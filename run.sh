@@ -98,6 +98,9 @@ should_skip() {
     00_lib.sh)
       # helper library, never executed as a step
       return 0 ;;
+    76_app_scaffold.sh)
+      # scaffolder; run directly with args when needed
+      return 0 ;;
     12_dns_register.sh)
       [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     45_oauth2_proxy.sh)

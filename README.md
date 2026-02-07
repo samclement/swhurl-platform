@@ -8,6 +8,40 @@ This repository contains a modular, idempotent set of scripts to provision a ful
 - Configure DNS if desired: The machine can register multiple `*.swhurl.com` subdomains via a systemd service. The scripts idempotently ensure this.
 - Edit `config.env` to set domain/flags (defaults work for homelab.swhurl.com). For purely local use, set `BASE_DOMAIN=127.0.0.1.nip.io` and `CLUSTER_ISSUER=selfsigned`.
 
+## External Dependencies
+
+This project uses upstream charts, container images, and cloud services. Ensure the following are available:
+
+- Kubernetes provider
+  - k3s (default, recommended on Linux): installing and uninstalling k3s requires root access (`curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -`).
+    - Kubeconfig: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`).
+    - Ingress: k3s exposes `ingress-nginx` via KlipperLB (LoadBalancer on host ports 80/443). Make sure these ports are free/firewall-open.
+  - kind (optional): requires Docker or Podman.
+    - Podman rootless has sysctl limitations; this repo disables kind sysctl tuning (`KIND_TUNE_INOTIFY=false`).
+    - Podman socket or `podman machine` is needed for Docker-compatible API on some hosts.
+
+- CLI tools (install on the operator machine)
+  - kubectl (v1.26+), Helm (v3.11+), curl, envsubst (from `gettext`), jq, yq
+  - Optional: sops and age (for GitOps-style secret encryption)
+  - Optional (DNS step only): awscli and `dig` (dnsutils) for Route53 updater
+
+- Network egress to public repositories (for Helm charts and container images)
+  - Helm charts: `https://charts.jetstack.io`, `https://kubernetes.github.io/ingress-nginx`, `https://oauth2-proxy.github.io/manifests`, `https://prometheus-community.github.io/helm-charts`, `https://grafana.github.io/helm-charts`, `https://fluent.github.io/helm-charts`, `https://charts.min.io/`
+  - Container registries: `registry.k8s.io`, `docker.io`, `ghcr.io`, `quay.io`, `cr.fluentbit.io`
+  - If behind a proxy, export the appropriate `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` variables for both Helm and container runtime.
+
+- DNS and certificates (optional but recommended)
+  - Let’s Encrypt HTTP-01: requires public DNS (A/AAAA record) pointing to the Ingress IP and ports 80/443 reachable from the internet. Set `CLUSTER_ISSUER=letsencrypt` and `ACME_EMAIL`.
+  - Local-only: set `BASE_DOMAIN=127.0.0.1.nip.io` and `CLUSTER_ISSUER=selfsigned` (no public DNS or ACME needed).
+  - Dynamic DNS for `*.swhurl.com` (Linux only): `./scripts/12_dns_register.sh` installs a systemd service+timer that needs `sudo`, AWS credentials with Route53 changes for `swhurl.com`, and `awscli`.
+
+- OIDC provider for OAuth2 Proxy (optional)
+  - Provide `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (store in `profiles/secrets.env`). Supported IdPs include Google, GitHub, Auth0, etc.
+
+- Storage and capacity
+  - k3s local-path provisioner provides a default StorageClass; ensure enough disk for Prometheus and MinIO.
+  - MinIO defaults to a 20Gi PersistentVolumeClaim; adjust in `scripts/70_minio.sh` if needed.
+
 Create the platform:
 
 ```

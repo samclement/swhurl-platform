@@ -16,8 +16,10 @@ fi
 
 helm_upsert ingress-nginx ingress-nginx/ingress-nginx ingress \
   --set controller.replicaCount=1 \
-  --set controller.ingressClassResource.default=true
+  --set controller.ingressClassResource.default=true \
+  --set controller.service.type=NodePort \
+  --set controller.service.nodePorts.http=31514 \
+  --set controller.service.nodePorts.https=30313
 
 wait_deploy ingress ingress-nginx-controller
 log_info "ingress-nginx installed"
-

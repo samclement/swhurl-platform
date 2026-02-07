@@ -9,4 +9,3 @@ nodes:
       - containerPort: 30313
         hostPort: 30313
         protocol: TCP
-  - role: worker

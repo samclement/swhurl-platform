@@ -47,8 +47,9 @@ if [[ -f "config.env" ]]; then
   source "config.env"
 fi
 
-# Load profile if provided
+# Load profile if provided and export the path so child scripts can re-source
 if [[ -n "$PROFILE_FILE" ]]; then
+  export PROFILE_FILE
   # shellcheck disable=SC1090
   source "$PROFILE_FILE"
 fi
@@ -94,6 +95,9 @@ fi
 should_skip() {
   local step="$1"
   case "$(basename "$step")" in
+    00_lib.sh)
+      # helper library, never executed as a step
+      return 0 ;;
     12_dns_register.sh)
       [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     45_oauth2_proxy.sh)
@@ -134,10 +138,11 @@ for s in "${SELECTED_STEPS[@]}"; do
     echo "[skip] $base (not executable or missing)"
     continue
   fi
-  echo "[run] $base ${DELETE_MODE:+--delete}"
   if [[ "$DELETE_MODE" == true ]]; then
+    echo "[run] $base --delete"
     "$s" --delete
   else
+    echo "[run] $base"
     "$s"
   fi
 done

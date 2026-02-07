@@ -12,6 +12,21 @@ if [[ -f "$ROOT_DIR/config.env" ]]; then
   source "$ROOT_DIR/config.env"
 fi
 
+# Optionally layer a profile for secrets/overrides. Priority:
+# 1) $PROFILE_FILE if set and exists
+# 2) $ROOT_DIR/profiles/secrets.env if exists
+# 3) $ROOT_DIR/profiles/local.env if exists
+if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$PROFILE_FILE"
+elif [[ -f "$ROOT_DIR/profiles/secrets.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT_DIR/profiles/secrets.env"
+elif [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT_DIR/profiles/local.env"
+fi
+
 log_info() { printf "[INFO] %s\n" "$*"; }
 log_warn() { printf "[WARN] %s\n" "$*"; }
 log_error() { printf "[ERROR] %s\n" "$*" >&2; }
@@ -23,7 +38,8 @@ need_cmd() {
 
 ensure_context() {
   need_cmd kubectl
-  kubectl version --short >/dev/null 2>&1 || die "kubectl cannot reach a cluster; ensure kubeconfig is set"
+  # Robust reachability check that works across kubectl versions
+  kubectl get --raw=/version >/dev/null 2>&1 || die "kubectl cannot reach a cluster; ensure kubeconfig is set"
 }
 
 kubectl_ns() {
@@ -51,4 +67,3 @@ label_managed() {
   local ns="$1" kind="$2" name="$3"
   kubectl -n "$ns" label "$kind" "$name" platform.swhurl.io/managed=true --overwrite >/dev/null 2>&1 || true
 }
-

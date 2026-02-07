@@ -28,6 +28,9 @@ spec:
 EOF
     ;;
   letsencrypt)
+    if [[ -z "${ACME_EMAIL:-}" ]]; then
+      die "ACME_EMAIL is empty. Set it in profiles/secrets.env or via --profile before creating the 'letsencrypt' ClusterIssuer."
+    fi
     cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -51,4 +54,3 @@ EOF
 esac
 
 log_info "ClusterIssuer '$ISSUER_NAME' ensured"
-

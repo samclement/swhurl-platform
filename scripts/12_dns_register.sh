@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Idempotent DNS registration for <subdomain>.swhurl.com using the
-# aws-dns-updater systemd service/timer from @samclement's gist.
+# Idempotent DNS registration for one or more <subdomain>.swhurl.com names
+# using a local aws-dns-updater script and systemd service/timer.
 # - Linux + systemd only. On macOS or non-systemd, this is a no-op.
-# - Uses $SWHURL_SUBDOMAIN if set, otherwise defaults to "homelab".
-# - Rewrites unit files only when the configured subdomain/user differs.
+# - Supports multiple subdomains via SWHURL_SUBDOMAINS (space/comma-separated).
+# - Backwards compatible with SWHURL_SUBDOMAIN (single value).
 
 log() { printf "[%s] %s\n" "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$*"; }
 warn() { log "WARN: $*"; }
@@ -19,8 +19,6 @@ if [[ -f "$ROOT_DIR/config.env" ]]; then
   source "$ROOT_DIR/config.env"
 fi
 
-SWHURL_SUBDOMAIN="${SWHURL_SUBDOMAIN:-homelab}"
-
 DELETE_MODE=false
 for arg in "$@"; do
   case "$arg" in
@@ -28,11 +26,13 @@ for arg in "$@"; do
     --help|-h)
       cat <<USAGE
 Usage: $(basename "$0") [--delete]
-  Idempotently install or remove a systemd service/timer that updates
-  <subdomain>.swhurl.com via Route53 using aws-dns-updater.sh.
+  Install or remove a systemd service/timer that updates
+  one or more <subdomain>.swhurl.com Route53 A records.
 
 Env:
-  SWHURL_SUBDOMAIN   Subdomain (default: homelab)
+  SWHURL_SUBDOMAINS   Space or comma-separated subdomains (e.g. "homelab oauth.homelab grafana.homelab")
+  SWHURL_SUBDOMAIN    Back-compat single subdomain (ignored if SWHURL_SUBDOMAINS is set)
+  BASE_DOMAIN         If ends with .swhurl.com, defaults will be derived when SWHURL_SUBDOMAINS is empty
 USAGE
       exit 0
       ;;
@@ -61,18 +61,48 @@ TIMER_PATH="/etc/systemd/system/$TIMER_NAME"
 
 HELPER_DIR="$USER_HOME/.local/scripts"
 HELPER_SCRIPT="$HELPER_DIR/aws-dns-updater.sh"
-HELPER_URL="https://gist.githubusercontent.com/samclement/9bef6ded89ede2085439cbde97e532b8/raw"
+LOCAL_HELPER_SOURCE="$SCRIPT_DIR/aws-dns-updater.sh"
 
 mkdir -p "$HELPER_DIR"
 
-desired_execstart="ExecStart=/bin/bash $HELPER_SCRIPT $SWHURL_SUBDOMAIN"
+# Determine subdomain list
+subdomains_raw="${SWHURL_SUBDOMAINS:-}"
+if [[ -z "$subdomains_raw" ]]; then
+  if [[ -n "${SWHURL_SUBDOMAIN:-}" ]]; then
+    subdomains_raw="$SWHURL_SUBDOMAIN"
+  elif [[ -n "${BASE_DOMAIN:-}" && "$BASE_DOMAIN" =~ \.swhurl\.com$ ]]; then
+    # Derive defaults from BASE_DOMAIN=<base>.swhurl.com
+    base_subdomain="${BASE_DOMAIN%.swhurl.com}"
+    base_subdomain="${base_subdomain%.}"
+    subdomains_raw="$base_subdomain oauth.$base_subdomain grafana.$base_subdomain minio.$base_subdomain minio-console.$base_subdomain"
+    warn "SWHURL_SUBDOMAINS not set; derived defaults: $subdomains_raw"
+  else
+    subdomains_raw="homelab"
+    warn "SWHURL_SUBDOMAINS not set; defaulting to '$subdomains_raw'"
+  fi
+fi
+
+# Normalize separators to spaces and quote each for ExecStart
+subdomains_raw="${subdomains_raw//,/ }"
+read -r -a SUBDOMAINS <<< "$subdomains_raw"
+if [[ ${#SUBDOMAINS[@]} -eq 0 ]]; then
+  die "No subdomains provided or derived"
+fi
+
+quoted_subdomains=()
+for s in "${SUBDOMAINS[@]}"; do
+  [[ -n "$s" ]] || continue
+  quoted_subdomains+=("\"$s\"")
+done
+
+desired_execstart=("ExecStart=/bin/bash $HELPER_SCRIPT" "${quoted_subdomains[@]}")
+desired_execstart_line="${desired_execstart[*]}"
 
 create_or_update_unit() {
   local path="$1"; shift
   local content="$1"; shift
   local changed=0
   if [[ -f "$path" ]]; then
-    # Compare current content with desired; update only if different
     if ! diff -q <(printf "%s" "$content") "$path" >/dev/null 2>&1; then
       log "Updating $(basename "$path")"
       printf "%s" "$content" | sudo tee "$path" >/dev/null
@@ -97,7 +127,7 @@ After=network.target
 
 [Service]
 Type=simple
-$desired_execstart
+$desired_execstart_line
 User=$USER_NAME
 Restart=on-failure
 RestartSec=10s
@@ -121,9 +151,8 @@ WantedBy=timers.target
 
 if [[ "$DELETE_MODE" == true ]]; then
   log "Deleting DNS updater units if managed by this repo"
-  # Only stop/disable/remove if units reference our HELPER_SCRIPT and subdomain
   needs_remove=false
-  if [[ -f "$SERVICE_PATH" ]] && grep -q "^ExecStart=.*/aws-dns-updater.sh $SWHURL_SUBDOMAIN$" "$SERVICE_PATH"; then
+  if [[ -f "$SERVICE_PATH" ]] && grep -q "^ExecStart=.*/aws-dns-updater.sh" "$SERVICE_PATH"; then
     needs_remove=true
   fi
   if [[ "$needs_remove" == true ]]; then
@@ -131,20 +160,22 @@ if [[ "$DELETE_MODE" == true ]]; then
     sudo systemctl disable "$TIMER_NAME" "$SERVICE_NAME" >/dev/null || true
     sudo rm -f "$SERVICE_PATH" "$TIMER_PATH" || true
     sudo systemctl daemon-reload || true
-    log "Removed systemd units for ${SWHURL_SUBDOMAIN}.swhurl.com"
+    log "Removed systemd units"
   else
-    log "Units not managed for subdomain '$SWHURL_SUBDOMAIN'; nothing to delete."
+    log "Units not recognized as managed; nothing to delete."
   fi
   exit 0
 fi
 
-# Ensure helper script exists and is executable (after potential delete-mode early exit)
-if [[ ! -x "$HELPER_SCRIPT" ]]; then
+# Install/refresh helper script from this repo
+if [[ ! -f "$LOCAL_HELPER_SOURCE" ]]; then
+  die "Local helper script not found: $LOCAL_HELPER_SOURCE"
+fi
+if ! cmp -s "$LOCAL_HELPER_SOURCE" "$HELPER_SCRIPT" 2>/dev/null; then
   log "Installing helper script to $HELPER_SCRIPT"
-  curl -fsSL "$HELPER_URL" -o "$HELPER_SCRIPT" || die "Failed to download helper script"
-  chmod +x "$HELPER_SCRIPT"
+  install -m 0755 "$LOCAL_HELPER_SOURCE" "$HELPER_SCRIPT"
 else
-  log "Helper script already present: $HELPER_SCRIPT"
+  log "Helper script already up-to-date: $HELPER_SCRIPT"
 fi
 
 if create_or_update_unit "$SERVICE_PATH" "$service_content"; then unit_changed=1; fi
@@ -159,7 +190,6 @@ fi
 sudo systemctl enable "$SERVICE_NAME" >/dev/null || true
 sudo systemctl enable "$TIMER_NAME" >/dev/null || true
 
-# If service is running and config changed, restart; otherwise ensure started
 if (( unit_changed == 1 )); then
   log "(Re)starting $SERVICE_NAME and $TIMER_NAME"
   sudo systemctl restart "$SERVICE_NAME" || true
@@ -169,8 +199,7 @@ else
   sudo systemctl start "$TIMER_NAME" || true
 fi
 
-# Status summary
-log "Configured domain: ${SWHURL_SUBDOMAIN}.swhurl.com"
+log "Configured subdomains: ${SUBDOMAINS[*]} (under swhurl.com)"
 log "Service status:"
 sudo systemctl --no-pager --full status "$SERVICE_NAME" | sed -n '1,15p' || true
 log "Timer status:"

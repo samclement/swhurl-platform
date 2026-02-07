@@ -14,6 +14,7 @@ HOSTNAME="hello.${BASE_DOMAIN}"
 
 if [[ "$DELETE" == true ]]; then
   kubectl delete -n "$APP_NS" ingress "$APP_NAME" --ignore-not-found
+  kubectl delete -n "$APP_NS" certificate "$APP_NAME" --ignore-not-found || true
   kubectl delete -n "$APP_NS" deploy "$APP_NAME" svc "$APP_NAME" --ignore-not-found
   kubectl delete ns "$APP_NS" --ignore-not-found
   exit 0
@@ -59,12 +60,13 @@ metadata:
   namespace: ${APP_NS}
   annotations:
     kubernetes.io/ingress.class: nginx
-    cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-url: https://${OAUTH_HOST}/oauth2/auth" )
-    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=$scheme://$host$request_uri" )
+    # Use in-cluster service for auth-url to avoid external TLS/DNS dependency
+    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth" )
+    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri" )
 spec:
+  ingressClassName: nginx
   tls:
     - hosts: ["${HOSTNAME}"]
       secretName: ${APP_NAME}-tls
@@ -79,8 +81,20 @@ spec:
                 name: ${APP_NAME}
                 port:
                   number: 80
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ${APP_NAME}
+  namespace: ${APP_NS}
+spec:
+  secretName: ${APP_NAME}-tls
+  issuerRef:
+    name: ${CLUSTER_ISSUER}
+    kind: ClusterIssuer
+  dnsNames:
+    - ${HOSTNAME}
 EOF
 
 wait_deploy "$APP_NS" "$APP_NAME"
 log_info "Sample app deployed at https://${HOSTNAME}"
-

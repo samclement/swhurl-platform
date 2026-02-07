@@ -1,5 +1,48 @@
 # Platform Infrastructure Guide (Agents)
 
+## Agents Operating Notes
+
+- Always update this AGENTS.md with new learnings, gotchas, and environment-specific fixes discovered while working on the repo. Keep entries concise, actionable, and tied to the relevant scripts/config.
+- Prefer adding learnings in the sections below. If a learning implies a code change, also open a TODO in the relevant script and reference it here.
+
+### Current Learnings
+
+- Podman + kind on Linux/macOS
+  - Missing rootless deps cause kind failures with Podman (errors like: `newuidmap not found`, `open /etc/containers/policy.json: no such file or directory`). Fixes:
+    - Install deps (Ubuntu/Debian): `sudo apt-get install -y uidmap slirp4netns fuse-overlayfs containers-common` (and `podman` if not present).
+    - Ensure user-level socket: `loginctl enable-linger "$USER" && systemctl --user daemon-reload && systemctl --user enable --now podman.socket`.
+    - If system files are missing, add user-level fallbacks:
+      - `~/.config/containers/policy.json` with an "insecureAcceptAnything" default policy (OK for local dev).
+      - `~/.config/containers/registries.conf` with `unqualified-search-registries = ["docker.io"]`.
+  - Homebrew-installed Podman (or Linux without system units): prefer `podman machine` to avoid config gaps:
+    - `podman machine init --cpus 4 --memory 6144 --disk-size 40 --now`; then `podman info` and run kind with `KIND_EXPERIMENTAL_PROVIDER=podman`.
+  - TODO: In `scripts/02_podman_setup.sh`, consider auto-fallback to `podman machine` on Linux when `podman.socket` is not available, and print precise next steps when `newuidmap`/`slirp4netns` are missing.
+
+- Orchestrator run order
+  - `scripts/00_lib.sh` is a helper and should not be executed as a step. Update `run.sh` to exclude `00_lib.sh` from selection (future improvement). For now, executing it is harmless but noisy.
+
+- Domains and DNS registration
+  - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> grafana.<base> minio.<base> minio-console.<base>`.
+  - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
+
+- OIDC for applications
+  - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:
+    - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
+    - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
+    - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
+  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via `./scripts/45_oauth2_proxy.sh`.
+  - See README “Add OIDC To Your App” for a complete Ingress example.
+  - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
+  - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
+
+- Secrets hygiene
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`.
+  - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
+  - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.
+
+---
+
 This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It covers local clusters (Podman + kind) and remote single-node clusters (k3s), plus common platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
 
 If you already have a cluster, you can jump directly to the Bootstrap section.

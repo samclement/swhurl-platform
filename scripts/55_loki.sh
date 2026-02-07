@@ -20,7 +20,13 @@ if [[ "$DELETE" == true ]]; then
 fi
 
 helm_upsert loki grafana/loki observability \
-  --set loki.auth_enabled=false
+  --set loki.auth_enabled=false \
+  --set deploymentMode=SingleBinary \
+  --set singleBinary.replicas=1 \
+  --set loki.storage.type=filesystem \
+  --set loki.useTestSchema=true \
+  --set write.replicas=0 \
+  --set read.replicas=0 \
+  --set backend.replicas=0
 
 log_info "loki installed"
-

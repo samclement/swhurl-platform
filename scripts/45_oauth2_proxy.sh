@@ -25,26 +25,51 @@ if [[ -z "${OIDC_CLIENT_ID:-}" || -z "${OIDC_CLIENT_SECRET:-}" ]]; then
 fi
 
 kubectl_ns ingress
+# oauth2-proxy expects a cookie secret that is exactly 16, 24, or 32 bytes.
+# Generate a 32-character ASCII hex secret safely (no pipefail issues) if not provided.
+GEN_COOKIE_SECRET() { hexdump -v -e '/1 "%02X"' -n 16 /dev/urandom; }
+COOKIE_SECRET_VAL="${OAUTH_COOKIE_SECRET:-$(GEN_COOKIE_SECRET)}"
 kubectl -n ingress create secret generic oauth2-proxy-secret \
   --from-literal=client-id="${OIDC_CLIENT_ID:-unset}" \
   --from-literal=client-secret="${OIDC_CLIENT_SECRET:-unset}" \
-  --from-literal=cookie-secret="${OAUTH_COOKIE_SECRET:-$(openssl rand -base64 32 2>/dev/null || echo dummysecret)}" \
+  --from-literal=cookie-secret="${COOKIE_SECRET_VAL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Verify secret exists and cookie-secret length is valid (16/24/32)
+for i in {1..10}; do
+  if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then
+    LEN=$(kubectl -n ingress get secret oauth2-proxy-secret -o jsonpath='{.data.cookie-secret}' | base64 -d | wc -c | tr -d '[:space:]')
+    if [[ "$LEN" == "16" || "$LEN" == "24" || "$LEN" == "32" ]]; then
+      break
+    fi
+  fi
+  sleep 1
+done
+LEN=$(kubectl -n ingress get secret oauth2-proxy-secret -o jsonpath='{.data.cookie-secret}' | base64 -d | wc -c | tr -d '[:space:]' || echo 0)
+if [[ "$LEN" != "16" && "$LEN" != "24" && "$LEN" != "32" ]]; then
+  die "oauth2-proxy-secret not created or invalid cookie-secret length ($LEN)"
+fi
+
+REDIRECT_URL="${OAUTH_REDIRECT_URL:-https://${OAUTH_HOST}/oauth2/callback}"
+
+PARENT_DOMAIN=".${BASE_DOMAIN}"
 helm_upsert oauth2-proxy oauth2-proxy/oauth2-proxy ingress \
   --set config.existingSecret=oauth2-proxy-secret \
   --set extraArgs.provider=oidc \
   --set extraArgs.oidc-issuer-url="${OIDC_ISSUER:-https://example.com}" \
-  --set extraArgs.redirect-url="https://${OAUTH_HOST}/oauth2/callback" \
+  --set extraArgs.redirect-url="${REDIRECT_URL}" \
   --set extraArgs.email-domain="*" \
+  --set extraArgs.cookie-domain="${PARENT_DOMAIN}" \
+  --set extraArgs.whitelist-domain="${PARENT_DOMAIN}" \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
   --set ingress.annotations."cert-manager\.io/cluster-issuer"=${CLUSTER_ISSUER} \
-  --set ingress.hosts[0].host="${OAUTH_HOST}" \
-  --set ingress.hosts[0].paths[0].path="/" \
+  --set ingress.hosts[0]="${OAUTH_HOST}" \
   --set ingress.tls[0].hosts[0]="${OAUTH_HOST}" \
   --set ingress.tls[0].secretName=oauth2-proxy-tls
 
 wait_deploy ingress oauth2-proxy
+# Ensure pods pick up any updated secret values (cookie-secret changes)
+kubectl -n ingress rollout restart deploy/oauth2-proxy >/dev/null 2>&1 || true
+wait_deploy ingress oauth2-proxy
 log_info "oauth2-proxy installed"
-

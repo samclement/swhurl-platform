@@ -26,6 +26,7 @@ else
 fi
 
 helm_upsert ingress-nginx ingress-nginx/ingress-nginx ingress \
+  -f "$SCRIPT_DIR/../values/ingress-nginx-logging.yaml" \
   --set controller.replicaCount=1 \
   --set controller.ingressClassResource.default=true \
   "${SERVICE_ARGS[@]}"

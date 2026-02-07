@@ -59,6 +59,13 @@ helm_upsert oauth2-proxy oauth2-proxy/oauth2-proxy ingress \
   --set extraArgs.oidc-issuer-url="${OIDC_ISSUER:-https://example.com}" \
   --set extraArgs.redirect-url="${REDIRECT_URL}" \
   --set extraArgs.email-domain="*" \
+  --set extraArgs.standard-logging=true \
+  --set extraArgs.standard-logging-format=json \
+  --set extraArgs.request-logging=true \
+  --set extraArgs.request-logging-format=json \
+  --set extraArgs.auth-logging=true \
+  --set extraArgs.auth-logging-format=json \
+  --set extraArgs.silence-ping-logging=true \
   --set extraArgs.cookie-domain="${PARENT_DOMAIN}" \
   --set extraArgs.whitelist-domain="${PARENT_DOMAIN}" \
   --set ingress.enabled=true \

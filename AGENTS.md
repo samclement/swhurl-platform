@@ -43,6 +43,10 @@
 
 - Logging with Fluent Bit (chart quirk)
   - The `fluent/fluent-bit` Helm chart does not support `backend.type=loki`. It uses `config.outputs` instead and defaults to Elasticsearch. `scripts/50_logging_fluentbit.sh` now applies a values overlay to set Loki outputs explicitly. If you see `elasticsearch-master` in the rendered ConfigMap, re-run step 50 to replace values (`--reset-values` is used).
+  - Structured logs for better queries:
+    - ingress-nginx: `values/ingress-nginx-logging.yaml` sets JSON `log-format-upstream` and escape. Reinstall controller (step 40) to apply.
+    - oauth2-proxy: `scripts/45_oauth2_proxy.sh` enables JSON for standard/auth/request logs via `extraArgs.*-format=json`.
+    - Fluent Bit: sends JSON (`line_format json`) and uses a curated `labelmap.json` to keep Loki labels low-cardinality. Query with LogQL: `{namespace="ingress"} | json | status>=500` or `{app="oauth2-proxy"} | json | method="GET"`.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`.

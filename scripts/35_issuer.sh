@@ -18,35 +18,18 @@ fi
 
 case "$ISSUER_NAME" in
   selfsigned)
-    cat <<EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned
-spec:
-  selfSigned: {}
-EOF
+    kubectl apply -k "$SCRIPT_DIR/../manifests/issuers/selfsigned"
     ;;
   letsencrypt)
     if [[ -z "${ACME_EMAIL:-}" ]]; then
       die "ACME_EMAIL is empty. Set it in profiles/secrets.env or via --profile before creating the 'letsencrypt' ClusterIssuer."
     fi
-    cat <<EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt
-spec:
-  acme:
-    email: ${ACME_EMAIL}
-    server: https://acme-v02.api.letsencrypt.org/directory
-    privateKeySecretRef:
-      name: acme-account-key
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR"' EXIT
+    cp -r "$SCRIPT_DIR/../manifests/issuers/letsencrypt" "$TMPDIR/issuer"
+    ( export ACME_EMAIL; envsubst < "$TMPDIR/issuer/issuer.yaml" > "$TMPDIR/issuer/issuer.rendered.yaml" )
+    mv "$TMPDIR/issuer/issuer.rendered.yaml" "$TMPDIR/issuer/issuer.yaml"
+    kubectl apply -k "$TMPDIR/issuer"
     ;;
   *)
     die "Unknown CLUSTER_ISSUER: $ISSUER_NAME"

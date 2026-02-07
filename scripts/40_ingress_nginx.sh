@@ -14,12 +14,21 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
+SERVICE_ARGS=()
+if [[ "${K8S_PROVIDER:-k3s}" == "k3s" ]]; then
+  # Use k3s' KlipperLB to expose 80/443 on the host for simplicity
+  SERVICE_ARGS+=("--set" "controller.service.type=LoadBalancer")
+else
+  # kind or other: prefer NodePort with explicit ports to avoid collisions
+  SERVICE_ARGS+=("--set" "controller.service.type=NodePort")
+  SERVICE_ARGS+=("--set" "controller.service.nodePorts.http=31514")
+  SERVICE_ARGS+=("--set" "controller.service.nodePorts.https=30313")
+fi
+
 helm_upsert ingress-nginx ingress-nginx/ingress-nginx ingress \
   --set controller.replicaCount=1 \
   --set controller.ingressClassResource.default=true \
-  --set controller.service.type=NodePort \
-  --set controller.service.nodePorts.http=31514 \
-  --set controller.service.nodePorts.https=30313
+  "${SERVICE_ARGS[@]}"
 
 wait_deploy ingress ingress-nginx-controller
 log_info "ingress-nginx installed"

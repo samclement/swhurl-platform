@@ -10,7 +10,16 @@ ensure_context
 
 APP_NS=apps
 APP_NAME=hello-web
-HOSTNAME="hello.${BASE_DOMAIN}"
+
+# Derive host: allow override via APP_HOST, else use BASE_DOMAIN
+HOST="${APP_HOST:-}"
+if [[ -z "$HOST" ]]; then
+  if [[ -n "${BASE_DOMAIN:-}" ]]; then
+    HOST="hello.${BASE_DOMAIN}"
+  else
+    die "BASE_DOMAIN is not set and APP_HOST not provided; cannot render sample app Ingress. Set BASE_DOMAIN (e.g., 127.0.0.1.nip.io) or export APP_HOST."
+  fi
+fi
 
 if [[ "$DELETE" == true ]]; then
   kubectl delete -n "$APP_NS" ingress "$APP_NAME" --ignore-not-found
@@ -22,79 +31,44 @@ fi
 
 kubectl_ns "$APP_NS"
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NS}
-spec:
-  replicas: 1
-  selector:
-    matchLabels: { app: ${APP_NAME} }
-  template:
-    metadata:
-      labels: { app: ${APP_NAME} }
-    spec:
-      containers:
-        - name: web
-          image: docker.io/nginx:1.25-alpine
-          ports: [{ containerPort: 80 }]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NS}
-spec:
-  selector: { app: ${APP_NAME} }
-  ports:
-    - port: 80
-      targetPort: 80
-      name: http
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NS}
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    # Use in-cluster service for auth-url to avoid external TLS/DNS dependency
-    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth" )
-    $( [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && echo "nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri" )
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts: ["${HOSTNAME}"]
-      secretName: ${APP_NAME}-tls
-  rules:
-    - host: "${HOSTNAME}"
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: ${APP_NAME}
-                port:
-                  number: 80
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NS}
-spec:
-  secretName: ${APP_NAME}-tls
-  issuerRef:
-    name: ${CLUSTER_ISSUER}
-    kind: ClusterIssuer
-  dnsNames:
-    - ${HOSTNAME}
-EOF
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+cp "$SCRIPT_DIR/../manifests/templates/app/"*.yaml "$TMPDIR/"
+
+export APP_NAME APP_NS HOST IMAGE="docker.io/nginx:1.25-alpine" TLS_SECRET="${APP_NAME}-tls" ISSUER="${CLUSTER_ISSUER}" OAUTH_HOST
+for f in "$TMPDIR"/*.yaml; do
+  envsubst '${APP_NAME} ${APP_NS} ${HOST} ${TLS_SECRET} ${ISSUER} ${IMAGE} ${OAUTH_HOST}' < "$f" > "$f.rendered"
+  mv "$f.rendered" "$f"
+done
+
+# Decide whether to use OAuth-protected ingress
+USE_AUTH=false
+if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+  # Only enable auth if oauth2-proxy is deployed and available
+  if kubectl -n ingress get deploy oauth2-proxy >/dev/null 2>&1; then
+    if kubectl -n ingress rollout status deploy/oauth2-proxy --timeout=5s >/dev/null 2>&1; then
+      USE_AUTH=true
+    fi
+  fi
+fi
+
+if [[ "$USE_AUTH" == true ]]; then
+  log_info "Using OAuth-protected Ingress for sample app (oauth2-proxy detected)"
+else
+  log_info "Using public Ingress for sample app (oauth2-proxy missing or disabled)"
+fi
+
+cat > "$TMPDIR/kustomization.yaml" <<K
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - certificate.yaml
+  - $( [[ "$USE_AUTH" == true ]] && echo ingress-auth.yaml || echo ingress-public.yaml )
+K
+
+kubectl apply -k "$TMPDIR"
 
 wait_deploy "$APP_NS" "$APP_NAME"
-log_info "Sample app deployed at https://${HOSTNAME}"
+log_info "Sample app deployed at https://${HOST}"

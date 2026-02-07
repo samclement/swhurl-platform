@@ -19,12 +19,21 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
-LOKI_URL="http://loki.observability.svc.cluster.local:3100"
+LOKI_URL="${LOKI_URL:-http://loki.observability.svc.cluster.local:3100}"
+
+# Render a values overlay that switches outputs to Loki
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+cp "$SCRIPT_DIR/../values/fluent-bit-loki.yaml" "$TMPDIR/values.yaml"
+(
+  export LOKI_URL CLUSTER_NAME
+  envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"
+)
+
 helm_upsert fluent-bit fluent/fluent-bit logging \
-  --set tolerations[0].operator=Exists \
-  --set backend.type=loki \
-  --set backend.loki.host="${LOKI_URL}"
+  --reset-values \
+  -f "$TMPDIR/values.rendered.yaml" \
+  --set tolerations[0].operator=Exists
 
 wait_ds logging fluent-bit
 log_info "fluent-bit installed"
-

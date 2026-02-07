@@ -21,6 +21,7 @@ fi
 
 helm_upsert loki grafana/loki observability \
   --set loki.auth_enabled=false \
+  --set loki.commonConfig.replication_factor=1 \
   --set deploymentMode=SingleBinary \
   --set singleBinary.replicas=1 \
   --set loki.storage.type=filesystem \
@@ -30,3 +31,7 @@ helm_upsert loki grafana/loki observability \
   --set backend.replicas=0
 
 log_info "loki installed"
+
+# Wait for single-binary statefulset to be ready and gateway to be up
+kubectl -n observability rollout status statefulset/loki --timeout=${TIMEOUT_SECS:-300}s || true
+kubectl -n observability rollout status deploy/loki-gateway --timeout=${TIMEOUT_SECS:-300}s || true

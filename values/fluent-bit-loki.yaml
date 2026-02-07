@@ -1,0 +1,17 @@
+config:
+  # Override default Elasticsearch outputs with Loki outputs
+  outputs: |
+    [OUTPUT]
+        Name loki
+        Match kube.*
+        Host loki-gateway.observability.svc.cluster.local
+        Port 80
+        Labels job=fluent-bit,cluster=${CLUSTER_NAME}
+        auto_kubernetes_labels On
+
+    [OUTPUT]
+        Name loki
+        Match host.*
+        Host loki-gateway.observability.svc.cluster.local
+        Port 80
+        Labels job=fluent-bit,cluster=${CLUSTER_NAME}

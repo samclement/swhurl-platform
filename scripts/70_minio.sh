@@ -27,6 +27,7 @@ kubectl -n storage create secret generic minio-creds \
   --dry-run=client -o yaml | kubectl apply -f -
 
 helm_upsert minio minio/minio storage \
+  --set image.repository=docker.io/minio/minio \
   --set mode=standalone \
   --set resources.requests.memory=512Mi \
   --set replicas=1 \
@@ -36,16 +37,16 @@ helm_upsert minio minio/minio storage \
   --set ingress.enabled=true \
   --set ingress.ingressClassName=nginx \
   --set ingress.annotations."cert-manager\.io/cluster-issuer"=${CLUSTER_ISSUER} \
-  --set ingress.hosts[0].host="${MINIO_HOST}" \
-  --set ingress.hosts[0].paths[0].path="/" \
+  --set ingress.path="/" \
+  --set ingress.hosts[0]="${MINIO_HOST}" \
   --set ingress.tls[0].hosts[0]="${MINIO_HOST}" \
   --set ingress.tls[0].secretName=minio-tls \
   --set consoleIngress.enabled=true \
   --set consoleIngress.ingressClassName=nginx \
   --set consoleIngress.annotations."cert-manager\.io/cluster-issuer"=${CLUSTER_ISSUER} \
+  --set consoleIngress.path="/" \
   --set consoleIngress.hosts[0]="${MINIO_CONSOLE_HOST}" \
   --set consoleIngress.tls[0].hosts[0]="${MINIO_CONSOLE_HOST}" \
   --set consoleIngress.tls[0].secretName=minio-console-tls
 
 log_info "minio installed"
-

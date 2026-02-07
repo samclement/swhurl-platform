@@ -17,9 +17,14 @@
   - Homebrew-installed Podman (or Linux without system units): prefer `podman machine` to avoid config gaps:
     - `podman machine init --cpus 4 --memory 6144 --disk-size 40 --now`; then `podman info` and run kind with `KIND_EXPERIMENTAL_PROVIDER=podman`.
   - TODO: In `scripts/02_podman_setup.sh`, consider auto-fallback to `podman machine` on Linux when `podman.socket` is not available, and print precise next steps when `newuidmap`/`slirp4netns` are missing.
+  - Kind sysctls on rootless Podman: `scripts/16_kind_sysctls.sh` cannot raise inotify limits inside kind node containers when Podman is rootless (kernel sysctls blocked by user namespaces). The script now auto-skips in this case and logs guidance. Workarounds:
+    - Use Docker as the provider, or
+    - Use `podman machine` (macOS) / a rootful VM for kind, or
+    - Disable the step with `KIND_TUNE_INOTIFY=false`.
 
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and should not be executed as a step. Update `run.sh` to exclude `00_lib.sh` from selection (future improvement). For now, executing it is harmless but noisy.
+  - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
@@ -36,6 +41,9 @@
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
 
+- Logging with Fluent Bit (chart quirk)
+  - The `fluent/fluent-bit` Helm chart does not support `backend.type=loki`. It uses `config.outputs` instead and defaults to Elasticsearch. `scripts/50_logging_fluentbit.sh` now applies a values overlay to set Loki outputs explicitly. If you see `elasticsearch-master` in the rendered ConfigMap, re-run step 50 to replace values (`--reset-values` is used).
+
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`.
   - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
@@ -43,7 +51,7 @@
 
 ---
 
-This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It covers local clusters (Podman + kind) and remote single-node clusters (k3s), plus common platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
+This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It prefers k3s by default (Linux-friendly) with kind as an alternative. It covers platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
 
 If you already have a cluster, you can jump directly to the Bootstrap section.
 
@@ -81,9 +89,26 @@ Notes
 
 ## Choose a Cluster
 
-You have two supported paths:
+You have two supported paths (k3s by default):
 
-1) Local development: kind (Kubernetes in Docker) using Podman as the provider
+1) Local or single-node: k3s (default)
+
+- Install k3s with Traefik disabled (we install ingress-nginx):
+
+```
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+```
+
+- Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:
+
+```
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $(id -u):$(id -g) ~/.kube/config
+```
+
+- Run scripts with `K8S_PROVIDER=k3s` (default in `config.env`).
+
+2) Alternative: Local development via kind (Podman/Docker provider)
 
 - Install kind:
   - macOS: `brew install kind`
@@ -109,22 +134,6 @@ nodes:
 ```
 
 Create with: `KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name platform --config kind-config.yaml`.
-
-2) Remote or Linux host: single-node k3s (lightweight Kubernetes)
-
-- Install k3s (disable bundled Traefik; we will install our own ingress):
-
-```
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
-sudo kubectl get nodes
-```
-
-- Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or merge contexts). Example:
-
-```
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $(id -u):$(id -g) ~/.kube/config
-```
 
 ## Bootstrap (Helm)
 

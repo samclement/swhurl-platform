@@ -3,6 +3,11 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 
+if [[ "${K8S_PROVIDER:-kind}" != "kind" ]]; then
+  log_info "K8S_PROVIDER is '${K8S_PROVIDER:-}', skipping Podman setup"
+  exit 0
+fi
+
 OS=$(uname -s || true)
 if [[ "$OS" == "Darwin" ]]; then
   if ! command -v podman >/dev/null 2>&1; then

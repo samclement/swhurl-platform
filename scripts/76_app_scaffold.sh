@@ -59,86 +59,27 @@ fi
 
 kubectl_ns "$NS"
 
-AUTH_URL_ANNOTATION=""
-AUTH_SIGNIN_ANNOTATION=""
-if [[ "$USE_AUTH" == true ]]; then
-  AUTH_URL_ANNOTATION="nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth"
-  AUTH_SIGNIN_ANNOTATION="nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
-fi
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+cp "$SCRIPT_DIR/../manifests/templates/app/"*.yaml "$TMPDIR/"
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ${NAME}
-  namespace: ${NS}
-spec:
-  replicas: 1
-  selector:
-    matchLabels: { app: ${NAME} }
-  template:
-    metadata:
-      labels: { app: ${NAME} }
-    spec:
-      containers:
-        - name: web
-          image: ${IMAGE}
-          ports: [{ containerPort: 80 }]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${NAME}
-  namespace: ${NS}
-spec:
-  selector: { app: ${NAME} }
-  ports:
-    - port: 80
-      targetPort: 80
-      name: http
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: ${NAME}
-  namespace: ${NS}
-spec:
-  secretName: ${TLS_SECRET}
-  issuerRef:
-    name: ${ISSUER}
-    kind: ClusterIssuer
-  dnsNames:
-    - ${HOST}
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ${NAME}
-  namespace: ${NS}
-  annotations:
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    ${AUTH_URL_ANNOTATION}
-    ${AUTH_SIGNIN_ANNOTATION}
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts: ["${HOST}"]
-      secretName: ${TLS_SECRET}
-  rules:
-    - host: "${HOST}"
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: ${NAME}
-                port:
-                  number: 80
-EOF
+export APP_NAME="$NAME" APP_NS="$NS" HOST="$HOST" IMAGE TLS_SECRET="${TLS_SECRET}" ISSUER OAUTH_HOST
+for f in "$TMPDIR"/*.yaml; do
+  envsubst < "$f" > "$f.rendered"
+  mv "$f.rendered" "$f"
+done
+
+cat > "$TMPDIR/kustomization.yaml" <<K
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - certificate.yaml
+  - $( [[ "$USE_AUTH" == true ]] && echo ingress-auth.yaml || echo ingress-public.yaml )
+K
+
+kubectl apply -k "$TMPDIR"
 
 wait_deploy "$NS" "$NAME"
 log_info "App '${NAME}' deployed at https://${HOST}"
-

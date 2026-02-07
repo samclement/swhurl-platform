@@ -169,6 +169,13 @@ spec:
                   number: 80
 ```
 
+- Scaffold a new app (helper script)
+  - Create a protected app quickly:
+    - `./scripts/76_app_scaffold.sh --name app --host app.${BASE_DOMAIN}`
+  - Make it public (no OAuth):
+    - `./scripts/76_app_scaffold.sh --name public --host public.${BASE_DOMAIN} --no-auth`
+  - Options: `--namespace apps`, `--image <repo:tag>`, `--issuer <ClusterIssuer>`
+
 - Optional behaviors
   - Allow a public path (no auth): place it on a separate Ingress without the auth annotations, or use advanced NGINX snippets to exclude specific locations.
   - Pass access tokens to the app: customize oauth2-proxy to set `--set-authorization-header=true` and `--pass-access-token=true` (via a Helm override), then include `Authorization` in `auth-response-headers`.

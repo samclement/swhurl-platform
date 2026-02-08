@@ -101,6 +101,9 @@ should_skip() {
     76_app_scaffold.sh)
       # scaffolder; run directly with args when needed
       return 0 ;;
+    01_check_prereqs.sh|15_kube_context.sh|25_helm_repos.sh|90_smoke_tests.sh|91_validate_cluster.sh|95_dump_context.sh)
+      # informational/validation steps; no --delete mode
+      [[ "$DELETE_MODE" == true ]] && return 0 ;;
     12_dns_register.sh)
       [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     45_oauth2_proxy.sh)
@@ -117,6 +120,9 @@ should_skip() {
       [[ "${FEAT_MESH_LINKERD:-false}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     81_mesh_istio.sh)
       [[ "${FEAT_MESH_ISTIO:-false}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+    20_namespaces.sh)
+      # namespaces are handled by installs; avoid deleting shared namespaces by default
+      [[ "$DELETE_MODE" == true ]] && return 0 ;;
   esac
   return 1
 }

@@ -27,4 +27,15 @@ kubectl -n cert-manager wait --for=condition=Available deploy/cert-manager --tim
 kubectl -n cert-manager wait --for=condition=Available deploy/cert-manager-webhook --timeout=${TIMEOUT_SECS:-300}s
 kubectl -n cert-manager wait --for=condition=Available deploy/cert-manager-cainjector --timeout=${TIMEOUT_SECS:-300}s
 
+# Ensure webhook CA bundle is injected before proceeding to issuer creation
+if ! wait_webhook_cabundle cert-manager-webhook "${TIMEOUT_SECS:-300}"; then
+  log_warn "Webhook CA bundle not ready; restarting webhook/cainjector and retrying"
+  kubectl -n cert-manager rollout restart deploy/cert-manager-webhook deploy/cert-manager-cainjector >/dev/null 2>&1 || true
+  kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=${TIMEOUT_SECS:-300}s
+  kubectl -n cert-manager rollout status deploy/cert-manager-cainjector --timeout=${TIMEOUT_SECS:-300}s
+  if ! wait_webhook_cabundle cert-manager-webhook "${TIMEOUT_SECS:-300}"; then
+    die "cert-manager webhook CA bundle still not ready; retry later or inspect cert-manager-webhook"
+  fi
+fi
+
 log_info "cert-manager installed"

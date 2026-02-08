@@ -3,13 +3,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 
-# Lightweight handler for k3s provider. We do NOT install k3s automatically
+# Lightweight handler for k3s. We do NOT install k3s automatically
 # (requires root). This script validates access and prints clear next steps.
-
-if [[ "${K8S_PROVIDER:-kind}" != "k3s" ]]; then
-  log_info "K8S_PROVIDER is '${K8S_PROVIDER:-}', skipping k3s checks"
-  exit 0
-fi
 
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
@@ -39,4 +34,3 @@ else
 fi
 
 log_info "k3s provider ready"
-

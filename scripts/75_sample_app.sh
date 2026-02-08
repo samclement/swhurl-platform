@@ -31,44 +31,96 @@ fi
 
 kubectl_ns "$APP_NS"
 
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-cp "$SCRIPT_DIR/../manifests/templates/app/"*.yaml "$TMPDIR/"
+APP_USE_KUSTOMIZE="${APP_USE_KUSTOMIZE:-true}"
+TLS_SECRET="${TLS_SECRET:-${APP_NAME}-tls}"
+ISSUER="${ISSUER:-${CLUSTER_ISSUER}}"
+IMAGE="${IMAGE:-docker.io/nginx:1.25-alpine}"
+AUTH_ENABLED="${APP_AUTH_ENABLED:-${FEAT_OAUTH2_PROXY:-false}}"
 
-export APP_NAME APP_NS HOST IMAGE="docker.io/nginx:1.25-alpine" TLS_SECRET="${APP_NAME}-tls" ISSUER="${CLUSTER_ISSUER}" OAUTH_HOST
-for f in "$TMPDIR"/*.yaml; do
-  envsubst '${APP_NAME} ${APP_NS} ${HOST} ${TLS_SECRET} ${ISSUER} ${IMAGE} ${OAUTH_HOST}' < "$f" > "$f.rendered"
-  mv "$f.rendered" "$f"
-done
+if [[ "$APP_USE_KUSTOMIZE" == true ]]; then
+  TMPDIR=$(mktemp -d)
+  trap 'rm -rf "$TMPDIR"' EXIT
+  # Copy base to avoid kustomize security boundary issues
+  mkdir -p "$TMPDIR/base"
+  cp -r "$SCRIPT_DIR/../infra/manifests/apps/hello/base/"* "$TMPDIR/base/"
 
-# Decide whether to use OAuth-protected ingress
-USE_AUTH=false
-if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  # Only enable auth if oauth2-proxy is deployed and available
-  if kubectl -n ingress get deploy oauth2-proxy >/dev/null 2>&1; then
-    if kubectl -n ingress rollout status deploy/oauth2-proxy --timeout=5s >/dev/null 2>&1; then
-      USE_AUTH=true
-    fi
+  cat > "$TMPDIR/kustomization.yaml" <<K
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ${APP_NS}
+resources:
+  - ./base
+
+configMapGenerator:
+  - name: hello-params
+    literals:
+      - host=${HOST}
+      - tlsSecret=${TLS_SECRET}
+      - issuerName=${ISSUER}
+
+replacements:
+  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.host}
+    targets:
+      - select: {kind: Ingress, name: ${APP_NAME}}
+        fieldPaths: [spec.rules.0.host, spec.tls.0.hosts.0]
+      - select: {kind: Certificate, name: ${APP_NAME}}
+        fieldPaths: [spec.dnsNames.0]
+  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.tlsSecret}
+    targets:
+      - select: {kind: Ingress, name: ${APP_NAME}}
+        fieldPaths: [spec.tls.0.secretName]
+      - select: {kind: Certificate, name: ${APP_NAME}}
+        fieldPaths: [spec.secretName]
+  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.issuerName}
+    targets:
+      - select: {kind: Certificate, name: ${APP_NAME}}
+        fieldPaths: [spec.issuerRef.name]
+K
+
+  if [[ "$AUTH_ENABLED" == true && -n "${OAUTH_HOST:-}" ]]; then
+    cat > "$TMPDIR/auth-patch.yaml" <<K
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri
+K
+    cat >> "$TMPDIR/kustomization.yaml" <<K
+
+patches:
+  - path: auth-patch.yaml
+    target:
+      kind: Ingress
+      name: ${APP_NAME}
+K
+  elif [[ "$AUTH_ENABLED" == true ]]; then
+    log_warn "APP_AUTH_ENABLED/FEAT_OAUTH2_PROXY is true but OAUTH_HOST is empty; skipping auth annotations"
   fi
-fi
 
-if [[ "$USE_AUTH" == true ]]; then
-  log_info "Using OAuth-protected Ingress for sample app (oauth2-proxy detected)"
+  kubectl apply -k "$TMPDIR"
 else
-  log_info "Using public Ingress for sample app (oauth2-proxy missing or disabled)"
-fi
-
-cat > "$TMPDIR/kustomization.yaml" <<K
+  # Legacy template path using envsubst (kept for compatibility)
+  TMPDIR=$(mktemp -d)
+  trap 'rm -rf "$TMPDIR"' EXIT
+  cp "$SCRIPT_DIR/../infra/manifests/templates/app/"*.yaml "$TMPDIR/"
+  export APP_NAME APP_NS HOST IMAGE TLS_SECRET ISSUER OAUTH_HOST
+  for f in "$TMPDIR"/*.yaml; do
+    envsubst '${APP_NAME} ${APP_NS} ${HOST} ${TLS_SECRET} ${ISSUER} ${IMAGE} ${OAUTH_HOST}' < "$f" > "$f.rendered"
+    mv "$f.rendered" "$f"
+  done
+  cat > "$TMPDIR/kustomization.yaml" <<K
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
   - certificate.yaml
-  - $( [[ "$USE_AUTH" == true ]] && echo ingress-auth.yaml || echo ingress-public.yaml )
+  - ingress-public.yaml
 K
-
-kubectl apply -k "$TMPDIR"
+  kubectl apply -k "$TMPDIR"
+fi
 
 wait_deploy "$APP_NS" "$APP_NAME"
 log_info "Sample app deployed at https://${HOST}"

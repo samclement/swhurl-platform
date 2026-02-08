@@ -57,6 +57,26 @@ wait_ds() {
   kubectl -n "$ns" rollout status ds/"$name" --timeout="${timeout}s"
 }
 
+wait_webhook_cabundle() {
+  local name="$1" timeout="${2:-${TIMEOUT_SECS:-300}}"
+  local start now ca
+  start=$(date +%s)
+  while true; do
+    if kubectl get validatingwebhookconfiguration "$name" >/dev/null 2>&1; then
+      ca=$(kubectl get validatingwebhookconfiguration "$name" -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || true)
+      if [[ -n "$ca" ]]; then
+        log_info "Webhook '${name}' CA bundle populated"
+        return 0
+      fi
+    fi
+    now=$(date +%s)
+    if (( now - start >= timeout )); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 helm_upsert() {
   local release="$1" chart="$2" ns="$3"; shift 3
   kubectl_ns "$ns"

@@ -3,14 +3,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 
-case "${K8S_PROVIDER:-kind}" in
-  kind)
-    CTX="kind-${CLUSTER_NAME}"
-    ;;
-  *)
-    CTX="$(kubectl config current-context)"
-    ;;
-esac
+CTX="$(kubectl config current-context)"
 
 if kubectl config get-contexts "$CTX" >/dev/null 2>&1; then
   log_info "Using kubectl context: $CTX"
@@ -21,4 +14,3 @@ fi
 
 ensure_context
 log_info "Kube context verified"
-

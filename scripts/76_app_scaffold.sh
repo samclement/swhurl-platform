@@ -61,7 +61,7 @@ kubectl_ns "$NS"
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
-cp "$SCRIPT_DIR/../manifests/templates/app/"*.yaml "$TMPDIR/"
+cp "$SCRIPT_DIR/../infra/manifests/templates/app/"*.yaml "$TMPDIR/"
 
 export APP_NAME="$NAME" APP_NS="$NS" HOST="$HOST" IMAGE TLS_SECRET="${TLS_SECRET}" ISSUER OAUTH_HOST
 for f in "$TMPDIR"/*.yaml; do

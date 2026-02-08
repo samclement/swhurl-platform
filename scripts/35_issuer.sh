@@ -18,7 +18,7 @@ fi
 
 case "$ISSUER_NAME" in
   selfsigned)
-    kubectl apply -k "$SCRIPT_DIR/../manifests/issuers/selfsigned"
+    kubectl apply -k "$SCRIPT_DIR/../infra/manifests/issuers/selfsigned"
     ;;
   letsencrypt)
     if [[ -z "${ACME_EMAIL:-}" ]]; then
@@ -26,7 +26,7 @@ case "$ISSUER_NAME" in
     fi
     TMPDIR=$(mktemp -d)
     trap 'rm -rf "$TMPDIR"' EXIT
-    cp -r "$SCRIPT_DIR/../manifests/issuers/letsencrypt" "$TMPDIR/issuer"
+    cp -r "$SCRIPT_DIR/../infra/manifests/issuers/letsencrypt" "$TMPDIR/issuer"
     ( export ACME_EMAIL; envsubst < "$TMPDIR/issuer/issuer.yaml" > "$TMPDIR/issuer/issuer.rendered.yaml" )
     mv "$TMPDIR/issuer/issuer.rendered.yaml" "$TMPDIR/issuer/issuer.yaml"
     kubectl apply -k "$TMPDIR/issuer"

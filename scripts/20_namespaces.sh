@@ -5,9 +5,5 @@ source "$SCRIPT_DIR/00_lib.sh"
 
 ensure_context
 
-for ns in platform-system ingress cert-manager logging observability storage; do
-  kubectl_ns "$ns"
-done
-
-log_info "Namespaces ensured"
-
+kubectl apply -f "$SCRIPT_DIR/../infra/manifests/namespaces.yaml"
+log_info "Namespaces applied"

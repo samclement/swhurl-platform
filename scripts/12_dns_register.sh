@@ -18,6 +18,14 @@ if [[ -f "$ROOT_DIR/config.env" ]]; then
   # shellcheck disable=SC1090
   source "$ROOT_DIR/config.env"
 fi
+# Optionally layer a profile for overrides (domain/subdomains, etc.)
+if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$PROFILE_FILE"
+elif [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT_DIR/profiles/local.env"
+fi
 
 DELETE_MODE=false
 for arg in "$@"; do
@@ -33,6 +41,7 @@ Env:
   SWHURL_SUBDOMAINS   Space or comma-separated subdomains (e.g. "homelab oauth.homelab grafana.homelab")
   SWHURL_SUBDOMAIN    Back-compat single subdomain (ignored if SWHURL_SUBDOMAINS is set)
   BASE_DOMAIN         If ends with .swhurl.com, defaults will be derived when SWHURL_SUBDOMAINS is empty
+  PROFILE_FILE        Optional profile file (run.sh --profile) for overrides
 USAGE
       exit 0
       ;;

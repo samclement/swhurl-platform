@@ -7,29 +7,20 @@
 
 ### Current Learnings
 
-- Podman + kind on Linux/macOS
-  - Missing rootless deps cause kind failures with Podman (errors like: `newuidmap not found`, `open /etc/containers/policy.json: no such file or directory`). Fixes:
-    - Install deps (Ubuntu/Debian): `sudo apt-get install -y uidmap slirp4netns fuse-overlayfs containers-common` (and `podman` if not present).
-    - Ensure user-level socket: `loginctl enable-linger "$USER" && systemctl --user daemon-reload && systemctl --user enable --now podman.socket`.
-    - If system files are missing, add user-level fallbacks:
-      - `~/.config/containers/policy.json` with an "insecureAcceptAnything" default policy (OK for local dev).
-      - `~/.config/containers/registries.conf` with `unqualified-search-registries = ["docker.io"]`.
-  - Homebrew-installed Podman (or Linux without system units): prefer `podman machine` to avoid config gaps:
-    - `podman machine init --cpus 4 --memory 6144 --disk-size 40 --now`; then `podman info` and run kind with `KIND_EXPERIMENTAL_PROVIDER=podman`.
-  - TODO: In `scripts/02_podman_setup.sh`, consider auto-fallback to `podman machine` on Linux when `podman.socket` is not available, and print precise next steps when `newuidmap`/`slirp4netns` are missing.
-  - Kind sysctls on rootless Podman: `scripts/16_kind_sysctls.sh` cannot raise inotify limits inside kind node containers when Podman is rootless (kernel sysctls blocked by user namespaces). The script now auto-skips in this case and logs guidance. Workarounds:
-    - Use Docker as the provider, or
-    - Use `podman machine` (macOS) / a rootful VM for kind, or
-    - Disable the step with `KIND_TUNE_INOTIFY=false`.
+- k3s-only focus
+  - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
 
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and should not be executed as a step. Update `run.sh` to exclude `00_lib.sh` from selection (future improvement). For now, executing it is harmless but noisy.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
+  - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
+  - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, fluent-bit outputs) and suggests which scripts to re-run on mismatch.
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
   - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> grafana.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
+  - `scripts/12_dns_register.sh` now honors `PROFILE_FILE` (if set) or `profiles/local.env` for domain/subdomain overrides. It does not auto-source `profiles/secrets.env`.
 
 - OIDC for applications
   - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:
@@ -44,42 +35,39 @@
 - Logging with Fluent Bit (chart quirk)
   - The `fluent/fluent-bit` Helm chart does not support `backend.type=loki`. It uses `config.outputs` instead and defaults to Elasticsearch. `scripts/50_logging_fluentbit.sh` now applies a values overlay to set Loki outputs explicitly. If you see `elasticsearch-master` in the rendered ConfigMap, re-run step 50 to replace values (`--reset-values` is used).
   - Structured logs for better queries:
-    - ingress-nginx: `values/ingress-nginx-logging.yaml` sets JSON `log-format-upstream` and escape. Reinstall controller (step 40) to apply.
+    - ingress-nginx: `infra/values/ingress-nginx-logging.yaml` sets JSON `log-format-upstream` and escape. Reinstall controller (step 40) to apply.
     - oauth2-proxy: `scripts/45_oauth2_proxy.sh` enables JSON for standard/auth/request logs via `extraArgs.*-format=json`.
     - Fluent Bit: sends JSON (`line_format json`) and uses a curated `labelmap.json` to keep Loki labels low-cardinality. Query with LogQL: `{namespace="ingress"} | json | status>=500` or `{app="oauth2-proxy"} | json | method="GET"`.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`.
   - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
+  - Gotcha: when `--profile` is used (setting `$PROFILE_FILE`), `profiles/secrets.env` is not loaded. If you need both, merge secrets into the profile or create a combined profile that sources `profiles/secrets.env`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.
+
+- Architecture diagram (D2)
+  - Source: `docs/architecture.d2`. Render to SVG: `d2 --theme 200 docs/architecture.d2 docs/architecture.svg`.
+  - If the CLI complains about unknown shapes, ensure D2 v0.7+ or simplify shapes (use `rectangle`, `cloud`).
 
 ---
 
-This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It prefers k3s by default (Linux-friendly) with kind as an alternative. It covers platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
+This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
 
 If you already have a cluster, you can jump directly to the Bootstrap section.
 
 ## Prerequisites
 
-- Podman: Container runtime for local builds/runs.
 - kubectl: Kubernetes CLI.
 - Helm: Package manager for Kubernetes.
 - age + sops: Secrets encryption for GitOps.
 - Optional: yq/jq for YAML/JSON processing; kustomize if desired.
-
-Install on macOS (Homebrew):
-
-```
-brew install podman kubernetes-cli helm age sops jq yq
-podman machine init --cpus 4 --memory 6144 --disk-size 40
-podman machine start
-```
+- k3s installed and kubeconfig set (local Linux host) or a reachable remote cluster.
 
 Install on Linux (Debian/Ubuntu example):
 
 ```
 sudo apt-get update
-sudo apt-get install -y podman curl gnupg lsb-release jq
+sudo apt-get install -y curl gnupg lsb-release jq
 curl -fsSL https://get.helm.sh/helm-v3.14.4-linux-amd64.tar.gz | tar -xz && sudo mv linux-amd64/helm /usr/local/bin/helm
 curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 sudo apt-get install -y sops
@@ -88,56 +76,24 @@ curl -fsSL https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.
 
 Notes
 
-- For local clusters that require a Docker-compatible API (e.g., kind), Podman provides a socket. On Linux enable it with: `systemctl --user enable --now podman.socket`. On macOS, the Podman machine already exposes the socket to the VM.
 - Ensure `kubectl` context points to your target cluster before running Helm installs.
 
-## Choose a Cluster
+## Choose a Cluster (k3s only)
 
-You have two supported paths (k3s by default):
-
-1) Local or single-node: k3s (default)
-
-- Install k3s with Traefik disabled (we install ingress-nginx):
+Install k3s with Traefik disabled (we install ingress-nginx):
 
 ```
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
 ```
 
-- Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:
+Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:
 
 ```
 sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
 sudo chown $(id -u):$(id -g) ~/.kube/config
 ```
 
-- Run scripts with `K8S_PROVIDER=k3s` (default in `config.env`).
-
-2) Alternative: Local development via kind (Podman/Docker provider)
-
-- Install kind:
-  - macOS: `brew install kind`
-  - Linux: `curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64 && chmod +x ./kind && sudo mv ./kind /usr/local/bin/`
-- Use Podman as the provider:
-  - `export KIND_EXPERIMENTAL_PROVIDER=podman`
-- Create a cluster (single node):
-
-```
-KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name platform
-kubectl cluster-info --context kind-platform
-```
-
-Optional: Multi-node kind config (save as `kind-config.yaml`):
-
-```
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-  - role: control-plane
-  - role: worker
-  - role: worker
-```
-
-Create with: `KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name platform --config kind-config.yaml`.
+If you already have a reachable cluster, just ensure `kubectl` points at it.
 
 ## Bootstrap (Helm)
 
@@ -438,7 +394,7 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
 
 ## Service Mesh Best Practices
 
-- Mesh choice: Start simple (Linkerd) for lightweight clusters (kind/k3s); use Istio for advanced traffic policies and multi-cluster; consider Cilium Service Mesh if you already run Cilium and want eBPF data-plane. Prefer the smallest feature set that meets requirements.
+- Mesh choice: Start simple (Linkerd) for lightweight clusters (k3s); use Istio for advanced traffic policies and multi-cluster; consider Cilium Service Mesh if you already run Cilium and want eBPF data-plane. Prefer the smallest feature set that meets requirements.
 - mTLS by default: Enforce strict mTLS mesh-wide. Use short-lived certs with automatic rotation. Back trust roots by cert-manager or a private CA. Prefer SPIFFE IDs for workload identity and auditability.
 - Scope and injection: Enable sidecar injection by namespace label; exclude `kube-system`, `ingress`, and control-plane namespaces. Use per-namespace PeerAuthentication/Policy (Istio) or Server/AuthorizationPolicy (Linkerd). Consider ambient/sidecarless modes only after evaluating maturity and tradeoffs.
 - Traffic policy: Set sane defaults for timeouts, retries, and budgets; add circuit breaking and outlier detection to protect dependencies. Use progressive delivery (Flagger or Argo Rollouts) for canaries/blue-green with mesh traffic shifting.
@@ -459,7 +415,7 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
 
 - Backups: Back up etcd (or for k3s, use etcd or external DB); back up MinIO buckets; export Grafana dashboards.
 - Upgrades: Upgrade Helm charts one at a time; monitor with Prometheus and logs; use staged environments when possible.
-- Teardown: `kind delete cluster --name platform` or `sudo /usr/local/bin/k3s-uninstall.sh`.
+- Teardown: `sudo /usr/local/bin/k3s-uninstall.sh` (server).
 
 ## Troubleshooting
 
@@ -473,18 +429,17 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
 
 ```
 infra/
-  helm-values/
-    cert-manager/values.yaml
-    ingress-nginx/values.yaml
-    oauth2-proxy/values.yaml
-    kube-prometheus-stack/values.yaml
-    fluent-bit/values.yaml
-    minio/values.yaml
+  values/
+    ingress-nginx-logging.yaml
+    oauth2-proxy.yaml.gotmpl
+    kube-prometheus-stack.yaml.gotmpl
+    fluent-bit-loki.yaml
+    minio.yaml.gotmpl
   manifests/
     issuers/
-    ingress/
-    rbac/
-    network-policies/
+    apps/
+    templates/
+    namespaces.yaml
 secrets/
   (sops-encrypted secrets)
 ```

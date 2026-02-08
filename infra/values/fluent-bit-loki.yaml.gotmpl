@@ -1,0 +1,41 @@
+config:
+  # Override default Elasticsearch outputs with Loki outputs
+  outputs: |
+    [OUTPUT]
+        Name loki
+        Match kube.*
+        Host loki-gateway.observability.svc.cluster.local
+        Port 80
+        Labels job=fluent-bit,cluster={{ .Environment.Values.clusterName }}
+        label_map_path /fluent-bit/etc/conf/labelmap.json
+        auto_kubernetes_labels Off
+        line_format json
+
+    [OUTPUT]
+        Name loki
+        Match host.*
+        Host loki-gateway.observability.svc.cluster.local
+        Port 80
+        Labels job=fluent-bit,cluster={{ .Environment.Values.clusterName }}
+
+  # Provide a label mapping file to keep Loki stream labels low-cardinality and useful
+  extraFiles:
+    labelmap.json: |
+      {
+        "kubernetes": {
+          "namespace_name": "namespace",
+          "pod_name": "pod",
+          "container_name": "container",
+          "labels": {
+            "app.kubernetes.io/name": "app",
+            "app": "app",
+            "app.kubernetes.io/component": "component",
+            "app.kubernetes.io/instance": "instance",
+            "environment": "env",
+            "env": "env"
+          }
+        },
+        "level": "level",
+        "severity": "level"
+      }
+

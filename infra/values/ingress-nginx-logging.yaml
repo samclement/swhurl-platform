@@ -1,4 +1,12 @@
 controller:
+  replicaCount: 1
+  ingressClassResource:
+    default: true
+  service:
+    type: NodePort
+    nodePorts:
+      http: 31514
+      https: 30313
   config:
     # Escape JSON so log fields are valid JSON
     log-format-escape-json: "true"

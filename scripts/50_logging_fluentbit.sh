@@ -24,7 +24,7 @@ LOKI_URL="${LOKI_URL:-http://loki.observability.svc.cluster.local:3100}"
 # Render a values overlay that switches outputs to Loki
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
-cp "$SCRIPT_DIR/../values/fluent-bit-loki.yaml" "$TMPDIR/values.yaml"
+cp "$SCRIPT_DIR/../infra/values/fluent-bit-loki.yaml" "$TMPDIR/values.yaml"
 (
   export LOKI_URL CLUSTER_NAME
   envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"

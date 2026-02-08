@@ -1,0 +1,107 @@
+title: Swhurl Platform Architecture
+
+direction: right
+
+legend: {
+  Browser: "End user accessing apps"
+  DNS: "Public DNS (*.BASE_DOMAIN / swhurl.com)"
+  Ingress: "ingress-nginx Controller (namespace: ingress)"
+  OAuth2Proxy: "oauth2-proxy (namespace: ingress)"
+  OIDC: "External Identity Provider (e.g., Google, Auth0)"
+  CertManager: "cert-manager (namespace: cert-manager)"
+  FluentBit: "Fluent Bit (namespace: logging)"
+  Loki: "Loki (namespace: observability)"
+  PromGraf: "Prometheus + Grafana (namespace: observability)"
+  MinIO: "MinIO + Console (namespace: storage)"
+  App: "Sample App / Your Apps (namespace: apps)"
+}
+
+External: {
+  shape: cloud
+  DNS: "DNS (*.BASE_DOMAIN)"
+  OIDC: "OIDC Provider"
+}
+
+Cluster: {
+  label: "Kubernetes Cluster (k3s)"
+  shape: rectangle
+
+  IngressNS: {
+    label: "Namespace: ingress"
+    Ingress: "ingress-nginx"
+    OAuth2Proxy: "oauth2-proxy"
+  }
+
+  CertNS: {
+    label: "Namespace: cert-manager"
+    CertManager: "cert-manager"
+    Issuers: {
+      direction: down
+      SelfSigned: "ClusterIssuer: selfsigned"
+      LetsEncrypt: "ClusterIssuer: letsencrypt"
+    }
+  }
+
+  LoggingNS: {
+    label: "Namespace: logging"
+    FluentBit: "fluent-bit (DaemonSet)"
+  }
+
+  ObsNS: {
+    label: "Namespace: observability"
+    direction: down
+    Loki: "Loki"
+    Prometheus: "Prometheus"
+    Grafana: "Grafana"
+  }
+
+  StorageNS: {
+    label: "Namespace: storage"
+    MinIO: "MinIO"
+    MinIOConsole: "MinIO Console"
+  }
+
+  AppsNS: {
+    label: "Namespace: apps"
+    direction: down
+    App: "Sample App"
+    OtherApps: "Other Apps"
+  }
+}
+
+# External access path
+Browser: "User Browser"
+Browser -> External.DNS: "resolve *.BASE_DOMAIN"
+External.DNS -> Cluster.IngressNS.Ingress: "HTTPS (80/443)"
+Cluster.IngressNS.Ingress -> Cluster.AppsNS.App: "Route to app Service"
+
+# Edge auth with oauth2-proxy
+Cluster.IngressNS.Ingress -> Cluster.IngressNS.OAuth2Proxy: "auth-url/auth-signin"
+Cluster.IngressNS.OAuth2Proxy -> External.OIDC: "OIDC (authorize/token/userinfo)"
+Cluster.IngressNS.OAuth2Proxy -> Cluster.AppsNS.App: "forward auth headers"
+
+# TLS certificates
+Cluster.CertNS.CertManager -> Cluster.IngressNS.Ingress: "provisions TLS certs"
+Cluster.CertNS.Issuers.SelfSigned -> Cluster.CertNS.CertManager
+Cluster.CertNS.Issuers.LetsEncrypt -> Cluster.CertNS.CertManager
+
+# Logging and Observability
+Cluster.LoggingNS.FluentBit -> Cluster.ObsNS.Loki: "logs"
+Cluster.ObsNS.Grafana -> Cluster.ObsNS.Loki: "datasource"
+Cluster.ObsNS.Prometheus -> Cluster.IngressNS.Ingress: "scrape metrics"
+Cluster.ObsNS.Prometheus -> Cluster.AppsNS.App: "scrape metrics"
+
+# Object Storage
+Cluster.StorageNS.MinIOConsole -> Cluster.StorageNS.MinIO: "admin/API"
+External.DNS -> Cluster.StorageNS.MinIO: "HTTPS (minio.BASE_DOMAIN)"
+External.DNS -> Cluster.ObsNS.Grafana: "HTTPS (grafana.BASE_DOMAIN)"
+External.DNS -> Cluster.IngressNS.OAuth2Proxy: "HTTPS (oauth.BASE_DOMAIN)"
+
+# Notes (context)
+Notes: {
+  style: {
+    stroke: "#888"
+    fill: "#f9f9f9"
+  }
+  label: "k3s provides the cluster. Ingress uses cert-manager for TLS. Apps can enable edge auth via oauth2-proxy. Fluent Bit ships logs to Loki; Grafana reads from Loki and Prometheus. MinIO offers S3-compatible storage and a console."
+}

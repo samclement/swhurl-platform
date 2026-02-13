@@ -5,6 +5,7 @@ This plan defines a simplified, k3s-only workflow. The repository focuses on dec
 ## Goals
 
 - k3s-only (remove kind/Podman support)
+- Cilium as the default CNI
 - Declarative manifests and values as the source of truth
 - Clear, explicit execution order
 - DNS is independent of Kubernetes but required before cert-manager
@@ -21,6 +22,7 @@ infra/
   values/
     ingress-nginx-logging.yaml
     fluent-bit-loki.yaml
+    cilium.yaml
     loki-single.yaml
     kube-prometheus-stack.yaml.gotmpl
     oauth2-proxy.yaml.gotmpl
@@ -33,6 +35,7 @@ scripts/
   11_cluster_k3s.sh
   12_dns_register.sh
   15_kube_context.sh
+  26_cilium.sh
   20_namespaces.sh
   25_helm_repos.sh
   30_cert_manager.sh
@@ -65,17 +68,18 @@ config.env
 4. `15_kube_context.sh`
 5. `20_namespaces.sh` (applies `infra/manifests/namespaces.yaml`)
 6. `25_helm_repos.sh`
-7. `30_cert_manager.sh`
-8. `35_issuer.sh` (uses `infra/manifests/issuers/*`)
-9. `40_ingress_nginx.sh`
-10. `45_oauth2_proxy.sh` (if enabled)
-11. `50_logging_fluentbit.sh` (if enabled)
-12. `55_loki.sh` (if enabled)
-13. `60_prom_grafana.sh` (if enabled)
-14. `70_minio.sh` (if enabled)
-15. `75_sample_app.sh`
-16. `90_smoke_tests.sh`
-17. `91_validate_cluster.sh`
+7. `26_cilium.sh` (CNI)
+8. `30_cert_manager.sh`
+9. `35_issuer.sh` (uses `infra/manifests/issuers/*`)
+10. `40_ingress_nginx.sh`
+11. `45_oauth2_proxy.sh` (if enabled)
+12. `50_logging_fluentbit.sh` (if enabled)
+13. `55_loki.sh` (if enabled)
+14. `60_prom_grafana.sh` (if enabled)
+15. `70_minio.sh` (if enabled)
+16. `75_sample_app.sh`
+17. `90_smoke_tests.sh`
+18. `91_validate_cluster.sh`
 
 Run with:
 

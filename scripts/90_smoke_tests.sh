@@ -14,6 +14,12 @@ kubectl -n cert-manager get pods
 log_info "Smoke tests: ingress controller"
 kubectl -n ingress get svc,deploy
 
+if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+  log_info "Smoke tests: cilium"
+  kubectl -n kube-system get ds cilium
+  kubectl -n kube-system get deploy cilium-operator
+fi
+
 # Inbound connectivity test to Ingress via fixed NodePort 30313
 if command -v curl >/dev/null 2>&1; then
   HOST="hello.${BASE_DOMAIN}"

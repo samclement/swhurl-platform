@@ -19,4 +19,3 @@ spec:
           image: docker.io/nginx:1.25-alpine
           ports:
             - containerPort: 80
-

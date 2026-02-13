@@ -33,4 +33,12 @@ else
   exit 1
 fi
 
+if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+  flannel_backend=$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.annotations.flannel\.alpha\.coreos\.com/backend-type}{"\n"}{end}' | grep -v '^$' | head -n 1 || true)
+  if [[ -n "$flannel_backend" ]]; then
+    log_warn "Detected flannel backend on nodes (${flannel_backend})."
+    log_warn "Cilium requires k3s with flannel disabled: --flannel-backend=none --disable-network-policy"
+  fi
+fi
+
 log_info "k3s provider ready"

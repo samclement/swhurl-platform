@@ -9,16 +9,20 @@
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
+  - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_cilium.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
+  - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium.yaml` with `useDigest: false`.
+  - Hubble UI ingress is configured in `infra/values/cilium.yaml` and rendered via envsubst in `scripts/26_cilium.sh`. It uses `HUBBLE_HOST`, `CLUSTER_ISSUER`, and OAuth2 annotations with `OAUTH_HOST`.
 
 - Orchestrator run order
-  - `scripts/00_lib.sh` is a helper and should not be executed as a step. Update `run.sh` to exclude `00_lib.sh` from selection (future improvement). For now, executing it is harmless but noisy.
+  - `scripts/00_lib.sh` is a helper and is excluded by `run.sh` (along with `scripts/76_app_scaffold.sh`).
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, fluent-bit outputs) and suggests which scripts to re-run on mismatch.
+  - There is no Alloy install step in this repo today. Keep docs/config aligned to existing scripts (`55_loki.sh` + `60_prom_grafana.sh`).
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> grafana.<base> minio.<base> minio-console.<base>`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> grafana.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
   - `scripts/12_dns_register.sh` now honors `PROFILE_FILE` (if set) or `profiles/local.env` for domain/subdomain overrides. It does not auto-source `profiles/secrets.env`.
 
@@ -51,7 +55,7 @@
 
 ---
 
-This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
+This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: Cilium CNI, cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
 
 If you already have a cluster, you can jump directly to the Bootstrap section.
 
@@ -80,10 +84,10 @@ Notes
 
 ## Choose a Cluster (k3s only)
 
-Install k3s with Traefik disabled (we install ingress-nginx):
+Install k3s with Traefik disabled and flannel off (for Cilium):
 
 ```
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --flannel-backend=none --disable-network-policy" sh -
 ```
 
 Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:
@@ -118,6 +122,7 @@ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add cilium https://helm.cilium.io/
 helm repo add fluent https://fluent.github.io/helm-charts
 helm repo add minio https://charts.min.io/
 helm repo update
@@ -198,8 +203,7 @@ helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
   --set ingress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set ingress.hosts[0].host="oauth.YOUR_DOMAIN" \
-  --set ingress.hosts[0].paths[0].path="/" \
+  --set ingress.hosts[0]="oauth.YOUR_DOMAIN" \
   --set ingress.tls[0].hosts[0]="oauth.YOUR_DOMAIN" \
   --set ingress.tls[0].secretName=oauth2-proxy-tls
 ```
@@ -268,8 +272,8 @@ helm upgrade --install minio minio/minio \
   --set ingress.enabled=true \
   --set ingress.ingressClassName=nginx \
   --set ingress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set ingress.hosts[0].host="minio.YOUR_DOMAIN" \
-  --set ingress.hosts[0].paths[0].path="/" \
+  --set ingress.path="/" \
+  --set ingress.hosts[0]="minio.YOUR_DOMAIN" \
   --set ingress.tls[0].hosts[0]="minio.YOUR_DOMAIN" \
   --set ingress.tls[0].secretName=minio-tls \
   --set consoleIngress.enabled=true \

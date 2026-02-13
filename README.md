@@ -1,6 +1,6 @@
 # Swhurl Platform (k3s-only)
 
-This repo provides a k3s-focused, declarative platform setup: cert-manager, ingress-nginx, oauth2-proxy, logging with Fluent Bit + Loki, observability (Prometheus + Grafana), and MinIO. Scripts are thin orchestrators around Helm + manifests in `infra/`.
+This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-manager, ingress-nginx, oauth2-proxy, logging with Fluent Bit + Loki, observability (Prometheus + Grafana), and MinIO. Scripts are thin orchestrators around Helm + manifests in `infra/`.
 
 ## Quick Start
 
@@ -22,9 +22,9 @@ Each step lists assumptions and outputs. Run in order.
 2. **Install or Connect to k3s**
    - Assumes: you will install k3s on a host or use an existing cluster.
    - Output: a reachable Kubernetes API from your machine.
-   - Example install (local host):
+   - Example install (local host, Cilium-compatible):
      ```bash
-     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --flannel-backend=none --disable-network-policy" sh -
      ```
    - Kubeconfig example:
      ```bash
@@ -40,7 +40,7 @@ Each step lists assumptions and outputs. Run in order.
    - Assumes: your cluster ingress is reachable from the public internet on ports 80 and 443.
    - Assumes: your DNS A/CNAME records point at your public IP (or upstream router).
    - Assumes: your router forwards 80/443 to the k3s node running ingress-nginx.
-   - Output: `*.${BASE_DOMAIN}` resolves to your public IP and is reachable on 80/443.
+   - Output: `*.${BASE_DOMAIN}` resolves to your public IP and is reachable on 80/443 (including `hubble.${BASE_DOMAIN}` for the Hubble UI).
    - If using swhurl.com dynamic DNS on Linux:
      ```bash
      ./scripts/12_dns_register.sh
@@ -68,58 +68,64 @@ Each step lists assumptions and outputs. Run in order.
    - Output: required Helm repos added and updated.
    - Command: `./scripts/25_helm_repos.sh`
 
-8. **cert-manager**
+8. **CNI (Cilium)**
+   - Assumes: k3s was installed with `--flannel-backend=none --disable-network-policy`.
+   - Output: Cilium daemonset and operator running.
+   - Command: `./scripts/26_cilium.sh`
+   - If flannel is detected, reinstall k3s or set `CILIUM_SKIP_FLANNEL_CHECK=true` to override.
+
+9. **cert-manager**
    - Assumes: cluster can create CRDs and deployments.
    - Output: cert-manager installed and ready.
    - Command: `./scripts/30_cert_manager.sh`
 
-9. **ClusterIssuer (Let’s Encrypt or self-signed)**
+10. **ClusterIssuer (Let’s Encrypt or self-signed)**
    - Assumes: DNS + ports 80/443 are reachable for ACME HTTP-01 if using Let’s Encrypt.
    - Assumes: `ACME_EMAIL` is set in `profiles/secrets.env`.
    - Output: ClusterIssuer created.
    - Command: `./scripts/35_issuer.sh`
 
-10. **Ingress (ingress-nginx)**
-    - Assumes: service type `LoadBalancer` is appropriate for your k3s environment.
+11. **Ingress (ingress-nginx)**
+    - Assumes: NodePort is reachable from your router (80->31514, 443->30313).
     - Output: ingress-nginx installed and default IngressClass set.
     - Command: `./scripts/40_ingress_nginx.sh`
 
-11. **OAuth2 Proxy (optional)**
+12. **OAuth2 Proxy (optional)**
     - Assumes: OIDC provider credentials are set in `profiles/secrets.env`.
     - Output: oauth2-proxy deployed with ingress + TLS.
     - Command: `./scripts/45_oauth2_proxy.sh`
 
-12. **Logging (optional)**
+13. **Logging (optional)**
     - Assumes: Loki is installed or will be installed.
     - Output: Fluent Bit running with Loki outputs.
     - Command: `./scripts/50_logging_fluentbit.sh`
 
-13. **Loki (optional)**
+14. **Loki (optional)**
     - Assumes: observability namespace exists.
     - Output: Loki single-binary deployment.
     - Command: `./scripts/55_loki.sh`
 
-14. **Observability (optional)**
+15. **Observability (optional)**
     - Assumes: ingress and cert-manager are ready.
     - Output: Prometheus + Grafana with ingress.
     - Command: `./scripts/60_prom_grafana.sh`
 
-15. **MinIO (optional)**
+16. **MinIO (optional)**
     - Assumes: storage namespace exists and credentials are set in `profiles/secrets.env`.
     - Output: MinIO and console ingresses.
     - Command: `./scripts/70_minio.sh`
 
-16. **Sample App**
+17. **Sample App**
     - Assumes: `BASE_DOMAIN` is set and DNS resolves.
     - Output: sample app with ingress and cert.
     - Command: `./scripts/75_sample_app.sh`
 
-17. **Smoke Tests**
+18. **Smoke Tests**
    - Assumes: core components are installed.
    - Output: basic health validation.
    - Command: `./scripts/90_smoke_tests.sh`
 
-18. **State Validation (cluster vs local config)**
+19. **State Validation (cluster vs local config)**
     - Assumes: components are installed and kube API is reachable.
     - Output: mismatches reported with suggested re-runs.
     - Command: `./scripts/91_validate_cluster.sh`

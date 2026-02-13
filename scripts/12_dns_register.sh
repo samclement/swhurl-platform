@@ -38,7 +38,7 @@ Usage: $(basename "$0") [--delete]
   one or more <subdomain>.swhurl.com Route53 A records.
 
 Env:
-  SWHURL_SUBDOMAINS   Space or comma-separated subdomains (e.g. "homelab oauth.homelab grafana.homelab")
+  SWHURL_SUBDOMAINS   Space or comma-separated subdomains (e.g. "homelab oauth.homelab grafana.homelab hubble.homelab")
   SWHURL_SUBDOMAIN    Back-compat single subdomain (ignored if SWHURL_SUBDOMAINS is set)
   BASE_DOMAIN         If ends with .swhurl.com, defaults will be derived when SWHURL_SUBDOMAINS is empty
   PROFILE_FILE        Optional profile file (run.sh --profile) for overrides
@@ -83,7 +83,7 @@ if [[ -z "$subdomains_raw" ]]; then
     # Derive defaults from BASE_DOMAIN=<base>.swhurl.com
     base_subdomain="${BASE_DOMAIN%.swhurl.com}"
     base_subdomain="${base_subdomain%.}"
-    subdomains_raw="$base_subdomain oauth.$base_subdomain grafana.$base_subdomain minio.$base_subdomain minio-console.$base_subdomain"
+    subdomains_raw="$base_subdomain oauth.$base_subdomain grafana.$base_subdomain hubble.$base_subdomain minio.$base_subdomain minio-console.$base_subdomain"
     warn "SWHURL_SUBDOMAINS not set; derived defaults: $subdomains_raw"
   else
     subdomains_raw="homelab"

@@ -2,15 +2,16 @@
 
 ## Goals
 1. Remove kind and Podman dependencies.
-2. Favor declarative, file-driven config over imperative flags.
-3. Make run order explicit and reproducible.
-4. Separate concerns so DNS is independent of Kubernetes but required before cert-manager.
+2. Standardize on Cilium for CNI.
+3. Favor declarative, file-driven config over imperative flags.
+4. Make run order explicit and reproducible.
+5. Separate concerns so DNS is independent of Kubernetes but required before cert-manager.
 
 ## Proposed Repo Shape
 1. `infra/`
 2. `infra/values/`
 3. `infra/manifests/`
-4. `infra/issuers/`
+4. `infra/manifests/issuers/`
 5. `profiles/`
 6. `scripts/`
 7. `run.sh`
@@ -23,16 +24,16 @@
 5. All Kubernetes resources are expressed in `infra/` and applied declaratively.
 
 ## What We Remove
-1. `scripts/10_cluster_kind.sh`
-2. `scripts/02_podman_setup.sh`
-3. `scripts/16_kind_sysctls.sh`
+1. Legacy kind provider scripts
+2. Legacy Podman provider setup scripts
+3. Legacy kind sysctl helper scripts
 4. `KIND_*` config in `config.env`
 5. Any README/plan references to kind/Podman provider setup
 
 ## Declarative Source of Truth
 1. `infra/manifests/` for raw Kubernetes YAML.
 2. `infra/values/` for Helm values files.
-3. `infra/issuers/` for ClusterIssuer manifests rendered from env.
+3. `infra/manifests/issuers/` for ClusterIssuer manifests rendered from env.
 4. `run.sh` only orchestrates `kubectl apply -k` and `helm upgrade --install -f`.
 
 ## Clear Separation of Concerns
@@ -46,22 +47,23 @@
 2. **DNS**: Run `scripts/12_dns_register.sh` if using `*.swhurl.com`.
 3. **Namespaces**: Apply `infra/manifests/namespaces.yaml`.
 4. **Helm Repos**: `scripts/25_helm_repos.sh` or `helmfile` if kept.
-5. **Cert-Manager**: `helm upgrade --install` with values file.
-6. **ClusterIssuer**: Apply `infra/issuers/letsencrypt.yaml` or `selfsigned.yaml`.
-7. **Ingress**: Apply `infra/values/ingress-nginx-logging.yaml` via Helm.
-8. **OAuth2 Proxy**: Apply if enabled in profile.
-9. **Logging**: Apply if enabled in profile.
-10. **Observability**: Apply if enabled in profile.
-11. **Storage (MinIO)**: Apply if enabled in profile.
-12. **Apps**: Apply sample app manifests.
-13. **Smoke Tests**: Run `scripts/90_smoke_tests.sh`.
+5. **CNI (Cilium)**: Install via Helm after k3s is running with flannel disabled.
+6. **Cert-Manager**: `helm upgrade --install` with values file.
+7. **ClusterIssuer**: Apply `infra/manifests/issuers/letsencrypt` or `infra/manifests/issuers/selfsigned`.
+8. **Ingress**: Apply `infra/values/ingress-nginx-logging.yaml` via Helm.
+9. **OAuth2 Proxy**: Apply if enabled in profile.
+10. **Logging**: Apply if enabled in profile.
+11. **Observability**: Apply if enabled in profile.
+12. **Storage (MinIO)**: Apply if enabled in profile.
+13. **Apps**: Apply sample app manifests.
+14. **Smoke Tests**: Run `scripts/90_smoke_tests.sh`.
 
 ## Concrete Refactor Steps
 1. Update `plan.md` to describe k3s-only and declarative flow.
 2. Remove kind scripts and config references.
 3. Add `infra/manifests/namespaces.yaml` and move namespace creation there.
 4. Move all chart values to `infra/values/` and reference them consistently.
-5. Move issuer manifests to `infra/issuers/` with envsubst or kustomize replacements.
+5. Move issuer manifests to `infra/manifests/issuers/` with envsubst or kustomize replacements.
 6. Update `run.sh` to execute only declarative steps in the order above.
 7. Update `README.md` to match the new flow and remove kind/Podman docs.
 8. Keep `scripts/12_dns_register.sh` independent of kubeconfig or `kubectl`.

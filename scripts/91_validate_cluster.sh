@@ -57,6 +57,57 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
     ;;
 esac
 
+say "Cilium"
+if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+  if kubectl -n kube-system get ds cilium >/dev/null 2>&1; then
+    ok "cilium daemonset present"
+  else
+    mismatch "cilium daemonset not found"
+    add_suggest "scripts/26_cilium.sh"
+  fi
+  if kubectl -n kube-system get deploy cilium-operator >/dev/null 2>&1; then
+    ok "cilium-operator deployment present"
+  else
+    mismatch "cilium-operator deployment not found"
+    add_suggest "scripts/26_cilium.sh"
+  fi
+else
+  ok "FEAT_CILIUM=false; skipping"
+fi
+
+say "Hubble"
+if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+  if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
+    ok "hubble-relay deployment present"
+  else
+    mismatch "hubble-relay deployment not found"
+    add_suggest "scripts/26_cilium.sh"
+  fi
+  if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then
+    ok "hubble-ui deployment present"
+  else
+    mismatch "hubble-ui deployment not found"
+    add_suggest "scripts/26_cilium.sh"
+  fi
+  if kubectl -n kube-system get ingress hubble-ui >/dev/null 2>&1; then
+    actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
+    actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_cilium.sh"
+    check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_cilium.sh"
+    expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
+    expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
+    actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
+    actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
+    check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_cilium.sh"
+    check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_cilium.sh"
+  else
+    mismatch "hubble-ui ingress not found"
+    add_suggest "scripts/26_cilium.sh"
+  fi
+else
+  ok "FEAT_CILIUM=false; skipping"
+fi
+
 say "ingress-nginx"
 if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
   actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')

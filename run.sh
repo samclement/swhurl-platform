@@ -106,6 +106,8 @@ should_skip() {
       [[ "$DELETE_MODE" == true ]] && return 0 ;;
     12_dns_register.sh)
       [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+    26_cilium.sh)
+      [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     45_oauth2_proxy.sh)
       [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     50_logging_fluentbit.sh)

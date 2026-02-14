@@ -7,6 +7,7 @@ DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
 ensure_context
+need_cmd helm
 
 if [[ "${FEAT_CILIUM:-true}" != "true" && "$DELETE" != true ]]; then
   log_info "FEAT_CILIUM=false; skipping install"
@@ -38,6 +39,9 @@ cp "$VALUES_FILE" "$TMPDIR/values.yaml"
   export CLUSTER_ISSUER OAUTH_HOST HUBBLE_HOST DOLLAR
   envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"
 )
+
+helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1 || true
+helm repo update >/dev/null
 
 helm_upsert cilium cilium/cilium kube-system -f "$TMPDIR/values.rendered.yaml"
 

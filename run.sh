@@ -91,6 +91,36 @@ filter_steps() {
 
 filter_steps ALL_STEPS SELECTED_STEPS "$ONLY_FILTER"
 
+# Apply-order tweak: when both k3s bootstrap and cilium are selected,
+# run cilium immediately after step 10 to avoid split bootstrap phases.
+if [[ "$DELETE_MODE" != true ]]; then
+  cilium_step=""
+  non_cilium_steps=()
+  for s in "${SELECTED_STEPS[@]}"; do
+    if [[ "$(basename "$s")" == "26_cilium.sh" ]]; then
+      cilium_step="$s"
+    else
+      non_cilium_steps+=("$s")
+    fi
+  done
+
+  if [[ -n "$cilium_step" ]]; then
+    reordered_steps=()
+    cilium_inserted=false
+    for s in "${non_cilium_steps[@]}"; do
+      reordered_steps+=("$s")
+      if [[ "$(basename "$s")" == "10_install_k3s_cilium_minimal.sh" ]]; then
+        reordered_steps+=("$cilium_step")
+        cilium_inserted=true
+      fi
+    done
+    if [[ "$cilium_inserted" == false ]]; then
+      reordered_steps+=("$cilium_step")
+    fi
+    SELECTED_STEPS=("${reordered_steps[@]}")
+  fi
+fi
+
 # Reverse for delete mode
 if [[ "$DELETE_MODE" == true ]]; then
   mapfile -t SELECTED_STEPS < <(printf '%s\n' "${SELECTED_STEPS[@]}" | tac)

@@ -7,7 +7,6 @@ DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
 ensure_context
-need_cmd helm
 
 if [[ "${FEAT_CILIUM:-true}" != "true" && "$DELETE" != true ]]; then
   log_info "FEAT_CILIUM=false; skipping install"
@@ -16,20 +15,17 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling cilium"
-  if helm -n kube-system status cilium >/dev/null 2>&1; then
-    helm uninstall cilium -n kube-system || true
-  else
-    log_info "cilium release not present; attempting force cleanup of labeled cilium resources"
-    kubectl -n kube-system delete ds cilium cilium-envoy --ignore-not-found >/dev/null 2>&1 || true
-    kubectl -n kube-system delete deploy cilium-operator hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
-    kubectl -n kube-system delete svc cilium-envoy hubble-peer hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
-    kubectl -n kube-system delete deploy,ds,svc,cm,secret,sa,role,rolebinding \
-      -l app.kubernetes.io/part-of=cilium --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clusterrole,clusterrolebinding \
-      -l app.kubernetes.io/part-of=cilium --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete ciliumidentity,ciliumendpoint,ciliumnode,ciliumnetworkpolicy,ciliumclusterwidenetworkpolicy,ciliumcidrgroup,ciliuml2announcementpolicy,ciliumloadbalancerippool,ciliumnodeconfig,ciliumpodippool \
-      --all --ignore-not-found >/dev/null 2>&1 || true
-  fi
+  destroy_release cilium >/dev/null 2>&1 || true
+  log_info "Attempting force cleanup of labeled cilium resources"
+  kubectl -n kube-system delete ds cilium cilium-envoy --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n kube-system delete deploy cilium-operator hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n kube-system delete svc cilium-envoy hubble-peer hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n kube-system delete deploy,ds,svc,cm,secret,sa,role,rolebinding \
+    -l app.kubernetes.io/part-of=cilium --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete clusterrole,clusterrolebinding \
+    -l app.kubernetes.io/part-of=cilium --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ciliumidentity,ciliumendpoint,ciliumnode,ciliumnetworkpolicy,ciliumclusterwidenetworkpolicy,ciliumcidrgroup,ciliuml2announcementpolicy,ciliumloadbalancerippool,ciliumnodeconfig,ciliumpodippool \
+    --all --ignore-not-found >/dev/null 2>&1 || true
   if [[ "${CILIUM_DELETE_CRDS:-true}" == "true" ]]; then
     crds="$(kubectl get crd -o name 2>/dev/null | rg '\.cilium\.io$' || true)"
     if [[ -n "$crds" ]]; then
@@ -59,20 +55,7 @@ if [[ "${CILIUM_SKIP_FLANNEL_CHECK:-false}" != "true" ]]; then
   fi
 fi
 
-VALUES_FILE="$SCRIPT_DIR/../infra/values/cilium.yaml"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-cp "$VALUES_FILE" "$TMPDIR/values.yaml"
-(
-  DOLLAR='$'
-  export CLUSTER_ISSUER OAUTH_HOST HUBBLE_HOST DOLLAR
-  envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"
-)
-
-helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1 || true
-helm repo update >/dev/null
-
-helm_upsert cilium cilium/cilium kube-system -f "$TMPDIR/values.rendered.yaml"
+sync_release cilium
 
 wait_ds kube-system cilium
 wait_deploy kube-system cilium-operator

@@ -15,18 +15,14 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling oauth2-proxy"
-  if helm -n ingress status oauth2-proxy >/dev/null 2>&1; then
-    helm uninstall oauth2-proxy -n ingress || true
-  else
-    log_info "oauth2-proxy release not present; skipping helm uninstall"
-  fi
-  kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found
+  destroy_release oauth2-proxy >/dev/null 2>&1 || true
+  kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found >/dev/null 2>&1 || true
   exit 0
 fi
 
-if [[ -z "${OIDC_CLIENT_ID:-}" || -z "${OIDC_CLIENT_SECRET:-}" ]]; then
-  log_warn "OIDC_CLIENT_ID/SECRET not set; oauth2-proxy will not authenticate. Set in config.env"
-fi
+[[ -n "${OIDC_ISSUER:-}" ]] || die "OIDC_ISSUER is required for oauth2-proxy"
+[[ -n "${OIDC_CLIENT_ID:-}" ]] || die "OIDC_CLIENT_ID is required for oauth2-proxy"
+[[ -n "${OIDC_CLIENT_SECRET:-}" ]] || die "OIDC_CLIENT_SECRET is required for oauth2-proxy"
 
 kubectl_ns ingress
 # oauth2-proxy expects a cookie secret that is exactly 16, 24, or 32 bytes.
@@ -55,29 +51,8 @@ if [[ "$LEN" != "16" && "$LEN" != "24" && "$LEN" != "32" ]]; then
 fi
 
 REDIRECT_URL="${OAUTH_REDIRECT_URL:-https://${OAUTH_HOST}/oauth2/callback}"
-
-PARENT_DOMAIN=".${BASE_DOMAIN}"
-helm_upsert oauth2-proxy oauth2-proxy/oauth2-proxy ingress \
-  --set config.existingSecret=oauth2-proxy-secret \
-  --set extraArgs.provider=oidc \
-  --set extraArgs.oidc-issuer-url="${OIDC_ISSUER:-https://example.com}" \
-  --set extraArgs.redirect-url="${REDIRECT_URL}" \
-  --set extraArgs.email-domain="*" \
-  --set extraArgs.standard-logging=true \
-  --set extraArgs.standard-logging-format=json \
-  --set extraArgs.request-logging=true \
-  --set extraArgs.request-logging-format=json \
-  --set extraArgs.auth-logging=true \
-  --set extraArgs.auth-logging-format=json \
-  --set extraArgs.silence-ping-logging=true \
-  --set extraArgs.cookie-domain="${PARENT_DOMAIN}" \
-  --set extraArgs.whitelist-domain="${PARENT_DOMAIN}" \
-  --set ingress.enabled=true \
-  --set ingress.className=nginx \
-  --set ingress.annotations."cert-manager\.io/cluster-issuer"=${CLUSTER_ISSUER} \
-  --set ingress.hosts[0]="${OAUTH_HOST}" \
-  --set ingress.tls[0].hosts[0]="${OAUTH_HOST}" \
-  --set ingress.tls[0].secretName=oauth2-proxy-tls
+export OAUTH_REDIRECT_URL="$REDIRECT_URL"
+sync_release oauth2-proxy
 
 wait_deploy ingress oauth2-proxy
 # Ensure pods pick up any updated secret values (cookie-secret changes)

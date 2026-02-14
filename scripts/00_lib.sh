@@ -83,6 +83,23 @@ helm_upsert() {
   helm upgrade --install "$release" "$chart" --namespace "$ns" "$@"
 }
 
+helmfile_cmd() {
+  need_cmd helmfile
+  local hf_file="${HELMFILE_FILE:-$ROOT_DIR/helmfile.yaml.gotmpl}"
+  local hf_env="${HELMFILE_ENV:-default}"
+  helmfile -f "$hf_file" -e "$hf_env" "$@"
+}
+
+sync_release() {
+  local release="$1"
+  helmfile_cmd -l app="$release" sync
+}
+
+destroy_release() {
+  local release="$1"
+  helmfile_cmd -l app="$release" destroy
+}
+
 label_managed() {
   local ns="$1" kind="$2" name="$3"
   kubectl -n "$ns" label "$kind" "$name" platform.swhurl.io/managed=true --overwrite >/dev/null 2>&1 || true

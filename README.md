@@ -100,13 +100,19 @@ Each step lists assumptions and outputs. Run in order.
     - Assumes: `CLICKSTACK_API_KEY` is set in `profiles/secrets.env`.
     - Output: ClickStack (ClickHouse + HyperDX + OTel Collector) deployed with ingress + TLS.
     - Host: `${CLICKSTACK_HOST}`.
+    - Important: ClickStack/HyperDX may generate or rotate runtime keys on first startup; configured keys may not remain authoritative.
     - Command: `./scripts/50_clickstack.sh`
 
 14. **Kubernetes OTel Collectors (optional)**
     - Assumes: ClickStack is installed in `observability`.
-    - Assumes: `CLICKSTACK_INGESTION_KEY` is set in `profiles/secrets.env`.
+    - Assumes: `CLICKSTACK_INGESTION_KEY` is copied from the current HyperDX UI key and set in `profiles/secrets.env`.
     - Output: OTel DaemonSet + cluster Deployment shipping K8s logs/metrics/events to ClickStack OTLP endpoint.
     - Command: `./scripts/51_otel_k8s.sh`
+    - If exporters return 401:
+      1. Login to HyperDX (`${CLICKSTACK_HOST}`) and open API Keys.
+      2. Copy the current ingestion key.
+      3. Update `CLICKSTACK_INGESTION_KEY` in your profile.
+      4. Re-run `./scripts/51_otel_k8s.sh`.
 
 15. **MinIO (optional)**
     - Assumes: storage namespace exists and credentials are set in `profiles/secrets.env`.

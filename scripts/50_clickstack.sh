@@ -15,20 +15,10 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling clickstack and legacy observability releases"
-  if helm -n observability status clickstack >/dev/null 2>&1; then
-    helm uninstall clickstack -n observability || true
-  else
-    log_info "clickstack release not present; skipping helm uninstall"
-  fi
-  if helm -n logging status fluent-bit >/dev/null 2>&1; then
-    helm uninstall fluent-bit -n logging || true
-  fi
-  if helm -n observability status loki >/dev/null 2>&1; then
-    helm uninstall loki -n observability || true
-  fi
-  if helm -n observability status monitoring >/dev/null 2>&1; then
-    helm uninstall monitoring -n observability || true
-  fi
+  destroy_release clickstack >/dev/null 2>&1 || true
+  helm uninstall fluent-bit -n logging >/dev/null 2>&1 || true
+  helm uninstall loki -n observability >/dev/null 2>&1 || true
+  helm uninstall monitoring -n observability >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -37,38 +27,13 @@ CLICKSTACK_HOST="${CLICKSTACK_HOST:-clickstack.${BASE_DOMAIN}}"
 CLICKSTACK_API_KEY="${CLICKSTACK_API_KEY:-}"
 [[ -n "$CLICKSTACK_API_KEY" ]] || die "CLICKSTACK_API_KEY is required for scripts/50_clickstack.sh"
 
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-cp "$SCRIPT_DIR/../infra/values/clickstack.yaml" "$TMPDIR/values.yaml"
-(
-  export CLICKSTACK_HOST CLICKSTACK_API_KEY CLUSTER_ISSUER
-  envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"
-)
-
-values_args=(-f "$TMPDIR/values.rendered.yaml")
-if [[ "${FEAT_OAUTH2_PROXY:-false}" == "true" ]]; then
-  if [[ -n "${OAUTH_HOST:-}" ]]; then
-    cp "$SCRIPT_DIR/../infra/values/clickstack-oauth.yaml" "$TMPDIR/values.oauth.yaml"
-    (
-      DOLLAR='$'
-      export OAUTH_HOST DOLLAR
-      envsubst < "$TMPDIR/values.oauth.yaml" > "$TMPDIR/values.oauth.rendered.yaml"
-    )
-    values_args+=(-f "$TMPDIR/values.oauth.rendered.yaml")
-  else
-    log_warn "FEAT_OAUTH2_PROXY=true but OAUTH_HOST is empty; skipping ClickStack OAuth ingress annotations"
-  fi
-fi
-
 if [[ "${CLICKSTACK_CLEAN_LEGACY:-true}" == "true" ]]; then
   helm uninstall fluent-bit -n logging >/dev/null 2>&1 || true
   helm uninstall loki -n observability >/dev/null 2>&1 || true
   helm uninstall monitoring -n observability >/dev/null 2>&1 || true
 fi
 
-helm_upsert clickstack clickstack/clickstack observability \
-  --reset-values \
-  "${values_args[@]}"
+sync_release clickstack
 
 wait_deploy observability clickstack-app
 wait_deploy observability clickstack-otel-collector
@@ -77,3 +42,6 @@ if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; th
 fi
 
 log_info "clickstack installed at https://${CLICKSTACK_HOST}"
+log_warn "ClickStack keys may be generated/rotated at first startup and may not match configured values."
+log_warn "After first login to HyperDX, copy the current ingestion key from the UI and set CLICKSTACK_INGESTION_KEY in your profile."
+log_info "Then run: ./scripts/51_otel_k8s.sh"

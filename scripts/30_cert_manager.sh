@@ -10,11 +10,7 @@ ensure_context
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling cert-manager"
-  if helm -n cert-manager status cert-manager >/dev/null 2>&1; then
-    helm uninstall cert-manager -n cert-manager || true
-  else
-    log_info "cert-manager release not present; skipping helm uninstall"
-  fi
+  destroy_release cert-manager >/dev/null 2>&1 || true
   if [[ "${CM_DELETE_CRDS:-true}" == "true" ]]; then
     crds="$(kubectl get crd -o name 2>/dev/null | rg 'cert-manager\.io|acme\.cert-manager\.io' || true)"
     if [[ -n "$crds" ]]; then
@@ -26,12 +22,7 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
-# Optionally disable chart's startup API check job (defaults to false) to
-# avoid Helm post-install timeouts on slower or freshly booted clusters.
-STARTUP_APICHECK="${CM_STARTUP_API_CHECK:-false}"
-helm_upsert cert-manager jetstack/cert-manager cert-manager \
-  --set installCRDs=true \
-  --set startupapicheck.enabled=${STARTUP_APICHECK}
+sync_release cert-manager
 
 kubectl -n cert-manager wait --for=condition=Available deploy/cert-manager --timeout=${TIMEOUT_SECS:-300}s
 kubectl -n cert-manager wait --for=condition=Available deploy/cert-manager-webhook --timeout=${TIMEOUT_SECS:-300}s

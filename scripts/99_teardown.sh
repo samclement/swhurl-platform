@@ -46,14 +46,31 @@ for ns in "${managed_namespaces[@]}"; do
   kubectl wait --for=delete ns/"$ns" --timeout="${NAMESPACE_DELETE_TIMEOUT_SECS}s" >/dev/null 2>&1 || true
 done
 
+leftover_pvcs=()
+for ns in "${managed_namespaces[@]}"; do
+  rows="$(kubectl -n "$ns" get pvc -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+  while IFS= read -r pvc; do
+    [[ -z "$pvc" ]] && continue
+    leftover_pvcs+=("${ns}/${pvc}")
+  done <<< "$rows"
+done
+
 ns_left=()
 for ns in "${managed_namespaces[@]}"; do
   if kubectl get ns "$ns" >/dev/null 2>&1; then
     ns_left+=("$ns")
   fi
 done
+
+if [[ "${#leftover_pvcs[@]}" -gt 0 ]]; then
+  log_error "PVCs still present after teardown wait: ${leftover_pvcs[*]}"
+fi
 if [[ "${#ns_left[@]}" -gt 0 ]]; then
-  log_warn "Namespaces still present after wait: ${ns_left[*]}"
+  log_error "Namespaces still present after wait: ${ns_left[*]}"
+fi
+
+if [[ "${#leftover_pvcs[@]}" -gt 0 || "${#ns_left[@]}" -gt 0 ]]; then
+  die "Refusing to continue delete while non-k3s workloads are still terminating. Resolve stuck PVC/namespace teardown before deleting Cilium."
 fi
 
 log_info "Deleting platform CRDs (cert-manager/acme/cilium)"

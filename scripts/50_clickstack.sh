@@ -24,7 +24,8 @@ fi
 
 kubectl_ns observability
 CLICKSTACK_HOST="${CLICKSTACK_HOST:-clickstack.${BASE_DOMAIN}}"
-CLICKSTACK_API_KEY="${CLICKSTACK_API_KEY:-$(cat /proc/sys/kernel/random/uuid)}"
+CLICKSTACK_API_KEY="${CLICKSTACK_API_KEY:-}"
+[[ -n "$CLICKSTACK_API_KEY" ]] || die "CLICKSTACK_API_KEY is required for scripts/50_clickstack.sh"
 
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -64,4 +65,5 @@ wait_deploy observability clickstack-otel-collector
 if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
   wait_deploy observability clickstack-clickhouse
 fi
+
 log_info "clickstack installed at https://${CLICKSTACK_HOST}"

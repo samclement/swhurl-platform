@@ -97,13 +97,14 @@ Each step lists assumptions and outputs. Run in order.
 
 13. **Observability (ClickStack, optional)**
     - Assumes: ingress and cert-manager are ready.
+    - Assumes: `CLICKSTACK_API_KEY` is set in `profiles/secrets.env`.
     - Output: ClickStack (ClickHouse + HyperDX + OTel Collector) deployed with ingress + TLS.
     - Host: `${CLICKSTACK_HOST}`.
     - Command: `./scripts/50_clickstack.sh`
 
 14. **Kubernetes OTel Collectors (optional)**
     - Assumes: ClickStack is installed in `observability`.
-    - Assumes: `CLICKSTACK_INGESTION_KEY` is set in `profiles/secrets.env` (preferred). If unset, script tries to read the active receiver token from `clickstack-otel-collector`.
+    - Assumes: `CLICKSTACK_INGESTION_KEY` is set in `profiles/secrets.env`.
     - Output: OTel DaemonSet + cluster Deployment shipping K8s logs/metrics/events to ClickStack OTLP endpoint.
     - Command: `./scripts/51_otel_k8s.sh`
 

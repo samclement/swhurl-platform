@@ -30,23 +30,8 @@ fi
 kubectl_ns logging
 
 OTLP_ENDPOINT="${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}"
-INGESTION_KEY_SOURCE="CLICKSTACK_INGESTION_KEY"
 INGESTION_KEY="${CLICKSTACK_INGESTION_KEY:-}"
-if [[ -z "$INGESTION_KEY" ]]; then
-  # TODO(swhurl-platform): Query the HyperDX ingestion key via ClickStack API instead of scraping effective.yaml.
-  # Prefer the collector's active bearer token because this is what it currently validates.
-  INGESTION_KEY="$(
-    kubectl -n observability exec deploy/clickstack-otel-collector -- sh -lc \
-      "sed -n '40,60p' /etc/otel/supervisor-data/effective.yaml | sed -n 's/^[[:space:]]*-[[:space:]]*//p' | head -n1" \
-      2>/dev/null || true
-  )"
-  INGESTION_KEY_SOURCE="clickstack-otel-collector effective config"
-fi
-if [[ -z "$INGESTION_KEY" ]]; then
-  INGESTION_KEY="$(kubectl -n observability get secret clickstack-app-secrets -o jsonpath='{.data.api-key}' 2>/dev/null | base64 -d || true)"
-  INGESTION_KEY_SOURCE="observability/clickstack-app-secrets"
-fi
-[[ -n "$INGESTION_KEY" ]] || die "No ingestion key found. Set CLICKSTACK_INGESTION_KEY (preferred) or ensure clickstack-otel-collector is running."
+[[ -n "$INGESTION_KEY" ]] || die "CLICKSTACK_INGESTION_KEY is required for scripts/51_otel_k8s.sh"
 
 kubectl -n logging create secret generic hyperdx-secret \
   --from-literal=HYPERDX_API_KEY="$INGESTION_KEY" \
@@ -75,4 +60,4 @@ if [[ -n "$deploy_name" ]]; then
   wait_deploy logging "$deploy_name"
 fi
 
-log_info "Kubernetes OTel collectors installed (endpoint: ${OTLP_ENDPOINT}, key source: ${INGESTION_KEY_SOURCE})"
+log_info "Kubernetes OTel collectors installed (endpoint: ${OTLP_ENDPOINT}, key source: CLICKSTACK_INGESTION_KEY)"

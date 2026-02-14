@@ -9,12 +9,15 @@
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
+  - `scripts/10_install_k3s_cilium_minimal.sh` now bootstraps k3s only (Traefik disabled, flannel disabled); it no longer installs Cilium.
   - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_cilium.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium.yaml` with `useDigest: false`.
   - Hubble UI ingress is configured in `infra/values/cilium.yaml` and rendered via envsubst in `scripts/26_cilium.sh`. It uses `HUBBLE_HOST`, `CLUSTER_ISSUER`, and OAuth2 annotations with `OAUTH_HOST`.
 
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh` (along with `scripts/76_app_scaffold.sh`).
+  - In apply mode, `run.sh` now reorders `scripts/26_cilium.sh` to run immediately after `scripts/10_install_k3s_cilium_minimal.sh` when both are selected.
+  - `scripts/26_cilium.sh` is self-sufficient for early execution and now adds/updates the `cilium` Helm repo before install.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
@@ -35,19 +38,18 @@
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
-  - `infra/manifests/apps/hello/overlays/auth/ingress-auth-patch.yaml` must keep `` placeholders (not hardcoded hosts). Hardcoding `oauth.placeholder.local` causes ingress external auth DNS failures and HTTP 500s on `hello` routes.
 
 - Observability with ClickStack
   - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-oauth.yaml` and applied by `scripts/50_clickstack.sh` when `FEAT_OAUTH2_PROXY=true` and `OAUTH_HOST` is set.
+  - `scripts/50_clickstack.sh` only uses `CLICKSTACK_API_KEY` and now fails fast if it is unset.
   - Use `scripts/51_otel_k8s.sh` to install Kubernetes OTel collectors (`open-telemetry/opentelemetry-collector`) in `logging` namespace. It creates `hyperdx-secret` and `otel-config-vars`, then deploys daemonset + cluster collectors forwarding to `${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
-  - Auth gotcha: ingestion uses bearer token auth. Prefer setting `CLICKSTACK_INGESTION_KEY` (in `profiles/secrets.env`) for `scripts/51_otel_k8s.sh`. If unset, script attempts to read the active token from `clickstack-otel-collector` effective config.
+  - `scripts/51_otel_k8s.sh` only uses `CLICKSTACK_INGESTION_KEY` and now fails fast if it is unset.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; re-run `scripts/51_otel_k8s.sh` after fixing `CLICKSTACK_INGESTION_KEY`.
-  - TODO: `scripts/51_otel_k8s.sh` contains a TODO to replace effective-config token scraping with a ClickStack API lookup for ingestion keys.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_INGESTION_KEY`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
   - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
   - Gotcha: when `--profile` is used (setting `$PROFILE_FILE`), `profiles/secrets.env` is not loaded. If you need both, merge secrets into the profile or create a combined profile that sources `profiles/secrets.env`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.

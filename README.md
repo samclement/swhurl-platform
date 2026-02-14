@@ -1,6 +1,6 @@
 # Swhurl Platform (k3s-only)
 
-This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-manager, ingress-nginx, oauth2-proxy, logging with Fluent Bit + Loki, observability (Prometheus + Grafana), and MinIO. Scripts are thin orchestrators around Helm + manifests in `infra/`.
+This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-manager, ingress-nginx, oauth2-proxy, ClickStack (ClickHouse + HyperDX + OTel Collector), and MinIO. Scripts are thin orchestrators around Helm + manifests in `infra/`.
 
 ## Quick Start
 
@@ -95,37 +95,34 @@ Each step lists assumptions and outputs. Run in order.
     - Output: oauth2-proxy deployed with ingress + TLS.
     - Command: `./scripts/45_oauth2_proxy.sh`
 
-13. **Logging (optional)**
-    - Assumes: Loki is installed or will be installed.
-    - Output: Fluent Bit running with Loki outputs.
-    - Command: `./scripts/50_logging_fluentbit.sh`
-
-14. **Loki (optional)**
-    - Assumes: observability namespace exists.
-    - Output: Loki single-binary deployment.
-    - Command: `./scripts/55_loki.sh`
-
-15. **Observability (optional)**
+13. **Observability (ClickStack, optional)**
     - Assumes: ingress and cert-manager are ready.
-    - Output: Prometheus + Grafana with ingress.
-    - Command: `./scripts/60_prom_grafana.sh`
+    - Output: ClickStack (ClickHouse + HyperDX + OTel Collector) deployed with ingress + TLS.
+    - Host: `${CLICKSTACK_HOST}`.
+    - Command: `./scripts/50_clickstack.sh`
 
-16. **MinIO (optional)**
+14. **Kubernetes OTel Collectors (optional)**
+    - Assumes: ClickStack is installed in `observability`.
+    - Assumes: `CLICKSTACK_INGESTION_KEY` is set in `profiles/secrets.env` (preferred). If unset, script tries to read the active receiver token from `clickstack-otel-collector`.
+    - Output: OTel DaemonSet + cluster Deployment shipping K8s logs/metrics/events to ClickStack OTLP endpoint.
+    - Command: `./scripts/51_otel_k8s.sh`
+
+15. **MinIO (optional)**
     - Assumes: storage namespace exists and credentials are set in `profiles/secrets.env`.
     - Output: MinIO and console ingresses.
     - Command: `./scripts/70_minio.sh`
 
-17. **Sample App**
+16. **Sample App**
     - Assumes: `BASE_DOMAIN` is set and DNS resolves.
     - Output: sample app with ingress and cert.
     - Command: `./scripts/75_sample_app.sh`
 
-18. **Smoke Tests**
+17. **Smoke Tests**
    - Assumes: core components are installed.
    - Output: basic health validation.
    - Command: `./scripts/90_smoke_tests.sh`
 
-19. **State Validation (cluster vs local config)**
+18. **State Validation (cluster vs local config)**
     - Assumes: components are installed and kube API is reachable.
     - Output: mismatches reported with suggested re-runs.
     - Command: `./scripts/91_validate_cluster.sh`

@@ -84,7 +84,7 @@ kind: Ingress
 metadata:
   name: ${APP_NAME}
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-url: https://${OAUTH_HOST}/oauth2/auth
     nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri
 K
     cat >> "$TMPDIR/kustomization.yaml" <<K

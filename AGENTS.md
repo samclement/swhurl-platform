@@ -18,7 +18,7 @@
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
-  - Observability is installed via `scripts/50_clickstack.sh`. `scripts/55_loki.sh` and `scripts/60_prom_grafana.sh` are retained as deprecated cleanup stubs.
+  - Observability is installed via `scripts/50_clickstack.sh`; legacy `scripts/50_logging_fluentbit.sh`, `scripts/55_loki.sh`, and `scripts/60_prom_grafana.sh` have been removed.
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
@@ -39,7 +39,6 @@
 
 - Observability with ClickStack
   - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
-  - Script `scripts/50_logging_fluentbit.sh` is a compatibility wrapper that delegates to `scripts/50_clickstack.sh`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-oauth.yaml` and applied by `scripts/50_clickstack.sh` when `FEAT_OAUTH2_PROXY=true` and `OAUTH_HOST` is set.
   - Use `scripts/51_otel_k8s.sh` to install Kubernetes OTel collectors (`open-telemetry/opentelemetry-collector`) in `logging` namespace. It creates `hyperdx-secret` and `otel-config-vars`, then deploys daemonset + cluster collectors forwarding to `${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).

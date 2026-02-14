@@ -34,13 +34,19 @@ cp "$SCRIPT_DIR/../infra/values/clickstack.yaml" "$TMPDIR/values.yaml"
   envsubst < "$TMPDIR/values.yaml" > "$TMPDIR/values.rendered.yaml"
 )
 
-extra_args=()
-if [[ "${FEAT_OAUTH2_PROXY:-false}" == "true" && -n "${OAUTH_HOST:-}" ]]; then
-  extra_args+=(
-    --set "hyperdx.ingress.annotations.nginx\.ingress\.kubernetes\.io/auth-url=https://${OAUTH_HOST}/oauth2/auth"
-    --set "hyperdx.ingress.annotations.nginx\.ingress\.kubernetes\.io/auth-signin=https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
-    --set "hyperdx.ingress.annotations.nginx\.ingress\.kubernetes\.io/auth-response-headers=X-Auth-Request-User\\,X-Auth-Request-Email\\,Authorization"
-  )
+values_args=(-f "$TMPDIR/values.rendered.yaml")
+if [[ "${FEAT_OAUTH2_PROXY:-false}" == "true" ]]; then
+  if [[ -n "${OAUTH_HOST:-}" ]]; then
+    cp "$SCRIPT_DIR/../infra/values/clickstack-oauth.yaml" "$TMPDIR/values.oauth.yaml"
+    (
+      DOLLAR='$'
+      export OAUTH_HOST DOLLAR
+      envsubst < "$TMPDIR/values.oauth.yaml" > "$TMPDIR/values.oauth.rendered.yaml"
+    )
+    values_args+=(-f "$TMPDIR/values.oauth.rendered.yaml")
+  else
+    log_warn "FEAT_OAUTH2_PROXY=true but OAUTH_HOST is empty; skipping ClickStack OAuth ingress annotations"
+  fi
 fi
 
 if [[ "${CLICKSTACK_CLEAN_LEGACY:-true}" == "true" ]]; then
@@ -51,8 +57,7 @@ fi
 
 helm_upsert clickstack clickstack/clickstack observability \
   --reset-values \
-  -f "$TMPDIR/values.rendered.yaml" \
-  "${extra_args[@]}"
+  "${values_args[@]}"
 
 wait_deploy observability clickstack-app
 wait_deploy observability clickstack-otel-collector

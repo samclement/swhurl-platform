@@ -39,7 +39,7 @@
 - Observability with ClickStack
   - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Script `scripts/50_logging_fluentbit.sh` is a compatibility wrapper that delegates to `scripts/50_clickstack.sh`.
-  - Optional OAuth protection for HyperDX ingress is applied when `FEAT_OAUTH2_PROXY=true` and `OAUTH_HOST` is set.
+  - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-oauth.yaml` and applied by `scripts/50_clickstack.sh` when `FEAT_OAUTH2_PROXY=true` and `OAUTH_HOST` is set.
   - Use `scripts/51_otel_k8s.sh` to install Kubernetes OTel collectors (`open-telemetry/opentelemetry-collector`) in `logging` namespace. It creates `hyperdx-secret` and `otel-config-vars`, then deploys daemonset + cluster collectors forwarding to `${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
   - Auth gotcha: ingestion uses bearer token auth. Prefer setting `CLICKSTACK_INGESTION_KEY` (in `profiles/secrets.env`) for `scripts/51_otel_k8s.sh`. If unset, script attempts to read the active token from `clickstack-otel-collector` effective config.

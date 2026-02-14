@@ -164,6 +164,14 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/50_clickstack.sh"
     check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/50_clickstack.sh"
+    if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+      expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
+      expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
+      actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
+      actual_auth_signin=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
+      check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/50_clickstack.sh"
+      check_eq "clickstack.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/50_clickstack.sh"
+    fi
   else
     mismatch "clickstack ingress not found"
     add_suggest "scripts/50_clickstack.sh"

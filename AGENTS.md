@@ -17,12 +17,12 @@
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh` (along with `scripts/76_app_scaffold.sh`).
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
-  - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, fluent-bit outputs) and suggests which scripts to re-run on mismatch.
-  - There is no Alloy install step in this repo today. Keep docs/config aligned to existing scripts (`55_loki.sh` + `60_prom_grafana.sh`).
+  - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
+  - Observability is installed via `scripts/50_clickstack.sh`. `scripts/55_loki.sh` and `scripts/60_prom_grafana.sh` are retained as deprecated cleanup stubs.
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> grafana.<base> hubble.<base> minio.<base> minio-console.<base>`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
   - `scripts/12_dns_register.sh` now honors `PROFILE_FILE` (if set) or `profiles/local.env` for domain/subdomain overrides. It does not auto-source `profiles/secrets.env`.
 
@@ -36,15 +36,18 @@
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
 
-- Logging with Fluent Bit (chart quirk)
-  - The `fluent/fluent-bit` Helm chart does not support `backend.type=loki`. It uses `config.outputs` instead and defaults to Elasticsearch. `scripts/50_logging_fluentbit.sh` now applies a values overlay to set Loki outputs explicitly. If you see `elasticsearch-master` in the rendered ConfigMap, re-run step 50 to replace values (`--reset-values` is used).
-  - Structured logs for better queries:
-    - ingress-nginx: `infra/values/ingress-nginx-logging.yaml` sets JSON `log-format-upstream` and escape. Reinstall controller (step 40) to apply.
-    - oauth2-proxy: `scripts/45_oauth2_proxy.sh` enables JSON for standard/auth/request logs via `extraArgs.*-format=json`.
-    - Fluent Bit: sends JSON (`line_format json`) and uses a curated `labelmap.json` to keep Loki labels low-cardinality. Query with LogQL: `{namespace="ingress"} | json | status>=500` or `{app="oauth2-proxy"} | json | method="GET"`.
+- Observability with ClickStack
+  - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
+  - Script `scripts/50_logging_fluentbit.sh` is a compatibility wrapper that delegates to `scripts/50_clickstack.sh`.
+  - Optional OAuth protection for HyperDX ingress is applied when `FEAT_OAUTH2_PROXY=true` and `OAUTH_HOST` is set.
+  - Use `scripts/51_otel_k8s.sh` to install Kubernetes OTel collectors (`open-telemetry/opentelemetry-collector`) in `logging` namespace. It creates `hyperdx-secret` and `otel-config-vars`, then deploys daemonset + cluster collectors forwarding to `${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}`.
+  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
+  - Auth gotcha: ingestion uses bearer token auth. Prefer setting `CLICKSTACK_INGESTION_KEY` (in `profiles/secrets.env`) for `scripts/51_otel_k8s.sh`. If unset, script attempts to read the active token from `clickstack-otel-collector` effective config.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; re-run `scripts/51_otel_k8s.sh` after fixing `CLICKSTACK_INGESTION_KEY`.
+  - TODO: `scripts/51_otel_k8s.sh` contains a TODO to replace effective-config token scraping with a ClickStack API lookup for ingestion keys.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_INGESTION_KEY`.
   - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
   - Gotcha: when `--profile` is used (setting `$PROFILE_FILE`), `profiles/secrets.env` is not loaded. If you need both, merge secrets into the profile or create a combined profile that sources `profiles/secrets.env`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.
@@ -55,7 +58,7 @@
 
 ---
 
-This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: Cilium CNI, cert-manager, ingress with OAuth proxy, logging (Fluent Bit), observability (Prometheus + Grafana), and object storage (MinIO). It also includes best practices for secrets and RBAC.
+This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: Cilium CNI, cert-manager, ingress with OAuth proxy, observability via ClickStack (ClickHouse + HyperDX + OTel Collector), and object storage (MinIO). It also includes best practices for secrets and RBAC.
 
 If you already have a cluster, you can jump directly to the Bootstrap section.
 
@@ -120,10 +123,9 @@ Add Helm repos
 helm repo add jetstack https://charts.jetstack.io
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add cilium https://helm.cilium.io/
-helm repo add fluent https://fluent.github.io/helm-charts
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo add minio https://charts.min.io/
 helm repo update
 ```
@@ -217,45 +219,27 @@ metadata:
     nginx.ingress.kubernetes.io/auth-signin: "https://oauth.YOUR_DOMAIN/oauth2/start?rd=$scheme://$host$request_uri"
 ```
 
-### Logging: Fluent Bit
+### Observability: ClickStack
 
-Deploy Fluent Bit as a DaemonSet to collect container logs. You can ship to Loki, Elasticsearch/OpenSearch, or a vendor. Example to Loki (install Loki first or point to an existing instance):
-
-Install Fluent Bit:
+Install ClickStack (ClickHouse + HyperDX + OTel Collector):
 
 ```
-helm upgrade --install fluent-bit fluent/fluent-bit \
-  --namespace logging \
-  --set tolerations[0].operator=Exists \
-  --set backend.type=loki \
-  --set backend.loki.host="http://loki.observability.svc.cluster.local:3100"
+./scripts/50_clickstack.sh
 ```
 
-Optional: Deploy Loki for log storage (single-tenant, dev):
+This script renders `infra/values/clickstack.yaml`, deploys the `clickstack/clickstack` chart, and exposes HyperDX at `https://${CLICKSTACK_HOST}` with cert-manager TLS.
+
+If oauth2-proxy is enabled, the script adds NGINX auth annotations to the ClickStack ingress.
+
+### Kubernetes OTel Integration
+
+Install Kubernetes-focused OTel collectors (daemonset + deployment) and forward telemetry to ClickStack:
 
 ```
-helm repo add grafana https://grafana.github.io/helm-charts && helm repo update
-helm upgrade --install loki grafana/loki \
-  --namespace observability \
-  --set loki.auth_enabled=false
+./scripts/51_otel_k8s.sh
 ```
 
-### Observability: Prometheus + Grafana
-
-Install the kube-prometheus-stack:
-
-```
-helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-  --namespace observability \
-  --set grafana.ingress.enabled=true \
-  --set grafana.ingress.ingressClassName=nginx \
-  --set grafana.ingress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set grafana.ingress.hosts[0]="grafana.YOUR_DOMAIN" \
-  --set grafana.ingress.tls[0].hosts[0]="grafana.YOUR_DOMAIN" \
-  --set grafana.ingress.tls[0].secretName=grafana-tls
-```
-
-Secure Grafana via OAuth2 Proxy by applying the same auth annotations to the Grafana Ingress, or by enabling Grafana’s built-in OIDC if preferred.
+This follows the ClickStack Kubernetes integration pattern using the upstream `open-telemetry/opentelemetry-collector` chart.
 
 ### Storage: MinIO (Object Storage)
 
@@ -417,8 +401,8 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
 
 ## Day-2 Ops (Brief)
 
-- Backups: Back up etcd (or for k3s, use etcd or external DB); back up MinIO buckets; export Grafana dashboards.
-- Upgrades: Upgrade Helm charts one at a time; monitor with Prometheus and logs; use staged environments when possible.
+- Backups: Back up etcd (or for k3s, use etcd or external DB); back up MinIO buckets; back up ClickStack PVCs and ClickHouse data.
+- Upgrades: Upgrade Helm charts one at a time; monitor logs/ingestion health in ClickStack; use staged environments when possible.
 - Teardown: `sudo /usr/local/bin/k3s-uninstall.sh` (server).
 
 ## Troubleshooting
@@ -426,7 +410,7 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
 - Ingress 404s: Check `ingressClassName`, controller logs, and Service/Endpoints readiness.
 - Certificates pending: Inspect cert-manager `Certificate`/`Order` events; verify DNS/HTTP-01 reachability and issuer name.
 - OAuth loops: Validate `redirect-url`, cookie secret length (32+ bytes base64), and time skew.
-- Fluent Bit drops: Verify backend connectivity and record sizes; check DaemonSet tolerations.
+- ClickStack ingestion gaps: verify app OTLP exporters target the ClickStack collector service and inspect `clickstack-otel-collector` logs.
 - Node storage: Ensure enough disk for local PVs; adjust MinIO persistence and requests.
 
 ## Suggested Repo Structure (optional)
@@ -436,8 +420,9 @@ infra/
   values/
     ingress-nginx-logging.yaml
     oauth2-proxy.yaml.gotmpl
-    kube-prometheus-stack.yaml.gotmpl
-    fluent-bit-loki.yaml
+    clickstack.yaml
+    otel-k8s-daemonset.yaml
+    otel-k8s-deployment.yaml
     minio.yaml.gotmpl
   manifests/
     issuers/

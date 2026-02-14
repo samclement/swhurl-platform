@@ -57,8 +57,12 @@ fi
 # Allow ONLY from env if not given via flag
 ONLY_FILTER="${ONLY_FILTER:-${ONLY:-}}"
 
-# Collect steps from scripts directory
-mapfile -t ALL_STEPS < <(ls -1 scripts/[0-9][0-9]_*.sh 2>/dev/null | sort)
+# Collect executable steps from scripts directory, excluding helper/deprecated wrappers.
+mapfile -t ALL_STEPS < <(
+  ls -1 scripts/[0-9][0-9]_*.sh 2>/dev/null \
+    | sort \
+    | rg -v '/(00_lib|50_logging_fluentbit|55_loki|60_prom_grafana|76_app_scaffold)\.sh$'
+)
 
 if [[ ${#ALL_STEPS[@]} -eq 0 ]]; then
   echo "No scripts found under scripts/. Nothing to do."; exit 0
@@ -111,11 +115,16 @@ should_skip() {
     45_oauth2_proxy.sh)
       [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     50_logging_fluentbit.sh)
-      [[ "${FEAT_LOGGING:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+      # compatibility wrapper; never run directly via orchestrator
+      return 0 ;;
+    50_clickstack.sh)
+      [[ "${FEAT_CLICKSTACK:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+    51_otel_k8s.sh)
+      [[ "${FEAT_OTEL_K8S:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     55_loki.sh)
-      [[ "${FEAT_LOKI:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+      return 0 ;;
     60_prom_grafana.sh)
-      [[ "${FEAT_OBS:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
+      return 0 ;;
     70_minio.sh)
       [[ "${FEAT_MINIO:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
     80_mesh_linkerd.sh)

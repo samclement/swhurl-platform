@@ -32,9 +32,14 @@ else
   log_warn "curl not found; skipping NodePort connectivity test"
 fi
 
-if [[ "${FEAT_OBS:-true}" == "true" ]]; then
-  log_info "Smoke tests: monitoring stack"
-  kubectl -n observability get pods
+if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
+  log_info "Smoke tests: clickstack"
+  kubectl -n observability get deploy,sts,svc,ingress | rg -i "clickstack|NAME" || true
+fi
+
+if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
+  log_info "Smoke tests: kubernetes otel collectors"
+  kubectl -n logging get ds,deploy | rg -i "otel-k8s|NAME" || true
 fi
 
 if [[ "${FEAT_MINIO:-true}" == "true" ]]; then

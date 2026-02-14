@@ -157,19 +157,81 @@ else
   ok "FEAT_OAUTH2_PROXY=false; skipping"
 fi
 
-say "Grafana"
-if [[ "${FEAT_OBS:-true}" == "true" ]]; then
-  if kubectl -n observability get ingress monitoring-grafana >/dev/null 2>&1; then
-    actual_host=$(kubectl -n observability get ingress monitoring-grafana -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n observability get ingress monitoring-grafana -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "grafana.host" "${GRAFANA_HOST:-}" "$actual_host" "scripts/60_prom_grafana.sh"
-    check_eq "grafana.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/60_prom_grafana.sh"
+say "ClickStack"
+if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
+  if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
+    actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
+    actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/50_clickstack.sh"
+    check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/50_clickstack.sh"
   else
-    mismatch "grafana ingress not found"
-    add_suggest "scripts/60_prom_grafana.sh"
+    mismatch "clickstack ingress not found"
+    add_suggest "scripts/50_clickstack.sh"
+  fi
+  if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
+    ok "clickstack app deployment present"
+  else
+    mismatch "clickstack app deployment not found"
+    add_suggest "scripts/50_clickstack.sh"
+  fi
+  if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
+    ok "clickstack otel collector deployment present"
+  else
+    mismatch "clickstack otel collector deployment not found"
+    add_suggest "scripts/50_clickstack.sh"
+  fi
+  if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
+    ok "clickstack clickhouse deployment present"
+  else
+    mismatch "clickstack clickhouse deployment not found"
+    add_suggest "scripts/50_clickstack.sh"
   fi
 else
-  ok "FEAT_OBS=false; skipping"
+  ok "FEAT_CLICKSTACK=false; skipping"
+fi
+
+say "Kubernetes OTel Collectors"
+if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
+  if kubectl -n logging get ds -l app.kubernetes.io/instance=otel-k8s-daemonset >/dev/null 2>&1; then
+    ok "otel-k8s daemonset release present"
+  else
+    mismatch "otel-k8s daemonset release not found"
+    add_suggest "scripts/51_otel_k8s.sh"
+  fi
+  if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
+    ok "otel-k8s cluster deployment release present"
+  else
+    mismatch "otel-k8s cluster deployment release not found"
+    add_suggest "scripts/51_otel_k8s.sh"
+  fi
+  if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
+    ok "hyperdx-secret present"
+  else
+    mismatch "hyperdx-secret missing"
+    add_suggest "scripts/51_otel_k8s.sh"
+  fi
+  if kubectl -n logging get configmap otel-config-vars >/dev/null 2>&1; then
+    ok "otel-config-vars configmap present"
+  else
+    mismatch "otel-config-vars configmap missing"
+    add_suggest "scripts/51_otel_k8s.sh"
+  fi
+  if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1 && kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
+    sender_token="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d || true)"
+    receiver_token="$(
+      kubectl -n observability exec deploy/clickstack-otel-collector -- sh -lc \
+        "sed -n '40,60p' /etc/otel/supervisor-data/effective.yaml | sed -n 's/^[[:space:]]*-[[:space:]]*//p' | head -n1" \
+        2>/dev/null || true
+    )"
+    if [[ -n "$sender_token" && -n "$receiver_token" && "$sender_token" != "$receiver_token" ]]; then
+      mismatch "otel token mismatch: logging/hyperdx-secret does not match clickstack receiver token"
+      add_suggest "scripts/51_otel_k8s.sh"
+    else
+      ok "otel token alignment check passed"
+    fi
+  fi
+else
+  ok "FEAT_OTEL_K8S=false; skipping"
 fi
 
 say "MinIO"
@@ -194,24 +256,6 @@ if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
   fi
 else
   ok "FEAT_MINIO=false; skipping"
-fi
-
-say "Fluent Bit"
-if [[ "${FEAT_LOGGING:-true}" == "true" ]]; then
-  if kubectl -n logging get cm fluent-bit >/dev/null 2>&1; then
-    actual_fb=$(kubectl -n logging get cm fluent-bit -o jsonpath='{.data.fluent-bit\.conf}')
-    if echo "$actual_fb" | rg -q "Name loki"; then
-      ok "fluent-bit outputs include loki"
-    else
-      mismatch "fluent-bit outputs missing loki"
-      add_suggest "scripts/50_logging_fluentbit.sh"
-    fi
-  else
-    mismatch "fluent-bit configmap not found"
-    add_suggest "scripts/50_logging_fluentbit.sh"
-  fi
-else
-  ok "FEAT_LOGGING=false; skipping"
 fi
 
 if [[ "$fail" -eq 1 ]]; then

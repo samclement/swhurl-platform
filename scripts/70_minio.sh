@@ -15,7 +15,11 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling minio"
-  helm uninstall minio -n storage || true
+  if helm -n storage status minio >/dev/null 2>&1; then
+    helm uninstall minio -n storage || true
+  else
+    log_info "minio release not present; skipping helm uninstall"
+  fi
   kubectl -n storage delete secret minio-creds --ignore-not-found
   exit 0
 fi

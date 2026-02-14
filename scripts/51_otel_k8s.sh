@@ -16,8 +16,16 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling Kubernetes OTel collectors"
-  helm uninstall otel-k8s-daemonset -n logging || true
-  helm uninstall otel-k8s-cluster -n logging || true
+  if helm -n logging status otel-k8s-daemonset >/dev/null 2>&1; then
+    helm uninstall otel-k8s-daemonset -n logging || true
+  else
+    log_info "otel-k8s-daemonset release not present; skipping helm uninstall"
+  fi
+  if helm -n logging status otel-k8s-cluster >/dev/null 2>&1; then
+    helm uninstall otel-k8s-cluster -n logging || true
+  else
+    log_info "otel-k8s-cluster release not present; skipping helm uninstall"
+  fi
   kubectl -n logging delete secret hyperdx-secret --ignore-not-found
   kubectl -n logging delete configmap otel-config-vars --ignore-not-found
   exit 0

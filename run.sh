@@ -57,12 +57,21 @@ fi
 # Allow ONLY from env if not given via flag
 ONLY_FILTER="${ONLY_FILTER:-${ONLY:-}}"
 
-# Collect executable steps from scripts directory, excluding helper/deprecated wrappers.
-mapfile -t ALL_STEPS < <(
-  ls -1 scripts/[0-9][0-9]_*.sh 2>/dev/null \
-    | sort \
-    | rg -v '/(00_lib|76_app_scaffold)\.sh$'
-)
+# Collect step scripts, preferring tracked files so local/untracked scripts
+# do not silently change orchestrator behavior.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  mapfile -t ALL_STEPS < <(
+    git ls-files 'scripts/[0-9][0-9]_*.sh' \
+      | sort \
+      | rg -v '/(00_lib|76_app_scaffold)\.sh$'
+  )
+else
+  mapfile -t ALL_STEPS < <(
+    ls -1 scripts/[0-9][0-9]_*.sh 2>/dev/null \
+      | sort \
+      | rg -v '/(00_lib|76_app_scaffold)\.sh$'
+  )
+fi
 
 if [[ ${#ALL_STEPS[@]} -eq 0 ]]; then
   echo "No scripts found under scripts/. Nothing to do."; exit 0
@@ -124,6 +133,32 @@ fi
 # Reverse for delete mode
 if [[ "$DELETE_MODE" == true ]]; then
   mapfile -t SELECTED_STEPS < <(printf '%s\n' "${SELECTED_STEPS[@]}" | tac)
+
+  # Ensure finalizer/verification run at the very end of delete flow.
+  # Keep Cilium deletion after teardown because k3s local-path PVC cleanup
+  # helper pods may need CNI while namespaces/PVCs are being removed.
+  teardown_step=""
+  cilium_step=""
+  verify_delete_step=""
+  delete_steps=()
+  for s in "${SELECTED_STEPS[@]}"; do
+    case "$(basename "$s")" in
+      99_teardown.sh) teardown_step="$s" ;;
+      26_cilium.sh) cilium_step="$s" ;;
+      98_verify_delete_clean.sh) verify_delete_step="$s" ;;
+      *) delete_steps+=("$s") ;;
+    esac
+  done
+  if [[ -n "$teardown_step" ]]; then
+    delete_steps+=("$teardown_step")
+  fi
+  if [[ -n "$cilium_step" ]]; then
+    delete_steps+=("$cilium_step")
+  fi
+  if [[ -n "$verify_delete_step" ]]; then
+    delete_steps+=("$verify_delete_step")
+  fi
+  SELECTED_STEPS=("${delete_steps[@]}")
 fi
 
 should_skip() {
@@ -135,6 +170,9 @@ should_skip() {
     76_app_scaffold.sh)
       # scaffolder; run directly with args when needed
       return 0 ;;
+    98_verify_delete_clean.sh|99_teardown.sh)
+      # delete-only steps
+      [[ "$DELETE_MODE" != true ]] && return 0 ;;
     01_check_prereqs.sh|15_kube_context.sh|25_helm_repos.sh|90_smoke_tests.sh|91_validate_cluster.sh|95_dump_context.sh)
       # informational/validation steps; no --delete mode
       [[ "$DELETE_MODE" == true ]] && return 0 ;;

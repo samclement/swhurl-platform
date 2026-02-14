@@ -10,9 +10,19 @@ ensure_context
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling cert-manager"
-  helm uninstall cert-manager -n cert-manager || true
-  # Optionally remove CRDs (commented out by default)
-  # kubectl delete crd -l app.kubernetes.io/name=cert-manager || true
+  if helm -n cert-manager status cert-manager >/dev/null 2>&1; then
+    helm uninstall cert-manager -n cert-manager || true
+  else
+    log_info "cert-manager release not present; skipping helm uninstall"
+  fi
+  if [[ "${CM_DELETE_CRDS:-true}" == "true" ]]; then
+    crds="$(kubectl get crd -o name 2>/dev/null | rg 'cert-manager\.io|acme\.cert-manager\.io' || true)"
+    if [[ -n "$crds" ]]; then
+      log_info "Deleting cert-manager CRDs"
+      # shellcheck disable=SC2086
+      kubectl delete $crds --ignore-not-found || true
+    fi
+  fi
   exit 0
 fi
 

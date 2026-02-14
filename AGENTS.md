@@ -11,6 +11,7 @@
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
   - `scripts/10_install_k3s_cilium_minimal.sh` now bootstraps k3s only (Traefik disabled, flannel disabled); it no longer installs Cilium.
   - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_cilium.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
+  - `scripts/26_cilium.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium.yaml` with `useDigest: false`.
   - Hubble UI ingress is configured in `infra/values/cilium.yaml` and rendered via envsubst in `scripts/26_cilium.sh`. It uses `HUBBLE_HOST`, `CLUSTER_ISSUER`, and OAuth2 annotations with `OAUTH_HOST`.
 
@@ -18,8 +19,17 @@
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh` (along with `scripts/76_app_scaffold.sh`).
   - In apply mode, `run.sh` now reorders `scripts/26_cilium.sh` to run immediately after `scripts/10_install_k3s_cilium_minimal.sh` when both are selected.
   - `scripts/26_cilium.sh` is self-sufficient for early execution and now adds/updates the `cilium` Helm repo before install.
+  - In delete mode, `run.sh` executes component uninstall steps first, then `scripts/99_teardown.sh`, then `scripts/26_cilium.sh` so local-path PVC helper pods can still use CNI during namespace cleanup.
+  - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_cilium.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
+  - `run.sh` now discovers step scripts from tracked files (`git ls-files`) so untracked local scripts do not silently affect plan/order.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
+  - `scripts/30_cert_manager.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
+  - `scripts/35_issuer.sh --delete` is idempotent when cert-manager CRDs are already removed and skips cleanly if `clusterissuers.cert-manager.io` is unavailable.
+  - `scripts/99_teardown.sh --delete` now performs real cleanup (non-k3s-native secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall.
+  - `scripts/98_verify_delete_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
+  - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
+  - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
   - Observability is installed via `scripts/50_clickstack.sh`; legacy `scripts/50_logging_fluentbit.sh`, `scripts/55_loki.sh`, and `scripts/60_prom_grafana.sh` have been removed.
 

@@ -1,0 +1,22 @@
+kubeProxyReplacement: "false"
+operator:
+  replicas: 1
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
+        nginx.ingress.kubernetes.io/auth-url: {{ printf "https://%s/oauth2/auth" .Environment.Values.computed.oauthHost | quote }}
+        nginx.ingress.kubernetes.io/auth-signin: {{ printf "https://%s/oauth2/start?rd=$scheme://$host$request_uri" .Environment.Values.computed.oauthHost | quote }}
+      hosts:
+        - {{ .Environment.Values.computed.hubbleHost | quote }}
+      tls:
+        - secretName: hubble-ui-tls
+          hosts:
+            - {{ .Environment.Values.computed.hubbleHost | quote }}

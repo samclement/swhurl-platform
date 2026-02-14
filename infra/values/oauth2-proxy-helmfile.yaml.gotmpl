@@ -1,35 +1,26 @@
-# Expects an existing Secret named oauth2-proxy-secret with keys:
-# - client-id
-# - client-secret
-# - cookie-secret (16/24/32 bytes ASCII)
-
 config:
   existingSecret: oauth2-proxy-secret
 
 extraArgs:
   provider: oidc
-  oidc-issuer-url: {{ env "OIDC_ISSUER" | default "https://example.com" | quote }}
-  redirect-url: {{ printf "https://%s/oauth2/callback" .Environment.Values.computed.oauthHost | quote }}
+  oidc-issuer-url: {{ env "OIDC_ISSUER" | quote }}
+  redirect-url: {{ env "OAUTH_REDIRECT_URL" | default (printf "https://%s/oauth2/callback" .Environment.Values.computed.oauthHost) | quote }}
   email-domain: "*"
   cookie-domain: {{ printf ".%s" .Environment.Values.baseDomain | quote }}
   whitelist-domain: {{ printf ".%s" .Environment.Values.baseDomain | quote }}
   standard-logging: true
-  standard-logging-format: json
   request-logging: true
-  request-logging-format: json
   auth-logging: true
-  auth-logging-format: json
   silence-ping-logging: true
 
 ingress:
   enabled: true
   className: nginx
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer }}
+    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   hosts:
     - {{ .Environment.Values.computed.oauthHost | quote }}
   tls:
     - secretName: oauth2-proxy-tls
       hosts:
         - {{ .Environment.Values.computed.oauthHost | quote }}
-

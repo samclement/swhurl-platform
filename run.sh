@@ -173,7 +173,7 @@ should_skip() {
     98_verify_delete_clean.sh|99_teardown.sh)
       # delete-only steps
       [[ "$DELETE_MODE" != true ]] && return 0 ;;
-    01_check_prereqs.sh|15_kube_context.sh|25_helm_repos.sh|90_smoke_tests.sh|91_validate_cluster.sh|95_dump_context.sh)
+    01_check_prereqs.sh|15_kube_context.sh|25_helm_repos.sh|90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|95_verify_kustomize_builds.sh|96_verify_script_surface.sh)
       # informational/validation steps; no --delete mode
       [[ "$DELETE_MODE" == true ]] && return 0 ;;
     12_dns_register.sh)

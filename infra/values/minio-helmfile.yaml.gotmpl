@@ -1,3 +1,6 @@
+image:
+  repository: docker.io/minio/minio
+
 mode: standalone
 resources:
   requests:
@@ -13,7 +16,7 @@ ingress:
   enabled: true
   ingressClassName: nginx
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer }}
+    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   path: /
   hosts:
     - {{ .Environment.Values.computed.minioHost | quote }}
@@ -26,7 +29,7 @@ consoleIngress:
   enabled: true
   ingressClassName: nginx
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer }}
+    cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   path: /
   hosts:
     - {{ .Environment.Values.computed.minioConsoleHost | quote }}
@@ -34,4 +37,3 @@ consoleIngress:
     - secretName: minio-console-tls
       hosts:
         - {{ .Environment.Values.computed.minioConsoleHost | quote }}
-

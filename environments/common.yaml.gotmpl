@@ -1,0 +1,16 @@
+baseDomain: {{ env "BASE_DOMAIN" | default "127.0.0.1.nip.io" | quote }}
+issuer: {{ env "CLUSTER_ISSUER" | default "selfsigned" | quote }}
+timeoutSecs: {{ env "TIMEOUT_SECS" | default "300" }}
+features:
+  cilium: {{ eq (env "FEAT_CILIUM" | default "true") "true" }}
+  oauth2Proxy: {{ eq (env "FEAT_OAUTH2_PROXY" | default "true") "true" }}
+  clickstack: {{ eq (env "FEAT_CLICKSTACK" | default "true") "true" }}
+  otelK8s: {{ eq (env "FEAT_OTEL_K8S" | default "true") "true" }}
+  minio: {{ eq (env "FEAT_MINIO" | default "true") "true" }}
+computed:
+  oauthHost: {{ env "OAUTH_HOST" | default (printf "oauth.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
+  hubbleHost: {{ env "HUBBLE_HOST" | default (printf "hubble.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
+  clickstackHost: {{ env "CLICKSTACK_HOST" | default (printf "clickstack.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
+  minioHost: {{ env "MINIO_HOST" | default (printf "minio.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
+  minioConsoleHost: {{ env "MINIO_CONSOLE_HOST" | default (printf "minio-console.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
+  clickstackOtelEndpoint: {{ env "CLICKSTACK_OTEL_ENDPOINT" | default "http://clickstack-otel-collector.observability.svc.cluster.local:4318" | quote }}

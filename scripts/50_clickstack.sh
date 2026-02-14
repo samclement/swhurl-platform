@@ -15,10 +15,20 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling clickstack and legacy observability releases"
-  helm uninstall clickstack -n observability || true
-  helm uninstall fluent-bit -n logging || true
-  helm uninstall loki -n observability || true
-  helm uninstall monitoring -n observability || true
+  if helm -n observability status clickstack >/dev/null 2>&1; then
+    helm uninstall clickstack -n observability || true
+  else
+    log_info "clickstack release not present; skipping helm uninstall"
+  fi
+  if helm -n logging status fluent-bit >/dev/null 2>&1; then
+    helm uninstall fluent-bit -n logging || true
+  fi
+  if helm -n observability status loki >/dev/null 2>&1; then
+    helm uninstall loki -n observability || true
+  fi
+  if helm -n observability status monitoring >/dev/null 2>&1; then
+    helm uninstall monitoring -n observability || true
+  fi
   exit 0
 fi
 

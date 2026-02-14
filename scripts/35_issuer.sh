@@ -12,7 +12,11 @@ ISSUER_NAME="${CLUSTER_ISSUER:-selfsigned}"
 
 if [[ "$DELETE" == true ]]; then
   log_info "Deleting ClusterIssuer '${ISSUER_NAME}' if present"
-  kubectl delete clusterissuer "$ISSUER_NAME" --ignore-not-found
+  if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '^clusterissuers$'; then
+    kubectl delete clusterissuer "$ISSUER_NAME" --ignore-not-found || true
+  else
+    log_info "clusterissuers.cert-manager.io not present; skipping"
+  fi
   exit 0
 fi
 

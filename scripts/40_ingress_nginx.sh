@@ -10,7 +10,11 @@ ensure_context
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling ingress-nginx"
-  helm uninstall ingress-nginx -n ingress || true
+  if helm -n ingress status ingress-nginx >/dev/null 2>&1; then
+    helm uninstall ingress-nginx -n ingress || true
+  else
+    log_info "ingress-nginx release not present; skipping helm uninstall"
+  fi
   exit 0
 fi
 

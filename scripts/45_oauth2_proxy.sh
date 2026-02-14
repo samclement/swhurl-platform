@@ -15,7 +15,11 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   log_info "Uninstalling oauth2-proxy"
-  helm uninstall oauth2-proxy -n ingress || true
+  if helm -n ingress status oauth2-proxy >/dev/null 2>&1; then
+    helm uninstall oauth2-proxy -n ingress || true
+  else
+    log_info "oauth2-proxy release not present; skipping helm uninstall"
+  fi
   kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found
   exit 0
 fi

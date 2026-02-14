@@ -35,6 +35,7 @@
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
+  - `infra/manifests/apps/hello/overlays/auth/ingress-auth-patch.yaml` must keep `` placeholders (not hardcoded hosts). Hardcoding `oauth.placeholder.local` causes ingress external auth DNS failures and HTTP 500s on `hello` routes.
 
 - Observability with ClickStack
   - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.

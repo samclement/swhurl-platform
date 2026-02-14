@@ -22,6 +22,11 @@ need CLUSTER_ISSUER
 
 if [[ "${CLUSTER_ISSUER:-}" == "letsencrypt" ]]; then
   need ACME_EMAIL
+  if [[ "${LETSENCRYPT_ENV:-staging}" =~ ^(staging|prod|production)$ ]]; then
+    ok "LETSENCRYPT_ENV is valid"
+  else
+    bad "LETSENCRYPT_ENV must be staging|prod|production"
+  fi
 fi
 
 printf "\n== Feature Contracts ==\n"
@@ -51,6 +56,7 @@ fi
 printf "\n== Effective (non-secret) ==\n"
 printf "BASE_DOMAIN=%s\n" "${BASE_DOMAIN:-}"
 printf "CLUSTER_ISSUER=%s\n" "${CLUSTER_ISSUER:-}"
+printf "LETSENCRYPT_ENV=%s\n" "${LETSENCRYPT_ENV:-}"
 printf "OAUTH_HOST=%s\n" "${OAUTH_HOST:-}"
 printf "HUBBLE_HOST=%s\n" "${HUBBLE_HOST:-}"
 printf "CLICKSTACK_HOST=%s\n" "${CLICKSTACK_HOST:-}"

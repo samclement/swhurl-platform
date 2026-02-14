@@ -26,7 +26,9 @@
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/30_cert_manager.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
+  - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_cert_manager.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
   - `scripts/35_issuer.sh --delete` is idempotent when cert-manager CRDs are already removed and skips cleanly if `clusterissuers.cert-manager.io` is unavailable.
+  - Let’s Encrypt issuer mode now supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/35_issuer.sh` ensures both `letsencrypt-staging` and `letsencrypt-prod` exist, and keeps `letsencrypt` as an alias issuer for ingress annotations.
   - `scripts/99_teardown.sh --delete` now performs real cleanup (non-k3s-native secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall.
   - `scripts/99_teardown.sh --delete` is a hard gate before `scripts/26_cilium.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
   - `scripts/98_verify_delete_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.

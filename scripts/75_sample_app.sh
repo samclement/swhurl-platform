@@ -23,7 +23,7 @@ fi
 
 if [[ "$DELETE" == true ]]; then
   kubectl delete -n "$APP_NS" ingress "$APP_NAME" --ignore-not-found
-  if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '^certificates$'; then
+  if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '(^|[.])certificates([.]|$)'; then
     kubectl delete -n "$APP_NS" certificate "$APP_NAME" --ignore-not-found || true
   else
     log_info "certificates.cert-manager.io not present; skipping certificate delete"

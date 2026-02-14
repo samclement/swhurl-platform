@@ -14,7 +14,7 @@ ensure_context
 need_cmd helmfile
 
 log_info "Verifying Helmfile environment '${HELMFILE_ENV:-default}'"
-helmfile_cmd repos >/dev/null
+log_info "Assuming Helm repos are already configured (run scripts/25_helm_repos.sh first)"
 
 log_info "Running helmfile lint"
 helmfile_cmd lint

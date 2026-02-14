@@ -1,0 +1,33 @@
+global:
+  storageClassName: local-path
+
+clickhouse:
+  persistence:
+    enabled: true
+    dataSize: 20Gi
+    logSize: 5Gi
+  prometheus:
+    enabled: false
+
+mongodb:
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+
+hyperdx:
+  apiKey: ${CLICKSTACK_API_KEY}
+  frontendUrl: https://${CLICKSTACK_HOST}
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    host: ${CLICKSTACK_HOST}
+    path: "/(.*)"
+    pathType: ImplementationSpecific
+    annotations:
+      cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
+    tls:
+      enabled: true
+      secretName: clickstack-tls
+
+otel:
+  enabled: true

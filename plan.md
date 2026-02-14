@@ -21,10 +21,8 @@ infra/
     templates/
   values/
     ingress-nginx-logging.yaml
-    fluent-bit-loki.yaml
     cilium.yaml
-    loki-single.yaml
-    kube-prometheus-stack.yaml.gotmpl
+    clickstack.yaml
     oauth2-proxy.yaml.gotmpl
     minio.yaml.gotmpl
 profiles/
@@ -42,9 +40,8 @@ scripts/
   35_issuer.sh
   40_ingress_nginx.sh
   45_oauth2_proxy.sh
-  50_logging_fluentbit.sh
-  55_loki.sh
-  60_prom_grafana.sh
+  50_clickstack.sh
+  51_otel_k8s.sh
   70_minio.sh
   75_sample_app.sh
   90_smoke_tests.sh
@@ -73,13 +70,12 @@ config.env
 9. `35_issuer.sh` (uses `infra/manifests/issuers/*`)
 10. `40_ingress_nginx.sh`
 11. `45_oauth2_proxy.sh` (if enabled)
-12. `50_logging_fluentbit.sh` (if enabled)
-13. `55_loki.sh` (if enabled)
-14. `60_prom_grafana.sh` (if enabled)
-15. `70_minio.sh` (if enabled)
-16. `75_sample_app.sh`
-17. `90_smoke_tests.sh`
-18. `91_validate_cluster.sh`
+12. `50_clickstack.sh` (if enabled)
+13. `51_otel_k8s.sh` (if enabled)
+14. `70_minio.sh` (if enabled)
+15. `75_sample_app.sh`
+16. `90_smoke_tests.sh`
+17. `91_validate_cluster.sh`
 
 Run with:
 

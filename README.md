@@ -82,7 +82,10 @@ Each step lists assumptions and outputs. Run in order.
 10. **ClusterIssuer (Let’s Encrypt or self-signed)**
    - Assumes: DNS + ports 80/443 are reachable for ACME HTTP-01 if using Let’s Encrypt.
    - Assumes: `ACME_EMAIL` is set in `profiles/secrets.env`.
-   - Output: ClusterIssuer created.
+   - For Let’s Encrypt mode: set `CLUSTER_ISSUER=letsencrypt` and choose ACME target via `LETSENCRYPT_ENV=staging|prod` (default `staging`).
+   - Output:
+     - `letsencrypt-staging` and `letsencrypt-prod` ClusterIssuers created.
+     - `letsencrypt` ClusterIssuer alias points to staging or prod based on `LETSENCRYPT_ENV`.
    - Command: `./scripts/35_issuer.sh`
 
 11. **Ingress (ingress-nginx)**

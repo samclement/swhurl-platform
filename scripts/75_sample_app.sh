@@ -20,15 +20,11 @@ log_info "Syncing sample app (helmfile: component=apps-hello)"
 release="hello-web"
 release_ns="apps"
 for kind in deploy svc ingress; do
-  if kubectl -n "$release_ns" get "$kind" hello-web >/dev/null 2>&1; then
-    kubectl -n "$release_ns" label "$kind" hello-web app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-    kubectl -n "$release_ns" annotate "$kind" hello-web meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
-  fi
+  adopt_helm_ownership "$kind" hello-web "$release" "$release_ns" "$release_ns"
 done
 if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '(^|[.])certificates([.]|$)'; then
   if kubectl -n "$release_ns" get certificate hello-web >/dev/null 2>&1; then
-    kubectl -n "$release_ns" label certificate hello-web app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-    kubectl -n "$release_ns" annotate certificate hello-web meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+    adopt_helm_ownership certificate hello-web "$release" "$release_ns" "$release_ns"
   fi
 fi
 helmfile_cmd -l component=apps-hello sync

@@ -24,10 +24,7 @@ release="platform-namespaces"
 release_ns="kube-system"
 namespaces=(platform-system ingress cert-manager logging observability storage apps)
 for ns in "${namespaces[@]}"; do
-  if kubectl get ns "$ns" >/dev/null 2>&1; then
-    kubectl label ns "$ns" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-    kubectl annotate ns "$ns" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
-  fi
+  adopt_helm_ownership ns "$ns" "$release" "$release_ns"
 done
 
 # Namespaces are managed declaratively via a local Helm chart so the platform can

@@ -44,10 +44,7 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
   selfsigned|*) issuers=(selfsigned) ;;
 esac
 for name in "${issuers[@]}"; do
-  if kubectl get clusterissuer "$name" >/dev/null 2>&1; then
-    kubectl label clusterissuer "$name" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-    kubectl annotate clusterissuer "$name" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
-  fi
+  adopt_helm_ownership clusterissuer "$name" "$release" "$release_ns"
 done
 helmfile_cmd -l phase=core-issuers sync
 

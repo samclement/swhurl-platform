@@ -69,8 +69,8 @@
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
-  - `scripts/00_lib.sh` now auto-sources `$PROFILE_FILE` (exported by `run.sh`), or falls back to `profiles/secrets.env` / `profiles/local.env` if present. This ensures direct script runs get secrets too.
-  - Gotcha: when `--profile` is used (setting `$PROFILE_FILE`), `profiles/secrets.env` is not loaded. If you need both, merge secrets into the profile or create a combined profile that sources `profiles/secrets.env`.
+  - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
+  - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.
 
 - Architecture diagram (D2)

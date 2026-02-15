@@ -18,11 +18,11 @@
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh` (along with `scripts/76_app_scaffold.sh`).
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
-  - In apply mode, `run.sh` now reorders `scripts/26_cilium.sh` to run immediately after `scripts/10_install_k3s_cilium_minimal.sh` when both are selected.
-  - Helm repositories are managed via `helmfile repos` in `scripts/25_helm_repos.sh`.
-  - In delete mode, `run.sh` executes component uninstall steps first, then `scripts/99_teardown.sh`, then `scripts/26_cilium.sh` so local-path PVC helper pods can still use CNI during namespace cleanup.
+  - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
+  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Enable `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh` with `FEAT_BOOTSTRAP_K3S=true`.
+  - Helm repositories are managed via `scripts/25_helm_repos.sh`.
+  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_cilium.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
   - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_cilium.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
-  - `run.sh` now discovers step scripts from tracked files (`git ls-files`) so untracked local scripts do not silently affect plan/order.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/30_cert_manager.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.

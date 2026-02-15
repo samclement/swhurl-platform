@@ -10,6 +10,10 @@ need_cmd kubectl
 need_cmd helm
 need_cmd helmfile
 need_cmd curl
+need_cmd rg
+need_cmd envsubst
+need_cmd base64
+need_cmd hexdump
 
 # Optional
 command -v jq >/dev/null 2>&1 || log_warn "jq not found (optional)"

@@ -14,25 +14,26 @@ Print the current plan:
 1) Prerequisites & verify
 - `scripts/01_check_prereqs.sh`
 
-2) DNS & Network Reachability
-- `scripts/12_dns_register.sh` (feature-gated by `FEAT_DNS_REGISTER`)
+Manual prerequisite (optional): DNS registration for `.swhurl.com`
+- `scripts/12_dns_register.sh` installs/updates a systemd service/timer that keeps Route53 records current.
+- Run `scripts/12_dns_register.sh --delete` to remove the unit files.
 
-3) Basic Kubernetes Cluster (kubeconfig)
+2) Basic Kubernetes Cluster (kubeconfig)
 - `scripts/15_kube_context.sh`
 - Optional host bootstrap (not part of the default platform pipeline):
   - `scripts/10_install_k3s_cilium_minimal.sh`
   - `scripts/11_cluster_k3s.sh`
   - Enable with `FEAT_BOOTSTRAP_K3S=true`
 
-4) Environment (profiles/secrets) & verification
+3) Environment (profiles/secrets) & verification
 - `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)
 
-5) Cluster deps (helm/cilium) & verification
+4) Cluster deps (helm/cilium) & verification
 - `scripts/25_helm_repos.sh`
 - `scripts/20_namespaces.sh` (Helmfile local chart: `component=platform-namespaces`)
 - `scripts/26_cilium.sh` (feature-gated by `FEAT_CILIUM`)
 
-6) Platform services & verification
+5) Platform services & verification
 - `scripts/31_helmfile_core.sh` (Helmfile: `phase=core`, installs cert-manager + ingress-nginx)
 - `scripts/31_helmfile_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`, default `LETSENCRYPT_ENV=staging`)
 - `scripts/29_platform_config.sh` (kubectl: secrets/configmaps required by Helm releases)
@@ -41,10 +42,10 @@ Print the current plan:
 Notes:
 - `scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_helmfile_core.sh`.
 
-7) Test application & verification
+6) Test application & verification
 - `scripts/75_sample_app.sh`
 
-8) Cluster verification suite
+7) Cluster verification suite
 - `scripts/90_smoke_tests.sh`
 - `scripts/91_validate_cluster.sh`
 - `scripts/92_verify_helmfile_diff.sh`

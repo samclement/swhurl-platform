@@ -58,6 +58,7 @@
   - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
   - `scripts/12_dns_register.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/12_dns_register.sh` when desired subdomains change.
+  - `scripts/12_dns_register.sh` is a manual prerequisite (not part of `run.sh`); run it once per host to install/update the systemd timer, and run with `--delete` to uninstall.
 
 - OIDC for applications
   - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:

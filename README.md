@@ -6,8 +6,9 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (gitignored, see `profiles/secrets.example.env`).
-3. Print the plan: `./scripts/02_print_plan.sh`
-4. Apply: `./run.sh`
+3. Optional (DNS for `.swhurl.com`): `./scripts/12_dns_register.sh` (installs/updates the systemd timer). Remove via `./scripts/12_dns_register.sh --delete`.
+4. Print the plan: `./scripts/02_print_plan.sh`
+5. Apply: `./run.sh`
 
 Docs:
 - Phase runbook: `docs/runbook.md`
@@ -30,13 +31,12 @@ To print the plan without executing:
 This is the top-level structure the repo follows (each phase has its own verification gates). The concrete script mapping is in `docs/runbook.md`.
 
 1. Prerequisites & verify
-2. DNS & Network Reachability & verify
-3. Basic Kubernetes Cluster (kubeconfig) & verify
-4. Environment (profiles/secrets) & verification
-5. Cluster Deps (Helm, namespaces, Cilium) & verification
-6. Cluster Platform Services (core: cert-manager + ingress, then platform: oauth/clickstack/otel/minio) & verification
-7. Test application & verification
-8. Cluster verification suite
+2. Basic Kubernetes Cluster (kubeconfig) & verify
+3. Environment (profiles/secrets) & verification
+4. Cluster Deps (Helm, namespaces, Cilium) & verification
+5. Cluster Platform Services (core: cert-manager + ingress, then platform: oauth/clickstack/otel/minio) & verification
+6. Test application & verification
+7. Cluster verification suite
 
 ### Platform Installs Are Helmfile-Driven
 
@@ -82,7 +82,6 @@ Feature flags:
 - `FEAT_CLICKSTACK`: install ClickStack (default `true`).
 - `FEAT_OTEL_K8S`: install OTel k8s collectors (default `true`).
 - `FEAT_MINIO`: install MinIO (default `true`).
-- `FEAT_DNS_REGISTER`: enable `scripts/12_dns_register.sh` (default `true`).
 - `FEAT_BOOTSTRAP_K3S`: include the optional local host k3s bootstrap steps (default `false`).
 - `FEAT_VERIFY`: run verification suite during `./run.sh` (default `true`).
 

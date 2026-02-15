@@ -9,9 +9,8 @@ legend: {
   OAuth2Proxy: "oauth2-proxy (namespace: ingress)"
   OIDC: "External Identity Provider (e.g., Google, Auth0)"
   CertManager: "cert-manager (namespace: cert-manager)"
-  FluentBit: "Fluent Bit (namespace: logging)"
-  Loki: "Loki (namespace: observability)"
-  PromGraf: "Prometheus + Grafana (namespace: observability)"
+  OTel: "OpenTelemetry Collectors (namespace: logging)"
+  ClickStack: "ClickStack (ClickHouse + HyperDX + OTel Collector) (namespace: observability)"
   MinIO: "MinIO + Console (namespace: storage)"
   App: "Sample App / Your Apps (namespace: apps)"
 }
@@ -44,15 +43,14 @@ Cluster: {
 
   LoggingNS: {
     label: "Namespace: logging"
-    FluentBit: "fluent-bit (DaemonSet)"
+    OTel: "otel-k8s (DaemonSet + Deployment)"
   }
 
   ObsNS: {
     label: "Namespace: observability"
     direction: down
-    Loki: "Loki"
-    Prometheus: "Prometheus"
-    Grafana: "Grafana"
+    ClickStack: "ClickStack (ClickHouse + HyperDX)"
+    ClickStackOtel: "ClickStack OTel Collector"
   }
 
   StorageNS: {
@@ -85,16 +83,14 @@ Cluster.CertNS.CertManager -> Cluster.IngressNS.Ingress: "provisions TLS certs"
 Cluster.CertNS.Issuers.SelfSigned -> Cluster.CertNS.CertManager
 Cluster.CertNS.Issuers.LetsEncrypt -> Cluster.CertNS.CertManager
 
-# Logging and Observability
-Cluster.LoggingNS.FluentBit -> Cluster.ObsNS.Loki: "logs"
-Cluster.ObsNS.Grafana -> Cluster.ObsNS.Loki: "datasource"
-Cluster.ObsNS.Prometheus -> Cluster.IngressNS.Ingress: "scrape metrics"
-Cluster.ObsNS.Prometheus -> Cluster.AppsNS.App: "scrape metrics"
+# Logging and Observability (OTel -> ClickStack)
+Cluster.LoggingNS.OTel -> Cluster.ObsNS.ClickStackOtel: "OTLP (logs/metrics/events)"
+Cluster.ObsNS.ClickStackOtel -> Cluster.ObsNS.ClickStack: "store + visualize"
 
 # Object Storage
 Cluster.StorageNS.MinIOConsole -> Cluster.StorageNS.MinIO: "admin/API"
 External.DNS -> Cluster.StorageNS.MinIO: "HTTPS (minio.BASE_DOMAIN)"
-External.DNS -> Cluster.ObsNS.Grafana: "HTTPS (grafana.BASE_DOMAIN)"
+External.DNS -> Cluster.ObsNS.ClickStack: "HTTPS (clickstack.BASE_DOMAIN)"
 External.DNS -> Cluster.IngressNS.OAuth2Proxy: "HTTPS (oauth.BASE_DOMAIN)"
 
 # Notes (context)
@@ -103,5 +99,5 @@ Notes: {
     stroke: "#888"
     fill: "#f9f9f9"
   }
-  label: "k3s provides the cluster. Ingress uses cert-manager for TLS. Apps can enable edge auth via oauth2-proxy. Fluent Bit ships logs to Loki; Grafana reads from Loki and Prometheus. MinIO offers S3-compatible storage and a console."
+  label: "k3s provides the cluster. Ingress uses cert-manager for TLS. Apps can enable edge auth via oauth2-proxy. OTel collectors ship telemetry to ClickStack (HyperDX + ClickHouse). MinIO offers S3-compatible storage and a console."
 }

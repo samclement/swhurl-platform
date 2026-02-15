@@ -63,11 +63,14 @@ while IFS= read -r row; do
   name="${row#*/}"
 
   if [[ "$DELETE_SCOPE" == "managed" ]]; then
-    # Only enforce cleanup expectations inside the namespaces this repo manages.
+    # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
     case "$ns" in
       apps|cert-manager|cilium-secrets|ingress|logging|observability|platform-system|storage) ;;
       *) continue ;;
     esac
+    if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'; then
+      continue
+    fi
   else
     # dedicated-cluster: enforce cluster-wide cleanup (unsafe on shared clusters).
     if [[ "$ns" == "kube-system" ]]; then
@@ -82,7 +85,7 @@ while IFS= read -r row; do
 done <<< "$secret_rows"
 
 if [[ "${#non_native[@]}" -eq 0 ]]; then
-  ok "No non-k3s-native secrets remain (scope: ${DELETE_SCOPE})"
+  ok "No platform-managed secrets remain (scope: ${DELETE_SCOPE})"
 else
   bad "Non-k3s-native secrets still present: ${non_native[*]}"
 fi

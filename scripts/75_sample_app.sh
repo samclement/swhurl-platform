@@ -54,6 +54,8 @@ kind: Kustomization
 namespace: ${APP_NS}
 resources:
   - ./base
+commonLabels:
+  platform.swhurl.io/managed: "true"
 
 configMapGenerator:
   - name: hello-params
@@ -122,6 +124,8 @@ resources:
   - service.yaml
   - certificate.yaml
   - ingress-public.yaml
+commonLabels:
+  platform.swhurl.io/managed: "true"
 K
   kubectl apply -k "$TMPDIR"
 fi

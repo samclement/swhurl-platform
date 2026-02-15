@@ -26,6 +26,8 @@ kubectl -n storage create secret generic minio-creds \
   --from-literal=rootPassword="${MINIO_ROOT_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+label_managed storage secret minio-creds
+
 sync_release minio
 
 log_info "minio installed"

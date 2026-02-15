@@ -67,6 +67,29 @@ Use a profile:
 
 ## Key Flags and Inputs
 
+Common inputs (see `docs/contracts.md` and `scripts/94_verify_config_contract.sh` for the full contract):
+
+- `KUBECONFIG`: kubectl context for the target cluster (or use `~/.kube/config`).
+- `BASE_DOMAIN`: base domain used to compute ingress hosts (defaults to `127.0.0.1.nip.io`).
+- `CLUSTER_ISSUER`: `selfsigned` or `letsencrypt` (default `selfsigned`).
+- `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) when `CLUSTER_ISSUER=letsencrypt`.
+- `TIMEOUT_SECS`: Helm/Helmfile timeouts (default `300`).
+
+Feature flags:
+
+- `FEAT_CILIUM`: install Cilium (default `true`).
+- `FEAT_OAUTH2_PROXY`: install oauth2-proxy (default `true`).
+- `FEAT_CLICKSTACK`: install ClickStack (default `true`).
+- `FEAT_OTEL_K8S`: install OTel k8s collectors (default `true`).
+- `FEAT_MINIO`: install MinIO (default `true`).
+- `FEAT_DNS_REGISTER`: enable `scripts/12_dns_register.sh` (default `true`).
+- `FEAT_BOOTSTRAP_K3S`: include the optional local host k3s bootstrap steps (default `false`).
+- `FEAT_VERIFY`: run verification suite during `./run.sh` (default `true`).
+
+Delete controls:
+
+- `DELETE_SCOPE`: `managed` (default) or `dedicated-cluster` (more aggressive; see Teardown section).
+
 ## How Environment Variables Flow (kubectl, Helm, Helmfile)
 
 This repo uses shell-sourced config (`config.env` + profiles) and relies on **exported** environment variables to drive Helmfile templating.

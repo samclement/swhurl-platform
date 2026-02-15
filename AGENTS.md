@@ -31,6 +31,7 @@
     - `scripts/29_platform_config.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
   - `scripts/92_verify_helmfile_diff.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_diff.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
+  - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
   - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_cilium.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
@@ -53,7 +54,7 @@
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
   - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/12_dns_register.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
-  - `scripts/12_dns_register.sh` now honors `PROFILE_FILE` (if set) or `profiles/local.env` for domain/subdomain overrides. It does not auto-source `profiles/secrets.env`.
+  - `scripts/12_dns_register.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/12_dns_register.sh` when desired subdomains change.
 
 - OIDC for applications
   - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:

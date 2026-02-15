@@ -68,10 +68,14 @@ wait_ds() {
 
 wait_webhook_cabundle() {
   local name="$1" timeout="${2:-${TIMEOUT_SECS:-300}}"
-  local start now ca
+  local start now ca elapsed last_log exists ca_len
   start=$(date +%s)
+  last_log=0
+  log_info "Waiting for webhook '${name}' CA bundle to be populated (timeout: ${timeout}s)"
   while true; do
+    exists=false
     if kubectl get validatingwebhookconfiguration "$name" >/dev/null 2>&1; then
+      exists=true
       ca=$(kubectl get validatingwebhookconfiguration "$name" -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || true)
       if [[ -n "$ca" ]]; then
         log_info "Webhook '${name}' CA bundle populated"
@@ -79,7 +83,17 @@ wait_webhook_cabundle() {
       fi
     fi
     now=$(date +%s)
-    if (( now - start >= timeout )); then
+    elapsed=$(( now - start ))
+    # Emit periodic status so this doesn't look like a hang.
+    if (( elapsed - last_log >= 10 )); then
+      ca_len=0
+      if [[ -n "${ca:-}" ]]; then
+        ca_len=${#ca}
+      fi
+      log_info "Still waiting: webhookConfigPresent=${exists} caBundleLen=${ca_len} elapsed=${elapsed}s"
+      last_log=$elapsed
+    fi
+    if (( elapsed >= timeout )); then
       return 1
     fi
     sleep 2

@@ -47,6 +47,10 @@ if [[ "$DELETE" == true ]]; then
     kubectl -n kube-system delete $leftover_pods --force --grace-period=0 --ignore-not-found >/dev/null 2>&1 || true
     kubectl -n kube-system wait --for=delete pod -l app.kubernetes.io/part-of=cilium --timeout=30s >/dev/null 2>&1 || true
   fi
+
+  # cilium-secrets is created/owned by Cilium. Remove it as part of Cilium teardown so
+  # reruns converge cleanly.
+  kubectl delete ns cilium-secrets --ignore-not-found >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -58,6 +62,18 @@ if [[ "${CILIUM_SKIP_FLANNEL_CHECK:-false}" != "true" ]]; then
     log_error "Reinstall k3s, then rerun this step. Set CILIUM_SKIP_FLANNEL_CHECK=true to override."
     exit 1
   fi
+fi
+
+# The Cilium chart manages `cilium-secrets` and Helm will refuse to install if the
+# namespace already exists without matching ownership metadata.
+if kubectl get ns cilium-secrets >/dev/null 2>&1; then
+  # If a previous run removed cilium-secrets, it may be Terminating briefly.
+  if [[ -n "$(kubectl get ns cilium-secrets -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)" ]]; then
+    log_info "Waiting for namespace cilium-secrets to finish terminating"
+    kubectl wait --for=delete ns/cilium-secrets --timeout=120s >/dev/null 2>&1 || true
+  fi
+  kubectl label ns cilium-secrets app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+  kubectl annotate ns cilium-secrets meta.helm.sh/release-name=cilium meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
 fi
 
 sync_release cilium

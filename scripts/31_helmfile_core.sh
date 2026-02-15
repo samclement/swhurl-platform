@@ -35,6 +35,20 @@ if ! wait_webhook_cabundle cert-manager-webhook "${TIMEOUT_SECS:-300}"; then
 fi
 
 log_info "Syncing core ClusterIssuers (phase=core-issuers)"
+# Helm refuses to install a chart that renders ClusterIssuer objects if those issuers
+# already exist without Helm ownership metadata. On existing clusters, adopt them.
+release="platform-issuers"
+release_ns="kube-system"
+case "${CLUSTER_ISSUER:-selfsigned}" in
+  letsencrypt) issuers=(letsencrypt letsencrypt-staging letsencrypt-prod) ;;
+  selfsigned|*) issuers=(selfsigned) ;;
+esac
+for name in "${issuers[@]}"; do
+  if kubectl get clusterissuer "$name" >/dev/null 2>&1; then
+    kubectl label clusterissuer "$name" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+    kubectl annotate clusterissuer "$name" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+  fi
+done
 helmfile_cmd -l phase=core-issuers sync
 
 log_info "Core Helm releases synced"

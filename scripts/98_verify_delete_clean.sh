@@ -16,6 +16,12 @@ ensure_context
 fail=0
 bad() { printf "[BAD] %s\n" "$1"; fail=1; }
 ok() { printf "[OK] %s\n" "$1"; }
+DELETE_SCOPE="${DELETE_SCOPE:-managed}" # managed | dedicated-cluster
+
+case "$DELETE_SCOPE" in
+  managed|dedicated-cluster) ;;
+  *) bad "DELETE_SCOPE must be one of: managed, dedicated-cluster (got: ${DELETE_SCOPE})" ;;
+esac
 
 # 1) No Helm releases should remain.
 if [[ "$(helm list -A -q | wc -l | tr -d '[:space:]')" == "0" ]]; then
@@ -56,10 +62,18 @@ while IFS= read -r row; do
   ns="${row%%/*}"
   name="${row#*/}"
 
-  # allowed kube-system native secrets
-  if [[ "$ns" == "kube-system" ]]; then
-    if [[ "$name" == "k3s-serving" || "$name" == *.node-password.k3s || "$name" == bootstrap-token-* ]]; then
-      continue
+  if [[ "$DELETE_SCOPE" == "managed" ]]; then
+    # Only enforce cleanup expectations inside the namespaces this repo manages.
+    case "$ns" in
+      apps|cert-manager|cilium-secrets|ingress|logging|observability|platform-system|storage) ;;
+      *) continue ;;
+    esac
+  else
+    # dedicated-cluster: enforce cluster-wide cleanup (unsafe on shared clusters).
+    if [[ "$ns" == "kube-system" ]]; then
+      if [[ "$name" == "k3s-serving" || "$name" == *.node-password.k3s || "$name" == bootstrap-token-* ]]; then
+        continue
+      fi
     fi
   fi
 
@@ -68,7 +82,7 @@ while IFS= read -r row; do
 done <<< "$secret_rows"
 
 if [[ "${#non_native[@]}" -eq 0 ]]; then
-  ok "No non-k3s-native secrets remain"
+  ok "No non-k3s-native secrets remain (scope: ${DELETE_SCOPE})"
 else
   bad "Non-k3s-native secrets still present: ${non_native[*]}"
 fi

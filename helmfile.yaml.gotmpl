@@ -25,7 +25,6 @@ releases:
     labels:
       app: platform-namespaces
       tier: bootstrap
-      phase: bootstrap
       component: platform-namespaces
 
   - name: cilium
@@ -36,7 +35,7 @@ releases:
     labels:
       app: cilium
       tier: network
-      phase: network
+      component: cilium
     values:
       - infra/values/cilium-helmfile.yaml.gotmpl
 
@@ -50,6 +49,7 @@ releases:
       app: cert-manager
       tier: security
       phase: core
+      component: cert-manager
     values:
       - infra/values/cert-manager-helmfile.yaml.gotmpl
 
@@ -77,6 +77,7 @@ releases:
       app: ingress-nginx
       tier: ingress
       phase: core
+      component: ingress-nginx
     values:
       - infra/values/ingress-nginx-logging.yaml
 
@@ -92,6 +93,7 @@ releases:
       app: oauth2-proxy
       tier: ingress
       phase: platform
+      component: oauth2-proxy
     values:
       - infra/values/oauth2-proxy-helmfile.yaml.gotmpl
 
@@ -107,6 +109,7 @@ releases:
       app: clickstack
       tier: observability
       phase: platform
+      component: clickstack
     values:
       - infra/values/clickstack-helmfile.yaml.gotmpl
 
@@ -121,6 +124,7 @@ releases:
       app: otel-k8s-daemonset
       tier: observability
       phase: platform
+      component: otel-k8s-daemonset
     values:
       - infra/values/otel-k8s-daemonset.yaml
 
@@ -136,6 +140,7 @@ releases:
       app: otel-k8s-cluster
       tier: observability
       phase: platform
+      component: otel-k8s-cluster
     values:
       - infra/values/otel-k8s-deployment.yaml
 
@@ -151,6 +156,7 @@ releases:
       app: minio
       tier: storage
       phase: platform
+      component: minio
     values:
       - infra/values/minio-helmfile.yaml.gotmpl
 
@@ -164,7 +170,6 @@ releases:
     labels:
       app: hello-web
       tier: apps
-      phase: apps
       component: apps-hello
     values:
       - infra/values/apps-hello-helmfile.yaml.gotmpl

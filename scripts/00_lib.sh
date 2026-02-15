@@ -148,16 +148,50 @@ helmfile_cmd() {
 }
 
 sync_release() {
-  local release="$1"
-  helmfile_cmd -l app="$release" sync
+  # Single-release convergence should key off a stable label rather than release name.
+  # We standardize on `component=<id>` across Helmfile releases.
+  local component="$1"
+  helmfile_cmd -l component="$component" sync
 }
 
 destroy_release() {
-  local release="$1"
-  helmfile_cmd -l app="$release" destroy
+  local component="$1"
+  helmfile_cmd -l component="$component" destroy
 }
 
 label_managed() {
   local ns="$1" kind="$2" name="$3"
   kubectl -n "$ns" label "$kind" "$name" platform.swhurl.io/managed=true --overwrite >/dev/null 2>&1 || true
+}
+
+adopt_helm_ownership() {
+  # Adopt an existing resource so Helm can manage it without failing due to missing
+  # ownership metadata (meta.helm.sh/* and app.kubernetes.io/managed-by).
+  #
+  # Usage:
+  #   adopt_helm_ownership <kind> <name> <release> <release_ns> [namespace]
+  local kind="$1" name="$2" release="$3" release_ns="$4" ns="${5:-}"
+
+  [[ -n "$kind" && -n "$name" && -n "$release" && -n "$release_ns" ]] || return 0
+
+  # Namespace resources are always cluster-scoped.
+  if [[ "$kind" == "ns" || "$kind" == "namespace" || "$kind" == "namespaces" ]]; then
+    if kubectl get ns "$name" >/dev/null 2>&1; then
+      kubectl label ns "$name" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+      kubectl annotate ns "$name" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
+  if [[ -n "$ns" ]]; then
+    if kubectl -n "$ns" get "$kind" "$name" >/dev/null 2>&1; then
+      kubectl -n "$ns" label "$kind" "$name" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+      kubectl -n "$ns" annotate "$kind" "$name" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+    fi
+  else
+    if kubectl get "$kind" "$name" >/dev/null 2>&1; then
+      kubectl label "$kind" "$name" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+      kubectl annotate "$kind" "$name" meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+    fi
+  fi
 }

@@ -18,6 +18,9 @@
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
+  - Helmfile label conventions:
+    - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
+    - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Enable `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh` with `FEAT_BOOTSTRAP_K3S=true`.
   - Helm repositories are managed via `scripts/25_helm_repos.sh`.

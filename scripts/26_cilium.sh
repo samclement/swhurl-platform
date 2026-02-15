@@ -72,8 +72,7 @@ if kubectl get ns cilium-secrets >/dev/null 2>&1; then
     log_info "Waiting for namespace cilium-secrets to finish terminating"
     kubectl wait --for=delete ns/cilium-secrets --timeout=120s >/dev/null 2>&1 || true
   fi
-  kubectl label ns cilium-secrets app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
-  kubectl annotate ns cilium-secrets meta.helm.sh/release-name=cilium meta.helm.sh/release-namespace=kube-system --overwrite >/dev/null 2>&1 || true
+  adopt_helm_ownership ns cilium-secrets cilium kube-system
 fi
 
 sync_release cilium

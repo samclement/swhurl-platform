@@ -41,6 +41,10 @@ Helmfile labels so orchestration can target phases:
 - `phase=core` (cert-manager + ingress-nginx)
 - `phase=platform` (oauth2-proxy, clickstack, otel collectors, minio)
 
+Additionally, thin wrapper scripts that operate on a single release use:
+
+- `component=<id>`: stable selector for `sync_release` / `destroy_release` wrappers in `scripts/00_lib.sh`.
+
 ### Helm
 
 Helm does not substitute environment variables in values by default. In this repo Helm is

@@ -45,9 +45,8 @@ else
   bad "36_helmfile_platform.sh: uses helmfile_cmd with phase=platform label selection"
 fi
 
-# Legacy per-component scripts remain available for targeted debugging and should
-# keep using the shared Helmfile helpers when they manage Helm releases.
-for s in 26_cilium.sh 30_cert_manager.sh 40_ingress_nginx.sh 45_oauth2_proxy.sh 50_clickstack.sh 51_otel_k8s.sh 70_minio.sh; do
+# Release-specific scripts should keep using shared Helmfile helpers if/when they exist.
+for s in 26_cilium.sh 30_cert_manager.sh; do
   p="$SCRIPT_DIR/$s"
   if rg -q 'sync_release ' "$p"; then
     ok "$s: sync_release path present"

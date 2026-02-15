@@ -39,7 +39,7 @@ Print the current plan:
 - `scripts/36_helmfile_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags)
 
 Notes:
-- The older per-component scripts (`30_*.sh`, `40_*.sh`, `45_*.sh`, `50_*.sh`, `51_*.sh`, `70_*.sh`) still exist for targeted debugging, but the default `./run.sh` path uses the Helmfile phase scripts above.
+- `scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_helmfile_core.sh`.
 
 7) Test application & verification
 - `scripts/75_sample_app.sh`

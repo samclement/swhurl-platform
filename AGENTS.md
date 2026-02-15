@@ -43,7 +43,7 @@
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
-  - Observability is installed via `scripts/50_clickstack.sh`; legacy `scripts/50_logging_fluentbit.sh`, `scripts/55_loki.sh`, and `scripts/60_prom_grafana.sh` have been removed.
+  - Observability is installed via `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
@@ -56,21 +56,19 @@
     - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
     - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
     - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`) or directly via `./scripts/45_oauth2_proxy.sh`.
+  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`).
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
 
 - Observability with ClickStack
-  - Default install path uses `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`. `scripts/50_clickstack.sh` remains available for targeted debugging/reruns.
+  - Default install path uses `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
-  - `scripts/50_clickstack.sh` only uses `CLICKSTACK_API_KEY` and now fails fast if it is unset.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Default install path uses `scripts/29_platform_config.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_helmfile_platform.sh` (installs the collector releases). `scripts/51_otel_k8s.sh` remains available for targeted debugging/reruns.
+  - Default install path uses `scripts/29_platform_config.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_helmfile_platform.sh` (installs the collector releases).
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
-  - `scripts/51_otel_k8s.sh` only uses `CLICKSTACK_INGESTION_KEY` and now fails fast if it is unset.
-  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/51_otel_k8s.sh`.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/51_otel_k8s.sh`.
+  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
@@ -250,10 +248,10 @@ metadata:
 Install ClickStack (ClickHouse + HyperDX + OTel Collector):
 
 ```
-./scripts/50_clickstack.sh
+./scripts/36_helmfile_platform.sh
 ```
 
-This script syncs the declarative Helmfile release (`app=clickstack`) using `infra/values/clickstack-helmfile.yaml.gotmpl` and exposes HyperDX at `https://${CLICKSTACK_HOST}` with cert-manager TLS.
+This script syncs Helmfile releases labeled `phase=platform`, including ClickStack, and exposes HyperDX at `https://${CLICKSTACK_HOST}` with cert-manager TLS.
 
 If oauth2-proxy is enabled, auth annotations are applied declaratively by Helmfile values.
 
@@ -262,7 +260,8 @@ If oauth2-proxy is enabled, auth annotations are applied declaratively by Helmfi
 Install Kubernetes-focused OTel collectors (daemonset + deployment) and forward telemetry to ClickStack:
 
 ```
-./scripts/51_otel_k8s.sh
+./scripts/29_platform_config.sh
+./scripts/36_helmfile_platform.sh
 ```
 
 This follows the ClickStack Kubernetes integration pattern using the upstream `open-telemetry/opentelemetry-collector` chart.

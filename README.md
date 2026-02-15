@@ -49,7 +49,7 @@ The default `./run.sh` path uses these scripts:
 - `scripts/29_platform_config.sh`: creates/deletes the small set of non-Helm resources the charts depend on (Secrets/ConfigMaps).
 - `scripts/36_helmfile_platform.sh`: `helmfile sync/destroy -l phase=platform`.
 
-The older per-component scripts (`scripts/30_*`, `scripts/40_*`, `scripts/45_*`, `scripts/50_*`, `scripts/51_*`, `scripts/70_*`) still exist for targeted debugging/reruns, but are not the default orchestration path.
+`scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
 
 Run everything:
 

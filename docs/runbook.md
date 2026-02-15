@@ -34,7 +34,7 @@ Print the current plan:
 
 6) Platform services & verification
 - `scripts/31_helmfile_core.sh` (Helmfile: `phase=core`, installs cert-manager + ingress-nginx)
-- `scripts/35_issuer.sh` (Kustomize: `infra/manifests/issuers/*`, default `LETSENCRYPT_ENV=staging`)
+- `scripts/31_helmfile_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`, default `LETSENCRYPT_ENV=staging`)
 - `scripts/29_platform_config.sh` (kubectl: secrets/configmaps required by Helm releases)
 - `scripts/36_helmfile_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags)
 

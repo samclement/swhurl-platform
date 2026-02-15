@@ -105,6 +105,35 @@ wait_webhook_cabundle() {
   done
 }
 
+wait_crd_established() {
+  local crd="$1" timeout="${2:-${TIMEOUT_SECS:-300}}"
+  local start now elapsed last_log status
+  start=$(date +%s)
+  last_log=0
+  log_info "Waiting for CRD '${crd}' to be Established (timeout: ${timeout}s)"
+  while true; do
+    status="$(kubectl get crd "$crd" -o jsonpath='{range .status.conditions[?(@.type=="Established")]}{.status}{end}' 2>/dev/null || true)"
+    if [[ "$status" == "True" ]]; then
+      log_info "CRD '${crd}' is Established"
+      return 0
+    fi
+    now=$(date +%s)
+    elapsed=$(( now - start ))
+    if (( elapsed - last_log >= 10 )); then
+      if kubectl get crd "$crd" >/dev/null 2>&1; then
+        log_info "Still waiting: crdPresent=true establishedStatus=${status:-<empty>} elapsed=${elapsed}s"
+      else
+        log_info "Still waiting: crdPresent=false elapsed=${elapsed}s"
+      fi
+      last_log=$elapsed
+    fi
+    if (( elapsed >= timeout )); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 helm_upsert() {
   local release="$1" chart="$2" ns="$3"; shift 3
   kubectl_ns "$ns"

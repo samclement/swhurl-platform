@@ -115,8 +115,8 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 - Kustomize does not read arbitrary environment variables by default.
 - This repo uses Kustomize for mostly-static resources under `infra/manifests/*`.
 - When a manifest needs a runtime value, the pattern is either:
-  - Use Helmfile templating/values for Helm-managed resources, or
-  - Build with `kubectl kustomize ...` and then inject via `envsubst` in a script (e.g. `scripts/35_issuer.sh` for `ACME_EMAIL`).
+  - Use Helmfile templating/values for Helm-managed resources (preferred for platform components), or
+  - Build with `kubectl kustomize ...` and inject values via explicit script logic (apps only).
 
 Environment layering
 - `config.env`: non-secret defaults (committed).
@@ -125,7 +125,7 @@ Environment layering
 
 ACME / Let’s Encrypt
 - Default is staging: `LETSENCRYPT_ENV=staging`
-- `scripts/35_issuer.sh` ensures:
+- `scripts/31_helmfile_core.sh` ensures:
   - `letsencrypt-staging` and `letsencrypt-prod` exist
   - `letsencrypt` is an alias issuer that points to the selected env (so most ingresses can keep `cert-manager.io/cluster-issuer: letsencrypt`)
 

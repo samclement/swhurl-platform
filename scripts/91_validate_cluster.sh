@@ -38,28 +38,28 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
       warn "ACME_EMAIL is empty; cannot validate letsencrypt email"
     elif kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
       actual_email=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.email}')
-      check_eq "letsencrypt.email" "${ACME_EMAIL}" "$actual_email" "scripts/35_issuer.sh"
+      check_eq "letsencrypt.email" "${ACME_EMAIL}" "$actual_email" "scripts/31_helmfile_core.sh"
       expected_server="https://acme-staging-v02.api.letsencrypt.org/directory"
       case "${LETSENCRYPT_ENV:-staging}" in
         prod|production) expected_server="https://acme-v02.api.letsencrypt.org/directory" ;;
       esac
       actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
-      check_eq "letsencrypt.server" "${expected_server}" "$actual_server" "scripts/35_issuer.sh"
+      check_eq "letsencrypt.server" "${expected_server}" "$actual_server" "scripts/31_helmfile_core.sh"
       if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
         ok "letsencrypt-staging ClusterIssuer present"
       else
         mismatch "ClusterIssuer letsencrypt-staging not found"
-        add_suggest "scripts/35_issuer.sh"
+        add_suggest "scripts/31_helmfile_core.sh"
       fi
       if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
         ok "letsencrypt-prod ClusterIssuer present"
       else
         mismatch "ClusterIssuer letsencrypt-prod not found"
-        add_suggest "scripts/35_issuer.sh"
+        add_suggest "scripts/31_helmfile_core.sh"
       fi
     else
       mismatch "ClusterIssuer letsencrypt not found"
-      add_suggest "scripts/35_issuer.sh"
+      add_suggest "scripts/31_helmfile_core.sh"
     fi
     ;;
   selfsigned)
@@ -67,7 +67,7 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
       ok "selfsigned ClusterIssuer present"
     else
       mismatch "ClusterIssuer selfsigned not found"
-      add_suggest "scripts/35_issuer.sh"
+      add_suggest "scripts/31_helmfile_core.sh"
     fi
     ;;
   *)

@@ -1,0 +1,25 @@
+# Controls which issuers to render.
+mode: selfsigned # selfsigned | letsencrypt
+
+labels:
+  platform.swhurl.io/managed: "true"
+
+selfsigned:
+  name: selfsigned
+
+letsencrypt:
+  # The two explicit issuers are always rendered in letsencrypt mode.
+  stagingName: letsencrypt-staging
+  prodName: letsencrypt-prod
+  selectedEnv: staging # staging | prod
+  aliasName: letsencrypt
+  createAlias: true
+
+  email: ""
+  ingressClass: nginx
+
+  # Secrets where cert-manager stores the ACME account private keys.
+  # Keep these stable so switching env doesn't create unnecessary churn.
+  stagingAccountKeySecretName: acme-account-key-staging
+  prodAccountKeySecretName: acme-account-key-prod
+  aliasAccountKeySecretName: acme-account-key

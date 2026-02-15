@@ -142,7 +142,6 @@ build_apply_plan() {
 
   # 6) Platform Services
   add_step out_arr "$(step_path 31_helmfile_core.sh)"
-  add_step out_arr "$(step_path 35_issuer.sh)"
   add_step out_arr "$(step_path 29_platform_config.sh)"
   add_step out_arr "$(step_path 36_helmfile_platform.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
@@ -172,7 +171,6 @@ build_delete_plan() {
 
   add_step out_arr "$(step_path 36_helmfile_platform.sh)"
   add_step out_arr "$(step_path 29_platform_config.sh)"
-  add_step out_arr "$(step_path 35_issuer.sh)"
   add_step out_arr "$(step_path 31_helmfile_core.sh)"
   add_step out_arr "$(step_path 30_cert_manager.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.

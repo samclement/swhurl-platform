@@ -1,0 +1,5 @@
+apiVersion: v2
+name: platform-issuers
+description: ClusterIssuers for the swhurl platform (selfsigned and Let's Encrypt)
+type: application
+version: 0.1.0

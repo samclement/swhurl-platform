@@ -26,14 +26,28 @@ fi
 
 kubectl_ns ingress
 # oauth2-proxy expects a cookie secret that is exactly 16, 24, or 32 bytes.
-# Generate a 32-character ASCII hex secret safely (no pipefail issues) if not provided.
+# Create-once semantics:
+# - If OAUTH_COOKIE_SECRET is set: enforce it and update the Secret.
+# - Else: do not mutate an existing Secret (avoids auth outages on rerun).
 GEN_COOKIE_SECRET() { hexdump -v -e '/1 "%02X"' -n 16 /dev/urandom; }
-COOKIE_SECRET_VAL="${OAUTH_COOKIE_SECRET:-$(GEN_COOKIE_SECRET)}"
-kubectl -n ingress create secret generic oauth2-proxy-secret \
-  --from-literal=client-id="${OIDC_CLIENT_ID:-unset}" \
-  --from-literal=client-secret="${OIDC_CLIENT_SECRET:-unset}" \
-  --from-literal=cookie-secret="${COOKIE_SECRET_VAL}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then
+  if [[ -n "${OAUTH_COOKIE_SECRET:-}" ]]; then
+    kubectl -n ingress create secret generic oauth2-proxy-secret \
+      --from-literal=client-id="${OIDC_CLIENT_ID}" \
+      --from-literal=client-secret="${OIDC_CLIENT_SECRET}" \
+      --from-literal=cookie-secret="${OAUTH_COOKIE_SECRET}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_info "oauth2-proxy-secret already exists and OAUTH_COOKIE_SECRET is unset; leaving cookie secret unchanged"
+  fi
+else
+  COOKIE_SECRET_VAL="${OAUTH_COOKIE_SECRET:-$(GEN_COOKIE_SECRET)}"
+  kubectl -n ingress create secret generic oauth2-proxy-secret \
+    --from-literal=client-id="${OIDC_CLIENT_ID}" \
+    --from-literal=client-secret="${OIDC_CLIENT_SECRET}" \
+    --from-literal=cookie-secret="${COOKIE_SECRET_VAL}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 # Verify secret exists and cookie-secret length is valid (16/24/32)
 for i in {1..10}; do
@@ -55,7 +69,5 @@ export OAUTH_REDIRECT_URL="$REDIRECT_URL"
 sync_release oauth2-proxy
 
 wait_deploy ingress oauth2-proxy
-# Ensure pods pick up any updated secret values (cookie-secret changes)
-kubectl -n ingress rollout restart deploy/oauth2-proxy >/dev/null 2>&1 || true
-wait_deploy ingress oauth2-proxy
+# If the Secret was updated explicitly, the deploy will roll anyway; no forced restart here.
 log_info "oauth2-proxy installed"

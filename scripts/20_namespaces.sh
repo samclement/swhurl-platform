@@ -5,5 +5,5 @@ source "$SCRIPT_DIR/00_lib.sh"
 
 ensure_context
 
-kubectl apply -f "$SCRIPT_DIR/../infra/manifests/namespaces.yaml"
+kubectl apply -k "$SCRIPT_DIR/../infra/manifests/platform"
 log_info "Namespaces applied"

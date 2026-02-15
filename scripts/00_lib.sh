@@ -6,16 +6,13 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Load config if present
+# Load config and profile. Helmfile templates use env-vars via `env "FOO"`,
+# so we need to export loaded values, not just set shell variables.
+set -a
 if [[ -f "$ROOT_DIR/config.env" ]]; then
   # shellcheck disable=SC1090
   source "$ROOT_DIR/config.env"
 fi
-
-# Optionally layer a profile for secrets/overrides. Priority:
-# 1) $PROFILE_FILE if set and exists
-# 2) $ROOT_DIR/profiles/secrets.env if exists
-# 3) $ROOT_DIR/profiles/local.env if exists
 if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$PROFILE_FILE"
@@ -26,6 +23,7 @@ elif [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
   # shellcheck disable=SC1090
   source "$ROOT_DIR/profiles/local.env"
 fi
+set +a
 
 log_info() { printf "[INFO] %s\n" "$*"; }
 log_warn() { printf "[WARN] %s\n" "$*"; }

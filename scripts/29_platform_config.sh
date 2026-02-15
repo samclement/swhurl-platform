@@ -8,12 +8,29 @@ for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
 ensure_context
 
+is_managed() {
+  local ns="$1" kind="$2" name="$3"
+  kubectl -n "$ns" get "$kind" "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'
+}
+
+delete_if_managed() {
+  local ns="$1" kind="$2" name="$3"
+  if kubectl -n "$ns" get "$kind" "$name" >/dev/null 2>&1; then
+    if is_managed "$ns" "$kind" "$name"; then
+      log_info "Deleting managed ${ns}/${kind}/${name}"
+      kubectl -n "$ns" delete "$kind" "$name" --ignore-not-found >/dev/null 2>&1 || true
+    else
+      log_warn "Skipping delete of ${ns}/${kind}/${name} (missing label platform.swhurl.io/managed=true)"
+    fi
+  fi
+}
+
 if [[ "$DELETE" == true ]]; then
   log_info "Deleting platform config resources (secrets/configmaps)"
-  kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n logging delete secret hyperdx-secret --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n logging delete configmap otel-config-vars --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n storage delete secret minio-creds --ignore-not-found >/dev/null 2>&1 || true
+  delete_if_managed ingress secret oauth2-proxy-secret
+  delete_if_managed logging secret hyperdx-secret
+  delete_if_managed logging configmap otel-config-vars
+  delete_if_managed storage secret minio-creds
   exit 0
 fi
 
@@ -24,6 +41,8 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   [[ -n "${OIDC_CLIENT_SECRET:-}" ]] || die "OIDC_CLIENT_SECRET is required when FEAT_OAUTH2_PROXY=true"
 
   kubectl_ns ingress
+
+  log_info "Ensuring ingress/Secret oauth2-proxy-secret (OIDC client + cookie secret)"
 
   # oauth2-proxy expects a cookie secret that is exactly 16, 24, or 32 bytes.
   # Create-once semantics:
@@ -75,10 +94,12 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   INGESTION_KEY="${CLICKSTACK_INGESTION_KEY:-}"
   [[ -n "$INGESTION_KEY" ]] || die "CLICKSTACK_INGESTION_KEY is required when FEAT_OTEL_K8S=true"
 
+  log_info "Ensuring logging/Secret hyperdx-secret (HYPERDX_API_KEY from CLICKSTACK_INGESTION_KEY)"
   kubectl -n logging create secret generic hyperdx-secret \
     --from-literal=HYPERDX_API_KEY="$INGESTION_KEY" \
     --dry-run=client -o yaml | kubectl apply -f -
 
+  log_info "Ensuring logging/ConfigMap otel-config-vars (HYPERDX_OTLP_ENDPOINT)"
   kubectl -n logging create configmap otel-config-vars \
     --from-literal=HYPERDX_OTLP_ENDPOINT="$OTLP_ENDPOINT" \
     --dry-run=client -o yaml | kubectl apply -f -
@@ -93,6 +114,7 @@ if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
   [[ -n "${MINIO_ROOT_USER:-}" ]] || die "MINIO_ROOT_USER is required when FEAT_MINIO=true"
   [[ -n "${MINIO_ROOT_PASSWORD:-}" ]] || die "MINIO_ROOT_PASSWORD is required when FEAT_MINIO=true"
 
+  log_info "Ensuring storage/Secret minio-creds (existingSecret for MinIO chart)"
   kubectl -n storage create secret generic minio-creds \
     --from-literal=rootUser="${MINIO_ROOT_USER}" \
     --from-literal=rootPassword="${MINIO_ROOT_PASSWORD}" \
@@ -102,4 +124,3 @@ if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
 fi
 
 log_info "Platform config resources ensured"
-

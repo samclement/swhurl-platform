@@ -56,10 +56,13 @@ This repo uses shell-sourced config (`config.env` + profiles) and relies on **ex
 
 1) `./run.sh` and `./scripts/*`
 - `./run.sh` sources `config.env` and an optional `--profile FILE` for orchestration decisions (feature flags, plan).
-- Each script then sources `scripts/00_lib.sh`, which sources `config.env` and either:
-  - `$PROFILE_FILE` (when `--profile` is used), or
-  - `profiles/secrets.env` (fallback), or
-  - `profiles/local.env` (fallback)
+- Each script then sources `scripts/00_lib.sh`, which layers config in this order:
+  - `config.env`
+  - `profiles/local.env` (if present)
+  - `profiles/secrets.env` (if present)
+  - `$PROFILE_FILE` (when `--profile` is used; highest precedence)
+- If you want a standalone profile that does *not* also load `profiles/local.env` and `profiles/secrets.env`, set:
+  - `PROFILE_EXCLUSIVE=true`
 - `scripts/00_lib.sh` uses `set -a` while sourcing so variables are **exported** for child processes (notably `helmfile`).
 
 2) `helmfile` (templating and values)

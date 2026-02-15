@@ -34,8 +34,9 @@
   - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/30_cert_manager.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
   - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_cert_manager.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
-  - `scripts/35_issuer.sh --delete` is idempotent when cert-manager CRDs are already removed and skips cleanly if `clusterissuers.cert-manager.io` is unavailable.
-  - Let’s Encrypt issuer mode now supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/35_issuer.sh` ensures both `letsencrypt-staging` and `letsencrypt-prod` exist, and keeps `letsencrypt` as an alias issuer for ingress annotations.
+  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_helmfile_core.sh` applies ClusterIssuers via a local chart:
+    - Always creates `letsencrypt-staging` and `letsencrypt-prod`
+    - Keeps `letsencrypt` as an alias issuer pointing at the selected env (for stable ingress annotations)
   - `scripts/99_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_teardown.sh --delete` is a hard gate before `scripts/26_cilium.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
   - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_cilium.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_delete_clean.sh` checks it even when `DELETE_SCOPE=managed`.

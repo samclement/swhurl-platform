@@ -1,0 +1,11 @@
+{{- if eq (.Values.mode | default "selfsigned") "selfsigned" -}}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.selfsigned.name | default "selfsigned" | quote }}
+  labels:
+{{ include "platform-issuers.labels" . | indent 4 }}
+spec:
+  selfSigned: {}
+{{- end -}}
+

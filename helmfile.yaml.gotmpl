@@ -53,6 +53,20 @@ releases:
     values:
       - infra/values/cert-manager-helmfile.yaml.gotmpl
 
+  - name: platform-issuers
+    namespace: kube-system
+    chart: ./charts/platform-issuers
+    installed: true
+    needs:
+      - cert-manager/cert-manager
+    labels:
+      app: platform-issuers
+      tier: security
+      phase: core-issuers
+      component: platform-issuers
+    values:
+      - infra/values/platform-issuers-helmfile.yaml.gotmpl
+
   - name: ingress-nginx
     namespace: ingress
     chart: ingress-nginx/ingress-nginx

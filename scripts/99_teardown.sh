@@ -15,6 +15,7 @@ ensure_context
 
 managed_namespaces=(apps cert-manager cilium-secrets ingress logging observability platform-system storage)
 NAMESPACE_DELETE_TIMEOUT_SECS="${NAMESPACE_DELETE_TIMEOUT_SECS:-180}"
+DELETE_SCOPE="${DELETE_SCOPE:-managed}" # managed | dedicated-cluster
 
 is_allowed_k3s_secret() {
   local ns="$1" name="$2"
@@ -24,17 +25,34 @@ is_allowed_k3s_secret() {
   [[ "$name" == "k3s-serving" || "$name" == *.node-password.k3s || "$name" == bootstrap-token-* || "$name" == sh.helm.release.v1.cilium.* ]]
 }
 
-log_info "Sweeping non-k3s-native secrets"
-secret_rows="$(kubectl get secret -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
-while IFS= read -r row; do
-  [[ -z "$row" ]] && continue
-  ns="${row%%/*}"
-  name="${row#*/}"
-  if is_allowed_k3s_secret "$ns" "$name"; then
-    continue
-  fi
-  kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true
-done <<< "$secret_rows"
+case "$DELETE_SCOPE" in
+  managed|dedicated-cluster) ;;
+  *) die "DELETE_SCOPE must be one of: managed, dedicated-cluster (got: ${DELETE_SCOPE})" ;;
+esac
+
+if [[ "$DELETE_SCOPE" == "dedicated-cluster" ]]; then
+  log_warn "DELETE_SCOPE=dedicated-cluster: sweeping secrets cluster-wide (unsafe on shared clusters)"
+  secret_rows="$(kubectl get secret -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+  while IFS= read -r row; do
+    [[ -z "$row" ]] && continue
+    ns="${row%%/*}"
+    name="${row#*/}"
+    if is_allowed_k3s_secret "$ns" "$name"; then
+      continue
+    fi
+    kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true
+  done <<< "$secret_rows"
+else
+  log_info "Sweeping platform secrets in managed namespaces only (DELETE_SCOPE=managed)"
+  for ns in "${managed_namespaces[@]}"; do
+    kubectl get ns "$ns" >/dev/null 2>&1 || continue
+    mapfile -t names < <(kubectl -n "$ns" get secret -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+    for name in "${names[@]}"; do
+      [[ -z "$name" ]] && continue
+      kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true
+    done
+  done
+fi
 
 log_info "Deleting managed namespaces: ${managed_namespaces[*]}"
 for ns in "${managed_namespaces[@]}"; do

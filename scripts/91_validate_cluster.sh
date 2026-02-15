@@ -129,14 +129,14 @@ fi
 say "ingress-nginx"
 if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
   actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
-  check_eq "service.type" "NodePort" "$actual_svc_type" "scripts/40_ingress_nginx.sh"
+  check_eq "service.type" "NodePort" "$actual_svc_type" "scripts/31_helmfile_core.sh"
   actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
   actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-  check_eq "nodePort.http" "31514" "$actual_http_np" "scripts/40_ingress_nginx.sh"
-  check_eq "nodePort.https" "30313" "$actual_https_np" "scripts/40_ingress_nginx.sh"
+  check_eq "nodePort.http" "31514" "$actual_http_np" "scripts/31_helmfile_core.sh"
+  check_eq "nodePort.https" "30313" "$actual_https_np" "scripts/31_helmfile_core.sh"
 else
   mismatch "ingress-nginx service not found"
-  add_suggest "scripts/40_ingress_nginx.sh"
+  add_suggest "scripts/31_helmfile_core.sh"
 fi
 
 if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
@@ -145,19 +145,19 @@ if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
     ok "log-format-upstream present"
   else
     mismatch "log-format-upstream missing"
-    add_suggest "scripts/40_ingress_nginx.sh"
+    add_suggest "scripts/31_helmfile_core.sh"
   fi
 else
   mismatch "ingress-nginx configmap not found"
-  add_suggest "scripts/40_ingress_nginx.sh"
+  add_suggest "scripts/31_helmfile_core.sh"
 fi
 
 if kubectl get ingressclass nginx >/dev/null 2>&1; then
   actual_default=$(kubectl get ingressclass nginx -o jsonpath='{.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class}')
-  check_eq "ingressclass.default" "true" "$actual_default" "scripts/40_ingress_nginx.sh"
+  check_eq "ingressclass.default" "true" "$actual_default" "scripts/31_helmfile_core.sh"
 else
   mismatch "ingressclass nginx not found"
-  add_suggest "scripts/40_ingress_nginx.sh"
+  add_suggest "scripts/31_helmfile_core.sh"
 fi
 
 say "oauth2-proxy"
@@ -165,11 +165,11 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/45_oauth2_proxy.sh"
-    check_eq "oauth2-proxy.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/45_oauth2_proxy.sh"
+    check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/36_helmfile_platform.sh"
+    check_eq "oauth2-proxy.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_helmfile_platform.sh"
   else
     mismatch "oauth2-proxy ingress not found"
-    add_suggest "scripts/45_oauth2_proxy.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
 else
   ok "FEAT_OAUTH2_PROXY=false; skipping"
@@ -180,37 +180,37 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
   if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/50_clickstack.sh"
-    check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/50_clickstack.sh"
+    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_helmfile_platform.sh"
+    check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_helmfile_platform.sh"
     if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
       expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
       expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
       actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
-      check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/50_clickstack.sh"
-      check_eq "clickstack.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/50_clickstack.sh"
+      check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/36_helmfile_platform.sh"
+      check_eq "clickstack.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/36_helmfile_platform.sh"
     fi
   else
     mismatch "clickstack ingress not found"
-    add_suggest "scripts/50_clickstack.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
     ok "clickstack app deployment present"
   else
     mismatch "clickstack app deployment not found"
-    add_suggest "scripts/50_clickstack.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     ok "clickstack otel collector deployment present"
   else
     mismatch "clickstack otel collector deployment not found"
-    add_suggest "scripts/50_clickstack.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
     ok "clickstack clickhouse deployment present"
   else
     mismatch "clickstack clickhouse deployment not found"
-    add_suggest "scripts/50_clickstack.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
 else
   ok "FEAT_CLICKSTACK=false; skipping"
@@ -222,25 +222,25 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
     ok "otel-k8s daemonset release present"
   else
     mismatch "otel-k8s daemonset release not found"
-    add_suggest "scripts/51_otel_k8s.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
     ok "otel-k8s cluster deployment release present"
   else
     mismatch "otel-k8s cluster deployment release not found"
-    add_suggest "scripts/51_otel_k8s.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
     ok "hyperdx-secret present"
   else
     mismatch "hyperdx-secret missing"
-    add_suggest "scripts/51_otel_k8s.sh"
+    add_suggest "scripts/29_platform_config.sh"
   fi
   if kubectl -n logging get configmap otel-config-vars >/dev/null 2>&1; then
     ok "otel-config-vars configmap present"
   else
     mismatch "otel-config-vars configmap missing"
-    add_suggest "scripts/51_otel_k8s.sh"
+    add_suggest "scripts/29_platform_config.sh"
   fi
   if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1 && kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     sender_token="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d || true)"
@@ -251,7 +251,8 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
     )"
     if [[ -n "$sender_token" && -n "$receiver_token" && "$sender_token" != "$receiver_token" ]]; then
       mismatch "otel token mismatch: logging/hyperdx-secret does not match clickstack receiver token"
-      add_suggest "scripts/51_otel_k8s.sh"
+      add_suggest "scripts/29_platform_config.sh"
+      add_suggest "scripts/36_helmfile_platform.sh"
     else
       ok "otel token alignment check passed"
     fi
@@ -265,20 +266,20 @@ if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/70_minio.sh"
-    check_eq "minio.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/70_minio.sh"
+    check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/36_helmfile_platform.sh"
+    check_eq "minio.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_helmfile_platform.sh"
   else
     mismatch "minio ingress not found"
-    add_suggest "scripts/70_minio.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
   if kubectl -n storage get ingress minio-console >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/70_minio.sh"
-    check_eq "minio-console.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/70_minio.sh"
+    check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/36_helmfile_platform.sh"
+    check_eq "minio-console.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_helmfile_platform.sh"
   else
     mismatch "minio-console ingress not found"
-    add_suggest "scripts/70_minio.sh"
+    add_suggest "scripts/36_helmfile_platform.sh"
   fi
 else
   ok "FEAT_MINIO=false; skipping"

@@ -65,9 +65,8 @@ Kustomize does not consume arbitrary env vars by default. If Kustomize resources
 - Make them Helmfile/Helm-managed (preferred for platform components).
 - Or keep them Kustomize-only for apps and inject values via explicit script logic.
 
-This repo does not ship a Kustomize manifest tree by default (no `infra/manifests/`). The verification step
-`scripts/95_verify_kustomize_builds.sh` will pass when it is missing; it only runs builds if you add your own
-`kustomization.yaml` files.
+This repo does not ship a Kustomize manifest tree by default (no `infra/manifests/`). If you add your own
+`kustomization.yaml` files, validate them explicitly with `kubectl kustomize` in CI.
 
 ## Delete Contract
 

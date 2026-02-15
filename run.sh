@@ -155,7 +155,6 @@ build_apply_plan() {
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_diff.sh)"
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 93_verify_release_inventory.sh)"
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 95_dump_context.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 95_verify_kustomize_builds.sh)"
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 96_verify_script_surface.sh)"
 }
 
@@ -238,7 +237,7 @@ run_step() {
       ;;
     31_helmfile_core.sh|36_helmfile_platform.sh)
       ;;
-    90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|95_verify_kustomize_builds.sh|96_verify_script_surface.sh)
+    90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|96_verify_script_surface.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
     98_verify_delete_clean.sh|99_teardown.sh)
       [[ "$DELETE_MODE" == true ]] || { echo "[skip] $base (delete-only)"; return 0; } ;;

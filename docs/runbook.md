@@ -40,7 +40,6 @@ Print the current plan:
 
 Notes:
 - `scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_helmfile_core.sh`.
-- `scripts/95_verify_kustomize_builds.sh` is intentionally a no-op by default: this repo does not ship `infra/manifests/` and does not use Kustomize in the default pipeline.
 
 7) Test application & verification
 - `scripts/75_sample_app.sh`
@@ -51,7 +50,6 @@ Notes:
 - `scripts/92_verify_helmfile_diff.sh`
 - `scripts/93_verify_release_inventory.sh`
 - `scripts/95_dump_context.sh`
-- `scripts/95_verify_kustomize_builds.sh`
 - `scripts/96_verify_script_surface.sh`
 
 ## Phases (Delete)

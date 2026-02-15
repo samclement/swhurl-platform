@@ -164,14 +164,30 @@ k3s uninstall is manual unless `K3S_UNINSTALL=true`:
 sudo /usr/local/bin/k3s-uninstall.sh
 ```
 
-## Layout
+## Repo Layout (What Goes Where)
+
+This repo separates **declarative state** (Helmfile/Kustomize) from **orchestration** (scripts):
+
+- `run.sh`: phase-based orchestrator (apply and delete ordering).
+- `config.env`: committed, non-secret defaults and feature flags.
+- `profiles/`: local overrides and secrets (layered on top of `config.env`).
+- `environments/`: Helmfile environments and derived values (`.Environment.Values`) used by `helmfile.yaml.gotmpl`.
+- `helmfile.yaml.gotmpl`: declarative Helm releases (Cilium, cert-manager, ingress-nginx, oauth2-proxy, ClickStack, OTel collectors, MinIO).
+- `infra/`: declarative Kubernetes inputs owned by this repo.
+- `infra/values/`: Helm chart values files (referenced by Helmfile releases).
+- `infra/manifests/`: Kustomize bases/overlays for non-Helm resources (namespaces, issuers, sample app).
+- `scripts/`: thin step scripts used by `run.sh` (apply/delete) plus verification scripts.
+- `docs/`: runbook and architecture diagram sources.
 
 ```
+docs/
+environments/
 infra/
   manifests/
   values/
 profiles/
 scripts/
 config.env
+helmfile.yaml.gotmpl
 run.sh
 ```

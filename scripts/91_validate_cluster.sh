@@ -162,6 +162,12 @@ fi
 
 say "oauth2-proxy"
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+  if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then
+    ok "oauth2-proxy-secret present"
+  else
+    mismatch "oauth2-proxy-secret missing"
+    add_suggest "scripts/29_platform_config.sh"
+  fi
   if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
@@ -263,6 +269,12 @@ fi
 
 say "MinIO"
 if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
+  if kubectl -n storage get secret minio-creds >/dev/null 2>&1; then
+    ok "minio-creds secret present"
+  else
+    mismatch "minio-creds secret missing"
+    add_suggest "scripts/29_platform_config.sh"
+  fi
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')

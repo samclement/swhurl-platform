@@ -12,3 +12,5 @@ secrets/
 *.swp
 *.swo
 
+# Local scratch notes (keep untracked)
+todo.md

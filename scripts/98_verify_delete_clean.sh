@@ -32,7 +32,7 @@ else
 fi
 
 # 2) Managed namespaces should be gone.
-managed_namespaces=(apps cert-manager cilium-secrets ingress logging observability platform-system storage)
+managed_namespaces=(apps cert-manager ingress logging observability platform-system storage)
 ns_left=()
 for ns in "${managed_namespaces[@]}"; do
   if kubectl get ns "$ns" >/dev/null 2>&1; then
@@ -43,6 +43,13 @@ if [[ "${#ns_left[@]}" -eq 0 ]]; then
   ok "Managed namespaces removed"
 else
   bad "Managed namespaces still present: ${ns_left[*]}"
+fi
+
+# 2b) Cilium-owned namespace should be removed after cilium delete.
+if kubectl get ns cilium-secrets >/dev/null 2>&1; then
+  bad "Cilium namespace still present: cilium-secrets"
+else
+  ok "Cilium namespace removed: cilium-secrets"
 fi
 
 # 3) Cilium/cert-manager CRDs should be gone.
@@ -72,7 +79,7 @@ while IFS= read -r row; do
 
     # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
     case "$ns" in
-      apps|cert-manager|cilium-secrets|ingress|logging|observability|platform-system|storage) ;;
+      apps|cert-manager|ingress|logging|observability|platform-system|storage) ;;
       *) continue ;;
     esac
     if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'; then

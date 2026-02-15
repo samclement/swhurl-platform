@@ -13,7 +13,7 @@ fi
 
 ensure_context
 
-managed_namespaces=(apps cert-manager cilium-secrets ingress logging observability platform-system storage)
+managed_namespaces=(apps cert-manager ingress logging observability platform-system storage)
 NAMESPACE_DELETE_TIMEOUT_SECS="${NAMESPACE_DELETE_TIMEOUT_SECS:-180}"
 DELETE_SCOPE="${DELETE_SCOPE:-managed}" # managed | dedicated-cluster
 

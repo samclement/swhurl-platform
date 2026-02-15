@@ -6,7 +6,8 @@ namespaces:
   - observability
   - storage
   - apps
-  - cilium-secrets
+  # NOTE: cilium-secrets is owned by the Cilium chart. Do not manage it here or
+  # Helm will fail to install Cilium on clusters where this chart ran first.
 
 labels:
   platform.swhurl.io/managed: "true"

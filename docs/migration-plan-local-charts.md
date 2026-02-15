@@ -25,7 +25,7 @@ Changes
 
 Validation
 - `./run.sh`
-- `./run.sh --delete && ./scripts/98_verify_delete_clean.sh --delete`
+- `./run.sh --delete`
 
 ## Step 1: Move Managed Namespaces to a Local Chart
 
@@ -85,4 +85,3 @@ Changes
 
 Validation
 - Run delete twice; second run is a fast no-op and still passes `98`.
-

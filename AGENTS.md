@@ -22,7 +22,7 @@
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
-  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` + `scripts/manual_k3s_context.sh` manually if needed.
+  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_kube_context.sh`.
   - Helm repositories are managed via `scripts/25_helm_repos.sh`.
   - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_namespaces.sh` and `scripts/31_helmfile_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.

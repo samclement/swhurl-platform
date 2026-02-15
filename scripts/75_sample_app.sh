@@ -8,102 +8,34 @@ for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
 ensure_context
 
-APP_NS=apps
-APP_NAME=hello-web
-
-# Derive host: allow override via APP_HOST, else use BASE_DOMAIN
-HOST="${APP_HOST:-}"
-if [[ -z "$HOST" ]]; then
-  if [[ -n "${BASE_DOMAIN:-}" ]]; then
-    HOST="hello.${BASE_DOMAIN}"
-  else
-    die "BASE_DOMAIN is not set and APP_HOST not provided; cannot render sample app Ingress. Set BASE_DOMAIN (e.g., 127.0.0.1.nip.io) or export APP_HOST."
-  fi
-fi
-
 if [[ "$DELETE" == true ]]; then
-  kubectl delete -n "$APP_NS" ingress "$APP_NAME" --ignore-not-found
-  if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '(^|[.])certificates([.]|$)'; then
-    kubectl delete -n "$APP_NS" certificate "$APP_NAME" --ignore-not-found || true
-  else
-    log_info "certificates.cert-manager.io not present; skipping certificate delete"
-  fi
-  kubectl delete -n "$APP_NS" deploy "$APP_NAME" svc "$APP_NAME" --ignore-not-found
-  kubectl delete ns "$APP_NS" --ignore-not-found
+  log_info "Destroying sample app (helmfile: component=apps-hello)"
+  helmfile_cmd -l component=apps-hello destroy >/dev/null 2>&1 || true
   exit 0
 fi
 
-kubectl_ns "$APP_NS"
+need_cmd helmfile
 
-TLS_SECRET="${TLS_SECRET:-${APP_NAME}-tls}"
-ISSUER="${ISSUER:-${CLUSTER_ISSUER}}"
-IMAGE="${IMAGE:-docker.io/nginx:1.25-alpine}"
-AUTH_ENABLED="${APP_AUTH_ENABLED:-${FEAT_OAUTH2_PROXY:-false}}"
-
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-# Copy base to avoid kustomize security boundary issues
-mkdir -p "$TMPDIR/base"
-cp -r "$SCRIPT_DIR/../infra/manifests/apps/hello/base/"* "$TMPDIR/base/"
-
-cat > "$TMPDIR/kustomization.yaml" <<K
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: ${APP_NS}
-resources:
-  - ./base
-commonLabels:
-  platform.swhurl.io/managed: "true"
-
-configMapGenerator:
-  - name: hello-params
-    literals:
-      - host=${HOST}
-      - tlsSecret=${TLS_SECRET}
-      - issuerName=${ISSUER}
-
-replacements:
-  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.host}
-    targets:
-      - select: {kind: Ingress, name: ${APP_NAME}}
-        fieldPaths: [spec.rules.0.host, spec.tls.0.hosts.0]
-      - select: {kind: Certificate, name: ${APP_NAME}}
-        fieldPaths: [spec.dnsNames.0]
-  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.tlsSecret}
-    targets:
-      - select: {kind: Ingress, name: ${APP_NAME}}
-        fieldPaths: [spec.tls.0.secretName]
-      - select: {kind: Certificate, name: ${APP_NAME}}
-        fieldPaths: [spec.secretName]
-  - source: {kind: ConfigMap, name: hello-params, fieldPath: data.issuerName}
-    targets:
-      - select: {kind: Certificate, name: ${APP_NAME}}
-        fieldPaths: [spec.issuerRef.name]
-K
-
-if [[ "$AUTH_ENABLED" == true && -n "${OAUTH_HOST:-}" ]]; then
-  cat > "$TMPDIR/auth-patch.yaml" <<K
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ${APP_NAME}
-  annotations:
-    nginx.ingress.kubernetes.io/auth-url: https://${OAUTH_HOST}/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri
-K
-  cat >> "$TMPDIR/kustomization.yaml" <<K
-
-patches:
-  - path: auth-patch.yaml
-    target:
-      kind: Ingress
-      name: ${APP_NAME}
-K
-elif [[ "$AUTH_ENABLED" == true ]]; then
-  log_warn "APP_AUTH_ENABLED/FEAT_OAUTH2_PROXY is true but OAUTH_HOST is empty; skipping auth annotations"
+log_info "Syncing sample app (helmfile: component=apps-hello)"
+release="hello-web"
+release_ns="apps"
+for kind in deploy svc ingress; do
+  if kubectl -n "$release_ns" get "$kind" hello-web >/dev/null 2>&1; then
+    kubectl -n "$release_ns" label "$kind" hello-web app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+    kubectl -n "$release_ns" annotate "$kind" hello-web meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+  fi
+done
+if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q '(^|[.])certificates([.]|$)'; then
+  if kubectl -n "$release_ns" get certificate hello-web >/dev/null 2>&1; then
+    kubectl -n "$release_ns" label certificate hello-web app.kubernetes.io/managed-by=Helm --overwrite >/dev/null 2>&1 || true
+    kubectl -n "$release_ns" annotate certificate hello-web meta.helm.sh/release-name="$release" meta.helm.sh/release-namespace="$release_ns" --overwrite >/dev/null 2>&1 || true
+  fi
 fi
+helmfile_cmd -l component=apps-hello sync
 
-kubectl apply -k "$TMPDIR"
-
-wait_deploy "$APP_NS" "$APP_NAME"
-log_info "Sample app deployed at https://${HOST}"
+HOST="$(kubectl -n apps get ingress hello-web -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
+if [[ -n "$HOST" ]]; then
+  log_info "Sample app deployed at https://${HOST}"
+else
+  log_info "Sample app deployed"
+fi

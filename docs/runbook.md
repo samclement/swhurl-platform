@@ -1,6 +1,6 @@
 # Platform Runbook (Phases)
 
-This repo is organized into explicit phases so you can run, verify, and debug the platform in stages. Scripts should be thin wrappers; declarative state lives in Helmfile and Kustomize.
+This repo is organized into explicit phases so you can run, verify, and debug the platform in stages. Scripts should be thin wrappers; declarative state lives in Helmfile and local charts (Kustomize is optional and currently unused by the default pipeline).
 
 Print the current plan:
 

@@ -67,7 +67,7 @@ Use a profile:
 
 ## Key Flags and Inputs
 
-## How Environment Variables Flow (kubectl, Helm, Helmfile, Kustomize)
+## How Environment Variables Flow (kubectl, Helm, Helmfile)
 
 This repo uses shell-sourced config (`config.env` + profiles) and relies on **exported** environment variables to drive Helmfile templating.
 
@@ -111,12 +111,10 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 - `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
 - Some charts rely on runtime Secrets/ConfigMaps that are created with `kubectl` (see `scripts/29_platform_config.sh`). Those resources are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`.
 
-5) `kustomize` (raw manifests)
+5) `kustomize` (optional)
+- Kustomize is not used by the default pipeline anymore; it’s kept as an optional tool for teams that prefer raw manifests for apps.
 - Kustomize does not read arbitrary environment variables by default.
-- This repo uses Kustomize for mostly-static resources under `infra/manifests/*`.
-- When a manifest needs a runtime value, the pattern is either:
-  - Use Helmfile templating/values for Helm-managed resources (preferred for platform components), or
-  - Build with `kubectl kustomize ...` and inject values via explicit script logic (apps only).
+- If you use Kustomize and need runtime values, prefer Helmfile/local charts for platform components, and keep Kustomize to apps-only overlays.
 
 Environment layering
 - `config.env`: non-secret defaults (committed).
@@ -168,7 +166,7 @@ sudo /usr/local/bin/k3s-uninstall.sh
 
 ## Repo Layout (What Goes Where)
 
-This repo separates **declarative state** (Helmfile/Kustomize) from **orchestration** (scripts):
+This repo separates **declarative state** (Helmfile/local charts) from **orchestration** (scripts):
 
 - `run.sh`: phase-based orchestrator (apply and delete ordering).
 - `config.env`: committed, non-secret defaults and feature flags.
@@ -178,7 +176,6 @@ This repo separates **declarative state** (Helmfile/Kustomize) from **orchestrat
 - `charts/`: local Helm charts for repo-owned Kubernetes resources (e.g. managed namespaces; later issuers/apps).
 - `infra/`: declarative Kubernetes inputs owned by this repo.
 - `infra/values/`: Helm chart values files (referenced by Helmfile releases).
-- `infra/manifests/`: Kustomize bases/overlays for non-Helm resources (issuers, sample app).
 - `scripts/`: thin step scripts used by `run.sh` (apply/delete) plus verification scripts.
 - `docs/`: runbook and architecture diagram sources.
 

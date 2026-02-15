@@ -18,7 +18,19 @@ bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
 fail=0
 printf "== Kustomize Build Verification ==\n"
 
-mapfile -t targets < <(find "$SCRIPT_DIR/../infra/manifests" -name kustomization.yaml -printf '%h\n' | sort)
+manifests_root="$SCRIPT_DIR/../infra/manifests"
+if [[ ! -d "$manifests_root" ]]; then
+  ok "No kustomizations found (infra/manifests missing; this repo is Helmfile/local-chart driven)"
+  ok "Kustomize build verification passed"
+  exit 0
+fi
+
+mapfile -t targets < <(find "$manifests_root" -name kustomization.yaml -printf '%h\n' 2>/dev/null | sort)
+if [[ "${#targets[@]}" -eq 0 ]]; then
+  ok "No kustomizations found (this repo is Helmfile/local-chart driven)"
+  ok "Kustomize build verification passed"
+  exit 0
+fi
 for t in "${targets[@]}"; do
   if kubectl kustomize "$t" >/dev/null 2>&1; then
     ok "$t"

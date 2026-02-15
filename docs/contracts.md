@@ -56,13 +56,14 @@ Important dry-run behavior:
 - There is no supported “skip admission” flag for server dry-run. If webhook-free validation is required,
   use `--dry-run=client`.
 
-### Kustomize
+### Kustomize (Optional)
 
-Kustomize does not consume arbitrary env vars by default. If Kustomize resources require runtime values,
-the supported patterns are:
+Kustomize is not used by the default pipeline anymore; it’s kept optional for app teams who prefer raw manifests.
+
+Kustomize does not consume arbitrary env vars by default. If Kustomize resources require runtime values, the supported patterns are:
 
 - Make them Helmfile/Helm-managed (preferred for platform components).
-- Or keep them Kustomize-only and inject values via explicit script logic (apps only).
+- Or keep them Kustomize-only for apps and inject values via explicit script logic.
 
 ## Delete Contract
 
@@ -77,4 +78,3 @@ Delete scope:
 
 - `DELETE_SCOPE=managed` (default): sweep only resources in namespaces this repo manages.
 - `DELETE_SCOPE=dedicated-cluster`: opt-in, more aggressive cleanup for dedicated clusters.
-

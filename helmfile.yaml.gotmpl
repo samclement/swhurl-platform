@@ -153,3 +153,18 @@ releases:
       phase: platform
     values:
       - infra/values/minio-helmfile.yaml.gotmpl
+
+  - name: hello-web
+    namespace: apps
+    chart: ./charts/apps-hello
+    installed: true
+    needs:
+      - ingress/ingress-nginx
+      - kube-system/platform-issuers
+    labels:
+      app: hello-web
+      tier: apps
+      phase: apps
+      component: apps-hello
+    values:
+      - infra/values/apps-hello-helmfile.yaml.gotmpl

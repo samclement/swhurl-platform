@@ -1,0 +1,32 @@
+nameOverride: hello-web
+
+labels:
+  platform.swhurl.io/managed: "true"
+
+image:
+  repository: docker.io/nginx
+  tag: "1.25-alpine"
+
+replicaCount: 1
+
+service:
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "hello.127.0.0.1.nip.io"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tlsSecretName: hello-web-tls
+
+tls:
+  enabled: true
+  issuerName: selfsigned
+  dnsNames:
+    - "hello.127.0.0.1.nip.io"
+
+auth:
+  enabled: false
+  oauthHost: ""

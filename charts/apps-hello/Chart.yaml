@@ -1,0 +1,5 @@
+apiVersion: v2
+name: apps-hello
+description: Sample hello-web app (Deployment + Service + Ingress + Certificate)
+type: application
+version: 0.1.0

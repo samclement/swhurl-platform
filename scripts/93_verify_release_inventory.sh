@@ -21,7 +21,9 @@ fail=0
 say "Required Releases"
 
 expected=(
+  "kube-system/platform-namespaces"
   "cert-manager/cert-manager"
+  "kube-system/platform-issuers"
   "ingress/ingress-nginx"
 )
 [[ "${FEAT_CILIUM:-true}" == "true" ]] && expected+=("kube-system/cilium")

@@ -15,15 +15,14 @@ Print the current plan:
 - `scripts/01_check_prereqs.sh`
 
 Manual prerequisite (optional): DNS registration for `.swhurl.com`
-- `scripts/12_dns_register.sh` installs/updates a systemd service/timer that keeps Route53 records current.
-- Run `scripts/12_dns_register.sh --delete` to remove the unit files.
+- `scripts/manual_dns_register.sh` installs/updates a systemd service/timer that keeps Route53 records current.
+- Run `scripts/manual_dns_register.sh --delete` to remove the unit files.
 
 2) Basic Kubernetes Cluster (kubeconfig)
 - `scripts/15_kube_context.sh`
-- Optional host bootstrap (not part of the default platform pipeline):
-  - `scripts/10_install_k3s_cilium_minimal.sh`
-  - `scripts/11_cluster_k3s.sh`
-  - Enable with `FEAT_BOOTSTRAP_K3S=true`
+Manual prerequisite (optional): Local host bootstrap (k3s)
+- `scripts/manual_install_k3s_minimal.sh` installs k3s with Traefik + flannel disabled (Cilium is installed separately).
+- `scripts/manual_k3s_context.sh` provides k3s-specific kubeconfig hints and an optional uninstall helper.
 
 3) Environment (profiles/secrets) & verification
 - `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)

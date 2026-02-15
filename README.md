@@ -6,7 +6,7 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (gitignored, see `profiles/secrets.example.env`).
-3. Optional (DNS for `.swhurl.com`): `./scripts/12_dns_register.sh` (installs/updates the systemd timer). Remove via `./scripts/12_dns_register.sh --delete`.
+3. Optional (DNS for `.swhurl.com`): `./scripts/manual_dns_register.sh` (installs/updates the systemd timer). Remove via `./scripts/manual_dns_register.sh --delete`.
 4. Print the plan: `./scripts/02_print_plan.sh`
 5. Apply: `./run.sh`
 
@@ -82,7 +82,6 @@ Feature flags:
 - `FEAT_CLICKSTACK`: install ClickStack (default `true`).
 - `FEAT_OTEL_K8S`: install OTel k8s collectors (default `true`).
 - `FEAT_MINIO`: install MinIO (default `true`).
-- `FEAT_BOOTSTRAP_K3S`: include the optional local host k3s bootstrap steps (default `false`).
 - `FEAT_VERIFY`: run verification suite during `./run.sh` (default `true`).
 
 Delete controls:
@@ -152,8 +151,8 @@ ACME / Let’s Encrypt
 
 k3s bootstrap (optional)
 - Cluster provisioning is not the default workflow. If you want the repo to install k3s on the local host:
-  - Set `FEAT_BOOTSTRAP_K3S=true`
-  - The plan includes `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh`
+  - Run `scripts/manual_install_k3s_minimal.sh` (installs k3s with Traefik + flannel disabled; Cilium is installed separately)
+  - Verify cluster reachability with `scripts/manual_k3s_context.sh` (or `scripts/15_kube_context.sh` for generic kubeconfig validation)
 
 Verification toggles
 - `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.

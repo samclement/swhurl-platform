@@ -63,6 +63,13 @@ while IFS= read -r row; do
   name="${row#*/}"
 
   if [[ "$DELETE_SCOPE" == "managed" ]]; then
+    # kube-system is normally excluded in managed scope, but this secret is created by the
+    # platform (Cilium Hubble UI + cert-manager ingress-shim) and should be deleted.
+    if [[ "$ns" == "kube-system" && "$name" == "hubble-ui-tls" ]]; then
+      non_native+=("$row")
+      continue
+    fi
+
     # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
     case "$ns" in
       apps|cert-manager|cilium-secrets|ingress|logging|observability|platform-system|storage) ;;

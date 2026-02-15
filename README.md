@@ -115,7 +115,7 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 - Kustomize is not used by the default pipeline anymore; it’s kept as an optional tool for teams that prefer raw manifests for apps.
 - Kustomize does not read arbitrary environment variables by default.
 - If you use Kustomize and need runtime values, prefer Helmfile/local charts for platform components, and keep Kustomize to apps-only overlays.
-- This repo does not ship an `infra/manifests/` Kustomize tree by default; `scripts/95_verify_kustomize_builds.sh` is a no-op unless you add your own kustomizations.
+- This repo does not ship an `infra/manifests/` Kustomize tree by default.
 
 Environment layering
 - `config.env`: non-secret defaults (committed).

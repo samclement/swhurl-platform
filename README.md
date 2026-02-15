@@ -4,140 +4,39 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 
 ## Quick Start
 
-1. Install prerequisites.
-2. Install or connect to k3s.
-3. Make DNS and ports reachable for ACME.
-4. Configure `config.env` and `profiles/secrets.env`.
-5. Run `./run.sh`.
+1. Configure non-secrets in `config.env`.
+2. Configure secrets in `profiles/secrets.env` (gitignored, see `profiles/secrets.example.env`).
+3. Print the plan: `./scripts/02_print_plan.sh`
+4. Apply: `./run.sh`
 
-## Assumptions and Sequence
+Docs:
+- Phase runbook: `docs/runbook.md`
 
-Each step lists assumptions and outputs. Run in order.
+## How This Repo Is Structured
 
-1. **Prereqs**
-   - Assumes: `kubectl`, `helm`, `curl` installed.
-   - Output: tools are available locally.
-   - Command: `./scripts/01_check_prereqs.sh`
+The platform is run in explicit phases so you can apply/verify/debug in stages. The orchestrator (`run.sh`) does not discover scripts dynamically; it runs an explicit plan.
 
-2. **Install or Connect to k3s**
-   - Assumes: you will install k3s on a host or use an existing cluster.
-   - Output: a reachable Kubernetes API from your machine.
-   - Example install (local host, Cilium-compatible):
-     ```bash
-     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --flannel-backend=none --disable-network-policy" sh -
-     ```
-   - Kubeconfig example:
-     ```bash
-     sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-     sudo chown $(id -u):$(id -g) ~/.kube/config
-     ```
-   - Verify access:
-     ```bash
-     kubectl get nodes
-     ```
+To print the plan without executing:
 
-3. **DNS and Network Reachability (required for cert-manager with ACME)**
-   - Assumes: your cluster ingress is reachable from the public internet on ports 80 and 443.
-   - Assumes: your DNS A/CNAME records point at your public IP (or upstream router).
-   - Assumes: your router forwards 80/443 to the k3s node running ingress-nginx.
-   - Output: `*.${BASE_DOMAIN}` resolves to your public IP and is reachable on 80/443 (including `hubble.${BASE_DOMAIN}` for the Hubble UI).
-   - If using swhurl.com dynamic DNS on Linux:
-     ```bash
-     ./scripts/12_dns_register.sh
-     ```
-   - If not using swhurl.com, create your DNS records manually.
+```bash
+./scripts/02_print_plan.sh
+./scripts/02_print_plan.sh --delete
+```
 
-4. **Configure Environment**
-   - Assumes: you can edit local files and keep secrets out of git.
-   - Output: values consumed by scripts.
-   - Edit `config.env` for non-secrets and domain settings.
-   - Put secrets in `profiles/secrets.env` (gitignored). See `profiles/secrets.example.env`.
+## Phases (Install)
 
-5. **Verify kube context**
-   - Assumes: kubeconfig is pointing at the target cluster.
-   - Output: the scripts will operate on the intended cluster.
-   - Command: `./scripts/15_kube_context.sh`
+This is the top-level structure the repo follows (each phase has its own verification gates). The concrete script mapping is in `docs/runbook.md`.
 
-6. **Namespaces (declarative)**
-   - Assumes: kube API is reachable.
-   - Output: core namespaces created.
-   - Command: `./scripts/20_namespaces.sh`
+1. Prerequisites & verify
+2. DNS & Network Reachability & verify
+3. Basic Kubernetes Cluster (kubeconfig) & verify
+4. Environment (profiles/secrets) & verification
+5. Cluster Deps (Helm, namespaces, Cilium) & verification
+6. Cluster Platform Services (cert-manager, ingress, oauth, clickstack, otel, minio) & verification
+7. Test application & verification
+8. Cluster verification suite
 
-7. **Helm repositories**
-   - Assumes: network access to chart repos.
-   - Output: required Helm repos added and updated.
-   - Command: `./scripts/25_helm_repos.sh`
-
-8. **CNI (Cilium)**
-   - Assumes: k3s was installed with `--flannel-backend=none --disable-network-policy`.
-   - Output: Cilium daemonset and operator running.
-   - Command: `./scripts/26_cilium.sh`
-   - If flannel is detected, reinstall k3s or set `CILIUM_SKIP_FLANNEL_CHECK=true` to override.
-
-9. **cert-manager**
-   - Assumes: cluster can create CRDs and deployments.
-   - Output: cert-manager installed and ready.
-   - Command: `./scripts/30_cert_manager.sh`
-
-10. **ClusterIssuer (Let’s Encrypt or self-signed)**
-   - Assumes: DNS + ports 80/443 are reachable for ACME HTTP-01 if using Let’s Encrypt.
-   - Assumes: `ACME_EMAIL` is set in `profiles/secrets.env`.
-   - For Let’s Encrypt mode: set `CLUSTER_ISSUER=letsencrypt` and choose ACME target via `LETSENCRYPT_ENV=staging|prod` (default `staging`).
-   - Output:
-     - `letsencrypt-staging` and `letsencrypt-prod` ClusterIssuers created.
-     - `letsencrypt` ClusterIssuer alias points to staging or prod based on `LETSENCRYPT_ENV`.
-   - Command: `./scripts/35_issuer.sh`
-
-11. **Ingress (ingress-nginx)**
-    - Assumes: NodePort is reachable from your router (80->31514, 443->30313).
-    - Output: ingress-nginx installed and default IngressClass set.
-    - Command: `./scripts/40_ingress_nginx.sh`
-
-12. **OAuth2 Proxy (optional)**
-    - Assumes: OIDC provider credentials are set in `profiles/secrets.env`.
-    - Output: oauth2-proxy deployed with ingress + TLS.
-    - Command: `./scripts/45_oauth2_proxy.sh`
-
-13. **Observability (ClickStack, optional)**
-    - Assumes: ingress and cert-manager are ready.
-    - Assumes: `CLICKSTACK_API_KEY` is set in `profiles/secrets.env`.
-    - Output: ClickStack (ClickHouse + HyperDX + OTel Collector) deployed with ingress + TLS.
-    - Host: `${CLICKSTACK_HOST}`.
-    - Important: ClickStack/HyperDX may generate or rotate runtime keys on first startup; configured keys may not remain authoritative.
-    - Command: `./scripts/50_clickstack.sh`
-
-14. **Kubernetes OTel Collectors (optional)**
-    - Assumes: ClickStack is installed in `observability`.
-    - Assumes: `CLICKSTACK_INGESTION_KEY` is copied from the current HyperDX UI key and set in `profiles/secrets.env`.
-    - Output: OTel DaemonSet + cluster Deployment shipping K8s logs/metrics/events to ClickStack OTLP endpoint.
-    - Command: `./scripts/51_otel_k8s.sh`
-    - If exporters return 401:
-      1. Login to HyperDX (`${CLICKSTACK_HOST}`) and open API Keys.
-      2. Copy the current ingestion key.
-      3. Update `CLICKSTACK_INGESTION_KEY` in your profile.
-      4. Re-run `./scripts/51_otel_k8s.sh`.
-
-15. **MinIO (optional)**
-    - Assumes: storage namespace exists and credentials are set in `profiles/secrets.env`.
-    - Output: MinIO and console ingresses.
-    - Command: `./scripts/70_minio.sh`
-
-16. **Sample App**
-    - Assumes: `BASE_DOMAIN` is set and DNS resolves.
-    - Output: sample app with ingress and cert.
-    - Command: `./scripts/75_sample_app.sh`
-
-17. **Smoke Tests**
-   - Assumes: core components are installed.
-   - Output: basic health validation.
-   - Command: `./scripts/90_smoke_tests.sh`
-
-18. **State Validation (cluster vs local config)**
-    - Assumes: components are installed and kube API is reachable.
-    - Output: mismatches reported with suggested re-runs.
-    - Command: `./scripts/91_validate_cluster.sh`
-
-## Full Run
+Run everything:
 
 ```bash
 ./run.sh
@@ -149,11 +48,38 @@ Use a profile:
 ./run.sh --profile profiles/minimal.env
 ```
 
-## Teardown
+## Key Flags and Inputs
+
+Environment layering
+- `config.env`: non-secret defaults (committed).
+- `profiles/secrets.env`: secrets (gitignored).
+- `--profile FILE`: additional overrides (exported to child scripts as `PROFILE_FILE`).
+
+ACME / Let’s Encrypt
+- Default is staging: `LETSENCRYPT_ENV=staging`
+- `scripts/35_issuer.sh` ensures:
+  - `letsencrypt-staging` and `letsencrypt-prod` exist
+  - `letsencrypt` is an alias issuer that points to the selected env (so most ingresses can keep `cert-manager.io/cluster-issuer: letsencrypt`)
+
+k3s bootstrap (optional)
+- Cluster provisioning is not the default workflow. If you want the repo to install k3s on the local host:
+  - Set `FEAT_BOOTSTRAP_K3S=true`
+  - The plan includes `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh`
+
+Verification toggles
+- `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.
+
+## Teardown (Delete)
 
 ```bash
 ./run.sh --delete
 ```
+
+Delete ordering is intentionally strict:
+- Platform services are removed first.
+- `scripts/99_teardown.sh` sweeps managed namespaces, non-k3s-native secrets, and platform CRDs.
+- Cilium is deleted last (`scripts/26_cilium.sh --delete`), so k3s/local-path helper pods can still run during PVC/namespace cleanup.
+- `scripts/98_verify_delete_clean.sh` runs last and fails the delete if anything remains.
 
 k3s uninstall is manual unless `K3S_UNINSTALL=true`:
 

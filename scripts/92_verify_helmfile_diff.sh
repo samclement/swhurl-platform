@@ -31,7 +31,17 @@ trap 'rm -f "$rendered"' EXIT
 log_info "Rendering desired manifests (helmfile template)"
 helmfile_cmd template > "$rendered"
 
-log_info "Validating rendered manifests against live API (kubectl dry-run=server)"
+SERVER_DRY_RUN="${HELMFILE_SERVER_DRY_RUN:-true}" # true|false
+if [[ "$SERVER_DRY_RUN" != "true" && "$SERVER_DRY_RUN" != "false" ]]; then
+  die "HELMFILE_SERVER_DRY_RUN must be true or false (got: ${SERVER_DRY_RUN})"
+fi
+
+if [[ "$SERVER_DRY_RUN" == "false" ]]; then
+  log_info "Skipping server dry-run (HELMFILE_SERVER_DRY_RUN=false); running client dry-run only"
+  kubectl apply --dry-run=client -f "$rendered" >/dev/null
+  log_info "Template/dry-run validation passed"
+else
+  log_info "Validating rendered manifests against live API (kubectl dry-run=server)"
 srv_err="$(mktemp)"
 cli_err="$(mktemp)"
 if ! kubectl apply --dry-run=server -f "$rendered" >/dev/null 2>"$srv_err"; then
@@ -64,6 +74,7 @@ fi
 rm -f "$srv_err" "$cli_err" || true
 
 log_info "Template/dry-run validation passed"
+fi
 
 # Drift check: helmfile diff should be the final gate for "declarative == live".
 # We keep suppression knobs to avoid known non-actionable noise (e.g. some Secret churn).

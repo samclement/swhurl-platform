@@ -406,20 +406,6 @@ kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
   pod-security.kubernetes.io/warn=restricted
 ```
 
-## Service Mesh Best Practices
-
-- Mesh choice: Start simple (Linkerd) for lightweight clusters (k3s); use Istio for advanced traffic policies and multi-cluster; consider Cilium Service Mesh if you already run Cilium and want eBPF data-plane. Prefer the smallest feature set that meets requirements.
-- mTLS by default: Enforce strict mTLS mesh-wide. Use short-lived certs with automatic rotation. Back trust roots by cert-manager or a private CA. Prefer SPIFFE IDs for workload identity and auditability.
-- Scope and injection: Enable sidecar injection by namespace label; exclude `kube-system`, `ingress`, and control-plane namespaces. Use per-namespace PeerAuthentication/Policy (Istio) or Server/AuthorizationPolicy (Linkerd). Consider ambient/sidecarless modes only after evaluating maturity and tradeoffs.
-- Traffic policy: Set sane defaults for timeouts, retries, and budgets; add circuit breaking and outlier detection to protect dependencies. Use progressive delivery (Flagger or Argo Rollouts) for canaries/blue-green with mesh traffic shifting.
-- Gateways and egress: Terminate inbound TLS at ingress gateway inside the mesh; originate TLS for external calls at an egress gateway. Restrict egress with explicit allowlists and DNS-based policies where possible.
-- Observability: Scrape proxy metrics with Prometheus; install mesh dashboards. Enable distributed tracing via OpenTelemetry (export to Tempo/Jaeger), propagate `traceparent`, and keep sampling/cardinality under control.
-- Security policy: Default deny at the mesh policy layer; authorize by SPIFFE ID/ServiceAccount and namespace. Use JWT validation at the edge and fine-grained AuthorizationPolicy/HTTPRoute filters for internal services; avoid wildcards.
-- Performance/cost: Set requests/limits for proxies; right-size concurrency and connection pools. Exclude ultra high-throughput or latency-sensitive paths from the mesh if benefits don’t outweigh overhead. Tune HTTP/2 and keep-alives; keep tracing sample rates low on hot paths.
-- Upgrades: Follow control-plane/data-plane version skew guidance. Canary upgrade the control plane; roll proxies with surge/partition. Pin CRD/chart versions in Git; validate in staging.
-- Multi-cluster: Use a shared root trust or mesh federation with distinct trust domains. Use east-west gateways and export/import policies intentionally; restrict cross-cluster communication to necessary namespaces/services.
-- Troubleshooting: Use `istioctl x precheck`, `istioctl proxy-status`, and Envoy admin (`/config_dump`, `/clusters`) or `linkerd check`, `linkerd viz`, and `linkerd tap` to trace requests. Temporarily disable injection per-pod via annotations for isolation.
-
 ## DNS and Domains
 
 - For local dev without DNS, use magic hosts like `127.0.0.1.nip.io` or `sslip.io` to test Ingress quickly.

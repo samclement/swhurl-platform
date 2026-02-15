@@ -20,6 +20,11 @@ if [[ "$DELETE" == true ]]; then
   kubectl -n kube-system delete ds cilium cilium-envoy --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n kube-system delete deploy cilium-operator hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n kube-system delete svc cilium-envoy hubble-peer hubble-relay hubble-ui --ignore-not-found >/dev/null 2>&1 || true
+
+  # Hubble UI TLS secret is created by cert-manager (ingress-shim) and may not be removed
+  # by Helm uninstall when cert-manager/CRDs are deleted earlier in the teardown sequence.
+  kubectl -n kube-system delete secret hubble-ui-tls --ignore-not-found >/dev/null 2>&1 || true
+
   kubectl -n kube-system delete deploy,ds,svc,cm,secret,sa,role,rolebinding \
     -l app.kubernetes.io/part-of=cilium --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete clusterrole,clusterrolebinding \

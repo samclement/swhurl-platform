@@ -65,6 +65,10 @@ Kustomize does not consume arbitrary env vars by default. If Kustomize resources
 - Make them Helmfile/Helm-managed (preferred for platform components).
 - Or keep them Kustomize-only for apps and inject values via explicit script logic.
 
+This repo does not ship a Kustomize manifest tree by default (no `infra/manifests/`). The verification step
+`scripts/95_verify_kustomize_builds.sh` will pass when it is missing; it only runs builds if you add your own
+`kustomization.yaml` files.
+
 ## Delete Contract
 
 Helm does not uninstall CRDs in a reliable/portable way. This repo’s delete contract is:

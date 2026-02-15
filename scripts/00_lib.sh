@@ -68,12 +68,13 @@ wait_ds() {
 
 wait_webhook_cabundle() {
   local name="$1" timeout="${2:-${TIMEOUT_SECS:-300}}"
-  local start now ca elapsed last_log exists ca_len
+  local start now ca elapsed last_log exists ca_len leader
   start=$(date +%s)
   last_log=0
-  log_info "Waiting for webhook '${name}' CA bundle to be populated (timeout: ${timeout}s)"
+  log_info "Waiting for webhook '${name}' CA bundle to be injected by cert-manager-cainjector (often delayed by leader election) (timeout: ${timeout}s)"
   while true; do
     exists=false
+    ca=""
     if kubectl get validatingwebhookconfiguration "$name" >/dev/null 2>&1; then
       exists=true
       ca=$(kubectl get validatingwebhookconfiguration "$name" -o jsonpath='{.webhooks[0].clientConfig.caBundle}' 2>/dev/null || true)
@@ -90,7 +91,11 @@ wait_webhook_cabundle() {
       if [[ -n "${ca:-}" ]]; then
         ca_len=${#ca}
       fi
-      log_info "Still waiting: webhookConfigPresent=${exists} caBundleLen=${ca_len} elapsed=${elapsed}s"
+      leader="$(kubectl -n kube-system get lease cert-manager-cainjector-leader-election -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)"
+      if [[ -z "$leader" ]]; then
+        leader="(none)"
+      fi
+      log_info "Still waiting: webhookConfigPresent=${exists} caBundleLen=${ca_len} cainjectorLeader=${leader} elapsed=${elapsed}s"
       last_log=$elapsed
     fi
     if (( elapsed >= timeout )); then

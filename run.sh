@@ -28,6 +28,10 @@ Env:
   ONLY                 Same as --only (overridden by CLI flag)
   FEAT_BOOTSTRAP_K3S    If true, include scripts/10 + scripts/11 in apply runs (default false)
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
+
+Manual prereqs:
+  DNS registration is not part of the orchestrator plan. If you use .swhurl.com
+  domains and want automatic Route53 updates, run: ./scripts/12_dns_register.sh
 USAGE
 }
 
@@ -124,32 +128,29 @@ build_apply_plan() {
   # 1) Prerequisites
   add_step out_arr "$(step_path 01_check_prereqs.sh)"
 
-  # 2) DNS & Network Reachability
-  add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
-
-  # 3) Cluster Access (kubeconfig)
+  # 2) Cluster Access (kubeconfig)
   add_step out_arr "$(step_path 15_kube_context.sh)"
   add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 10_install_k3s_cilium_minimal.sh)"
   add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 11_cluster_k3s.sh)"
 
-  # 4) Environment & Config Contract
+  # 3) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
 
-  # 5) Cluster Dependencies
+  # 4) Cluster Dependencies
   add_step out_arr "$(step_path 25_helm_repos.sh)"
   add_step out_arr "$(step_path 20_namespaces.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
 
-  # 6) Platform Services
+  # 5) Platform Services
   add_step out_arr "$(step_path 31_helmfile_core.sh)"
   add_step out_arr "$(step_path 29_platform_config.sh)"
   add_step out_arr "$(step_path 36_helmfile_platform.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
-  # 7) Test Application
+  # 6) Test Application
   add_step out_arr "$(step_path 75_sample_app.sh)"
 
-  # 8) Verification
+  # 7) Verification
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 90_smoke_tests.sh)"
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_validate_cluster.sh)"
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_diff.sh)"
@@ -177,8 +178,6 @@ build_delete_plan() {
   # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_teardown.sh).
   add_step out_arr "$(step_path 20_namespaces.sh)"
 
-  add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
-
   # Deterministic finalizers: teardown -> cilium -> verify.
   add_step out_arr "$(step_path 99_teardown.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
@@ -192,13 +191,12 @@ print_plan() {
   # Phase headings are informational only; script order is the source of truth.
   if [[ "$DELETE_MODE" != true ]]; then
     echo "  - 1) Prerequisites & verify"
-    echo "  - 2) DNS & Network Reachability"
-    echo "  - 3) Basic Kubernetes Cluster (kubeconfig)"
-    echo "  - 4) Environment (profiles/secrets) & verification"
-    echo "  - 5) Cluster deps (helm/cilium) & verification"
-    echo "  - 6) Platform services & verification"
-    echo "  - 7) Test application & verification"
-    echo "  - 8) Cluster verification suite"
+    echo "  - 2) Basic Kubernetes Cluster (kubeconfig)"
+    echo "  - 3) Environment (profiles/secrets) & verification"
+    echo "  - 4) Cluster deps (helm/cilium) & verification"
+    echo "  - 5) Platform services & verification"
+    echo "  - 6) Test application & verification"
+    echo "  - 7) Cluster verification suite"
   else
     echo "  - Delete (reverse phases; cilium last)"
   fi
@@ -228,8 +226,6 @@ run_step() {
   case "$base" in
     10_install_k3s_cilium_minimal.sh|11_cluster_k3s.sh)
       [[ "$FEAT_BOOTSTRAP_K3S" == "true" ]] || { echo "[skip] $base (FEAT_BOOTSTRAP_K3S=false)"; return 0; } ;;
-    12_dns_register.sh)
-      [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_DNS_REGISTER=false)"; return 0; } ;;
     26_cilium.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
     29_platform_config.sh)

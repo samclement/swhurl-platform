@@ -69,6 +69,12 @@ k3s bootstrap (optional)
 Verification toggles
 - `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.
 
+Helmfile drift checks (`scripts/92_verify_helmfile_diff.sh`)
+- Requires the `helm-diff` plugin:
+  - `helm plugin install https://github.com/databus23/helm-diff`
+- Server-side dry-run uses the API server and will run admission webhooks. If your cluster rejects dry-run due to validating webhooks (common with ingress duplicate host/path), you can skip server dry-run and still validate render sanity:
+  - `HELMFILE_SERVER_DRY_RUN=false ./scripts/92_verify_helmfile_diff.sh`
+
 ## Teardown (Delete)
 
 ```bash
@@ -80,6 +86,11 @@ Delete ordering is intentionally strict:
 - `scripts/99_teardown.sh` sweeps managed namespaces, non-k3s-native secrets, and platform CRDs.
 - Cilium is deleted last (`scripts/26_cilium.sh --delete`), so k3s/local-path helper pods can still run during PVC/namespace cleanup.
 - `scripts/98_verify_delete_clean.sh` runs last and fails the delete if anything remains.
+
+Delete scope (shared clusters)
+- By default, deletion only sweeps Secrets in the namespaces this repo manages.
+- For a dedicated cluster wipe, opt in explicitly:
+  - `DELETE_SCOPE=dedicated-cluster ./run.sh --delete`
 
 k3s uninstall is manual unless `K3S_UNINSTALL=true`:
 

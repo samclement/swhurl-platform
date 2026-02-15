@@ -175,6 +175,9 @@ build_delete_plan() {
   add_step out_arr "$(step_path 30_cert_manager.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
+  # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_teardown.sh).
+  add_step out_arr "$(step_path 20_namespaces.sh)"
+
   add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
 
   # Deterministic finalizers: teardown -> cilium -> verify.

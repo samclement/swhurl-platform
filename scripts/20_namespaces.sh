@@ -8,7 +8,11 @@ ensure_context
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 if [[ "$DELETE" == true ]]; then
-  log_info "Namespaces are managed by Helmfile; skipping in delete mode"
+  # This removes the Helm release record without deleting namespaces (the chart marks
+  # Namespace resources with helm.sh/resource-policy=keep). scripts/99_teardown.sh
+  # is responsible for deleting namespaces in a deterministic, gated way.
+  log_info "Destroying platform-namespaces Helm release (namespaces are deleted by scripts/99_teardown.sh)"
+  helmfile_cmd -l component=platform-namespaces destroy >/dev/null 2>&1 || true
   exit 0
 fi
 

@@ -33,13 +33,13 @@ Print the current plan:
 - `scripts/26_cilium.sh` (feature-gated by `FEAT_CILIUM`)
 
 6) Platform services & verification
-- `scripts/30_cert_manager.sh`
+- `scripts/31_helmfile_core.sh` (Helmfile: `phase=core`, installs cert-manager + ingress-nginx)
 - `scripts/35_issuer.sh` (Kustomize: `infra/manifests/issuers/*`, default `LETSENCRYPT_ENV=staging`)
-- `scripts/40_ingress_nginx.sh`
-- `scripts/45_oauth2_proxy.sh` (feature-gated by `FEAT_OAUTH2_PROXY`)
-- `scripts/50_clickstack.sh` (feature-gated by `FEAT_CLICKSTACK`)
-- `scripts/51_otel_k8s.sh` (feature-gated by `FEAT_OTEL_K8S`)
-- `scripts/70_minio.sh` (feature-gated by `FEAT_MINIO`)
+- `scripts/29_platform_config.sh` (kubectl: secrets/configmaps required by Helm releases)
+- `scripts/36_helmfile_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags)
+
+Notes:
+- The older per-component scripts (`30_*.sh`, `40_*.sh`, `45_*.sh`, `50_*.sh`, `51_*.sh`, `70_*.sh`) still exist for targeted debugging, but the default `./run.sh` path uses the Helmfile phase scripts above.
 
 7) Test application & verification
 - `scripts/75_sample_app.sh`
@@ -63,4 +63,3 @@ Delete runs in reverse order with deterministic finalizers:
 4) Verify cluster is clean (`scripts/98_verify_delete_clean.sh`)
 
 Important: Cilium is deleted only after platform namespaces and PVCs are removed, so k3s/local-path helper pods can still run during namespace cleanup.
-

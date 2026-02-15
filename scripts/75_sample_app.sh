@@ -35,20 +35,18 @@ fi
 
 kubectl_ns "$APP_NS"
 
-APP_USE_KUSTOMIZE="${APP_USE_KUSTOMIZE:-true}"
 TLS_SECRET="${TLS_SECRET:-${APP_NAME}-tls}"
 ISSUER="${ISSUER:-${CLUSTER_ISSUER}}"
 IMAGE="${IMAGE:-docker.io/nginx:1.25-alpine}"
 AUTH_ENABLED="${APP_AUTH_ENABLED:-${FEAT_OAUTH2_PROXY:-false}}"
 
-if [[ "$APP_USE_KUSTOMIZE" == true ]]; then
-  TMPDIR=$(mktemp -d)
-  trap 'rm -rf "$TMPDIR"' EXIT
-  # Copy base to avoid kustomize security boundary issues
-  mkdir -p "$TMPDIR/base"
-  cp -r "$SCRIPT_DIR/../infra/manifests/apps/hello/base/"* "$TMPDIR/base/"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+# Copy base to avoid kustomize security boundary issues
+mkdir -p "$TMPDIR/base"
+cp -r "$SCRIPT_DIR/../infra/manifests/apps/hello/base/"* "$TMPDIR/base/"
 
-  cat > "$TMPDIR/kustomization.yaml" <<K
+cat > "$TMPDIR/kustomization.yaml" <<K
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: ${APP_NS}
@@ -83,8 +81,8 @@ replacements:
         fieldPaths: [spec.issuerRef.name]
 K
 
-  if [[ "$AUTH_ENABLED" == true && -n "${OAUTH_HOST:-}" ]]; then
-    cat > "$TMPDIR/auth-patch.yaml" <<K
+if [[ "$AUTH_ENABLED" == true && -n "${OAUTH_HOST:-}" ]]; then
+  cat > "$TMPDIR/auth-patch.yaml" <<K
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -93,7 +91,7 @@ metadata:
     nginx.ingress.kubernetes.io/auth-url: https://${OAUTH_HOST}/oauth2/auth
     nginx.ingress.kubernetes.io/auth-signin: https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri
 K
-    cat >> "$TMPDIR/kustomization.yaml" <<K
+  cat >> "$TMPDIR/kustomization.yaml" <<K
 
 patches:
   - path: auth-patch.yaml
@@ -101,34 +99,11 @@ patches:
       kind: Ingress
       name: ${APP_NAME}
 K
-  elif [[ "$AUTH_ENABLED" == true ]]; then
-    log_warn "APP_AUTH_ENABLED/FEAT_OAUTH2_PROXY is true but OAUTH_HOST is empty; skipping auth annotations"
-  fi
-
-  kubectl apply -k "$TMPDIR"
-else
-  # Legacy template path using envsubst (kept for compatibility)
-  TMPDIR=$(mktemp -d)
-  trap 'rm -rf "$TMPDIR"' EXIT
-  cp "$SCRIPT_DIR/../infra/manifests/templates/app/"*.yaml "$TMPDIR/"
-  export APP_NAME APP_NS HOST IMAGE TLS_SECRET ISSUER OAUTH_HOST
-  for f in "$TMPDIR"/*.yaml; do
-    envsubst '${APP_NAME} ${APP_NS} ${HOST} ${TLS_SECRET} ${ISSUER} ${IMAGE} ${OAUTH_HOST}' < "$f" > "$f.rendered"
-    mv "$f.rendered" "$f"
-  done
-  cat > "$TMPDIR/kustomization.yaml" <<K
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - deployment.yaml
-  - service.yaml
-  - certificate.yaml
-  - ingress-public.yaml
-commonLabels:
-  platform.swhurl.io/managed: "true"
-K
-  kubectl apply -k "$TMPDIR"
+elif [[ "$AUTH_ENABLED" == true ]]; then
+  log_warn "APP_AUTH_ENABLED/FEAT_OAUTH2_PROXY is true but OAUTH_HOST is empty; skipping auth annotations"
 fi
+
+kubectl apply -k "$TMPDIR"
 
 wait_deploy "$APP_NS" "$APP_NAME"
 log_info "Sample app deployed at https://${HOST}"

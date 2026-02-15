@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Orchestrator for local platform setup scripts.
-# - Loads config/env and optional profile
-# - Supports ONLY filter (comma-separated step numbers or filenames)
-# - Supports --delete to run teardown in reverse
-# - Skips missing scripts gracefully
+# Phase-based orchestrator for platform scripts.
+# - Explicit ordering and dependencies (no implicit script discovery)
+# - --delete runs reverse phases with deterministic finalizers
+# - --only can filter by step number (NN) or script basename
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -26,7 +25,9 @@ Options:
   --delete        Run teardown (reverse order), passing --delete to steps
 
 Env:
-  ONLY            Same as --only (overridden by CLI flag)
+  ONLY                 Same as --only (overridden by CLI flag)
+  FEAT_BOOTSTRAP_K3S    If true, include scripts/10 + scripts/11 in apply runs (default false)
+  FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
 USAGE
 }
 
@@ -41,41 +42,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Load base config
+# Load base config (non-secret). Scripts load again via scripts/00_lib.sh.
 if [[ -f "config.env" ]]; then
   # shellcheck disable=SC1091
   source "config.env"
 fi
 
-# Load profile if provided and export the path so child scripts can re-source
+# Load profile if provided and export the path so child scripts can re-source.
 if [[ -n "$PROFILE_FILE" ]]; then
   export PROFILE_FILE
   # shellcheck disable=SC1090
   source "$PROFILE_FILE"
 fi
 
-# Allow ONLY from env if not given via flag
+# Allow ONLY from env if not given via flag.
 ONLY_FILTER="${ONLY_FILTER:-${ONLY:-}}"
 
-# Collect step scripts, preferring tracked files so local/untracked scripts
-# do not silently change orchestrator behavior.
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  mapfile -t ALL_STEPS < <(
-    git ls-files 'scripts/[0-9][0-9]_*.sh' \
-      | sort \
-      | rg -v '/(00_lib|76_app_scaffold)\.sh$'
-  )
-else
-  mapfile -t ALL_STEPS < <(
-    ls -1 scripts/[0-9][0-9]_*.sh 2>/dev/null \
-      | sort \
-      | rg -v '/(00_lib|76_app_scaffold)\.sh$'
-  )
-fi
-
-if [[ ${#ALL_STEPS[@]} -eq 0 ]]; then
-  echo "No scripts found under scripts/. Nothing to do."; exit 0
-fi
+step_path() { printf "scripts/%s\n" "$1"; }
 
 filter_steps() {
   local -n in_arr=$1 out_arr=$2
@@ -87,6 +70,7 @@ filter_steps() {
   IFS=',' read -r -a tokens <<< "$only"
   out_arr=()
   for s in "${in_arr[@]}"; do
+    local base num t
     base=$(basename "$s")
     num=${base%%_*}
     for t in "${tokens[@]}"; do
@@ -98,111 +82,186 @@ filter_steps() {
   done
 }
 
-filter_steps ALL_STEPS SELECTED_STEPS "$ONLY_FILTER"
-
-# Apply-order tweak: when both k3s bootstrap and cilium are selected,
-# run cilium immediately after step 10 to avoid split bootstrap phases.
-if [[ "$DELETE_MODE" != true ]]; then
-  cilium_step=""
-  non_cilium_steps=()
-  for s in "${SELECTED_STEPS[@]}"; do
-    if [[ "$(basename "$s")" == "26_cilium.sh" ]]; then
-      cilium_step="$s"
-    else
-      non_cilium_steps+=("$s")
-    fi
-  done
-
-  if [[ -n "$cilium_step" ]]; then
-    reordered_steps=()
-    cilium_inserted=false
-    for s in "${non_cilium_steps[@]}"; do
-      reordered_steps+=("$s")
-      if [[ "$(basename "$s")" == "10_install_k3s_cilium_minimal.sh" ]]; then
-        reordered_steps+=("$cilium_step")
-        cilium_inserted=true
-      fi
-    done
-    if [[ "$cilium_inserted" == false ]]; then
-      reordered_steps+=("$cilium_step")
-    fi
-    SELECTED_STEPS=("${reordered_steps[@]}")
-  fi
-fi
-
-# Reverse for delete mode
-if [[ "$DELETE_MODE" == true ]]; then
-  mapfile -t SELECTED_STEPS < <(printf '%s\n' "${SELECTED_STEPS[@]}" | tac)
-
-  # Ensure finalizer/verification run at the very end of delete flow.
-  # Keep Cilium deletion after teardown because k3s local-path PVC cleanup
-  # helper pods may need CNI while namespaces/PVCs are being removed.
-  teardown_step=""
-  cilium_step=""
-  verify_delete_step=""
-  delete_steps=()
-  for s in "${SELECTED_STEPS[@]}"; do
-    case "$(basename "$s")" in
-      99_teardown.sh) teardown_step="$s" ;;
-      26_cilium.sh) cilium_step="$s" ;;
-      98_verify_delete_clean.sh) verify_delete_step="$s" ;;
-      *) delete_steps+=("$s") ;;
-    esac
-  done
-  if [[ -n "$teardown_step" ]]; then
-    delete_steps+=("$teardown_step")
-  fi
-  if [[ -n "$cilium_step" ]]; then
-    delete_steps+=("$cilium_step")
-  fi
-  if [[ -n "$verify_delete_step" ]]; then
-    delete_steps+=("$verify_delete_step")
-  fi
-  SELECTED_STEPS=("${delete_steps[@]}")
-fi
-
-should_skip() {
-  local step="$1"
-  case "$(basename "$step")" in
-    00_lib.sh)
-      # helper library, never executed as a step
-      return 0 ;;
-    76_app_scaffold.sh)
-      # scaffolder; run directly with args when needed
-      return 0 ;;
-    98_verify_delete_clean.sh|99_teardown.sh)
-      # delete-only steps
-      [[ "$DELETE_MODE" != true ]] && return 0 ;;
-    01_check_prereqs.sh|15_kube_context.sh|25_helm_repos.sh|90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|95_verify_kustomize_builds.sh|96_verify_script_surface.sh)
-      # informational/validation steps; no --delete mode
-      [[ "$DELETE_MODE" == true ]] && return 0 ;;
-    12_dns_register.sh)
-      [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    26_cilium.sh)
-      [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    45_oauth2_proxy.sh)
-      [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    50_clickstack.sh)
-      [[ "${FEAT_CLICKSTACK:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    51_otel_k8s.sh)
-      [[ "${FEAT_OTEL_K8S:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    70_minio.sh)
-      [[ "${FEAT_MINIO:-true}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    80_mesh_linkerd.sh)
-      [[ "${FEAT_MESH_LINKERD:-false}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    81_mesh_istio.sh)
-      [[ "${FEAT_MESH_ISTIO:-false}" == "true" || "$DELETE_MODE" == true ]] || return 0 ;;
-    20_namespaces.sh)
-      # namespaces are handled by installs; avoid deleting shared namespaces by default
-      [[ "$DELETE_MODE" == true ]] && return 0 ;;
-  esac
-  return 1
+add_step() {
+  local -n _arr="$1"
+  local s="$2"
+  [[ -f "$s" ]] || return 0
+  _arr+=("$s")
 }
 
-echo "Plan:"
-for s in "${SELECTED_STEPS[@]}"; do
-  printf "  - %s %s\n" "$(basename "$s")" "$([[ "$DELETE_MODE" == true ]] && echo "(delete)" || echo "")"
-done
+add_step_if() {
+  local arr_name="$1"
+  local cond="$2" s="$3"
+  [[ "$cond" == "true" ]] || return 0
+  add_step "$arr_name" "$s"
+}
+
+FEAT_BOOTSTRAP_K3S="${FEAT_BOOTSTRAP_K3S:-false}"
+FEAT_VERIFY="${FEAT_VERIFY:-true}"
+
+build_apply_plan() {
+  local -n out_arr=$1
+  out_arr=()
+
+  # 1) Prerequisites
+  add_step out_arr "$(step_path 01_check_prereqs.sh)"
+
+  # 2) DNS & Network Reachability
+  add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
+
+  # 3) Cluster Access (kubeconfig)
+  add_step out_arr "$(step_path 15_kube_context.sh)"
+  add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 10_install_k3s_cilium_minimal.sh)"
+  add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 11_cluster_k3s.sh)"
+
+  # 4) Environment & Config Contract
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
+
+  # 5) Cluster Dependencies
+  add_step out_arr "$(step_path 20_namespaces.sh)"
+  add_step out_arr "$(step_path 25_helm_repos.sh)"
+  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
+
+  # 6) Platform Services
+  add_step out_arr "$(step_path 30_cert_manager.sh)"
+  add_step out_arr "$(step_path 35_issuer.sh)"
+  add_step out_arr "$(step_path 40_ingress_nginx.sh)"
+  add_step_if out_arr "${FEAT_OAUTH2_PROXY:-true}" "$(step_path 45_oauth2_proxy.sh)"
+  add_step_if out_arr "${FEAT_CLICKSTACK:-true}" "$(step_path 50_clickstack.sh)"
+  add_step_if out_arr "${FEAT_OTEL_K8S:-true}" "$(step_path 51_otel_k8s.sh)"
+  add_step_if out_arr "${FEAT_MINIO:-true}" "$(step_path 70_minio.sh)"
+  add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
+  add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
+
+  # 7) Test Application
+  add_step out_arr "$(step_path 75_sample_app.sh)"
+
+  # 8) Verification
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 90_smoke_tests.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_validate_cluster.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_diff.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 93_verify_release_inventory.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 95_dump_context.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 95_verify_kustomize_builds.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 96_verify_script_surface.sh)"
+}
+
+build_delete_plan() {
+  local -n out_arr=$1
+  out_arr=()
+
+  # Preflight: require kube context (do not pass --delete).
+  add_step out_arr "$(step_path 15_kube_context.sh)"
+
+  # Reverse platform components (apps -> services -> finalizers).
+  add_step out_arr "$(step_path 75_sample_app.sh)"
+
+  add_step_if out_arr "${FEAT_MINIO:-true}" "$(step_path 70_minio.sh)"
+  add_step_if out_arr "${FEAT_OTEL_K8S:-true}" "$(step_path 51_otel_k8s.sh)"
+  add_step_if out_arr "${FEAT_CLICKSTACK:-true}" "$(step_path 50_clickstack.sh)"
+  add_step_if out_arr "${FEAT_OAUTH2_PROXY:-true}" "$(step_path 45_oauth2_proxy.sh)"
+  add_step out_arr "$(step_path 40_ingress_nginx.sh)"
+  add_step out_arr "$(step_path 35_issuer.sh)"
+  add_step out_arr "$(step_path 30_cert_manager.sh)"
+  add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
+  add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
+
+  add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
+
+  # Deterministic finalizers: teardown -> cilium -> verify.
+  add_step out_arr "$(step_path 99_teardown.sh)"
+  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
+  add_step out_arr "$(step_path 98_verify_delete_clean.sh)"
+}
+
+print_plan() {
+  local -n steps=$1
+  echo "Plan:"
+
+  # Phase headings are informational only; script order is the source of truth.
+  if [[ "$DELETE_MODE" != true ]]; then
+    echo "  - 1) Prerequisites & verify"
+    echo "  - 2) DNS & Network Reachability"
+    echo "  - 3) Basic Kubernetes Cluster (kubeconfig)"
+    echo "  - 4) Environment (profiles/secrets) & verification"
+    echo "  - 5) Cluster deps (helm/cilium) & verification"
+    echo "  - 6) Platform services & verification"
+    echo "  - 7) Test application & verification"
+    echo "  - 8) Cluster verification suite"
+  else
+    echo "  - Delete (reverse phases; cilium last)"
+  fi
+
+  for s in "${steps[@]}"; do
+    local base
+    base=$(basename "$s")
+    if [[ "$DELETE_MODE" == true && "$base" != "15_kube_context.sh" ]]; then
+      printf "  - %s (delete)\n" "$base"
+    else
+      printf "  - %s\n" "$base"
+    fi
+  done
+}
+
+run_step() {
+  local s="$1"
+  local base
+  base=$(basename "$s")
+
+  if [[ ! -x "$s" ]]; then
+    echo "[skip] $base (not executable or missing)"
+    return 0
+  fi
+
+  # Feature gates for direct --only execution and readability.
+  case "$base" in
+    10_install_k3s_cilium_minimal.sh|11_cluster_k3s.sh)
+      [[ "$FEAT_BOOTSTRAP_K3S" == "true" ]] || { echo "[skip] $base (FEAT_BOOTSTRAP_K3S=false)"; return 0; } ;;
+    12_dns_register.sh)
+      [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_DNS_REGISTER=false)"; return 0; } ;;
+    26_cilium.sh)
+      [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
+    45_oauth2_proxy.sh)
+      [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_OAUTH2_PROXY=false)"; return 0; } ;;
+    50_clickstack.sh)
+      [[ "${FEAT_CLICKSTACK:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CLICKSTACK=false)"; return 0; } ;;
+    51_otel_k8s.sh)
+      [[ "${FEAT_OTEL_K8S:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_OTEL_K8S=false)"; return 0; } ;;
+    70_minio.sh)
+      [[ "${FEAT_MINIO:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MINIO=false)"; return 0; } ;;
+    80_mesh_linkerd.sh)
+      [[ "${FEAT_MESH_LINKERD:-false}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MESH_LINKERD=false)"; return 0; } ;;
+    81_mesh_istio.sh)
+      [[ "${FEAT_MESH_ISTIO:-false}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MESH_ISTIO=false)"; return 0; } ;;
+    90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|95_verify_kustomize_builds.sh|96_verify_script_surface.sh)
+      [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
+    98_verify_delete_clean.sh|99_teardown.sh)
+      [[ "$DELETE_MODE" == true ]] || { echo "[skip] $base (delete-only)"; return 0; } ;;
+  esac
+
+  if [[ "$DELETE_MODE" == true ]]; then
+    if [[ "$base" == "15_kube_context.sh" ]]; then
+      echo "[run] $base"
+      "$s"
+    else
+      echo "[run] $base --delete"
+      "$s" --delete
+    fi
+  else
+    echo "[run] $base"
+    "$s"
+  fi
+}
+
+if [[ "$DELETE_MODE" == true ]]; then
+  build_delete_plan ALL_STEPS
+else
+  build_apply_plan ALL_STEPS
+fi
+
+filter_steps ALL_STEPS SELECTED_STEPS "$ONLY_FILTER"
+
+print_plan SELECTED_STEPS
 
 if [[ "$DRY_RUN" == true ]]; then
   echo "Dry run: exiting without executing."
@@ -210,22 +269,7 @@ if [[ "$DRY_RUN" == true ]]; then
 fi
 
 for s in "${SELECTED_STEPS[@]}"; do
-  base=$(basename "$s")
-  if should_skip "$s"; then
-    echo "[skip] $base (feature disabled)"
-    continue
-  fi
-  if [[ ! -x "$s" ]]; then
-    echo "[skip] $base (not executable or missing)"
-    continue
-  fi
-  if [[ "$DELETE_MODE" == true ]]; then
-    echo "[run] $base --delete"
-    "$s" --delete
-  else
-    echo "[run] $base"
-    "$s"
-  fi
+  run_step "$s"
 done
 
 echo "Done."

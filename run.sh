@@ -26,12 +26,12 @@ Options:
 
 Env:
   ONLY                 Same as --only (overridden by CLI flag)
-  FEAT_BOOTSTRAP_K3S    If true, include scripts/10 + scripts/11 in apply runs (default false)
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
 
 Manual prereqs:
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
-  domains and want automatic Route53 updates, run: ./scripts/12_dns_register.sh
+  domains and want automatic Route53 updates, run: ./scripts/manual_dns_register.sh
+  Host bootstrap (k3s install) is also manual. See README.
 USAGE
 }
 
@@ -118,7 +118,6 @@ add_step_if() {
   add_step "$arr_name" "$s"
 }
 
-FEAT_BOOTSTRAP_K3S="${FEAT_BOOTSTRAP_K3S:-false}"
 FEAT_VERIFY="${FEAT_VERIFY:-true}"
 
 build_apply_plan() {
@@ -130,8 +129,6 @@ build_apply_plan() {
 
   # 2) Cluster Access (kubeconfig)
   add_step out_arr "$(step_path 15_kube_context.sh)"
-  add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 10_install_k3s_cilium_minimal.sh)"
-  add_step_if out_arr "$FEAT_BOOTSTRAP_K3S" "$(step_path 11_cluster_k3s.sh)"
 
   # 3) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
@@ -224,8 +221,6 @@ run_step() {
 
   # Feature gates for direct --only execution and readability.
   case "$base" in
-    10_install_k3s_cilium_minimal.sh|11_cluster_k3s.sh)
-      [[ "$FEAT_BOOTSTRAP_K3S" == "true" ]] || { echo "[skip] $base (FEAT_BOOTSTRAP_K3S=false)"; return 0; } ;;
     26_cilium.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
     29_platform_config.sh)

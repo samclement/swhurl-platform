@@ -49,6 +49,8 @@ else
     --dry-run=client -o yaml | kubectl apply -f -
 fi
 
+label_managed ingress secret oauth2-proxy-secret
+
 # Verify secret exists and cookie-secret length is valid (16/24/32)
 for i in {1..10}; do
   if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then

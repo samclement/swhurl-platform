@@ -42,6 +42,9 @@ kubectl -n logging create configmap otel-config-vars \
   --from-literal=HYPERDX_OTLP_ENDPOINT="$OTLP_ENDPOINT" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+label_managed logging secret hyperdx-secret
+label_managed logging configmap otel-config-vars
+
 sync_release otel-k8s-daemonset
 sync_release otel-k8s-cluster
 

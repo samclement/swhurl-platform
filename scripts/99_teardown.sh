@@ -46,11 +46,7 @@ else
   log_info "Sweeping platform secrets in managed namespaces only (DELETE_SCOPE=managed)"
   for ns in "${managed_namespaces[@]}"; do
     kubectl get ns "$ns" >/dev/null 2>&1 || continue
-    mapfile -t names < <(kubectl -n "$ns" get secret -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
-    for name in "${names[@]}"; do
-      [[ -z "$name" ]] && continue
-      kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true
-    done
+    kubectl -n "$ns" delete secret -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
   done
 fi
 

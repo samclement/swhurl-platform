@@ -42,18 +42,36 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Load base config (non-secret). Scripts load again via scripts/00_lib.sh.
+# Load env with the same layering semantics as scripts/00_lib.sh, so the plan
+# is computed from the same effective configuration the scripts will use:
+#   config.env -> profiles/local.env -> profiles/secrets.env -> --profile (highest precedence)
+#
+# Opt out (standalone profile): PROFILE_EXCLUSIVE=true uses only config.env -> --profile
+PROFILE_EXCLUSIVE="${PROFILE_EXCLUSIVE:-false}"
+if [[ "$PROFILE_EXCLUSIVE" != "true" && "$PROFILE_EXCLUSIVE" != "false" ]]; then
+  echo "[ERROR] PROFILE_EXCLUSIVE must be true or false (got: $PROFILE_EXCLUSIVE)" >&2
+  exit 1
+fi
+
+set -a
 if [[ -f "config.env" ]]; then
   # shellcheck disable=SC1091
   source "config.env"
 fi
-
-# Load profile if provided and export the path so child scripts can re-source.
+if [[ "$PROFILE_EXCLUSIVE" == "false" && -f "profiles/local.env" ]]; then
+  # shellcheck disable=SC1091
+  source "profiles/local.env"
+fi
+if [[ "$PROFILE_EXCLUSIVE" == "false" && -f "profiles/secrets.env" ]]; then
+  # shellcheck disable=SC1091
+  source "profiles/secrets.env"
+fi
 if [[ -n "$PROFILE_FILE" ]]; then
   export PROFILE_FILE
   # shellcheck disable=SC1090
   source "$PROFILE_FILE"
 fi
+set +a
 
 # Allow ONLY from env if not given via flag.
 ONLY_FILTER="${ONLY_FILTER:-${ONLY:-}}"

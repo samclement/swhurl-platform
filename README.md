@@ -56,6 +56,7 @@ This repo uses shell-sourced config (`config.env` + profiles) and relies on **ex
 
 1) `./run.sh` and `./scripts/*`
 - `./run.sh` sources `config.env` and an optional `--profile FILE` for orchestration decisions (feature flags, plan).
+- `./run.sh` uses the same layering semantics as `scripts/00_lib.sh` so the plan matches the effective config used by all steps.
 - Each script then sources `scripts/00_lib.sh`, which layers config in this order:
   - `config.env`
   - `profiles/local.env` (if present)

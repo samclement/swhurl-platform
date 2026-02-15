@@ -13,7 +13,16 @@ DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
 if [[ "$DELETE" == true ]]; then
-  log_info "k3s teardown not automated here. To uninstall: 'sudo /usr/local/bin/k3s-uninstall.sh' (server)"
+  log_info "k3s teardown is optional. To uninstall: 'sudo /usr/local/bin/k3s-uninstall.sh' (server)"
+  log_info "Set K3S_UNINSTALL=true to attempt running the uninstall script with sudo."
+  if [[ "${K3S_UNINSTALL:-false}" == "true" ]]; then
+    if command -v sudo >/dev/null 2>&1 && [[ -x "/usr/local/bin/k3s-uninstall.sh" ]]; then
+      log_info "Running k3s-uninstall.sh via sudo"
+      sudo /usr/local/bin/k3s-uninstall.sh || true
+    else
+      log_warn "sudo or /usr/local/bin/k3s-uninstall.sh not available; skipping"
+    fi
+  fi
   exit 0
 fi
 
@@ -61,3 +70,4 @@ fi
 
 # Do not wait for Ready here: with flannel disabled this depends on Cilium.
 log_info "k3s installed without flannel/traefik. Next step: scripts/26_cilium.sh"
+log_info "Verify kubeconfig with: scripts/15_kube_context.sh"

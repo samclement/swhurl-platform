@@ -22,7 +22,7 @@ Manual prerequisite (optional): DNS registration for `.swhurl.com`
 - `scripts/15_kube_context.sh`
 Manual prerequisite (optional): Local host bootstrap (k3s)
 - `scripts/manual_install_k3s_minimal.sh` installs k3s with Traefik + flannel disabled (Cilium is installed separately).
-- `scripts/manual_k3s_context.sh` provides k3s-specific kubeconfig hints and an optional uninstall helper.
+- Verify kubeconfig and API reachability with `scripts/15_kube_context.sh`.
 
 3) Environment (profiles/secrets) & verification
 - `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)

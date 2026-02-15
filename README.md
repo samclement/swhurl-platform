@@ -152,7 +152,7 @@ ACME / Let’s Encrypt
 k3s bootstrap (optional)
 - Cluster provisioning is not the default workflow. If you want the repo to install k3s on the local host:
   - Run `scripts/manual_install_k3s_minimal.sh` (installs k3s with Traefik + flannel disabled; Cilium is installed separately)
-  - Verify cluster reachability with `scripts/manual_k3s_context.sh` (or `scripts/15_kube_context.sh` for generic kubeconfig validation)
+  - Verify kubeconfig and API reachability with `scripts/15_kube_context.sh`
 
 Verification toggles
 - `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.

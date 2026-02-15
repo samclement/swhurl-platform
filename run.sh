@@ -145,8 +145,7 @@ build_apply_plan() {
   add_step out_arr "$(step_path 35_issuer.sh)"
   add_step out_arr "$(step_path 29_platform_config.sh)"
   add_step out_arr "$(step_path 36_helmfile_platform.sh)"
-  add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
-  add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
+  # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
   # 7) Test Application
   add_step out_arr "$(step_path 75_sample_app.sh)"
@@ -176,8 +175,7 @@ build_delete_plan() {
   add_step out_arr "$(step_path 35_issuer.sh)"
   add_step out_arr "$(step_path 31_helmfile_core.sh)"
   add_step out_arr "$(step_path 30_cert_manager.sh)"
-  add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
-  add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
+  # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
   add_step_if out_arr "${FEAT_DNS_REGISTER:-true}" "$(step_path 12_dns_register.sh)"
 
@@ -239,10 +237,6 @@ run_step() {
       ;;
     31_helmfile_core.sh|36_helmfile_platform.sh)
       ;;
-    80_mesh_linkerd.sh)
-      [[ "${FEAT_MESH_LINKERD:-false}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MESH_LINKERD=false)"; return 0; } ;;
-    81_mesh_istio.sh)
-      [[ "${FEAT_MESH_ISTIO:-false}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MESH_ISTIO=false)"; return 0; } ;;
     90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|95_verify_kustomize_builds.sh|96_verify_script_surface.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
     98_verify_delete_clean.sh|99_teardown.sh)

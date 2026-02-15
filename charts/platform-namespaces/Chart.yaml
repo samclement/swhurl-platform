@@ -1,0 +1,5 @@
+apiVersion: v2
+name: platform-namespaces
+description: Managed namespaces for the swhurl platform
+type: application
+version: 0.1.0

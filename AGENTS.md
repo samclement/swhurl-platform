@@ -21,6 +21,7 @@
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Enable `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh` with `FEAT_BOOTSTRAP_K3S=true`.
   - Helm repositories are managed via `scripts/25_helm_repos.sh`.
+  - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
   - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_cilium.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_helmfile_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.

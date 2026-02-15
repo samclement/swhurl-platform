@@ -28,8 +28,8 @@ Print the current plan:
 - `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)
 
 5) Cluster deps (helm/cilium) & verification
-- `scripts/20_namespaces.sh` (Kustomize: `infra/manifests/platform`)
 - `scripts/25_helm_repos.sh`
+- `scripts/20_namespaces.sh` (Helmfile local chart: `component=platform-namespaces`)
 - `scripts/26_cilium.sh` (feature-gated by `FEAT_CILIUM`)
 
 6) Platform services & verification

@@ -175,9 +175,10 @@ This repo separates **declarative state** (Helmfile/Kustomize) from **orchestrat
 - `profiles/`: local overrides and secrets (layered on top of `config.env`).
 - `environments/`: Helmfile environments and derived values (`.Environment.Values`) used by `helmfile.yaml.gotmpl`.
 - `helmfile.yaml.gotmpl`: declarative Helm releases (Cilium, cert-manager, ingress-nginx, oauth2-proxy, ClickStack, OTel collectors, MinIO).
+- `charts/`: local Helm charts for repo-owned Kubernetes resources (e.g. managed namespaces; later issuers/apps).
 - `infra/`: declarative Kubernetes inputs owned by this repo.
 - `infra/values/`: Helm chart values files (referenced by Helmfile releases).
-- `infra/manifests/`: Kustomize bases/overlays for non-Helm resources (namespaces, issuers, sample app).
+- `infra/manifests/`: Kustomize bases/overlays for non-Helm resources (issuers, sample app).
 - `scripts/`: thin step scripts used by `run.sh` (apply/delete) plus verification scripts.
 - `docs/`: runbook and architecture diagram sources.
 

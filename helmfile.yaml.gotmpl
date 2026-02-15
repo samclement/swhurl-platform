@@ -18,6 +18,16 @@ environments:
 ---
 
 releases:
+  - name: platform-namespaces
+    namespace: kube-system
+    chart: ./charts/platform-namespaces
+    installed: true
+    labels:
+      app: platform-namespaces
+      tier: bootstrap
+      phase: core
+      component: platform-namespaces
+
   - name: cilium
     namespace: kube-system
     chart: cilium/cilium
@@ -34,6 +44,8 @@ releases:
     namespace: cert-manager
     chart: jetstack/cert-manager
     version: v1.19.3
+    needs:
+      - kube-system/platform-namespaces
     labels:
       app: cert-manager
       tier: security

@@ -1,0 +1,12 @@
+namespaces:
+  - platform-system
+  - ingress
+  - cert-manager
+  - logging
+  - observability
+  - storage
+  - apps
+  - cilium-secrets
+
+labels:
+  platform.swhurl.io/managed: "true"

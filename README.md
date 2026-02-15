@@ -50,6 +50,51 @@ Use a profile:
 
 ## Key Flags and Inputs
 
+## How Environment Variables Flow (kubectl, Helm, Helmfile, Kustomize)
+
+This repo uses shell-sourced config (`config.env` + profiles) and relies on **exported** environment variables to drive Helmfile templating.
+
+1) `./run.sh` and `./scripts/*`
+- `./run.sh` sources `config.env` and an optional `--profile FILE` for orchestration decisions (feature flags, plan).
+- Each script then sources `scripts/00_lib.sh`, which sources `config.env` and either:
+  - `$PROFILE_FILE` (when `--profile` is used), or
+  - `profiles/secrets.env` (fallback), or
+  - `profiles/local.env` (fallback)
+- `scripts/00_lib.sh` uses `set -a` while sourcing so variables are **exported** for child processes (notably `helmfile`).
+
+2) `helmfile` (templating and values)
+- Helmfile templates read environment variables via Go templating: `{{ env "VAR" }}`.
+- This repo’s Helmfile is `helmfile.yaml.gotmpl` and its environment values come from:
+  - `environments/common.yaml.gotmpl` (derives `.Environment.Values` from exported env vars)
+  - plus `environments/default.yaml` or `environments/minimal.yaml`
+- Feature flags are applied twice:
+  - Orchestration: `run.sh` decides which scripts to run.
+  - Declarative state: Helmfile uses `.Environment.Values.features.*` to set `installed:` on releases.
+
+If you run Helmfile manually, you must export variables yourself, e.g.:
+```bash
+set -a
+source ./config.env
+source ./profiles/secrets.env
+set +a
+helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
+```
+
+3) `helm` (charts)
+- Helm itself does not substitute env vars into chart values automatically.
+- In this repo, Helm is invoked via Helmfile; chart configuration comes from the rendered YAML in `infra/values/*`.
+
+4) `kubectl` (apply and context)
+- `kubectl` reads `KUBECONFIG` (or `~/.kube/config`) for cluster access.
+- `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
+
+5) `kustomize` (raw manifests)
+- Kustomize does not read arbitrary environment variables by default.
+- This repo uses Kustomize for mostly-static resources under `infra/manifests/*`.
+- When a manifest needs a runtime value, the pattern is either:
+  - Use Helmfile templating/values for Helm-managed resources, or
+  - Build with `kubectl kustomize ...` and then inject via `envsubst` in a script (e.g. `scripts/35_issuer.sh` for `ACME_EMAIL`).
+
 Environment layering
 - `config.env`: non-secret defaults (committed).
 - `profiles/secrets.env`: secrets (gitignored).

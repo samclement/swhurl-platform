@@ -11,21 +11,13 @@ log() { printf "[%s] %s\n" "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$*"; }
 warn() { log "WARN: $*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
-# Load config.env if present (repo root is one level up from scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [[ -f "$ROOT_DIR/config.env" ]]; then
-  # shellcheck disable=SC1090
-  source "$ROOT_DIR/config.env"
-fi
-# Optionally layer a profile for overrides (domain/subdomains, etc.)
-if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$PROFILE_FILE"
-elif [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
-  # shellcheck disable=SC1090
-  source "$ROOT_DIR/profiles/local.env"
-fi
+
+# Use the standard env layering logic (config.env -> local.env -> secrets.env -> PROFILE_FILE)
+# so DNS inputs behave consistently with the rest of the repo.
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/00_lib.sh"
 
 DELETE_MODE=false
 for arg in "$@"; do
@@ -42,6 +34,7 @@ Env:
   SWHURL_SUBDOMAIN    Back-compat single subdomain (ignored if SWHURL_SUBDOMAINS is set)
   BASE_DOMAIN         If ends with .swhurl.com, defaults will be derived when SWHURL_SUBDOMAINS is empty
   PROFILE_FILE        Optional profile file (run.sh --profile) for overrides
+  PROFILE_EXCLUSIVE   If true, do not auto-load profiles/local.env or profiles/secrets.env (standalone profile)
 USAGE
       exit 0
       ;;

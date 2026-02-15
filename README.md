@@ -32,9 +32,24 @@ This is the top-level structure the repo follows (each phase has its own verific
 3. Basic Kubernetes Cluster (kubeconfig) & verify
 4. Environment (profiles/secrets) & verification
 5. Cluster Deps (Helm, namespaces, Cilium) & verification
-6. Cluster Platform Services (cert-manager, ingress, oauth, clickstack, otel, minio) & verification
+6. Cluster Platform Services (core: cert-manager + ingress, then platform: oauth/clickstack/otel/minio) & verification
 7. Test application & verification
 8. Cluster verification suite
+
+### Platform Installs Are Helmfile-Driven
+
+Most platform services are installed declaratively via Helmfile and grouped into two phases:
+
+- **Core**: cert-manager + ingress-nginx (Helmfile label `phase=core`)
+- **Platform**: oauth2-proxy + clickstack + otel-k8s collectors + minio (Helmfile label `phase=platform`)
+
+The default `./run.sh` path uses these scripts:
+
+- `scripts/31_helmfile_core.sh`: `helmfile sync/destroy -l phase=core` and waits for cert-manager webhook CA injection (needed before creating issuers).
+- `scripts/29_platform_config.sh`: creates/deletes the small set of non-Helm resources the charts depend on (Secrets/ConfigMaps).
+- `scripts/36_helmfile_platform.sh`: `helmfile sync/destroy -l phase=platform`.
+
+The older per-component scripts (`scripts/30_*`, `scripts/40_*`, `scripts/45_*`, `scripts/50_*`, `scripts/51_*`, `scripts/70_*`) still exist for targeted debugging/reruns, but are not the default orchestration path.
 
 Run everything:
 
@@ -74,6 +89,7 @@ This repo uses shell-sourced config (`config.env` + profiles) and relies on **ex
 - Feature flags are applied twice:
   - Orchestration: `run.sh` decides which scripts to run.
   - Declarative state: Helmfile uses `.Environment.Values.features.*` to set `installed:` on releases.
+- Helm installs are grouped via Helmfile labels (`phase=core`, `phase=platform`) so the default pipeline can `sync/destroy` by phase.
 
 If you run Helmfile manually, you must export variables yourself, e.g.:
 ```bash
@@ -91,6 +107,7 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 4) `kubectl` (apply and context)
 - `kubectl` reads `KUBECONFIG` (or `~/.kube/config`) for cluster access.
 - `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
+- Some charts rely on runtime Secrets/ConfigMaps that are created with `kubectl` (see `scripts/29_platform_config.sh`). Those resources are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`.
 
 5) `kustomize` (raw manifests)
 - Kustomize does not read arbitrary environment variables by default.

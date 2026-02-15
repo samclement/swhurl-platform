@@ -7,17 +7,16 @@ set -Eeuo pipefail
 # - Supports multiple subdomains via SWHURL_SUBDOMAINS (space/comma-separated).
 # - Backwards compatible with SWHURL_SUBDOMAIN (single value).
 
-log() { printf "[%s] %s\n" "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$*"; }
-warn() { log "WARN: $*"; }
-die() { log "ERROR: $*" >&2; exit 1; }
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Use the standard env layering logic (config.env -> local.env -> secrets.env -> PROFILE_FILE)
 # so DNS inputs behave consistently with the rest of the repo.
 # shellcheck disable=SC1090
 source "$SCRIPT_DIR/00_lib.sh"
+
+log() { printf "[%s] %s\n" "$(date +'%Y-%m-%dT%H:%M:%S%z')" "$*"; }
+warn() { log "WARN: $*"; }
+die() { log "ERROR: $*" >&2; exit 1; }
 
 DELETE_MODE=false
 for arg in "$@"; do

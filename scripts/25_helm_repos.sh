@@ -9,7 +9,8 @@ add_repo() {
   local name="$1" url="$2" required="${3:-true}"
   local tries=0 max_tries="${HELM_REPO_RETRIES:-3}"
   while true; do
-    if helm repo add "$name" "$url" >/dev/null 2>&1; then
+    # --force-update makes reruns idempotent (updates URL if repo already exists).
+    if helm repo add "$name" "$url" --force-update >/dev/null 2>&1; then
       return 0
     fi
     tries=$((tries + 1))

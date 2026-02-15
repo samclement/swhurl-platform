@@ -141,13 +141,10 @@ build_apply_plan() {
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
 
   # 6) Platform Services
-  add_step out_arr "$(step_path 30_cert_manager.sh)"
+  add_step out_arr "$(step_path 31_helmfile_core.sh)"
   add_step out_arr "$(step_path 35_issuer.sh)"
-  add_step out_arr "$(step_path 40_ingress_nginx.sh)"
-  add_step_if out_arr "${FEAT_OAUTH2_PROXY:-true}" "$(step_path 45_oauth2_proxy.sh)"
-  add_step_if out_arr "${FEAT_CLICKSTACK:-true}" "$(step_path 50_clickstack.sh)"
-  add_step_if out_arr "${FEAT_OTEL_K8S:-true}" "$(step_path 51_otel_k8s.sh)"
-  add_step_if out_arr "${FEAT_MINIO:-true}" "$(step_path 70_minio.sh)"
+  add_step out_arr "$(step_path 29_platform_config.sh)"
+  add_step out_arr "$(step_path 36_helmfile_platform.sh)"
   add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
   add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
 
@@ -174,12 +171,10 @@ build_delete_plan() {
   # Reverse platform components (apps -> services -> finalizers).
   add_step out_arr "$(step_path 75_sample_app.sh)"
 
-  add_step_if out_arr "${FEAT_MINIO:-true}" "$(step_path 70_minio.sh)"
-  add_step_if out_arr "${FEAT_OTEL_K8S:-true}" "$(step_path 51_otel_k8s.sh)"
-  add_step_if out_arr "${FEAT_CLICKSTACK:-true}" "$(step_path 50_clickstack.sh)"
-  add_step_if out_arr "${FEAT_OAUTH2_PROXY:-true}" "$(step_path 45_oauth2_proxy.sh)"
-  add_step out_arr "$(step_path 40_ingress_nginx.sh)"
+  add_step out_arr "$(step_path 36_helmfile_platform.sh)"
+  add_step out_arr "$(step_path 29_platform_config.sh)"
   add_step out_arr "$(step_path 35_issuer.sh)"
+  add_step out_arr "$(step_path 31_helmfile_core.sh)"
   add_step out_arr "$(step_path 30_cert_manager.sh)"
   add_step_if out_arr "${FEAT_MESH_LINKERD:-false}" "$(step_path 80_mesh_linkerd.sh)"
   add_step_if out_arr "${FEAT_MESH_ISTIO:-false}" "$(step_path 81_mesh_istio.sh)"
@@ -239,14 +234,11 @@ run_step() {
       [[ "${FEAT_DNS_REGISTER:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_DNS_REGISTER=false)"; return 0; } ;;
     26_cilium.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
-    45_oauth2_proxy.sh)
-      [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_OAUTH2_PROXY=false)"; return 0; } ;;
-    50_clickstack.sh)
-      [[ "${FEAT_CLICKSTACK:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CLICKSTACK=false)"; return 0; } ;;
-    51_otel_k8s.sh)
-      [[ "${FEAT_OTEL_K8S:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_OTEL_K8S=false)"; return 0; } ;;
-    70_minio.sh)
-      [[ "${FEAT_MINIO:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MINIO=false)"; return 0; } ;;
+    29_platform_config.sh)
+      # Contains internal feature gates for individual resources.
+      ;;
+    31_helmfile_core.sh|36_helmfile_platform.sh)
+      ;;
     80_mesh_linkerd.sh)
       [[ "${FEAT_MESH_LINKERD:-false}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_MESH_LINKERD=false)"; return 0; } ;;
     81_mesh_istio.sh)

@@ -22,6 +22,10 @@
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Enable `scripts/10_install_k3s_cilium_minimal.sh` + `scripts/11_cluster_k3s.sh` with `FEAT_BOOTSTRAP_K3S=true`.
   - Helm repositories are managed via `scripts/25_helm_repos.sh`.
   - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_cilium.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
+  - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
+    - `scripts/31_helmfile_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
+    - `scripts/36_helmfile_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
+    - `scripts/29_platform_config.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
   - `scripts/92_verify_helmfile_diff.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_diff.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_cilium.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
@@ -52,17 +56,17 @@
     - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
     - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
     - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via `./scripts/45_oauth2_proxy.sh`.
+  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`) or directly via `./scripts/45_oauth2_proxy.sh`.
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
 
 - Observability with ClickStack
-  - Use `scripts/50_clickstack.sh` to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
+  - Default install path uses `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`. `scripts/50_clickstack.sh` remains available for targeted debugging/reruns.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - `scripts/50_clickstack.sh` only uses `CLICKSTACK_API_KEY` and now fails fast if it is unset.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Use `scripts/51_otel_k8s.sh` to install Kubernetes OTel collectors (`open-telemetry/opentelemetry-collector`) in `logging` namespace. It creates `hyperdx-secret` and `otel-config-vars`, then deploys daemonset + cluster collectors forwarding to `${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}`.
+  - Default install path uses `scripts/29_platform_config.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_helmfile_platform.sh` (installs the collector releases). `scripts/51_otel_k8s.sh` remains available for targeted debugging/reruns.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
   - `scripts/51_otel_k8s.sh` only uses `CLICKSTACK_INGESTION_KEY` and now fails fast if it is unset.
   - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/51_otel_k8s.sh`.

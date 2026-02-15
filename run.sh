@@ -136,8 +136,8 @@ build_apply_plan() {
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
 
   # 5) Cluster Dependencies
-  add_step out_arr "$(step_path 20_namespaces.sh)"
   add_step out_arr "$(step_path 25_helm_repos.sh)"
+  add_step out_arr "$(step_path 20_namespaces.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
 
   # 6) Platform Services

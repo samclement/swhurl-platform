@@ -1,0 +1,14 @@
+{{- $labels := .Values.labels | default dict -}}
+{{- range $i, $ns := .Values.namespaces -}}
+{{- if gt $i 0 }}
+---
+{{- end }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns | quote }}
+  labels:
+{{- range $k, $v := $labels }}
+    {{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end -}}

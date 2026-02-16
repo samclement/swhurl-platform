@@ -53,6 +53,8 @@
   - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_delete_clean.sh` checks it even when `DELETE_SCOPE=managed`.
   - `scripts/98_verify_delete_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
   - Validation gates are scriptized and run in-order: `92_verify_helmfile_diff.sh`, `93_verify_release_inventory.sh`, `94_verify_config_contract.sh`, `96_verify_script_surface.sh`.
+  - `scripts/91_validate_cluster.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
+  - Delete invariants are centralized in `scripts/00_lib.sh` via `PLATFORM_MANAGED_NAMESPACES` and `PLATFORM_CRD_NAME_REGEX`; keep `scripts/99_teardown.sh` and `scripts/98_verify_delete_clean.sh` aligned by using these shared constants.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.

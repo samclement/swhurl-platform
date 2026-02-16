@@ -32,7 +32,7 @@ else
 fi
 
 # 2) Managed namespaces should be gone.
-managed_namespaces=(apps cert-manager ingress logging observability platform-system storage)
+managed_namespaces=("${PLATFORM_MANAGED_NAMESPACES[@]}")
 ns_left=()
 for ns in "${managed_namespaces[@]}"; do
   if kubectl get ns "$ns" >/dev/null 2>&1; then
@@ -53,10 +53,9 @@ else
 fi
 
 # 3) Cilium/cert-manager CRDs should be gone.
-crd_patterns='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
-if kubectl get crd -o name | rg -q "$crd_patterns"; then
+if kubectl get crd -o name | rg -q "$PLATFORM_CRD_NAME_REGEX"; then
   bad "Platform CRDs still present"
-  kubectl get crd -o name | rg "$crd_patterns" || true
+  kubectl get crd -o name | rg "$PLATFORM_CRD_NAME_REGEX" || true
 else
   ok "Platform CRDs removed"
 fi
@@ -78,10 +77,7 @@ while IFS= read -r row; do
     fi
 
     # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
-    case "$ns" in
-      apps|cert-manager|ingress|logging|observability|platform-system|storage) ;;
-      *) continue ;;
-    esac
+    is_platform_managed_namespace "$ns" || continue
     if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'; then
       continue
     fi

@@ -60,6 +60,11 @@
   - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
   - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
+  - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles, Helmfile release mappings, and `run.sh` verify-script wiring.
+  - `scripts/93_verify_expected_releases.sh` now fails on unexpected extra releases by default (in `platform` scope). Tune with:
+    - `VERIFY_RELEASE_SCOPE=platform|cluster`
+    - `VERIFY_RELEASE_ALLOWLIST` (comma-separated glob patterns, e.g. `kube-system/traefik,apps/custom-app`)
+    - `VERIFY_RELEASE_STRICT_EXTRAS=false` to skip extra-release checks
   - Verification maintainability roadmap (including Keycloak as the pilot feature) is documented in `docs/verification-maintainability-plan.md`; use it as the source for future verification framework refactors and follow-up prompts.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.

@@ -35,6 +35,12 @@ Verification toggles:
 - `FEAT_VERIFY=true|false`: run core verification gates (`94`, `91`, `92`) in `./run.sh`.
 - `FEAT_VERIFY_DEEP=true|false`: run extra diagnostics/consistency checks (`90`, `93`, `95`, `96`) in `./run.sh`.
 
+Release inventory verification controls (`scripts/93_verify_expected_releases.sh`):
+
+- `VERIFY_RELEASE_SCOPE=platform|cluster` (default `platform`)
+- `VERIFY_RELEASE_ALLOWLIST=<comma-separated glob patterns>`
+- `VERIFY_RELEASE_STRICT_EXTRAS=true|false` (default `true`)
+
 ## Tool Contract (How Each Tool Uses Env Vars)
 
 ### Helmfile

@@ -81,7 +81,7 @@ Changes
 - `./run.sh --delete` destroys in reverse phase order:
   - `apps` -> `platform` -> `core` -> teardown sweep -> `network` (cilium last)
 - Keep explicit CRD/finalizer cleanup steps (Helm cannot be relied upon for this).
-- Keep `scripts/98_verify_delete_clean.sh` as the gate.
+- Keep `scripts/98_verify_teardown_clean.sh` as the gate.
 
 Validation
 - Run delete twice; second run is a fast no-op and still passes `98`.

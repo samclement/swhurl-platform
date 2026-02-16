@@ -25,7 +25,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 - Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`.
 
 3) Environment (profiles/secrets) & verification
-- `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)
+- `scripts/94_verify_config_inputs.sh` (feature-gated by `FEAT_VERIFY`)
 
 4) Cluster deps (helm/cilium) & verification
 - `scripts/25_helm_repos.sh`
@@ -45,12 +45,14 @@ Notes:
 - `scripts/75_sample_app.sh`
 
 7) Cluster verification suite
-- `scripts/90_smoke_tests.sh`
-- `scripts/91_validate_cluster.sh`
-- `scripts/92_verify_helmfile_diff.sh`
-- `scripts/93_verify_release_inventory.sh`
-- `scripts/95_dump_context.sh`
-- `scripts/96_verify_script_surface.sh`
+- Core gates (default; `FEAT_VERIFY=true`):
+  - `scripts/91_verify_platform_state.sh`
+  - `scripts/92_verify_helmfile_drift.sh`
+- Extra checks/diagnostics (opt-in; `FEAT_VERIFY_DEEP=true`):
+  - `scripts/90_verify_runtime_smoke.sh`
+  - `scripts/93_verify_expected_releases.sh`
+  - `scripts/95_capture_cluster_diagnostics.sh` (writes diagnostics under `./artifacts/cluster-diagnostics-<timestamp>/` unless an output dir is passed)
+  - `scripts/96_verify_orchestrator_contract.sh`
 
 ## Phases (Delete)
 
@@ -59,6 +61,6 @@ Delete runs in reverse order with deterministic finalizers:
 1) Remove apps and platform services (reverse order)
 2) Perform teardown sweep (namespaces, non-k3s-native secrets, platform CRDs)
 3) Remove Cilium last
-4) Verify cluster is clean (`scripts/98_verify_delete_clean.sh`)
+4) Verify cluster is clean (`scripts/98_verify_teardown_clean.sh`)
 
 Important: Cilium is deleted only after platform namespaces and PVCs are removed, so k3s/local-path helper pods can still run during namespace cleanup.

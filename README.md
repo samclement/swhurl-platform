@@ -67,7 +67,7 @@ Use a profile:
 
 ## Key Flags and Inputs
 
-Common inputs (see `docs/contracts.md` and `scripts/94_verify_config_contract.sh` for the full contract):
+Common inputs (see `docs/contracts.md` and `scripts/94_verify_config_inputs.sh` for the full contract):
 
 - `KUBECONFIG`: kubectl context for the target cluster (or use `~/.kube/config`).
 - `BASE_DOMAIN`: base domain used to compute ingress hosts (defaults to `127.0.0.1.nip.io`).
@@ -82,7 +82,8 @@ Feature flags:
 - `FEAT_CLICKSTACK`: install ClickStack (default `true`).
 - `FEAT_OTEL_K8S`: install OTel k8s collectors (default `true`).
 - `FEAT_MINIO`: install MinIO (default `true`).
-- `FEAT_VERIFY`: run verification suite during `./run.sh` (default `true`).
+- `FEAT_VERIFY`: run core verification gates during `./run.sh` (`94`, `91`, `92`; default `true`).
+- `FEAT_VERIFY_DEEP`: run extra verification/diagnostics (`90`, `93`, `95`, `96`; default `false`).
 
 Delete controls:
 
@@ -155,13 +156,14 @@ k3s bootstrap (optional)
   - Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`
 
 Verification toggles
-- `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.
+- `FEAT_VERIFY=true|false` controls core verification gates (`94`, `91`, `92`) during `./run.sh`.
+- `FEAT_VERIFY_DEEP=true|false` controls extra checks/diagnostics (`90`, `93`, `95`, `96`).
 
-Helmfile drift checks (`scripts/92_verify_helmfile_diff.sh`)
+Helmfile drift checks (`scripts/92_verify_helmfile_drift.sh`)
 - Requires the `helm-diff` plugin:
   - `helm plugin install https://github.com/databus23/helm-diff`
 - Server-side dry-run uses the API server and will run admission webhooks. If your cluster rejects dry-run due to validating webhooks (common with ingress duplicate host/path), you can skip server dry-run and still validate render sanity:
-  - `HELMFILE_SERVER_DRY_RUN=false ./scripts/92_verify_helmfile_diff.sh`
+  - `HELMFILE_SERVER_DRY_RUN=false ./scripts/92_verify_helmfile_drift.sh`
 
 ## Teardown (Delete)
 
@@ -171,9 +173,9 @@ Helmfile drift checks (`scripts/92_verify_helmfile_diff.sh`)
 
 Delete ordering is intentionally strict:
 - Platform services are removed first.
-- `scripts/99_teardown.sh` sweeps managed namespaces, non-k3s-native secrets, and platform CRDs.
+- `scripts/99_execute_teardown.sh` sweeps managed namespaces, non-k3s-native secrets, and platform CRDs.
 - Cilium is deleted last (`scripts/26_manage_cilium_lifecycle.sh --delete`), so k3s/local-path helper pods can still run during PVC/namespace cleanup.
-- `scripts/98_verify_delete_clean.sh` runs last and fails the delete if anything remains.
+- `scripts/98_verify_teardown_clean.sh` runs last and fails the delete if anything remains.
 
 Delete scope (shared clusters)
 - By default, deletion only sweeps Secrets in the namespaces this repo manages.

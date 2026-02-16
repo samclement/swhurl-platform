@@ -66,6 +66,7 @@
     - `VERIFY_RELEASE_ALLOWLIST` (comma-separated glob patterns, e.g. `kube-system/traefik,apps/custom-app`)
     - `VERIFY_RELEASE_STRICT_EXTRAS=true` to enable extra-release checks (default `false`)
   - Verification maintainability roadmap (including Keycloak as the pilot feature) is documented in `docs/verification-maintainability-plan.md`; use it as the source for future verification framework refactors and follow-up prompts.
+  - Documentation consistency gotcha: avoid hard-coding hypothetical script paths in planning docs. Keep references either aligned to existing files or clearly marked as future/proposed so script-reference checks stay actionable.
   - For day-to-day maintainer changes, prefer explicit updates using `docs/add-feature-checklist.md` rather than introducing new script abstraction layers.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.

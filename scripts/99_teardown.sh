@@ -13,7 +13,7 @@ fi
 
 ensure_context
 
-managed_namespaces=(apps cert-manager ingress logging observability platform-system storage)
+managed_namespaces=("${PLATFORM_MANAGED_NAMESPACES[@]}")
 NAMESPACE_DELETE_TIMEOUT_SECS="${NAMESPACE_DELETE_TIMEOUT_SECS:-180}"
 DELETE_SCOPE="${DELETE_SCOPE:-managed}" # managed | dedicated-cluster
 
@@ -88,7 +88,7 @@ if [[ "${#leftover_pvcs[@]}" -gt 0 || "${#ns_left[@]}" -gt 0 ]]; then
 fi
 
 log_info "Deleting platform CRDs (cert-manager/acme/cilium)"
-crds="$(kubectl get crd -o name 2>/dev/null | rg 'cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$' || true)"
+crds="$(kubectl get crd -o name 2>/dev/null | rg "$PLATFORM_CRD_NAME_REGEX" || true)"
 if [[ -n "$crds" ]]; then
   # shellcheck disable=SC2086
   kubectl delete $crds --ignore-not-found >/dev/null 2>&1 || true

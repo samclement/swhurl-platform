@@ -41,6 +41,19 @@ log_warn() { printf "[WARN] %s\n" "$*"; }
 log_error() { printf "[ERROR] %s\n" "$*" >&2; }
 die() { log_error "$*"; exit 1; }
 
+# Shared platform cleanup scope to keep teardown and delete-clean verification aligned.
+readonly -a PLATFORM_MANAGED_NAMESPACES=(apps cert-manager ingress logging observability platform-system storage)
+readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
+
+is_platform_managed_namespace() {
+  local ns="$1"
+  local item
+  for item in "${PLATFORM_MANAGED_NAMESPACES[@]}"; do
+    [[ "$item" == "$ns" ]] && return 0
+  done
+  return 1
+}
+
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }

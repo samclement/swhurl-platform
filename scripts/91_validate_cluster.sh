@@ -112,12 +112,16 @@ if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
     check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
-    expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
-    expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
-    actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
-    actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
-    check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
-    check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_manage_cilium_lifecycle.sh"
+    if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+      expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
+      expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
+      actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
+      actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
+      check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
+      check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_manage_cilium_lifecycle.sh"
+    else
+      ok "FEAT_OAUTH2_PROXY=false; skipping hubble-ui auth annotation checks"
+    fi
   else
     mismatch "hubble-ui ingress not found"
     add_suggest "scripts/26_manage_cilium_lifecycle.sh"

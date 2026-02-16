@@ -17,14 +17,6 @@ managed_namespaces=("${PLATFORM_MANAGED_NAMESPACES[@]}")
 NAMESPACE_DELETE_TIMEOUT_SECS="${NAMESPACE_DELETE_TIMEOUT_SECS:-180}"
 DELETE_SCOPE="${DELETE_SCOPE:-managed}" # managed | dedicated-cluster
 
-is_allowed_k3s_secret() {
-  local ns="$1" name="$2"
-  if [[ "$ns" != "kube-system" ]]; then
-    return 1
-  fi
-  [[ "$name" == "k3s-serving" || "$name" == *.node-password.k3s || "$name" == bootstrap-token-* || "$name" == sh.helm.release.v1.cilium.* ]]
-}
-
 case "$DELETE_SCOPE" in
   managed|dedicated-cluster) ;;
   *) die "DELETE_SCOPE must be one of: managed, dedicated-cluster (got: ${DELETE_SCOPE})" ;;
@@ -37,7 +29,7 @@ if [[ "$DELETE_SCOPE" == "dedicated-cluster" ]]; then
     [[ -z "$row" ]] && continue
     ns="${row%%/*}"
     name="${row#*/}"
-    if is_allowed_k3s_secret "$ns" "$name"; then
+    if is_allowed_k3s_secret_for_teardown "$ns" "$name"; then
       continue
     fi
     kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true

@@ -83,10 +83,8 @@ while IFS= read -r row; do
     fi
   else
     # dedicated-cluster: enforce cluster-wide cleanup (unsafe on shared clusters).
-    if [[ "$ns" == "kube-system" ]]; then
-      if [[ "$name" == "k3s-serving" || "$name" == *.node-password.k3s || "$name" == bootstrap-token-* ]]; then
-        continue
-      fi
+    if is_allowed_k3s_secret_for_verify "$ns" "$name"; then
+      continue
     fi
   fi
 

@@ -20,17 +20,7 @@ bad() { printf "[BAD] %s\n" "$1"; fail=1; }
 fail=0
 say "Required Releases"
 
-expected=(
-  "kube-system/platform-namespaces"
-  "cert-manager/cert-manager"
-  "kube-system/platform-issuers"
-  "ingress/ingress-nginx"
-)
-[[ "${FEAT_CILIUM:-true}" == "true" ]] && expected+=("kube-system/cilium")
-[[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && expected+=("ingress/oauth2-proxy")
-[[ "${FEAT_CLICKSTACK:-true}" == "true" ]] && expected+=("observability/clickstack")
-[[ "${FEAT_OTEL_K8S:-true}" == "true" ]] && expected+=("logging/otel-k8s-daemonset" "logging/otel-k8s-cluster")
-[[ "${FEAT_MINIO:-true}" == "true" ]] && expected+=("storage/minio")
+mapfile -t expected < <(verify_expected_releases)
 
 actual="$(helm list -A --no-headers 2>/dev/null | awk '{print $2"/"$1}')"
 for item in "${expected[@]}"; do

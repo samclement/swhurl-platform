@@ -39,10 +39,7 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
     elif kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
       actual_email=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.email}')
       check_eq "letsencrypt.email" "${ACME_EMAIL}" "$actual_email" "scripts/31_sync_helmfile_phase_core.sh"
-      expected_server="https://acme-staging-v02.api.letsencrypt.org/directory"
-      case "${LETSENCRYPT_ENV:-staging}" in
-        prod|production) expected_server="https://acme-v02.api.letsencrypt.org/directory" ;;
-      esac
+      expected_server="$(verify_expected_letsencrypt_server "${LETSENCRYPT_ENV:-staging}")"
       actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
       check_eq "letsencrypt.server" "${expected_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
       if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
@@ -113,8 +110,8 @@ if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
     check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
     if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-      expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
-      expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
+      expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
+      expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
       check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
@@ -133,11 +130,11 @@ fi
 say "ingress-nginx"
 if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
   actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
-  check_eq "service.type" "NodePort" "$actual_svc_type" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/31_sync_helmfile_phase_core.sh"
   actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
   actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-  check_eq "nodePort.http" "31514" "$actual_http_np" "scripts/31_sync_helmfile_phase_core.sh"
-  check_eq "nodePort.https" "30313" "$actual_https_np" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/31_sync_helmfile_phase_core.sh"
 else
   mismatch "ingress-nginx service not found"
   add_suggest "scripts/31_sync_helmfile_phase_core.sh"
@@ -193,8 +190,8 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
     check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
     if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-      expected_auth_url="https://${OAUTH_HOST}/oauth2/auth"
-      expected_auth_signin="https://${OAUTH_HOST}/oauth2/start?rd=\$scheme://\$host\$request_uri"
+      expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
+      expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
       check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/36_sync_helmfile_phase_platform.sh"

@@ -127,19 +127,13 @@ fi
 #
 # Known non-actionable churn:
 # - Cilium rotates these TLS/CA secrets and helm-diff will always show changes (with secret content suppressed).
-IGNORED_RESOURCE_HEADERS=(
-  "kube-system, cilium-ca, Secret (v1) has changed:"
-  "kube-system, hubble-relay-client-certs, Secret (v1) has changed:"
-  "kube-system, hubble-server-certs, Secret (v1) has changed:"
-)
-
 # Resource headers look like:
 #   <ns>, <name>, <Kind> (<apiVersion>) has changed:
 resource_headers="$(rg -n '^[^,]+, [^,]+, .* has (changed|been added|been removed):$' "$diff_clean" | sed -E 's/^[0-9]+://g' || true)"
 
 # Filter out ignored resource headers.
 actionable_headers="$resource_headers"
-for h in "${IGNORED_RESOURCE_HEADERS[@]}"; do
+for h in "${VERIFY_HELMFILE_IGNORED_RESOURCE_HEADERS[@]}"; do
   actionable_headers="$(printf "%s\n" "$actionable_headers" | rg -v -F "$h" || true)"
 done
 actionable_headers="$(printf "%s\n" "$actionable_headers" | rg -v '^$' || true)"

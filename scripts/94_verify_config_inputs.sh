@@ -16,13 +16,14 @@ need(){ local k="$1"; local v="${!k:-}"; [[ -n "$v" ]] && ok "$k is set" || bad 
 
 fail=0
 printf "== Config Contract ==\n"
-need BASE_DOMAIN
-need CLUSTER_ISSUER
-[[ "${TIMEOUT_SECS:-}" =~ ^[0-9]+$ ]] && ok "TIMEOUT_SECS is numeric" || bad "TIMEOUT_SECS is numeric"
+for key in "${VERIFY_REQUIRED_BASE_VARS[@]}"; do
+  need "$key"
+done
+[[ "${!VERIFY_REQUIRED_TIMEOUT_VAR:-}" =~ ^[0-9]+$ ]] && ok "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric" || bad "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric"
 
 if [[ "${CLUSTER_ISSUER:-}" == "letsencrypt" ]]; then
   need ACME_EMAIL
-  if [[ "${LETSENCRYPT_ENV:-staging}" =~ ^(staging|prod|production)$ ]]; then
+  if is_allowed_letsencrypt_env "${LETSENCRYPT_ENV:-staging}"; then
     ok "LETSENCRYPT_ENV is valid"
   else
     bad "LETSENCRYPT_ENV must be staging|prod|production"
@@ -31,38 +32,35 @@ fi
 
 printf "\n== Feature Contracts ==\n"
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  need OAUTH_HOST
-  need OIDC_ISSUER
-  need OIDC_CLIENT_ID
-  need OIDC_CLIENT_SECRET
+  for key in "${VERIFY_REQUIRED_OAUTH_VARS[@]}"; do
+    need "$key"
+  done
 fi
 if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
-  need HUBBLE_HOST
+  for key in "${VERIFY_REQUIRED_CILIUM_VARS[@]}"; do
+    need "$key"
+  done
 fi
 if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
-  need CLICKSTACK_HOST
-  need CLICKSTACK_API_KEY
+  for key in "${VERIFY_REQUIRED_CLICKSTACK_VARS[@]}"; do
+    need "$key"
+  done
 fi
 if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
-  need CLICKSTACK_OTEL_ENDPOINT
-  need CLICKSTACK_INGESTION_KEY
+  for key in "${VERIFY_REQUIRED_OTEL_VARS[@]}"; do
+    need "$key"
+  done
 fi
 if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
-  need MINIO_HOST
-  need MINIO_CONSOLE_HOST
-  need MINIO_ROOT_PASSWORD
+  for key in "${VERIFY_REQUIRED_MINIO_VARS[@]}"; do
+    need "$key"
+  done
 fi
 
 printf "\n== Effective (non-secret) ==\n"
-printf "BASE_DOMAIN=%s\n" "${BASE_DOMAIN:-}"
-printf "CLUSTER_ISSUER=%s\n" "${CLUSTER_ISSUER:-}"
-printf "LETSENCRYPT_ENV=%s\n" "${LETSENCRYPT_ENV:-}"
-printf "OAUTH_HOST=%s\n" "${OAUTH_HOST:-}"
-printf "HUBBLE_HOST=%s\n" "${HUBBLE_HOST:-}"
-printf "CLICKSTACK_HOST=%s\n" "${CLICKSTACK_HOST:-}"
-printf "CLICKSTACK_OTEL_ENDPOINT=%s\n" "${CLICKSTACK_OTEL_ENDPOINT:-}"
-printf "MINIO_HOST=%s\n" "${MINIO_HOST:-}"
-printf "MINIO_CONSOLE_HOST=%s\n" "${MINIO_CONSOLE_HOST:-}"
+for key in "${VERIFY_EFFECTIVE_NON_SECRET_VARS[@]}"; do
+  printf "%s=%s\n" "$key" "${!key:-}"
+done
 
 if [[ "$fail" -ne 0 ]]; then
   exit 1

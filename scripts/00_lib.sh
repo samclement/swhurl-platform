@@ -6,6 +6,10 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Shared verification/teardown contract.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/00_verify_contract_lib.sh"
+
 # Load config and profile. Helmfile templates use env-vars via `env "FOO"`,
 # so we need to export loaded values, not just set shell variables.
 set -a
@@ -40,19 +44,6 @@ log_info() { printf "[INFO] %s\n" "$*"; }
 log_warn() { printf "[WARN] %s\n" "$*"; }
 log_error() { printf "[ERROR] %s\n" "$*" >&2; }
 die() { log_error "$*"; exit 1; }
-
-# Shared platform cleanup scope to keep teardown and delete-clean verification aligned.
-readonly -a PLATFORM_MANAGED_NAMESPACES=(apps cert-manager ingress logging observability platform-system storage)
-readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
-
-is_platform_managed_namespace() {
-  local ns="$1"
-  local item
-  for item in "${PLATFORM_MANAGED_NAMESPACES[@]}"; do
-    [[ "$item" == "$ns" ]] && return 0
-  done
-  return 1
-}
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"

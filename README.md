@@ -67,7 +67,7 @@ Use a profile:
 
 ## Key Flags and Inputs
 
-Common inputs (see `docs/contracts.md` and `scripts/94_verify_config_inputs.sh` for the full contract):
+Common inputs (see `docs/contracts.md` and `scripts/00_verify_contract_lib.sh` for the full contract):
 
 - `KUBECONFIG`: kubectl context for the target cluster (or use `~/.kube/config`).
 - `BASE_DOMAIN`: base domain used to compute ingress hosts (defaults to `127.0.0.1.nip.io`).
@@ -201,6 +201,7 @@ This repo separates **declarative state** (Helmfile/local charts) from **orchest
 - `infra/`: declarative Kubernetes inputs owned by this repo.
 - `infra/values/`: Helm chart values files (referenced by Helmfile releases).
 - `scripts/`: thin step scripts used by `run.sh` (apply/delete) plus verification scripts.
+- `scripts/00_verify_contract_lib.sh`: centralized verification and teardown expectations consumed by the 9x verify scripts (sourced by `scripts/00_lib.sh`).
 - `docs/`: runbook and architecture diagram sources.
 
 ```

@@ -31,36 +31,16 @@ if [[ "${CLUSTER_ISSUER:-}" == "letsencrypt" ]]; then
 fi
 
 printf "\n== Feature Contracts ==\n"
-if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  for key in "${VERIFY_REQUIRED_OAUTH_VARS[@]}"; do
-    need "$key"
-  done
-fi
-if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
-  for key in "${VERIFY_REQUIRED_CILIUM_VARS[@]}"; do
-    need "$key"
-  done
-fi
-if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
-  for key in "${VERIFY_REQUIRED_CLICKSTACK_VARS[@]}"; do
-    need "$key"
-  done
-fi
-if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
-  for key in "${VERIFY_REQUIRED_OTEL_VARS[@]}"; do
-    need "$key"
-  done
-fi
-if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
-  for key in "${VERIFY_REQUIRED_MINIO_VARS[@]}"; do
-    need "$key"
-  done
-fi
+while IFS= read -r key; do
+  [[ -n "$key" ]] || continue
+  need "$key"
+done < <(verify_required_vars_for_enabled_features)
 
 printf "\n== Effective (non-secret) ==\n"
-for key in "${VERIFY_EFFECTIVE_NON_SECRET_VARS[@]}"; do
+while IFS= read -r key; do
+  [[ -n "$key" ]] || continue
   printf "%s=%s\n" "$key" "${!key:-}"
-done
+done < <(verify_effective_non_secret_vars)
 
 if [[ "$fail" -ne 0 ]]; then
   exit 1

@@ -2,6 +2,16 @@
 
 Last updated: 2026-02-16
 
+## Implementation Status
+
+- Phase 1 started:
+  - added `scripts/00_feature_registry_lib.sh`
+  - `scripts/93_verify_expected_releases.sh` now resolves expected releases via registry-driven helpers
+  - `scripts/94_verify_config_inputs.sh` now resolves feature required vars via registry-driven helpers
+  - `scripts/91_verify_platform_state.sh` feature gates now use registry helpers (`feature_is_enabled`)
+- Remaining Phase 1 work:
+  - remove remaining feature metadata duplication outside verification (for example Helm repo and runtime-input script wiring), or explicitly scope those to later phases if intentional
+
 ## Goal
 
 Make verification easy to maintain when adding a new platform feature (example: Keycloak), by reducing duplicate configuration, reducing required touchpoints, and enforcing consistency with automated checks.

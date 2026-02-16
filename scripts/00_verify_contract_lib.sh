@@ -2,13 +2,22 @@
 
 # Helper library (not a runnable phase step).
 # Sourced by scripts/00_lib.sh to provide shared verification/teardown contracts.
+# Depends on scripts/00_feature_registry_lib.sh.
+
+if [[ -z "${FEATURE_REGISTRY_LOADED:-}" ]]; then
+  _VERIFY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091
+  source "$_VERIFY_SCRIPT_DIR/00_feature_registry_lib.sh"
+  unset _VERIFY_SCRIPT_DIR
+fi
 
 if [[ "${VERIFY_CONTRACT_LOADED:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 readonly VERIFY_CONTRACT_LOADED="1"
 
-# Single source of truth for verification and teardown expectations.
+# Shared verification and teardown expectations.
+# Feature-specific metadata is sourced from scripts/00_feature_registry_lib.sh.
 
 # Ingress runtime verification contract.
 readonly VERIFY_INGRESS_SERVICE_TYPE="NodePort"
@@ -46,21 +55,10 @@ readonly -a VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM=(
 readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN CLUSTER_ISSUER)
 readonly VERIFY_REQUIRED_TIMEOUT_VAR="TIMEOUT_SECS"
 readonly -a VERIFY_ALLOWED_LETSENCRYPT_ENVS=(staging prod production)
-readonly -a VERIFY_REQUIRED_OAUTH_VARS=(OAUTH_HOST OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET)
-readonly -a VERIFY_REQUIRED_CILIUM_VARS=(HUBBLE_HOST)
-readonly -a VERIFY_REQUIRED_CLICKSTACK_VARS=(CLICKSTACK_HOST CLICKSTACK_API_KEY)
-readonly -a VERIFY_REQUIRED_OTEL_VARS=(CLICKSTACK_OTEL_ENDPOINT CLICKSTACK_INGESTION_KEY)
-readonly -a VERIFY_REQUIRED_MINIO_VARS=(MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD)
-readonly -a VERIFY_EFFECTIVE_NON_SECRET_VARS=(
+readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
   CLUSTER_ISSUER
   LETSENCRYPT_ENV
-  OAUTH_HOST
-  HUBBLE_HOST
-  CLICKSTACK_HOST
-  CLICKSTACK_OTEL_ENDPOINT
-  MINIO_HOST
-  MINIO_CONSOLE_HOST
 )
 
 name_matches_any_pattern() {
@@ -117,16 +115,58 @@ verify_expected_letsencrypt_server() {
 }
 
 verify_expected_releases() {
+  local -A seen=()
   local -a expected=(
     "kube-system/platform-namespaces"
     "cert-manager/cert-manager"
     "kube-system/platform-issuers"
     "ingress/ingress-nginx"
   )
-  [[ "${FEAT_CILIUM:-true}" == "true" ]] && expected+=("kube-system/cilium")
-  [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]] && expected+=("ingress/oauth2-proxy")
-  [[ "${FEAT_CLICKSTACK:-true}" == "true" ]] && expected+=("observability/clickstack")
-  [[ "${FEAT_OTEL_K8S:-true}" == "true" ]] && expected+=("logging/otel-k8s-daemonset" "logging/otel-k8s-cluster")
-  [[ "${FEAT_MINIO:-true}" == "true" ]] && expected+=("storage/minio")
+  local key release
+  for key in "${FEATURE_KEYS[@]}"; do
+    feature_is_enabled "$key" || continue
+    while IFS= read -r release; do
+      [[ -n "$release" ]] || continue
+      if [[ -z "${seen[$release]+x}" ]]; then
+        expected+=("$release")
+        seen["$release"]=1
+      fi
+    done < <(feature_expected_releases "$key")
+  done
   printf '%s\n' "${expected[@]}"
+}
+
+verify_required_vars_for_enabled_features() {
+  local -A seen=()
+  local key var
+  for key in "${FEATURE_KEYS[@]}"; do
+    feature_is_enabled "$key" || continue
+    while IFS= read -r var; do
+      [[ -n "$var" ]] || continue
+      [[ -n "${seen[$var]+x}" ]] && continue
+      seen["$var"]=1
+      printf '%s\n' "$var"
+    done < <(feature_required_vars "$key")
+  done
+}
+
+verify_effective_non_secret_vars() {
+  local -A seen=()
+  local key var
+
+  for var in "${VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS[@]}"; do
+    [[ -n "${seen[$var]+x}" ]] && continue
+    seen["$var"]=1
+    printf '%s\n' "$var"
+  done
+
+  for key in "${FEATURE_KEYS[@]}"; do
+    feature_is_enabled "$key" || continue
+    while IFS= read -r var; do
+      [[ -n "$var" ]] || continue
+      [[ -n "${seen[$var]+x}" ]] && continue
+      seen["$var"]=1
+      printf '%s\n' "$var"
+    done < <(feature_effective_non_secret_vars "$key")
+  done
 }

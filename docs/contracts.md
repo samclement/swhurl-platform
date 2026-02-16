@@ -25,8 +25,10 @@ This is required so `helmfile` Go templates can read the environment.
 
 ### Required variables
 
-The source of truth for verification input contracts is `scripts/00_verify_contract_lib.sh`
-(consumed by `scripts/94_verify_config_inputs.sh` and other verify scripts).
+The source of truth for verification input contracts is:
+
+- `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases)
+- `scripts/00_verify_contract_lib.sh` (shared non-feature verification/teardown constants/helpers)
 
 Verification toggles:
 

@@ -35,6 +35,9 @@ readonly -a VERIFY_HELMFILE_IGNORED_RESOURCE_HEADERS=(
 # Teardown/delete-clean contract.
 readonly -a PLATFORM_MANAGED_NAMESPACES=(apps cert-manager ingress logging observability platform-system storage)
 readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
+readonly -a VERIFY_RELEASE_ALLOWLIST_DEFAULT=(
+  "apps/hello-web"
+)
 
 # During teardown (before Cilium delete), keep Cilium helm release metadata.
 readonly -a VERIFY_K3S_ALLOWED_SECRETS_PRE_CILIUM=(
@@ -77,6 +80,14 @@ is_platform_managed_namespace() {
     [[ "$item" == "$ns" ]] && return 0
   done
   return 1
+}
+
+is_release_in_platform_scope() {
+  local release_ref="$1"
+  local ns="${release_ref%%/*}"
+  [[ -n "$ns" ]] || return 1
+  [[ "$ns" == "kube-system" ]] && return 0
+  is_platform_managed_namespace "$ns"
 }
 
 is_allowed_k3s_secret_for_teardown() {

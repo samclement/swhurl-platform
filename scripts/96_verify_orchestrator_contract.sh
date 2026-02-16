@@ -17,6 +17,9 @@ fail=0
 printf "== Orchestrator Contract Verification ==\n"
 
 run="$SCRIPT_DIR/../run.sh"
+root="$SCRIPT_DIR/.."
+config_file="$root/config.env"
+helmfile_file="$root/helmfile.yaml.gotmpl"
 
 # Verify the supported default pipeline uses the Helmfile phase scripts.
 for s in 31_sync_helmfile_phase_core.sh 29_prepare_platform_runtime_inputs.sh 36_sync_helmfile_phase_platform.sh; do
@@ -57,6 +60,133 @@ for s in 26_manage_cilium_lifecycle.sh 30_manage_cert_manager_cleanup.sh; do
     ok "$s: destroy_release path present"
   else
     bad "$s: destroy_release path present"
+  fi
+done
+
+printf "\n== Feature Registry Contracts ==\n"
+
+allowed_non_feature_flags=(FEAT_VERIFY FEAT_VERIFY_DEEP)
+mapfile -t registry_flags < <(feature_registry_flags | rg -v '^$' | sort -u)
+if [[ "${#registry_flags[@]}" -eq 0 ]]; then
+  bad "feature registry exposes FEAT_* flags"
+else
+  ok "feature registry exposes FEAT_* flags"
+fi
+
+# Every FEAT_* in config/profiles should be represented by the registry
+# unless it is an orchestration-only toggle.
+config_sources=("$config_file")
+for p in "$root"/profiles/*.env; do
+  [[ -f "$p" ]] || continue
+  config_sources+=("$p")
+done
+
+mapfile -t declared_feat_flags < <(
+  awk -F= '/^[[:space:]]*FEAT_[A-Z0-9_]+[[:space:]]*=/{gsub(/[[:space:]]/,"",$1); print $1}' "${config_sources[@]}" | sort -u
+)
+for flag in "${declared_feat_flags[@]}"; do
+  if name_matches_any_pattern "$flag" "${registry_flags[@]}"; then
+    continue
+  fi
+  if name_matches_any_pattern "$flag" "${allowed_non_feature_flags[@]}"; then
+    continue
+  fi
+  bad "${flag}: declared in config/profiles but missing from feature registry"
+done
+ok "All feature FEAT_* flags in config/profiles are covered by the registry"
+
+# Ensure config.env carries defaults for each registered feature flag.
+mapfile -t config_defaults < <(
+  awk -F= '/^[[:space:]]*FEAT_[A-Z0-9_]+[[:space:]]*=/{gsub(/[[:space:]]/,"",$1); print $1}' "$config_file" | sort -u
+)
+for flag in "${registry_flags[@]}"; do
+  if name_matches_any_pattern "$flag" "${config_defaults[@]}"; then
+    ok "${flag}: default present in config.env"
+  else
+    bad "${flag}: missing default in config.env"
+  fi
+done
+
+# Parse release refs from helmfile (<namespace>/<name>).
+mapfile -t helmfile_releases < <(
+  awk '
+    /^[[:space:]]*-[[:space:]]name:[[:space:]]*/{
+      name=$0
+      sub(/^[[:space:]]*-[[:space:]]name:[[:space:]]*/,"",name)
+      gsub(/"/,"",name)
+      next
+    }
+    /^[[:space:]]*namespace:[[:space:]]*/{
+      ns=$0
+      sub(/^[[:space:]]*namespace:[[:space:]]*/,"",ns)
+      gsub(/"/,"",ns)
+      if(name!=""){print ns "/" name; name=""}
+    }
+  ' "$helmfile_file" | sort -u
+)
+
+declare -A checked_verify_script_tier=()
+for key in "${FEATURE_KEYS[@]}"; do
+  mapfile -t expected_releases < <(feature_expected_releases "$key")
+  if [[ "${#expected_releases[@]}" -eq 0 ]]; then
+    bad "feature '${key}' has no expected release mapping"
+  fi
+  for rel in "${expected_releases[@]}"; do
+    if printf '%s\n' "${helmfile_releases[@]}" | grep -qx "$rel"; then
+      ok "feature '${key}' release mapped in helmfile: ${rel}"
+    else
+      bad "feature '${key}' release missing from helmfile: ${rel}"
+    fi
+  done
+
+  verify_script="$(feature_verify_script "$key")"
+  verify_tier="$(feature_verify_tier "$key")"
+  if [[ -z "$verify_script" ]]; then
+    bad "feature '${key}' has no verify script assignment"
+    continue
+  fi
+  if [[ ! -f "$SCRIPT_DIR/$verify_script" ]]; then
+    bad "feature '${key}' verify script not found: ${verify_script}"
+    continue
+  fi
+  case "$verify_tier" in
+    core|deep) ;;
+    *)
+      bad "feature '${key}' has invalid verify tier: ${verify_tier}"
+      continue
+      ;;
+  esac
+
+  script_tier_key="${verify_script}:${verify_tier}"
+  if [[ -n "${checked_verify_script_tier[$script_tier_key]+x}" ]]; then
+    continue
+  fi
+  checked_verify_script_tier["$script_tier_key"]=1
+
+  if [[ "$verify_tier" == "core" ]]; then
+    if rg -F -q "add_step_if out_arr \"\$FEAT_VERIFY\" \"\$(step_path ${verify_script})\"" "$run"; then
+      ok "${verify_script}: wired in run.sh core tier"
+    else
+      bad "${verify_script}: missing from run.sh core tier"
+    fi
+  else
+    if rg -F -q "add_step_if out_arr \"\$FEAT_VERIFY_DEEP\" \"\$(step_path ${verify_script})\"" "$run"; then
+      ok "${verify_script}: wired in run.sh deep tier"
+    else
+      bad "${verify_script}: missing from run.sh deep tier"
+    fi
+  fi
+done
+
+# Catch orphaned verify scripts that exist but are never wired in run.sh.
+mapfile -t verify_scripts_on_disk < <(
+  find "$SCRIPT_DIR" -maxdepth 1 -type f -name '9[0-9]_verify_*.sh' -printf '%f\n' | sort
+)
+for s in "${verify_scripts_on_disk[@]}"; do
+  if rg -F -q "$s" "$run"; then
+    ok "${s}: referenced by run.sh"
+  else
+    bad "${s}: not referenced by run.sh"
   fi
 done
 

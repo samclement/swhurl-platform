@@ -11,6 +11,9 @@ Last updated: 2026-02-16
   - `scripts/91_verify_platform_state.sh` feature gates now use registry helpers (`feature_is_enabled`)
 - Remaining Phase 1 work:
   - remove remaining feature metadata duplication outside verification (for example Helm repo and runtime-input script wiring), or explicitly scope those to later phases if intentional
+- Phase 3 in progress:
+  - `scripts/96_verify_orchestrator_contract.sh` now validates registry-to-config flag coverage, registry-to-Helmfile release mappings, and verify-script wiring in `run.sh`
+  - `scripts/93_verify_expected_releases.sh` now checks missing expected releases and unexpected extras (with scope + allowlist controls)
 
 ## Goal
 

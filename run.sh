@@ -27,6 +27,7 @@ Options:
 Env:
   ONLY                 Same as --only (overridden by CLI flag)
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
+  FEAT_VERIFY_DEEP      If true, run extra/diagnostic verification scripts (default false)
 
 Manual prereqs:
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
@@ -119,6 +120,18 @@ add_step_if() {
 }
 
 FEAT_VERIFY="${FEAT_VERIFY:-true}"
+FEAT_VERIFY_DEEP="${FEAT_VERIFY_DEEP:-false}"
+if [[ "$FEAT_VERIFY" != "true" && "$FEAT_VERIFY" != "false" ]]; then
+  echo "[ERROR] FEAT_VERIFY must be true or false (got: $FEAT_VERIFY)" >&2
+  exit 1
+fi
+if [[ "$FEAT_VERIFY_DEEP" != "true" && "$FEAT_VERIFY_DEEP" != "false" ]]; then
+  echo "[ERROR] FEAT_VERIFY_DEEP must be true or false (got: $FEAT_VERIFY_DEEP)" >&2
+  exit 1
+fi
+if [[ "$FEAT_VERIFY" != "true" ]]; then
+  FEAT_VERIFY_DEEP="false"
+fi
 
 build_apply_plan() {
   local -n out_arr=$1
@@ -131,7 +144,7 @@ build_apply_plan() {
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
   # 3) Environment & Config Contract
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
   # 4) Cluster Dependencies
   add_step out_arr "$(step_path 25_helm_repos.sh)"
@@ -148,12 +161,14 @@ build_apply_plan() {
   add_step out_arr "$(step_path 75_sample_app.sh)"
 
   # 7) Verification
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 90_smoke_tests.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_validate_cluster.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_diff.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 93_verify_release_inventory.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 95_dump_context.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 96_verify_script_surface.sh)"
+  # Core verification gates (default)
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_verify_platform_state.sh)"
+  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_drift.sh)"
+  # Extra verification/diagnostics (opt-in)
+  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 90_verify_runtime_smoke.sh)"
+  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 93_verify_expected_releases.sh)"
+  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 95_capture_cluster_diagnostics.sh)"
+  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 96_verify_orchestrator_contract.sh)"
 }
 
 build_delete_plan() {
@@ -172,13 +187,13 @@ build_delete_plan() {
   add_step out_arr "$(step_path 30_manage_cert_manager_cleanup.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
-  # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_teardown.sh).
+  # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_execute_teardown.sh).
   add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
 
   # Deterministic finalizers: teardown -> cilium -> verify.
-  add_step out_arr "$(step_path 99_teardown.sh)"
+  add_step out_arr "$(step_path 99_execute_teardown.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
-  add_step out_arr "$(step_path 98_verify_delete_clean.sh)"
+  add_step out_arr "$(step_path 98_verify_teardown_clean.sh)"
 }
 
 print_plan() {
@@ -228,9 +243,11 @@ run_step() {
       ;;
     31_sync_helmfile_phase_core.sh|36_sync_helmfile_phase_platform.sh)
       ;;
-    90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|96_verify_script_surface.sh)
+    91_verify_platform_state.sh|92_verify_helmfile_drift.sh|94_verify_config_inputs.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
-    98_verify_delete_clean.sh|99_teardown.sh)
+    90_verify_runtime_smoke.sh|93_verify_expected_releases.sh|95_capture_cluster_diagnostics.sh|96_verify_orchestrator_contract.sh)
+      [[ "$DELETE_MODE" == false && "$FEAT_VERIFY_DEEP" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY_DEEP=false or delete mode)"; return 0; } ;;
+    98_verify_teardown_clean.sh|99_execute_teardown.sh)
       [[ "$DELETE_MODE" == true ]] || { echo "[skip] $base (delete-only)"; return 0; } ;;
   esac
 

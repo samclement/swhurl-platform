@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/00_lib.sh"
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 if [[ "$DELETE" == true ]]; then
-  log_info "Script surface check is apply-only; skipping in delete mode"
+  log_info "Orchestrator contract check is apply-only; skipping in delete mode"
   exit 0
 fi
 
@@ -14,7 +14,7 @@ ok(){ printf "[OK] %s\n" "$1"; }
 bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
 
 fail=0
-printf "== Script Surface Verification ==\n"
+printf "== Orchestrator Contract Verification ==\n"
 
 run="$SCRIPT_DIR/../run.sh"
 
@@ -65,4 +65,4 @@ if [[ "$fail" -ne 0 ]]; then
 fi
 
 echo
-ok "Script surface verification passed"
+ok "Orchestrator contract verification passed"

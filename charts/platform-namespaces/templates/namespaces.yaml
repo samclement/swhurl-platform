@@ -9,7 +9,7 @@ metadata:
   name: {{ $ns | quote }}
   annotations:
     # Prevent accidental early namespace deletion (e.g. if this release is destroyed out of order).
-    # Cluster teardown is handled explicitly by scripts/99_teardown.sh.
+    # Cluster teardown is handled explicitly by scripts/99_execute_teardown.sh.
     "helm.sh/resource-policy": keep
   labels:
 {{- range $k, $v := $labels }}

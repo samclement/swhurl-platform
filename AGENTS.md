@@ -32,13 +32,13 @@
   - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
   - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not include it in `platform-namespaces` or Cilium install will fail due to conflicting Helm ownership. `scripts/26_manage_cilium_lifecycle.sh` adopts `cilium-secrets` to the `cilium` release if it already exists.
-  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_manage_cilium_lifecycle.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
+  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_execute_teardown.sh` runs before `scripts/26_manage_cilium_lifecycle.sh` (Cilium last) and then `scripts/98_verify_teardown_clean.sh`.
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
-  - `scripts/92_verify_helmfile_diff.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
-  - `scripts/92_verify_helmfile_diff.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
+  - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
+  - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
   - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_manage_cilium_lifecycle.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
   - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_manage_cert_manager_cleanup.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
@@ -48,16 +48,19 @@
   - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart:
     - Always creates `letsencrypt-staging` and `letsencrypt-prod`
     - Keeps `letsencrypt` as an alias issuer pointing at the selected env (for stable ingress annotations)
-  - `scripts/99_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
-  - `scripts/99_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
-  - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_delete_clean.sh` checks it even when `DELETE_SCOPE=managed`.
-  - `scripts/98_verify_delete_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
-  - Validation gates are scriptized and run in-order: `92_verify_helmfile_diff.sh`, `93_verify_release_inventory.sh`, `94_verify_config_contract.sh`, `96_verify_script_surface.sh`.
-  - `scripts/91_validate_cluster.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
-  - Delete invariants are centralized in `scripts/00_lib.sh` via `PLATFORM_MANAGED_NAMESPACES` and `PLATFORM_CRD_NAME_REGEX`; keep `scripts/99_teardown.sh` and `scripts/98_verify_delete_clean.sh` aligned by using these shared constants.
+  - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
+  - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
+  - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_teardown_clean.sh` checks it even when `DELETE_SCOPE=managed`.
+  - `scripts/98_verify_teardown_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
+  - Verification tiers:
+    - Core (default, `FEAT_VERIFY=true`): `94_verify_config_inputs.sh`, `91_verify_platform_state.sh`, `92_verify_helmfile_drift.sh`.
+    - Deep (opt-in, `FEAT_VERIFY_DEEP=true`): `90_verify_runtime_smoke.sh`, `93_verify_expected_releases.sh`, `95_capture_cluster_diagnostics.sh`, `96_verify_orchestrator_contract.sh`.
+  - `scripts/95_capture_cluster_diagnostics.sh` writes diagnostics to `./artifacts/cluster-diagnostics-<timestamp>/` by default (or a custom output dir when passed as arg).
+  - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
+  - Delete invariants are centralized in `scripts/00_lib.sh` via `PLATFORM_MANAGED_NAMESPACES` and `PLATFORM_CRD_NAME_REGEX`; keep `scripts/99_execute_teardown.sh` and `scripts/98_verify_teardown_clean.sh` aligned by using these shared constants.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
-  - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
+  - `scripts/91_verify_platform_state.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
   - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration

@@ -25,7 +25,12 @@ This is required so `helmfile` Go templates can read the environment.
 
 ### Required variables
 
-The source of truth for required inputs is `scripts/94_verify_config_contract.sh`.
+The source of truth for required inputs is `scripts/94_verify_config_inputs.sh`.
+
+Verification toggles:
+
+- `FEAT_VERIFY=true|false`: run core verification gates (`94`, `91`, `92`) in `./run.sh`.
+- `FEAT_VERIFY_DEEP=true|false`: run extra diagnostics/consistency checks (`90`, `93`, `95`, `96`) in `./run.sh`.
 
 ## Tool Contract (How Each Tool Uses Env Vars)
 
@@ -79,7 +84,7 @@ Helm does not uninstall CRDs in a reliable/portable way. This repo’s delete co
 1) Remove workloads first (apps, then platform services), so PVCs/namespaces can terminate cleanly.
 2) Perform teardown sweeps (managed secrets/namespaces, platform CRDs).
 3) Remove Cilium last, so helper pods used for PVC cleanup can still run.
-4) Verify the cluster is clean via `scripts/98_verify_delete_clean.sh`.
+4) Verify the cluster is clean via `scripts/98_verify_teardown_clean.sh`.
 
 Delete scope:
 

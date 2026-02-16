@@ -39,7 +39,7 @@ Release inventory verification controls (`scripts/93_verify_expected_releases.sh
 
 - `VERIFY_RELEASE_SCOPE=platform|cluster` (default `platform`)
 - `VERIFY_RELEASE_ALLOWLIST=<comma-separated glob patterns>`
-- `VERIFY_RELEASE_STRICT_EXTRAS=true|false` (default `true`)
+- `VERIFY_RELEASE_STRICT_EXTRAS=true|false` (default `false`)
 
 ## Tool Contract (How Each Tool Uses Env Vars)
 

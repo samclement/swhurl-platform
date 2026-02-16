@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 # Helper library (not a runnable phase step).
-# Canonical feature registry for flags, required vars, expected releases,
-# and verification ownership metadata.
+# Canonical feature registry for flags, required vars, and expected releases.
 
 if [[ "${FEATURE_REGISTRY_LOADED:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
@@ -47,26 +46,6 @@ readonly -A FEATURE_EXPECTED_RELEASES=(
   [clickstack]="observability/clickstack"
   [otel_k8s]="logging/otel-k8s-daemonset logging/otel-k8s-cluster"
   [minio]="storage/minio"
-)
-
-# Current runtime verification ownership (pre-modularization).
-readonly -A FEATURE_VERIFY_SCRIPT=(
-  [cilium]="91_verify_platform_state.sh"
-  [oauth2_proxy]="91_verify_platform_state.sh"
-  [clickstack]="91_verify_platform_state.sh"
-  [otel_k8s]="91_verify_platform_state.sh"
-  [minio]="91_verify_platform_state.sh"
-)
-
-# Verification tier for each feature verifier:
-# - core: runs when FEAT_VERIFY=true
-# - deep: runs when FEAT_VERIFY_DEEP=true
-readonly -A FEATURE_VERIFY_TIER=(
-  [cilium]="core"
-  [oauth2_proxy]="core"
-  [clickstack]="core"
-  [otel_k8s]="core"
-  [minio]="core"
 )
 
 feature_registry_keys() {
@@ -118,14 +97,4 @@ feature_expected_releases() {
   for r in $releases; do
     printf '%s\n' "$r"
   done
-}
-
-feature_verify_script() {
-  local key="$1"
-  printf '%s' "${FEATURE_VERIFY_SCRIPT[$key]:-}"
-}
-
-feature_verify_tier() {
-  local key="$1"
-  printf '%s' "${FEATURE_VERIFY_TIER[$key]:-}"
 }

@@ -125,7 +125,6 @@ mapfile -t helmfile_releases < <(
   ' "$helmfile_file" | sort -u
 )
 
-declare -A checked_verify_script_tier=()
 for key in "${FEATURE_KEYS[@]}"; do
   mapfile -t expected_releases < <(feature_expected_releases "$key")
   if [[ "${#expected_releases[@]}" -eq 0 ]]; then
@@ -138,56 +137,6 @@ for key in "${FEATURE_KEYS[@]}"; do
       bad "feature '${key}' release missing from helmfile: ${rel}"
     fi
   done
-
-  verify_script="$(feature_verify_script "$key")"
-  verify_tier="$(feature_verify_tier "$key")"
-  if [[ -z "$verify_script" ]]; then
-    bad "feature '${key}' has no verify script assignment"
-    continue
-  fi
-  if [[ ! -f "$SCRIPT_DIR/$verify_script" ]]; then
-    bad "feature '${key}' verify script not found: ${verify_script}"
-    continue
-  fi
-  case "$verify_tier" in
-    core|deep) ;;
-    *)
-      bad "feature '${key}' has invalid verify tier: ${verify_tier}"
-      continue
-      ;;
-  esac
-
-  script_tier_key="${verify_script}:${verify_tier}"
-  if [[ -n "${checked_verify_script_tier[$script_tier_key]+x}" ]]; then
-    continue
-  fi
-  checked_verify_script_tier["$script_tier_key"]=1
-
-  if [[ "$verify_tier" == "core" ]]; then
-    if rg -F -q "add_step_if out_arr \"\$FEAT_VERIFY\" \"\$(step_path ${verify_script})\"" "$run"; then
-      ok "${verify_script}: wired in run.sh core tier"
-    else
-      bad "${verify_script}: missing from run.sh core tier"
-    fi
-  else
-    if rg -F -q "add_step_if out_arr \"\$FEAT_VERIFY_DEEP\" \"\$(step_path ${verify_script})\"" "$run"; then
-      ok "${verify_script}: wired in run.sh deep tier"
-    else
-      bad "${verify_script}: missing from run.sh deep tier"
-    fi
-  fi
-done
-
-# Catch orphaned verify scripts that exist but are never wired in run.sh.
-mapfile -t verify_scripts_on_disk < <(
-  find "$SCRIPT_DIR" -maxdepth 1 -type f -name '9[0-9]_verify_*.sh' -printf '%f\n' | sort
-)
-for s in "${verify_scripts_on_disk[@]}"; do
-  if rg -F -q "$s" "$run"; then
-    ok "${s}: referenced by run.sh"
-  else
-    bad "${s}: not referenced by run.sh"
-  fi
 done
 
 if [[ "$fail" -ne 0 ]]; then

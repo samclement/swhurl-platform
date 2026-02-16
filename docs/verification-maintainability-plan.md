@@ -12,8 +12,11 @@ Last updated: 2026-02-16
 - Remaining Phase 1 work:
   - remove remaining feature metadata duplication outside verification (for example Helm repo and runtime-input script wiring), or explicitly scope those to later phases if intentional
 - Phase 3 in progress:
-  - `scripts/96_verify_orchestrator_contract.sh` now validates registry-to-config flag coverage, registry-to-Helmfile release mappings, and verify-script wiring in `run.sh`
+  - `scripts/96_verify_orchestrator_contract.sh` now validates registry-to-config flag coverage and registry-to-Helmfile release mappings
   - `scripts/93_verify_expected_releases.sh` now checks missing expected releases and unexpected extras (with scope + allowlist controls)
+- Simplicity decision:
+  - Keep `scripts/25_helm_repos.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit for now.
+  - Use `docs/add-feature-checklist.md` as the primary maintainer workflow.
 
 ## Goal
 

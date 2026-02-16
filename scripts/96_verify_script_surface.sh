@@ -19,7 +19,7 @@ printf "== Script Surface Verification ==\n"
 run="$SCRIPT_DIR/../run.sh"
 
 # Verify the supported default pipeline uses the Helmfile phase scripts.
-for s in 31_helmfile_core.sh 29_platform_config.sh 36_helmfile_platform.sh; do
+for s in 31_sync_helmfile_phase_core.sh 29_prepare_platform_runtime_inputs.sh 36_sync_helmfile_phase_platform.sh; do
   p="$SCRIPT_DIR/$s"
   if [[ -f "$p" ]]; then
     ok "$s: present"
@@ -28,25 +28,25 @@ for s in 31_helmfile_core.sh 29_platform_config.sh 36_helmfile_platform.sh; do
   fi
 done
 
-if rg -q '31_helmfile_core\.sh' "$run" && rg -q '29_platform_config\.sh' "$run" && rg -q '36_helmfile_platform\.sh' "$run"; then
+if rg -q '31_sync_helmfile_phase_core\.sh' "$run" && rg -q '29_prepare_platform_runtime_inputs\.sh' "$run" && rg -q '36_sync_helmfile_phase_platform\.sh' "$run"; then
   ok "run.sh: phase scripts wired into plan"
 else
   bad "run.sh: phase scripts wired into plan"
 fi
 
-if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_helmfile_core.sh"; then
-  ok "31_helmfile_core.sh: uses helmfile_cmd with phase=core label selection"
+if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then
+  ok "31_sync_helmfile_phase_core.sh: uses helmfile_cmd with phase=core label selection"
 else
-  bad "31_helmfile_core.sh: uses helmfile_cmd with phase=core label selection"
+  bad "31_sync_helmfile_phase_core.sh: uses helmfile_cmd with phase=core label selection"
 fi
-if rg -q 'helmfile_cmd -l phase=platform (sync|destroy)' "$SCRIPT_DIR/36_helmfile_platform.sh"; then
-  ok "36_helmfile_platform.sh: uses helmfile_cmd with phase=platform label selection"
+if rg -q 'helmfile_cmd -l phase=platform (sync|destroy)' "$SCRIPT_DIR/36_sync_helmfile_phase_platform.sh"; then
+  ok "36_sync_helmfile_phase_platform.sh: uses helmfile_cmd with phase=platform label selection"
 else
-  bad "36_helmfile_platform.sh: uses helmfile_cmd with phase=platform label selection"
+  bad "36_sync_helmfile_phase_platform.sh: uses helmfile_cmd with phase=platform label selection"
 fi
 
 # Release-specific scripts should keep using shared Helmfile helpers if/when they exist.
-for s in 26_cilium.sh 30_cert_manager.sh; do
+for s in 26_manage_cilium_lifecycle.sh 30_manage_cert_manager_cleanup.sh; do
   p="$SCRIPT_DIR/$s"
   if rg -q 'sync_release ' "$p"; then
     ok "$s: sync_release path present"

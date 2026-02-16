@@ -15,31 +15,31 @@ Print the current plan:
 - `scripts/01_check_prereqs.sh`
 
 Manual prerequisite (optional): DNS registration for `.swhurl.com`
-- `scripts/manual_dns_register.sh` installs/updates a systemd service/timer that keeps Route53 records current.
-- Run `scripts/manual_dns_register.sh --delete` to remove the unit files.
+- `scripts/manual_configure_route53_dns_updater.sh` installs/updates a systemd service/timer that keeps Route53 records current.
+- Run `scripts/manual_configure_route53_dns_updater.sh --delete` to remove the unit files.
 
 2) Basic Kubernetes Cluster (kubeconfig)
-- `scripts/15_kube_context.sh`
+- `scripts/15_verify_cluster_access.sh`
 Manual prerequisite (optional): Local host bootstrap (k3s)
 - `scripts/manual_install_k3s_minimal.sh` installs k3s with Traefik + flannel disabled (Cilium is installed separately).
-- Verify kubeconfig and API reachability with `scripts/15_kube_context.sh`.
+- Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`.
 
 3) Environment (profiles/secrets) & verification
 - `scripts/94_verify_config_contract.sh` (feature-gated by `FEAT_VERIFY`)
 
 4) Cluster deps (helm/cilium) & verification
 - `scripts/25_helm_repos.sh`
-- `scripts/20_namespaces.sh` (Helmfile local chart: `component=platform-namespaces`)
-- `scripts/26_cilium.sh` (feature-gated by `FEAT_CILIUM`)
+- `scripts/20_reconcile_platform_namespaces.sh` (Helmfile local chart: `component=platform-namespaces`)
+- `scripts/26_manage_cilium_lifecycle.sh` (feature-gated by `FEAT_CILIUM`)
 
 5) Platform services & verification
-- `scripts/31_helmfile_core.sh` (Helmfile: `phase=core`, installs cert-manager + ingress-nginx)
-- `scripts/31_helmfile_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`, default `LETSENCRYPT_ENV=staging`)
-- `scripts/29_platform_config.sh` (kubectl: secrets/configmaps required by Helm releases)
-- `scripts/36_helmfile_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags)
+- `scripts/31_sync_helmfile_phase_core.sh` (Helmfile: `phase=core`, installs cert-manager + ingress-nginx)
+- `scripts/31_sync_helmfile_phase_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`, default `LETSENCRYPT_ENV=staging`)
+- `scripts/29_prepare_platform_runtime_inputs.sh` (kubectl: secrets/configmaps required by Helm releases)
+- `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags)
 
 Notes:
-- `scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_helmfile_core.sh`.
+- `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.
 
 6) Test application & verification
 - `scripts/75_sample_app.sh`

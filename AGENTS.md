@@ -10,74 +10,79 @@
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
   - `scripts/manual_install_k3s_minimal.sh` bootstraps k3s only (Traefik disabled, flannel disabled); it does not install Cilium.
-  - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_cilium.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
-  - `scripts/26_cilium.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
+  - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_manage_cilium_lifecycle.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
+  - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium-helmfile.yaml.gotmpl` with `useDigest: false`.
   - Hubble UI ingress is configured declaratively in `infra/values/cilium-helmfile.yaml.gotmpl` (no script-side envsubst).
 
 - Orchestrator run order
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
+  - Script naming convention:
+    - `NN_verify_*` for validation gates (e.g. `15_verify_cluster_access.sh`).
+    - `NN_reconcile_*` / `NN_prepare_*` for declarative pre-Helm setup.
+    - `NN_manage_*_lifecycle` / `NN_manage_*_cleanup` for exception scripts that own imperative lifecycle/finalizer behavior.
+    - `NN_sync_helmfile_phase_*` for Helmfile phase wrappers.
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
   - Helmfile label conventions:
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
-  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_kube_context.sh`.
+  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
   - Helm repositories are managed via `scripts/25_helm_repos.sh`.
   - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
-  - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_namespaces.sh` and `scripts/31_helmfile_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
-  - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not include it in `platform-namespaces` or Cilium install will fail due to conflicting Helm ownership. `scripts/26_cilium.sh` adopts `cilium-secrets` to the `cilium` release if it already exists.
-  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_cilium.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
+  - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
+  - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not include it in `platform-namespaces` or Cilium install will fail due to conflicting Helm ownership. `scripts/26_manage_cilium_lifecycle.sh` adopts `cilium-secrets` to the `cilium` release if it already exists.
+  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_teardown.sh` runs before `scripts/26_manage_cilium_lifecycle.sh` (Cilium last) and then `scripts/98_verify_delete_clean.sh`.
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
-    - `scripts/31_helmfile_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
-    - `scripts/36_helmfile_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_platform_config.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
+    - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
+    - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
+    - `scripts/29_prepare_platform_runtime_inputs.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
   - `scripts/92_verify_helmfile_diff.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_diff.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
-  - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_cilium.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
-  - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_cert_manager.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
-  - cert-manager webhook CA injection can lag after install; `scripts/30_cert_manager.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
-  - `scripts/30_cert_manager.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
-  - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_cert_manager.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
-  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_helmfile_core.sh` applies ClusterIssuers via a local chart:
+  - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_manage_cilium_lifecycle.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
+  - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_manage_cert_manager_cleanup.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
+  - cert-manager webhook CA injection can lag after install; `scripts/30_manage_cert_manager_cleanup.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
+  - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
+  - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
+  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart:
     - Always creates `letsencrypt-staging` and `letsencrypt-prod`
     - Keeps `letsencrypt` as an alias issuer pointing at the selected env (for stable ingress annotations)
   - `scripts/99_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
-  - `scripts/99_teardown.sh --delete` is a hard gate before `scripts/26_cilium.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
-  - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_cilium.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_delete_clean.sh` checks it even when `DELETE_SCOPE=managed`.
+  - `scripts/99_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
+  - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_delete_clean.sh` checks it even when `DELETE_SCOPE=managed`.
   - `scripts/98_verify_delete_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
   - Validation gates are scriptized and run in-order: `92_verify_helmfile_diff.sh`, `93_verify_release_inventory.sh`, `94_verify_config_contract.sh`, `96_verify_script_surface.sh`.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_validate_cluster.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
-  - Observability is installed via `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`).
+  - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/manual_dns_register.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/manual_configure_route53_dns_updater.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
-  - `scripts/manual_dns_register.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/manual_dns_register.sh` when desired subdomains change.
-  - `scripts/manual_dns_register.sh` is a manual prerequisite (not part of `run.sh`); run it once per host to install/update the systemd timer, and run with `--delete` to uninstall.
+  - `scripts/manual_configure_route53_dns_updater.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/manual_configure_route53_dns_updater.sh` when desired subdomains change.
+  - `scripts/manual_configure_route53_dns_updater.sh` is a manual prerequisite (not part of `run.sh`); run it once per host to install/update the systemd timer, and run with `--delete` to uninstall.
 
 - OIDC for applications
   - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:
     - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
     - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
     - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`).
+  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`).
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
 
 - Observability with ClickStack
-  - Default install path uses `scripts/36_helmfile_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
+  - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Default install path uses `scripts/29_platform_config.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_helmfile_platform.sh` (installs the collector releases).
+  - Default install path uses `scripts/29_prepare_platform_runtime_inputs.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_sync_helmfile_phase_platform.sh` (installs the collector releases).
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
-  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/29_platform_config.sh` + `scripts/36_helmfile_platform.sh`.
+  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
@@ -257,7 +262,7 @@ metadata:
 Install ClickStack (ClickHouse + HyperDX + OTel Collector):
 
 ```
-./scripts/36_helmfile_platform.sh
+./scripts/36_sync_helmfile_phase_platform.sh
 ```
 
 This script syncs Helmfile releases labeled `phase=platform`, including ClickStack, and exposes HyperDX at `https://${CLICKSTACK_HOST}` with cert-manager TLS.
@@ -269,8 +274,8 @@ If oauth2-proxy is enabled, auth annotations are applied declaratively by Helmfi
 Install Kubernetes-focused OTel collectors (daemonset + deployment) and forward telemetry to ClickStack:
 
 ```
-./scripts/29_platform_config.sh
-./scripts/36_helmfile_platform.sh
+./scripts/29_prepare_platform_runtime_inputs.sh
+./scripts/36_sync_helmfile_phase_platform.sh
 ```
 
 This follows the ClickStack Kubernetes integration pattern using the upstream `open-telemetry/opentelemetry-collector` chart.

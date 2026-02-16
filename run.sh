@@ -30,7 +30,7 @@ Env:
 
 Manual prereqs:
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
-  domains and want automatic Route53 updates, run: ./scripts/manual_dns_register.sh
+  domains and want automatic Route53 updates, run: ./scripts/manual_configure_route53_dns_updater.sh
   Host bootstrap (k3s install) is also manual. See README.
 USAGE
 }
@@ -128,20 +128,20 @@ build_apply_plan() {
   add_step out_arr "$(step_path 01_check_prereqs.sh)"
 
   # 2) Cluster Access (kubeconfig)
-  add_step out_arr "$(step_path 15_kube_context.sh)"
+  add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
   # 3) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_contract.sh)"
 
   # 4) Cluster Dependencies
   add_step out_arr "$(step_path 25_helm_repos.sh)"
-  add_step out_arr "$(step_path 20_namespaces.sh)"
-  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
+  add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
+  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
 
   # 5) Platform Services
-  add_step out_arr "$(step_path 31_helmfile_core.sh)"
-  add_step out_arr "$(step_path 29_platform_config.sh)"
-  add_step out_arr "$(step_path 36_helmfile_platform.sh)"
+  add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
+  add_step out_arr "$(step_path 29_prepare_platform_runtime_inputs.sh)"
+  add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
   # 6) Test Application
@@ -161,23 +161,23 @@ build_delete_plan() {
   out_arr=()
 
   # Preflight: require kube context (do not pass --delete).
-  add_step out_arr "$(step_path 15_kube_context.sh)"
+  add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
   # Reverse platform components (apps -> services -> finalizers).
   add_step out_arr "$(step_path 75_sample_app.sh)"
 
-  add_step out_arr "$(step_path 36_helmfile_platform.sh)"
-  add_step out_arr "$(step_path 29_platform_config.sh)"
-  add_step out_arr "$(step_path 31_helmfile_core.sh)"
-  add_step out_arr "$(step_path 30_cert_manager.sh)"
+  add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
+  add_step out_arr "$(step_path 29_prepare_platform_runtime_inputs.sh)"
+  add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
+  add_step out_arr "$(step_path 30_manage_cert_manager_cleanup.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
   # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_teardown.sh).
-  add_step out_arr "$(step_path 20_namespaces.sh)"
+  add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
 
   # Deterministic finalizers: teardown -> cilium -> verify.
   add_step out_arr "$(step_path 99_teardown.sh)"
-  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_cilium.sh)"
+  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
   add_step out_arr "$(step_path 98_verify_delete_clean.sh)"
 }
 
@@ -201,7 +201,7 @@ print_plan() {
   for s in "${steps[@]}"; do
     local base
     base=$(basename "$s")
-    if [[ "$DELETE_MODE" == true && "$base" != "15_kube_context.sh" ]]; then
+    if [[ "$DELETE_MODE" == true && "$base" != "15_verify_cluster_access.sh" ]]; then
       printf "  - %s (delete)\n" "$base"
     else
       printf "  - %s\n" "$base"
@@ -221,12 +221,12 @@ run_step() {
 
   # Feature gates for direct --only execution and readability.
   case "$base" in
-    26_cilium.sh)
+    26_manage_cilium_lifecycle.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
-    29_platform_config.sh)
+    29_prepare_platform_runtime_inputs.sh)
       # Contains internal feature gates for individual resources.
       ;;
-    31_helmfile_core.sh|36_helmfile_platform.sh)
+    31_sync_helmfile_phase_core.sh|36_sync_helmfile_phase_platform.sh)
       ;;
     90_smoke_tests.sh|91_validate_cluster.sh|92_verify_helmfile_diff.sh|93_verify_release_inventory.sh|94_verify_config_contract.sh|95_dump_context.sh|96_verify_script_surface.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
@@ -235,7 +235,7 @@ run_step() {
   esac
 
   if [[ "$DELETE_MODE" == true ]]; then
-    if [[ "$base" == "15_kube_context.sh" ]]; then
+    if [[ "$base" == "15_verify_cluster_access.sh" ]]; then
       echo "[run] $base"
       "$s"
     else

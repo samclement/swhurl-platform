@@ -32,7 +32,7 @@ Validation
 Changes
 - Add `charts/platform-namespaces/` which templates the managed namespaces.
 - Add a Helmfile release `platform-namespaces` (`labels.phase=core`).
-- Make `scripts/20_namespaces.sh` a thin wrapper around Helmfile (or remove it after the cutover).
+- Make `scripts/20_reconcile_platform_namespaces.sh` a thin wrapper around Helmfile (or remove it after the cutover).
 
 Validation
 - `helmfile -l phase=core apply`

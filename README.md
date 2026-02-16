@@ -6,7 +6,7 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (gitignored, see `profiles/secrets.example.env`).
-3. Optional (DNS for `.swhurl.com`): `./scripts/manual_dns_register.sh` (installs/updates the systemd timer). Remove via `./scripts/manual_dns_register.sh --delete`.
+3. Optional (DNS for `.swhurl.com`): `./scripts/manual_configure_route53_dns_updater.sh` (installs/updates the systemd timer). Remove via `./scripts/manual_configure_route53_dns_updater.sh --delete`.
 4. Print the plan: `./scripts/02_print_plan.sh`
 5. Apply: `./run.sh`
 
@@ -47,11 +47,11 @@ Most platform services are installed declaratively via Helmfile and grouped into
 
 The default `./run.sh` path uses these scripts:
 
-- `scripts/31_helmfile_core.sh`: `helmfile sync/destroy -l phase=core` and waits for cert-manager webhook CA injection (needed before creating issuers).
-- `scripts/29_platform_config.sh`: creates/deletes the small set of non-Helm resources the charts depend on (Secrets/ConfigMaps).
-- `scripts/36_helmfile_platform.sh`: `helmfile sync/destroy -l phase=platform`.
+- `scripts/31_sync_helmfile_phase_core.sh`: `helmfile sync/destroy -l phase=core` and waits for cert-manager webhook CA injection (needed before creating issuers).
+- `scripts/29_prepare_platform_runtime_inputs.sh`: creates/deletes the small set of non-Helm resources the charts depend on (Secrets/ConfigMaps).
+- `scripts/36_sync_helmfile_phase_platform.sh`: `helmfile sync/destroy -l phase=platform`.
 
-`scripts/30_cert_manager.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
+`scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
 
 Run everything:
 
@@ -130,7 +130,7 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 4) `kubectl` (apply and context)
 - `kubectl` reads `KUBECONFIG` (or `~/.kube/config`) for cluster access.
 - `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
-- Some charts rely on runtime Secrets/ConfigMaps that are created with `kubectl` (see `scripts/29_platform_config.sh`). Those resources are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`.
+- Some charts rely on runtime Secrets/ConfigMaps that are created with `kubectl` (see `scripts/29_prepare_platform_runtime_inputs.sh`). Those resources are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`.
 
 5) `kustomize` (optional)
 - Kustomize is not used by the default pipeline anymore; it’s kept as an optional tool for teams that prefer raw manifests for apps.
@@ -145,14 +145,14 @@ Environment layering
 
 ACME / Let’s Encrypt
 - Default is staging: `LETSENCRYPT_ENV=staging`
-- `scripts/31_helmfile_core.sh` ensures:
+- `scripts/31_sync_helmfile_phase_core.sh` ensures:
   - `letsencrypt-staging` and `letsencrypt-prod` exist
   - `letsencrypt` is an alias issuer that points to the selected env (so most ingresses can keep `cert-manager.io/cluster-issuer: letsencrypt`)
 
 k3s bootstrap (optional)
 - Cluster provisioning is not the default workflow. If you want the repo to install k3s on the local host:
   - Run `scripts/manual_install_k3s_minimal.sh` (installs k3s with Traefik + flannel disabled; Cilium is installed separately)
-  - Verify kubeconfig and API reachability with `scripts/15_kube_context.sh`
+  - Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`
 
 Verification toggles
 - `FEAT_VERIFY=true|false` controls whether the verification suite runs during `./run.sh`.
@@ -172,7 +172,7 @@ Helmfile drift checks (`scripts/92_verify_helmfile_diff.sh`)
 Delete ordering is intentionally strict:
 - Platform services are removed first.
 - `scripts/99_teardown.sh` sweeps managed namespaces, non-k3s-native secrets, and platform CRDs.
-- Cilium is deleted last (`scripts/26_cilium.sh --delete`), so k3s/local-path helper pods can still run during PVC/namespace cleanup.
+- Cilium is deleted last (`scripts/26_manage_cilium_lifecycle.sh --delete`), so k3s/local-path helper pods can still run during PVC/namespace cleanup.
 - `scripts/98_verify_delete_clean.sh` runs last and fails the delete if anything remains.
 
 Delete scope (shared clusters)

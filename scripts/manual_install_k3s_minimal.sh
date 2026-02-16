@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/00_lib.sh"
 # 1) Install k3s with Traefik disabled and flannel/network-policy disabled
 # 2) Configure kubeconfig and wait for node registration
 #
-# Cilium is installed separately by scripts/26_cilium.sh.
+# Cilium is installed separately by scripts/26_manage_cilium_lifecycle.sh.
 
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
@@ -69,5 +69,5 @@ if ! kubectl get nodes --no-headers 2>/dev/null | grep -q .; then
 fi
 
 # Do not wait for Ready here: with flannel disabled this depends on Cilium.
-log_info "k3s installed without flannel/traefik. Next step: scripts/26_cilium.sh"
-log_info "Verify kubeconfig with: scripts/15_kube_context.sh"
+log_info "k3s installed without flannel/traefik. Next step: scripts/26_manage_cilium_lifecycle.sh"
+log_info "Verify kubeconfig with: scripts/15_verify_cluster_access.sh"

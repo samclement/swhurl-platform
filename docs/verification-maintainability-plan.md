@@ -4,18 +4,17 @@ Last updated: 2026-02-16
 
 ## Implementation Status
 
-- Phase 1 started:
-  - added `scripts/00_feature_registry_lib.sh`
-  - `scripts/93_verify_expected_releases.sh` now resolves expected releases via registry-driven helpers
-  - `scripts/94_verify_config_inputs.sh` now resolves feature required vars via registry-driven helpers
-  - `scripts/91_verify_platform_state.sh` feature gates now use registry helpers (`feature_is_enabled`)
-- Remaining Phase 1 work:
-  - remove remaining feature metadata duplication outside verification (for example Helm repo and runtime-input script wiring), or explicitly scope those to later phases if intentional
-- Phase 3 in progress:
-  - `scripts/96_verify_orchestrator_contract.sh` now validates registry-to-config flag coverage and registry-to-Helmfile release mappings
-  - `scripts/93_verify_expected_releases.sh` now checks missing expected releases and unexpected extras (with scope + allowlist controls)
-- Simplicity decision:
-  - Keep `scripts/25_helm_repos.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit for now.
+Current state (2026-02-16):
+
+- Implemented:
+  - `scripts/00_feature_registry_lib.sh` is the feature verification registry.
+  - `scripts/93_verify_expected_releases.sh` resolves expected releases via registry helpers and can check unexpected extras (scope + allowlist controls).
+  - `scripts/94_verify_config_inputs.sh` resolves feature-required vars via registry helpers.
+  - `scripts/91_verify_platform_state.sh` gates feature checks via registry helpers (`feature_is_enabled`).
+  - `scripts/96_verify_orchestrator_contract.sh` validates registry/config flag coverage and registry/Helmfile release mappings.
+- Intentional simplification:
+  - Keep `scripts/25_helm_repos.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit.
+  - Keep runtime verification mostly centralized in `scripts/91_verify_platform_state.sh` unless maintenance pain clearly justifies splitting.
   - Use `docs/add-feature-checklist.md` as the primary maintainer workflow.
 
 ## Goal
@@ -55,34 +54,30 @@ This is the core maintainability issue: one feature requires synchronized edits 
 
 ## Desired End State
 
-Maintainer adds a new feature by editing one source-of-truth registry and one feature verification module, then runs one consistency check that validates wiring.
+Maintainer adds a new feature by editing one source-of-truth registry and one runtime verification touchpoint, then runs one consistency check that validates wiring.
 
 ## High-Level Plan
 
 ### Phase 1: Single Feature Registry
 
-Create a registry file (for example `scripts/feature_registry.sh` or `infra/contracts/features.yaml`) defining, per feature:
+Use `scripts/00_feature_registry_lib.sh` as the source of truth defining, per feature:
 
 - feature flag name (`FEAT_*`)
 - helmfile release(s)
 - required env vars
 - optional runtime inputs/secrets contract
 - verification tier (`core` or `deep`)
-- verify module entrypoint
+- runtime verification entrypoint (currently in `scripts/91_verify_platform_state.sh`)
 
 Then make existing verification scripts read from this registry instead of hardcoded feature lists.
 
-### Phase 2: Modular Runtime Verification
+### Phase 2: Runtime Verification Modularity (Conditional)
 
-Refactor `scripts/91_verify_platform_state.sh` into a dispatcher + modules, for example:
+Keep `scripts/91_verify_platform_state.sh` as a single verifier by default.
 
-- `scripts/91_verify_platform_state.sh` (dispatcher/orchestrator)
-- `scripts/verify_components/oauth2_proxy.sh`
-- `scripts/verify_components/clickstack.sh`
-- `scripts/verify_components/minio.sh`
-- `scripts/verify_components/keycloak.sh` (new feature case)
+If it becomes materially hard to maintain, split it into a thin dispatcher plus per-feature modules (for example under `scripts/verify_components/`) as a scoped follow-up.
 
-Goal: adding feature verification is additive, not invasive.
+Goal: add feature verification with minimal invasive edits while avoiding abstraction overhead until needed.
 
 ### Phase 3: Stronger Consistency Gates
 
@@ -90,9 +85,9 @@ Expand `scripts/96_verify_orchestrator_contract.sh` to fail when:
 
 - a `FEAT_*` flag exists but has no registry entry
 - a registry feature has no Helmfile release mapping
-- a registry feature has no verify module
-- verify modules exist but are not assigned to a tier
-- tiered verify modules are not executed by `run.sh`
+- a registry feature has no runtime verification coverage
+- runtime verification coverage is assigned to the wrong verification tier
+- tiered verification scripts are not executed by `run.sh`
 
 Also upgrade `scripts/93_verify_expected_releases.sh` to detect both:
 
@@ -124,7 +119,7 @@ Optional follow-up: lightweight mocked checks for registry/module integrity with
 Implement Keycloak using the new model as the proving case:
 
 - add Keycloak feature in registry
-- add Keycloak verify module
+- add Keycloak runtime verification (in `scripts/91_verify_platform_state.sh`, or module form if Phase 2 is adopted)
 - verify repo/docs updates are derived from registry-driven flow
 - confirm reduced maintainer touchpoints
 
@@ -133,8 +128,8 @@ Implement Keycloak using the new model as the proving case:
 Issue VER-001: Source-of-truth duplication across config, Helmfile, and verify scripts.
 Resolution target: Phase 1.
 
-Issue VER-002: Runtime verification monolith (`91`) causes high edit conflict and onboarding cost.
-Resolution target: Phase 2.
+Issue VER-002: Runtime verification monolith (`91`) may cause edit conflict/onboarding cost as features grow.
+Resolution target: Phase 2 (only if complexity threshold is crossed).
 
 Issue VER-003: Orchestrator contract checks are too narrow and can miss unwired verify scripts.
 Resolution target: Phase 3.
@@ -164,9 +159,9 @@ Resolution target: model runtime-input contracts in registry during Phases 1 and
 
 - Adding a new platform feature requires at most:
   - one registry update
-  - one feature verify module
+  - one runtime verification update (single file or module, depending on Phase 2)
   - one Helmfile release definition
-- `96` fails on any missing wiring between feature flag, Helmfile, and verification module.
+- `96` fails on any missing wiring between feature flag and Helmfile release mappings.
 - `93` reports both missing and unexpected releases.
 - Documentation includes a concise maintainer playbook for adding a feature and verification.
 - Keycloak is added successfully using the new flow.
@@ -181,8 +176,8 @@ If a future prompt asks to continue this work, start by:
 
 Primary migration sequence recommendation:
 
-1. Implement Phase 1 registry.
-2. Implement Phase 3 consistency checks against that registry.
-3. Refactor Phase 2 modular verification.
-4. Add CI (Phase 5).
+1. Keep Phase 1 registry as source of truth and maintain it.
+2. Continue expanding Phase 3 consistency checks against that registry.
+3. Add CI guardrails (Phase 5).
+4. Re-evaluate Phase 2 modular verification only if maintainability pain is concrete.
 5. Use Keycloak as migration proof (Phase 6).

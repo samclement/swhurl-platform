@@ -59,6 +59,7 @@
   - `scripts/95_capture_cluster_diagnostics.sh` writes diagnostics to `./artifacts/cluster-diagnostics-<timestamp>/` by default (or a custom output dir when passed as arg).
   - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
+  - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
   - Verification maintainability roadmap (including Keycloak as the pilot feature) is documented in `docs/verification-maintainability-plan.md`; use it as the source for future verification framework refactors and follow-up prompts.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.

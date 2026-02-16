@@ -73,7 +73,7 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
 esac
 
 say "Cilium"
-if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+if feature_is_enabled cilium; then
   if kubectl -n kube-system get ds cilium >/dev/null 2>&1; then
     ok "cilium daemonset present"
   else
@@ -87,11 +87,11 @@ if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
     add_suggest "scripts/26_manage_cilium_lifecycle.sh"
   fi
 else
-  ok "FEAT_CILIUM=false; skipping"
+  ok "$(feature_flag_var cilium)=false; skipping"
 fi
 
 say "Hubble"
-if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
+if feature_is_enabled cilium; then
   if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
     ok "hubble-relay deployment present"
   else
@@ -109,7 +109,7 @@ if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
     check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
-    if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+    if feature_is_enabled oauth2_proxy; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
@@ -117,14 +117,14 @@ if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
       check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
       check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_manage_cilium_lifecycle.sh"
     else
-      ok "FEAT_OAUTH2_PROXY=false; skipping hubble-ui auth annotation checks"
+      ok "$(feature_flag_var oauth2_proxy)=false; skipping hubble-ui auth annotation checks"
     fi
   else
     mismatch "hubble-ui ingress not found"
     add_suggest "scripts/26_manage_cilium_lifecycle.sh"
   fi
 else
-  ok "FEAT_CILIUM=false; skipping"
+  ok "$(feature_flag_var cilium)=false; skipping"
 fi
 
 say "ingress-nginx"
@@ -162,7 +162,7 @@ else
 fi
 
 say "oauth2-proxy"
-if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+if feature_is_enabled oauth2_proxy; then
   if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then
     ok "oauth2-proxy-secret present"
   else
@@ -179,17 +179,17 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
 else
-  ok "FEAT_OAUTH2_PROXY=false; skipping"
+  ok "$(feature_flag_var oauth2_proxy)=false; skipping"
 fi
 
 say "ClickStack"
-if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
+if feature_is_enabled clickstack; then
   if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
     check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
-    if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
+    if feature_is_enabled oauth2_proxy; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
@@ -220,11 +220,11 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
 else
-  ok "FEAT_CLICKSTACK=false; skipping"
+  ok "$(feature_flag_var clickstack)=false; skipping"
 fi
 
 say "Kubernetes OTel Collectors"
-if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
+if feature_is_enabled otel_k8s; then
   if kubectl -n logging get ds -l app.kubernetes.io/instance=otel-k8s-daemonset >/dev/null 2>&1; then
     ok "otel-k8s daemonset release present"
   else
@@ -265,11 +265,11 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
     fi
   fi
 else
-  ok "FEAT_OTEL_K8S=false; skipping"
+  ok "$(feature_flag_var otel_k8s)=false; skipping"
 fi
 
 say "MinIO"
-if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
+if feature_is_enabled minio; then
   if kubectl -n storage get secret minio-creds >/dev/null 2>&1; then
     ok "minio-creds secret present"
   else
@@ -295,7 +295,7 @@ if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
 else
-  ok "FEAT_MINIO=false; skipping"
+  ok "$(feature_flag_var minio)=false; skipping"
 fi
 
 if [[ "$fail" -eq 1 ]]; then

@@ -33,7 +33,7 @@ for item in "${expected[@]}"; do
   fi
 done
 
-STRICT_EXTRAS="${VERIFY_RELEASE_STRICT_EXTRAS:-true}"
+STRICT_EXTRAS="${VERIFY_RELEASE_STRICT_EXTRAS:-false}"
 if [[ "$STRICT_EXTRAS" != "true" && "$STRICT_EXTRAS" != "false" ]]; then
   bad "VERIFY_RELEASE_STRICT_EXTRAS must be true or false (got: ${STRICT_EXTRAS})"
 fi

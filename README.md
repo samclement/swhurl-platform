@@ -13,6 +13,7 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 Docs:
 - Phase runbook: `docs/runbook.md`
 - Contracts (env/tool/delete): `docs/contracts.md`
+- Add feature checklist: `docs/add-feature-checklist.md`
 - Migration plan (local charts): `docs/migration-plan-local-charts.md`
 
 ## How This Repo Is Structured

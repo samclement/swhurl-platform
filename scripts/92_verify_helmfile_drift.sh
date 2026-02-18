@@ -20,7 +20,7 @@ if ! helm diff --help >/dev/null 2>&1; then
 fi
 
 log_info "Verifying Helmfile environment '${HELMFILE_ENV:-default}'"
-log_info "Assuming Helm repos are already configured (run scripts/25_helm_repos.sh first)"
+log_info "Assuming Helm repos are already configured (run scripts/25_prepare_helm_repositories.sh first)"
 
 log_info "Running helmfile lint"
 helmfile_cmd lint

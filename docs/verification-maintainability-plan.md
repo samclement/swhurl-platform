@@ -13,7 +13,7 @@ Current state (2026-02-16):
   - `scripts/91_verify_platform_state.sh` gates feature checks via registry helpers (`feature_is_enabled`).
   - `scripts/96_verify_orchestrator_contract.sh` validates registry/config flag coverage and registry/Helmfile release mappings.
 - Intentional simplification:
-  - Keep `scripts/25_helm_repos.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit.
+  - Keep `scripts/25_prepare_helm_repositories.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit.
   - Keep runtime verification mostly centralized in `scripts/91_verify_platform_state.sh` unless maintenance pain clearly justifies splitting.
   - Use `docs/add-feature-checklist.md` as the primary maintainer workflow.
 
@@ -41,7 +41,7 @@ Feature installation is Helmfile-driven (`phase=core`, `phase=platform`) with fe
 Adding Keycloak today likely requires manual updates in many places, including:
 
 - `helmfile.yaml.gotmpl` (release definition)
-- `scripts/25_helm_repos.sh` (repo setup)
+- `scripts/25_prepare_helm_repositories.sh` (repo setup)
 - `config.env` (feature flag and variables)
 - `environments/common.yaml.gotmpl` (feature mapping)
 - `charts/platform-namespaces/values.yaml` (namespace, if needed)

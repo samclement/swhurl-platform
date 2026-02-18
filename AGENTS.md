@@ -23,13 +23,14 @@
     - `NN_reconcile_*` / `NN_prepare_*` for declarative pre-Helm setup.
     - `NN_manage_*_lifecycle` / `NN_manage_*_cleanup` for exception scripts that own imperative lifecycle/finalizer behavior.
     - `NN_sync_helmfile_phase_*` for Helmfile phase wrappers.
+    - Keep repo/app utility steps aligned to this convention (for example `25_prepare_helm_repositories.sh`, `75_manage_sample_app_lifecycle.sh`) so plan ordering and purpose are obvious.
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
   - Helmfile label conventions:
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
-  - Helm repositories are managed via `scripts/25_helm_repos.sh`.
+  - Helm repositories are managed via `scripts/25_prepare_helm_repositories.sh`.
   - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
   - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not include it in `platform-namespaces` or Cilium install will fail due to conflicting Helm ownership. `scripts/26_manage_cilium_lifecycle.sh` adopts `cilium-secrets` to the `cilium` release if it already exists.
@@ -69,7 +70,7 @@
   - Documentation consistency gotcha: avoid hard-coding hypothetical script paths in planning docs. Keep references either aligned to existing files or clearly marked as future/proposed so script-reference checks stay actionable.
   - For day-to-day maintainer changes, prefer explicit updates using `docs/add-feature-checklist.md` rather than introducing new script abstraction layers.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
-  - `scripts/75_sample_app.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
+  - `scripts/75_manage_sample_app_lifecycle.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_verify_platform_state.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
   - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 

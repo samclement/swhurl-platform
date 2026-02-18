@@ -22,7 +22,7 @@ Goal: keep explicit scripts readable; avoid adding framework indirection unless 
 - If the feature requires pre-created Secrets/ConfigMaps, update:
   - `scripts/29_prepare_platform_runtime_inputs.sh`
 - If the feature needs an extra chart repo, update:
-  - `scripts/25_helm_repos.sh`
+  - `scripts/25_prepare_helm_repositories.sh`
 
 Keep these scripts explicit and local. Prefer clear `if FEAT_*` blocks over meta-framework logic.
 

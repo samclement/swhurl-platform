@@ -69,7 +69,7 @@ Changes
 - Add `charts/apps-hello/` for deployment/service/ingress/cert as needed.
 - Helmfile release `apps-hello` with `labels.phase=apps` and `needs: [ingress-nginx, cert-manager]`
   (and optionally oauth2-proxy if enabled).
-- Retire Kustomize-based hello install in `scripts/75_sample_app.sh`.
+- Retire Kustomize-based hello install in `scripts/75_manage_sample_app_lifecycle.sh`.
 
 Validation
 - `https://hello.${BASE_DOMAIN}` works, TLS is issued.

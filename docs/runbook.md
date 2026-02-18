@@ -28,7 +28,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 - `scripts/94_verify_config_inputs.sh` (feature-gated by `FEAT_VERIFY`)
 
 4) Cluster deps (helm/cilium) & verification
-- `scripts/25_helm_repos.sh`
+- `scripts/25_prepare_helm_repositories.sh`
 - `scripts/20_reconcile_platform_namespaces.sh` (Helmfile local chart: `component=platform-namespaces`)
 - `scripts/26_manage_cilium_lifecycle.sh` (feature-gated by `FEAT_CILIUM`)
 
@@ -42,7 +42,7 @@ Notes:
 - `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.
 
 6) Test application & verification
-- `scripts/75_sample_app.sh`
+- `scripts/75_manage_sample_app_lifecycle.sh`
 
 7) Cluster verification suite
 - Core gates (default; `FEAT_VERIFY=true`):

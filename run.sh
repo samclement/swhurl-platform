@@ -147,7 +147,7 @@ build_apply_plan() {
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
   # 4) Cluster Dependencies
-  add_step out_arr "$(step_path 25_helm_repos.sh)"
+  add_step out_arr "$(step_path 25_prepare_helm_repositories.sh)"
   add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
 
@@ -158,7 +158,7 @@ build_apply_plan() {
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 
   # 6) Test Application
-  add_step out_arr "$(step_path 75_sample_app.sh)"
+  add_step out_arr "$(step_path 75_manage_sample_app_lifecycle.sh)"
 
   # 7) Verification
   # Core verification gates (default)
@@ -179,7 +179,7 @@ build_delete_plan() {
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
   # Reverse platform components (apps -> services -> finalizers).
-  add_step out_arr "$(step_path 75_sample_app.sh)"
+  add_step out_arr "$(step_path 75_manage_sample_app_lifecycle.sh)"
 
   add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
   add_step out_arr "$(step_path 29_prepare_platform_runtime_inputs.sh)"

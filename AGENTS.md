@@ -295,7 +295,7 @@ Install OAuth2 Proxy (configure with your OIDC provider, e.g., Google, GitHub, A
 kubectl -n ingress create secret generic oauth2-proxy-secret \
   --from-literal=client-id="YOUR_CLIENT_ID" \
   --from-literal=client-secret="YOUR_CLIENT_SECRET" \
-  --from-literal=cookie-secret="$(openssl rand -base64 32)"
+  --from-literal=cookie-secret="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
 
 helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
   --namespace ingress \

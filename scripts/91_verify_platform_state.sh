@@ -182,11 +182,11 @@ fi
 
 say "oauth2-proxy"
 if feature_is_enabled oauth2_proxy; then
-  if kubectl -n ingress get secret oauth2-proxy-secret >/dev/null 2>&1; then
-    ok "oauth2-proxy-secret present"
+  if kubectl -n ingress get deploy oauth2-proxy >/dev/null 2>&1; then
+    ok "oauth2-proxy deployment present"
   else
-    mismatch "oauth2-proxy-secret missing"
-    add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
+    mismatch "oauth2-proxy deployment not found"
+    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
   if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')

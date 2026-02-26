@@ -45,7 +45,7 @@ Compatibility helpers:
 - `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
 
 Convenience task runner:
-- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `all-apply`, `flux-bootstrap`, etc.).
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `all-apply`, `flux-bootstrap`, etc.).
 
 GitOps sequencing scaffold:
 - `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> core -> platform -> example-app`).
@@ -126,7 +126,7 @@ Feature flags:
 - `FEAT_OTEL_K8S`: install OTel k8s collectors (default `true`).
 - `FEAT_MINIO`: install MinIO (default `true`).
 - `FEAT_VERIFY`: run core verification gates during `./run.sh` (`94`, `91`, `92`; default `true`).
-- `FEAT_VERIFY_DEEP`: run extra verification/diagnostics (`90`, `93`, `95`, `96`; default `false`).
+- `FEAT_VERIFY_DEEP`: run extra verification/diagnostics (`90`, `93`, `95`, `96`, `97`; default `false`).
 
 Delete controls:
 
@@ -200,7 +200,7 @@ k3s bootstrap (optional)
 
 Verification toggles
 - `FEAT_VERIFY=true|false` controls core verification gates (`94`, `91`, `92`) during `./run.sh`.
-- `FEAT_VERIFY_DEEP=true|false` controls extra checks/diagnostics (`90`, `93`, `95`, `96`).
+- `FEAT_VERIFY_DEEP=true|false` controls extra checks/diagnostics (`90`, `93`, `95`, `96`, `97`).
 
 Helmfile drift checks (`scripts/92_verify_helmfile_drift.sh`)
 - Requires the `helm-diff` plugin:

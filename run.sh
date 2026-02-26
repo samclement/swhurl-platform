@@ -180,6 +180,7 @@ build_apply_plan() {
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 93_verify_expected_releases.sh)"
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 95_capture_cluster_diagnostics.sh)"
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 96_verify_orchestrator_contract.sh)"
+  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 97_verify_provider_matrix.sh)"
 }
 
 build_delete_plan() {

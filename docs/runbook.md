@@ -53,6 +53,7 @@ Notes:
   - `scripts/93_verify_expected_releases.sh`
   - `scripts/95_capture_cluster_diagnostics.sh` (writes diagnostics under `./artifacts/cluster-diagnostics-<timestamp>/` unless an output dir is passed)
   - `scripts/96_verify_orchestrator_contract.sh`
+  - `scripts/97_verify_provider_matrix.sh` (renders Helmfile under provider combinations and validates release install gating)
 
 ## Phases (Delete)
 

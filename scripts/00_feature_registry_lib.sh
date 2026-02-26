@@ -48,10 +48,6 @@ readonly -A FEATURE_EXPECTED_RELEASES=(
   [minio]="storage/minio"
 )
 
-feature_registry_keys() {
-  printf '%s\n' "${FEATURE_KEYS[@]}"
-}
-
 feature_registry_flags() {
   local key
   for key in "${FEATURE_KEYS[@]}"; do

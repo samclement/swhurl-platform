@@ -16,7 +16,7 @@
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
-  - `scripts/manual_install_k3s_minimal.sh` bootstraps k3s only (Traefik disabled, flannel disabled); it does not install Cilium.
+  - `scripts/manual_install_k3s_minimal.sh` is a compatibility wrapper to `host/run-host.sh --only 20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik` unless overridden).
   - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_manage_cilium_lifecycle.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
   - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium-helmfile.yaml.gotmpl` with `useDigest: false`.
@@ -151,10 +151,10 @@ Notes
 
 ## Choose a Cluster (k3s only)
 
-Install k3s with Traefik disabled and flannel off (for Cilium):
+Install k3s with flannel off (for Cilium). Keep Traefik enabled by default unless you explicitly set `K3S_INGRESS_MODE=none`:
 
 ```
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --flannel-backend=none --disable-network-policy" sh -
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--flannel-backend=none --disable-network-policy" sh -
 ```
 
 Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:

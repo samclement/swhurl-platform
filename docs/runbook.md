@@ -21,7 +21,7 @@ Manual prerequisite (optional): DNS registration for `.swhurl.com`
 2) Basic Kubernetes Cluster (kubeconfig)
 - `scripts/15_verify_cluster_access.sh`
 Manual prerequisite (optional): Local host bootstrap (k3s)
-- `scripts/manual_install_k3s_minimal.sh` installs k3s with Traefik + flannel disabled (Cilium is installed separately).
+- `scripts/manual_install_k3s_minimal.sh` delegates to host layer task `host/tasks/20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik`, flannel disabled for Cilium).
 - Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`.
 
 3) Environment (profiles/secrets) & verification

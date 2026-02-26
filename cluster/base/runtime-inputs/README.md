@@ -4,9 +4,10 @@ Declarative runtime secret targets used by platform components:
 
 - `ingress/oauth2-proxy-secret`
 - `logging/hyperdx-secret`
+- source values in `flux-system/platform-runtime-inputs`
 
-Values are populated by Flux post-build substitution from:
+`kustomization.yaml` uses `replacements` to project source keys from
+`platform-runtime-inputs` into workload target secrets.
 
-- `flux-system/Secret platform-runtime-inputs`
-
-Sync/update the source secret via `scripts/29_prepare_platform_runtime_inputs.sh`.
+Update `secret-platform-runtime-inputs.yaml` (or patch it from a private overlay)
+to set environment-specific credentials.

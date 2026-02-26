@@ -33,10 +33,9 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
-  - Remaining major migration item is declarative runtime secret/input management
-    (currently bridged by `scripts/29_prepare_platform_runtime_inputs.sh`).
-  - OTel endpoint input is now declarative in Helm values; the bridge script is now
-    a manual secret bridge; legacy runtime input cleanup on delete is owned by `scripts/99_execute_teardown.sh`.
+  - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual apply-only secret bridge (excluded from default apply/delete plans).
+  - Legacy runtime input cleanup on delete is owned by `scripts/99_execute_teardown.sh`.
+  - Remaining major migration item is fully declarative runtime secret/input management so `scripts/29_prepare_platform_runtime_inputs.sh` can be retired.
 
 Provider migration status:
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into

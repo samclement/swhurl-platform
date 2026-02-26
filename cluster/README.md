@@ -7,6 +7,7 @@ Structure:
 - `flux/`: Flux bootstrap manifests and source definitions.
 - `base/`: provider-agnostic platform components.
 - `overlays/homelab/`: environment composition and provider selection.
+- `overlays/homelab/providers/`: ingress/storage provider overlay scaffolds (`ingress-traefik`, `ingress-nginx`, `storage-minio`, `storage-ceph`).
 - `overlays/homelab/flux/`: Flux `Kustomization` dependency chain for phase ordering.
 
 During migration, legacy orchestration in `run.sh` remains the source of truth for applies/deletes.

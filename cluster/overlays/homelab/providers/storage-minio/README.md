@@ -1,3 +1,6 @@
-# Storage Provider: MinIO (Compatibility)
+# Storage Provider: MinIO
 
-Place MinIO compatibility overlay resources here during migration.
+Compatibility overlay for the current in-cluster object storage path.
+
+Populate this folder while MinIO remains active; migrate data and ownership before
+switching to `storage-ceph`.

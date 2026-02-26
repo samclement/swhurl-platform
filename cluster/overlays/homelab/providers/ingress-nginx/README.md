@@ -1,3 +1,6 @@
-# Ingress Provider: NGINX (Compatibility)
+# Ingress Provider: NGINX
 
-Place ingress-nginx compatibility overlay resources here during migration.
+Compatibility overlay while clusters transition away from ingress-nginx.
+
+Populate this folder only for migration/rollback scenarios where nginx remains the
+active ingress provider.

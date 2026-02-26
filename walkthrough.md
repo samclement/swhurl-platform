@@ -48,8 +48,8 @@ infra/values/clickstack-helmfile.yaml.gotmpl
 infra/values/ingress-nginx-logging.yaml
 infra/values/minio-helmfile.yaml.gotmpl
 infra/values/oauth2-proxy-helmfile.yaml.gotmpl
-infra/values/otel-k8s-daemonset.yaml
-infra/values/otel-k8s-deployment.yaml
+infra/values/otel-k8s-daemonset.yaml.gotmpl
+infra/values/otel-k8s-deployment.yaml.gotmpl
 infra/values/platform-issuers-helmfile.yaml.gotmpl
 profiles/local.env
 profiles/minimal.env
@@ -2728,7 +2728,7 @@ releases:
       phase: platform
       component: otel-k8s-daemonset
     values:
-      - infra/values/otel-k8s-daemonset.yaml
+      - infra/values/otel-k8s-daemonset.yaml.gotmpl
 
   - name: otel-k8s-cluster
     namespace: logging
@@ -2744,7 +2744,7 @@ releases:
       phase: platform
       component: otel-k8s-cluster
     values:
-      - infra/values/otel-k8s-deployment.yaml
+      - infra/values/otel-k8s-deployment.yaml.gotmpl
 
   - name: minio
     namespace: storage
@@ -3023,7 +3023,7 @@ auth:
 ```
 
 ```bash
-sed -n '1,260p' infra/values/otel-k8s-daemonset.yaml && echo && sed -n '1,260p' infra/values/otel-k8s-deployment.yaml
+sed -n '1,260p' infra/values/otel-k8s-daemonset.yaml.gotmpl && echo && sed -n '1,260p' infra/values/otel-k8s-deployment.yaml.gotmpl
 ```
 
 ```output

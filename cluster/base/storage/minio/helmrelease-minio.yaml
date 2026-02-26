@@ -32,7 +32,6 @@ spec:
     persistence:
       enabled: true
       size: 20Gi
-    existingSecret: minio-creds
     ingress:
       enabled: true
       ingressClassName: nginx

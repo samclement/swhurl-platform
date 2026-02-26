@@ -57,7 +57,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 5) Platform services & verification
 - `scripts/31_sync_helmfile_phase_core.sh` (Helmfile: `phase=core`, installs cert-manager and installs ingress-nginx only when `INGRESS_PROVIDER=nginx`)
 - `scripts/31_sync_helmfile_phase_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`), always creating `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` (alias from `LETSENCRYPT_ENV`)
-- `scripts/29_prepare_platform_runtime_inputs.sh` (kubectl: secrets/configmaps required by Helm releases)
+- `scripts/29_prepare_platform_runtime_inputs.sh` (kubectl: Secrets required by Helm releases; includes legacy managed ConfigMap cleanup on delete)
 - `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags and provider settings; MinIO only when `OBJECT_STORAGE_PROVIDER=minio`)
 
 Notes:

@@ -264,12 +264,6 @@ if feature_is_enabled otel_k8s; then
     mismatch "hyperdx-secret missing"
     add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
   fi
-  if kubectl -n logging get configmap otel-config-vars >/dev/null 2>&1; then
-    ok "otel-config-vars configmap present"
-  else
-    mismatch "otel-config-vars configmap missing"
-    add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
-  fi
   if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1 && kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     sender_token="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d || true)"
     receiver_token="$(
@@ -291,12 +285,6 @@ fi
 
 say "MinIO"
 if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
-  if kubectl -n storage get secret minio-creds >/dev/null 2>&1; then
-    ok "minio-creds secret present"
-  else
-    mismatch "minio-creds secret missing"
-    add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
-  fi
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')

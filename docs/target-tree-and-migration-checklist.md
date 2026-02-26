@@ -34,6 +34,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Legacy script orchestration remains available as compatibility mode.
   - Remaining major migration item is declarative runtime secret/input management
     (currently bridged by `scripts/29_prepare_platform_runtime_inputs.sh`).
+  - OTel endpoint input is now declarative in Helm values; the bridge script is now
+    primarily secret-oriented (with legacy `otel-config-vars` cleanup retained on delete).
 
 Provider migration status:
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into
@@ -126,7 +128,6 @@ Guiding rule:
 │
 ├─ scripts/
 │  ├─ compat/
-│  │  ├─ run-legacy-pipeline.sh
 │  │  └─ verify-legacy-contracts.sh
 │  └─ bootstrap/
 │     └─ install-flux.sh
@@ -248,7 +249,7 @@ Tasks:
 | `scripts/manual_configure_route53_dns_updater.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
-| `run.sh` | Temporary compatibility wrapper | `scripts/compat/run-legacy-pipeline.sh` |
+| `run.sh` | Legacy/developer orchestrator (current compatibility entrypoint) | `run.sh` |
 | `helmfile.yaml.gotmpl` | GitOps definitions | `cluster/base/*` + `cluster/overlays/homelab/*` |
 | `infra/values/*.yaml*` | HelmRelease/Kustomize values | `cluster/overlays/homelab/values/` + component dirs |
 | `charts/platform-namespaces` | GitOps base manifests | `cluster/base/namespaces/` |

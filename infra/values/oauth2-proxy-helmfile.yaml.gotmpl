@@ -15,7 +15,7 @@ extraArgs:
 
 ingress:
   enabled: true
-  className: nginx
+  className: {{ .Environment.Values.computed.ingressClass | quote }}
   annotations:
     cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   hosts:

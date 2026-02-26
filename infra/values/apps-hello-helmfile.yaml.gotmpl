@@ -12,12 +12,14 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
+  className: {{ .Environment.Values.computed.ingressClass | quote }}
   host: {{ env "APP_HOST" | default (printf "hello.%s" .Environment.Values.baseDomain) | quote }}
   tlsSecretName: {{ env "TLS_SECRET" | default "hello-web-tls" | quote }}
   annotations:
+{{- if eq .Environment.Values.providers.ingress "nginx" }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+{{- end }}
 
 tls:
   enabled: true
@@ -26,5 +28,5 @@ tls:
     - {{ env "APP_HOST" | default (printf "hello.%s" .Environment.Values.baseDomain) | quote }}
 
 auth:
-  enabled: {{ if ne (env "APP_AUTH_ENABLED" | default "") "" }}{{ eq (env "APP_AUTH_ENABLED") "true" }}{{ else }}{{ .Environment.Values.features.oauth2Proxy }}{{ end }}
+  enabled: {{ if ne (env "APP_AUTH_ENABLED" | default "") "" }}{{ eq (env "APP_AUTH_ENABLED") "true" }}{{ else }}{{ and .Environment.Values.features.oauth2Proxy (eq .Environment.Values.providers.ingress "nginx") }}{{ end }}
   oauthHost: {{ .Environment.Values.computed.oauthHost | quote }}

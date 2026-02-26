@@ -11,6 +11,7 @@ providers:
   ingress: {{ env "INGRESS_PROVIDER" | default "nginx" | quote }}
   objectStorage: {{ env "OBJECT_STORAGE_PROVIDER" | default "minio" | quote }}
 computed:
+  ingressClass: {{ ternary "traefik" "nginx" (eq (env "INGRESS_PROVIDER" | default "nginx") "traefik") | quote }}
   oauthHost: {{ env "OAUTH_HOST" | default (printf "oauth.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
   hubbleHost: {{ env "HUBBLE_HOST" | default (printf "hubble.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
   clickstackHost: {{ env "CLICKSTACK_HOST" | default (printf "clickstack.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}

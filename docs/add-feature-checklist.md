@@ -20,7 +20,7 @@ Goal: keep explicit scripts readable; avoid adding framework indirection unless 
 ## 3) Runtime input scripts (only if needed)
 
 - If the feature requires pre-created Secrets/ConfigMaps, update:
-  - `scripts/29_prepare_platform_runtime_inputs.sh` (manual compatibility bridge / delete helper)
+  - `scripts/29_prepare_platform_runtime_inputs.sh` (manual compatibility bridge)
 - If the feature needs an extra chart repo, update:
   - `scripts/25_prepare_helm_repositories.sh`
 

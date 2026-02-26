@@ -193,7 +193,6 @@ build_delete_plan() {
   add_step out_arr "$(step_path 75_manage_sample_app_lifecycle.sh)"
 
   add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
-  add_step out_arr "$(step_path 29_prepare_platform_runtime_inputs.sh)"
   add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
   add_step out_arr "$(step_path 30_manage_cert_manager_cleanup.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.

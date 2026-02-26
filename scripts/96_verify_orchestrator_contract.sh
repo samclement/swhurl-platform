@@ -38,15 +38,21 @@ else
 fi
 
 if [[ -f "$SCRIPT_DIR/29_prepare_platform_runtime_inputs.sh" ]]; then
-  ok "29_prepare_platform_runtime_inputs.sh: present (manual bridge/delete helper)"
+  ok "29_prepare_platform_runtime_inputs.sh: present (manual bridge script)"
 else
-  bad "29_prepare_platform_runtime_inputs.sh: present (manual bridge/delete helper)"
+  bad "29_prepare_platform_runtime_inputs.sh: present (manual bridge script)"
 fi
 
-if rg -n 'build_delete_plan' -A40 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
-  ok "run.sh: delete plan includes 29_prepare_platform_runtime_inputs.sh helper"
+if rg -n 'build_apply_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
+  bad "run.sh: apply plan excludes 29_prepare_platform_runtime_inputs.sh"
 else
-  bad "run.sh: delete plan includes 29_prepare_platform_runtime_inputs.sh helper"
+  ok "run.sh: apply plan excludes 29_prepare_platform_runtime_inputs.sh"
+fi
+
+if rg -n 'build_delete_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
+  bad "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
+else
+  ok "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
 fi
 
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then

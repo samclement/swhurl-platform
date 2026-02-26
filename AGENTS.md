@@ -15,6 +15,7 @@
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
   - `cluster/README.md` should call out that `scripts/29_prepare_platform_runtime_inputs.sh` is a manual Flux/legacy secret bridge and is not required for default `./run.sh` applies.
+  - `run.sh` delete plan no longer includes `scripts/29_prepare_platform_runtime_inputs.sh`; legacy runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
@@ -79,7 +80,7 @@
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge and delete helper for legacy managed leftovers (`otel-config-vars`, `minio-creds`); it is no longer part of the default apply plan.
+    - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge only; it is no longer part of the default apply/delete plans.
     - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and the legacy OTel `hyperdx-secret` from `CLICKSTACK_API_KEY`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
@@ -149,8 +150,8 @@
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
-  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
-  - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; `scripts/29_prepare_platform_runtime_inputs.sh` keeps `minio-creds` as delete-only legacy cleanup.
+  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; legacy runtime-input cleanup (`otel-config-vars`) is handled by `scripts/99_execute_teardown.sh`.
+  - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
   - Single-key contract: `CLICKSTACK_API_KEY` now defines both ClickStack chart `apiKey` and OTel exporter `authorization`; after key rotation in HyperDX UI, update `CLICKSTACK_API_KEY` and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.

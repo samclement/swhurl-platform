@@ -6,6 +6,10 @@ Environment-specific composition layer:
 - supports staging/prod app overlay separation (`apps-staging`, `apps-prod`)
 - supports staging/prod platform overlay separation (`platform/staging`, `platform/prod`)
 
-Use `providers/*` folders to toggle implementation choices without changing base components.
-Select exactly one ingress overlay and one storage overlay when wiring this into an active
-GitOps stack.
+Default `kustomization.yaml` composes:
+- base platform components
+- ingress-nginx provider overlay
+- minio storage provider overlay
+- staging app overlay
+
+Use `providers/*` and `apps/*` overlays when switching providers or promoting environments.

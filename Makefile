@@ -20,6 +20,7 @@ help:
 	@echo "  verify-legacy       Run legacy verification suite"
 	@echo "  verify-provider-matrix  Validate Helmfile provider gating matrix"
 	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
+	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 
 .PHONY: host-plan
 host-plan:
@@ -88,3 +89,8 @@ verify-provider-matrix:
 .PHONY: flux-bootstrap
 flux-bootstrap:
 	./scripts/bootstrap/install-flux.sh
+
+.PHONY: flux-reconcile
+flux-reconcile:
+	flux reconcile source git swhurl-platform -n flux-system
+	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source

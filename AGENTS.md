@@ -81,6 +81,7 @@
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge only; it is no longer part of the default apply/delete plans.
+    - `scripts/29_prepare_platform_runtime_inputs.sh --delete` is now a no-op that points operators to `scripts/99_execute_teardown.sh` for delete-time cleanup ownership.
     - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and the legacy OTel `hyperdx-secret` from `CLICKSTACK_API_KEY`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.

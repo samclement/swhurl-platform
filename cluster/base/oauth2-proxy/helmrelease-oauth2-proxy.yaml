@@ -4,7 +4,6 @@ metadata:
   name: oauth2-proxy
   namespace: ingress
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: oauth2-proxy
@@ -24,8 +23,6 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (OIDC_*, BASE_DOMAIN, and provider-specific auth behavior).
     config:
       existingSecret: oauth2-proxy-secret
     extraArgs:
@@ -33,6 +30,12 @@ spec:
       oidc-issuer-url: https://accounts.google.com
       redirect-url: https://oauth.homelab.swhurl.com/oauth2/callback
       email-domain: "*"
+      cookie-domain: .homelab.swhurl.com
+      whitelist-domain: .homelab.swhurl.com
+      standard-logging: true
+      request-logging: true
+      auth-logging: true
+      silence-ping-logging: true
     ingress:
       enabled: true
       className: nginx

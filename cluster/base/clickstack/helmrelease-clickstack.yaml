@@ -4,7 +4,6 @@ metadata:
   name: clickstack
   namespace: observability
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: clickstack
@@ -24,10 +23,19 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (CLICKSTACK_*, hosts, and provider-specific auth behavior).
     global:
       storageClassName: local-path
+    clickhouse:
+      persistence:
+        enabled: true
+        dataSize: 20Gi
+        logSize: 5Gi
+      prometheus:
+        enabled: false
+    mongodb:
+      persistence:
+        enabled: true
+        dataSize: 10Gi
     hyperdx:
       apiKey: ""
       frontendUrl: https://clickstack.homelab.swhurl.com
@@ -35,8 +43,15 @@ spec:
         enabled: true
         ingressClassName: nginx
         host: clickstack.homelab.swhurl.com
+        path: /(.*)
+        pathType: ImplementationSpecific
         annotations:
           cert-manager.io/cluster-issuer: letsencrypt-staging
+          nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
+          nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
+          nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User,X-Auth-Request-Email,Authorization
         tls:
           enabled: true
           secretName: clickstack-tls
+    otel:
+      enabled: true

@@ -4,7 +4,6 @@ metadata:
   name: otel-k8s-daemonset
   namespace: logging
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: otel-k8s-daemonset
@@ -24,6 +23,64 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (HyperDX token/source endpoint, feature gates, and pipeline parity).
     mode: daemonset
+    image:
+      repository: otel/opentelemetry-collector-k8s
+    presets:
+      logsCollection:
+        enabled: true
+        includeCollectorLogs: true
+      kubeletMetrics:
+        enabled: true
+      hostMetrics:
+        enabled: true
+      kubernetesAttributes:
+        enabled: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    config:
+      exporters:
+        otlphttp:
+          endpoint: ${env:HYPERDX_OTLP_ENDPOINT}
+          headers:
+            authorization: ${env:HYPERDX_API_KEY}
+      service:
+        pipelines:
+          logs:
+            receivers:
+              - otlp
+              - filelog
+            processors:
+              - memory_limiter
+              - k8sattributes
+              - batch
+            exporters:
+              - otlphttp
+          metrics:
+            receivers:
+              - kubeletstats
+              - hostmetrics
+            processors:
+              - memory_limiter
+              - k8sattributes
+              - batch
+            exporters:
+              - otlphttp
+    extraEnvs:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: hyperdx-secret
+            key: HYPERDX_API_KEY
+      - name: HYPERDX_OTLP_ENDPOINT
+        valueFrom:
+          configMapKeyRef:
+            name: otel-config-vars
+            key: HYPERDX_OTLP_ENDPOINT
+    clusterRole:
+      create: true

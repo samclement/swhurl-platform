@@ -4,7 +4,6 @@ metadata:
   name: minio
   namespace: storage
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: minio
@@ -24,15 +23,23 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (MINIO_* hosts/credentials and feature/provider gating).
+    image:
+      repository: docker.io/minio/minio
     mode: standalone
+    resources:
+      requests:
+        memory: 512Mi
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 20Gi
     existingSecret: minio-creds
     ingress:
       enabled: true
       ingressClassName: nginx
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-staging
+      path: /
       hosts:
         - minio.homelab.swhurl.com
       tls:
@@ -44,6 +51,7 @@ spec:
       ingressClassName: nginx
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-staging
+      path: /
       hosts:
         - minio-console.homelab.swhurl.com
       tls:

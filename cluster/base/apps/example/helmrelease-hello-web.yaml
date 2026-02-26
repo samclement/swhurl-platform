@@ -4,7 +4,6 @@ metadata:
   name: hello-web
   namespace: apps-staging
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: hello-web
@@ -23,8 +22,6 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (APP_HOST, issuer/provider, auth toggle, image overrides).
     nameOverride: hello-web
     labels:
       platform.swhurl.io/managed: "true"
@@ -34,7 +31,7 @@ spec:
     ingress:
       enabled: true
       className: nginx
-      host: hello.example.invalid
+      host: staging.hello.homelab.swhurl.com
       tlsSecretName: hello-web-tls
       annotations:
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -43,7 +40,7 @@ spec:
       enabled: true
       issuerName: letsencrypt-staging
       dnsNames:
-        - hello.example.invalid
+        - staging.hello.homelab.swhurl.com
     auth:
-      enabled: false
-      oauthHost: oauth.example.invalid
+      enabled: true
+      oauthHost: oauth.homelab.swhurl.com

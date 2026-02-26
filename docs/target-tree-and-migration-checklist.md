@@ -10,6 +10,21 @@ This document defines:
 
 It is the implementation companion to `docs/homelab-intent-and-design.md`.
 
+## Current Status Snapshot (2026-02-26)
+
+- Phase 1 (Host Layer Introduction): mostly complete
+  - `host/` task/lib structure is in place.
+  - Legacy manual host scripts are compatibility wrappers.
+- Phase 2 (GitOps Bootstrap): scaffold complete
+  - `cluster/flux/*` and bootstrap helper exist.
+  - Flux dependency chain scaffold is present with safe suspended layers.
+- Phase 3/4 (Provider Migration groundwork): scaffold in progress
+  - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into
+    Helmfile gating, values, and verification.
+  - Provider overlay directories and migration runbooks exist; provider implementations in
+    GitOps overlays remain to be filled.
+- Phase 5/6 (GitOps parity + legacy retirement): pending
+
 ## Target Technology Boundaries
 
 Use a two-layer model:

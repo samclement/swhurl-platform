@@ -50,31 +50,28 @@ Current strengths:
 
 Current gaps against intent:
 
-- Host dependency installation is checked but not managed (`01_check_prereqs.sh` verifies only).
-- Ingress and object storage are modeled as fixed components, not provider families.
-- k3s bootstrap script currently disables Traefik, which conflicts with the new desired default.
+- Host dependency installation is managed in `host/tasks/00_bootstrap_host.sh`, but host orchestration is still opt-in (not default in cluster-only runs).
+- Ingress and object storage provider intent flags now exist; remaining gap is provider default/promotion policy over time (Traefik/Ceph direction).
+- k3s bootstrap defaults align with Traefik-first (`K3S_INGRESS_MODE=traefik`), but cluster provisioning remains a manual prerequisite path.
 - Example app currently demonstrates basic ingress/OIDC/TLS, but not full platform integrations (telemetry/object storage usage).
 
 ## Recommended Improvements
 
-1. Add host bootstrap phase for dependencies
-- Add a new script (for example `scripts/10_prepare_host_dependencies.sh`) that installs required host packages idempotently.
-- Keep distro-specific logic isolated (`apt`, `dnf`, etc.) in dedicated host Bash modules (for example under `host/lib/`).
+1. Tighten host bootstrap adoption
+- Continue using `host/tasks/00_bootstrap_host.sh` for idempotent package installation.
+- Keep distro-specific logic isolated (`apt`, `dnf`, etc.) in dedicated host Bash modules (`host/lib/`).
 - Keep `01_check_prereqs.sh` as validation gate even after install support is added.
 
-2. Introduce provider switches for ingress and object storage
-- Add `INGRESS_PROVIDER=traefik|nginx`.
-- Add `OBJECT_STORAGE_PROVIDER=minio|ceph`.
+2. Continue provider switch rollout for ingress and object storage
 - Keep stable consumer-facing env vars (`OAUTH_HOST`, `CLICKSTACK_HOST`, `MINIO_*` or generic storage host vars) while chart/release wiring changes by provider.
 
-3. Rework Helmfile phases around capability domains
-- Keep `phase=core|platform`, but make ingress/storage releases conditional by provider.
-- Add provider-neutral wrapper scripts (for example `sync_ingress_provider`, `sync_storage_provider`) that select labels.
+3. Continue reducing legacy script surface area
+- Keep `phase=core|platform` ownership explicit while GitOps overlays become the default operator path.
+- Avoid adding new one-off wrapper scripts unless they materially reduce operational risk.
 
-4. Align k3s bootstrap with desired ingress default
-- Add explicit k3s mode variable (for example `K3S_INGRESS_MODE=traefik|none`).
-- Default to Traefik mode for new installs.
-- Keep `none` mode for advanced users who want external ingress choices.
+4. Keep k3s bootstrap behavior explicit
+- Maintain `K3S_INGRESS_MODE=traefik|none` and document when `none` is required.
+- Keep `traefik` as the default for new installs unless a migration demands otherwise.
 
 5. Plan ingress migration with compatibility window
 - Keep `ingress-nginx` as optional transitional provider.
@@ -118,12 +115,11 @@ Current gaps against intent:
 ## Suggested Implementation Sequence
 
 1. Add this intent as a tracked design target (this document).
-2. Add host dependency install script and wire it into `run.sh` before prereq verification.
-3. Add ingress provider abstraction with Traefik path, keep nginx optional.
-4. Update k3s bootstrap defaults to align with Traefik-first design.
-5. Add storage provider abstraction with Ceph opt-in path, keep MinIO optional.
-6. Expand sample app to cover telemetry and storage integration.
-7. Add CI checks for orchestration contracts and drift/verification scripts.
+2. Increase adoption of the host layer in day-to-day workflows (`host/run-host.sh` or `run.sh --with-host`).
+3. Finalize ingress provider migration policy (Traefik default timing + rollback criteria).
+4. Finalize storage provider migration policy (Ceph default timing + data-migration checklist).
+5. Expand sample app to cover telemetry and storage integration.
+6. Add CI checks for orchestration contracts and drift/verification scripts.
 
 ## Non-Goals (for now)
 

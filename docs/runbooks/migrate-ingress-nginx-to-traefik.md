@@ -27,18 +27,13 @@ helm list -A
 kubectl get ingress -A
 ```
 
-2. Set provider intent to Traefik (profile recommended).
-
-```bash
-cat > profiles/ingress-traefik.env <<'EOF'
-INGRESS_PROVIDER=traefik
-EOF
-```
+2. Set provider intent to Traefik by using the committed profile file
+   `profiles/provider-traefik.env` (no ad-hoc profile creation required).
 
 3. Reconcile core and platform with the new provider.
 
 ```bash
-./run.sh --profile profiles/ingress-traefik.env
+./run.sh --profile profiles/provider-traefik.env
 ```
 
 4. Verify `ingress-nginx` is no longer managed/installed and ingress resources remain
@@ -54,7 +49,7 @@ kubectl get ingress -A
 
 ```bash
 ./scripts/92_verify_helmfile_drift.sh
-FEAT_VERIFY_DEEP=true ./run.sh --profile profiles/ingress-traefik.env
+FEAT_VERIFY_DEEP=true ./run.sh --profile profiles/provider-traefik.env
 ```
 
 ## Expected Behavior in This Repo
@@ -68,21 +63,13 @@ FEAT_VERIFY_DEEP=true ./run.sh --profile profiles/ingress-traefik.env
 
 ## Rollback
 
-1. Restore provider intent:
+1. Restore provider intent to nginx:
 
 ```bash
-cat > profiles/ingress-nginx.env <<'EOF'
-INGRESS_PROVIDER=nginx
-EOF
+INGRESS_PROVIDER=nginx ./run.sh
 ```
 
-2. Re-run reconciliation:
-
-```bash
-./run.sh --profile profiles/ingress-nginx.env
-```
-
-3. Re-run verification:
+2. Re-run verification:
 
 ```bash
 ./scripts/91_verify_platform_state.sh

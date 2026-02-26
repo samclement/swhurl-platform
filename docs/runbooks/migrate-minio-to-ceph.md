@@ -30,18 +30,13 @@ store secrets in `profiles/secrets.env` or external secret manager.
 
 ## Platform Switch Steps
 
-1. Create a profile for Ceph provider intent.
-
-```bash
-cat > profiles/storage-ceph.env <<'EOF'
-OBJECT_STORAGE_PROVIDER=ceph
-EOF
-```
+1. Use the committed provider profile for Ceph intent
+   (`profiles/provider-ceph.env`) instead of creating an ad-hoc profile file.
 
 2. Reconcile platform with Ceph provider intent.
 
 ```bash
-./run.sh --profile profiles/storage-ceph.env
+./run.sh --profile profiles/provider-ceph.env
 ```
 
 3. Confirm MinIO is no longer managed by Helmfile.
@@ -61,21 +56,13 @@ helm list -n storage | rg minio || true
 
 ## Rollback
 
-1. Restore provider intent:
+1. Restore provider intent to MinIO:
 
 ```bash
-cat > profiles/storage-minio.env <<'EOF'
-OBJECT_STORAGE_PROVIDER=minio
-EOF
+OBJECT_STORAGE_PROVIDER=minio ./run.sh
 ```
 
-2. Re-run reconciliation:
-
-```bash
-./run.sh --profile profiles/storage-minio.env
-```
-
-3. Re-verify platform:
+2. Re-verify platform:
 
 ```bash
 ./scripts/91_verify_platform_state.sh

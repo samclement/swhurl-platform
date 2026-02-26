@@ -68,6 +68,7 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null
           kubectl kustomize cluster/base/cert-manager >/dev/null
+          kubectl kustomize cluster/base/cert-manager/issuers >/dev/null
           kubectl kustomize cluster/base/cilium >/dev/null
           kubectl kustomize cluster/base/oauth2-proxy >/dev/null
           kubectl kustomize cluster/base/clickstack >/dev/null

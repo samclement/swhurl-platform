@@ -51,10 +51,10 @@ Convenience task runner:
 - `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, etc.).
 
 GitOps sequencing scaffold:
-- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> cert-manager -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
+- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> cert-manager -> issuers -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
 - Only `namespaces` is active by default; later layers are intentionally `suspend: true` until migrated.
 - `cluster/overlays/homelab/providers/` contains ingress/storage provider scaffolds so the future GitOps stack can pick one ingress overlay and one storage overlay explicitly.
-- `cluster/base/` now includes component-level scaffolds (`cert-manager`, `oauth2-proxy`, `clickstack`, `otel`, `storage/{minio,ceph}`) to make target ownership explicit.
+- `cluster/base/` now includes component-level scaffolds (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/{minio,ceph}`) to make target ownership explicit.
 
 CI validation:
 - `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, `kubectl kustomize` rendering checks for scaffolded GitOps paths, and provider-matrix verification via `scripts/97_verify_provider_matrix.sh`.

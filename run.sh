@@ -276,9 +276,6 @@ run_step() {
   case "$base" in
     26_manage_cilium_lifecycle.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
-    29_prepare_platform_runtime_inputs.sh)
-      # Contains internal feature gates for individual resources.
-      ;;
     31_sync_helmfile_phase_core.sh|36_sync_helmfile_phase_platform.sh)
       ;;
     91_verify_platform_state.sh|92_verify_helmfile_drift.sh|94_verify_config_inputs.sh)

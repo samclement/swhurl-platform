@@ -34,9 +34,9 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
   - Runtime secret targets are declarative in `cluster/base/runtime-inputs` via Flux (`homelab-runtime-inputs`).
-  - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual apply-only bridge that syncs the Flux source secret (`flux-system/platform-runtime-inputs`), and remains excluded from default apply/delete plans.
+  - Legacy bridge script `scripts/29_prepare_platform_runtime_inputs.sh` is retired.
   - Legacy runtime input cleanup on delete is owned by `scripts/99_execute_teardown.sh`.
-  - Remaining major migration item is retiring the script bridge entirely in favor of a fully GitOps-native secret flow.
+  - Remaining major migration item is provider default/promotion completion (Traefik/Ceph path).
 
 Provider migration status:
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into
@@ -258,7 +258,7 @@ Tasks:
 | `charts/apps-hello` | GitOps app example | `cluster/base/apps/example/` |
 | `scripts/31_sync_helmfile_phase_core.sh` | GitOps dependency graph | `cluster/base/*` + overlay dependencies |
 | `scripts/36_sync_helmfile_phase_platform.sh` | GitOps dependency graph | `cluster/base/*` + overlay dependencies |
-| `scripts/29_prepare_platform_runtime_inputs.sh` | Flux runtime-input source sync compatibility | `cluster/base/runtime-inputs/` + `flux-system/platform-runtime-inputs` |
+| `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `cluster/base/runtime-inputs/` |
 | `scripts/9*_verify_*.sh` | GitOps health + policy checks | `scripts/compat/verify-legacy-contracts.sh` then CI policy checks |
 
 ## Sequencing in the Target Model

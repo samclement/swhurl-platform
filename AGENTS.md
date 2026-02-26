@@ -14,8 +14,8 @@
   - Avoid self-referential Showboat commands inside executable walkthrough `bash` blocks (for example `showboat verify walkthrough.md`), which can cause recursive verification hangs.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
-  - `cluster/README.md` should call out that `scripts/29_prepare_platform_runtime_inputs.sh` is a manual Flux/legacy secret bridge and is not required for default `./run.sh` applies.
-  - `run.sh` delete plan no longer includes `scripts/29_prepare_platform_runtime_inputs.sh`; legacy runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
+  - `cluster/README.md` should call out that runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`.
+  - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
@@ -23,7 +23,7 @@
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
-  - Runtime secret targets now live in `cluster/base/runtime-inputs`; Flux reconciles them via `homelab-runtime-inputs` using post-build substitutions from `flux-system/platform-runtime-inputs`.
+  - Runtime input source/target secrets now live in `cluster/base/runtime-inputs`; `kustomization.yaml` uses declarative `replacements` from `secret-platform-runtime-inputs.yaml` to project values into workload secrets.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
@@ -82,9 +82,8 @@
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge only; it is no longer part of the default apply/delete plans.
-    - `scripts/29_prepare_platform_runtime_inputs.sh --delete` is now a no-op that points operators to `scripts/99_execute_teardown.sh` for delete-time cleanup ownership.
-    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now syncs `flux-system/platform-runtime-inputs` from layered env/profile values (with create-once cookie-secret semantics when `OAUTH_COOKIE_SECRET` is unset).
+    - `scripts/29_prepare_platform_runtime_inputs.sh` is retired; runtime-input ownership is declarative in `cluster/base/runtime-inputs`.
+    - Update `cluster/base/runtime-inputs/secret-platform-runtime-inputs.yaml` (or patch from private overlays) when runtime credentials change.
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
@@ -117,7 +116,7 @@
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
   - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
   - Keep verification helper libs lean; remove unused exports from `scripts/00_feature_registry_lib.sh` / `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
-  - `scripts/96_verify_orchestrator_contract.sh` now treats `scripts/29_prepare_platform_runtime_inputs.sh` as optional compatibility (warns when absent) while still enforcing that default apply/delete plans exclude it.
+  - `scripts/96_verify_orchestrator_contract.sh` now enforces that `scripts/29_prepare_platform_runtime_inputs.sh` is absent and runtime-input wiring is declarative (`cluster/base/runtime-inputs` + Flux stack path).
   - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles and Helmfile release mappings.
   - `scripts/97_verify_provider_matrix.sh` validates provider flag behavior without cluster access by rendering Helmfile for provider combinations and asserting `ingress-nginx`/`minio` installed states.
   - `scripts/93_verify_expected_releases.sh` is now Flux-first (`VERIFY_INVENTORY_MODE=auto|flux|helm`, default `auto`) and falls back to Helm release inventory when Flux stack resources are absent.

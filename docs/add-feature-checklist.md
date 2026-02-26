@@ -17,14 +17,14 @@ Goal: keep explicit scripts readable; avoid adding framework indirection unless 
 - Add/verify environment mapping in `environments/common.yaml.gotmpl`.
 - Add feature values file in `infra/values/` if needed.
 
-## 3) Runtime input scripts (only if needed)
+## 3) Runtime input manifests (only if needed)
 
 - If the feature requires pre-created Secrets/ConfigMaps, update:
-  - `scripts/29_prepare_platform_runtime_inputs.sh` (manual compatibility bridge)
+  - `cluster/base/runtime-inputs/*` (declarative source + target secret projection)
 - If the feature needs an extra chart repo, update:
   - `scripts/25_prepare_helm_repositories.sh`
 
-Keep these scripts explicit and local. Prefer clear `if FEAT_*` blocks over meta-framework logic.
+Keep this wiring explicit and local. Prefer clear `if FEAT_*` blocks over meta-framework logic.
 
 ## 4) Verification updates
 

@@ -42,8 +42,7 @@ else
     kubectl -n "$ns" delete configmap -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
   done
 
-  # Legacy runtime bridge cleanup that used to live in scripts/29_prepare_platform_runtime_inputs.sh --delete.
-  # Keep explicit names here until the compatibility bridge is fully retired.
+  # Runtime-input source/target cleanup.
   kubectl -n flux-system delete secret platform-runtime-inputs --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n logging delete secret hyperdx-secret --ignore-not-found >/dev/null 2>&1 || true

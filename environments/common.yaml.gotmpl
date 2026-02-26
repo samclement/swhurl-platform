@@ -1,5 +1,6 @@
 baseDomain: {{ env "BASE_DOMAIN" | default "127.0.0.1.nip.io" | quote }}
-issuer: {{ env "CLUSTER_ISSUER" | default "selfsigned" | quote }}
+issuer: {{ env "PLATFORM_CLUSTER_ISSUER" | default (env "CLUSTER_ISSUER" | default "letsencrypt-staging") | quote }}
+appIssuer: {{ env "APP_CLUSTER_ISSUER" | default (env "PLATFORM_CLUSTER_ISSUER" | default (env "CLUSTER_ISSUER" | default "letsencrypt-staging")) | quote }}
 timeoutSecs: {{ env "TIMEOUT_SECS" | default "300" }}
 features:
   cilium: {{ eq (env "FEAT_CILIUM" | default "true") "true" }}
@@ -18,3 +19,4 @@ computed:
   minioHost: {{ env "MINIO_HOST" | default (printf "minio.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
   minioConsoleHost: {{ env "MINIO_CONSOLE_HOST" | default (printf "minio-console.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
   clickstackOtelEndpoint: {{ env "CLICKSTACK_OTEL_ENDPOINT" | default "http://clickstack-otel-collector.observability.svc.cluster.local:4318" | quote }}
+  appNamespace: {{ env "APP_NAMESPACE" | default "apps-staging" | quote }}

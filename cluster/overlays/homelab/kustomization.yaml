@@ -10,3 +10,6 @@ resources: []
 # Choose one object storage provider:
 # - providers/storage-minio
 # - providers/storage-ceph
+# Choose app environment overlay:
+# - apps/staging
+# - apps/prod

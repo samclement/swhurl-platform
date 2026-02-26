@@ -21,7 +21,7 @@ Destructive loop:
   5) Uninstall k3s
 
 Safety:
-  - Refuses Let’s Encrypt prod loops unless ALLOW_LETSENCRYPT_PROD_LOOP=true.
+  - Refuses loops that would hit Let’s Encrypt production endpoints unless ALLOW_LETSENCRYPT_PROD_LOOP=true.
   - Requires explicit --yes.
 USAGE
 }
@@ -55,16 +55,18 @@ fi
 source "$PROFILE_FILE"
 set +a
 
-if [[ "${CLUSTER_ISSUER:-selfsigned}" == "letsencrypt" ]]; then
-  le_env="${LETSENCRYPT_ENV:-staging}"
-  le_create_prod="${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"
-  if [[ "$le_create_prod" != "true" && "$le_create_prod" != "false" ]]; then
-    die "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false (got: $le_create_prod)"
-  fi
-  if [[ "$le_env" == "prod" || "$le_env" == "production" || "$le_create_prod" == "true" ]]; then
-    [[ "${ALLOW_LETSENCRYPT_PROD_LOOP:-false}" == "true" ]] || die \
-      "This loop would hit Let’s Encrypt production (LETSENCRYPT_ENV=$le_env LETSENCRYPT_CREATE_PROD_ISSUER=$le_create_prod). Set ALLOW_LETSENCRYPT_PROD_LOOP=true to override."
-  fi
+prod_server="https://acme-v02.api.letsencrypt.org/directory"
+staging_server="${LETSENCRYPT_STAGING_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+configured_prod_server="${LETSENCRYPT_PROD_SERVER:-$prod_server}"
+le_env="${LETSENCRYPT_ENV:-staging}"
+case "$le_env" in
+  prod|production) alias_server="$configured_prod_server" ;;
+  *) alias_server="$staging_server" ;;
+esac
+
+if [[ "$configured_prod_server" == "$prod_server" || "$alias_server" == "$prod_server" ]]; then
+  [[ "${ALLOW_LETSENCRYPT_PROD_LOOP:-false}" == "true" ]] || die \
+    "This loop would hit Let’s Encrypt production (LETSENCRYPT_ENV=$le_env LETSENCRYPT_PROD_SERVER=$configured_prod_server). Set ALLOW_LETSENCRYPT_PROD_LOOP=true to override."
 fi
 
 run_k3s_uninstall() {

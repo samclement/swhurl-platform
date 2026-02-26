@@ -23,7 +23,7 @@ ingress:
 
 tls:
   enabled: true
-  issuerName: {{ .Environment.Values.issuer | quote }}
+  issuerName: {{ .Environment.Values.appIssuer | quote }}
   dnsNames:
     - {{ env "APP_HOST" | default (printf "hello.%s" .Environment.Values.baseDomain) | quote }}
 

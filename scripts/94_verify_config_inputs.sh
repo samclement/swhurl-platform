@@ -21,23 +21,31 @@ for key in "${VERIFY_REQUIRED_BASE_VARS[@]}"; do
 done
 [[ "${!VERIFY_REQUIRED_TIMEOUT_VAR:-}" =~ ^[0-9]+$ ]] && ok "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric" || bad "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric"
 
-if [[ "${CLUSTER_ISSUER:-}" == "letsencrypt" ]]; then
-  need ACME_EMAIL
-  if is_allowed_letsencrypt_env "${LETSENCRYPT_ENV:-staging}"; then
-    ok "LETSENCRYPT_ENV is valid"
-  else
-    bad "LETSENCRYPT_ENV must be staging|prod|production"
-  fi
-  if is_bool_string "${LETSENCRYPT_CREATE_STAGING_ISSUER:-true}"; then
-    ok "LETSENCRYPT_CREATE_STAGING_ISSUER is valid"
-  else
-    bad "LETSENCRYPT_CREATE_STAGING_ISSUER must be true|false"
-  fi
-  if is_bool_string "${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"; then
-    ok "LETSENCRYPT_CREATE_PROD_ISSUER is valid"
-  else
-    bad "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false"
-  fi
+if is_allowed_letsencrypt_env "${LETSENCRYPT_ENV:-staging}"; then
+  ok "LETSENCRYPT_ENV is valid"
+else
+  bad "LETSENCRYPT_ENV must be staging|prod|production"
+fi
+
+platform_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
+if is_allowed_cluster_issuer "$platform_issuer"; then
+  ok "PLATFORM_CLUSTER_ISSUER is valid (${platform_issuer})"
+else
+  bad "PLATFORM_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
+fi
+
+app_issuer="${APP_CLUSTER_ISSUER:-$platform_issuer}"
+if is_allowed_cluster_issuer "$app_issuer"; then
+  ok "APP_CLUSTER_ISSUER is valid (${app_issuer})"
+else
+  bad "APP_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
+fi
+
+app_namespace="${APP_NAMESPACE:-apps-staging}"
+if [[ "$app_namespace" == "apps-staging" || "$app_namespace" == "apps-prod" ]]; then
+  ok "APP_NAMESPACE is valid (${app_namespace})"
+else
+  bad "APP_NAMESPACE must be apps-staging or apps-prod (got: ${app_namespace})"
 fi
 
 if [[ -n "${INGRESS_PROVIDER:-}" ]]; then

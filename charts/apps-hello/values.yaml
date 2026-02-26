@@ -23,7 +23,7 @@ ingress:
 
 tls:
   enabled: true
-  issuerName: selfsigned
+  issuerName: letsencrypt-staging
   dnsNames:
     - "hello.127.0.0.1.nip.io"
 

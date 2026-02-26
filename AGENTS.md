@@ -76,9 +76,17 @@
   - cert-manager webhook CA injection can lag after install; `scripts/30_manage_cert_manager_cleanup.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
   - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
-  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart:
-    - `letsencrypt-staging`/`letsencrypt-prod` creation is now toggleable via `LETSENCRYPT_CREATE_STAGING_ISSUER` and `LETSENCRYPT_CREATE_PROD_ISSUER` (both default `true`)
-    - Keeps `letsencrypt` as an alias issuer pointing at the selected env (for stable ingress annotations)
+  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart and always creates:
+    - `selfsigned`
+    - `letsencrypt-staging`
+    - `letsencrypt-prod`
+    - `letsencrypt` alias issuer pointing at `LETSENCRYPT_ENV`
+  - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, point `LETSENCRYPT_PROD_SERVER` to staging (see `profiles/test-loop.env` / `profiles/overlay-staging.env`) to avoid production ACME traffic.
+  - Issuer intent is split by scope: `PLATFORM_CLUSTER_ISSUER` drives platform ingress/certs, `APP_CLUSTER_ISSUER` drives sample/app cert issuance, and `APP_NAMESPACE` defaults to `apps-staging`.
+  - Managed app namespaces are now `apps-staging` and `apps-prod` (no shared `apps` default). `scripts/75_manage_sample_app_lifecycle.sh` deploys to `${APP_NAMESPACE}`.
+  - Overlay profiles for promotion flow:
+    - `profiles/overlay-staging.env`: staging issuer defaults and prod-named issuer routed to staging ACME.
+    - `profiles/overlay-prod.env`: production issuer defaults and app namespace `apps-prod`.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
   - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_teardown_clean.sh` checks it even when `DELETE_SCOPE=managed`.

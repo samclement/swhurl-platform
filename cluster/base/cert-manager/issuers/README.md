@@ -13,5 +13,6 @@ Current scaffold:
 
 - `helmrelease-platform-issuers.yaml`: suspended Flux `HelmRelease` pointing at
   `./charts/platform-issuers` in this repo.
-- Values are intentionally safe defaults (selfsigned/staging-oriented) and should be aligned
-  with environment contract before unsuspending.
+- Values are intentionally safe defaults and should be aligned with environment contract before
+  unsuspending. Current contract always renders: `selfsigned`, `letsencrypt-staging`,
+  `letsencrypt-prod`, and `letsencrypt` alias.

@@ -8,6 +8,8 @@ help:
 	@echo "  host-delete         Delete host layer"
 	@echo "  cluster-plan        Print cluster plan"
 	@echo "  cluster-apply       Apply cluster layer"
+	@echo "  cluster-apply-staging  Apply staging overlay profile"
+	@echo "  cluster-apply-prod  Apply production overlay profile"
 	@echo "  cluster-apply-traefik  Apply with Traefik provider profile"
 	@echo "  cluster-apply-ceph     Apply with Ceph storage profile"
 	@echo "  cluster-apply-traefik-ceph  Apply with Traefik+Ceph provider profile"
@@ -38,6 +40,14 @@ cluster-plan:
 .PHONY: cluster-apply
 cluster-apply:
 	./run.sh
+
+.PHONY: cluster-apply-staging
+cluster-apply-staging:
+	./run.sh --profile profiles/overlay-staging.env
+
+.PHONY: cluster-apply-prod
+cluster-apply-prod:
+	./run.sh --profile profiles/overlay-prod.env
 
 .PHONY: cluster-apply-traefik
 cluster-apply-traefik:

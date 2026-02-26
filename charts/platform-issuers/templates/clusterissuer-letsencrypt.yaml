@@ -1,16 +1,5 @@
-{{- if eq (.Values.mode | default "selfsigned") "letsencrypt" -}}
-{{- $email := required "letsencrypt.email is required when mode=letsencrypt" .Values.letsencrypt.email -}}
+{{- $email := required "letsencrypt.email is required" .Values.letsencrypt.email -}}
 {{- $class := .Values.letsencrypt.ingressClass | default "nginx" -}}
-{{- $createStaging := true -}}
-{{- if hasKey .Values.letsencrypt "createStagingIssuer" -}}
-{{- $createStaging = .Values.letsencrypt.createStagingIssuer -}}
-{{- end -}}
-{{- $createProd := true -}}
-{{- if hasKey .Values.letsencrypt "createProdIssuer" -}}
-{{- $createProd = .Values.letsencrypt.createProdIssuer -}}
-{{- end -}}
-
-{{- if $createStaging }}
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -21,16 +10,13 @@ metadata:
 spec:
   acme:
     email: {{ $email | quote }}
-    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    server: {{ include "platform-issuers.letsencrypt.stagingServer" . | quote }}
     privateKeySecretRef:
       name: {{ .Values.letsencrypt.stagingAccountKeySecretName | default "acme-account-key-staging" | quote }}
     solvers:
       - http01:
           ingress:
             class: {{ $class | quote }}
-{{- end }}
-
-{{- if $createProd }}
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -41,14 +27,13 @@ metadata:
 spec:
   acme:
     email: {{ $email | quote }}
-    server: https://acme-v02.api.letsencrypt.org/directory
+    server: {{ include "platform-issuers.letsencrypt.prodServer" . | quote }}
     privateKeySecretRef:
       name: {{ .Values.letsencrypt.prodAccountKeySecretName | default "acme-account-key-prod" | quote }}
     solvers:
       - http01:
           ingress:
             class: {{ $class | quote }}
-{{- end }}
 
 {{- if (.Values.letsencrypt.createAlias | default true) }}
 ---
@@ -69,5 +54,3 @@ spec:
           ingress:
             class: {{ $class | quote }}
 {{- end }}
-
-{{- end -}}

@@ -37,10 +37,11 @@ Verification toggles:
 
 Let’s Encrypt safety controls:
 
-- `LETSENCRYPT_CREATE_STAGING_ISSUER=true|false`
-- `LETSENCRYPT_CREATE_PROD_ISSUER=true|false`
+- `LETSENCRYPT_ENV=staging|prod|production` (controls alias issuer `letsencrypt`)
+- `LETSENCRYPT_STAGING_SERVER=<url>` (optional override)
+- `LETSENCRYPT_PROD_SERVER=<url>` (optional override)
 
-Use `profiles/test-loop.env` for repeat destructive tests without production ACME calls.
+Use `profiles/test-loop.env` (or `profiles/overlay-staging.env`) for repeat destructive tests without production ACME calls.
 
 Release inventory verification controls (`scripts/93_verify_expected_releases.sh`):
 

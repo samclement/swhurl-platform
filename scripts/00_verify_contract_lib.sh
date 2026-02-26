@@ -123,11 +123,6 @@ is_allowed_cluster_issuer() {
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_CLUSTER_ISSUERS[@]}"
 }
 
-is_bool_string() {
-  local value="$1"
-  [[ "$value" == "true" || "$value" == "false" ]]
-}
-
 is_allowed_ingress_provider() {
   local value="$1"
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_INGRESS_PROVIDERS[@]}"

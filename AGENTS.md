@@ -23,6 +23,7 @@
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
+  - Runtime secret targets now live in `cluster/base/runtime-inputs`; Flux reconciles them via `homelab-runtime-inputs` using post-build substitutions from `flux-system/platform-runtime-inputs`.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
@@ -83,7 +84,7 @@
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge only; it is no longer part of the default apply/delete plans.
     - `scripts/29_prepare_platform_runtime_inputs.sh --delete` is now a no-op that points operators to `scripts/99_execute_teardown.sh` for delete-time cleanup ownership.
-    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and the legacy OTel `hyperdx-secret` from `CLICKSTACK_API_KEY`).
+    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now syncs `flux-system/platform-runtime-inputs` from layered env/profile values (with create-once cookie-secret semantics when `OAUTH_COOKIE_SECRET` is unset).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
@@ -104,6 +105,7 @@
     - `profiles/overlay-staging.env`: staging issuer defaults and prod-named issuer routed to staging ACME.
     - `profiles/overlay-prod.env`: production issuer defaults and app namespace `apps-prod`.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
+  - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
   - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_teardown_clean.sh` checks it even when `DELETE_SCOPE=managed`.
   - `scripts/98_verify_teardown_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.

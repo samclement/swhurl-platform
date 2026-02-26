@@ -114,4 +114,4 @@ The orchestrators invoke step scripts as executable files. Step scripts should f
 Compatibility notes:
 
 - `scripts/manual_install_k3s_minimal.sh` and `scripts/manual_configure_route53_dns_updater.sh` are compatibility wrappers into host-layer tasks.
-- `scripts/29_prepare_platform_runtime_inputs.sh` remains a manual compatibility bridge for runtime secrets, not an orchestrator-owned phase.
+- `scripts/29_prepare_platform_runtime_inputs.sh` remains a manual compatibility bridge for runtime secret inputs (syncs `flux-system/platform-runtime-inputs`), not an orchestrator-owned phase.

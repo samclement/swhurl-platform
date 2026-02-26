@@ -16,6 +16,28 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: homelab-runtime-inputs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: homelab-namespaces
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/runtime-inputs
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: homelab-cilium
   namespace: flux-system
 spec:
@@ -89,6 +111,7 @@ metadata:
 spec:
   dependsOn:
     - name: homelab-ingress
+    - name: homelab-runtime-inputs
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -123,6 +146,7 @@ metadata:
 spec:
   dependsOn:
     - name: homelab-clickstack
+    - name: homelab-runtime-inputs
   interval: 10m
   sourceRef:
     kind: GitRepository

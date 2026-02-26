@@ -5,6 +5,7 @@ Provider-agnostic component definitions live here:
 - cert-manager
 - cert-manager/issuers
 - cilium
+- runtime-inputs
 - oauth2-proxy
 - clickstack
 - otel

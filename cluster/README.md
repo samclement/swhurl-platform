@@ -14,5 +14,6 @@ Structure:
 
 Operational note:
 
-- Runtime input secrets (OIDC, ClickStack API key) can still be prepared by `scripts/29_prepare_platform_runtime_inputs.sh` as a manual compatibility bridge for Flux/legacy secret wiring.
+- Runtime input targets are declarative under `cluster/base/runtime-inputs` and are rendered by Flux from `flux-system/Secret platform-runtime-inputs`.
+- Use `scripts/29_prepare_platform_runtime_inputs.sh` as a compatibility helper to sync/update `platform-runtime-inputs` from local env/profile values.
 - Default Helmfile apply (`./run.sh`) does not require running `scripts/29_prepare_platform_runtime_inputs.sh`.

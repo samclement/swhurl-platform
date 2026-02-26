@@ -32,6 +32,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     to make future cutover points concrete without changing runtime ownership yet.
   - Suspended Flux `HelmRelease` scaffolds now also exist for platform components
     (`oauth2-proxy`, `clickstack`, `otel` collectors, `minio`) as explicit migration targets.
+  - Example app layer now includes a suspended Flux `HelmRelease` scaffold
+    (`cluster/base/apps/example/helmrelease-hello-web.yaml`).
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

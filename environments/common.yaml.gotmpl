@@ -7,6 +7,9 @@ features:
   clickstack: {{ eq (env "FEAT_CLICKSTACK" | default "true") "true" }}
   otelK8s: {{ eq (env "FEAT_OTEL_K8S" | default "true") "true" }}
   minio: {{ eq (env "FEAT_MINIO" | default "true") "true" }}
+providers:
+  ingress: {{ env "INGRESS_PROVIDER" | default "nginx" | quote }}
+  objectStorage: {{ env "OBJECT_STORAGE_PROVIDER" | default "minio" | quote }}
 computed:
   oauthHost: {{ env "OAUTH_HOST" | default (printf "oauth.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}
   hubbleHost: {{ env "HUBBLE_HOST" | default (printf "hubble.%s" (env "BASE_DOMAIN" | default "127.0.0.1.nip.io")) | quote }}

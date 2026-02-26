@@ -21,35 +21,39 @@ else
   ok "All nodes Ready (${ready_nodes}/${total_nodes})"
 fi
 
-log_info "Smoke tests: ingress NodePort wiring"
-if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
-  svc_type="$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')"
-  https_np="$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')"
-  if [[ "$svc_type" != "$VERIFY_INGRESS_SERVICE_TYPE" ]]; then
-    bad "ingress-nginx service.type mismatch (expected ${VERIFY_INGRESS_SERVICE_TYPE}, got ${svc_type:-<empty>})"
-  elif [[ "$https_np" == "$VERIFY_INGRESS_NODEPORT_HTTPS" ]]; then
-    ok "ingress-nginx HTTPS NodePort is ${VERIFY_INGRESS_NODEPORT_HTTPS}"
+if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
+  log_info "Smoke tests: ingress NodePort wiring"
+  if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
+    svc_type="$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')"
+    https_np="$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')"
+    if [[ "$svc_type" != "$VERIFY_INGRESS_SERVICE_TYPE" ]]; then
+      bad "ingress-nginx service.type mismatch (expected ${VERIFY_INGRESS_SERVICE_TYPE}, got ${svc_type:-<empty>})"
+    elif [[ "$https_np" == "$VERIFY_INGRESS_NODEPORT_HTTPS" ]]; then
+      ok "ingress-nginx HTTPS NodePort is ${VERIFY_INGRESS_NODEPORT_HTTPS}"
+    else
+      bad "ingress-nginx HTTPS NodePort mismatch (expected ${VERIFY_INGRESS_NODEPORT_HTTPS}, got ${https_np:-<empty>})"
+    fi
   else
-    bad "ingress-nginx HTTPS NodePort mismatch (expected ${VERIFY_INGRESS_NODEPORT_HTTPS}, got ${https_np:-<empty>})"
+    bad "ingress-nginx service not found"
   fi
-else
-  bad "ingress-nginx service not found"
-fi
 
-# End-to-end reachability test through ingress-nginx NodePort.
-if command -v curl >/dev/null 2>&1; then
-  host="${VERIFY_SAMPLE_INGRESS_HOST_PREFIX}.${BASE_DOMAIN}"
-  log_info "Smoke tests: HTTPS NodePort ${VERIFY_INGRESS_NODEPORT_HTTPS} -> Host: ${host}"
-  set +e
-  code="$(curl -sk -o /dev/null -w "%{http_code}" -H "Host: ${host}" "https://127.0.0.1:${VERIFY_INGRESS_NODEPORT_HTTPS}/")"
-  set -e
-  if [[ "$code" =~ ^[234][0-9][0-9]$ ]]; then
-    ok "Ingress HTTPS smoke check returned HTTP ${code}"
+  # End-to-end reachability test through ingress-nginx NodePort.
+  if command -v curl >/dev/null 2>&1; then
+    host="${VERIFY_SAMPLE_INGRESS_HOST_PREFIX}.${BASE_DOMAIN}"
+    log_info "Smoke tests: HTTPS NodePort ${VERIFY_INGRESS_NODEPORT_HTTPS} -> Host: ${host}"
+    set +e
+    code="$(curl -sk -o /dev/null -w "%{http_code}" -H "Host: ${host}" "https://127.0.0.1:${VERIFY_INGRESS_NODEPORT_HTTPS}/")"
+    set -e
+    if [[ "$code" =~ ^[234][0-9][0-9]$ ]]; then
+      ok "Ingress HTTPS smoke check returned HTTP ${code}"
+    else
+      bad "Ingress HTTPS smoke check returned HTTP ${code:-<empty>}"
+    fi
   else
-    bad "Ingress HTTPS smoke check returned HTTP ${code:-<empty>}"
+    log_warn "curl not found; skipping ingress HTTPS smoke check"
   fi
 else
-  log_warn "curl not found; skipping ingress HTTPS smoke check"
+  log_info "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping ingress-nginx NodePort smoke checks"
 fi
 
 if [[ "$fail" -ne 0 ]]; then

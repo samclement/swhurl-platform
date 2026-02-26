@@ -28,7 +28,9 @@ add_repo() {
 # Only add repos needed for enabled features so transient repo outages don't
 # block unrelated installs.
 add_repo jetstack https://charts.jetstack.io true
-add_repo ingress-nginx https://kubernetes.github.io/ingress-nginx true
+if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
+  add_repo ingress-nginx https://kubernetes.github.io/ingress-nginx true
+fi
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   add_repo oauth2-proxy https://oauth2-proxy.github.io/manifests true
@@ -42,7 +44,7 @@ fi
 if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   add_repo open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts true
 fi
-if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
+if [[ "${FEAT_MINIO:-true}" == "true" && "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
   add_repo minio https://charts.min.io/ true
 fi
 

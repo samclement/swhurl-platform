@@ -29,6 +29,9 @@ Docs:
 - Migration runbooks:
   - `docs/runbooks/migrate-ingress-nginx-to-traefik.md`
   - `docs/runbooks/migrate-minio-to-ceph.md`
+- ADRs:
+  - `docs/adr/0001-ingress-provider-strategy.md`
+  - `docs/adr/0002-storage-provider-strategy.md`
 - Add feature checklist: `docs/add-feature-checklist.md`
 - Migration plan (local charts): `docs/migration-plan-local-charts.md`
 

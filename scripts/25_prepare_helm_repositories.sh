@@ -37,6 +37,7 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
 fi
 if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
   add_repo cilium https://helm.cilium.io/ true
+  add_repo metrics-server https://kubernetes-sigs.github.io/metrics-server/ true
 fi
 if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
   add_repo clickstack https://clickhouse.github.io/ClickStack-helm-charts true

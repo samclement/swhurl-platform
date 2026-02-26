@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ../../base/namespaces
   - ../../base/cilium
+  - ../../base/metrics-server
   - ../../base/cert-manager
   - ../../base/cert-manager/issuers
   - providers/ingress-nginx

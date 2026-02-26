@@ -7,6 +7,8 @@ Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration r
 
 1. Bootstrap Flux controllers and source definitions:
    - `make flux-bootstrap`
+   - If `flux` CLI is missing, bootstrap auto-installs it to `~/.local/bin` by default.
+   - If no ready CNI exists yet, bootstrap auto-runs the Cilium lifecycle scripts first.
 2. Reconcile source + stack:
    - `make flux-reconcile`
 3. Observe stack health:
@@ -15,7 +17,7 @@ Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration r
 
 Default active dependency chain:
 
-- `namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`
+- `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage}} -> example-app`
 
 Default deployed app path:
 
@@ -43,7 +45,7 @@ Manual prerequisite (optional): DNS registration for `.swhurl.com`
 2) Basic Kubernetes Cluster (kubeconfig)
 - `scripts/15_verify_cluster_access.sh`
 Manual prerequisite (optional): Local host bootstrap (k3s)
-- `scripts/manual_install_k3s_minimal.sh` delegates to host layer task `host/tasks/20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik`, flannel disabled for Cilium).
+- `scripts/manual_install_k3s_minimal.sh` delegates to host layer task `host/tasks/20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik`, flannel disabled for Cilium, bundled `metrics-server` disabled so repo-managed metrics-server can be used).
 - Verify kubeconfig and API reachability with `scripts/15_verify_cluster_access.sh`.
 
 3) Environment (profiles/secrets) & verification
@@ -55,7 +57,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 - `scripts/26_manage_cilium_lifecycle.sh` (feature-gated by `FEAT_CILIUM`)
 
 5) Platform services & verification
-- `scripts/31_sync_helmfile_phase_core.sh` (Helmfile: `phase=core`, installs cert-manager and installs ingress-nginx only when `INGRESS_PROVIDER=nginx`)
+- `scripts/31_sync_helmfile_phase_core.sh` (Helmfile: `phase=core`, installs cert-manager, repo-managed metrics-server, and installs ingress-nginx only when `INGRESS_PROVIDER=nginx`)
 - `scripts/31_sync_helmfile_phase_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`), always creating `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` (alias from `LETSENCRYPT_ENV`)
 - `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags and provider settings; MinIO only when `OBJECT_STORAGE_PROVIDER=minio`)
 

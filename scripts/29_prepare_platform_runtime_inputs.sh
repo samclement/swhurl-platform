@@ -36,9 +36,10 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
+log_warn "scripts/29_prepare_platform_runtime_inputs.sh is a manual compatibility bridge; default ./run.sh apply does not invoke it."
+
 # oauth2-proxy secret (required by oauth2-proxy Helm release)
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  [[ -n "${OIDC_ISSUER:-}" ]] || die "OIDC_ISSUER is required when FEAT_OAUTH2_PROXY=true"
   [[ -n "${OIDC_CLIENT_ID:-}" ]] || die "OIDC_CLIENT_ID is required when FEAT_OAUTH2_PROXY=true"
   [[ -n "${OIDC_CLIENT_SECRET:-}" ]] || die "OIDC_CLIENT_SECRET is required when FEAT_OAUTH2_PROXY=true"
 

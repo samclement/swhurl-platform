@@ -76,6 +76,7 @@
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge and delete helper for legacy managed leftovers (`otel-config-vars`, `minio-creds`); it is no longer part of the default apply plan.
+    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and OTel ingestion secret).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).

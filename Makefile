@@ -12,6 +12,7 @@ help:
 	@echo "  cluster-apply-ceph     Apply with Ceph storage profile"
 	@echo "  cluster-apply-traefik-ceph  Apply with Traefik+Ceph provider profile"
 	@echo "  cluster-delete      Delete cluster layer"
+	@echo "  test-loop           Run destructive scratch cycles (k3s uninstall/install + apply/delete)"
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
 	@echo "  verify-legacy       Run legacy verification suite"
@@ -53,6 +54,10 @@ cluster-apply-traefik-ceph:
 .PHONY: cluster-delete
 cluster-delete:
 	./run.sh --delete
+
+.PHONY: test-loop
+test-loop:
+	./scripts/compat/repeat-scratch-cycles.sh --yes
 
 .PHONY: all-apply
 all-apply:

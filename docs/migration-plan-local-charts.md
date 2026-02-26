@@ -42,10 +42,10 @@ Validation
 
 Changes
 - Add `charts/platform-issuers/` producing:
-  - `ClusterIssuer letsencrypt-staging`
-  - `ClusterIssuer letsencrypt-prod`
+  - `ClusterIssuer letsencrypt-staging` (default enabled)
+  - `ClusterIssuer letsencrypt-prod` (optional via `LETSENCRYPT_CREATE_PROD_ISSUER=true`)
 - Helmfile release `platform-issuers` (`phase=core`) with `needs: [cert-manager]`.
-- Introduce `ACME_ENV=staging|prod` (default `staging`) and keep `CLUSTER_ISSUER` aligned.
+- Use `LETSENCRYPT_ENV=staging|prod` (default `staging`) and keep `CLUSTER_ISSUER` aligned.
 
 Validation
 - `kubectl get clusterissuers`

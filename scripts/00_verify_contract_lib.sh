@@ -64,6 +64,8 @@ readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
   CLUSTER_ISSUER
   LETSENCRYPT_ENV
+  LETSENCRYPT_CREATE_STAGING_ISSUER
+  LETSENCRYPT_CREATE_PROD_ISSUER
   INGRESS_PROVIDER
   OBJECT_STORAGE_PROVIDER
 )
@@ -109,6 +111,11 @@ is_allowed_k3s_secret_for_verify() {
 is_allowed_letsencrypt_env() {
   local value="$1"
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_LETSENCRYPT_ENVS[@]}"
+}
+
+is_bool_string() {
+  local value="$1"
+  [[ "$value" == "true" || "$value" == "false" ]]
 }
 
 is_allowed_ingress_provider() {

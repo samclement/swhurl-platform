@@ -22,6 +22,7 @@
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
   - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
   - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, kustomize structure rendering for flux scaffolding, and provider-matrix validation through `scripts/97_verify_provider_matrix.sh`).
+  - Destructive lifecycle loop helper: `scripts/compat/repeat-scratch-cycles.sh` performs uninstall/install/apply/delete cycles and blocks Let’s Encrypt prod usage unless `ALLOW_LETSENCRYPT_PROD_LOOP=true`.
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
@@ -72,7 +73,7 @@
   - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
   - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
   - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart:
-    - Always creates `letsencrypt-staging` and `letsencrypt-prod`
+    - `letsencrypt-staging`/`letsencrypt-prod` creation is now toggleable via `LETSENCRYPT_CREATE_STAGING_ISSUER` and `LETSENCRYPT_CREATE_PROD_ISSUER` (both default `true`)
     - Keeps `letsencrypt` as an alias issuer pointing at the selected env (for stable ingress annotations)
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

@@ -32,6 +32,7 @@ Docs:
 Compatibility helpers:
 - `scripts/compat/run-legacy-pipeline.sh` forwards to the current legacy `run.sh` flow.
 - `scripts/compat/verify-legacy-contracts.sh` runs the existing verification script suite.
+- `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
 
 ## How This Repo Is Structured
 

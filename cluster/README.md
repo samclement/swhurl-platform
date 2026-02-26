@@ -14,4 +14,5 @@ Structure:
 
 Operational note:
 
-- Runtime input secrets (OIDC, ClickStack ingestion key) can still be prepared by `scripts/29_prepare_platform_runtime_inputs.sh` as a manual compatibility bridge until a fully declarative secret manager flow is adopted.
+- Runtime input secrets (OIDC, ClickStack ingestion key) can still be prepared by `scripts/29_prepare_platform_runtime_inputs.sh` as a manual compatibility bridge for Flux/legacy secret wiring.
+- Default Helmfile apply (`./run.sh`) does not require running `scripts/29_prepare_platform_runtime_inputs.sh`.

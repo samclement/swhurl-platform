@@ -10,7 +10,8 @@
 - Documentation workflow
   - `showboat` is not installed globally in this repo environment; run it via `uvx showboat ...` (for example `uvx showboat init walkthrough.md ...`).
   - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
-  - `uvx showboat verify walkthrough.md` currently reports broad output drift; treat `walkthrough.md` as stale and prefer `README.md` + `docs/runbook.md` + `docs/target-tree-and-migration-checklist.md` for active contracts until walkthrough regeneration is done.
+  - The historical executable walkthrough drifted; `walkthrough.md` is now a concise current-state pointer. Regenerate it with `uvx showboat init ...` + fresh exec blocks when a full executable transcript is needed.
+  - Avoid self-referential Showboat commands inside executable walkthrough `bash` blocks (for example `showboat verify walkthrough.md`), which can cause recursive verification hangs.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
   - `cluster/README.md` should call out that `scripts/29_prepare_platform_runtime_inputs.sh` is a manual Flux/legacy secret bridge and is not required for default `./run.sh` applies.

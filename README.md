@@ -11,6 +11,10 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 5. Optional host apply: `./host/run-host.sh`
 6. Print the cluster plan: `./scripts/02_print_plan.sh`
 7. Apply cluster layer: `./run.sh`
+8. Optional provider profiles:
+   - `./run.sh --profile profiles/provider-traefik.env`
+   - `./run.sh --profile profiles/provider-ceph.env`
+   - `./run.sh --profile profiles/provider-traefik-ceph.env`
 
 Optional unified run (host + cluster):
 
@@ -41,7 +45,7 @@ Compatibility helpers:
 - `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
 
 Convenience task runner:
-- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`, etc.).
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `all-apply`, `flux-bootstrap`, etc.).
 
 GitOps sequencing scaffold:
 - `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> core -> platform -> example-app`).

@@ -36,6 +36,9 @@ jobs:
           ./scripts/manual_install_k3s_minimal.sh --dry-run
           ./scripts/manual_configure_route53_dns_updater.sh --dry-run
           ./run.sh --dry-run
+          ./run.sh --dry-run --profile profiles/provider-traefik.env
+          ./run.sh --dry-run --profile profiles/provider-ceph.env
+          ./run.sh --dry-run --profile profiles/provider-traefik-ceph.env
           ./run.sh --dry-run --with-host
           ./run.sh --dry-run --with-host --delete
           ./scripts/compat/run-legacy-pipeline.sh --dry-run

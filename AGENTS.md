@@ -116,6 +116,7 @@
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
   - `scripts/75_manage_sample_app_lifecycle.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
   - `scripts/91_verify_platform_state.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
+  - `scripts/91_verify_platform_state.sh` no longer treats `ingress/oauth2-proxy-secret` as a required runtime invariant for default Helmfile installs; it validates oauth2-proxy deployment/ingress state instead.
   - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration

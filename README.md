@@ -30,6 +30,7 @@ You can also set `RUN_HOST_LAYER=true` in env/config to make this the default be
 
 Docs:
 - Phase runbook: `docs/runbook.md`
+- Orchestration API (CLI + env contracts): `docs/orchestration-api.md`
 - Contracts (env/tool/delete): `docs/contracts.md`
 - Homelab intent and design direction: `docs/homelab-intent-and-design.md`
 - Target tree and migration checklist: `docs/target-tree-and-migration-checklist.md`

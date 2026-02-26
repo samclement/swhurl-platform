@@ -1,0 +1,11 @@
+# Managed template for host dynamic DNS updater timer
+[Unit]
+Description=Run Homelab Dynamic DNS Update every 10 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=10min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,7 @@
 # Ignore local secrets/profiles and keys
 profiles/secrets.env
 profiles/*.local.env
+host/config/host.env
 
 # Age/SOPS keys and encrypted secrets directory (if used)
 .keys/

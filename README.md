@@ -34,6 +34,9 @@ Compatibility helpers:
 - `scripts/compat/verify-legacy-contracts.sh` runs the existing verification script suite.
 - `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
 
+Convenience task runner:
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`, etc.).
+
 ## How This Repo Is Structured
 
 The platform is run in explicit phases so you can apply/verify/debug in stages. The orchestrator (`run.sh`) does not discover scripts dynamically; it runs an explicit plan.

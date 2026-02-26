@@ -7,6 +7,11 @@
 
 ### Current Learnings
 
+- Documentation workflow
+  - `showboat` is not installed globally in this repo environment; run it via `uvx showboat ...` (for example `uvx showboat init walkthrough.md ...`).
+  - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
+  - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
+
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
   - `scripts/manual_install_k3s_minimal.sh` bootstraps k3s only (Traefik disabled, flannel disabled); it does not install Cilium.
@@ -16,6 +21,9 @@
   - Hubble UI ingress is configured declaratively in `infra/values/cilium-helmfile.yaml.gotmpl` (no script-side envsubst).
 
 - Orchestrator run order
+  - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.
+  - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
+  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; current dynamic DNS task delegates to `scripts/manual_configure_route53_dns_updater.sh` for behavioral parity during migration.
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
   - Script naming convention:
     - `00_*_lib.sh` for sourced helper libraries (not runnable steps; excluded from `run.sh` plans).

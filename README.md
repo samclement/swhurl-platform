@@ -6,15 +6,23 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (gitignored, see `profiles/secrets.example.env`).
-3. Optional (DNS for `.swhurl.com`): `./scripts/manual_configure_route53_dns_updater.sh` (installs/updates the systemd timer). Remove via `./scripts/manual_configure_route53_dns_updater.sh --delete`.
-4. Print the plan: `./scripts/02_print_plan.sh`
-5. Apply: `./run.sh`
+3. Optional host overrides: copy `host/config/host.env.example` to `host/config/host.env` and edit.
+4. Optional host dry-run: `./host/run-host.sh --dry-run`
+5. Optional host apply: `./host/run-host.sh`
+6. Print the cluster plan: `./scripts/02_print_plan.sh`
+7. Apply cluster layer: `./run.sh`
 
 Docs:
 - Phase runbook: `docs/runbook.md`
 - Contracts (env/tool/delete): `docs/contracts.md`
+- Homelab intent and design direction: `docs/homelab-intent-and-design.md`
+- Target tree and migration checklist: `docs/target-tree-and-migration-checklist.md`
 - Add feature checklist: `docs/add-feature-checklist.md`
 - Migration plan (local charts): `docs/migration-plan-local-charts.md`
+
+Compatibility helpers:
+- `scripts/compat/run-legacy-pipeline.sh` forwards to the current legacy `run.sh` flow.
+- `scripts/compat/verify-legacy-contracts.sh` runs the existing verification script suite.
 
 ## How This Repo Is Structured
 

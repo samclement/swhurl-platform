@@ -78,12 +78,13 @@
   - `scripts/98_verify_teardown_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
   - Verification tiers:
     - Core (default, `FEAT_VERIFY=true`): `94_verify_config_inputs.sh`, `91_verify_platform_state.sh`, `92_verify_helmfile_drift.sh`.
-    - Deep (opt-in, `FEAT_VERIFY_DEEP=true`): `90_verify_runtime_smoke.sh`, `93_verify_expected_releases.sh`, `95_capture_cluster_diagnostics.sh`, `96_verify_orchestrator_contract.sh`.
+    - Deep (opt-in, `FEAT_VERIFY_DEEP=true`): `90_verify_runtime_smoke.sh`, `93_verify_expected_releases.sh`, `95_capture_cluster_diagnostics.sh`, `96_verify_orchestrator_contract.sh`, `97_verify_provider_matrix.sh`.
   - `scripts/95_capture_cluster_diagnostics.sh` writes diagnostics to `./artifacts/cluster-diagnostics-<timestamp>/` by default (or a custom output dir when passed as arg).
   - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
   - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
   - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles and Helmfile release mappings.
+  - `scripts/97_verify_provider_matrix.sh` validates provider flag behavior without cluster access by rendering Helmfile for provider combinations and asserting `ingress-nginx`/`minio` installed states.
   - `scripts/93_verify_expected_releases.sh` checks missing expected releases by default and can optionally fail on unexpected extras. Tune with:
     - `VERIFY_RELEASE_SCOPE=platform|cluster`
     - `VERIFY_RELEASE_ALLOWLIST` (comma-separated glob patterns, e.g. `kube-system/traefik,apps/custom-app`)

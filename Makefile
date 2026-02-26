@@ -15,6 +15,7 @@ help:
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
 	@echo "  verify-legacy       Run legacy verification suite"
+	@echo "  verify-provider-matrix  Validate Helmfile provider gating matrix"
 	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
 
 .PHONY: host-plan
@@ -64,6 +65,10 @@ all-delete:
 .PHONY: verify-legacy
 verify-legacy:
 	./scripts/compat/verify-legacy-contracts.sh
+
+.PHONY: verify-provider-matrix
+verify-provider-matrix:
+	./scripts/97_verify_provider_matrix.sh
 
 .PHONY: flux-bootstrap
 flux-bootstrap:

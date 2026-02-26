@@ -23,14 +23,6 @@ host_sudo() {
   fi
 }
 
-host_detect_os_id() {
-  local os_id=""
-  if [[ -r /etc/os-release ]]; then
-    os_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
-  fi
-  printf '%s' "$os_id"
-}
-
 host_repo_root_from_lib() {
   local lib_dir
   lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

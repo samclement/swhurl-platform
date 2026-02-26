@@ -26,6 +26,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     GitOps overlays remain to be filled.
   - Component-level base directories (`cluster/base/cert-manager`, `oauth2-proxy`,
     `clickstack`, `otel`, `storage/{minio,ceph}`) are scaffolded for clearer target ownership.
+  - Issuer ownership has an explicit scaffold boundary (`cluster/base/cert-manager/issuers`)
+    and Flux sequencing layer (`homelab-issuers`) between cert-manager and ingress/app layers.
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

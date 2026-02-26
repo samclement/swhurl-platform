@@ -52,12 +52,30 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-oauth2-proxy
+  name: homelab-issuers
   namespace: flux-system
 spec:
   suspend: true
   dependsOn:
     - name: homelab-cert-manager
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/cert-manager/issuers
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-oauth2-proxy
+  namespace: flux-system
+spec:
+  suspend: true
+  dependsOn:
+    - name: homelab-issuers
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -75,7 +93,7 @@ metadata:
 spec:
   suspend: true
   dependsOn:
-    - name: homelab-cert-manager
+    - name: homelab-issuers
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -111,7 +129,7 @@ metadata:
 spec:
   suspend: true
   dependsOn:
-    - name: homelab-cert-manager
+    - name: homelab-issuers
   interval: 10m
   sourceRef:
     kind: GitRepository

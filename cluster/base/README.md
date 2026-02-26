@@ -5,6 +5,7 @@ Provider-agnostic component definitions should live here.
 Current component scaffold:
 - namespaces
 - cert-manager
+- cert-manager/issuers
 - cilium
 - oauth2-proxy
 - clickstack

@@ -55,6 +55,7 @@ GitOps sequencing scaffold:
 - Only `namespaces` is active by default; later layers are intentionally `suspend: true` until migrated.
 - `cluster/overlays/homelab/providers/` contains ingress/storage provider scaffolds so the future GitOps stack can pick one ingress overlay and one storage overlay explicitly.
 - `cluster/base/` now includes component-level scaffolds (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/{minio,ceph}`) to make target ownership explicit.
+- Cert-manager/issuer scaffold now includes suspended Flux `HelmRelease` resources so migration can cut over with explicit ownership boundaries.
 
 CI validation:
 - `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, `kubectl kustomize` rendering checks for scaffolded GitOps paths, and provider-matrix verification via `scripts/97_verify_provider_matrix.sh`.

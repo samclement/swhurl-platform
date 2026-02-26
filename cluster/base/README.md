@@ -17,3 +17,5 @@ Current component scaffold:
 Transitional note:
 - `core/` and `platform/` remain as temporary aggregation placeholders while migration
   moves to per-component ownership.
+- Most component directories now include suspended Flux `HelmRelease` scaffolds to make
+  cutover points explicit without changing runtime ownership.

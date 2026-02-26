@@ -1,0 +1,42 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: clickstack
+  namespace: observability
+spec:
+  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
+  suspend: true
+  interval: 30m
+  releaseName: clickstack
+  chart:
+    spec:
+      chart: clickstack
+      version: 1.1.1
+      sourceRef:
+        kind: HelmRepository
+        name: clickstack
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # TODO(migration): replace scaffold defaults with environment-driven substitution
+    # (CLICKSTACK_*, hosts, issuer/provider, OAuth behavior).
+    global:
+      storageClassName: local-path
+    hyperdx:
+      apiKey: ""
+      frontendUrl: https://clickstack.example.invalid
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        host: clickstack.example.invalid
+        annotations:
+          cert-manager.io/cluster-issuer: selfsigned
+        tls:
+          enabled: true
+          secretName: clickstack-tls

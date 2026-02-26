@@ -131,7 +131,7 @@ releases:
       phase: platform
       component: otel-k8s-daemonset
     values:
-      - infra/values/otel-k8s-daemonset.yaml
+      - infra/values/otel-k8s-daemonset.yaml.gotmpl
 
   - name: otel-k8s-cluster
     namespace: logging
@@ -147,7 +147,7 @@ releases:
       phase: platform
       component: otel-k8s-cluster
     values:
-      - infra/values/otel-k8s-deployment.yaml
+      - infra/values/otel-k8s-deployment.yaml.gotmpl
 
   - name: minio
     namespace: storage

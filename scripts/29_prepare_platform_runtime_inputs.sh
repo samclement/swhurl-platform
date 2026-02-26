@@ -26,10 +26,12 @@ delete_if_managed() {
 }
 
 if [[ "$DELETE" == true ]]; then
-  log_info "Deleting platform config resources (secrets/configmaps)"
+  log_info "Deleting platform config resources (active secrets + legacy leftovers)"
   delete_if_managed ingress secret oauth2-proxy-secret
   delete_if_managed logging secret hyperdx-secret
+  # Legacy cleanup: otel-config-vars is no longer created by apply path.
   delete_if_managed logging configmap otel-config-vars
+  # Legacy cleanup: minio-creds is no longer created by apply path.
   delete_if_managed storage secret minio-creds
   exit 0
 fi
@@ -90,7 +92,6 @@ fi
 if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   kubectl_ns logging
 
-  OTLP_ENDPOINT="${CLICKSTACK_OTEL_ENDPOINT:-http://clickstack-otel-collector.observability.svc.cluster.local:4318}"
   INGESTION_KEY="${CLICKSTACK_INGESTION_KEY:-}"
   [[ -n "$INGESTION_KEY" ]] || die "CLICKSTACK_INGESTION_KEY is required when FEAT_OTEL_K8S=true"
 
@@ -99,28 +100,7 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
     --from-literal=HYPERDX_API_KEY="$INGESTION_KEY" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-  log_info "Ensuring logging/ConfigMap otel-config-vars (HYPERDX_OTLP_ENDPOINT)"
-  kubectl -n logging create configmap otel-config-vars \
-    --from-literal=HYPERDX_OTLP_ENDPOINT="$OTLP_ENDPOINT" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
   label_managed logging secret hyperdx-secret
-  label_managed logging configmap otel-config-vars
-fi
-
-# MinIO credentials secret (required by MinIO Helm release)
-if [[ "${FEAT_MINIO:-true}" == "true" && "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
-  kubectl_ns storage
-  [[ -n "${MINIO_ROOT_USER:-}" ]] || die "MINIO_ROOT_USER is required when FEAT_MINIO=true"
-  [[ -n "${MINIO_ROOT_PASSWORD:-}" ]] || die "MINIO_ROOT_PASSWORD is required when FEAT_MINIO=true"
-
-  log_info "Ensuring storage/Secret minio-creds (existingSecret for MinIO chart)"
-  kubectl -n storage create secret generic minio-creds \
-    --from-literal=rootUser="${MINIO_ROOT_USER}" \
-    --from-literal=rootPassword="${MINIO_ROOT_PASSWORD}" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  label_managed storage secret minio-creds
 fi
 
 log_info "Platform config resources ensured"

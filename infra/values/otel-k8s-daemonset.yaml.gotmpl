@@ -1,12 +1,15 @@
-mode: deployment
+mode: daemonset
 
 image:
   repository: otel/opentelemetry-collector-k8s
 
 presets:
-  kubernetesEvents:
+  logsCollection:
     enabled: true
-  clusterMetrics:
+    includeCollectorLogs: true
+  kubeletMetrics:
+    enabled: true
+  hostMetrics:
     enabled: true
   kubernetesAttributes:
     enabled: true
@@ -22,18 +25,18 @@ resources:
 config:
   exporters:
     otlphttp:
-      endpoint: ${env:HYPERDX_OTLP_ENDPOINT}
+      endpoint: {{ .Environment.Values.computed.clickstackOtelEndpoint | quote }}
       headers:
         authorization: ${env:HYPERDX_API_KEY}
 
   service:
     pipelines:
       logs:
-        receivers: [k8sobjects]
+        receivers: [otlp, filelog]
         processors: [memory_limiter, k8sattributes, batch]
         exporters: [otlphttp]
       metrics:
-        receivers: [k8s_cluster]
+        receivers: [kubeletstats, hostmetrics]
         processors: [memory_limiter, k8sattributes, batch]
         exporters: [otlphttp]
 
@@ -43,11 +46,6 @@ extraEnvs:
       secretKeyRef:
         name: hyperdx-secret
         key: HYPERDX_API_KEY
-  - name: HYPERDX_OTLP_ENDPOINT
-    valueFrom:
-      configMapKeyRef:
-        name: otel-config-vars
-        key: HYPERDX_OTLP_ENDPOINT
 
 clusterRole:
   create: true

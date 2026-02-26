@@ -15,14 +15,16 @@
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
-  - Flux dependency sequencing now actively reconciles all default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress -> platform -> example-app`).
+  - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
+  - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy `scripts/compat/run-legacy-pipeline.sh` alias was removed.
+  - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
   - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
   - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now targets `cluster/base/storage/minio` (staging issuer intent in base values). Use `cluster/overlays/homelab/platform/prod/storage-minio` for prod annotation/host promotion.
   - Ingress provider overlay `cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml` is active (no `spec.suspend`) and is the default ingress layer in Flux stack sequencing.
-  - Component-level GitOps base scaffolds now exist under `cluster/base/` (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/minio`, `storage/ceph`, plus `apps/example`); keep `core/` and `platform/` as temporary aggregation placeholders only.
+  - Component-level GitOps base scaffolds now exist under `cluster/base/` (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/minio`, `storage/ceph`, plus `apps/example`); prefer component-level paths directly (legacy `core/` and `platform/` placeholders were removed).
   - Cert-manager and issuer Flux `HelmRelease` resources are active at `cluster/base/cert-manager/helmrelease-cert-manager.yaml` and `cluster/base/cert-manager/issuers/helmrelease-platform-issuers.yaml`.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
   - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack deploys via `cluster/overlays/homelab/apps/staging`.
@@ -71,7 +73,7 @@
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh`: creates required Secrets/ConfigMaps for Helm releases (oauth2-proxy secret, HyperDX ingestion secret/config, MinIO creds).
+    - `scripts/29_prepare_platform_runtime_inputs.sh`: creates required Secrets for Helm releases (oauth2-proxy secret, HyperDX ingestion secret) and cleans up legacy managed leftovers on delete (`otel-config-vars`, `minio-creds`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
@@ -137,8 +139,10 @@
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Default install path uses `scripts/29_prepare_platform_runtime_inputs.sh` (creates `hyperdx-secret` + `otel-config-vars`) and `scripts/36_sync_helmfile_phase_platform.sh` (installs the collector releases).
-  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml`).
+  - Default install path uses `scripts/29_prepare_platform_runtime_inputs.sh` (creates `hyperdx-secret`) and `scripts/36_sync_helmfile_phase_platform.sh` (installs the collector releases).
+  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and only consume `hyperdx-secret`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
+  - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; `scripts/29_prepare_platform_runtime_inputs.sh` keeps `minio-creds` as delete-only legacy cleanup.
+  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
   - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
 
@@ -365,15 +369,12 @@ helm upgrade --install minio minio/minio \
   --set consoleIngress.tls[0].secretName=minio-console-tls
 ```
 
-Set access keys via a pre-created Secret (recommended) rather than Helm values. Example:
+Set access keys via Helm values (or an external secret manager in production). Example:
 
 ```
-kubectl -n storage create secret generic minio-creds \
-  --from-literal=rootUser="minioadmin" \
-  --from-literal=rootPassword="CHANGE_ME_LONG_RANDOM"
+--set rootUser="minioadmin" \
+--set rootPassword="CHANGE_ME_LONG_RANDOM"
 ```
-
-Then set `--set existingSecret=minio-creds` in the Helm install/upgrade.
 
 ## Secrets Management Best Practices
 
@@ -506,8 +507,8 @@ infra/
     ingress-nginx-logging.yaml
     oauth2-proxy-helmfile.yaml.gotmpl
     clickstack-helmfile.yaml.gotmpl
-    otel-k8s-daemonset.yaml
-    otel-k8s-deployment.yaml
+    otel-k8s-daemonset.yaml.gotmpl
+    otel-k8s-deployment.yaml.gotmpl
     minio-helmfile.yaml.gotmpl
   manifests/
     issuers/

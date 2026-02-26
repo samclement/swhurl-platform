@@ -45,7 +45,7 @@ spec:
     config:
       exporters:
         otlphttp:
-          endpoint: ${env:HYPERDX_OTLP_ENDPOINT}
+          endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
             authorization: ${env:HYPERDX_API_KEY}
       service:
@@ -74,10 +74,5 @@ spec:
           secretKeyRef:
             name: hyperdx-secret
             key: HYPERDX_API_KEY
-      - name: HYPERDX_OTLP_ENDPOINT
-        valueFrom:
-          configMapKeyRef:
-            name: otel-config-vars
-            key: HYPERDX_OTLP_ENDPOINT
     clusterRole:
       create: true

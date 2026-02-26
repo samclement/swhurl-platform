@@ -45,7 +45,6 @@ jobs:
           ./run.sh --dry-run --profile profiles/test-loop-selfsigned.env
           ./run.sh --dry-run --with-host
           ./run.sh --dry-run --with-host --delete
-          ./scripts/compat/run-legacy-pipeline.sh --dry-run
           ./scripts/compat/repeat-scratch-cycles.sh --help
           make help
 

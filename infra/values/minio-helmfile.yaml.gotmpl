@@ -10,7 +10,8 @@ persistence:
   enabled: true
   size: 20Gi
 
-existingSecret: minio-creds
+rootUser: {{ env "MINIO_ROOT_USER" | default "minioadmin" | quote }}
+rootPassword: {{ env "MINIO_ROOT_PASSWORD" | quote }}
 
 ingress:
   enabled: true

@@ -1,0 +1,49 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hello-web
+  namespace: apps
+spec:
+  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
+  suspend: true
+  interval: 30m
+  releaseName: hello-web
+  chart:
+    spec:
+      chart: ./charts/apps-hello
+      sourceRef:
+        kind: GitRepository
+        name: swhurl-platform
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # TODO(migration): replace scaffold defaults with environment-driven substitution
+    # (APP_HOST, issuer/provider, auth toggle, image overrides).
+    nameOverride: hello-web
+    labels:
+      platform.swhurl.io/managed: "true"
+    image:
+      repository: docker.io/nginx
+      tag: 1.25-alpine
+    ingress:
+      enabled: true
+      className: nginx
+      host: hello.example.invalid
+      tlsSecretName: hello-web-tls
+      annotations:
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    tls:
+      enabled: true
+      issuerName: selfsigned
+      dnsNames:
+        - hello.example.invalid
+    auth:
+      enabled: false
+      oauthHost: oauth.example.invalid

@@ -57,6 +57,7 @@ GitOps sequencing scaffold:
 - `cluster/base/` now includes component-level scaffolds (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/{minio,ceph}`) to make target ownership explicit.
 - Cert-manager/issuer scaffold now includes suspended Flux `HelmRelease` resources so migration can cut over with explicit ownership boundaries.
 - Platform component scaffolds (`oauth2-proxy`, `clickstack`, `otel`, `storage/minio`) now also include suspended Flux `HelmRelease` manifests for staged migration.
+- Example app scaffold now includes a suspended Flux `HelmRelease` for `charts/apps-hello`.
 
 CI validation:
 - `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, `kubectl kustomize` rendering checks for scaffolded GitOps paths, and provider-matrix verification via `scripts/97_verify_provider_matrix.sh`.

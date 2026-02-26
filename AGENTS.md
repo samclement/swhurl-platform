@@ -12,6 +12,7 @@
   - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
+  - `cluster/README.md` should call out that `scripts/29_prepare_platform_runtime_inputs.sh` is a manual Flux/legacy secret bridge and is not required for default `./run.sh` applies.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.

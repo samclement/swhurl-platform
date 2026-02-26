@@ -103,6 +103,8 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 - `CLUSTER_ISSUER`: `selfsigned` or `letsencrypt` (default `selfsigned`).
 - `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) when `CLUSTER_ISSUER=letsencrypt`.
 - `TIMEOUT_SECS`: Helm/Helmfile timeouts (default `300`).
+- `INGRESS_PROVIDER`: provider intent flag (`nginx` or `traefik`; migration scaffolding).
+- `OBJECT_STORAGE_PROVIDER`: provider intent flag (`minio` or `ceph`; migration scaffolding).
 
 Feature flags:
 

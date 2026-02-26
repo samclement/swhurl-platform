@@ -53,7 +53,7 @@ GitOps sequencing scaffold:
 - `cluster/overlays/homelab/providers/` contains ingress/storage provider scaffolds so the future GitOps stack can pick one ingress overlay and one storage overlay explicitly.
 
 CI validation:
-- `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, and `kubectl kustomize` rendering checks for scaffolded GitOps paths.
+- `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, `kubectl kustomize` rendering checks for scaffolded GitOps paths, and provider-matrix verification via `scripts/97_verify_provider_matrix.sh`.
 
 ## How This Repo Is Structured
 

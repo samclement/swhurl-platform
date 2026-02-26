@@ -64,3 +64,26 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null
+
+  provider-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Setup Helmfile
+        run: |
+          set -Eeuo pipefail
+          HELMFILE_VERSION=v0.168.0
+          curl -fsSL -o /tmp/helmfile.tar.gz "https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
+          tar -xzf /tmp/helmfile.tar.gz -C /tmp
+          sudo mv /tmp/helmfile /usr/local/bin/helmfile
+          helmfile --version
+
+      - name: Verify provider matrix
+        run: |
+          set -Eeuo pipefail
+          ./scripts/97_verify_provider_matrix.sh

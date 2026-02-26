@@ -1,0 +1,86 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-namespaces
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/namespaces
+  prune: true
+  wait: true
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-cilium
+  namespace: flux-system
+spec:
+  suspend: true
+  dependsOn:
+    - name: homelab-namespaces
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/cilium
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-core
+  namespace: flux-system
+spec:
+  suspend: true
+  dependsOn:
+    - name: homelab-cilium
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/core
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-platform
+  namespace: flux-system
+spec:
+  suspend: true
+  dependsOn:
+    - name: homelab-core
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/platform
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-example-app
+  namespace: flux-system
+spec:
+  suspend: true
+  dependsOn:
+    - name: homelab-platform
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./cluster/base/apps/example
+  prune: true
+  wait: true
+  timeout: 10m

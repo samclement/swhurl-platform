@@ -37,6 +37,10 @@ Compatibility helpers:
 Convenience task runner:
 - `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`, etc.).
 
+GitOps sequencing scaffold:
+- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> core -> platform -> example-app`).
+- Only `namespaces` is active by default; later layers are intentionally `suspend: true` until migrated.
+
 ## How This Repo Is Structured
 
 The platform is run in explicit phases so you can apply/verify/debug in stages. The orchestrator (`run.sh`) does not discover scripts dynamically; it runs an explicit plan.

@@ -21,6 +21,7 @@ run="$SCRIPT_DIR/../run.sh"
 root="$SCRIPT_DIR/.."
 config_file="$root/config.env"
 helmfile_file="$root/helmfile.yaml.gotmpl"
+flux_stack_file="$root/cluster/overlays/homelab/flux/stack-kustomizations.yaml"
 
 # Verify the supported default apply pipeline uses the Helmfile phase scripts.
 for s in 31_sync_helmfile_phase_core.sh 36_sync_helmfile_phase_platform.sh; do
@@ -54,6 +55,20 @@ if rg -n 'build_delete_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_in
   bad "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
 else
   ok "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
+fi
+
+if [[ -d "$root/cluster/base/runtime-inputs" ]]; then
+  ok "cluster/base/runtime-inputs: present"
+else
+  bad "cluster/base/runtime-inputs: present"
+fi
+
+if rg -q 'name: homelab-runtime-inputs' "$flux_stack_file" \
+  && rg -q 'path: ./cluster/base/runtime-inputs' "$flux_stack_file" \
+  && rg -q 'name: platform-runtime-inputs' "$flux_stack_file"; then
+  ok "Flux stack: runtime input kustomization + source secret substitution wired"
+else
+  bad "Flux stack: runtime input kustomization + source secret substitution wired"
 fi
 
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then

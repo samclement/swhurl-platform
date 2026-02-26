@@ -35,11 +35,19 @@ if [[ "$DELETE_SCOPE" == "dedicated-cluster" ]]; then
     kubectl -n "$ns" delete secret "$name" --ignore-not-found >/dev/null 2>&1 || true
   done <<< "$secret_rows"
 else
-  log_info "Sweeping platform secrets in managed namespaces only (DELETE_SCOPE=managed)"
+  log_info "Sweeping platform-managed secrets/configmaps in managed namespaces only (DELETE_SCOPE=managed)"
   for ns in "${managed_namespaces[@]}"; do
     kubectl get ns "$ns" >/dev/null 2>&1 || continue
     kubectl -n "$ns" delete secret -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
+    kubectl -n "$ns" delete configmap -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
   done
+
+  # Legacy runtime bridge cleanup that used to live in scripts/29_prepare_platform_runtime_inputs.sh --delete.
+  # Keep explicit names here until the compatibility bridge is fully retired.
+  kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n logging delete secret hyperdx-secret --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n logging delete configmap otel-config-vars --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n storage delete secret minio-creds --ignore-not-found >/dev/null 2>&1 || true
 fi
 
 log_info "Deleting managed namespaces: ${managed_namespaces[*]}"

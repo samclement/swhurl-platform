@@ -35,7 +35,7 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Remaining major migration item is declarative runtime secret/input management
     (currently bridged by `scripts/29_prepare_platform_runtime_inputs.sh`).
   - OTel endpoint input is now declarative in Helm values; the bridge script is now
-    a manual secret bridge/delete helper (`otel-config-vars` + `minio-creds` legacy cleanup retained on delete).
+    a manual secret bridge; legacy runtime input cleanup on delete is owned by `scripts/99_execute_teardown.sh`.
 
 Provider migration status:
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into

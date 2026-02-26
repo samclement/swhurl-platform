@@ -12,6 +12,7 @@ fi
 
 ok(){ printf "[OK] %s\n" "$1"; }
 bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
+warn(){ printf "[WARN] %s\n" "$1"; }
 
 fail=0
 printf "== Orchestrator Contract Verification ==\n"
@@ -38,9 +39,9 @@ else
 fi
 
 if [[ -f "$SCRIPT_DIR/29_prepare_platform_runtime_inputs.sh" ]]; then
-  ok "29_prepare_platform_runtime_inputs.sh: present (manual bridge script)"
+  ok "29_prepare_platform_runtime_inputs.sh: present (manual compatibility bridge script)"
 else
-  bad "29_prepare_platform_runtime_inputs.sh: present (manual bridge script)"
+  warn "29_prepare_platform_runtime_inputs.sh: absent (bridge retired)"
 fi
 
 if rg -n 'build_apply_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then

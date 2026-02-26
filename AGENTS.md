@@ -114,6 +114,7 @@
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
   - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
   - Keep verification helper libs lean; remove unused exports from `scripts/00_feature_registry_lib.sh` / `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
+  - `scripts/96_verify_orchestrator_contract.sh` now treats `scripts/29_prepare_platform_runtime_inputs.sh` as optional compatibility (warns when absent) while still enforcing that default apply/delete plans exclude it.
   - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles and Helmfile release mappings.
   - `scripts/97_verify_provider_matrix.sh` validates provider flag behavior without cluster access by rendering Helmfile for provider combinations and asserting `ingress-nginx`/`minio` installed states.
   - `scripts/93_verify_expected_releases.sh` is now Flux-first (`VERIFY_INVENTORY_MODE=auto|flux|helm`, default `auto`) and falls back to Helm release inventory when Flux stack resources are absent.

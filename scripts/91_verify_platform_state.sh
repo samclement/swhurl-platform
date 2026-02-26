@@ -258,9 +258,9 @@ if feature_is_enabled otel_k8s; then
     mismatch "otel-k8s cluster deployment release not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
-  sender_token="${CLICKSTACK_INGESTION_KEY:-}"
+  sender_token="${CLICKSTACK_API_KEY:-}"
   if [[ -z "$sender_token" ]]; then
-    mismatch "CLICKSTACK_INGESTION_KEY is empty; cannot verify otel token alignment"
+    mismatch "CLICKSTACK_API_KEY is empty; cannot verify otel token alignment"
     add_suggest "scripts/94_verify_config_inputs.sh"
   elif kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     receiver_token="$(
@@ -269,7 +269,7 @@ if feature_is_enabled otel_k8s; then
         2>/dev/null || true
     )"
     if [[ -n "$sender_token" && -n "$receiver_token" && "$sender_token" != "$receiver_token" ]]; then
-      mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY does not match clickstack receiver token"
+      mismatch "otel token mismatch: CLICKSTACK_API_KEY does not match clickstack receiver token"
       add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
     else
       ok "otel token alignment check passed"

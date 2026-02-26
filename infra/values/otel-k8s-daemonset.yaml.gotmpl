@@ -27,7 +27,7 @@ config:
     otlphttp:
       endpoint: {{ .Environment.Values.computed.clickstackOtelEndpoint | quote }}
       headers:
-        authorization: {{ env "CLICKSTACK_INGESTION_KEY" | quote }}
+        authorization: {{ env "CLICKSTACK_API_KEY" | quote }}
 
   service:
     pipelines:

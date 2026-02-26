@@ -13,6 +13,7 @@
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
+  - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
   - Flux dependency sequencing scaffold lives in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; keep non-migrated layers suspended (`spec.suspend: true`) to avoid accidental dual-ownership with legacy scripts.
   - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.

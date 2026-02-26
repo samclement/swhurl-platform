@@ -26,6 +26,9 @@ Docs:
 - Contracts (env/tool/delete): `docs/contracts.md`
 - Homelab intent and design direction: `docs/homelab-intent-and-design.md`
 - Target tree and migration checklist: `docs/target-tree-and-migration-checklist.md`
+- Migration runbooks:
+  - `docs/runbooks/migrate-ingress-nginx-to-traefik.md`
+  - `docs/runbooks/migrate-minio-to-ceph.md`
 - Add feature checklist: `docs/add-feature-checklist.md`
 - Migration plan (local charts): `docs/migration-plan-local-charts.md`
 

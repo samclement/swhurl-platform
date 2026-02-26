@@ -44,6 +44,7 @@ Notes:
 6) Test application & verification
 - `scripts/75_manage_sample_app_lifecycle.sh`
   - Uses `APP_NAMESPACE` (default `apps-staging`).
+  - Default ingress host is `staging.hello.${BASE_DOMAIN}` unless `APP_HOST` is set.
 
 7) Cluster verification suite
 - Core gates (default; `FEAT_VERIFY=true`):

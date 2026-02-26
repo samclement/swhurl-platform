@@ -16,10 +16,10 @@
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
   - Flux dependency sequencing scaffold lives in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; keep non-migrated layers suspended (`spec.suspend: true`) to avoid accidental dual-ownership with legacy scripts.
-  - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to staging overlays under `cluster/overlays/homelab/platform/staging/*`; promote by switching those paths to `platform/prod/*` only after staging stabilizes.
+  - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
   - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
-  - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now delegates to `cluster/overlays/homelab/platform/staging/storage-minio`; keep provider selection at the overlay layer even while environment-specific values live under `platform/staging`.
+  - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now targets `cluster/base/storage/minio` (staging issuer intent in base values). Use `cluster/overlays/homelab/platform/prod/storage-minio` for prod annotation/host promotion.
   - Ingress migration scaffolding now includes a suspended ingress-nginx `HelmRelease` at `cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml` and a dedicated Flux sequencing layer `homelab-ingress`; TODO in that manifest tracks alignment with env/provider contract before unsuspending.
   - Component-level GitOps base scaffolds now exist under `cluster/base/` (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/minio`, `storage/ceph`, plus `apps/example`); keep `core/` and `platform/` as temporary aggregation placeholders only.
   - Cert-manager migration scaffolding now includes suspended Flux `HelmRelease` resources at `cluster/base/cert-manager/helmrelease-cert-manager.yaml` and `cluster/base/cert-manager/issuers/helmrelease-platform-issuers.yaml` (with TODO to wire env-driven substitutions before unsuspending).
@@ -116,8 +116,8 @@
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/manual_configure_route53_dns_updater.sh` derives a sensible set: `<base> oauth.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
-  - To expose the sample app over DNS, add `hello.<base>` to `SWHURL_SUBDOMAINS`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/manual_configure_route53_dns_updater.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> prod.hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
+  - To expose the sample app over DNS overlays, add `staging.hello.<base>` and `prod.hello.<base>` to `SWHURL_SUBDOMAINS`.
   - `scripts/manual_configure_route53_dns_updater.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/manual_configure_route53_dns_updater.sh` when desired subdomains change.
   - `scripts/manual_configure_route53_dns_updater.sh` is a manual prerequisite (not part of `run.sh`); run it once per host to install/update the systemd timer, and run with `--delete` to uninstall.
 

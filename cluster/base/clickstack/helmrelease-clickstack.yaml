@@ -25,18 +25,18 @@ spec:
       retries: 3
   values:
     # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (CLICKSTACK_*, hosts, issuer/provider, OAuth behavior).
+    # (CLICKSTACK_*, hosts, and provider-specific auth behavior).
     global:
       storageClassName: local-path
     hyperdx:
       apiKey: ""
-      frontendUrl: https://clickstack.example.invalid
+      frontendUrl: https://clickstack.homelab.swhurl.com
       ingress:
         enabled: true
         ingressClassName: nginx
-        host: clickstack.example.invalid
+        host: clickstack.homelab.swhurl.com
         annotations:
-          cert-manager.io/cluster-issuer: selfsigned
+          cert-manager.io/cluster-issuer: letsencrypt-staging
         tls:
           enabled: true
           secretName: clickstack-tls

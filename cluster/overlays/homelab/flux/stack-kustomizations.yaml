@@ -44,7 +44,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/platform/staging/cert-manager
+  path: ./cluster/base/cert-manager
   prune: true
   wait: true
   timeout: 10m
@@ -62,7 +62,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/platform/staging/issuers
+  path: ./cluster/base/cert-manager/issuers
   prune: true
   wait: true
   timeout: 10m
@@ -98,7 +98,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/platform/staging/oauth2-proxy
+  path: ./cluster/base/oauth2-proxy
   prune: true
   wait: true
   timeout: 10m
@@ -116,7 +116,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/platform/staging/clickstack
+  path: ./cluster/base/clickstack
   prune: true
   wait: true
   timeout: 10m
@@ -134,7 +134,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/platform/staging/otel
+  path: ./cluster/base/otel
   prune: true
   wait: true
   timeout: 10m

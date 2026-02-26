@@ -13,3 +13,12 @@ patches:
       - op: replace
         path: /spec/values/tls/issuerName
         value: letsencrypt-staging
+      - op: replace
+        path: /spec/values/ingress/host
+        value: staging.hello.homelab.swhurl.com
+      - op: replace
+        path: /spec/values/tls/dnsNames/0
+        value: staging.hello.homelab.swhurl.com
+      - op: replace
+        path: /spec/values/auth/oauthHost
+        value: oauth.homelab.swhurl.com

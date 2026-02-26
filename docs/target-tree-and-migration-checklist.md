@@ -95,11 +95,17 @@ Guiding rule:
 │  └─ overlays/
 │     └─ homelab/
 │        ├─ kustomization.yaml
+│        ├─ platform/
+│        │  ├─ staging/
+│        │  └─ prod/
 │        ├─ providers/
 │        │  ├─ ingress-traefik/
 │        │  ├─ ingress-nginx/
 │        │  ├─ storage-minio/
 │        │  └─ storage-ceph/
+│        ├─ apps/
+│        │  ├─ staging/
+│        │  └─ prod/
 │        └─ values/
 │           ├─ domain.yaml
 │           ├─ tls.yaml

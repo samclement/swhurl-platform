@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../../../base/oauth2-proxy
+patches:
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: oauth2-proxy
+    patch: |-
+      - op: replace
+        path: /spec/values/extraArgs/redirect-url
+        value: https://oauth.homelab.swhurl.com/oauth2/callback
+      - op: replace
+        path: /spec/values/ingress/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod
+      - op: replace
+        path: /spec/values/ingress/hosts/0
+        value: oauth.homelab.swhurl.com
+      - op: replace
+        path: /spec/values/ingress/tls/0/hosts/0
+        value: oauth.homelab.swhurl.com

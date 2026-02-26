@@ -61,6 +61,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 
 Notes:
 - `scripts/29_prepare_platform_runtime_inputs.sh` is no longer part of the default apply/delete plans; use it as a manual compatibility bridge for runtime secrets only.
+- `scripts/29_prepare_platform_runtime_inputs.sh --delete` is a no-op; delete-time runtime input cleanup lives in `scripts/99_execute_teardown.sh`.
 - Delete-time legacy runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 - `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.
 

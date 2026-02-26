@@ -6,35 +6,12 @@ source "$SCRIPT_DIR/00_lib.sh"
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
 
-ensure_context
-
-is_managed() {
-  local ns="$1" kind="$2" name="$3"
-  kubectl -n "$ns" get "$kind" "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'
-}
-
-delete_if_managed() {
-  local ns="$1" kind="$2" name="$3"
-  if kubectl -n "$ns" get "$kind" "$name" >/dev/null 2>&1; then
-    if is_managed "$ns" "$kind" "$name"; then
-      log_info "Deleting managed ${ns}/${kind}/${name}"
-      kubectl -n "$ns" delete "$kind" "$name" --ignore-not-found >/dev/null 2>&1 || true
-    else
-      log_warn "Skipping delete of ${ns}/${kind}/${name} (missing label platform.swhurl.io/managed=true)"
-    fi
-  fi
-}
-
 if [[ "$DELETE" == true ]]; then
-  log_info "Deleting platform config resources (active secrets + legacy leftovers)"
-  delete_if_managed ingress secret oauth2-proxy-secret
-  delete_if_managed logging secret hyperdx-secret
-  # Legacy cleanup: otel-config-vars is no longer created by apply path.
-  delete_if_managed logging configmap otel-config-vars
-  # Legacy cleanup: minio-creds is no longer created by apply path.
-  delete_if_managed storage secret minio-creds
+  log_info "Delete-time runtime input cleanup moved to scripts/99_execute_teardown.sh; nothing to do"
   exit 0
 fi
+
+ensure_context
 
 log_warn "scripts/29_prepare_platform_runtime_inputs.sh is a manual compatibility bridge; default ./run.sh apply does not invoke it."
 

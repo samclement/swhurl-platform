@@ -64,6 +64,7 @@
     - `NN_sync_helmfile_phase_*` for Helmfile phase wrappers.
     - Keep repo/app utility steps aligned to this convention (for example `25_prepare_helm_repositories.sh`, `75_manage_sample_app_lifecycle.sh`) so plan ordering and purpose are obvious.
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
+  - `scripts/00_lib.sh` no longer keeps an unused `helm_upsert` helper; prefer Helmfile selector helpers (`sync_release` / `destroy_release`) for release operations.
   - Helmfile label conventions:
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.

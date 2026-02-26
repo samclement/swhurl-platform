@@ -142,12 +142,6 @@ wait_crd_established() {
   done
 }
 
-helm_upsert() {
-  local release="$1" chart="$2" ns="$3"; shift 3
-  kubectl_ns "$ns"
-  helm upgrade --install "$release" "$chart" --namespace "$ns" "$@"
-}
-
 helmfile_cmd() {
   need_cmd helmfile
   local hf_file="${HELMFILE_FILE:-$ROOT_DIR/helmfile.yaml.gotmpl}"

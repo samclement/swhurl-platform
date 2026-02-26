@@ -12,4 +12,4 @@ Provider-agnostic component definitions live here:
 - storage/ceph
 - apps/example
 
-`core/` and `platform/` remain as compatibility placeholders; active ownership is component-level.
+Legacy `core/` and `platform/` placeholder directories were removed; active ownership is component-level paths only.

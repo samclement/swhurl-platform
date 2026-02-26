@@ -40,9 +40,9 @@ else
 fi
 
 if [[ -f "$SCRIPT_DIR/29_prepare_platform_runtime_inputs.sh" ]]; then
-  ok "29_prepare_platform_runtime_inputs.sh: present (manual compatibility bridge script)"
+  bad "29_prepare_platform_runtime_inputs.sh: removed (legacy bridge retired)"
 else
-  warn "29_prepare_platform_runtime_inputs.sh: absent (bridge retired)"
+  ok "29_prepare_platform_runtime_inputs.sh: removed (legacy bridge retired)"
 fi
 
 if rg -n 'build_apply_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
@@ -63,12 +63,14 @@ else
   bad "cluster/base/runtime-inputs: present"
 fi
 
+runtime_inputs_kustomization_file="$root/cluster/base/runtime-inputs/kustomization.yaml"
 if rg -q 'name: homelab-runtime-inputs' "$flux_stack_file" \
   && rg -q 'path: ./cluster/base/runtime-inputs' "$flux_stack_file" \
-  && rg -q 'name: platform-runtime-inputs' "$flux_stack_file"; then
-  ok "Flux stack: runtime input kustomization + source secret substitution wired"
+  && rg -q 'secret-platform-runtime-inputs\.yaml' "$runtime_inputs_kustomization_file" \
+  && rg -q 'replacements:' "$runtime_inputs_kustomization_file"; then
+  ok "Flux stack: runtime input kustomization + declarative source secret projection wired"
 else
-  bad "Flux stack: runtime input kustomization + source secret substitution wired"
+  bad "Flux stack: runtime input kustomization + declarative source secret projection wired"
 fi
 
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then

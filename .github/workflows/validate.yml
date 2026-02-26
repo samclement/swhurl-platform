@@ -88,6 +88,7 @@ jobs:
           kubectl kustomize cluster/base/oauth2-proxy >/dev/null
           kubectl kustomize cluster/base/clickstack >/dev/null
           kubectl kustomize cluster/base/otel >/dev/null
+          kubectl kustomize cluster/base/runtime-inputs >/dev/null
           kubectl kustomize cluster/base/storage >/dev/null
           kubectl kustomize cluster/base/storage/minio >/dev/null
           kubectl kustomize cluster/base/storage/ceph >/dev/null

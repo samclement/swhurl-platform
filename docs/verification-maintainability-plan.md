@@ -13,7 +13,7 @@ Current state (2026-02-26):
   - `scripts/91_verify_platform_state.sh` gates feature checks via registry helpers (`feature_is_enabled`).
   - `scripts/96_verify_orchestrator_contract.sh` validates registry/config flag coverage and registry/Helmfile release mappings.
 - Intentional simplification:
-  - Keep `scripts/25_prepare_helm_repositories.sh` and `scripts/29_prepare_platform_runtime_inputs.sh` explicit.
+  - Keep `scripts/25_prepare_helm_repositories.sh` explicit and runtime-input wiring declarative in `cluster/base/runtime-inputs`.
   - Keep runtime verification mostly centralized in `scripts/91_verify_platform_state.sh` unless maintenance pain clearly justifies splitting.
   - Use `docs/add-feature-checklist.md` as the primary maintainer workflow.
 
@@ -46,7 +46,7 @@ Adding Keycloak today likely requires manual updates in many places, including:
 - `environments/common.yaml.gotmpl` (feature mapping)
 - `charts/platform-namespaces/values.yaml` (namespace, if needed)
 - `scripts/00_verify_contract_lib.sh` (required vars, expected releases)
-- `scripts/29_prepare_platform_runtime_inputs.sh` (secrets/config if needed)
+- `cluster/base/runtime-inputs/*` (runtime secrets/config if needed)
 - `scripts/91_verify_platform_state.sh` (runtime verification checks)
 - `README.md` and `docs/runbook.md` (documentation updates)
 
@@ -152,8 +152,8 @@ Resolution target: phased rollout with temporary compatibility mode in Phases 1-
 Issue VER-009: Risk of false positives in strict release inventory checks (shared clusters / manual ops).
 Resolution target: explicit allowlist and scope controls in Phase 3.
 
-Issue VER-010: Secret-handling drift for runtime inputs created by scripts (`29_prepare_platform_runtime_inputs.sh`).
-Resolution target: model runtime-input contracts in registry during Phases 1 and 6.
+Issue VER-010: Secret-handling drift for runtime inputs.
+Resolution target: keep runtime-input contracts declarative in `cluster/base/runtime-inputs` and verified by orchestrator contract checks.
 
 ## Acceptance Criteria
 

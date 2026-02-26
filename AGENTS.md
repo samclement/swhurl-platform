@@ -19,7 +19,7 @@
   - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
   - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
-  - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, and kustomize structure rendering for flux scaffolding).
+  - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, kustomize structure rendering for flux scaffolding, and provider-matrix validation through `scripts/97_verify_provider_matrix.sh`).
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.

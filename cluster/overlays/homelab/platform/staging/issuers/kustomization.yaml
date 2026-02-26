@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../../../base/cert-manager/issuers
+patches:
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: platform-issuers
+    patch: |-
+      - op: replace
+        path: /spec/values/letsencrypt/selectedEnv
+        value: staging
+      - op: replace
+        path: /spec/values/letsencrypt/stagingServer
+        value: https://acme-staging-v02.api.letsencrypt.org/directory
+      - op: replace
+        path: /spec/values/letsencrypt/prodServer
+        value: https://acme-staging-v02.api.letsencrypt.org/directory
+      - op: replace
+        path: /spec/values/letsencrypt/ingressClass
+        value: nginx

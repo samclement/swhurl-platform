@@ -68,6 +68,18 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/ingress-nginx >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/cert-manager >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/issuers >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/oauth2-proxy >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/clickstack >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/otel >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/staging/storage-minio >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/cert-manager >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/issuers >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/oauth2-proxy >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/clickstack >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/otel >/dev/null
+          kubectl kustomize cluster/overlays/homelab/platform/prod/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/apps/staging >/dev/null
           kubectl kustomize cluster/overlays/homelab/apps/prod >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null

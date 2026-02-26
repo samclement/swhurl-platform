@@ -2,5 +2,5 @@
 
 Compatibility overlay for the current in-cluster object storage path.
 
-Populate this folder while MinIO remains active; migrate data and ownership before
-switching to `storage-ceph`.
+Current wiring delegates to `cluster/overlays/homelab/platform/staging/storage-minio`.
+Keep this overlay as the provider-selection entrypoint while MinIO remains active.

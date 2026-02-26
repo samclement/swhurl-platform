@@ -80,7 +80,7 @@
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge and delete helper for legacy managed leftovers (`otel-config-vars`, `minio-creds`); it is no longer part of the default apply plan.
-    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and OTel ingestion secret).
+    - `scripts/29_prepare_platform_runtime_inputs.sh` apply mode now warns that it is manual-only and no longer requires `OIDC_ISSUER` (it only creates oauth2 secret keys and the legacy OTel `hyperdx-secret` from `CLICKSTACK_API_KEY`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
@@ -149,14 +149,14 @@
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
-  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_INGESTION_KEY`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
+  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
   - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; `scripts/29_prepare_platform_runtime_inputs.sh` keeps `minio-creds` as delete-only legacy cleanup.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
-  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Single-key contract: `CLICKSTACK_API_KEY` now defines both ClickStack chart `apiKey` and OTel exporter `authorization`; after key rotation in HyperDX UI, update `CLICKSTACK_API_KEY` and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`.
   - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
   - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.

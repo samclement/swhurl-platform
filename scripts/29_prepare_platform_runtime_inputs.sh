@@ -93,12 +93,12 @@ fi
 if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   kubectl_ns logging
 
-  INGESTION_KEY="${CLICKSTACK_INGESTION_KEY:-}"
-  [[ -n "$INGESTION_KEY" ]] || die "CLICKSTACK_INGESTION_KEY is required when FEAT_OTEL_K8S=true"
+  CLICKSTACK_KEY="${CLICKSTACK_API_KEY:-}"
+  [[ -n "$CLICKSTACK_KEY" ]] || die "CLICKSTACK_API_KEY is required when FEAT_OTEL_K8S=true"
 
-  log_info "Ensuring logging/Secret hyperdx-secret (HYPERDX_API_KEY from CLICKSTACK_INGESTION_KEY)"
+  log_info "Ensuring logging/Secret hyperdx-secret (HYPERDX_API_KEY from CLICKSTACK_API_KEY)"
   kubectl -n logging create secret generic hyperdx-secret \
-    --from-literal=HYPERDX_API_KEY="$INGESTION_KEY" \
+    --from-literal=HYPERDX_API_KEY="$CLICKSTACK_KEY" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   label_managed logging secret hyperdx-secret

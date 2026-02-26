@@ -55,6 +55,7 @@
   - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/90_verify_runtime_smoke.sh` and `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
   - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is now native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install), with `scripts/manual_configure_route53_dns_updater.sh` retained as legacy compatibility path.
+  - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`); remove unused host-common helpers to keep host-task surface lean.
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
   - Script naming convention:
     - `00_*_lib.sh` for sourced helper libraries (not runnable steps; excluded from `run.sh` plans).

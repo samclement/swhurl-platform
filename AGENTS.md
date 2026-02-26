@@ -13,6 +13,7 @@
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
+  - Flux dependency sequencing scaffold lives in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; keep non-migrated layers suspended (`spec.suspend: true`) to avoid accidental dual-ownership with legacy scripts.
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.

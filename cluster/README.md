@@ -7,6 +7,12 @@ Structure:
 - `flux/`: Flux bootstrap manifests and source definitions.
 - `base/`: provider-agnostic platform components.
 - `overlays/homelab/`: environment composition and provider selection.
+- `overlays/homelab/flux/`: Flux `Kustomization` dependency chain for phase ordering.
 
 During migration, legacy orchestration in `run.sh` remains the source of truth for applies/deletes.
 Use this tree as the build-out path for phased GitOps adoption.
+
+Safety default:
+
+- In `cluster/overlays/homelab/flux/stack-kustomizations.yaml`, only the namespaces layer is active by default.
+- Remaining layers (`cilium`, `core`, `platform`, `example-app`) start with `spec.suspend: true` until each migration phase is ready.

@@ -24,7 +24,7 @@ config:
     otlphttp:
       endpoint: {{ .Environment.Values.computed.clickstackOtelEndpoint | quote }}
       headers:
-        authorization: ${env:HYPERDX_API_KEY}
+        authorization: {{ env "CLICKSTACK_INGESTION_KEY" | quote }}
 
   service:
     pipelines:
@@ -36,13 +36,6 @@ config:
         receivers: [k8s_cluster]
         processors: [memory_limiter, k8sattributes, batch]
         exporters: [otlphttp]
-
-extraEnvs:
-  - name: HYPERDX_API_KEY
-    valueFrom:
-      secretKeyRef:
-        name: hyperdx-secret
-        key: HYPERDX_API_KEY
 
 clusterRole:
   create: true

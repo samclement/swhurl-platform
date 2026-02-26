@@ -14,4 +14,4 @@ Structure:
 
 Operational note:
 
-- Runtime input secrets (OIDC, ClickStack ingestion key) are still prepared by `scripts/29_prepare_platform_runtime_inputs.sh` as a compatibility bridge until a fully declarative secret manager flow is adopted.
+- Runtime input secrets (OIDC, ClickStack ingestion key) can still be prepared by `scripts/29_prepare_platform_runtime_inputs.sh` as a manual compatibility bridge until a fully declarative secret manager flow is adopted.

@@ -164,7 +164,6 @@ build_apply_plan() {
 
   # 5) Platform Services
   add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
-  add_step out_arr "$(step_path 29_prepare_platform_runtime_inputs.sh)"
   add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
   # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
 

@@ -1,5 +1,7 @@
 config:
-  existingSecret: oauth2-proxy-secret
+  clientID: {{ env "OIDC_CLIENT_ID" | quote }}
+  clientSecret: {{ env "OIDC_CLIENT_SECRET" | quote }}
+  cookieSecret: {{ env "OAUTH_COOKIE_SECRET" | quote }}
 
 extraArgs:
   provider: oidc

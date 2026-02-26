@@ -1,15 +1,37 @@
 # Platform Runbook (Phases)
 
-This repo is organized into explicit phases so you can run, verify, and debug the platform in stages. Scripts should be thin wrappers; declarative state lives in Helmfile and local charts (Kustomize is optional and currently unused by the default pipeline).
+This repo is organized into explicit phases so you can run, verify, and debug the platform in stages.
+Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration retained as compatibility mode.
 
-Print the current plan:
+## Flux-First Operations
+
+1. Bootstrap Flux controllers and source definitions:
+   - `make flux-bootstrap`
+2. Reconcile source + stack:
+   - `make flux-reconcile`
+3. Observe stack health:
+   - `flux get kustomizations -n flux-system`
+   - `flux get helmreleases -A`
+
+Default active dependency chain:
+
+- `namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`
+
+Default deployed app path:
+
+- staging overlay at `cluster/overlays/homelab/apps/staging`
+- host `staging.hello.${BASE_DOMAIN}`
+
+## Legacy Compatibility Operations
+
+Print the legacy script plan:
 
 ```bash
 ./scripts/02_print_plan.sh
 ./scripts/02_print_plan.sh --delete
 ```
 
-## Phases (Install)
+## Legacy Phases (Install)
 
 1) Prerequisites & verify
 - `scripts/01_check_prereqs.sh`
@@ -57,7 +79,7 @@ Notes:
   - `scripts/96_verify_orchestrator_contract.sh`
   - `scripts/97_verify_provider_matrix.sh` (renders Helmfile under provider combinations and validates release install gating)
 
-## Phases (Delete)
+## Legacy Phases (Delete)
 
 Delete runs in reverse order with deterministic finalizers:
 

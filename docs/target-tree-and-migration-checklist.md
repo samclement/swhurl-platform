@@ -12,31 +12,34 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
 
 ## Current Status Snapshot (2026-02-26)
 
-- Phase 1 (Host Layer Introduction): mostly complete
+- Phase 1 (Host Layer Introduction): complete (Bash-based host ownership)
   - `host/` task/lib structure is in place.
   - Legacy manual host scripts are compatibility wrappers.
-- Phase 2 (GitOps Bootstrap): scaffold complete
+- Phase 2 (GitOps Bootstrap): complete
   - `cluster/flux/*` and bootstrap helper exist.
-  - Flux dependency chain scaffold is present with safe suspended layers and
-    component-level sequencing placeholders.
-- Phase 3/4 (Provider Migration groundwork): scaffold in progress
+  - Flux dependency chain is active in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- Phase 3/4 (Core + Platform GitOps Migration): complete for default provider path
+  - Component-level Flux `HelmRelease` resources are defined and active for:
+    `cilium`, `cert-manager`, `platform-issuers`, `oauth2-proxy`, `clickstack`,
+    `otel-k8s-daemonset`, `otel-k8s-cluster`, `minio`, and `hello-web`.
+  - Default homelab composition is explicit in `cluster/overlays/homelab/kustomization.yaml`
+    (ingress-nginx + minio + staging app overlay).
+  - Cert-manager issuer contract is explicit and always renders:
+    `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` alias.
+- Phase 5 (App + Contract Migration): mostly complete
+  - Sample app has staging/prod namespace overlays with staging as the default deployed path.
+  - Platform components deploy once in their usual namespaces with staging issuer defaults,
+    and prod promotion overlays patch only issuer/host intent.
+- Phase 6 (Legacy Retirement): in progress
+  - Legacy script orchestration remains available as compatibility mode.
+  - Remaining major migration item is declarative runtime secret/input management
+    (currently bridged by `scripts/29_prepare_platform_runtime_inputs.sh`).
+
+Provider migration status:
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into
     Helmfile gating, values, and verification.
-  - Provider overlay directories and migration runbooks exist; provider implementations in
-    GitOps overlays remain to be filled.
-  - Component-level base directories (`cluster/base/cert-manager`, `oauth2-proxy`,
-    `clickstack`, `otel`, `storage/{minio,ceph}`) are scaffolded for clearer target ownership.
-  - Issuer ownership has an explicit scaffold boundary (`cluster/base/cert-manager/issuers`)
-    and Flux sequencing layer (`homelab-issuers`) between cert-manager and ingress/app layers.
-  - Suspended Flux `HelmRelease` scaffolds now exist for cert-manager and platform-issuers
-    to make future cutover points concrete without changing runtime ownership yet.
-  - Suspended Flux `HelmRelease` scaffolds now also exist for platform components
-    (`oauth2-proxy`, `clickstack`, `otel` collectors, `minio`) as explicit migration targets.
-  - Example app layer now includes a suspended Flux `HelmRelease` scaffold
-    (`cluster/base/apps/example/helmrelease-hello-web.yaml`).
-  - Ingress provider sequencing now has an explicit layer (`homelab-ingress`) backed by
-    provider overlay scaffolding (`cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml`).
-- Phase 5/6 (GitOps parity + legacy retirement): pending
+  - NGINX/MinIO provider overlays are active by default.
+  - Traefik/Ceph overlays and runbooks remain the planned migration targets.
 
 ## Target Technology Boundaries
 

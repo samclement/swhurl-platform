@@ -1,8 +1,6 @@
 # Base Components
 
-Provider-agnostic component definitions should live here.
-
-Current component scaffold:
+Provider-agnostic component definitions live here:
 - namespaces
 - cert-manager
 - cert-manager/issuers
@@ -14,8 +12,4 @@ Current component scaffold:
 - storage/ceph
 - apps/example
 
-Transitional note:
-- `core/` and `platform/` remain as temporary aggregation placeholders while migration
-  moves to per-component ownership.
-- Most component directories now include suspended Flux `HelmRelease` scaffolds to make
-  cutover points explicit without changing runtime ownership.
+`core/` and `platform/` remain as compatibility placeholders; active ownership is component-level.

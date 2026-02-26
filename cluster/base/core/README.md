@@ -1,4 +1,3 @@
 # Base Component Group: Core
 
-Populate with core platform components (for example cert-manager and issuers).
-The flux stack entry `homelab-core` is suspended by default.
+Compatibility placeholder. Active core ownership is component-level (`cert-manager`, `cert-manager/issuers`).

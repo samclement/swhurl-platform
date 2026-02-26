@@ -1,6 +1,6 @@
 # Swhurl Platform (k3s-only)
 
-This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-manager, ingress-nginx, oauth2-proxy, ClickStack (ClickHouse + HyperDX + OTel Collector), and MinIO. Scripts are thin orchestrators around Helm + manifests in `infra/`.
+This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-manager, ingress-nginx, oauth2-proxy, ClickStack (ClickHouse + HyperDX + OTel Collector), MinIO, and a staging/prod sample app model. The cluster layer is Flux-managed from `cluster/`.
 
 ## Quick Start
 
@@ -9,12 +9,9 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 3. Optional host overrides: copy `host/config/host.env.example` to `host/config/host.env` and edit.
 4. Optional host dry-run: `./host/run-host.sh --dry-run`
 5. Optional host apply: `./host/run-host.sh`
-6. Print the cluster plan: `./scripts/02_print_plan.sh`
-7. Apply cluster layer: `./run.sh`
-8. Optional provider profiles:
-   - `./run.sh --profile profiles/provider-traefik.env`
-   - `./run.sh --profile profiles/provider-ceph.env`
-   - `./run.sh --profile profiles/provider-traefik-ceph.env`
+6. Bootstrap Flux + apply GitOps sources: `make flux-bootstrap`
+7. Reconcile the stack: `make flux-reconcile`
+8. Compatibility path (legacy orchestrator): `./run.sh`
 9. Destructive repeat-test profiles:
    - `profiles/test-loop.env` (Let’s Encrypt alias + prod endpoint overridden to staging)
    - `profiles/test-loop-selfsigned.env` (workloads selfsigned; ACME endpoints overridden to staging)
@@ -45,23 +42,18 @@ Docs:
 - Add feature checklist: `docs/add-feature-checklist.md`
 - Migration plan (local charts): `docs/migration-plan-local-charts.md`
 
-Compatibility helpers:
-- `scripts/compat/run-legacy-pipeline.sh` forwards to the current legacy `run.sh` flow.
-- `scripts/compat/verify-legacy-contracts.sh` runs the existing verification script suite.
+Operational helpers:
 - `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
+- `scripts/compat/run-legacy-pipeline.sh` forwards to legacy `run.sh`.
+- `scripts/compat/verify-legacy-contracts.sh` runs the legacy verification suite.
 
 Convenience task runner:
-- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, etc.).
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, `flux-reconcile`, etc.).
 
-GitOps sequencing scaffold:
-- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
-- Only `namespaces` is active by default; later layers are intentionally `suspend: true` until migrated.
-- `cluster/overlays/homelab/providers/` contains ingress/storage provider scaffolds so the future GitOps stack can pick one ingress overlay and one storage overlay explicitly.
-- `cluster/base/` now includes component-level scaffolds (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/{minio,ceph}`) to make target ownership explicit.
-- Cert-manager/issuer scaffold now includes suspended Flux `HelmRelease` resources so migration can cut over with explicit ownership boundaries.
-- Platform component scaffolds (`oauth2-proxy`, `clickstack`, `otel`, `storage/minio`) now also include suspended Flux `HelmRelease` manifests for staged migration.
-- Example app scaffold now includes a suspended Flux `HelmRelease` for `charts/apps-hello`.
-- Ingress provider overlay now includes a suspended ingress-nginx Flux `HelmRelease` and dedicated sequencing layer (`homelab-ingress`).
+GitOps sequencing:
+- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines the active Flux `dependsOn` chain (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
+- `cluster/overlays/homelab/kustomization.yaml` is the default composition (nginx + minio + staging app overlay).
+- `cluster/overlays/homelab/providers/` and `cluster/overlays/homelab/platform/` provide explicit promotion/provider overlays.
 
 CI validation:
 - `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, `kubectl kustomize` rendering checks for scaffolded GitOps paths, and provider-matrix verification via `scripts/97_verify_provider_matrix.sh`.
@@ -89,9 +81,9 @@ This is the top-level structure the repo follows (each phase has its own verific
 6. Test application & verification
 7. Cluster verification suite
 
-### Platform Installs Are Helmfile-Driven
+### Legacy Compatibility: Helmfile Script Pipeline
 
-Most platform services are installed declaratively via Helmfile and grouped into two phases:
+Legacy scripts still support Helmfile-driven applies/deletes in two grouped phases:
 
 - **Core**: cert-manager + ingress layer (ingress-nginx only when `INGRESS_PROVIDER=nginx`) (Helmfile label `phase=core`)
 - **Platform**: oauth2-proxy + clickstack + otel-k8s collectors + minio (Helmfile label `phase=platform`)

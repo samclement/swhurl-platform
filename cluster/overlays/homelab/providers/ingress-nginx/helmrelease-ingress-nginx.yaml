@@ -1,0 +1,41 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+  namespace: ingress
+spec:
+  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
+  suspend: true
+  interval: 30m
+  releaseName: ingress-nginx
+  chart:
+    spec:
+      chart: ingress-nginx
+      version: 4.14.3
+      sourceRef:
+        kind: HelmRepository
+        name: ingress-nginx
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # TODO(migration): align ingress service/logging defaults with env/provider contract
+    # if they diverge from the legacy Helmfile path.
+    controller:
+      replicaCount: 1
+      ingressClassResource:
+        default: true
+      service:
+        type: NodePort
+        nodePorts:
+          http: 31514
+          https: 30313
+      config:
+        log-format-escape-json: "true"
+        log-format-upstream: >-
+          {"time":"$time_iso8601","remote_addr":"$remote_addr","x_forward_for":"$proxy_add_x_forwarded_for","request_id":"$req_id","remote_user":"$remote_user","bytes_sent":$bytes_sent,"request_time":$request_time,"status":$status,"host":"$host","uri":"$uri","request":"$request","request_length":$request_length,"method":"$request_method","user_agent":"$http_user_agent","referer":"$http_referer","upstream_addr":"$upstream_addr","upstream_response_time":$upstream_response_time,"upstream_status":$upstream_status,"namespace":"$namespace","ingress":"$ingress_name","service":"$service_name"}

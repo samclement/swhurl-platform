@@ -7,3 +7,6 @@ This folder holds environment overlays for provider choices.
 - Keep non-selected overlays out of the active `kustomization.yaml`.
 
 These overlays are scaffolds during migration from the legacy Helmfile pipeline.
+
+Current ingress compatibility scaffold:
+- `ingress-nginx/helmrelease-ingress-nginx.yaml` (suspended by default)

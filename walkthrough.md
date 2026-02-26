@@ -7,6 +7,9 @@ This walkthrough follows the code in execution order, from `./run.sh` through ea
 
 The goal is to explain how the platform converges a k3s cluster declaratively while keeping imperative bash focused on orchestration, safety checks, and cleanup edge-cases.
 
+> Status (2026-02-26): this walkthrough is currently stale versus the active migration state.
+> Use `README.md`, `docs/runbook.md`, and `docs/target-tree-and-migration-checklist.md` as the source of truth until this file is fully regenerated.
+
 ```bash
 pwd && rg --files | sort | sed -n '1,80p'
 ```

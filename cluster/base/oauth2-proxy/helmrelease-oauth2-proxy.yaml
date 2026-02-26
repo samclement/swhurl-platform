@@ -4,7 +4,6 @@ metadata:
   name: oauth2-proxy
   namespace: ingress
 spec:
-  suspend: true
   interval: 30m
   releaseName: oauth2-proxy
   chart:

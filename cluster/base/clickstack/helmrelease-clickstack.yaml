@@ -4,7 +4,6 @@ metadata:
   name: clickstack
   namespace: observability
 spec:
-  suspend: true
   interval: 30m
   releaseName: clickstack
   chart:

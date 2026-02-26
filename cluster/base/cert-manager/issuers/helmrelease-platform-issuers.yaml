@@ -4,7 +4,6 @@ metadata:
   name: platform-issuers
   namespace: kube-system
 spec:
-  suspend: true
   interval: 30m
   releaseName: platform-issuers
   dependsOn:

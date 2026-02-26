@@ -4,7 +4,6 @@ metadata:
   name: ingress-nginx
   namespace: ingress
 spec:
-  suspend: true
   interval: 30m
   releaseName: ingress-nginx
   chart:

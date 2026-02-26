@@ -23,6 +23,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     Helmfile gating, values, and verification.
   - Provider overlay directories and migration runbooks exist; provider implementations in
     GitOps overlays remain to be filled.
+  - Component-level base directories (`cluster/base/cert-manager`, `oauth2-proxy`,
+    `clickstack`, `otel`, `storage/{minio,ceph}`) are scaffolded for clearer target ownership.
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

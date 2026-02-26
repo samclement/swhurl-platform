@@ -64,6 +64,15 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null
+          kubectl kustomize cluster/base/cert-manager >/dev/null
+          kubectl kustomize cluster/base/cilium >/dev/null
+          kubectl kustomize cluster/base/oauth2-proxy >/dev/null
+          kubectl kustomize cluster/base/clickstack >/dev/null
+          kubectl kustomize cluster/base/otel >/dev/null
+          kubectl kustomize cluster/base/storage >/dev/null
+          kubectl kustomize cluster/base/storage/minio >/dev/null
+          kubectl kustomize cluster/base/storage/ceph >/dev/null
+          kubectl kustomize cluster/base/apps/example >/dev/null
 
   provider-matrix:
     runs-on: ubuntu-latest

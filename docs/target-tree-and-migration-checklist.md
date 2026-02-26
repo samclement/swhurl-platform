@@ -17,7 +17,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Legacy manual host scripts are compatibility wrappers.
 - Phase 2 (GitOps Bootstrap): scaffold complete
   - `cluster/flux/*` and bootstrap helper exist.
-  - Flux dependency chain scaffold is present with safe suspended layers.
+  - Flux dependency chain scaffold is present with safe suspended layers and
+    component-level sequencing placeholders.
 - Phase 3/4 (Provider Migration groundwork): scaffold in progress
   - Provider intent flags (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) are wired into
     Helmfile gating, values, and verification.

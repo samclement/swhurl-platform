@@ -28,6 +28,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     `clickstack`, `otel`, `storage/{minio,ceph}`) are scaffolded for clearer target ownership.
   - Issuer ownership has an explicit scaffold boundary (`cluster/base/cert-manager/issuers`)
     and Flux sequencing layer (`homelab-issuers`) between cert-manager and ingress/app layers.
+  - Suspended Flux `HelmRelease` scaffolds now exist for cert-manager and platform-issuers
+    to make future cutover points concrete without changing runtime ownership yet.
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

@@ -12,6 +12,15 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 6. Print the cluster plan: `./scripts/02_print_plan.sh`
 7. Apply cluster layer: `./run.sh`
 
+Optional unified run (host + cluster):
+
+```bash
+./run.sh --with-host
+./run.sh --with-host --delete
+```
+
+You can also set `RUN_HOST_LAYER=true` in env/config to make this the default behavior.
+
 Docs:
 - Phase runbook: `docs/runbook.md`
 - Contracts (env/tool/delete): `docs/contracts.md`

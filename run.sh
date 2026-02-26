@@ -13,19 +13,24 @@ DELETE_MODE=false
 DRY_RUN=false
 ONLY_FILTER=""
 PROFILE_FILE=""
+WITH_HOST_LAYER="${RUN_HOST_LAYER:-false}"
+HOST_ENV_FILE=""
 
 usage() {
   cat <<USAGE
-Usage: ./run.sh [--profile FILE] [--only N[,N...]] [--dry-run] [--delete]
+Usage: ./run.sh [--profile FILE] [--host-env FILE] [--only N[,N...]] [--dry-run] [--delete] [--with-host]
 
 Options:
   --profile FILE  Load additional env vars (overrides config.env)
+  --host-env FILE Load host-layer env vars for ./host/run-host.sh
   --only LIST     Comma-separated step numbers or script basenames to run
   --dry-run       Print plan without executing
   --delete        Run teardown (reverse order), passing --delete to steps
+  --with-host     Include host layer orchestration via ./host/run-host.sh
 
 Env:
   ONLY                 Same as --only (overridden by CLI flag)
+  RUN_HOST_LAYER       If true, include host layer orchestration (default false)
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
   FEAT_VERIFY_DEEP      If true, run extra/diagnostic verification scripts (default false)
 
@@ -42,6 +47,8 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=true; shift ;;
     --only) ONLY_FILTER="$2"; shift 2 ;;
     --profile) PROFILE_FILE="$2"; shift 2 ;;
+    --host-env) HOST_ENV_FILE="$2"; shift 2 ;;
+    --with-host) WITH_HOST_LAYER=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
@@ -55,6 +62,10 @@ done
 PROFILE_EXCLUSIVE="${PROFILE_EXCLUSIVE:-false}"
 if [[ "$PROFILE_EXCLUSIVE" != "true" && "$PROFILE_EXCLUSIVE" != "false" ]]; then
   echo "[ERROR] PROFILE_EXCLUSIVE must be true or false (got: $PROFILE_EXCLUSIVE)" >&2
+  exit 1
+fi
+if [[ "$WITH_HOST_LAYER" != "true" && "$WITH_HOST_LAYER" != "false" ]]; then
+  echo "[ERROR] RUN_HOST_LAYER/--with-host must resolve to true or false (got: $WITH_HOST_LAYER)" >&2
   exit 1
 fi
 
@@ -200,6 +211,14 @@ print_plan() {
   local -n steps=$1
   echo "Plan:"
 
+  if [[ "$WITH_HOST_LAYER" == "true" ]]; then
+    if [[ "$DELETE_MODE" == "true" ]]; then
+      echo "  - Host layer enabled (runs after cluster delete steps)"
+    else
+      echo "  - Host layer enabled (runs before cluster apply steps)"
+    fi
+  fi
+
   # Phase headings are informational only; script order is the source of truth.
   if [[ "$DELETE_MODE" != true ]]; then
     echo "  - 1) Prerequisites & verify"
@@ -222,6 +241,26 @@ print_plan() {
       printf "  - %s\n" "$base"
     fi
   done
+}
+
+run_host_layer() {
+  [[ "$WITH_HOST_LAYER" == "true" ]] || return 0
+  local host_runner="$ROOT_DIR/host/run-host.sh"
+  [[ -x "$host_runner" ]] || { echo "[ERROR] Host layer requested but runner not found/executable: $host_runner" >&2; exit 1; }
+
+  local -a host_args=()
+  if [[ "$DELETE_MODE" == "true" ]]; then
+    host_args+=(--delete)
+  fi
+  if [[ "$DRY_RUN" == "true" ]]; then
+    host_args+=(--dry-run)
+  fi
+  if [[ -n "$HOST_ENV_FILE" ]]; then
+    host_args+=(--host-env "$HOST_ENV_FILE")
+  fi
+
+  echo "[run] host/run-host.sh ${host_args[*]}"
+  "$host_runner" "${host_args[@]}"
 }
 
 run_step() {
@@ -276,12 +315,21 @@ filter_steps ALL_STEPS SELECTED_STEPS "$ONLY_FILTER"
 print_plan SELECTED_STEPS
 
 if [[ "$DRY_RUN" == true ]]; then
+  run_host_layer
   echo "Dry run: exiting without executing."
   exit 0
+fi
+
+if [[ "$WITH_HOST_LAYER" == "true" && "$DELETE_MODE" != "true" ]]; then
+  run_host_layer
 fi
 
 for s in "${SELECTED_STEPS[@]}"; do
   run_step "$s"
 done
+
+if [[ "$WITH_HOST_LAYER" == "true" && "$DELETE_MODE" == "true" ]]; then
+  run_host_layer
+fi
 
 echo "Done."

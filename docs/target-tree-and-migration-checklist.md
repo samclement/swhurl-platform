@@ -30,6 +30,7 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Sample app has staging/prod namespace overlays with staging as the default deployed path.
   - Platform components deploy once in their usual namespaces with staging issuer defaults,
     and prod promotion overlays patch only issuer/host intent.
+  - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
   - Remaining major migration item is declarative runtime secret/input management

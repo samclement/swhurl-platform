@@ -115,7 +115,8 @@
   - Keep verification helper libs lean; remove unused exports from `scripts/00_feature_registry_lib.sh` / `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
   - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles and Helmfile release mappings.
   - `scripts/97_verify_provider_matrix.sh` validates provider flag behavior without cluster access by rendering Helmfile for provider combinations and asserting `ingress-nginx`/`minio` installed states.
-  - `scripts/93_verify_expected_releases.sh` checks missing expected releases by default and can optionally fail on unexpected extras. Tune with:
+  - `scripts/93_verify_expected_releases.sh` is now Flux-first (`VERIFY_INVENTORY_MODE=auto|flux|helm`, default `auto`) and falls back to Helm release inventory when Flux stack resources are absent.
+  - `scripts/93_verify_expected_releases.sh` can optionally fail on unexpected inventory extras. Tune with:
     - `VERIFY_RELEASE_SCOPE=platform|cluster`
     - `VERIFY_RELEASE_ALLOWLIST` (comma-separated glob patterns, e.g. `kube-system/traefik,apps/custom-app`)
     - `VERIFY_RELEASE_STRICT_EXTRAS=true` to enable extra-release checks (default `false`)

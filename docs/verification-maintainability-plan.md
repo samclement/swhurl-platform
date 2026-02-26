@@ -1,14 +1,14 @@
 # Verification Framework Maintainability Plan (Keycloak-Driven)
 
-Last updated: 2026-02-16
+Last updated: 2026-02-26
 
 ## Implementation Status
 
-Current state (2026-02-16):
+Current state (2026-02-26):
 
 - Implemented:
   - `scripts/00_feature_registry_lib.sh` is the feature verification registry.
-  - `scripts/93_verify_expected_releases.sh` resolves expected releases via registry helpers and can check unexpected extras (scope + allowlist controls).
+  - `scripts/93_verify_expected_releases.sh` is Flux-first (`VERIFY_INVENTORY_MODE=auto|flux|helm`) and falls back to Helm release inventory while preserving strict-extra controls.
   - `scripts/94_verify_config_inputs.sh` resolves feature-required vars via registry helpers.
   - `scripts/91_verify_platform_state.sh` gates feature checks via registry helpers (`feature_is_enabled`).
   - `scripts/96_verify_orchestrator_contract.sh` validates registry/config flag coverage and registry/Helmfile release mappings.

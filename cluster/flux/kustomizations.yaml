@@ -11,4 +11,4 @@ spec:
   path: ./cluster/overlays/homelab/flux
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 20m

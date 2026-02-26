@@ -92,5 +92,5 @@ flux-bootstrap:
 
 .PHONY: flux-reconcile
 flux-reconcile:
-	flux reconcile source git swhurl-platform -n flux-system
-	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source
+	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
+	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m

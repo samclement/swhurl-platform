@@ -7,17 +7,30 @@ source "$SCRIPT_DIR/00_common.sh"
 
 host_k3s_install_exec() {
   local mode="${K3S_INGRESS_MODE:-traefik}"
+  local -a args=(--flannel-backend=none --disable-network-policy)
   case "$mode" in
     traefik)
-      printf '%s' "--flannel-backend=none --disable-network-policy"
       ;;
     none)
-      printf '%s' "--disable traefik --flannel-backend=none --disable-network-policy"
+      args+=(--disable traefik)
       ;;
     *)
       host_die "K3S_INGRESS_MODE must be traefik|none (got: $mode)"
       ;;
   esac
+
+  local disabled_raw="${K3S_DISABLE_PACKAGED:-metrics-server}"
+  local comp
+  disabled_raw="${disabled_raw//,/ }"
+  for comp in $disabled_raw; do
+    [[ -n "$comp" ]] || continue
+    if [[ "$mode" == "none" && "$comp" == "traefik" ]]; then
+      continue
+    fi
+    args+=(--disable "$comp")
+  done
+
+  printf '%s' "${args[*]}"
 }
 
 host_k3s_apply() {
@@ -30,7 +43,7 @@ host_k3s_apply() {
   if systemctl is-active --quiet k3s; then
     host_log_info "k3s already active; skipping install"
   else
-    host_log_info "Installing k3s (K3S_INGRESS_MODE=${K3S_INGRESS_MODE:-traefik})"
+    host_log_info "Installing k3s (K3S_INGRESS_MODE=${K3S_INGRESS_MODE:-traefik}, K3S_DISABLE_PACKAGED=${K3S_DISABLE_PACKAGED:-metrics-server})"
     if [[ -n "${K3S_VERSION:-}" ]]; then
       curl -sfL https://get.k3s.io | host_sudo env INSTALL_K3S_VERSION="$K3S_VERSION" INSTALL_K3S_EXEC="$exec_flags" sh -
     else

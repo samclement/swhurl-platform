@@ -53,6 +53,21 @@ releases:
     values:
       - infra/values/cert-manager-helmfile.yaml.gotmpl
 
+  - name: metrics-server
+    namespace: kube-system
+    chart: metrics-server/metrics-server
+    version: 3.13.0
+    installed: true
+    needs:
+      - kube-system/cilium
+    labels:
+      app: metrics-server
+      tier: observability
+      phase: core
+      component: metrics-server
+    values:
+      - infra/values/metrics-server-helmfile.yaml.gotmpl
+
   - name: platform-issuers
     namespace: kube-system
     chart: ./charts/platform-issuers

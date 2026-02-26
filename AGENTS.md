@@ -19,6 +19,8 @@
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
+  - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
+  - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/25_prepare_helm_repositories.sh`, `scripts/20_reconcile_platform_namespaces.sh`, and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
@@ -36,6 +38,8 @@
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
   - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack deploys via `cluster/overlays/homelab/apps/staging`.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
+  - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
+  - Parent Flux `Kustomization` `cluster/flux/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
   - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
   - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, kustomize structure rendering for flux scaffolding, and provider-matrix validation through `scripts/97_verify_provider_matrix.sh`).
@@ -44,6 +48,8 @@
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
   - `scripts/manual_install_k3s_minimal.sh` is a compatibility wrapper to `host/run-host.sh --only 20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik` unless overridden).
+  - Host defaults disable bundled k3s `metrics-server` via `K3S_DISABLE_PACKAGED=metrics-server` so metrics-server is repo-managed.
+  - Repo-managed metrics-server is installed in `kube-system` (Flux base `cluster/base/metrics-server`, Helmfile release `metrics-server`) with `hostNetwork.enabled=true`, `--secure-port=4443`, and `--kubelet-insecure-tls` to avoid kubelet scrape failures (`connect: connection refused` to node `:10250`) seen on pod-network paths.
   - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_manage_cilium_lifecycle.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
   - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium-helmfile.yaml.gotmpl` with `useDigest: false`.

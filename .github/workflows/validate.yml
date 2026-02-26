@@ -85,6 +85,7 @@ jobs:
           kubectl kustomize cluster/base/cert-manager >/dev/null
           kubectl kustomize cluster/base/cert-manager/issuers >/dev/null
           kubectl kustomize cluster/base/cilium >/dev/null
+          kubectl kustomize cluster/base/metrics-server >/dev/null
           kubectl kustomize cluster/base/oauth2-proxy >/dev/null
           kubectl kustomize cluster/base/clickstack >/dev/null
           kubectl kustomize cluster/base/otel >/dev/null

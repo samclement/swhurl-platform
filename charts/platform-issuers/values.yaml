@@ -8,9 +8,11 @@ selfsigned:
   name: selfsigned
 
 letsencrypt:
-  # The two explicit issuers are always rendered in letsencrypt mode.
+  # Explicit issuers can be toggled for test safety/migration staging.
   stagingName: letsencrypt-staging
   prodName: letsencrypt-prod
+  createStagingIssuer: true
+  createProdIssuer: true
   selectedEnv: staging # staging | prod
   aliasName: letsencrypt
   createAlias: true

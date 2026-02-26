@@ -34,6 +34,16 @@ check_eq() {
 say "ClusterIssuer"
 case "${CLUSTER_ISSUER:-selfsigned}" in
   letsencrypt)
+    le_create_staging="${LETSENCRYPT_CREATE_STAGING_ISSUER:-true}"
+    le_create_prod="${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"
+    if ! is_bool_string "$le_create_staging"; then
+      mismatch "LETSENCRYPT_CREATE_STAGING_ISSUER must be true|false (got: $le_create_staging)"
+      add_suggest "scripts/94_verify_config_inputs.sh"
+    fi
+    if ! is_bool_string "$le_create_prod"; then
+      mismatch "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false (got: $le_create_prod)"
+      add_suggest "scripts/94_verify_config_inputs.sh"
+    fi
     if [[ -z "${ACME_EMAIL:-}" ]]; then
       warn "ACME_EMAIL is empty; cannot validate letsencrypt email"
     elif kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
@@ -42,17 +52,35 @@ case "${CLUSTER_ISSUER:-selfsigned}" in
       expected_server="$(verify_expected_letsencrypt_server "${LETSENCRYPT_ENV:-staging}")"
       actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
       check_eq "letsencrypt.server" "${expected_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
-      if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
-        ok "letsencrypt-staging ClusterIssuer present"
+      if [[ "$le_create_staging" == "true" ]]; then
+        if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
+          ok "letsencrypt-staging ClusterIssuer present"
+        else
+          mismatch "ClusterIssuer letsencrypt-staging not found"
+          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        fi
       else
-        mismatch "ClusterIssuer letsencrypt-staging not found"
-        add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
+          mismatch "ClusterIssuer letsencrypt-staging present but LETSENCRYPT_CREATE_STAGING_ISSUER=false"
+          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        else
+          ok "LETSENCRYPT_CREATE_STAGING_ISSUER=false; staging issuer absent"
+        fi
       fi
-      if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
-        ok "letsencrypt-prod ClusterIssuer present"
+      if [[ "$le_create_prod" == "true" ]]; then
+        if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+          ok "letsencrypt-prod ClusterIssuer present"
+        else
+          mismatch "ClusterIssuer letsencrypt-prod not found"
+          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        fi
       else
-        mismatch "ClusterIssuer letsencrypt-prod not found"
-        add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+          mismatch "ClusterIssuer letsencrypt-prod present but LETSENCRYPT_CREATE_PROD_ISSUER=false"
+          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+        else
+          ok "LETSENCRYPT_CREATE_PROD_ISSUER=false; prod issuer absent"
+        fi
       fi
     else
       mismatch "ClusterIssuer letsencrypt not found"

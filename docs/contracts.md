@@ -33,7 +33,14 @@ The source of truth for verification input contracts is:
 Verification toggles:
 
 - `FEAT_VERIFY=true|false`: run core verification gates (`94`, `91`, `92`) in `./run.sh`.
-- `FEAT_VERIFY_DEEP=true|false`: run extra diagnostics/consistency checks (`90`, `93`, `95`, `96`) in `./run.sh`.
+- `FEAT_VERIFY_DEEP=true|false`: run extra diagnostics/consistency checks (`90`, `93`, `95`, `96`, `97`) in `./run.sh`.
+
+Let’s Encrypt safety controls:
+
+- `LETSENCRYPT_CREATE_STAGING_ISSUER=true|false`
+- `LETSENCRYPT_CREATE_PROD_ISSUER=true|false`
+
+Use `profiles/test-loop.env` for repeat destructive tests without production ACME calls.
 
 Release inventory verification controls (`scripts/93_verify_expected_releases.sh`):
 

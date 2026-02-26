@@ -28,6 +28,16 @@ if [[ "${CLUSTER_ISSUER:-}" == "letsencrypt" ]]; then
   else
     bad "LETSENCRYPT_ENV must be staging|prod|production"
   fi
+  if is_bool_string "${LETSENCRYPT_CREATE_STAGING_ISSUER:-true}"; then
+    ok "LETSENCRYPT_CREATE_STAGING_ISSUER is valid"
+  else
+    bad "LETSENCRYPT_CREATE_STAGING_ISSUER must be true|false"
+  fi
+  if is_bool_string "${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"; then
+    ok "LETSENCRYPT_CREATE_PROD_ISSUER is valid"
+  else
+    bad "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false"
+  fi
 fi
 
 if [[ -n "${INGRESS_PROVIDER:-}" ]]; then

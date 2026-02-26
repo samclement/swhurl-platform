@@ -15,6 +15,9 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
    - `./run.sh --profile profiles/provider-traefik.env`
    - `./run.sh --profile profiles/provider-ceph.env`
    - `./run.sh --profile profiles/provider-traefik-ceph.env`
+9. Destructive repeat-test profiles:
+   - `profiles/test-loop.env` (Let’s Encrypt staging only; prod issuer disabled)
+   - `profiles/test-loop-selfsigned.env` (no ACME traffic)
 
 Optional unified run (host + cluster):
 
@@ -45,7 +48,7 @@ Compatibility helpers:
 - `scripts/bootstrap/install-flux.sh` bootstraps Flux controllers and applies `cluster/flux` source manifests.
 
 Convenience task runner:
-- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `all-apply`, `flux-bootstrap`, etc.).
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, etc.).
 
 GitOps sequencing scaffold:
 - `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> cert-manager -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
@@ -114,6 +117,8 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 - `BASE_DOMAIN`: base domain used to compute ingress hosts (defaults to `127.0.0.1.nip.io`).
 - `CLUSTER_ISSUER`: `selfsigned` or `letsencrypt` (default `selfsigned`).
 - `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) when `CLUSTER_ISSUER=letsencrypt`.
+- `LETSENCRYPT_CREATE_STAGING_ISSUER`: `true|false` (default `true`).
+- `LETSENCRYPT_CREATE_PROD_ISSUER`: `true|false` (default `true`).
 - `TIMEOUT_SECS`: Helm/Helmfile timeouts (default `300`).
 - `INGRESS_PROVIDER`: provider intent flag (`nginx` or `traefik`; migration scaffolding).
 - `OBJECT_STORAGE_PROVIDER`: provider intent flag (`minio` or `ceph`; migration scaffolding).
@@ -191,8 +196,13 @@ Environment layering
 ACME / Let’s Encrypt
 - Default is staging: `LETSENCRYPT_ENV=staging`
 - `scripts/31_sync_helmfile_phase_core.sh` ensures:
-  - `letsencrypt-staging` and `letsencrypt-prod` exist
+  - `letsencrypt-staging` / `letsencrypt-prod` exist when their create flags are enabled
   - `letsencrypt` is an alias issuer that points to the selected env (so most ingresses can keep `cert-manager.io/cluster-issuer: letsencrypt`)
+- For repeat destructive testing without production calls:
+  - use `./run.sh --profile profiles/test-loop.env` (staging alias + prod issuer disabled), or
+  - use `./run.sh --profile profiles/test-loop-selfsigned.env` (no ACME).
+- Automated scratch loop helper:
+  - `./scripts/compat/repeat-scratch-cycles.sh --yes --cycles 3 --profile profiles/test-loop.env`
 
 k3s bootstrap (optional)
 - Cluster provisioning is not the default workflow. If you want the repo to install k3s on the local host:

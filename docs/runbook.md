@@ -65,3 +65,15 @@ Delete runs in reverse order with deterministic finalizers:
 4) Verify cluster is clean (`scripts/98_verify_teardown_clean.sh`)
 
 Important: Cilium is deleted only after platform namespaces and PVCs are removed, so k3s/local-path helper pods can still run during namespace cleanup.
+
+## Repeat Scratch Testing
+
+To test full lifecycle repeatedly (k3s uninstall/install + apply/delete), use:
+
+```bash
+./scripts/compat/repeat-scratch-cycles.sh --yes --cycles 3 --profile profiles/test-loop.env
+```
+
+Notes:
+- `profiles/test-loop.env` keeps ACME on staging and disables prod issuer creation.
+- Use `profiles/test-loop-selfsigned.env` to avoid ACME traffic entirely.

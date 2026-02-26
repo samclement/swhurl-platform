@@ -9,6 +9,6 @@ mode: {{ .Environment.Values.issuer | quote }}
 letsencrypt:
   # Only used when mode=letsencrypt
   email: {{ env "ACME_EMAIL" | default "" | quote }}
-  ingressClass: nginx
+  ingressClass: {{ .Environment.Values.computed.ingressClass | quote }}
   selectedEnv: {{ env "LETSENCRYPT_ENV" | default "staging" | quote }}
   createAlias: true

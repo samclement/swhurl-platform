@@ -14,7 +14,7 @@ existingSecret: minio-creds
 
 ingress:
   enabled: true
-  ingressClassName: nginx
+  ingressClassName: {{ .Environment.Values.computed.ingressClass | quote }}
   annotations:
     cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   path: /
@@ -27,7 +27,7 @@ ingress:
 
 consoleIngress:
   enabled: true
-  ingressClassName: nginx
+  ingressClassName: {{ .Environment.Values.computed.ingressClass | quote }}
   annotations:
     cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
   path: /

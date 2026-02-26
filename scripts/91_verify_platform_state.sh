@@ -109,13 +109,15 @@ if feature_is_enabled cilium; then
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
     check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
-    if feature_is_enabled oauth2_proxy; then
+    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
       check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
       check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_manage_cilium_lifecycle.sh"
+    elif feature_is_enabled oauth2_proxy; then
+      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping NGINX auth annotation checks for hubble-ui"
     else
       ok "$(feature_flag_var oauth2_proxy)=false; skipping hubble-ui auth annotation checks"
     fi
@@ -193,13 +195,15 @@ if feature_is_enabled clickstack; then
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
     check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
-    if feature_is_enabled oauth2_proxy; then
+    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
       check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/36_sync_helmfile_phase_platform.sh"
       check_eq "clickstack.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/36_sync_helmfile_phase_platform.sh"
+    elif feature_is_enabled oauth2_proxy; then
+      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping NGINX auth annotation checks for clickstack"
     fi
   else
     mismatch "clickstack ingress not found"

@@ -11,6 +11,7 @@
   - `showboat` is not installed globally in this repo environment; run it via `uvx showboat ...` (for example `uvx showboat init walkthrough.md ...`).
   - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
+  - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.

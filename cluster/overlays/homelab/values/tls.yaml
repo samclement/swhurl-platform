@@ -1,0 +1,3 @@
+# TLS-related overlay values for homelab environments
+clusterIssuer: letsencrypt
+letsencryptEnv: staging

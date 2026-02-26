@@ -1,0 +1,3 @@
+# Feature/provider selection values for homelab environments
+ingressProvider: traefik
+objectStorageProvider: minio

@@ -25,22 +25,22 @@ spec:
       retries: 3
   values:
     # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (OIDC_*, BASE_DOMAIN, issuer/provider).
+    # (OIDC_*, BASE_DOMAIN, and provider-specific auth behavior).
     config:
       existingSecret: oauth2-proxy-secret
     extraArgs:
       provider: oidc
-      oidc-issuer-url: https://example.invalid
-      redirect-url: https://oauth.example.invalid/oauth2/callback
+      oidc-issuer-url: https://accounts.google.com
+      redirect-url: https://oauth.homelab.swhurl.com/oauth2/callback
       email-domain: "*"
     ingress:
       enabled: true
       className: nginx
       annotations:
-        cert-manager.io/cluster-issuer: selfsigned
+        cert-manager.io/cluster-issuer: letsencrypt-staging
       hosts:
-        - oauth.example.invalid
+        - oauth.homelab.swhurl.com
       tls:
         - secretName: oauth2-proxy-tls
           hosts:
-            - oauth.example.invalid
+            - oauth.homelab.swhurl.com

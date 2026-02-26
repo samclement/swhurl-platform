@@ -13,7 +13,7 @@ service:
 ingress:
   enabled: true
   className: {{ .Environment.Values.computed.ingressClass | quote }}
-  host: {{ env "APP_HOST" | default (printf "hello.%s" .Environment.Values.baseDomain) | quote }}
+  host: {{ env "APP_HOST" | default (printf "staging.hello.%s" .Environment.Values.baseDomain) | quote }}
   tlsSecretName: {{ env "TLS_SECRET" | default "hello-web-tls" | quote }}
   annotations:
 {{- if eq .Environment.Values.providers.ingress "nginx" }}
@@ -25,7 +25,7 @@ tls:
   enabled: true
   issuerName: {{ .Environment.Values.appIssuer | quote }}
   dnsNames:
-    - {{ env "APP_HOST" | default (printf "hello.%s" .Environment.Values.baseDomain) | quote }}
+    - {{ env "APP_HOST" | default (printf "staging.hello.%s" .Environment.Values.baseDomain) | quote }}
 
 auth:
   enabled: {{ if ne (env "APP_AUTH_ENABLED" | default "") "" }}{{ eq (env "APP_AUTH_ENABLED") "true" }}{{ else }}{{ and .Environment.Values.features.oauth2Proxy (eq .Environment.Values.providers.ingress "nginx") }}{{ end }}

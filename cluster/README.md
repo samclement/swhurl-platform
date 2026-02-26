@@ -8,7 +8,7 @@ Structure:
 - `base/`: provider-agnostic platform components (component-level scaffolds for `cert-manager`, `cert-manager/issuers`, `cilium`, `oauth2-proxy`, `clickstack`, `otel`, `storage/*`, `apps/example`).
 - `overlays/homelab/`: environment composition and provider selection.
 - `overlays/homelab/apps/`: staging/prod app overlays (`apps-staging` / `apps-prod` + issuer defaults).
-- `overlays/homelab/platform/`: staging/prod overlays for platform components (default Flux paths target `staging`).
+- `overlays/homelab/platform/`: overlays for promoting platform components from base staging defaults to prod issuer annotations/hosts.
 - `overlays/homelab/providers/`: ingress/storage provider overlay scaffolds (`ingress-traefik`, `ingress-nginx`, `storage-minio`, `storage-ceph`).
 - `overlays/homelab/flux/`: Flux `Kustomization` dependency chain for phase ordering.
 

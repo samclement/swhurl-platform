@@ -66,7 +66,7 @@ host_dynamic_dns_subdomains() {
       local base
       base="${BASE_DOMAIN%.swhurl.com}"
       base="${base%.}"
-      raw="$base oauth.$base clickstack.$base hubble.$base minio.$base minio-console.$base"
+      raw="$base oauth.$base staging.hello.$base prod.hello.$base clickstack.$base hubble.$base minio.$base minio-console.$base"
       host_log_warn "SWHURL_SUBDOMAINS not set; derived defaults: $raw"
     else
       raw="homelab"

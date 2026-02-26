@@ -74,7 +74,7 @@ Changes
 - Retire Kustomize-based hello install in `scripts/75_manage_sample_app_lifecycle.sh`.
 
 Validation
-- `https://hello.${BASE_DOMAIN}` works, TLS is issued.
+- `https://staging.hello.${BASE_DOMAIN}` works, TLS is issued.
 - OAuth annotations are correct when enabled.
 
 ## Step 5: Make Delete a First-Class Transaction (Reverse Needs)

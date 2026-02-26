@@ -16,8 +16,11 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
    - `./run.sh --profile profiles/provider-ceph.env`
    - `./run.sh --profile profiles/provider-traefik-ceph.env`
 9. Destructive repeat-test profiles:
-   - `profiles/test-loop.env` (Let’s Encrypt staging only; prod issuer disabled)
-   - `profiles/test-loop-selfsigned.env` (no ACME traffic)
+   - `profiles/test-loop.env` (Let’s Encrypt alias + prod endpoint overridden to staging)
+   - `profiles/test-loop-selfsigned.env` (workloads selfsigned; ACME endpoints overridden to staging)
+10. Promotion overlay profiles:
+   - `./run.sh --profile profiles/overlay-staging.env` (apps namespace `apps-staging`, host `staging.hello.${BASE_DOMAIN}`)
+   - `./run.sh --profile profiles/overlay-prod.env` (apps namespace `apps-prod`, host `prod.hello.${BASE_DOMAIN}`)
 
 Optional unified run (host + cluster):
 
@@ -124,6 +127,7 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 - `PLATFORM_CLUSTER_ISSUER`: issuer for platform components (`selfsigned|letsencrypt|letsencrypt-staging|letsencrypt-prod`; default `letsencrypt-staging`).
 - `APP_CLUSTER_ISSUER`: issuer for app certificates (defaults to `PLATFORM_CLUSTER_ISSUER`).
 - `APP_NAMESPACE`: sample-app target namespace (`apps-staging|apps-prod`; default `apps-staging`).
+- `APP_HOST`: sample-app ingress host (default `staging.hello.${BASE_DOMAIN}`).
 - `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) for alias issuer `letsencrypt`.
 - `LETSENCRYPT_STAGING_SERVER`: optional staging ACME endpoint override.
 - `LETSENCRYPT_PROD_SERVER`: optional prod ACME endpoint override (set to staging for repeated scratch-cycle safety).
@@ -204,11 +208,11 @@ Environment layering
 ACME / Let’s Encrypt
 - Default is staging: `LETSENCRYPT_ENV=staging`
 - `scripts/31_sync_helmfile_phase_core.sh` ensures:
-  - `letsencrypt-staging` / `letsencrypt-prod` exist when their create flags are enabled
+  - `selfsigned`, `letsencrypt-staging`, and `letsencrypt-prod` exist
   - `letsencrypt` is an alias issuer that points to the selected env (so most ingresses can keep `cert-manager.io/cluster-issuer: letsencrypt`)
 - For repeat destructive testing without production calls:
-  - use `./run.sh --profile profiles/test-loop.env` (staging alias + prod issuer disabled), or
-  - use `./run.sh --profile profiles/test-loop-selfsigned.env` (no ACME).
+  - use `./run.sh --profile profiles/test-loop.env` (staging alias + prod endpoint overridden to staging), or
+  - use `./run.sh --profile profiles/test-loop-selfsigned.env` (workloads use selfsigned and ACME endpoints are overridden to staging).
 - Automated scratch loop helper:
   - `./scripts/compat/repeat-scratch-cycles.sh --yes --cycles 3 --profile profiles/test-loop.env`
 

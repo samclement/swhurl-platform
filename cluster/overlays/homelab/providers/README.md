@@ -12,5 +12,7 @@ Current ingress compatibility scaffold:
 - `ingress-nginx/helmrelease-ingress-nginx.yaml` (suspended by default)
 
 Current storage compatibility scaffold:
-- `storage-minio/kustomization.yaml` delegates to `../platform/staging/storage-minio`
-  so provider selection stays separate from environment (staging/prod) value overlays.
+- `storage-minio/kustomization.yaml` targets `../../../base/storage/minio` (staging TLS
+  intent by default in base values).
+- Use `../platform/prod/storage-minio` when promoting platform storage ingress annotations
+  to `letsencrypt-prod`.

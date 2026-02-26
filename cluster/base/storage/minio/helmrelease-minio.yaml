@@ -25,28 +25,28 @@ spec:
       retries: 3
   values:
     # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (MINIO_* hosts/credentials, issuer/provider, and feature gating).
+    # (MINIO_* hosts/credentials and feature/provider gating).
     mode: standalone
     existingSecret: minio-creds
     ingress:
       enabled: true
       ingressClassName: nginx
       annotations:
-        cert-manager.io/cluster-issuer: selfsigned
+        cert-manager.io/cluster-issuer: letsencrypt-staging
       hosts:
-        - minio.example.invalid
+        - minio.homelab.swhurl.com
       tls:
         - secretName: minio-tls
           hosts:
-            - minio.example.invalid
+            - minio.homelab.swhurl.com
     consoleIngress:
       enabled: true
       ingressClassName: nginx
       annotations:
-        cert-manager.io/cluster-issuer: selfsigned
+        cert-manager.io/cluster-issuer: letsencrypt-staging
       hosts:
-        - minio-console.example.invalid
+        - minio-console.homelab.swhurl.com
       tls:
         - secretName: minio-console-tls
           hosts:
-            - minio-console.example.invalid
+            - minio-console.homelab.swhurl.com

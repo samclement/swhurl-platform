@@ -58,10 +58,14 @@ readonly -a VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM=(
 readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN CLUSTER_ISSUER)
 readonly VERIFY_REQUIRED_TIMEOUT_VAR="TIMEOUT_SECS"
 readonly -a VERIFY_ALLOWED_LETSENCRYPT_ENVS=(staging prod production)
+readonly -a VERIFY_ALLOWED_INGRESS_PROVIDERS=(nginx traefik)
+readonly -a VERIFY_ALLOWED_OBJECT_STORAGE_PROVIDERS=(minio ceph)
 readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
   CLUSTER_ISSUER
   LETSENCRYPT_ENV
+  INGRESS_PROVIDER
+  OBJECT_STORAGE_PROVIDER
 )
 
 name_matches_any_pattern() {
@@ -105,6 +109,16 @@ is_allowed_k3s_secret_for_verify() {
 is_allowed_letsencrypt_env() {
   local value="$1"
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_LETSENCRYPT_ENVS[@]}"
+}
+
+is_allowed_ingress_provider() {
+  local value="$1"
+  name_matches_any_pattern "$value" "${VERIFY_ALLOWED_INGRESS_PROVIDERS[@]}"
+}
+
+is_allowed_object_storage_provider() {
+  local value="$1"
+  name_matches_any_pattern "$value" "${VERIFY_ALLOWED_OBJECT_STORAGE_PROVIDERS[@]}"
 }
 
 verify_oauth_auth_url() {

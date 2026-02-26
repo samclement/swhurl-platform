@@ -45,6 +45,7 @@ Use `profiles/test-loop.env` (or `profiles/overlay-staging.env`) for repeat dest
 
 Release inventory verification controls (`scripts/93_verify_expected_releases.sh`):
 
+- `VERIFY_INVENTORY_MODE=auto|flux|helm` (default `auto`; prefers Flux inventory when stack resources are present, otherwise falls back to Helm releases)
 - `VERIFY_RELEASE_SCOPE=platform|cluster` (default `platform`)
 - `VERIFY_RELEASE_ALLOWLIST=<comma-separated glob patterns>`
 - `VERIFY_RELEASE_STRICT_EXTRAS=true|false` (default `false`)

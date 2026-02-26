@@ -75,7 +75,7 @@ Notes:
   - `scripts/92_verify_helmfile_drift.sh`
 - Extra checks/diagnostics (opt-in; `FEAT_VERIFY_DEEP=true`):
   - `scripts/90_verify_runtime_smoke.sh`
-  - `scripts/93_verify_expected_releases.sh`
+  - `scripts/93_verify_expected_releases.sh` (Flux-first inventory/health checks; Helm release inventory fallback via `VERIFY_INVENTORY_MODE=helm`)
   - `scripts/95_capture_cluster_diagnostics.sh` (writes diagnostics under `./artifacts/cluster-diagnostics-<timestamp>/` unless an output dir is passed)
   - `scripts/96_verify_orchestrator_contract.sh`
   - `scripts/97_verify_provider_matrix.sh` (renders Helmfile under provider combinations and validates release install gating)

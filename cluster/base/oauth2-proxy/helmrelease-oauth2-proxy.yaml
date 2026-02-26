@@ -1,0 +1,46 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oauth2-proxy
+  namespace: ingress
+spec:
+  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
+  suspend: true
+  interval: 30m
+  releaseName: oauth2-proxy
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.1.3
+      sourceRef:
+        kind: HelmRepository
+        name: oauth2-proxy
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # TODO(migration): replace scaffold defaults with environment-driven substitution
+    # (OIDC_*, BASE_DOMAIN, issuer/provider).
+    config:
+      existingSecret: oauth2-proxy-secret
+    extraArgs:
+      provider: oidc
+      oidc-issuer-url: https://example.invalid
+      redirect-url: https://oauth.example.invalid/oauth2/callback
+      email-domain: "*"
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: selfsigned
+      hosts:
+        - oauth.example.invalid
+      tls:
+        - secretName: oauth2-proxy-tls
+          hosts:
+            - oauth.example.invalid

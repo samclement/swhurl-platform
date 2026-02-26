@@ -30,6 +30,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     and Flux sequencing layer (`homelab-issuers`) between cert-manager and ingress/app layers.
   - Suspended Flux `HelmRelease` scaffolds now exist for cert-manager and platform-issuers
     to make future cutover points concrete without changing runtime ownership yet.
+  - Suspended Flux `HelmRelease` scaffolds now also exist for platform components
+    (`oauth2-proxy`, `clickstack`, `otel` collectors, `minio`) as explicit migration targets.
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

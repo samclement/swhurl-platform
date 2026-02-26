@@ -4,7 +4,6 @@ metadata:
   name: otel-k8s-daemonset
   namespace: logging
 spec:
-  suspend: true
   interval: 30m
   releaseName: otel-k8s-daemonset
   chart:

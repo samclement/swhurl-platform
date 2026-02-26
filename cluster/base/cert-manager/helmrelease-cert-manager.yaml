@@ -4,8 +4,6 @@ metadata:
   name: cert-manager
   namespace: cert-manager
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
-  suspend: true
   interval: 30m
   releaseName: cert-manager
   chart:

@@ -1,15 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources: []
-
-# Phase-in as components are migrated to GitOps.
-# - ../../base
-# Choose one ingress provider:
-# - providers/ingress-traefik
-# - providers/ingress-nginx
-# Choose one object storage provider:
-# - providers/storage-minio
-# - providers/storage-ceph
-# Choose app environment overlay:
-# - apps/staging
-# - apps/prod
+resources:
+  - ../../base/namespaces
+  - ../../base/cilium
+  - ../../base/cert-manager
+  - ../../base/cert-manager/issuers
+  - providers/ingress-nginx
+  - ../../base/oauth2-proxy
+  - ../../base/clickstack
+  - ../../base/otel
+  - providers/storage-minio
+  - apps/staging

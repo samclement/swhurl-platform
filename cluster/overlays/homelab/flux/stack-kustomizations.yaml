@@ -19,7 +19,6 @@ metadata:
   name: homelab-cilium
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-namespaces
   interval: 10m
@@ -37,7 +36,6 @@ metadata:
   name: homelab-cert-manager
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-cilium
   interval: 10m
@@ -55,7 +53,6 @@ metadata:
   name: homelab-issuers
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-cert-manager
   interval: 10m
@@ -73,7 +70,6 @@ metadata:
   name: homelab-ingress
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-issuers
   interval: 10m
@@ -91,7 +87,6 @@ metadata:
   name: homelab-oauth2-proxy
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-ingress
   interval: 10m
@@ -109,7 +104,6 @@ metadata:
   name: homelab-clickstack
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-ingress
   interval: 10m
@@ -127,7 +121,6 @@ metadata:
   name: homelab-otel
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-clickstack
   interval: 10m
@@ -145,7 +138,6 @@ metadata:
   name: homelab-storage
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-ingress
   interval: 10m
@@ -163,7 +155,6 @@ metadata:
   name: homelab-example-app
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: homelab-oauth2-proxy
     - name: homelab-clickstack

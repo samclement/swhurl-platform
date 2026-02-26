@@ -4,7 +4,6 @@ metadata:
   name: hello-web
   namespace: apps-staging
 spec:
-  suspend: true
   interval: 30m
   releaseName: hello-web
   chart:

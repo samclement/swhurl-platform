@@ -40,6 +40,7 @@ Convenience task runner:
 GitOps sequencing scaffold:
 - `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines a Flux `dependsOn` chain (`namespaces -> cilium -> core -> platform -> example-app`).
 - Only `namespaces` is active by default; later layers are intentionally `suspend: true` until migrated.
+- `cluster/overlays/homelab/providers/` contains ingress/storage provider scaffolds so the future GitOps stack can pick one ingress overlay and one storage overlay explicitly.
 
 CI validation:
 - `.github/workflows/validate.yml` runs shell syntax checks, dry-run command checks, and `kubectl kustomize` rendering checks for scaffolded GitOps paths.

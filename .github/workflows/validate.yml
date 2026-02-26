@@ -55,4 +55,9 @@ jobs:
           set -Eeuo pipefail
           kubectl kustomize cluster/flux >/dev/null
           kubectl kustomize cluster/overlays/homelab/flux >/dev/null
+          kubectl kustomize cluster/overlays/homelab >/dev/null
+          kubectl kustomize cluster/overlays/homelab/providers/ingress-traefik >/dev/null
+          kubectl kustomize cluster/overlays/homelab/providers/ingress-nginx >/dev/null
+          kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
+          kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null

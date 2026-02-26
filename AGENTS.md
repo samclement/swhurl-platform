@@ -14,6 +14,7 @@
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Flux dependency sequencing scaffold lives in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; keep non-migrated layers suspended (`spec.suspend: true`) to avoid accidental dual-ownership with legacy scripts.
+  - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
   - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, and kustomize structure rendering for flux scaffolding).
 
 - k3s-only focus

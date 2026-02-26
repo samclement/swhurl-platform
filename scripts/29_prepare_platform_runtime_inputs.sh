@@ -109,7 +109,7 @@ if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
 fi
 
 # MinIO credentials secret (required by MinIO Helm release)
-if [[ "${FEAT_MINIO:-true}" == "true" ]]; then
+if [[ "${FEAT_MINIO:-true}" == "true" && "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
   kubectl_ns storage
   [[ -n "${MINIO_ROOT_USER:-}" ]] || die "MINIO_ROOT_USER is required when FEAT_MINIO=true"
   [[ -n "${MINIO_ROOT_PASSWORD:-}" ]] || die "MINIO_ROOT_PASSWORD is required when FEAT_MINIO=true"

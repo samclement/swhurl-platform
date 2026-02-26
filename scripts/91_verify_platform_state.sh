@@ -127,38 +127,42 @@ else
   ok "$(feature_flag_var cilium)=false; skipping"
 fi
 
-say "ingress-nginx"
-if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
-  actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
-  check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/31_sync_helmfile_phase_core.sh"
-  actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-  actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-  check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/31_sync_helmfile_phase_core.sh"
-  check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/31_sync_helmfile_phase_core.sh"
-else
-  mismatch "ingress-nginx service not found"
-  add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-fi
-
-if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
-  actual_log=$(kubectl -n ingress get cm ingress-nginx-controller -o jsonpath='{.data.log-format-upstream}')
-  if [[ -n "$actual_log" ]]; then
-    ok "log-format-upstream present"
+say "Ingress"
+if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
+  if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
+    actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
+    check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/31_sync_helmfile_phase_core.sh"
+    actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+    actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+    check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/31_sync_helmfile_phase_core.sh"
+    check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/31_sync_helmfile_phase_core.sh"
   else
-    mismatch "log-format-upstream missing"
+    mismatch "ingress-nginx service not found"
+    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+  fi
+
+  if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
+    actual_log=$(kubectl -n ingress get cm ingress-nginx-controller -o jsonpath='{.data.log-format-upstream}')
+    if [[ -n "$actual_log" ]]; then
+      ok "log-format-upstream present"
+    else
+      mismatch "log-format-upstream missing"
+      add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+    fi
+  else
+    mismatch "ingress-nginx configmap not found"
+    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+  fi
+
+  if kubectl get ingressclass nginx >/dev/null 2>&1; then
+    actual_default=$(kubectl get ingressclass nginx -o jsonpath='{.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class}')
+    check_eq "ingressclass.default" "true" "$actual_default" "scripts/31_sync_helmfile_phase_core.sh"
+  else
+    mismatch "ingressclass nginx not found"
     add_suggest "scripts/31_sync_helmfile_phase_core.sh"
   fi
 else
-  mismatch "ingress-nginx configmap not found"
-  add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-fi
-
-if kubectl get ingressclass nginx >/dev/null 2>&1; then
-  actual_default=$(kubectl get ingressclass nginx -o jsonpath='{.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class}')
-  check_eq "ingressclass.default" "true" "$actual_default" "scripts/31_sync_helmfile_phase_core.sh"
-else
-  mismatch "ingressclass nginx not found"
-  add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+  ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping ingress-nginx specific checks"
 fi
 
 say "oauth2-proxy"
@@ -269,7 +273,7 @@ else
 fi
 
 say "MinIO"
-if feature_is_enabled minio; then
+if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
   if kubectl -n storage get secret minio-creds >/dev/null 2>&1; then
     ok "minio-creds secret present"
   else
@@ -295,7 +299,11 @@ if feature_is_enabled minio; then
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
 else
-  ok "$(feature_flag_var minio)=false; skipping"
+  if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
+    ok "OBJECT_STORAGE_PROVIDER=${OBJECT_STORAGE_PROVIDER:-minio}; skipping MinIO checks"
+  else
+    ok "$(feature_flag_var minio)=false; skipping"
+  fi
 fi
 
 if [[ "$fail" -eq 1 ]]; then

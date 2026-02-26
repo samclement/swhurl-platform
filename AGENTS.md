@@ -27,6 +27,8 @@
 - Orchestrator run order
   - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.
   - Config contract now validates provider intent flags in `scripts/94_verify_config_inputs.sh`: `INGRESS_PROVIDER=nginx|traefik`, `OBJECT_STORAGE_PROVIDER=minio|ceph` (currently informational scaffolding; not yet wired to release selection).
+  - Provider gating is partially wired: `helmfile.yaml.gotmpl` installs ingress-nginx only when `INGRESS_PROVIDER=nginx`, installs MinIO only when `OBJECT_STORAGE_PROVIDER=minio`, and conditionally removes ingress-nginx `needs` edges for provider-flexible releases.
+  - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/90_verify_runtime_smoke.sh` and `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
   - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is now native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install), with `scripts/manual_configure_route53_dns_updater.sh` retained as legacy compatibility path.
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.

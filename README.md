@@ -71,7 +71,7 @@ This is the top-level structure the repo follows (each phase has its own verific
 
 Most platform services are installed declaratively via Helmfile and grouped into two phases:
 
-- **Core**: cert-manager + ingress-nginx (Helmfile label `phase=core`)
+- **Core**: cert-manager + ingress layer (ingress-nginx only when `INGRESS_PROVIDER=nginx`) (Helmfile label `phase=core`)
 - **Platform**: oauth2-proxy + clickstack + otel-k8s collectors + minio (Helmfile label `phase=platform`)
 
 The default `./run.sh` path uses these scripts:
@@ -105,6 +105,7 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 - `TIMEOUT_SECS`: Helm/Helmfile timeouts (default `300`).
 - `INGRESS_PROVIDER`: provider intent flag (`nginx` or `traefik`; migration scaffolding).
 - `OBJECT_STORAGE_PROVIDER`: provider intent flag (`minio` or `ceph`; migration scaffolding).
+  - Current effect: ingress-nginx is installed only when `INGRESS_PROVIDER=nginx`; MinIO is installed only when `OBJECT_STORAGE_PROVIDER=minio`.
 
 Feature flags:
 

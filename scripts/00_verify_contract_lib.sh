@@ -145,11 +145,20 @@ verify_expected_releases() {
     "kube-system/platform-namespaces"
     "cert-manager/cert-manager"
     "kube-system/platform-issuers"
-    "ingress/ingress-nginx"
   )
+
+  case "${INGRESS_PROVIDER:-nginx}" in
+    nginx|"" ) expected+=("ingress/ingress-nginx") ;;
+    traefik ) ;;
+    * ) ;;
+  esac
+
   local key release
   for key in "${FEATURE_KEYS[@]}"; do
     feature_is_enabled "$key" || continue
+    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
+      continue
+    fi
     while IFS= read -r release; do
       [[ -n "$release" ]] || continue
       if [[ -z "${seen[$release]+x}" ]]; then
@@ -166,6 +175,9 @@ verify_required_vars_for_enabled_features() {
   local key var
   for key in "${FEATURE_KEYS[@]}"; do
     feature_is_enabled "$key" || continue
+    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
+      continue
+    fi
     while IFS= read -r var; do
       [[ -n "$var" ]] || continue
       [[ -n "${seen[$var]+x}" ]] && continue
@@ -187,6 +199,9 @@ verify_effective_non_secret_vars() {
 
   for key in "${FEATURE_KEYS[@]}"; do
     feature_is_enabled "$key" || continue
+    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
+      continue
+    fi
     while IFS= read -r var; do
       [[ -n "$var" ]] || continue
       [[ -n "${seen[$var]+x}" ]] && continue

@@ -168,7 +168,7 @@ releases:
       - infra/values/minio-helmfile.yaml.gotmpl
 
   - name: hello-web
-    namespace: apps
+    namespace: {{ .Environment.Values.computed.appNamespace }}
     chart: ./charts/apps-hello
     installed: true
     needs:

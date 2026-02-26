@@ -36,6 +36,8 @@ jobs:
           ./scripts/manual_install_k3s_minimal.sh --dry-run
           ./scripts/manual_configure_route53_dns_updater.sh --dry-run
           ./run.sh --dry-run
+          ./run.sh --dry-run --profile profiles/overlay-staging.env
+          ./run.sh --dry-run --profile profiles/overlay-prod.env
           ./run.sh --dry-run --profile profiles/provider-traefik.env
           ./run.sh --dry-run --profile profiles/provider-ceph.env
           ./run.sh --dry-run --profile profiles/provider-traefik-ceph.env
@@ -66,6 +68,8 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/ingress-nginx >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
+          kubectl kustomize cluster/overlays/homelab/apps/staging >/dev/null
+          kubectl kustomize cluster/overlays/homelab/apps/prod >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null
           kubectl kustomize cluster/base/cert-manager >/dev/null
           kubectl kustomize cluster/base/cert-manager/issuers >/dev/null

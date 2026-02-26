@@ -1,16 +1,10 @@
 labels:
   platform.swhurl.io/managed: "true"
 
-# Keep the existing external contract:
-# - CLUSTER_ISSUER=selfsigned -> install only selfsigned
-# - CLUSTER_ISSUER=letsencrypt -> install letsencrypt-staging + letsencrypt-prod + letsencrypt alias (selected by LETSENCRYPT_ENV)
-mode: {{ .Environment.Values.issuer | quote }}
-
 letsencrypt:
-  # Only used when mode=letsencrypt
   email: {{ env "ACME_EMAIL" | default "" | quote }}
   ingressClass: {{ .Environment.Values.computed.ingressClass | quote }}
-  createStagingIssuer: {{ eq (env "LETSENCRYPT_CREATE_STAGING_ISSUER" | default "true") "true" }}
-  createProdIssuer: {{ eq (env "LETSENCRYPT_CREATE_PROD_ISSUER" | default "true") "true" }}
   selectedEnv: {{ env "LETSENCRYPT_ENV" | default "staging" | quote }}
+  stagingServer: {{ env "LETSENCRYPT_STAGING_SERVER" | default "https://acme-staging-v02.api.letsencrypt.org/directory" | quote }}
+  prodServer: {{ env "LETSENCRYPT_PROD_SERVER" | default "https://acme-v02.api.letsencrypt.org/directory" | quote }}
   createAlias: true

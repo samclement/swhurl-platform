@@ -173,7 +173,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/base/apps/example
+  path: ./cluster/overlays/homelab/apps/staging
   prune: true
   wait: true
   timeout: 10m

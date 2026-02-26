@@ -111,6 +111,8 @@ Use a profile:
 
 ```bash
 ./run.sh --profile profiles/minimal.env
+./run.sh --profile profiles/overlay-staging.env
+./run.sh --profile profiles/overlay-prod.env
 ```
 
 ## Key Flags and Inputs
@@ -119,10 +121,12 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 
 - `KUBECONFIG`: kubectl context for the target cluster (or use `~/.kube/config`).
 - `BASE_DOMAIN`: base domain used to compute ingress hosts (defaults to `127.0.0.1.nip.io`).
-- `CLUSTER_ISSUER`: `selfsigned` or `letsencrypt` (default `selfsigned`).
-- `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) when `CLUSTER_ISSUER=letsencrypt`.
-- `LETSENCRYPT_CREATE_STAGING_ISSUER`: `true|false` (default `true`).
-- `LETSENCRYPT_CREATE_PROD_ISSUER`: `true|false` (default `true`).
+- `PLATFORM_CLUSTER_ISSUER`: issuer for platform components (`selfsigned|letsencrypt|letsencrypt-staging|letsencrypt-prod`; default `letsencrypt-staging`).
+- `APP_CLUSTER_ISSUER`: issuer for app certificates (defaults to `PLATFORM_CLUSTER_ISSUER`).
+- `APP_NAMESPACE`: sample-app target namespace (`apps-staging|apps-prod`; default `apps-staging`).
+- `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) for alias issuer `letsencrypt`.
+- `LETSENCRYPT_STAGING_SERVER`: optional staging ACME endpoint override.
+- `LETSENCRYPT_PROD_SERVER`: optional prod ACME endpoint override (set to staging for repeated scratch-cycle safety).
 - `TIMEOUT_SECS`: Helm/Helmfile timeouts (default `300`).
 - `INGRESS_PROVIDER`: provider intent flag (`nginx` or `traefik`; migration scaffolding).
 - `OBJECT_STORAGE_PROVIDER`: provider intent flag (`minio` or `ceph`; migration scaffolding).

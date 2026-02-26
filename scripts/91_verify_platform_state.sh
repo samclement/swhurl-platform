@@ -32,73 +32,58 @@ check_eq() {
 }
 
 say "ClusterIssuer"
-case "${CLUSTER_ISSUER:-selfsigned}" in
-  letsencrypt)
-    le_create_staging="${LETSENCRYPT_CREATE_STAGING_ISSUER:-true}"
-    le_create_prod="${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"
-    if ! is_bool_string "$le_create_staging"; then
-      mismatch "LETSENCRYPT_CREATE_STAGING_ISSUER must be true|false (got: $le_create_staging)"
-      add_suggest "scripts/94_verify_config_inputs.sh"
+expected_platform_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
+if is_allowed_cluster_issuer "$expected_platform_issuer"; then
+  ok "PLATFORM_CLUSTER_ISSUER resolved to ${expected_platform_issuer}"
+else
+  mismatch "PLATFORM_CLUSTER_ISSUER invalid: ${expected_platform_issuer}"
+  add_suggest "scripts/94_verify_config_inputs.sh"
+fi
+
+if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
+  ok "selfsigned ClusterIssuer present"
+else
+  mismatch "ClusterIssuer selfsigned not found"
+  add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+fi
+
+if [[ -z "${ACME_EMAIL:-}" ]]; then
+  warn "ACME_EMAIL is empty; cannot validate letsencrypt issuer emails"
+fi
+
+for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
+  if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
+    ok "${issuer_name} ClusterIssuer present"
+  else
+    mismatch "ClusterIssuer ${issuer_name} not found"
+    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+  fi
+done
+
+if [[ -n "${ACME_EMAIL:-}" ]]; then
+  for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
+    if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
+      actual_email=$(kubectl get clusterissuer "$issuer_name" -o jsonpath='{.spec.acme.email}')
+      check_eq "${issuer_name}.email" "${ACME_EMAIL}" "$actual_email" "scripts/31_sync_helmfile_phase_core.sh"
     fi
-    if ! is_bool_string "$le_create_prod"; then
-      mismatch "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false (got: $le_create_prod)"
-      add_suggest "scripts/94_verify_config_inputs.sh"
-    fi
-    if [[ -z "${ACME_EMAIL:-}" ]]; then
-      warn "ACME_EMAIL is empty; cannot validate letsencrypt email"
-    elif kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
-      actual_email=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.email}')
-      check_eq "letsencrypt.email" "${ACME_EMAIL}" "$actual_email" "scripts/31_sync_helmfile_phase_core.sh"
-      expected_server="$(verify_expected_letsencrypt_server "${LETSENCRYPT_ENV:-staging}")"
-      actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
-      check_eq "letsencrypt.server" "${expected_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
-      if [[ "$le_create_staging" == "true" ]]; then
-        if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
-          ok "letsencrypt-staging ClusterIssuer present"
-        else
-          mismatch "ClusterIssuer letsencrypt-staging not found"
-          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-        fi
-      else
-        if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
-          mismatch "ClusterIssuer letsencrypt-staging present but LETSENCRYPT_CREATE_STAGING_ISSUER=false"
-          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-        else
-          ok "LETSENCRYPT_CREATE_STAGING_ISSUER=false; staging issuer absent"
-        fi
-      fi
-      if [[ "$le_create_prod" == "true" ]]; then
-        if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
-          ok "letsencrypt-prod ClusterIssuer present"
-        else
-          mismatch "ClusterIssuer letsencrypt-prod not found"
-          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-        fi
-      else
-        if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
-          mismatch "ClusterIssuer letsencrypt-prod present but LETSENCRYPT_CREATE_PROD_ISSUER=false"
-          add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-        else
-          ok "LETSENCRYPT_CREATE_PROD_ISSUER=false; prod issuer absent"
-        fi
-      fi
-    else
-      mismatch "ClusterIssuer letsencrypt not found"
-      add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-    fi
-    ;;
-  selfsigned)
-    if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
-      ok "selfsigned ClusterIssuer present"
-    else
-      mismatch "ClusterIssuer selfsigned not found"
-      add_suggest "scripts/31_sync_helmfile_phase_core.sh"
-    fi
-    ;;
-  *)
-    warn "Unknown CLUSTER_ISSUER=${CLUSTER_ISSUER}"
-    ;;
-esac
+  done
+fi
+
+expected_staging_server="$(verify_expected_letsencrypt_server staging)"
+expected_prod_server="$(verify_expected_letsencrypt_server prod)"
+expected_alias_server="$(verify_expected_letsencrypt_server alias "${LETSENCRYPT_ENV:-staging}")"
+if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
+  actual_server=$(kubectl get clusterissuer letsencrypt-staging -o jsonpath='{.spec.acme.server}')
+  check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+fi
+if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+  actual_server=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.server}')
+  check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+fi
+if kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
+  actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
+  check_eq "letsencrypt.server" "${expected_alias_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+fi
 
 say "Cilium"
 if feature_is_enabled cilium; then
@@ -136,7 +121,7 @@ if feature_is_enabled cilium; then
     actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
-    check_eq "hubble-ui.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
+    check_eq "hubble-ui.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
     if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
@@ -207,7 +192,7 @@ if feature_is_enabled oauth2_proxy; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "oauth2-proxy.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "oauth2-proxy.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
   else
     mismatch "oauth2-proxy ingress not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
@@ -222,7 +207,7 @@ if feature_is_enabled clickstack; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "clickstack.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "clickstack.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
     if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
@@ -316,7 +301,7 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "minio.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "minio.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
   else
     mismatch "minio ingress not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
@@ -325,7 +310,7 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
     actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "minio-console.issuer" "${CLUSTER_ISSUER:-}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "minio-console.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
   else
     mismatch "minio-console ingress not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"

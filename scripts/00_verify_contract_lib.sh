@@ -33,10 +33,11 @@ readonly -a VERIFY_HELMFILE_IGNORED_RESOURCE_HEADERS=(
 )
 
 # Teardown/delete-clean contract.
-readonly -a PLATFORM_MANAGED_NAMESPACES=(apps cert-manager ingress logging observability platform-system storage)
+readonly -a PLATFORM_MANAGED_NAMESPACES=(apps-staging apps-prod cert-manager ingress logging observability platform-system storage)
 readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
 readonly -a VERIFY_RELEASE_ALLOWLIST_DEFAULT=(
-  "apps/hello-web"
+  "apps-staging/hello-web"
+  "apps-prod/hello-web"
 )
 
 # During teardown (before Cilium delete), keep Cilium helm release metadata.
@@ -55,17 +56,20 @@ readonly -a VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM=(
 )
 
 # Config input contract.
-readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN CLUSTER_ISSUER)
+readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN PLATFORM_CLUSTER_ISSUER ACME_EMAIL)
 readonly VERIFY_REQUIRED_TIMEOUT_VAR="TIMEOUT_SECS"
+readonly -a VERIFY_ALLOWED_CLUSTER_ISSUERS=(selfsigned letsencrypt letsencrypt-staging letsencrypt-prod)
 readonly -a VERIFY_ALLOWED_LETSENCRYPT_ENVS=(staging prod production)
 readonly -a VERIFY_ALLOWED_INGRESS_PROVIDERS=(nginx traefik)
 readonly -a VERIFY_ALLOWED_OBJECT_STORAGE_PROVIDERS=(minio ceph)
 readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
-  CLUSTER_ISSUER
+  PLATFORM_CLUSTER_ISSUER
+  APP_CLUSTER_ISSUER
+  APP_NAMESPACE
   LETSENCRYPT_ENV
-  LETSENCRYPT_CREATE_STAGING_ISSUER
-  LETSENCRYPT_CREATE_PROD_ISSUER
+  LETSENCRYPT_STAGING_SERVER
+  LETSENCRYPT_PROD_SERVER
   INGRESS_PROVIDER
   OBJECT_STORAGE_PROVIDER
 )
@@ -113,6 +117,11 @@ is_allowed_letsencrypt_env() {
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_LETSENCRYPT_ENVS[@]}"
 }
 
+is_allowed_cluster_issuer() {
+  local value="$1"
+  name_matches_any_pattern "$value" "${VERIFY_ALLOWED_CLUSTER_ISSUERS[@]}"
+}
+
 is_bool_string() {
   local value="$1"
   [[ "$value" == "true" || "$value" == "false" ]]
@@ -139,10 +148,23 @@ verify_oauth_auth_signin() {
 }
 
 verify_expected_letsencrypt_server() {
-  local le_env="${1:-staging}"
-  case "$le_env" in
-    prod|production) printf '%s' "https://acme-v02.api.letsencrypt.org/directory" ;;
-    *) printf '%s' "https://acme-staging-v02.api.letsencrypt.org/directory" ;;
+  local server_type="${1:-alias}"
+  local le_env="${2:-${LETSENCRYPT_ENV:-staging}}"
+  local staging_server="${LETSENCRYPT_STAGING_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+  local prod_server="${LETSENCRYPT_PROD_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
+
+  case "$server_type" in
+    staging) printf '%s' "$staging_server" ;;
+    prod) printf '%s' "$prod_server" ;;
+    alias)
+      case "$le_env" in
+        prod|production) printf '%s' "$prod_server" ;;
+        *) printf '%s' "$staging_server" ;;
+      esac
+      ;;
+    *)
+      printf '%s' "$staging_server"
+      ;;
   esac
 }
 

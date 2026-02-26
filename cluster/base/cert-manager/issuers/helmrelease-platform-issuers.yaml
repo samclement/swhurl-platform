@@ -27,15 +27,14 @@ spec:
       retries: 3
   values:
     # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (CLUSTER_ISSUER/LETSENCRYPT_* / ingress provider) before unsuspending this release.
+    # (PLATFORM_CLUSTER_ISSUER/LETSENCRYPT_* / ingress provider) before unsuspending this release.
     labels:
       platform.swhurl.io/managed: "true"
-    mode: selfsigned
     letsencrypt:
       # Keep safe defaults in scaffold manifests; switch before unsuspending.
       selectedEnv: staging
-      createStagingIssuer: true
-      createProdIssuer: false
+      stagingServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      prodServer: https://acme-v02.api.letsencrypt.org/directory
       createAlias: true
       ingressClass: nginx
       email: ""

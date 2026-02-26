@@ -39,19 +39,7 @@ log_info "Syncing core ClusterIssuers (phase=core-issuers)"
 # already exist without Helm ownership metadata. On existing clusters, adopt them.
 release="platform-issuers"
 release_ns="kube-system"
-case "${CLUSTER_ISSUER:-selfsigned}" in
-  letsencrypt)
-    le_create_staging="${LETSENCRYPT_CREATE_STAGING_ISSUER:-true}"
-    le_create_prod="${LETSENCRYPT_CREATE_PROD_ISSUER:-true}"
-    is_bool_string "$le_create_staging" || die "LETSENCRYPT_CREATE_STAGING_ISSUER must be true|false"
-    is_bool_string "$le_create_prod" || die "LETSENCRYPT_CREATE_PROD_ISSUER must be true|false"
-
-    issuers=(letsencrypt)
-    [[ "$le_create_staging" == "true" ]] && issuers+=(letsencrypt-staging)
-    [[ "$le_create_prod" == "true" ]] && issuers+=(letsencrypt-prod)
-    ;;
-  selfsigned|*) issuers=(selfsigned) ;;
-esac
+issuers=(selfsigned letsencrypt-staging letsencrypt-prod letsencrypt)
 for name in "${issuers[@]}"; do
   adopt_helm_ownership clusterissuer "$name" "$release" "$release_ns"
 done

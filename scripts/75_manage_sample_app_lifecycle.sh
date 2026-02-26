@@ -18,7 +18,7 @@ need_cmd helmfile
 
 log_info "Syncing sample app (helmfile: component=apps-hello)"
 release="hello-web"
-release_ns="apps"
+release_ns="${APP_NAMESPACE:-apps-staging}"
 for kind in deploy svc ingress; do
   adopt_helm_ownership "$kind" hello-web "$release" "$release_ns" "$release_ns"
 done
@@ -29,9 +29,9 @@ if kubectl api-resources --api-group=cert-manager.io -o name 2>/dev/null | rg -q
 fi
 helmfile_cmd -l component=apps-hello sync
 
-HOST="$(kubectl -n apps get ingress hello-web -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
+HOST="$(kubectl -n "$release_ns" get ingress hello-web -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
 if [[ -n "$HOST" ]]; then
-  log_info "Sample app deployed at https://${HOST}"
+  log_info "Sample app deployed in namespace ${release_ns} at https://${HOST}"
 else
-  log_info "Sample app deployed"
+  log_info "Sample app deployed in namespace ${release_ns}"
 fi

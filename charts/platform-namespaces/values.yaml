@@ -5,7 +5,8 @@ namespaces:
   - logging
   - observability
   - storage
-  - apps
+  - apps-staging
+  - apps-prod
   # NOTE: cilium-secrets is owned by the Cilium chart. Do not manage it here or
   # Helm will fail to install Cilium on clusters where this chart ran first.
 

@@ -43,6 +43,13 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: apps
+  name: apps-staging
+  labels:
+    platform.swhurl.io/managed: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps-prod
   labels:
     platform.swhurl.io/managed: "true"

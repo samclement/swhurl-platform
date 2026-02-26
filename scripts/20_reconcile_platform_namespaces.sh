@@ -22,7 +22,7 @@ need_cmd helmfile
 # already exist without Helm ownership metadata. On existing clusters, adopt them.
 release="platform-namespaces"
 release_ns="kube-system"
-namespaces=(platform-system ingress cert-manager logging observability storage apps)
+namespaces=(platform-system ingress cert-manager logging observability storage apps-staging apps-prod)
 for ns in "${namespaces[@]}"; do
   adopt_helm_ownership ns "$ns" "$release" "$release_ns"
 done

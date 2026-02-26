@@ -34,7 +34,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 
 5) Platform services & verification
 - `scripts/31_sync_helmfile_phase_core.sh` (Helmfile: `phase=core`, installs cert-manager and installs ingress-nginx only when `INGRESS_PROVIDER=nginx`)
-- `scripts/31_sync_helmfile_phase_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`, default `LETSENCRYPT_ENV=staging`)
+- `scripts/31_sync_helmfile_phase_core.sh` also applies ClusterIssuers via a local Helm chart (Helmfile: `phase=core-issuers`), always creating `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` (alias from `LETSENCRYPT_ENV`)
 - `scripts/29_prepare_platform_runtime_inputs.sh` (kubectl: secrets/configmaps required by Helm releases)
 - `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags and provider settings; MinIO only when `OBJECT_STORAGE_PROVIDER=minio`)
 
@@ -43,6 +43,7 @@ Notes:
 
 6) Test application & verification
 - `scripts/75_manage_sample_app_lifecycle.sh`
+  - Uses `APP_NAMESPACE` (default `apps-staging`).
 
 7) Cluster verification suite
 - Core gates (default; `FEAT_VERIFY=true`):
@@ -75,5 +76,5 @@ To test full lifecycle repeatedly (k3s uninstall/install + apply/delete), use:
 ```
 
 Notes:
-- `profiles/test-loop.env` keeps ACME on staging and disables prod issuer creation.
-- Use `profiles/test-loop-selfsigned.env` to avoid ACME traffic entirely.
+- `profiles/test-loop.env` keeps ACME issuer endpoints on staging (including the prod-named issuer) to avoid production Let’s Encrypt traffic.
+- Use `profiles/overlay-staging.env` for normal staging runs and `profiles/overlay-prod.env` for production promotion.

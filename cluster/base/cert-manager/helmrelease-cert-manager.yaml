@@ -26,5 +26,3 @@ spec:
       enabled: true
     startupapicheck:
       enabled: false
-    labels:
-      platform.swhurl.io/managed: "true"

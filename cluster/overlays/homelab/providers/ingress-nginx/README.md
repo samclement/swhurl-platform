@@ -2,5 +2,7 @@
 
 Compatibility overlay while clusters transition away from ingress-nginx.
 
-Populate this folder only for migration/rollback scenarios where nginx remains the
-active ingress provider.
+Current scaffold:
+
+- `helmrelease-ingress-nginx.yaml`: suspended Flux `HelmRelease` matching current
+  ingress-nginx chart/version and logging defaults.

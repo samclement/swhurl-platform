@@ -34,6 +34,8 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     (`oauth2-proxy`, `clickstack`, `otel` collectors, `minio`) as explicit migration targets.
   - Example app layer now includes a suspended Flux `HelmRelease` scaffold
     (`cluster/base/apps/example/helmrelease-hello-web.yaml`).
+  - Ingress provider sequencing now has an explicit layer (`homelab-ingress`) backed by
+    provider overlay scaffolding (`cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml`).
 - Phase 5/6 (GitOps parity + legacy retirement): pending
 
 ## Target Technology Boundaries

@@ -16,4 +16,4 @@ Use this tree as the build-out path for phased GitOps adoption.
 Safety default:
 
 - In `cluster/overlays/homelab/flux/stack-kustomizations.yaml`, only the namespaces layer is active by default.
-- Remaining layers (`cilium`, `cert-manager`, `issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage`, `example-app`) start with `spec.suspend: true` until each migration phase is ready.
+- Remaining layers (`cilium`, `cert-manager`, `issuers`, `ingress`, `oauth2-proxy`, `clickstack`, `otel`, `storage`, `example-app`) start with `spec.suspend: true` until each migration phase is ready.

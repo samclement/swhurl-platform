@@ -258,22 +258,18 @@ if feature_is_enabled otel_k8s; then
     mismatch "otel-k8s cluster deployment release not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
-  if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
-    ok "hyperdx-secret present"
-  else
-    mismatch "hyperdx-secret missing"
-    add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
-  fi
-  if kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1 && kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
-    sender_token="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d || true)"
+  sender_token="${CLICKSTACK_INGESTION_KEY:-}"
+  if [[ -z "$sender_token" ]]; then
+    mismatch "CLICKSTACK_INGESTION_KEY is empty; cannot verify otel token alignment"
+    add_suggest "scripts/94_verify_config_inputs.sh"
+  elif kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     receiver_token="$(
       kubectl -n observability exec deploy/clickstack-otel-collector -- sh -lc \
         "sed -n '40,60p' /etc/otel/supervisor-data/effective.yaml | sed -n 's/^[[:space:]]*-[[:space:]]*//p' | head -n1" \
         2>/dev/null || true
     )"
     if [[ -n "$sender_token" && -n "$receiver_token" && "$sender_token" != "$receiver_token" ]]; then
-      mismatch "otel token mismatch: logging/hyperdx-secret does not match clickstack receiver token"
-      add_suggest "scripts/29_prepare_platform_runtime_inputs.sh"
+      mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY does not match clickstack receiver token"
       add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
     else
       ok "otel token alignment check passed"

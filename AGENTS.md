@@ -16,7 +16,7 @@
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
-  - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy `scripts/compat/run-legacy-pipeline.sh` alias was removed.
+  - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
@@ -73,7 +73,7 @@
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh`: creates required Secrets for Helm releases (oauth2-proxy secret, HyperDX ingestion secret) and cleans up legacy managed leftovers on delete (`otel-config-vars`, `minio-creds`).
+    - `scripts/29_prepare_platform_runtime_inputs.sh` is now a manual runtime-secret bridge and delete helper for legacy managed leftovers (`otel-config-vars`, `minio-creds`); it is no longer part of the default apply plan.
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
@@ -130,21 +130,21 @@
     - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
     - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
     - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` in `config.env` and install oauth2-proxy via the default pipeline (`scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`).
+  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OAUTH_COOKIE_SECRET` in `config.env`/`profiles/secrets.env`; oauth2-proxy is installed by `scripts/36_sync_helmfile_phase_platform.sh`.
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
-  - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). The script now generates a 32-char alphanumeric secret when `OAUTH_COOKIE_SECRET` is unset.
+  - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). `OAUTH_COOKIE_SECRET` is now required in config/contracts for the default apply path; the legacy bridge script can still generate one when used manually.
 
 - Observability with ClickStack
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
   - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Default install path uses `scripts/29_prepare_platform_runtime_inputs.sh` (creates `hyperdx-secret`) and `scripts/36_sync_helmfile_phase_platform.sh` (installs the collector releases).
-  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and only consume `hyperdx-secret`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
+  - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
+  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_INGESTION_KEY`; `otel-config-vars` is treated as legacy cleanup-only in `scripts/29_prepare_platform_runtime_inputs.sh --delete`.
   - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; `scripts/29_prepare_platform_runtime_inputs.sh` keeps `minio-creds` as delete-only legacy cleanup.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
-  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/29_prepare_platform_runtime_inputs.sh` + `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Source of truth for ingestion key is HyperDX UI (API Keys) after startup/login. Set `CLICKSTACK_INGESTION_KEY` from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
@@ -336,7 +336,6 @@ If oauth2-proxy is enabled, auth annotations are applied declaratively by Helmfi
 Install Kubernetes-focused OTel collectors (daemonset + deployment) and forward telemetry to ClickStack:
 
 ```
-./scripts/29_prepare_platform_runtime_inputs.sh
 ./scripts/36_sync_helmfile_phase_platform.sh
 ```
 

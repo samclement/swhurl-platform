@@ -21,8 +21,8 @@ root="$SCRIPT_DIR/.."
 config_file="$root/config.env"
 helmfile_file="$root/helmfile.yaml.gotmpl"
 
-# Verify the supported default pipeline uses the Helmfile phase scripts.
-for s in 31_sync_helmfile_phase_core.sh 29_prepare_platform_runtime_inputs.sh 36_sync_helmfile_phase_platform.sh; do
+# Verify the supported default apply pipeline uses the Helmfile phase scripts.
+for s in 31_sync_helmfile_phase_core.sh 36_sync_helmfile_phase_platform.sh; do
   p="$SCRIPT_DIR/$s"
   if [[ -f "$p" ]]; then
     ok "$s: present"
@@ -31,10 +31,22 @@ for s in 31_sync_helmfile_phase_core.sh 29_prepare_platform_runtime_inputs.sh 36
   fi
 done
 
-if rg -q '31_sync_helmfile_phase_core\.sh' "$run" && rg -q '29_prepare_platform_runtime_inputs\.sh' "$run" && rg -q '36_sync_helmfile_phase_platform\.sh' "$run"; then
-  ok "run.sh: phase scripts wired into plan"
+if rg -q '31_sync_helmfile_phase_core\.sh' "$run" && rg -q '36_sync_helmfile_phase_platform\.sh' "$run"; then
+  ok "run.sh: apply phase scripts wired into plan"
 else
-  bad "run.sh: phase scripts wired into plan"
+  bad "run.sh: apply phase scripts wired into plan"
+fi
+
+if [[ -f "$SCRIPT_DIR/29_prepare_platform_runtime_inputs.sh" ]]; then
+  ok "29_prepare_platform_runtime_inputs.sh: present (manual bridge/delete helper)"
+else
+  bad "29_prepare_platform_runtime_inputs.sh: present (manual bridge/delete helper)"
+fi
+
+if rg -n 'build_delete_plan' -A40 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
+  ok "run.sh: delete plan includes 29_prepare_platform_runtime_inputs.sh helper"
+else
+  bad "run.sh: delete plan includes 29_prepare_platform_runtime_inputs.sh helper"
 fi
 
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then

@@ -90,9 +90,9 @@ Legacy scripts still support Helmfile-driven applies/deletes in two grouped phas
 The default `./run.sh` path uses these scripts:
 
 - `scripts/31_sync_helmfile_phase_core.sh`: `helmfile sync/destroy -l phase=core` and waits for cert-manager webhook CA injection (needed before creating issuers).
-- `scripts/29_prepare_platform_runtime_inputs.sh`: creates/deletes the small set of non-Helm resources the charts depend on (Secrets; plus legacy ConfigMap cleanup during delete).
 - `scripts/36_sync_helmfile_phase_platform.sh`: `helmfile sync/destroy -l phase=platform`.
 
+`scripts/29_prepare_platform_runtime_inputs.sh` remains as a manual compatibility bridge for runtime secrets and as a delete helper for legacy managed leftovers.
 `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
 
 Run everything:
@@ -183,7 +183,7 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 4) `kubectl` (apply and context)
 - `kubectl` reads `KUBECONFIG` (or `~/.kube/config`) for cluster access.
 - `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
-- Some charts rely on runtime Secrets that are created with `kubectl` (see `scripts/29_prepare_platform_runtime_inputs.sh`). Those resources are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`.
+- Flux/manual compatibility path: runtime bridge secrets can still be prepared with `scripts/29_prepare_platform_runtime_inputs.sh` (and are labeled `platform.swhurl.io/managed=true` for scoped deletion in `--delete`).
 
 5) `kustomize` (optional)
 - Kustomize is not used by the default pipeline anymore; it’s kept as an optional tool for teams that prefer raw manifests for apps.

@@ -4,7 +4,6 @@ metadata:
   name: ingress-nginx
   namespace: ingress
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: ingress-nginx
@@ -24,8 +23,6 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): align ingress service/logging defaults with env/provider contract
-    # if they diverge from the legacy Helmfile path.
     controller:
       replicaCount: 1
       ingressClassResource:

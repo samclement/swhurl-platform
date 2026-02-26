@@ -4,7 +4,6 @@ metadata:
   name: platform-issuers
   namespace: kube-system
 spec:
-  # Safety default: keep HelmRelease suspended until migration cutover from legacy Helmfile.
   suspend: true
   interval: 30m
   releaseName: platform-issuers
@@ -26,15 +25,12 @@ spec:
     remediation:
       retries: 3
   values:
-    # TODO(migration): replace scaffold defaults with environment-driven substitution
-    # (PLATFORM_CLUSTER_ISSUER/LETSENCRYPT_* / ingress provider) before unsuspending this release.
     labels:
       platform.swhurl.io/managed: "true"
     letsencrypt:
-      # Keep safe defaults in scaffold manifests; switch before unsuspending.
       selectedEnv: staging
       stagingServer: https://acme-staging-v02.api.letsencrypt.org/directory
       prodServer: https://acme-v02.api.letsencrypt.org/directory
       createAlias: true
       ingressClass: nginx
-      email: ""
+      email: admin@homelab.swhurl.com

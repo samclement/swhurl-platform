@@ -50,6 +50,11 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/base/cilium
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m
@@ -142,6 +147,11 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/base/oauth2-proxy
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m
@@ -160,6 +170,11 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/base/clickstack
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m
@@ -195,6 +210,11 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/overlays/homelab/providers/storage-minio
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m

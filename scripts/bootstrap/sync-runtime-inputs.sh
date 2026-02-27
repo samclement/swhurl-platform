@@ -37,6 +37,8 @@ oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
 acme_email="${ACME_EMAIL:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
+platform_cluster_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
+letsencrypt_env="${LETSENCRYPT_ENV:-staging}"
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   require_non_empty "OIDC_CLIENT_ID" "$oidc_client_id"
@@ -49,6 +51,17 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
 fi
 
 require_non_empty "ACME_EMAIL" "$acme_email"
+
+if ! is_allowed_cluster_issuer "$platform_cluster_issuer"; then
+  die "PLATFORM_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
+fi
+
+if ! is_allowed_letsencrypt_env "$letsencrypt_env"; then
+  die "LETSENCRYPT_ENV must be staging|prod|production"
+fi
+if [[ "$letsencrypt_env" == "production" ]]; then
+  letsencrypt_env="prod"
+fi
 
 if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
@@ -66,6 +79,8 @@ kubectl create secret generic platform-runtime-inputs \
   --from-literal=OIDC_CLIENT_SECRET="$oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
   --from-literal=ACME_EMAIL="$acme_email" \
+  --from-literal=PLATFORM_CLUSTER_ISSUER="$platform_cluster_issuer" \
+  --from-literal=LETSENCRYPT_ENV="$letsencrypt_env" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
   --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -

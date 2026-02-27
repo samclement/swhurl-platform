@@ -35,8 +35,6 @@ oidc_client_id="${OIDC_CLIENT_ID:-}"
 oidc_client_secret="${OIDC_CLIENT_SECRET:-}"
 oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
-clickstack_bootstrap_email="${CLICKSTACK_BOOTSTRAP_EMAIL:-}"
-clickstack_bootstrap_password="${CLICKSTACK_BOOTSTRAP_PASSWORD:-}"
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   require_non_empty "OIDC_CLIENT_ID" "$oidc_client_id"
@@ -52,27 +50,12 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true"
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
 fi
 
-if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
-  require_non_empty "CLICKSTACK_BOOTSTRAP_EMAIL" "$clickstack_bootstrap_email"
-  require_non_empty "CLICKSTACK_BOOTSTRAP_PASSWORD" "$clickstack_bootstrap_password"
-
-  if (( ${#clickstack_bootstrap_password} < 12 )) \
-    || ! [[ "$clickstack_bootstrap_password" =~ [A-Z] ]] \
-    || ! [[ "$clickstack_bootstrap_password" =~ [a-z] ]] \
-    || ! [[ "$clickstack_bootstrap_password" =~ [0-9] ]] \
-    || ! [[ "$clickstack_bootstrap_password" =~ [^A-Za-z0-9] ]]; then
-    die "CLICKSTACK_BOOTSTRAP_PASSWORD must be >=12 chars and include upper/lower/digit/special"
-  fi
-fi
-
 kubectl create secret generic platform-runtime-inputs \
   -n flux-system \
   --from-literal=OIDC_CLIENT_ID="$oidc_client_id" \
   --from-literal=OIDC_CLIENT_SECRET="$oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
-  --from-literal=CLICKSTACK_BOOTSTRAP_EMAIL="$clickstack_bootstrap_email" \
-  --from-literal=CLICKSTACK_BOOTSTRAP_PASSWORD="$clickstack_bootstrap_password" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n flux-system annotate secret platform-runtime-inputs kustomize.toolkit.fluxcd.io/prune=disabled --overwrite >/dev/null

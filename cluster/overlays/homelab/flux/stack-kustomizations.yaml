@@ -161,29 +161,11 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-clickstack-bootstrap
-  namespace: flux-system
-spec:
-  dependsOn:
-    - name: homelab-clickstack
-    - name: homelab-runtime-inputs
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: swhurl-platform
-  path: ./cluster/base/clickstack-bootstrap
-  prune: true
-  wait: true
-  timeout: 10m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: homelab-otel
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-clickstack-bootstrap
+    - name: homelab-clickstack
     - name: homelab-runtime-inputs
   interval: 10m
   sourceRef:

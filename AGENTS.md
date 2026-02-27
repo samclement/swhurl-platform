@@ -24,7 +24,7 @@
   - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
-  - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage} -> example-app`).
+  - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
   - Runtime input targets live in `cluster/base/runtime-inputs`; Flux `homelab-runtime-inputs` now injects values via `postBuild.substituteFrom` from external `flux-system/platform-runtime-inputs`.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
@@ -41,7 +41,7 @@
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
   - `make flux-reconcile` now syncs `flux-system/platform-runtime-inputs` from local env/profile first (`scripts/bootstrap/sync-runtime-inputs.sh`) and then reconciles `homelab-flux-sources` before `homelab-flux-stack`.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` fails fast on invalid runtime secrets (oauth2-proxy cookie length and ClickStack bootstrap password policy) before Flux reconcile to prevent late `clickstack-team-bootstrap` job failures.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` fails fast on invalid runtime secrets (for example oauth2-proxy cookie length) before Flux reconcile.
   - External runtime source secret gotcha: because `platform-runtime-inputs` was previously Flux inventory-owned, prune can delete it after migration. `scripts/bootstrap/sync-runtime-inputs.sh` now annotates `flux-system/platform-runtime-inputs` with `kustomize.toolkit.fluxcd.io/prune=disabled` to keep it external and persistent.
   - `cluster/flux/kustomizations.yaml` now includes `homelab-flux-sources`; `homelab-flux-stack` depends on it so HelmRepository drift (for example `metrics-server` source missing) is self-healed.
   - Parent Flux `Kustomization` `cluster/flux/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.
@@ -168,8 +168,7 @@
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
   - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; legacy runtime-input cleanup (`otel-config-vars`) is handled by `scripts/99_execute_teardown.sh`.
   - Flux path key wiring: `cluster/base/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` into both `logging/hyperdx-secret` and `observability/clickstack-runtime-inputs`; ClickStack HelmRelease consumes `observability/clickstack-runtime-inputs` via `valuesFrom.targetPath=hyperdx.apiKey`.
-  - ClickStack first-team bootstrap is now declarative via `cluster/base/clickstack-bootstrap/job-clickstack-team-bootstrap.yaml`; it waits for `clickstack-app` readiness, checks `/installation`, and only calls `/register/password` when no team exists.
-  - Bootstrap credentials are projected from runtime inputs: `platform-runtime-inputs.CLICKSTACK_BOOTSTRAP_EMAIL/PASSWORD` -> `observability/clickstack-bootstrap-inputs`.
+  - ClickStack first-team bootstrap is manual via the ClickStack UI; the repo no longer deploys an in-cluster bootstrap job.
   - Runtime gotcha: `clickstack-otel-collector` may show service ports `4317/4318` but still refuse OTLP traffic when its active OpAMP config does not attach `otlp/hyperdx` to any pipeline. Verify with `kubectl exec ... netstat -lntp` (only `13133/8888/24225` means OTLP is inactive) and `kubectl exec ... tail /etc/otel/supervisor-data/agent.log`.
   - Bootstrap gotcha: OTLP ingestion is disabled until at least one ClickStack team exists (`/installation` returns `{"isTeamExisting":false}`), because OpAMP only enables `otlp/hyperdx` receivers when team API keys exist. Complete initial UI registration/team setup before expecting `:4317/:4318` listeners.
   - Team bootstrap gotcha: ClickStack chart value `hyperdx.apiKey` alone does not create a Team record. In chart `1.1.1`, team creation still relies on registration/API flow (or local app mode only via `IS_LOCAL_APP_MODE=DANGEROUSLY_is_local_app_mode💀` in `hyperdx.env`, not recommended for shared/prod clusters).
@@ -180,7 +179,7 @@
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_BOOTSTRAP_EMAIL`, `CLICKSTACK_BOOTSTRAP_PASSWORD`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`.
   - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
   - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.

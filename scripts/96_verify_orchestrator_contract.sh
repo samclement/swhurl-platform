@@ -85,12 +85,11 @@ else
   bad "Runtime input sync command is available (scripts/bootstrap/sync-runtime-inputs.sh + Makefile target)"
 fi
 
-if rg -q 'name: homelab-clickstack-bootstrap' "$flux_stack_file" \
-  && rg -q 'path: ./cluster/base/clickstack-bootstrap' "$flux_stack_file" \
-  && rg -n 'name: homelab-otel' -A12 "$flux_stack_file" | rg -q 'homelab-clickstack-bootstrap'; then
-  ok "Flux stack: clickstack bootstrap sequencing wired (clickstack -> clickstack-bootstrap -> otel)"
+if ! rg -q 'name: homelab-clickstack-bootstrap' "$flux_stack_file" \
+  && rg -n 'name: homelab-otel' -A12 "$flux_stack_file" | rg -q 'name: homelab-clickstack'; then
+  ok "Flux stack: clickstack bootstrap kustomization removed; otel depends directly on clickstack"
 else
-  bad "Flux stack: clickstack bootstrap sequencing wired (clickstack -> clickstack-bootstrap -> otel)"
+  bad "Flux stack: clickstack bootstrap kustomization removed; otel depends directly on clickstack"
 fi
 
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then

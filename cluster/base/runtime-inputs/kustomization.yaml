@@ -4,4 +4,3 @@ resources:
   - secret-oauth2-proxy.yaml
   - secret-hyperdx.yaml
   - secret-clickstack-runtime-inputs.yaml
-  - secret-clickstack-bootstrap-inputs.yaml

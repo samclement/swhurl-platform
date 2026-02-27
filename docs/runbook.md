@@ -20,7 +20,7 @@ Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration r
 Default active dependency chain:
 
 - `homelab-flux-sources -> homelab-flux-stack`
-- inside `homelab-flux-stack`: `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`
+- inside `homelab-flux-stack`: `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage}} -> example-app`
 
 Default deployed app path:
 
@@ -67,7 +67,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 Notes:
 - Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external; sync it with `make runtime-inputs-sync` before `make flux-reconcile`.
-- ClickStack first-team bootstrap is handled by in-cluster Job `observability/clickstack-team-bootstrap` and requires `CLICKSTACK_BOOTSTRAP_EMAIL` + `CLICKSTACK_BOOTSTRAP_PASSWORD` in runtime inputs.
+- ClickStack first-team bootstrap is handled manually in the ClickStack UI.
 - Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 - `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.
 

@@ -28,6 +28,11 @@ Overlay selection note:
 - App URL/issuer/namespace are runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
 - `--profile` values drive runtime-input intent (including app URL/issuer and cert mode).
 
+Layer boundaries:
+- `cluster/` is the Flux desired-state layer (committed manifests and overlay paths).
+- `platform-runtime-inputs` is the only env-input bridge layer (`make runtime-inputs-sync`).
+- `Makefile` is the operator API layer (invokes sync + reconcile workflows).
+
 ## Common Use Cases
 
 ### 1) Clean install / teardown
@@ -59,13 +64,13 @@ Notes:
 
 ```bash
 # staging platform cert intent
-make platform-certs-staging
+make platform-certs CERT_ENV=staging
 
 # production platform cert intent
-make platform-certs-prod
+make platform-certs CERT_ENV=prod
 ```
 
-These targets sync runtime inputs then reconcile the Flux stack.
+Shortcuts are also available: `make platform-certs-staging`, `make platform-certs-prod`.
 
 ### 3) Post-install secrets updates + ClickStack caveats
 
@@ -94,38 +99,22 @@ flux reconcile kustomization homelab-runtime-inputs -n flux-system --with-source
 flux reconcile kustomization homelab-otel -n flux-system --with-source
 ```
 
-### 4) Platform cert mode: staging vs production Let's Encrypt
+### 4) App deployment test matrix (URL x Let's Encrypt)
 
-Both ClusterIssuers remain deployed. Platform components switch issuer via `PLATFORM_CLUSTER_ISSUER`.
-
-Use runtime-input toggle:
+Use one target with explicit intent flags:
 
 ```bash
-# staging
-PLATFORM_CLUSTER_ISSUER=letsencrypt-staging make runtime-inputs-sync
-make flux-reconcile
-
-# production
-PLATFORM_CLUSTER_ISSUER=letsencrypt-prod make runtime-inputs-sync
-make flux-reconcile
-```
-
-Detailed runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
-
-### 5) App deployment test matrix (URL x Let's Encrypt)
-
-The following targets update `APP_HOST` + `APP_CLUSTER_ISSUER` intent and reconcile:
-
-```bash
-make app-test-staging-le-staging
-make app-test-staging-le-prod
-make app-test-prod-le-staging
-make app-test-prod-le-prod
+make app-test APP_ENV=staging LE_ENV=staging
+make app-test APP_ENV=staging LE_ENV=prod
+make app-test APP_ENV=prod LE_ENV=staging
+make app-test APP_ENV=prod LE_ENV=prod
 ```
 
 URL mapping:
 - staging URL: `staging.hello.homelab.swhurl.com`
 - prod URL: `hello.homelab.swhurl.com`
+
+Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
 ## Orchestration
 

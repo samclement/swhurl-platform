@@ -6,7 +6,7 @@ Structure:
 
 - `flux/`: Flux bootstrap manifests and source definitions.
 - `base/`: component HelmRelease definitions (`cert-manager`, `cert-manager/issuers`, `cilium`, `metrics-server`, `oauth2-proxy`, `clickstack`, `otel`, `storage/*`, `apps/example`).
-- `overlays/homelab/`: default homelab composition (nginx + minio + app staging overlay).
+- `overlays/homelab/`: default homelab composition (nginx + minio providers; app intent comes from runtime inputs).
 - `overlays/homelab/apps/`: optional staging/prod app overlay examples.
 - `overlays/homelab/providers/`: explicit ingress/storage provider overlays.
 - `overlays/homelab/flux/`: Flux `Kustomization` dependency chain.

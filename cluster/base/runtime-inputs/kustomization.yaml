@@ -5,6 +5,7 @@ resources:
   - secret-oauth2-proxy.yaml
   - secret-hyperdx.yaml
   - secret-clickstack-runtime-inputs.yaml
+  - secret-clickstack-bootstrap-inputs.yaml
 replacements:
   - source:
       kind: Secret
@@ -56,3 +57,25 @@ replacements:
           namespace: observability
         fieldPaths:
           - stringData.CLICKSTACK_API_KEY
+  - source:
+      kind: Secret
+      name: platform-runtime-inputs
+      fieldPath: stringData.CLICKSTACK_BOOTSTRAP_EMAIL
+    targets:
+      - select:
+          kind: Secret
+          name: clickstack-bootstrap-inputs
+          namespace: observability
+        fieldPaths:
+          - stringData.BOOTSTRAP_EMAIL
+  - source:
+      kind: Secret
+      name: platform-runtime-inputs
+      fieldPath: stringData.CLICKSTACK_BOOTSTRAP_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: clickstack-bootstrap-inputs
+          namespace: observability
+        fieldPaths:
+          - stringData.BOOTSTRAP_PASSWORD

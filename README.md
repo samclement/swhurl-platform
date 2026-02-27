@@ -85,7 +85,7 @@ Convenience task runner:
 - `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, `flux-reconcile`, etc.).
 
 GitOps sequencing:
-- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines the active Flux `dependsOn` chain (`namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage}} -> example-app`).
+- `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines the active Flux `dependsOn` chain (`namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`).
 - `cluster/overlays/homelab/kustomization.yaml` is the default composition (nginx + minio + staging app overlay).
 - `cluster/overlays/homelab/providers/` and `cluster/overlays/homelab/platform/` provide explicit promotion/provider overlays.
 
@@ -155,6 +155,8 @@ Common inputs (see `docs/contracts.md`, `scripts/00_feature_registry_lib.sh`, an
 - `APP_CLUSTER_ISSUER`: issuer for app certificates (defaults to `PLATFORM_CLUSTER_ISSUER`).
 - `APP_NAMESPACE`: sample-app target namespace (`apps-staging|apps-prod`; default `apps-staging`).
 - `APP_HOST`: sample-app ingress host (default `staging.hello.${BASE_DOMAIN}`).
+- `CLICKSTACK_BOOTSTRAP_EMAIL`: first-team bootstrap email for ClickStack registration Job.
+- `CLICKSTACK_BOOTSTRAP_PASSWORD`: first-team bootstrap password (12+ chars with upper/lower/digit/special).
 - `LETSENCRYPT_ENV`: `staging` or `prod` (default `staging`) for alias issuer `letsencrypt`.
 - `LETSENCRYPT_STAGING_SERVER`: optional staging ACME endpoint override.
 - `LETSENCRYPT_PROD_SERVER`: optional prod ACME endpoint override (set to staging for repeated scratch-cycle safety).

@@ -17,7 +17,7 @@ Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration r
 
 Default active dependency chain:
 
-- `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage}} -> example-app`
+- `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`
 
 Default deployed app path:
 
@@ -64,6 +64,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 Notes:
 - Runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`.
 - Update `cluster/base/runtime-inputs/secret-platform-runtime-inputs.yaml` (or patch it from a private overlay) to set runtime credentials.
+- ClickStack first-team bootstrap is handled by in-cluster Job `observability/clickstack-team-bootstrap` and requires `CLICKSTACK_BOOTSTRAP_EMAIL` + `CLICKSTACK_BOOTSTRAP_PASSWORD` in runtime inputs.
 - Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 - `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.
 

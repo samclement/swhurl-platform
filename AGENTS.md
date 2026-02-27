@@ -42,6 +42,7 @@
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
   - `make flux-reconcile` now syncs `flux-system/platform-runtime-inputs` from local env/profile first (`scripts/bootstrap/sync-runtime-inputs.sh`) and then reconciles `homelab-flux-sources` before `homelab-flux-stack`.
   - `scripts/bootstrap/sync-runtime-inputs.sh` fails fast on invalid runtime secrets (oauth2-proxy cookie length and ClickStack bootstrap password policy) before Flux reconcile to prevent late `clickstack-team-bootstrap` job failures.
+  - External runtime source secret gotcha: because `platform-runtime-inputs` was previously Flux inventory-owned, prune can delete it after migration. `scripts/bootstrap/sync-runtime-inputs.sh` now annotates `flux-system/platform-runtime-inputs` with `kustomize.toolkit.fluxcd.io/prune=disabled` to keep it external and persistent.
   - `cluster/flux/kustomizations.yaml` now includes `homelab-flux-sources`; `homelab-flux-stack` depends on it so HelmRepository drift (for example `metrics-server` source missing) is self-healed.
   - Parent Flux `Kustomization` `cluster/flux/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.

@@ -15,6 +15,9 @@ Key mapping:
 - Flux post-build substitutions for platform manifests also read these source keys directly:
   - `${PLATFORM_CLUSTER_ISSUER}`
   - `${LETSENCRYPT_ENV}`
+  - `${LETSENCRYPT_STAGING_SERVER}`
+  - `${LETSENCRYPT_PROD_SERVER}`
+  - `${LETSENCRYPT_ALIAS_SERVER}` (computed from `LETSENCRYPT_ENV` by `scripts/bootstrap/sync-runtime-inputs.sh`)
 
 `homelab-runtime-inputs` in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`
 uses Flux `postBuild.substituteFrom` to inject values from

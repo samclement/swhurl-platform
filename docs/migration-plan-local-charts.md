@@ -1,5 +1,7 @@
 # Migration Plan: Local Charts + Env-Driven Secrets
 
+> Historical note: this document captures a superseded Helmfile migration path. Local charts `charts/platform-namespaces` and `charts/platform-issuers` have since been retired in favor of plain manifests under `cluster/base/`.
+
 This plan migrates the repo toward a more declarative model:
 
 - Platform glue (namespaces/issuers/apps) lives in **local charts** managed by Helmfile.

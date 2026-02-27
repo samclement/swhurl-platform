@@ -166,20 +166,19 @@
   - ClickStack/HyperDX ingress is intentionally not oauth2-proxy protected; app-level ingresses should own oauth2-proxy auth annotations when required.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
-  - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; legacy runtime-input cleanup (`otel-config-vars`) is handled by `scripts/99_execute_teardown.sh`.
-  - Flux path key wiring: `cluster/base/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` into both `logging/hyperdx-secret` and `observability/clickstack-runtime-inputs`; ClickStack HelmRelease consumes `observability/clickstack-runtime-inputs` via `valuesFrom.targetPath=hyperdx.apiKey`.
+  - Flux path key wiring is split-key: `cluster/base/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` to `observability/clickstack-runtime-inputs` (ClickStack chart input) and `platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` to `logging/hyperdx-secret` (OTel exporter authorization).
   - ClickStack first-team bootstrap is manual via the ClickStack UI; the repo no longer deploys an in-cluster bootstrap job.
   - Runtime gotcha: `clickstack-otel-collector` may show service ports `4317/4318` but still refuse OTLP traffic when its active OpAMP config does not attach `otlp/hyperdx` to any pipeline. Verify with `kubectl exec ... netstat -lntp` (only `13133/8888/24225` means OTLP is inactive) and `kubectl exec ... tail /etc/otel/supervisor-data/agent.log`.
   - Bootstrap gotcha: OTLP ingestion is disabled until at least one ClickStack team exists (`/installation` returns `{"isTeamExisting":false}`), because OpAMP only enables `otlp/hyperdx` receivers when team API keys exist. Complete initial UI registration/team setup before expecting `:4317/:4318` listeners.
   - Team bootstrap gotcha: ClickStack chart value `hyperdx.apiKey` alone does not create a Team record. In chart `1.1.1`, team creation still relies on registration/API flow (or local app mode only via `IS_LOCAL_APP_MODE=DANGEROUSLY_is_local_app_mode💀` in `hyperdx.env`, not recommended for shared/prod clusters).
-  - Secret update gotcha: `HYPERDX_API_KEY` is consumed as an env var in ClickStack pods, so updating `platform-runtime-inputs`/projected secrets does not hot-reload existing pods. After changing `CLICKSTACK_API_KEY`, restart `deploy/clickstack-app` and `deploy/clickstack-otel-collector`, then reconcile OTel collectors.
+  - Runtime-input sync fallback: `scripts/bootstrap/sync-runtime-inputs.sh` sets `CLICKSTACK_INGESTION_KEY` to `CLICKSTACK_API_KEY` when ingestion key is unset so first install can proceed before UI bootstrap.
   - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
-  - Single-key contract: `CLICKSTACK_API_KEY` now defines both ClickStack chart `apiKey` and OTel exporter `authorization`; after key rotation in HyperDX UI, update `CLICKSTACK_API_KEY` and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; fetch current key from UI and rerun `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-runtime-inputs` and `homelab-otel`.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
   - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
   - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.

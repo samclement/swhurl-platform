@@ -35,6 +35,7 @@ oidc_client_id="${OIDC_CLIENT_ID:-}"
 oidc_client_secret="${OIDC_CLIENT_SECRET:-}"
 oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
+clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   require_non_empty "OIDC_CLIENT_ID" "$oidc_client_id"
@@ -50,12 +51,19 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true"
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
 fi
 
+if [[ "${FEAT_OTEL_K8S:-true}" == "true" && -z "$clickstack_ingestion_key" ]]; then
+  clickstack_ingestion_key="$clickstack_api_key"
+  log_warn "CLICKSTACK_INGESTION_KEY is not set; defaulting to CLICKSTACK_API_KEY for OTel exporters"
+  log_warn "After first ClickStack login, set CLICKSTACK_INGESTION_KEY in profiles/secrets.env and rerun: make runtime-inputs-sync"
+fi
+
 kubectl create secret generic platform-runtime-inputs \
   -n flux-system \
   --from-literal=OIDC_CLIENT_ID="$oidc_client_id" \
   --from-literal=OIDC_CLIENT_SECRET="$oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
+  --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n flux-system annotate secret platform-runtime-inputs kustomize.toolkit.fluxcd.io/prune=disabled --overwrite >/dev/null

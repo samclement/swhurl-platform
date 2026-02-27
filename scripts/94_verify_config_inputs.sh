@@ -12,6 +12,7 @@ fi
 
 ok(){ printf "[OK] %s\n" "$1"; }
 bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
+warn(){ printf "[WARN] %s\n" "$1"; }
 need(){ local k="$1"; local v="${!k:-}"; [[ -n "$v" ]] && ok "$k is set" || bad "$k is set"; }
 
 fail=0
@@ -62,6 +63,10 @@ if [[ -n "${OBJECT_STORAGE_PROVIDER:-}" ]]; then
   else
     bad "OBJECT_STORAGE_PROVIDER must be minio|ceph"
   fi
+fi
+
+if [[ "${FEAT_OTEL_K8S:-true}" == "true" && -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
+  warn "CLICKSTACK_INGESTION_KEY is unset; OTel exporters will fall back to CLICKSTACK_API_KEY until you set it from ClickStack UI"
 fi
 
 printf "\n== Feature Contracts ==\n"

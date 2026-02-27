@@ -85,5 +85,5 @@ Deep checks (opt-in):
 ## Promotion / Profiles
 
 - Platform cert issuer mode is controlled by `PLATFORM_CLUSTER_ISSUER` and runtime-input sync.
-- Sample app environment promotion is controlled by app overlays (`cluster/overlays/homelab/apps/staging|prod`).
+- Sample app host/issuer/namespace intent is controlled by runtime-input vars (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`) via profile + sync/reconcile.
 - Provider selection is controlled by Flux kustomization paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.

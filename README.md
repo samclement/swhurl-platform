@@ -7,7 +7,7 @@ This repo manages a homelab Kubernetes platform with Flux GitOps. Default stack 
 - oauth2-proxy
 - ClickStack + OTel collectors
 - MinIO
-- sample app overlays (`apps/staging`, `apps/prod`)
+- sample app (`hello-web`) with runtime-input driven hostname/issuer/namespace
 
 ## Quickstart
 
@@ -24,8 +24,9 @@ Equivalent single-command cluster path:
 - Delete: `./run.sh --delete`
 
 Overlay selection note:
-- Active ingress/storage/app overlays are selected declaratively in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
-- `--profile` values (for example `profiles/overlay-staging.env`, `profiles/overlay-prod.env`) affect runtime-input/cert intent, not Flux overlay path selection.
+- Active ingress/storage overlays are selected declaratively in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- App URL/issuer/namespace are runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
+- `--profile` values drive runtime-input intent (including app URL/issuer and cert mode).
 
 ## Common Use Cases
 
@@ -36,39 +37,35 @@ Install:
 ```bash
 cp -n profiles/secrets.example.env profiles/secrets.env
 $EDITOR config.env profiles/secrets.env
-./host/run-host.sh
-make flux-bootstrap
-make flux-reconcile
+make install
 ```
 
 Teardown:
 
 ```bash
-./run.sh --delete
-
-# Optional host-layer cleanup
-./host/run-host.sh --delete
+make teardown
 ```
 
 Notes:
 - `./run.sh --delete` removes Flux stack kustomizations, performs teardown cleanup, removes Cilium, uninstalls Flux controllers, and runs delete verification.
 - `DELETE_SCOPE=dedicated-cluster` enables aggressive secret cleanup for dedicated clusters.
+- Makefile shortcuts:
+  - `make install` (cluster default apply path)
+  - `make teardown` (cluster default delete path)
+  - `make reinstall` (teardown then install)
+  - `make install-all` / `make teardown-all` (include host layer)
 
-### 2) Partial operation (platform components only)
-
-Suspend the sample app kustomization and reconcile only platform components:
-
-```bash
-flux suspend kustomization homelab-example-app -n flux-system
-make flux-reconcile
-```
-
-Re-enable later:
+### 2) Promote platform certs: staging -> prod
 
 ```bash
-flux resume kustomization homelab-example-app -n flux-system
-flux reconcile kustomization homelab-example-app -n flux-system --with-source
+# staging platform cert intent
+make platform-certs-staging
+
+# production platform cert intent
+make platform-certs-prod
 ```
+
+These targets sync runtime inputs then reconcile the Flux stack.
 
 ### 3) Post-install secrets updates + ClickStack caveats
 
@@ -114,6 +111,21 @@ make flux-reconcile
 ```
 
 Detailed runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
+
+### 5) App deployment test matrix (URL x Let's Encrypt)
+
+The following targets update `APP_HOST` + `APP_CLUSTER_ISSUER` intent and reconcile:
+
+```bash
+make app-test-staging-le-staging
+make app-test-staging-le-prod
+make app-test-prod-le-staging
+make app-test-prod-le-prod
+```
+
+URL mapping:
+- staging URL: `staging.hello.homelab.swhurl.com`
+- prod URL: `hello.homelab.swhurl.com`
 
 ## Orchestration
 

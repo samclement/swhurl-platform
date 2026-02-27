@@ -55,7 +55,8 @@ Default delete steps:
 Notes:
 - Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
-- Provider/app overlay selection is path-based in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; `--profile` does not switch those Flux kustomization paths.
+- Provider overlay selection is path-based in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; `--profile` does not switch those Flux kustomization paths.
+- App deployment intent is runtime-input driven through `platform-runtime-inputs` (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`).
 
 ## Host Orchestrator (`host/run-host.sh`)
 

@@ -35,6 +35,26 @@ else
   bad "PLATFORM_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
 fi
 
+app_issuer="${APP_CLUSTER_ISSUER:-$platform_issuer}"
+if is_allowed_cluster_issuer "$app_issuer"; then
+  ok "APP_CLUSTER_ISSUER is valid (${app_issuer})"
+else
+  bad "APP_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
+fi
+
+app_namespace="${APP_NAMESPACE:-apps-staging}"
+if [[ "$app_namespace" == "apps-staging" || "$app_namespace" == "apps-prod" ]]; then
+  ok "APP_NAMESPACE is valid (${app_namespace})"
+else
+  bad "APP_NAMESPACE must be apps-staging or apps-prod (got: ${app_namespace})"
+fi
+
+if [[ -n "${APP_HOST:-}" ]]; then
+  ok "APP_HOST is set (${APP_HOST})"
+else
+  bad "APP_HOST is set"
+fi
+
 if [[ -n "${INGRESS_PROVIDER:-}" ]]; then
   if is_allowed_ingress_provider "${INGRESS_PROVIDER}"; then
     ok "INGRESS_PROVIDER is valid"

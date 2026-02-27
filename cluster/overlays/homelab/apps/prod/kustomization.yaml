@@ -15,10 +15,10 @@ patches:
         value: letsencrypt-prod
       - op: replace
         path: /spec/values/ingress/host
-        value: prod.hello.homelab.swhurl.com
+        value: hello.homelab.swhurl.com
       - op: replace
         path: /spec/values/tls/dnsNames/0
-        value: prod.hello.homelab.swhurl.com
+        value: hello.homelab.swhurl.com
       - op: replace
         path: /spec/values/auth/oauthHost
         value: oauth.homelab.swhurl.com

@@ -36,6 +36,10 @@ jobs:
           ./run.sh --dry-run
           ./run.sh --dry-run --profile profiles/overlay-staging.env
           ./run.sh --dry-run --profile profiles/overlay-prod.env
+          ./run.sh --dry-run --profile profiles/app-test-staging-le-staging.env
+          ./run.sh --dry-run --profile profiles/app-test-staging-le-prod.env
+          ./run.sh --dry-run --profile profiles/app-test-prod-le-staging.env
+          ./run.sh --dry-run --profile profiles/app-test-prod-le-prod.env
           ./run.sh --dry-run --profile profiles/test-loop.env
           ./run.sh --dry-run --profile profiles/test-loop-selfsigned.env
           ./run.sh --dry-run --with-host

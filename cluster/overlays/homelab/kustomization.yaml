@@ -11,4 +11,4 @@ resources:
   - ../../base/clickstack
   - ../../base/otel
   - providers/storage-minio
-  - apps/staging
+  - ../../base/apps/example

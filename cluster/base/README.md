@@ -9,6 +9,7 @@ Provider-agnostic component definitions live here:
 - runtime-inputs
 - oauth2-proxy
 - clickstack
+- clickstack-bootstrap
 - otel
 - storage/minio
 - storage/ceph

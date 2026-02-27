@@ -1,0 +1,143 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickstack-team-bootstrap
+  namespace: observability
+  labels:
+    platform.swhurl.io/managed: "true"
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickstack-team-bootstrap
+        platform.swhurl.io/managed: "true"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: python:3.12-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLICKSTACK_API_BASE
+              value: http://clickstack-app.observability.svc.cluster.local:8000
+            - name: BOOTSTRAP_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: clickstack-bootstrap-inputs
+                  key: BOOTSTRAP_EMAIL
+            - name: BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickstack-bootstrap-inputs
+                  key: BOOTSTRAP_PASSWORD
+          command:
+            - python3
+            - -c
+            - |
+              import json
+              import os
+              import re
+              import sys
+              import time
+              import urllib.error
+              import urllib.request
+
+              base = os.environ.get("CLICKSTACK_API_BASE", "").rstrip("/")
+              email = os.environ.get("BOOTSTRAP_EMAIL", "")
+              password = os.environ.get("BOOTSTRAP_PASSWORD", "")
+
+              if not base:
+                  print("[ERROR] CLICKSTACK_API_BASE is empty")
+                  sys.exit(1)
+              if not email:
+                  print("[ERROR] BOOTSTRAP_EMAIL is empty")
+                  sys.exit(1)
+              if not password:
+                  print("[ERROR] BOOTSTRAP_PASSWORD is empty")
+                  sys.exit(1)
+
+              checks = [
+                  (len(password) >= 12, "at least 12 chars"),
+                  (re.search(r"[a-z]", password), "lowercase letter"),
+                  (re.search(r"[A-Z]", password), "uppercase letter"),
+                  (re.search(r"[0-9]", password), "number"),
+                  (re.search(r'[!@#$%^&*(),.?":{}|<>;\-+=]', password), "special char"),
+              ]
+              failed = [label for ok, label in checks if not ok]
+              if failed:
+                  print(
+                      "[ERROR] BOOTSTRAP_PASSWORD does not satisfy ClickStack policy: "
+                      + ", ".join(failed)
+                  )
+                  sys.exit(1)
+
+              def request_json(path, method="GET", payload=None, timeout=10):
+                  url = base + path
+                  data = None
+                  headers = {}
+                  if payload is not None:
+                      data = json.dumps(payload).encode("utf-8")
+                      headers["Content-Type"] = "application/json"
+                  req = urllib.request.Request(url, data=data, headers=headers, method=method)
+                  try:
+                      with urllib.request.urlopen(req, timeout=timeout) as resp:
+                          body = resp.read().decode("utf-8", errors="replace")
+                          return resp.status, body
+                  except urllib.error.HTTPError as exc:
+                      return exc.code, exc.read().decode("utf-8", errors="replace")
+
+              def installation_state():
+                  status, body = request_json("/installation")
+                  if status != 200:
+                      raise RuntimeError(f"installation endpoint status={status}, body={body}")
+                  parsed = json.loads(body)
+                  return bool(parsed.get("isTeamExisting", False))
+
+              for _ in range(60):
+                  try:
+                      status, _ = request_json("/health")
+                      if status == 200:
+                          break
+                  except Exception:
+                      pass
+                  time.sleep(5)
+              else:
+                  print("[ERROR] ClickStack API health endpoint did not become ready in time")
+                  sys.exit(1)
+
+              try:
+                  if installation_state():
+                      print("[INFO] ClickStack team already exists; bootstrap skipped")
+                      sys.exit(0)
+              except Exception as exc:
+                  print(f"[ERROR] Failed installation pre-check: {exc}")
+                  sys.exit(1)
+
+              status, body = request_json(
+                  "/register/password",
+                  method="POST",
+                  payload={
+                      "email": email,
+                      "password": password,
+                      "confirmPassword": password,
+                  },
+              )
+
+              if status in (200, 409):
+                  for _ in range(12):
+                      try:
+                          if installation_state():
+                              print("[INFO] ClickStack team bootstrap complete")
+                              sys.exit(0)
+                      except Exception:
+                          pass
+                      time.sleep(5)
+                  print(
+                      "[ERROR] ClickStack registration returned success but installation state "
+                      "did not converge to team existing"
+                  )
+                  sys.exit(1)
+
+              print(f"[ERROR] ClickStack registration failed (status={status}): {body}")
+              sys.exit(1)

@@ -73,6 +73,14 @@ else
   bad "Flux stack: runtime input kustomization + declarative source secret projection wired"
 fi
 
+if rg -q 'name: homelab-clickstack-bootstrap' "$flux_stack_file" \
+  && rg -q 'path: ./cluster/base/clickstack-bootstrap' "$flux_stack_file" \
+  && rg -n 'name: homelab-otel' -A12 "$flux_stack_file" | rg -q 'homelab-clickstack-bootstrap'; then
+  ok "Flux stack: clickstack bootstrap sequencing wired (clickstack -> clickstack-bootstrap -> otel)"
+else
+  bad "Flux stack: clickstack bootstrap sequencing wired (clickstack -> clickstack-bootstrap -> otel)"
+fi
+
 if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then
   ok "31_sync_helmfile_phase_core.sh: uses helmfile_cmd with phase=core label selection"
 else

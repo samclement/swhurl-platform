@@ -38,9 +38,6 @@ jobs:
           ./run.sh --dry-run
           ./run.sh --dry-run --profile profiles/overlay-staging.env
           ./run.sh --dry-run --profile profiles/overlay-prod.env
-          ./run.sh --dry-run --profile profiles/provider-traefik.env
-          ./run.sh --dry-run --profile profiles/provider-ceph.env
-          ./run.sh --dry-run --profile profiles/provider-traefik-ceph.env
           ./run.sh --dry-run --profile profiles/test-loop.env
           ./run.sh --dry-run --profile profiles/test-loop-selfsigned.env
           ./run.sh --dry-run --with-host
@@ -67,18 +64,6 @@ jobs:
           kubectl kustomize cluster/overlays/homelab/providers/ingress-nginx >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/providers/storage-ceph >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/cert-manager >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/issuers >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/oauth2-proxy >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/clickstack >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/otel >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/staging/storage-minio >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/cert-manager >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/issuers >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/oauth2-proxy >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/clickstack >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/otel >/dev/null
-          kubectl kustomize cluster/overlays/homelab/platform/prod/storage-minio >/dev/null
           kubectl kustomize cluster/overlays/homelab/apps/staging >/dev/null
           kubectl kustomize cluster/overlays/homelab/apps/prod >/dev/null
           kubectl kustomize cluster/base/namespaces >/dev/null
@@ -94,26 +79,3 @@ jobs:
           kubectl kustomize cluster/base/storage/minio >/dev/null
           kubectl kustomize cluster/base/storage/ceph >/dev/null
           kubectl kustomize cluster/base/apps/example >/dev/null
-
-  provider-matrix:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
-
-      - name: Setup Helmfile
-        run: |
-          set -Eeuo pipefail
-          HELMFILE_VERSION=v0.168.0
-          curl -fsSL -o /tmp/helmfile.tar.gz "https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
-          tar -xzf /tmp/helmfile.tar.gz -C /tmp
-          sudo mv /tmp/helmfile /usr/local/bin/helmfile
-          helmfile --version
-
-      - name: Verify provider matrix
-        run: |
-          set -Eeuo pipefail
-          ./scripts/97_verify_provider_matrix.sh

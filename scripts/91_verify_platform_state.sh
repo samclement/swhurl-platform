@@ -44,7 +44,7 @@ if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
   ok "selfsigned ClusterIssuer present"
 else
   mismatch "ClusterIssuer selfsigned not found"
-  add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
 fi
 
 if [[ -z "${ACME_EMAIL:-}" ]]; then
@@ -56,7 +56,7 @@ for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
     ok "${issuer_name} ClusterIssuer present"
   else
     mismatch "ClusterIssuer ${issuer_name} not found"
-    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 done
 
@@ -64,7 +64,7 @@ if [[ -n "${ACME_EMAIL:-}" ]]; then
   for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
     if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
       actual_email=$(kubectl get clusterissuer "$issuer_name" -o jsonpath='{.spec.acme.email}')
-      check_eq "${issuer_name}.email" "${ACME_EMAIL}" "$actual_email" "scripts/31_sync_helmfile_phase_core.sh"
+      check_eq "${issuer_name}.email" "${ACME_EMAIL}" "$actual_email" "scripts/32_reconcile_flux_stack.sh"
     fi
   done
 fi
@@ -74,15 +74,15 @@ expected_prod_server="$(verify_expected_letsencrypt_server prod)"
 expected_alias_server="$(verify_expected_letsencrypt_server alias "${LETSENCRYPT_ENV:-staging}")"
 if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-staging -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
 fi
 if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
 fi
 if kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt.server" "${expected_alias_server}" "$actual_server" "scripts/31_sync_helmfile_phase_core.sh"
+  check_eq "letsencrypt.server" "${expected_alias_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
 fi
 
 say "Cilium"
@@ -146,14 +146,14 @@ say "Ingress"
 if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
   if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
     actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
-    check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/31_sync_helmfile_phase_core.sh"
+    check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/32_reconcile_flux_stack.sh"
     actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
     actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-    check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/31_sync_helmfile_phase_core.sh"
-    check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/31_sync_helmfile_phase_core.sh"
+    check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "ingress-nginx service not found"
-    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 
   if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
@@ -162,19 +162,19 @@ if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       ok "log-format-upstream present"
     else
       mismatch "log-format-upstream missing"
-      add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+      add_suggest "scripts/32_reconcile_flux_stack.sh"
     fi
   else
     mismatch "ingress-nginx configmap not found"
-    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 
   if kubectl get ingressclass nginx >/dev/null 2>&1; then
     actual_default=$(kubectl get ingressclass nginx -o jsonpath='{.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class}')
-    check_eq "ingressclass.default" "true" "$actual_default" "scripts/31_sync_helmfile_phase_core.sh"
+    check_eq "ingressclass.default" "true" "$actual_default" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "ingressclass nginx not found"
-    add_suggest "scripts/31_sync_helmfile_phase_core.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else
   ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping ingress-nginx specific checks"
@@ -186,16 +186,16 @@ if feature_is_enabled oauth2_proxy; then
     ok "oauth2-proxy deployment present"
   else
     mismatch "oauth2-proxy deployment not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "oauth2-proxy.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "oauth2-proxy.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "oauth2-proxy ingress not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else
   ok "$(feature_flag_var oauth2_proxy)=false; skipping"
@@ -206,29 +206,29 @@ if feature_is_enabled clickstack; then
   if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "clickstack.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "clickstack.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "clickstack ingress not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
     ok "clickstack app deployment present"
   else
     mismatch "clickstack app deployment not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
     ok "clickstack otel collector deployment present"
   else
     mismatch "clickstack otel collector deployment not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
     ok "clickstack clickhouse deployment present"
   else
     mismatch "clickstack clickhouse deployment not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
     configured_api_key="${CLICKSTACK_API_KEY:-}"
@@ -264,13 +264,13 @@ if feature_is_enabled otel_k8s; then
     ok "otel-k8s daemonset release present"
   else
     mismatch "otel-k8s daemonset release not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
     ok "otel-k8s cluster deployment release present"
   else
     mismatch "otel-k8s cluster deployment release not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
   if [[ -z "$sender_token" ]]; then
@@ -309,20 +309,20 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "minio.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "minio.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "minio ingress not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
   if kubectl -n storage get ingress minio-console >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
-    check_eq "minio-console.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
+    check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "minio-console.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
   else
     mismatch "minio-console ingress not found"
-    add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else
   if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then

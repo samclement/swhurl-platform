@@ -15,4 +15,4 @@ Structure:
 Operational note:
 
 - Runtime input source and targets are declarative under `cluster/base/runtime-inputs`.
-- Update `cluster/base/runtime-inputs/secret-platform-runtime-inputs.yaml` (or patch it from a private overlay) to set environment-specific credentials.
+- The source secret (`flux-system/platform-runtime-inputs`) is external; sync it from local env/profile with `make runtime-inputs-sync`.

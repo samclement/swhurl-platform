@@ -20,6 +20,7 @@ help:
 	@echo "  verify-legacy       Run legacy verification suite"
 	@echo "  verify-provider-matrix  Validate Helmfile provider gating matrix"
 	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
+	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 
 .PHONY: host-plan
@@ -90,7 +91,13 @@ verify-provider-matrix:
 flux-bootstrap:
 	./scripts/bootstrap/install-flux.sh
 
+.PHONY: runtime-inputs-sync
+runtime-inputs-sync:
+	./scripts/bootstrap/sync-runtime-inputs.sh
+
 .PHONY: flux-reconcile
 flux-reconcile:
+	./scripts/bootstrap/sync-runtime-inputs.sh
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
+	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
 	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m

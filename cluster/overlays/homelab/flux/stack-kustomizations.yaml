@@ -4,6 +4,8 @@ metadata:
   name: homelab-namespaces
   namespace: flux-system
 spec:
+  dependsOn:
+    - name: homelab-flux-sources
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -26,6 +28,11 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/base/runtime-inputs
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 5m

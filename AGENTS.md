@@ -14,7 +14,7 @@
   - Avoid self-referential Showboat commands inside executable walkthrough `bash` blocks (for example `showboat verify walkthrough.md`), which can cause recursive verification hangs.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
-  - `cluster/README.md` should call out that runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`.
+  - `cluster/README.md` should call out that runtime input targets are declarative in `cluster/base/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
@@ -25,7 +25,7 @@
   - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage} -> example-app`).
-  - Runtime input source/target secrets now live in `cluster/base/runtime-inputs`; `kustomization.yaml` uses declarative `replacements` from `secret-platform-runtime-inputs.yaml` to project values into workload secrets.
+  - Runtime input targets live in `cluster/base/runtime-inputs`; Flux `homelab-runtime-inputs` now injects values via `postBuild.substituteFrom` from external `flux-system/platform-runtime-inputs`.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
@@ -40,6 +40,9 @@
   - Sample app TLS issuance can lag DNS propagation on first bootstraps; `cluster/base/apps/example/helmrelease-hello-web.yaml` now uses `timeout: 20m`, `interval: 10m`, and higher install/upgrade remediation retries to avoid permanent `RetriesExceeded` stalls.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
+  - `make flux-reconcile` now syncs `flux-system/platform-runtime-inputs` from local env/profile first (`scripts/bootstrap/sync-runtime-inputs.sh`) and then reconciles `homelab-flux-sources` before `homelab-flux-stack`.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` fails fast on invalid runtime secrets (oauth2-proxy cookie length and ClickStack bootstrap password policy) before Flux reconcile to prevent late `clickstack-team-bootstrap` job failures.
+  - `cluster/flux/kustomizations.yaml` now includes `homelab-flux-sources`; `homelab-flux-stack` depends on it so HelmRepository drift (for example `metrics-server` source missing) is self-healed.
   - Parent Flux `Kustomization` `cluster/flux/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
   - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
@@ -90,7 +93,7 @@
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
     - `scripts/29_prepare_platform_runtime_inputs.sh` is retired; runtime-input ownership is declarative in `cluster/base/runtime-inputs`.
-    - Update `cluster/base/runtime-inputs/secret-platform-runtime-inputs.yaml` (or patch from private overlays) when runtime credentials change.
+    - Update runtime credentials with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync` (sources `config.env` + profiles, writes `flux-system/platform-runtime-inputs`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
   - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).

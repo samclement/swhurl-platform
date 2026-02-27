@@ -1,110 +1,66 @@
 # Contracts (Config, Tooling, Delete)
 
-This repo is optimized for a small k3s platform, but the orchestration rules are generic:
-
-- Prefer declarative state (Helmfile + charts, or Kustomize) over bash.
-- Use bash only for: (1) preparing external inputs (Secrets/ConfigMaps), (2) cleanup that Helm cannot do (CRDs/finalizers), and (3) host bootstrap (optional).
+This repo is Flux-first. Bash scripts are used for orchestration glue, runtime-input sync, and teardown/finalizer cleanup.
 
 ## Environment Contract
 
-### Layering / precedence
+All scripts load config via `scripts/00_lib.sh` with precedence:
+1. `config.env`
+2. `profiles/local.env`
+3. `profiles/secrets.env`
+4. `$PROFILE_FILE` (`./run.sh --profile ...`)
 
-All scripts load configuration via `scripts/00_lib.sh` with this precedence (later wins):
+If `PROFILE_EXCLUSIVE=true`, only `config.env` and `$PROFILE_FILE` are loaded.
 
-1) `config.env` (committed, non-secret defaults)
-2) `profiles/local.env` (optional local overrides)
-3) `profiles/secrets.env` (gitignored secrets)
-4) `$PROFILE_FILE` (set by `./run.sh --profile ...`; highest precedence)
+Variables are exported (`set -a`) so child commands (for example `flux`, `helm`, `kubectl`) see the resolved values.
 
-If `PROFILE_EXCLUSIVE=true`, then only `config.env` + `$PROFILE_FILE` are loaded.
+## Required Contract Sources
 
-### Export behavior
-
-`scripts/00_lib.sh` uses `set -a` while sourcing so variables are exported to child processes.
-This is required so `helmfile` Go templates can read the environment.
-
-### Required variables
-
-The source of truth for verification input contracts is:
-
-- `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases)
-- `scripts/00_verify_contract_lib.sh` (shared non-feature verification/teardown constants/helpers)
+Source-of-truth files:
+- `scripts/00_feature_registry_lib.sh`
+- `scripts/00_verify_contract_lib.sh`
 
 Verification toggles:
+- `FEAT_VERIFY=true|false`: core checks (`94`, `91`)
+- `FEAT_VERIFY_DEEP=true|false`: deep checks (`90`, `93`, `95`, `96`)
 
-- `FEAT_VERIFY=true|false`: run core verification gates (`94`, `91`, `92`) in `./run.sh`.
-- `FEAT_VERIFY_DEEP=true|false`: run extra diagnostics/consistency checks (`90`, `93`, `95`, `96`, `97`) in `./run.sh`.
+Let’s Encrypt controls:
+- `LETSENCRYPT_ENV=staging|prod|production`
+- `LETSENCRYPT_STAGING_SERVER`
+- `LETSENCRYPT_PROD_SERVER`
 
-Let’s Encrypt safety controls:
+## Tool Contract
 
-- `LETSENCRYPT_ENV=staging|prod|production` (controls alias issuer `letsencrypt`)
-- `LETSENCRYPT_STAGING_SERVER=<url>` (optional override)
-- `LETSENCRYPT_PROD_SERVER=<url>` (optional override)
+### Flux
 
-Use `profiles/test-loop.env` (or `profiles/overlay-staging.env`) for repeat destructive tests without production ACME calls.
+Primary declarative control plane:
+- Bootstrap manifests: `cluster/flux`
+- Stack manifests: `cluster/overlays/homelab/flux`
 
-Release inventory verification controls (`scripts/93_verify_expected_releases.sh`):
-
-- `VERIFY_INVENTORY_MODE=auto|flux|helm` (default `auto`; prefers Flux inventory when stack resources are present, otherwise falls back to Helm releases)
-- `VERIFY_RELEASE_SCOPE=platform|cluster` (default `platform`)
-- `VERIFY_RELEASE_ALLOWLIST=<comma-separated glob patterns>`
-- `VERIFY_RELEASE_STRICT_EXTRAS=true|false` (default `false`)
-
-## Tool Contract (How Each Tool Uses Env Vars)
-
-### Helmfile
-
-- File: `helmfile.yaml.gotmpl`
-- Environments: `environments/common.yaml.gotmpl` + `environments/*.yaml`
-- Env vars are read in templates via `{{ env "VAR" }}` and/or derived into `.Environment.Values`.
-
-Helmfile is the declarative control plane for Helm-based installs. Releases are grouped with
-Helmfile labels so orchestration can target phases:
-
-- `phase=core` (cert-manager + ingress-nginx)
-- `phase=platform` (oauth2-proxy, clickstack, otel collectors, minio)
-
-Additionally, thin wrapper scripts that operate on a single release use:
-
-- `component=<id>`: stable selector for `sync_release` / `destroy_release` wrappers in `scripts/00_lib.sh`.
+Primary operations:
+- `scripts/bootstrap/install-flux.sh`
+- `scripts/32_reconcile_flux_stack.sh`
 
 ### Helm
 
-Helm does not substitute environment variables in values by default. In this repo Helm is
-invoked via Helmfile; chart configuration comes from rendered YAML in `infra/values/*`.
+Used for imperative bootstrap/cleanup helpers where needed:
+- Cilium pre-Flux bootstrap (`scripts/26_manage_cilium_lifecycle.sh`)
+- cert-manager cleanup during delete (`scripts/30_manage_cert_manager_cleanup.sh`)
 
 ### kubectl
 
-`kubectl` reads cluster access via `KUBECONFIG` or `~/.kube/config`.
-
-Important dry-run behavior:
-
-- `kubectl apply --dry-run=server` hits the API server and runs admission (including validating webhooks).
-- There is no supported “skip admission” flag for server dry-run. If webhook-free validation is required,
-  use `--dry-run=client`.
-
-### Kustomize (Optional)
-
-Kustomize is not used by the default pipeline anymore; it’s kept optional for app teams who prefer raw manifests.
-
-Kustomize does not consume arbitrary env vars by default. If Kustomize resources require runtime values, the supported patterns are:
-
-- Make them Helmfile/Helm-managed (preferred for platform components).
-- Or keep them Kustomize-only for apps and inject values via explicit script logic.
-
-This repo does not ship a Kustomize manifest tree by default (no `infra/manifests/`). If you add your own
-`kustomization.yaml` files, validate them explicitly with `kubectl kustomize` in CI.
+Used for cluster access checks, manifest apply/delete, and runtime verification.
 
 ## Delete Contract
 
-Helm does not uninstall CRDs in a reliable/portable way. This repo’s delete contract is:
+Delete flow contract:
+1. Remove Flux stack kustomizations.
+2. Run cleanup helpers for cert-manager/finalizers.
+3. Sweep managed namespaces/secrets/CRDs.
+4. Remove Cilium last.
+5. Uninstall Flux controllers.
+6. Verify clean teardown.
 
-1) Remove workloads first (apps, then platform services), so PVCs/namespaces can terminate cleanly.
-2) Perform teardown sweeps (managed secrets/namespaces, platform CRDs).
-3) Remove Cilium last, so helper pods used for PVC cleanup can still run.
-4) Verify the cluster is clean via `scripts/98_verify_teardown_clean.sh`.
-
-Delete scope:
-
-- `DELETE_SCOPE=managed` (default): sweep only resources in namespaces this repo manages.
-- `DELETE_SCOPE=dedicated-cluster`: opt-in, more aggressive cleanup for dedicated clusters.
+Delete scopes:
+- `DELETE_SCOPE=managed` (default)
+- `DELETE_SCOPE=dedicated-cluster` (aggressive, dedicated clusters only)

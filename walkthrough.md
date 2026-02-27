@@ -1,43 +1,16 @@
-# Swhurl Platform Walkthrough (Current)
+# Walkthrough (Current State)
 
-Last updated: 2026-02-26
+The historical executable walkthrough was retired because script/layout refactors made it drift quickly.
 
-This file intentionally stays concise and points to the active source-of-truth docs while migration is in progress.
+For the current repo behavior, use:
 
-## Source Of Truth
+1. `README.md` for operator flows and common use cases.
+2. `docs/orchestration-api.md` for CLI/step contracts.
+3. `docs/runbook.md` for Flux-first operations.
+4. `./scripts/02_print_plan.sh` and `./scripts/02_print_plan.sh --delete` for exact orchestrator plans.
 
-- `README.md`: operator-facing usage and lifecycle commands.
-- `docs/runbook.md`: phase-by-phase orchestration flow.
-- `docs/contracts.md`: config, tooling, and delete contracts.
-- `docs/target-tree-and-migration-checklist.md`: migration status and remaining Phase 6 items.
+If a full executable transcript is needed, regenerate a fresh walkthrough with Showboat:
 
-## Current Execution Model
-
-1. Preferred path: Flux-managed cluster reconciliation from `cluster/`.
-2. Compatibility path: `./run.sh` with explicit phase scripts.
-3. Default apply plan uses:
-   - `scripts/31_sync_helmfile_phase_core.sh`
-   - `scripts/36_sync_helmfile_phase_platform.sh`
-4. `scripts/29_prepare_platform_runtime_inputs.sh` is manual compatibility-only for runtime secret bridging and delete-time cleanup of legacy managed leftovers.
-
-## Verification Flow
-
-- Core checks (`FEAT_VERIFY=true`):
-  - `scripts/94_verify_config_inputs.sh`
-  - `scripts/91_verify_platform_state.sh`
-  - `scripts/92_verify_helmfile_drift.sh`
-- Deep checks (`FEAT_VERIFY_DEEP=true`):
-  - `scripts/90_verify_runtime_smoke.sh`
-  - `scripts/93_verify_expected_releases.sh`
-  - `scripts/95_capture_cluster_diagnostics.sh`
-  - `scripts/96_verify_orchestrator_contract.sh`
-  - `scripts/97_verify_provider_matrix.sh`
-
-## Regenerating A Full Executable Walkthrough
-
-If you need a full executable transcript again, regenerate this document with Showboat from the current code state instead of patching historical outputs.
-
-Suggested flow:
-- run `uvx showboat init walkthrough.md "Swhurl Platform Walkthrough"`
-- append notes and exec blocks incrementally
-- run `uvx showboat verify walkthrough.md`
+```bash
+uvx showboat init walkthrough.md --title "Swhurl Platform Walkthrough"
+```

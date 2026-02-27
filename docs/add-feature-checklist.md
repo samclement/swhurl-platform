@@ -1,59 +1,42 @@
-# Add Feature Checklist (Keep It Simple)
+# Add Feature Checklist
 
-Use this checklist when adding a new platform feature (for example Keycloak).
+Use this checklist when adding a new platform feature.
 
-Goal: keep explicit scripts readable; avoid adding framework indirection unless there is repeated pain.
+## 1) Declarative wiring (Flux)
 
-## 1) Declarative install wiring
+- Add/update component manifests under `cluster/base/*` or `cluster/overlays/homelab/*`.
+- Add/update Flux stack wiring in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- Keep `dependsOn` explicit.
 
-- Add Helmfile release in `helmfile.yaml.gotmpl` with:
-  - `installed:` feature gate
-  - `phase` label (`core` or `platform`)
-  - `component` label
-
-## 2) Feature flags and values
+## 2) Feature flags and config
 
 - Add/verify feature flag default in `config.env` (`FEAT_*`).
-- Add/verify environment mapping in `environments/common.yaml.gotmpl`.
-- Add feature values file in `infra/values/` if needed.
+- Update `scripts/00_feature_registry_lib.sh` required vars and expected release mapping.
 
-## 3) Runtime input manifests (only if needed)
+## 3) Runtime inputs (if feature needs secrets)
 
-- If the feature requires pre-created Secrets/ConfigMaps, update:
-  - `cluster/base/runtime-inputs/*` (declarative source + target secret projection)
-- If the feature needs an extra chart repo, update:
-  - `scripts/25_prepare_helm_repositories.sh`
-
-Keep this wiring explicit and local. Prefer clear `if FEAT_*` blocks over meta-framework logic.
+- Add/update target manifests in `cluster/base/runtime-inputs/*`.
+- Update `scripts/bootstrap/sync-runtime-inputs.sh` validation and secret projection values.
 
 ## 4) Verification updates
 
-- Update required config checks via:
-  - `scripts/00_feature_registry_lib.sh`
-  - `scripts/94_verify_config_inputs.sh` (already registry-driven)
-- Update expected release inventory via:
-  - `scripts/00_feature_registry_lib.sh`
-  - `scripts/93_verify_expected_releases.sh` (already registry-driven)
-- Add runtime state checks in:
-  - `scripts/91_verify_platform_state.sh`
+- `scripts/94_verify_config_inputs.sh`
+- `scripts/91_verify_platform_state.sh`
+- `scripts/93_verify_expected_releases.sh` (if inventory expectations change)
+- `scripts/96_verify_orchestrator_contract.sh` (if orchestrator/contract changes)
 
-## 5) Docs updates
+## 5) Documentation
 
-- `README.md` feature list/flags
-- `docs/runbook.md` phase behavior (if changed)
-- `AGENTS.md` for repo learnings/gotchas
+- `README.md`
+- `docs/runbook.md`
+- `AGENTS.md`
 
-## 6) Verification commands before PR
+## 6) Validation before PR
 
-- `bash -n scripts/*.sh`
+- `bash -n scripts/*.sh host/**/*.sh`
 - `./scripts/96_verify_orchestrator_contract.sh`
 - `./scripts/02_print_plan.sh`
 - Optional cluster-backed checks:
   - `./scripts/94_verify_config_inputs.sh`
   - `./scripts/93_verify_expected_releases.sh`
   - `./scripts/91_verify_platform_state.sh`
-
-## Guardrails
-
-- Do not add a new abstraction layer unless at least two concrete features are blocked by the same repeated maintenance problem.
-- Prefer explicit file updates and clear comments over clever cross-file generation.

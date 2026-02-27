@@ -234,13 +234,13 @@ Tasks:
 
 Outcomes:
 
-- `run.sh` becomes compatibility/developer helper only, or is removed.
-- Bash orchestration complexity is significantly reduced.
+- Helmfile compatibility layer is removed.
+- `run.sh` remains as a Flux-first helper orchestrator.
 
 Tasks:
 
-1. Move remaining reusable script logic into libraries or dedicated tools.
-2. Archive or remove script phases after parity period.
+1. Keep Flux stack sequencing as the single source of lifecycle ordering.
+2. Keep script surface minimal (bootstrap/reconcile/cleanup/verify helpers only).
 3. Keep docs and ADRs as the source of truth for provider decisions.
 
 ## Current to Target Mapping
@@ -251,16 +251,14 @@ Tasks:
 | `scripts/manual_configure_route53_dns_updater.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
-| `run.sh` | Legacy/developer orchestrator (current compatibility entrypoint) | `run.sh` |
-| `helmfile.yaml.gotmpl` | GitOps definitions | `cluster/base/*` + `cluster/overlays/homelab/*` |
-| `infra/values/*.yaml*` | HelmRelease/Kustomize values | `cluster/overlays/homelab/values/` + component dirs |
+| `run.sh` | Flux-first cluster orchestrator | `run.sh` |
+| `infra/values/*.yaml*` | HelmRelease/Kustomize values | component directories under `cluster/base/*` and `cluster/overlays/homelab/*` |
 | `charts/platform-namespaces` | GitOps base manifests | `cluster/base/namespaces/` |
 | `charts/platform-issuers` | GitOps cert-manager config | `cluster/base/cert-manager/issuers/` |
 | `charts/apps-hello` | GitOps app example | `cluster/base/apps/example/` |
-| `scripts/31_sync_helmfile_phase_core.sh` | GitOps dependency graph | `cluster/base/*` + overlay dependencies |
-| `scripts/36_sync_helmfile_phase_platform.sh` | GitOps dependency graph | `cluster/base/*` + overlay dependencies |
+| `scripts/32_reconcile_flux_stack.sh` | Flux reconcile operations | `cluster/flux/*` + `cluster/overlays/homelab/flux/*` |
 | `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `cluster/base/runtime-inputs/` |
-| `scripts/9*_verify_*.sh` | GitOps health + policy checks | `scripts/compat/verify-legacy-contracts.sh` then CI policy checks |
+| `scripts/9*_verify_*.sh` | GitOps health + policy checks | direct verify scripts + CI checks |
 
 ## Sequencing in the Target Model
 

@@ -65,6 +65,7 @@ kubectl -n flux-system get events --sort-by=.lastTimestamp -w
 Notes:
 - First-time image pulls (ClickStack/MinIO) can make initial reconciles take several minutes.
 - Host defaults disable bundled k3s `metrics-server`; this repo deploys metrics-server declaratively.
+- OTel exporters use `CLICKSTACK_INGESTION_KEY` when set. After first ClickStack login, copy the ingestion key from UI into `profiles/secrets.env`, then run `make runtime-inputs-sync` and `flux reconcile kustomization homelab-otel -n flux-system --with-source`.
 
 Docs:
 - Phase runbook: `docs/runbook.md`

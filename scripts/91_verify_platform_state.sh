@@ -230,6 +230,30 @@ if feature_is_enabled clickstack; then
     mismatch "clickstack clickhouse deployment not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
+  if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
+    configured_api_key="${CLICKSTACK_API_KEY:-}"
+    runtime_api_key="$(
+      kubectl -n observability get secret clickstack-runtime-inputs -o jsonpath='{.data.CLICKSTACK_API_KEY}' \
+        | base64 --decode 2>/dev/null || true
+    )"
+    if [[ -z "$configured_api_key" ]]; then
+      mismatch "CLICKSTACK_API_KEY is empty; cannot verify clickstack runtime-input alignment"
+      add_suggest "scripts/94_verify_config_inputs.sh"
+    elif [[ -z "$runtime_api_key" ]]; then
+      mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
+      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+    elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
+      mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
+      add_suggest "make runtime-inputs-sync"
+      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
+    else
+      ok "clickstack runtime-input key alignment check passed"
+    fi
+  else
+    mismatch "clickstack-runtime-inputs secret not found"
+    add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+  fi
 else
   ok "$(feature_flag_var clickstack)=false; skipping"
 fi
@@ -248,30 +272,33 @@ if feature_is_enabled otel_k8s; then
     mismatch "otel-k8s cluster deployment release not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
   fi
-  sender_token="${CLICKSTACK_API_KEY:-}"
+  sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
   if [[ -z "$sender_token" ]]; then
-    mismatch "CLICKSTACK_API_KEY is empty; cannot verify otel token alignment"
+    mismatch "CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
     add_suggest "scripts/94_verify_config_inputs.sh"
-  elif kubectl -n observability get secret clickstack-app-secrets >/dev/null 2>&1; then
+  elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
     receiver_token="$(
-      kubectl -n observability get secret clickstack-app-secrets -o jsonpath='{.data.api-key}' \
+      kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' \
         | base64 --decode 2>/dev/null || true
     )"
     if [[ -z "$receiver_token" ]]; then
-      mismatch "clickstack-app-secrets.api-key is empty"
+      mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
+      add_suggest "make runtime-inputs-sync"
       add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
     elif [[ "$sender_token" != "$receiver_token" ]]; then
-      mismatch "otel token mismatch: CLICKSTACK_API_KEY does not match clickstack-app-secrets.api-key"
+      mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
+      add_suggest "make runtime-inputs-sync"
       add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
       add_suggest "flux reconcile kustomization homelab-otel -n flux-system"
     else
       ok "otel token alignment check passed"
+      if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
+        warn "CLICKSTACK_INGESTION_KEY is not set; using CLICKSTACK_API_KEY fallback for OTel exporters"
+      fi
     fi
   else
-    mismatch "clickstack-app-secrets not found"
-    add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
+    mismatch "hyperdx-secret not found"
+    add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
   fi
 else
   ok "$(feature_flag_var otel_k8s)=false; skipping"

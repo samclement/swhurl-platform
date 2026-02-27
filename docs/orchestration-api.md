@@ -89,3 +89,14 @@ Step scripts should:
 3. Exit non-zero on unrecoverable failures.
 4. Keep output operator-readable.
 5. Be idempotent where practical.
+
+## Makefile Operator API
+
+Key runtime-intent targets:
+- `make platform-certs CERT_ENV=staging|prod [DRY_RUN=true]`
+  - Writes a temporary profile with `PLATFORM_CLUSTER_ISSUER` + `LETSENCRYPT_ENV` and runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
+- `make app-test APP_ENV=staging|prod LE_ENV=staging|prod [DRY_RUN=true]`
+  - Maps `APP_ENV` to app host/namespace (`staging.hello.${BASE_DOMAIN}` + `apps-staging`, or `hello.${BASE_DOMAIN}` + `apps-prod`), maps `LE_ENV` to `APP_CLUSTER_ISSUER`, then runs the same reconcile-only flow.
+
+Design boundary:
+- Env vars are consumed at one layer (`platform-runtime-inputs` source secret sync). Flux overlays and base manifests stay declarative and profile-agnostic.

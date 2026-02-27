@@ -15,3 +15,4 @@ Operational note:
 
 - Runtime input source and targets are declarative under `cluster/base/runtime-inputs`.
 - The source secret (`flux-system/platform-runtime-inputs`) is external; sync it from local env/profile with `make runtime-inputs-sync` (used for runtime targets and Flux substitutions including issuer controls `ACME_EMAIL`, `LETSENCRYPT_ENV`, `LETSENCRYPT_*_SERVER`, and `PLATFORM_CLUSTER_ISSUER`).
+- Active provider/app overlay selection is declarative in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`homelab-ingress.path`, `homelab-storage.path`, `homelab-example-app.path`).

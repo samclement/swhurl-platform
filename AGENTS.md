@@ -25,6 +25,7 @@
   - `cluster/README.md` should call out that runtime input targets are declarative in `cluster/base/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
+  - Keep overlay-selection docs explicit: active ingress/storage/app overlays are selected by Flux kustomization `path` values in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (not by `--profile` env layering).
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
@@ -73,6 +74,7 @@
 - Orchestrator run order
   - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.
   - Config contract now validates provider intent flags in `scripts/94_verify_config_inputs.sh`: `INGRESS_PROVIDER=nginx|traefik`, `OBJECT_STORAGE_PROVIDER=minio|ceph`.
+  - Keep `config.env` focused on active inputs: app-environment overlay selection (`staging/prod`) is path-driven in Flux stack, so avoid adding `APP_*` env vars that do not drive manifests.
   - Provider gating is wired in `helmfile.yaml.gotmpl`: ingress-nginx installs only when `INGRESS_PROVIDER=nginx`, MinIO installs only when `OBJECT_STORAGE_PROVIDER=minio`, and ingress-nginx `needs` edges are conditional for provider-flexible releases.
   - Provider-aware ingress templating is centralized in `environments/common.yaml.gotmpl` as `computed.ingressClass`; chart values consume this for ingress class names so swapping `INGRESS_PROVIDER` does not require per-chart rewrites.
   - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Flux `HelmRelease` values under `cluster/base/*` and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
@@ -119,11 +121,11 @@
     - `letsencrypt-prod`
     - `letsencrypt` alias issuer pointing at `LETSENCRYPT_ENV`
   - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, point `LETSENCRYPT_PROD_SERVER` to staging (see `profiles/test-loop.env` / `profiles/overlay-staging.env`) to avoid production ACME traffic.
-  - Issuer intent is split by scope: `PLATFORM_CLUSTER_ISSUER` drives platform ingress/certs, `APP_CLUSTER_ISSUER` drives sample/app cert issuance, and `APP_NAMESPACE` defaults to `apps-staging`.
-  - Managed app namespaces are now `apps-staging` and `apps-prod` (no shared `apps` default). `scripts/75_manage_sample_app_lifecycle.sh` deploys to `${APP_NAMESPACE}`.
-  - Overlay profiles for promotion flow:
-    - `profiles/overlay-staging.env`: app staging defaults with staging ACME safety overrides.
-    - `profiles/overlay-prod.env`: app production defaults (`apps-prod`) and production issuer defaults.
+  - Issuer intent is driven by `PLATFORM_CLUSTER_ISSUER` and applied via Flux substitutions from `platform-runtime-inputs`.
+  - Managed app namespaces are `apps-staging` and `apps-prod`; the active app environment comes from Flux overlay path selection in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`homelab-example-app.path`).
+  - Overlay profiles for promotion flow now represent cert/runtime intent only:
+    - `profiles/overlay-staging.env`: staging ACME safety overrides.
+    - `profiles/overlay-prod.env`: production issuer defaults.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

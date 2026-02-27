@@ -122,6 +122,9 @@ metadata:
   name: homelab-ingress
   namespace: flux-system
 spec:
+  # Overlay selection contract:
+  # - Edit this path to switch ingress provider intent.
+  # - Keep exactly one active ingress overlay path here.
   dependsOn:
     - name: homelab-issuers
   interval: 10m
@@ -203,6 +206,9 @@ metadata:
   name: homelab-storage
   namespace: flux-system
 spec:
+  # Overlay selection contract:
+  # - Edit this path to switch storage provider intent.
+  # - Keep exactly one active storage overlay path here.
   dependsOn:
     - name: homelab-ingress
   interval: 10m
@@ -225,6 +231,8 @@ metadata:
   name: homelab-example-app
   namespace: flux-system
 spec:
+  # Overlay selection contract:
+  # - Edit this path to switch the deployed app environment (staging/prod).
   dependsOn:
     - name: homelab-oauth2-proxy
     - name: homelab-clickstack

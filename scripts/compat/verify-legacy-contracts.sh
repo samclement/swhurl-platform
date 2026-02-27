@@ -11,14 +11,12 @@ fi
 
 ./scripts/94_verify_config_inputs.sh
 ./scripts/91_verify_platform_state.sh
-./scripts/92_verify_helmfile_drift.sh
 
 if [[ "${FEAT_VERIFY_DEEP:-false}" == "true" ]]; then
   ./scripts/90_verify_runtime_smoke.sh
   ./scripts/93_verify_expected_releases.sh
   ./scripts/95_capture_cluster_diagnostics.sh
   ./scripts/96_verify_orchestrator_contract.sh
-  ./scripts/97_verify_provider_matrix.sh
 fi
 
 echo "[compat] legacy verification complete"

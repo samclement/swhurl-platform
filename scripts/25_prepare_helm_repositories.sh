@@ -25,29 +25,8 @@ add_repo() {
   done
 }
 
-# Only add repos needed for enabled features so transient repo outages don't
-# block unrelated installs.
-add_repo jetstack https://charts.jetstack.io true
-if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
-  add_repo ingress-nginx https://kubernetes.github.io/ingress-nginx true
-fi
-
-if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  add_repo oauth2-proxy https://oauth2-proxy.github.io/manifests true
-fi
-if [[ "${FEAT_CILIUM:-true}" == "true" ]]; then
-  add_repo cilium https://helm.cilium.io/ true
-  add_repo metrics-server https://kubernetes-sigs.github.io/metrics-server/ true
-fi
-if [[ "${FEAT_CLICKSTACK:-true}" == "true" ]]; then
-  add_repo clickstack https://clickhouse.github.io/ClickStack-helm-charts true
-fi
-if [[ "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
-  add_repo open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts true
-fi
-if [[ "${FEAT_MINIO:-true}" == "true" && "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
-  add_repo minio https://charts.min.io/ true
-fi
+# Current usage: pre-Flux Cilium bootstrap.
+add_repo cilium https://helm.cilium.io/ true
 
 helm repo update >/dev/null 2>&1 || true
-log_info "Helm repositories added/updated"
+log_info "Helm repositories added/updated (cilium)"

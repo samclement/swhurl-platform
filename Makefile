@@ -10,15 +10,11 @@ help:
 	@echo "  cluster-apply       Apply cluster layer"
 	@echo "  cluster-apply-staging  Apply staging overlay profile"
 	@echo "  cluster-apply-prod  Apply production overlay profile"
-	@echo "  cluster-apply-traefik  Apply with Traefik provider profile"
-	@echo "  cluster-apply-ceph     Apply with Ceph storage profile"
-	@echo "  cluster-apply-traefik-ceph  Apply with Traefik+Ceph provider profile"
 	@echo "  cluster-delete      Delete cluster layer"
 	@echo "  test-loop           Run destructive scratch cycles (k3s uninstall/install + apply/delete)"
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
 	@echo "  verify-legacy       Run legacy verification suite"
-	@echo "  verify-provider-matrix  Validate Helmfile provider gating matrix"
 	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
@@ -51,18 +47,6 @@ cluster-apply-staging:
 cluster-apply-prod:
 	./run.sh --profile profiles/overlay-prod.env
 
-.PHONY: cluster-apply-traefik
-cluster-apply-traefik:
-	./run.sh --profile profiles/provider-traefik.env
-
-.PHONY: cluster-apply-ceph
-cluster-apply-ceph:
-	./run.sh --profile profiles/provider-ceph.env
-
-.PHONY: cluster-apply-traefik-ceph
-cluster-apply-traefik-ceph:
-	./run.sh --profile profiles/provider-traefik-ceph.env
-
 .PHONY: cluster-delete
 cluster-delete:
 	./run.sh --delete
@@ -83,10 +67,6 @@ all-delete:
 verify-legacy:
 	./scripts/compat/verify-legacy-contracts.sh
 
-.PHONY: verify-provider-matrix
-verify-provider-matrix:
-	./scripts/97_verify_provider_matrix.sh
-
 .PHONY: flux-bootstrap
 flux-bootstrap:
 	./scripts/bootstrap/install-flux.sh
@@ -98,6 +78,4 @@ runtime-inputs-sync:
 .PHONY: flux-reconcile
 flux-reconcile:
 	./scripts/bootstrap/sync-runtime-inputs.sh
-	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
-	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
-	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m
+	./scripts/32_reconcile_flux_stack.sh

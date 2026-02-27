@@ -8,7 +8,6 @@ log_info "Checking prerequisites"
 # Required
 need_cmd kubectl
 need_cmd helm
-need_cmd helmfile
 need_cmd curl
 need_cmd rg
 need_cmd envsubst

@@ -157,29 +157,19 @@ build_apply_plan() {
   # 3) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
-  # 4) Cluster Dependencies
-  add_step out_arr "$(step_path 25_prepare_helm_repositories.sh)"
-  add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
-  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
+  # 4) Flux Bootstrap + Reconcile
+  add_step out_arr "$(step_path bootstrap/install-flux.sh)"
+  add_step out_arr "$(step_path bootstrap/sync-runtime-inputs.sh)"
+  add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
 
-  # 5) Platform Services
-  add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
-  add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
-  # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
-
-  # 6) Test Application
-  add_step out_arr "$(step_path 75_manage_sample_app_lifecycle.sh)"
-
-  # 7) Verification
+  # 5) Verification
   # Core verification gates (default)
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_verify_platform_state.sh)"
-  add_step_if out_arr "$FEAT_VERIFY" "$(step_path 92_verify_helmfile_drift.sh)"
   # Extra verification/diagnostics (opt-in)
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 90_verify_runtime_smoke.sh)"
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 93_verify_expected_releases.sh)"
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 95_capture_cluster_diagnostics.sh)"
   add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 96_verify_orchestrator_contract.sh)"
-  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 97_verify_provider_matrix.sh)"
 }
 
 build_delete_plan() {
@@ -189,20 +179,14 @@ build_delete_plan() {
   # Preflight: require kube context (do not pass --delete).
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
-  # Reverse platform components (apps -> services -> finalizers).
-  add_step out_arr "$(step_path 75_manage_sample_app_lifecycle.sh)"
-
-  add_step out_arr "$(step_path 36_sync_helmfile_phase_platform.sh)"
-  add_step out_arr "$(step_path 31_sync_helmfile_phase_core.sh)"
+  # Reverse platform components and controllers before final teardown checks.
+  add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
   add_step out_arr "$(step_path 30_manage_cert_manager_cleanup.sh)"
-  # Service mesh scripts removed (Linkerd/Istio) to keep platform focused and reduce surface area.
-
-  # Remove the namespaces Helm release record (namespaces themselves are deleted in 99_execute_teardown.sh).
-  add_step out_arr "$(step_path 20_reconcile_platform_namespaces.sh)"
 
   # Deterministic finalizers: teardown -> cilium -> verify.
   add_step out_arr "$(step_path 99_execute_teardown.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
+  add_step out_arr "$(step_path bootstrap/install-flux.sh)"
   add_step out_arr "$(step_path 98_verify_teardown_clean.sh)"
 }
 
@@ -223,12 +207,10 @@ print_plan() {
     echo "  - 1) Prerequisites & verify"
     echo "  - 2) Basic Kubernetes Cluster (kubeconfig)"
     echo "  - 3) Environment (profiles/secrets) & verification"
-    echo "  - 4) Cluster deps (helm/cilium) & verification"
-    echo "  - 5) Platform services & verification"
-    echo "  - 6) Test application & verification"
-    echo "  - 7) Cluster verification suite"
+    echo "  - 4) Flux bootstrap + reconcile"
+    echo "  - 5) Cluster verification suite"
   else
-    echo "  - Delete (reverse phases; cilium last)"
+    echo "  - Delete (reverse phases; cilium + flux cleanup last)"
   fi
 
   for s in "${steps[@]}"; do
@@ -276,9 +258,7 @@ run_step() {
   case "$base" in
     26_manage_cilium_lifecycle.sh)
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
-    31_sync_helmfile_phase_core.sh|36_sync_helmfile_phase_platform.sh)
-      ;;
-    91_verify_platform_state.sh|92_verify_helmfile_drift.sh|94_verify_config_inputs.sh)
+    91_verify_platform_state.sh|94_verify_config_inputs.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
     90_verify_runtime_smoke.sh|93_verify_expected_releases.sh|95_capture_cluster_diagnostics.sh|96_verify_orchestrator_contract.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY_DEEP" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY_DEEP=false or delete mode)"; return 0; } ;;

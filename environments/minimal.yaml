@@ -1,4 +1,0 @@
-profileName: minimal
-features:
-  oauth2Proxy: false
-  minio: false

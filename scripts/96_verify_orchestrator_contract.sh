@@ -12,7 +12,6 @@ fi
 
 ok(){ printf "[OK] %s\n" "$1"; }
 bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
-warn(){ printf "[WARN] %s\n" "$1"; }
 
 fail=0
 printf "== Orchestrator Contract Verification ==\n"
@@ -20,41 +19,40 @@ printf "== Orchestrator Contract Verification ==\n"
 run="$SCRIPT_DIR/../run.sh"
 root="$SCRIPT_DIR/.."
 config_file="$root/config.env"
-helmfile_file="$root/helmfile.yaml.gotmpl"
 flux_stack_file="$root/cluster/overlays/homelab/flux/stack-kustomizations.yaml"
 
-# Verify the supported default apply pipeline uses the Helmfile phase scripts.
-for s in 31_sync_helmfile_phase_core.sh 36_sync_helmfile_phase_platform.sh; do
-  p="$SCRIPT_DIR/$s"
-  if [[ -f "$p" ]]; then
+for s in scripts/bootstrap/install-flux.sh scripts/bootstrap/sync-runtime-inputs.sh scripts/32_reconcile_flux_stack.sh; do
+  if [[ -x "$root/$s" ]]; then
     ok "$s: present"
   else
     bad "$s: present"
   fi
 done
 
-if rg -q '31_sync_helmfile_phase_core\.sh' "$run" && rg -q '36_sync_helmfile_phase_platform\.sh' "$run"; then
-  ok "run.sh: apply phase scripts wired into plan"
+if rg -q 'bootstrap/install-flux\.sh' "$run" \
+  && rg -q 'bootstrap/sync-runtime-inputs\.sh' "$run" \
+  && rg -q '32_reconcile_flux_stack\.sh' "$run"; then
+  ok "run.sh: Flux apply steps wired into plan"
 else
-  bad "run.sh: apply phase scripts wired into plan"
+  bad "run.sh: Flux apply steps wired into plan"
 fi
 
-if [[ -f "$SCRIPT_DIR/29_prepare_platform_runtime_inputs.sh" ]]; then
-  bad "29_prepare_platform_runtime_inputs.sh: removed (legacy bridge retired)"
+if rg -q '31_sync_helmfile_phase_core\.sh|36_sync_helmfile_phase_platform\.sh|92_verify_helmfile_drift\.sh|75_manage_sample_app_lifecycle\.sh' "$run"; then
+  bad "run.sh: no Helmfile compatibility steps in plan"
 else
-  ok "29_prepare_platform_runtime_inputs.sh: removed (legacy bridge retired)"
+  ok "run.sh: no Helmfile compatibility steps in plan"
 fi
 
-if rg -n 'build_apply_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
-  bad "run.sh: apply plan excludes 29_prepare_platform_runtime_inputs.sh"
+if [[ -e "$root/helmfile.yaml.gotmpl" ]]; then
+  bad "helmfile.yaml.gotmpl: removed"
 else
-  ok "run.sh: apply plan excludes 29_prepare_platform_runtime_inputs.sh"
+  ok "helmfile.yaml.gotmpl: removed"
 fi
 
-if rg -n 'build_delete_plan' -A50 "$run" | rg -q '29_prepare_platform_runtime_inputs\.sh'; then
-  bad "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
+if [[ -d "$root/environments" ]]; then
+  bad "environments/: removed"
 else
-  ok "run.sh: delete plan excludes 29_prepare_platform_runtime_inputs.sh"
+  ok "environments/: removed"
 fi
 
 if [[ -d "$root/cluster/base/runtime-inputs" ]]; then
@@ -92,32 +90,6 @@ else
   bad "Flux stack: clickstack bootstrap kustomization removed; otel depends directly on clickstack"
 fi
 
-if rg -q 'helmfile_cmd -l phase=core (sync|destroy)' "$SCRIPT_DIR/31_sync_helmfile_phase_core.sh"; then
-  ok "31_sync_helmfile_phase_core.sh: uses helmfile_cmd with phase=core label selection"
-else
-  bad "31_sync_helmfile_phase_core.sh: uses helmfile_cmd with phase=core label selection"
-fi
-if rg -q 'helmfile_cmd -l phase=platform (sync|destroy)' "$SCRIPT_DIR/36_sync_helmfile_phase_platform.sh"; then
-  ok "36_sync_helmfile_phase_platform.sh: uses helmfile_cmd with phase=platform label selection"
-else
-  bad "36_sync_helmfile_phase_platform.sh: uses helmfile_cmd with phase=platform label selection"
-fi
-
-# Release-specific scripts should keep using shared Helmfile helpers if/when they exist.
-for s in 26_manage_cilium_lifecycle.sh 30_manage_cert_manager_cleanup.sh; do
-  p="$SCRIPT_DIR/$s"
-  if rg -q 'sync_release ' "$p"; then
-    ok "$s: sync_release path present"
-  else
-    bad "$s: sync_release path present"
-  fi
-  if rg -q 'destroy_release ' "$p"; then
-    ok "$s: destroy_release path present"
-  else
-    bad "$s: destroy_release path present"
-  fi
-done
-
 printf "\n== Feature Registry Contracts ==\n"
 
 allowed_non_feature_flags=(FEAT_VERIFY FEAT_VERIFY_DEEP)
@@ -128,8 +100,6 @@ else
   ok "feature registry exposes FEAT_* flags"
 fi
 
-# Every FEAT_* in config/profiles should be represented by the registry
-# unless it is an orchestration-only toggle.
 config_sources=("$config_file")
 for p in "$root"/profiles/*.env; do
   [[ -f "$p" ]] || continue
@@ -150,7 +120,6 @@ for flag in "${declared_feat_flags[@]}"; do
 done
 ok "All feature FEAT_* flags in config/profiles are covered by the registry"
 
-# Ensure config.env carries defaults for each registered feature flag.
 mapfile -t config_defaults < <(
   awk -F= '/^[[:space:]]*FEAT_[A-Z0-9_]+[[:space:]]*=/{gsub(/[[:space:]]/,"",$1); print $1}' "$config_file" | sort -u
 )
@@ -162,22 +131,19 @@ for flag in "${registry_flags[@]}"; do
   fi
 done
 
-# Parse release refs from helmfile (<namespace>/<name>).
-mapfile -t helmfile_releases < <(
-  awk '
-    /^[[:space:]]*-[[:space:]]name:[[:space:]]*/{
-      name=$0
-      sub(/^[[:space:]]*-[[:space:]]name:[[:space:]]*/,"",name)
-      gsub(/"/,"",name)
-      next
-    }
-    /^[[:space:]]*namespace:[[:space:]]*/{
-      ns=$0
-      sub(/^[[:space:]]*namespace:[[:space:]]*/,"",ns)
-      gsub(/"/,"",ns)
-      if(name!=""){print ns "/" name; name=""}
-    }
-  ' "$helmfile_file" | sort -u
+mapfile -t manifest_releases < <(
+  find "$root/cluster" -name '*.yaml' -type f -print0 \
+    | xargs -0 awk '
+      BEGIN {kind=""; name=""; ns=""}
+      /^kind:[[:space:]]*HelmRelease[[:space:]]*$/ {kind="HelmRelease"; name=""; ns=""; next}
+      kind=="HelmRelease" && /^[[:space:]]*name:[[:space:]]*/ && name=="" {
+        line=$0; sub(/^[[:space:]]*name:[[:space:]]*/,"",line); gsub(/"/,"",line); name=line; next
+      }
+      kind=="HelmRelease" && /^[[:space:]]*namespace:[[:space:]]*/ && ns=="" {
+        line=$0; sub(/^[[:space:]]*namespace:[[:space:]]*/,"",line); gsub(/"/,"",line); ns=line;
+        if (name != "") { print ns "/" name; kind=""; name=""; ns="" }
+      }
+    ' | sort -u
 )
 
 for key in "${FEATURE_KEYS[@]}"; do
@@ -186,10 +152,10 @@ for key in "${FEATURE_KEYS[@]}"; do
     bad "feature '${key}' has no expected release mapping"
   fi
   for rel in "${expected_releases[@]}"; do
-    if printf '%s\n' "${helmfile_releases[@]}" | grep -qx "$rel"; then
-      ok "feature '${key}' release mapped in helmfile: ${rel}"
+    if printf '%s\n' "${manifest_releases[@]}" | grep -qx "$rel"; then
+      ok "feature '${key}' release mapped in cluster manifests: ${rel}"
     else
-      bad "feature '${key}' release missing from helmfile: ${rel}"
+      bad "feature '${key}' release missing from cluster manifests: ${rel}"
     fi
   done
 done

@@ -94,7 +94,7 @@ host_verify_host_commands() {
   done
 
   # These are managed by separate steps in many environments. Warn only.
-  for cmd in kubectl helm helmfile; do
+  for cmd in kubectl helm flux; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       host_log_warn "${cmd} not found (expected for cluster lifecycle operations)"
     fi

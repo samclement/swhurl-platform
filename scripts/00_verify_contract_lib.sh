@@ -25,20 +25,9 @@ readonly VERIFY_INGRESS_NODEPORT_HTTP="31514"
 readonly VERIFY_INGRESS_NODEPORT_HTTPS="30313"
 readonly VERIFY_SAMPLE_INGRESS_HOST_PREFIX="staging.hello"
 
-# Helmfile drift ignore contract.
-readonly -a VERIFY_HELMFILE_IGNORED_RESOURCE_HEADERS=(
-  "kube-system, cilium-ca, Secret (v1) has changed:"
-  "kube-system, hubble-relay-client-certs, Secret (v1) has changed:"
-  "kube-system, hubble-server-certs, Secret (v1) has changed:"
-)
-
 # Teardown/delete-clean contract.
 readonly -a PLATFORM_MANAGED_NAMESPACES=(apps-staging apps-prod cert-manager ingress logging observability platform-system storage)
 readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
-readonly -a VERIFY_RELEASE_ALLOWLIST_DEFAULT=(
-  "apps-staging/hello-web"
-  "apps-prod/hello-web"
-)
 
 # During teardown (before Cilium delete), keep Cilium helm release metadata.
 readonly -a VERIFY_K3S_ALLOWED_SECRETS_PRE_CILIUM=(
@@ -91,14 +80,6 @@ is_platform_managed_namespace() {
     [[ "$item" == "$ns" ]] && return 0
   done
   return 1
-}
-
-is_release_in_platform_scope() {
-  local release_ref="$1"
-  local ns="${release_ref%%/*}"
-  [[ -n "$ns" ]] || return 1
-  [[ "$ns" == "kube-system" ]] && return 0
-  is_platform_managed_namespace "$ns"
 }
 
 is_allowed_k3s_secret_for_teardown() {
@@ -162,37 +143,6 @@ verify_expected_letsencrypt_server() {
       printf '%s' "$staging_server"
       ;;
   esac
-}
-
-verify_expected_releases() {
-  local -A seen=()
-  local -a expected=(
-    "kube-system/platform-namespaces"
-    "cert-manager/cert-manager"
-    "kube-system/platform-issuers"
-  )
-
-  case "${INGRESS_PROVIDER:-nginx}" in
-    nginx|"" ) expected+=("ingress/ingress-nginx") ;;
-    traefik ) ;;
-    * ) ;;
-  esac
-
-  local key release
-  for key in "${FEATURE_KEYS[@]}"; do
-    feature_is_enabled "$key" || continue
-    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
-      continue
-    fi
-    while IFS= read -r release; do
-      [[ -n "$release" ]] || continue
-      if [[ -z "${seen[$release]+x}" ]]; then
-        expected+=("$release")
-        seen["$release"]=1
-      fi
-    done < <(feature_expected_releases "$key")
-  done
-  printf '%s\n' "${expected[@]}"
 }
 
 verify_required_vars_for_enabled_features() {

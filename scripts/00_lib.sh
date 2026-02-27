@@ -14,8 +14,7 @@ source "$SCRIPT_DIR/00_feature_registry_lib.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/00_verify_contract_lib.sh"
 
-# Load config and profile. Helmfile templates use env-vars via `env "FOO"`,
-# so we need to export loaded values, not just set shell variables.
+# Load config and profile and export for child process consumption.
 set -a
 if [[ -f "$ROOT_DIR/config.env" ]]; then
   # shellcheck disable=SC1090
@@ -140,25 +139,6 @@ wait_crd_established() {
     fi
     sleep 2
   done
-}
-
-helmfile_cmd() {
-  need_cmd helmfile
-  local hf_file="${HELMFILE_FILE:-$ROOT_DIR/helmfile.yaml.gotmpl}"
-  local hf_env="${HELMFILE_ENV:-default}"
-  helmfile -f "$hf_file" -e "$hf_env" "$@"
-}
-
-sync_release() {
-  # Single-release convergence should key off a stable label rather than release name.
-  # We standardize on `component=<id>` across Helmfile releases.
-  local component="$1"
-  helmfile_cmd -l component="$component" sync
-}
-
-destroy_release() {
-  local component="$1"
-  helmfile_cmd -l component="$component" destroy
 }
 
 label_managed() {

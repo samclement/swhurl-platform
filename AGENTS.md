@@ -10,10 +10,15 @@
 - Documentation workflow
   - `showboat` is not installed globally in this repo environment; run it via `uvx showboat ...` (for example `uvx showboat init walkthrough.md ...`).
   - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
+  - If a `showboat exec`/`showboat note` append is wrong, use `uvx showboat pop <file>` immediately to drop only the most recent entry, then re-run the corrected command.
   - The historical executable walkthrough drifted; `walkthrough.md` is now a concise current-state pointer. Regenerate it with `uvx showboat init ...` + fresh exec blocks when a full executable transcript is needed.
   - Avoid self-referential Showboat commands inside executable walkthrough `bash` blocks (for example `showboat verify walkthrough.md`), which can cause recursive verification hangs.
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
+  - Keep README quickstart aligned with `Makefile`: `make flux-reconcile` already runs runtime-input sync, so docs should not require a separate pre-step unless called out as optional/manual.
+  - Keep `profiles/secrets.example.env` comments aligned with `scripts/bootstrap/sync-runtime-inputs.sh` validation (for example `OAUTH_COOKIE_SECRET` is required and must be 16/24/32 chars when oauth2-proxy is enabled).
+  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; default homelab flow is a single `PLATFORM_CLUSTER_ISSUER` toggle (`letsencrypt-staging|letsencrypt-prod`) synced via `make runtime-inputs-sync` and applied by Flux reconcile (no platform path switching required).
+  - `cluster/overlays/homelab/platform/staging` was removed as unused scaffolding; keep platform defaults in `cluster/base/*` and use issuer toggle docs instead of staging platform overlay references.
   - `cluster/README.md` should call out that runtime input targets are declarative in `cluster/base/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
@@ -26,13 +31,13 @@
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
   - Runtime input targets live in `cluster/base/runtime-inputs`; Flux `homelab-runtime-inputs` now injects values via `postBuild.substituteFrom` from external `flux-system/platform-runtime-inputs`.
-  - `homelab-issuers` also consumes `platform-runtime-inputs` via Flux `postBuild.substituteFrom` for `ACME_EMAIL`; keep `make runtime-inputs-sync` in the issuer update path.
+  - `homelab-issuers` also consumes `platform-runtime-inputs` via Flux `postBuild.substituteFrom` for issuer controls (`ACME_EMAIL`, `LETSENCRYPT_ENV`); keep `make runtime-inputs-sync` in the issuer update path.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
-  - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`) where platform ingress annotations use `letsencrypt-staging`; promote to prod by switching paths to `cluster/overlays/homelab/platform/prod/*`.
+  - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`); platform cert mode is toggled via `PLATFORM_CLUSTER_ISSUER` from `platform-runtime-inputs` (staging/prod) without path switching.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
   - `cluster/base/README.md` should describe only active component paths; do not reference removed `cluster/base/core` or `cluster/base/platform` placeholders.
   - Provider overlay scaffolds now live at `cluster/overlays/homelab/providers/{ingress-traefik,ingress-nginx,storage-minio,storage-ceph}`; keep overlay composition explicit by selecting one ingress overlay and one storage overlay in the active homelab kustomization.
-  - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now targets `cluster/base/storage/minio` (staging issuer intent in base values). Use `cluster/overlays/homelab/platform/prod/storage-minio` for prod annotation/host promotion.
+  - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now targets `cluster/base/storage/minio`; cert issuer intent follows `PLATFORM_CLUSTER_ISSUER` substitution.
   - Ingress provider overlay `cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml` is active (no `spec.suspend`) and is the default ingress layer in Flux stack sequencing.
   - Component-level GitOps base scaffolds now exist under `cluster/base/` (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/minio`, `storage/ceph`, plus `apps/example`); prefer component-level paths directly (legacy `core/` and `platform/` placeholders were removed).
   - Cert-manager and issuer Flux `HelmRelease` resources are active at `cluster/base/cert-manager/helmrelease-cert-manager.yaml` and `cluster/base/cert-manager/issuers/helmrelease-platform-issuers.yaml`.
@@ -113,8 +118,8 @@
   - Issuer intent is split by scope: `PLATFORM_CLUSTER_ISSUER` drives platform ingress/certs, `APP_CLUSTER_ISSUER` drives sample/app cert issuance, and `APP_NAMESPACE` defaults to `apps-staging`.
   - Managed app namespaces are now `apps-staging` and `apps-prod` (no shared `apps` default). `scripts/75_manage_sample_app_lifecycle.sh` deploys to `${APP_NAMESPACE}`.
   - Overlay profiles for promotion flow:
-    - `profiles/overlay-staging.env`: staging issuer defaults and prod-named issuer routed to staging ACME.
-    - `profiles/overlay-prod.env`: production issuer defaults and app namespace `apps-prod`.
+    - `profiles/overlay-staging.env`: app staging defaults with staging ACME safety overrides.
+    - `profiles/overlay-prod.env`: app production defaults (`apps-prod`) and production issuer defaults.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

@@ -50,7 +50,7 @@ spec:
         path: /(.*)
         pathType: ImplementationSpecific
         annotations:
-          cert-manager.io/cluster-issuer: letsencrypt-staging
+          cert-manager.io/cluster-issuer: "${PLATFORM_CLUSTER_ISSUER}"
         tls:
           enabled: true
           secretName: clickstack-tls

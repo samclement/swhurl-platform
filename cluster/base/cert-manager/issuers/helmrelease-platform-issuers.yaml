@@ -27,7 +27,7 @@ spec:
     labels:
       platform.swhurl.io/managed: "true"
     letsencrypt:
-      selectedEnv: staging
+      selectedEnv: "${LETSENCRYPT_ENV}"
       stagingServer: https://acme-staging-v02.api.letsencrypt.org/directory
       prodServer: https://acme-v02.api.letsencrypt.org/directory
       createAlias: true

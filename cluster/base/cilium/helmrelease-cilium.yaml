@@ -35,7 +35,7 @@ spec:
           enabled: true
           className: nginx
           annotations:
-            cert-manager.io/cluster-issuer: letsencrypt-staging
+            cert-manager.io/cluster-issuer: "${PLATFORM_CLUSTER_ISSUER}"
             nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
             nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
           hosts:

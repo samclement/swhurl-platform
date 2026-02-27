@@ -185,6 +185,7 @@ releases:
   - name: hello-web
     namespace: {{ .Environment.Values.computed.appNamespace }}
     chart: ./charts/apps-hello
+    timeout: 1200
     installed: true
     needs:
       - kube-system/platform-issuers

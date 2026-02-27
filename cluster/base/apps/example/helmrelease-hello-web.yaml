@@ -4,8 +4,9 @@ metadata:
   name: hello-web
   namespace: apps-staging
 spec:
-  interval: 30m
+  interval: 10m
   releaseName: hello-web
+  timeout: 20m
   chart:
     spec:
       chart: ./charts/apps-hello
@@ -16,10 +17,10 @@ spec:
       interval: 30m
   install:
     remediation:
-      retries: 3
+      retries: 20
   upgrade:
     remediation:
-      retries: 3
+      retries: 20
   values:
     nameOverride: hello-web
     labels:

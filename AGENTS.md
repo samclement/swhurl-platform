@@ -37,6 +37,7 @@
   - Cert-manager and issuer Flux `HelmRelease` resources are active at `cluster/base/cert-manager/helmrelease-cert-manager.yaml` and `cluster/base/cert-manager/issuers/helmrelease-platform-issuers.yaml`.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
   - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack deploys via `cluster/overlays/homelab/apps/staging`.
+  - Sample app TLS issuance can lag DNS propagation on first bootstraps; `cluster/base/apps/example/helmrelease-hello-web.yaml` now uses `timeout: 20m`, `interval: 10m`, and higher install/upgrade remediation retries to avoid permanent `RetriesExceeded` stalls.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
   - Parent Flux `Kustomization` `cluster/flux/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.

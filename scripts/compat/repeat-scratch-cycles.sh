@@ -86,7 +86,7 @@ run_k3s_install() {
   local -a host_args=()
   [[ -n "$HOST_ENV_FILE" ]] && host_args+=(--host-env "$HOST_ENV_FILE")
   log "Installing k3s"
-  ./scripts/manual_install_k3s_minimal.sh "${host_args[@]}"
+  ./host/run-host.sh --only 20_install_k3s.sh "${host_args[@]}"
 }
 
 for i in $(seq 1 "$CYCLES"); do

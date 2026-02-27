@@ -7,7 +7,7 @@ For the current repo behavior, use:
 1. `README.md` for operator flows and common use cases.
 2. `docs/orchestration-api.md` for CLI/step contracts.
 3. `docs/runbook.md` for Flux-first operations.
-4. `./scripts/02_print_plan.sh` and `./scripts/02_print_plan.sh --delete` for exact orchestrator plans.
+4. `./run.sh --dry-run` and `./run.sh --dry-run --delete` for exact orchestrator plans.
 
 If a full executable transcript is needed, regenerate a fresh walkthrough with Showboat:
 

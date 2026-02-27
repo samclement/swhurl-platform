@@ -14,7 +14,7 @@ help:
 	@echo "  test-loop           Run destructive scratch cycles (k3s uninstall/install + apply/delete)"
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
-	@echo "  verify-legacy       Run legacy verification suite"
+	@echo "  verify              Run verification scripts against current context"
 	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
@@ -33,7 +33,7 @@ host-delete:
 
 .PHONY: cluster-plan
 cluster-plan:
-	./scripts/02_print_plan.sh
+	./run.sh --dry-run
 
 .PHONY: cluster-apply
 cluster-apply:
@@ -63,9 +63,16 @@ all-apply:
 all-delete:
 	./run.sh --with-host --delete
 
-.PHONY: verify-legacy
-verify-legacy:
-	./scripts/compat/verify-legacy-contracts.sh
+.PHONY: verify
+verify:
+	./scripts/94_verify_config_inputs.sh
+	./scripts/91_verify_platform_state.sh
+ifeq ($(FEAT_VERIFY_DEEP),true)
+	./scripts/90_verify_runtime_smoke.sh
+	./scripts/93_verify_expected_releases.sh
+	./scripts/95_capture_cluster_diagnostics.sh
+	./scripts/96_verify_orchestrator_contract.sh
+endif
 
 .PHONY: flux-bootstrap
 flux-bootstrap:

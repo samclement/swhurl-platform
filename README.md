@@ -133,8 +133,8 @@ Default delete flow:
 Show plans:
 
 ```bash
-./scripts/02_print_plan.sh
-./scripts/02_print_plan.sh --delete
+./run.sh --dry-run
+./run.sh --dry-run --delete
 ```
 
 ## Useful Targets
@@ -147,6 +147,7 @@ Show plans:
 - `make cluster-delete`
 - `make all-apply`
 - `make all-delete`
+- `make verify`
 
 ## Repo Layout
 

@@ -39,6 +39,10 @@ clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 platform_cluster_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
 letsencrypt_env="${LETSENCRYPT_ENV:-staging}"
+default_letsencrypt_staging_server="https://acme-staging-v02.api.letsencrypt.org/directory"
+default_letsencrypt_prod_server="https://acme-v02.api.letsencrypt.org/directory"
+letsencrypt_staging_server="${LETSENCRYPT_STAGING_SERVER:-$default_letsencrypt_staging_server}"
+letsencrypt_prod_server="${LETSENCRYPT_PROD_SERVER:-$default_letsencrypt_prod_server}"
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
   require_non_empty "OIDC_CLIENT_ID" "$oidc_client_id"
@@ -63,6 +67,11 @@ if [[ "$letsencrypt_env" == "production" ]]; then
   letsencrypt_env="prod"
 fi
 
+letsencrypt_alias_server="$letsencrypt_staging_server"
+if [[ "$letsencrypt_env" == "prod" ]]; then
+  letsencrypt_alias_server="$letsencrypt_prod_server"
+fi
+
 if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
 fi
@@ -81,6 +90,9 @@ kubectl create secret generic platform-runtime-inputs \
   --from-literal=ACME_EMAIL="$acme_email" \
   --from-literal=PLATFORM_CLUSTER_ISSUER="$platform_cluster_issuer" \
   --from-literal=LETSENCRYPT_ENV="$letsencrypt_env" \
+  --from-literal=LETSENCRYPT_STAGING_SERVER="$letsencrypt_staging_server" \
+  --from-literal=LETSENCRYPT_PROD_SERVER="$letsencrypt_prod_server" \
+  --from-literal=LETSENCRYPT_ALIAS_SERVER="$letsencrypt_alias_server" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
   --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -

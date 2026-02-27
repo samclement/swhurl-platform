@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    platform.swhurl.io/managed: "true"
+spec:
+  acme:
+    email: "${ACME_EMAIL}"
+    server: "${LETSENCRYPT_PROD_SERVER}"
+    privateKeySecretRef:
+      name: acme-account-key-prod
+    solvers:
+      - http01:
+          ingress:
+            class: nginx

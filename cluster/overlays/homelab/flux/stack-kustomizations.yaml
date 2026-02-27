@@ -141,6 +141,7 @@ metadata:
 spec:
   dependsOn:
     - name: homelab-ingress
+    - name: homelab-runtime-inputs
   interval: 10m
   sourceRef:
     kind: GitRepository

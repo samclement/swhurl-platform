@@ -6,6 +6,12 @@ metadata:
 spec:
   interval: 30m
   releaseName: clickstack
+  valuesFrom:
+    - kind: Secret
+      name: clickstack-runtime-inputs
+      valuesKey: CLICKSTACK_API_KEY
+      targetPath: hyperdx.apiKey
+      optional: false
   chart:
     spec:
       chart: clickstack
@@ -36,7 +42,6 @@ spec:
         enabled: true
         dataSize: 10Gi
     hyperdx:
-      apiKey: ""
       frontendUrl: https://clickstack.homelab.swhurl.com
       ingress:
         enabled: true
@@ -46,9 +51,6 @@ spec:
         pathType: ImplementationSpecific
         annotations:
           cert-manager.io/cluster-issuer: letsencrypt-staging
-          nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
-          nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
-          nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User,X-Auth-Request-Email,Authorization
         tls:
           enabled: true
           secretName: clickstack-tls

@@ -4,6 +4,7 @@ Declarative runtime secret targets used by platform components:
 
 - `ingress/oauth2-proxy-secret`
 - `logging/hyperdx-secret`
+- `observability/clickstack-runtime-inputs`
 - source values in `flux-system/platform-runtime-inputs`
 
 `kustomization.yaml` uses `replacements` to project source keys from

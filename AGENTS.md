@@ -159,10 +159,11 @@
 
 - Observability with ClickStack
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
-  - Optional OAuth protection for HyperDX ingress is declarative in `infra/values/clickstack-helmfile.yaml.gotmpl` and enabled when `FEAT_OAUTH2_PROXY=true`.
+  - ClickStack/HyperDX ingress is intentionally not oauth2-proxy protected; app-level ingresses should own oauth2-proxy auth annotations when required.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
   - OTel Helmfile values now render endpoint config from `infra/values/otel-k8s-daemonset.yaml.gotmpl` and `infra/values/otel-k8s-deployment.yaml.gotmpl` (`computed.clickstackOtelEndpoint`) and render `authorization` from `CLICKSTACK_API_KEY`; legacy runtime-input cleanup (`otel-config-vars`) is handled by `scripts/99_execute_teardown.sh`.
+  - Flux path key wiring: `cluster/base/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` into both `logging/hyperdx-secret` and `observability/clickstack-runtime-inputs`; ClickStack HelmRelease consumes `observability/clickstack-runtime-inputs` via `valuesFrom.targetPath=hyperdx.apiKey`.
   - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
   - Single-key contract: `CLICKSTACK_API_KEY` now defines both ClickStack chart `apiKey` and OTel exporter `authorization`; after key rotation in HyperDX UI, update `CLICKSTACK_API_KEY` and rerun `scripts/36_sync_helmfile_phase_platform.sh`.

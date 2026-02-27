@@ -32,4 +32,4 @@ spec:
       prodServer: https://acme-v02.api.letsencrypt.org/directory
       createAlias: true
       ingressClass: nginx
-      email: admin@homelab.swhurl.com
+      email: "${ACME_EMAIL}"

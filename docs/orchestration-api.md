@@ -65,7 +65,7 @@ As-of-step contract (default delete):
 
 Notes:
 
-- Runtime input target secrets are reconciled declaratively via `cluster/base/runtime-inputs`; source secret `flux-system/platform-runtime-inputs` is synced via `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync`.
+- Runtime input target secrets are reconciled declaratively via `cluster/base/runtime-inputs`; source secret `flux-system/platform-runtime-inputs` is synced via `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync` and also supplies `ACME_EMAIL` to `homelab-issuers` via Flux post-build substitution.
 - `run.sh` apply/delete plans still have no dedicated runtime-input step.
 - Delete-time legacy runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
 
@@ -115,4 +115,4 @@ The orchestrators invoke step scripts as executable files. Step scripts should f
 Compatibility notes:
 
 - `scripts/manual_install_k3s_minimal.sh` and `scripts/manual_configure_route53_dns_updater.sh` are compatibility wrappers into host-layer tasks.
-- Runtime input targets are declarative in `cluster/base/runtime-inputs`; source secret updates are done with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync`.
+- Runtime input targets are declarative in `cluster/base/runtime-inputs`; source secret updates are done with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync` (also updating `ACME_EMAIL` for issuer reconciliation).

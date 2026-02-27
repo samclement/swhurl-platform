@@ -135,6 +135,7 @@ The default `./run.sh` path uses these scripts:
 
 Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
 Source secret `flux-system/platform-runtime-inputs` is external and should be synced with `make runtime-inputs-sync`.
+`ACME_EMAIL` is also sourced from `platform-runtime-inputs` and substituted into Flux `homelab-issuers` (`platform-issuers` HelmRelease).
 Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
 

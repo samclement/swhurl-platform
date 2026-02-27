@@ -14,7 +14,7 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
 
 - Phase 1 (Host Layer Introduction): complete (Bash-based host ownership)
   - `host/` task/lib structure is in place.
-  - Legacy manual host scripts are compatibility wrappers.
+  - Host operations run through `host/run-host.sh` task selection (`--only`).
 - Phase 2 (GitOps Bootstrap): complete
   - `cluster/flux/*` and bootstrap helper exist.
   - Flux dependency chain is active in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
@@ -131,7 +131,7 @@ Guiding rule:
 │
 ├─ scripts/
 │  ├─ compat/
-│  │  └─ verify-legacy-contracts.sh
+│  │  └─ repeat-scratch-cycles.sh
 │  └─ bootstrap/
 │     └─ install-flux.sh
 │
@@ -145,7 +145,6 @@ Guiding rule:
 
 Notes:
 
-- Keep a temporary `scripts/compat/` area while migrating so existing workflows continue.
 - Keep one primary templating mechanism in cluster definitions. Avoid stacking Helmfile gotmpl + Kustomize env substitution + ad-hoc bash templating together.
 
 ## Migration Phases
@@ -248,12 +247,11 @@ Tasks:
 
 | Current path | Target ownership | Target path |
 |---|---|---|
-| `scripts/manual_install_k3s_minimal.sh` | Host Bash module | `host/tasks/20_install_k3s.sh` + `host/lib/30_k3s_lib.sh` |
-| `scripts/manual_configure_route53_dns_updater.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
+| `host/run-host.sh --only 20_install_k3s.sh` | Host Bash module | `host/tasks/20_install_k3s.sh` + `host/lib/30_k3s_lib.sh` |
+| `host/run-host.sh --only 10_dynamic_dns.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
-| `infra/values/*.yaml*` | HelmRelease/Kustomize values | component directories under `cluster/base/*` and `cluster/overlays/homelab/*` |
 | `charts/platform-namespaces` | Retired | `cluster/base/namespaces/` (plain manifests) |
 | `charts/platform-issuers` | Retired | `cluster/base/cert-manager/issuers/` (plain manifests) |
 | `charts/apps-hello` | GitOps app example | `cluster/base/apps/example/` |

@@ -35,7 +35,7 @@ Use this checklist when adding a new platform feature.
 
 - `bash -n scripts/*.sh host/**/*.sh`
 - `./scripts/96_verify_orchestrator_contract.sh`
-- `./scripts/02_print_plan.sh`
+- `./run.sh --dry-run`
 - Optional cluster-backed checks:
   - `./scripts/94_verify_config_inputs.sh`
   - `./scripts/93_verify_expected_releases.sh`

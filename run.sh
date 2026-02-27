@@ -36,8 +36,8 @@ Env:
 
 Manual prereqs:
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
-  domains and want automatic Route53 updates, run: ./scripts/manual_configure_route53_dns_updater.sh
-  Host bootstrap (k3s install) is also manual. See README.
+  domains and want automatic Route53 updates, run: ./host/run-host.sh --only 10_dynamic_dns.sh
+  Host bootstrap (k3s install) is also manual: ./host/run-host.sh --only 20_install_k3s.sh
 USAGE
 }
 

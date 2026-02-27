@@ -31,10 +31,8 @@ jobs:
       - name: Run dry-run commands
         run: |
           set -Eeuo pipefail
-          chmod +x run.sh host/run-host.sh scripts/compat/*.sh scripts/bootstrap/*.sh scripts/manual_install_k3s_minimal.sh scripts/manual_configure_route53_dns_updater.sh
+          chmod +x run.sh host/run-host.sh scripts/compat/*.sh scripts/bootstrap/*.sh
           ./host/run-host.sh --dry-run
-          ./scripts/manual_install_k3s_minimal.sh --dry-run
-          ./scripts/manual_configure_route53_dns_updater.sh --dry-run
           ./run.sh --dry-run
           ./run.sh --dry-run --profile profiles/overlay-staging.env
           ./run.sh --dry-run --profile profiles/overlay-prod.env

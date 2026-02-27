@@ -62,23 +62,23 @@
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
-  - `scripts/manual_install_k3s_minimal.sh` is a compatibility wrapper to `host/run-host.sh --only 20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik` unless overridden).
+  - Host k3s bootstrap entrypoint is `host/run-host.sh --only 20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik` unless overridden); legacy wrapper `scripts/manual_install_k3s_minimal.sh` was removed.
   - Host defaults disable bundled k3s `metrics-server` via `K3S_DISABLE_PACKAGED=metrics-server` so metrics-server is repo-managed.
   - Repo-managed metrics-server is installed in `kube-system` (Flux base `cluster/base/metrics-server`, Helmfile release `metrics-server`) with `hostNetwork.enabled=true`, `--secure-port=4443`, and `--kubelet-insecure-tls` to avoid kubelet scrape failures (`connect: connection refused` to node `:10250`) seen on pod-network paths.
   - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_manage_cilium_lifecycle.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
   - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
-  - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override repositories in `infra/values/cilium-helmfile.yaml.gotmpl` with `useDigest: false`.
-  - Hubble UI ingress is configured declaratively in `infra/values/cilium-helmfile.yaml.gotmpl` (no script-side envsubst).
+  - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override image repository settings in `cluster/base/cilium/helmrelease-cilium.yaml` as needed (for example pinning non-digest references).
+  - Hubble UI ingress is configured declaratively in `cluster/base/cilium/helmrelease-cilium.yaml`.
 
 - Orchestrator run order
   - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.
   - Config contract now validates provider intent flags in `scripts/94_verify_config_inputs.sh`: `INGRESS_PROVIDER=nginx|traefik`, `OBJECT_STORAGE_PROVIDER=minio|ceph`.
   - Provider gating is wired in `helmfile.yaml.gotmpl`: ingress-nginx installs only when `INGRESS_PROVIDER=nginx`, MinIO installs only when `OBJECT_STORAGE_PROVIDER=minio`, and ingress-nginx `needs` edges are conditional for provider-flexible releases.
   - Provider-aware ingress templating is centralized in `environments/common.yaml.gotmpl` as `computed.ingressClass`; chart values consume this for ingress class names so swapping `INGRESS_PROVIDER` does not require per-chart rewrites.
-  - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Helmfile values (`infra/values/*`) and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
+  - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Flux `HelmRelease` values under `cluster/base/*` and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
   - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/90_verify_runtime_smoke.sh` and `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
-  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is now native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install), with `scripts/manual_configure_route53_dns_updater.sh` retained as legacy compatibility path.
+  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
   - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`); remove unused host-common helpers to keep host-task surface lean.
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
   - Script naming convention:
@@ -93,8 +93,8 @@
   - Helmfile label conventions:
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
-  - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
-  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
+  - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `run.sh --dry-run`.
+  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `host/run-host.sh --only 20_install_k3s.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
   - Helm repositories are managed via `scripts/25_prepare_helm_repositories.sh`.
   - Managed namespaces are plain manifests in `cluster/base/namespaces`; `scripts/20_reconcile_platform_namespaces.sh` applies that kustomization directly.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
@@ -156,10 +156,9 @@
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `scripts/manual_configure_route53_dns_updater.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> prod.hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `host/run-host.sh --only 10_dynamic_dns.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> prod.hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
   - To expose the sample app over DNS overlays, add `staging.hello.<base>` and `prod.hello.<base>` to `SWHURL_SUBDOMAINS`.
-  - `scripts/manual_configure_route53_dns_updater.sh` uses the standard env layering (`scripts/00_lib.sh`) so domain/subdomain inputs are consistent with `./run.sh` (and it honors `PROFILE_FILE` / `PROFILE_EXCLUSIVE`). Note: the installed systemd unit runs the helper with explicit args; rerun `scripts/manual_configure_route53_dns_updater.sh` when desired subdomains change.
-  - `scripts/manual_configure_route53_dns_updater.sh` is a manual prerequisite (not part of `run.sh`); run it once per host to install/update the systemd timer, and run with `--delete` to uninstall.
+  - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.
 
 - OIDC for applications
   - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:
@@ -182,8 +181,10 @@
   - Bootstrap gotcha: OTLP ingestion is disabled until at least one ClickStack team exists (`/installation` returns `{"isTeamExisting":false}`), because OpAMP only enables `otlp/hyperdx` receivers when team API keys exist. Complete initial UI registration/team setup before expecting `:4317/:4318` listeners.
   - Team bootstrap gotcha: ClickStack chart value `hyperdx.apiKey` alone does not create a Team record. In chart `1.1.1`, team creation still relies on registration/API flow (or local app mode only via `IS_LOCAL_APP_MODE=DANGEROUSLY_is_local_app_mode💀` in `hyperdx.env`, not recommended for shared/prod clusters).
   - Runtime-input sync fallback: `scripts/bootstrap/sync-runtime-inputs.sh` sets `CLICKSTACK_INGESTION_KEY` to `CLICKSTACK_API_KEY` when ingestion key is unset so first install can proceed before UI bootstrap.
-  - MinIO Helmfile values now use `rootUser`/`rootPassword` directly in `infra/values/minio-helmfile.yaml.gotmpl`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
-  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `infra/values/otel-k8s-daemonset.yaml.gotmpl`).
+  - MinIO values use `rootUser`/`rootPassword` directly in `cluster/base/storage/minio/helmrelease-minio.yaml`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
+  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `cluster/base/otel/helmrelease-otel-k8s-daemonset.yaml`).
+  - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
+  - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-runtime-inputs` and `homelab-otel`.
 

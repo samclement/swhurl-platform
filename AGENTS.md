@@ -25,7 +25,7 @@
   - `cluster/README.md` should call out that runtime input targets are declarative in `cluster/base/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
-  - Keep overlay-selection docs explicit: active ingress/storage/app overlays are selected by Flux kustomization `path` values in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (not by `--profile` env layering).
+  - Keep overlay-selection docs explicit: active ingress/storage overlays are selected by Flux kustomization `path` values in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; app host/issuer/namespace intent is runtime-input driven (not selected by overlay path).
   - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
@@ -47,7 +47,7 @@
   - Cert-manager remains a Flux `HelmRelease` (`cluster/base/cert-manager/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `cluster/base/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
   - `scripts/bootstrap/sync-runtime-inputs.sh` now publishes `LETSENCRYPT_STAGING_SERVER`/`LETSENCRYPT_PROD_SERVER` (with defaults) and computed `LETSENCRYPT_ALIAS_SERVER` so issuer manifests stay declarative without Helm templating.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
-  - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack deploys via `cluster/overlays/homelab/apps/staging`.
+  - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack path now points to `cluster/base/apps/example` and receives app intent via runtime-input substitution (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`, `OAUTH_HOST`).
   - Sample app TLS issuance can lag DNS propagation on first bootstraps; `cluster/base/apps/example/helmrelease-hello-web.yaml` now uses `timeout: 20m`, `interval: 10m`, and higher install/upgrade remediation retries to avoid permanent `RetriesExceeded` stalls.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
@@ -122,7 +122,7 @@
     - `letsencrypt` alias issuer pointing at `LETSENCRYPT_ENV`
   - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, point `LETSENCRYPT_PROD_SERVER` to staging (see `profiles/test-loop.env` / `profiles/overlay-staging.env`) to avoid production ACME traffic.
   - Issuer intent is driven by `PLATFORM_CLUSTER_ISSUER` and applied via Flux substitutions from `platform-runtime-inputs`.
-  - Managed app namespaces are `apps-staging` and `apps-prod`; the active app environment comes from Flux overlay path selection in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`homelab-example-app.path`).
+  - Managed app namespaces remain `apps-staging` and `apps-prod`; active app URL/namespace/issuer intent is now runtime-input driven (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`) through `platform-runtime-inputs`.
   - Overlay profiles for promotion flow now represent cert/runtime intent only:
     - `profiles/overlay-staging.env`: staging ACME safety overrides.
     - `profiles/overlay-prod.env`: production issuer defaults.
@@ -158,8 +158,8 @@
 
 - Domains and DNS registration
   - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `host/run-host.sh --only 10_dynamic_dns.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> prod.hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
-  - To expose the sample app over DNS overlays, add `staging.hello.<base>` and `prod.hello.<base>` to `SWHURL_SUBDOMAINS`.
+  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `host/run-host.sh --only 10_dynamic_dns.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
+  - To expose the sample app over DNS intent profiles, add `staging.hello.<base>` and `hello.<base>` to `SWHURL_SUBDOMAINS`.
   - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.
 
 - OIDC for applications
@@ -187,6 +187,7 @@
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `cluster/base/otel/helmrelease-otel-k8s-daemonset.yaml`).
   - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
   - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
+  - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer promotion, and app URL/issuer test profiles that run runtime-input sync + Flux reconcile.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-runtime-inputs` and `homelab-otel`.
 

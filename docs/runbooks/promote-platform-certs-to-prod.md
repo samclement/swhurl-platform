@@ -62,10 +62,11 @@ Expected:
 - Platform ingresses (`hubble-ui`, `oauth2-proxy`, `clickstack`, `minio`, `minio-console`) show the configured `PLATFORM_CLUSTER_ISSUER`.
 - New/renewed certificates are issued by the selected ClusterIssuer.
 
-## Note on User App Staging/Prod
+## Note on User App Cert/URL Intent
 
-User apps remain separately promotable via:
-- `cluster/overlays/homelab/apps/staging`
-- `cluster/overlays/homelab/apps/prod`
+User app deployment intent is runtime-input driven:
+- `APP_HOST`
+- `APP_NAMESPACE`
+- `APP_CLUSTER_ISSUER`
 
-That app promotion path is independent from the single platform issuer toggle.
+This app path remains independent from the single platform issuer toggle.

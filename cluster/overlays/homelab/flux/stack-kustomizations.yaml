@@ -231,8 +231,8 @@ metadata:
   name: homelab-example-app
   namespace: flux-system
 spec:
-  # Overlay selection contract:
-  # - Edit this path to switch the deployed app environment (staging/prod).
+  # App deployment intent contract:
+  # - App host/namespace/issuer are runtime-input driven via platform-runtime-inputs.
   dependsOn:
     - name: homelab-oauth2-proxy
     - name: homelab-clickstack
@@ -242,7 +242,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./cluster/overlays/homelab/apps/staging
+  path: ./cluster/base/apps/example
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m

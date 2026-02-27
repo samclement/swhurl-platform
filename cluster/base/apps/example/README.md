@@ -3,5 +3,5 @@
 Reference app layer for platform integration.
 
 - Base release points to `./charts/apps-hello`.
-- Default stack uses the staging app overlay at `cluster/overlays/homelab/apps/staging`.
-- Use `cluster/overlays/homelab/apps/prod` for production namespace/domain/issuer intent.
+- Default stack points directly to this base path.
+- `homelab-example-app` receives `${APP_NAMESPACE}`, `${APP_HOST}`, `${APP_CLUSTER_ISSUER}`, and `${OAUTH_HOST}` via Flux `postBuild.substituteFrom` from `flux-system/platform-runtime-inputs`.

@@ -2,7 +2,7 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: hello-web
-  namespace: apps-staging
+  namespace: "${APP_NAMESPACE}"
 spec:
   interval: 10m
   releaseName: hello-web
@@ -31,16 +31,16 @@ spec:
     ingress:
       enabled: true
       className: nginx
-      host: staging.hello.homelab.swhurl.com
+      host: "${APP_HOST}"
       tlsSecretName: hello-web-tls
       annotations:
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     tls:
       enabled: true
-      issuerName: letsencrypt-staging
+      issuerName: "${APP_CLUSTER_ISSUER}"
       dnsNames:
-        - staging.hello.homelab.swhurl.com
+        - "${APP_HOST}"
     auth:
       enabled: true
-      oauthHost: oauth.homelab.swhurl.com
+      oauthHost: "${OAUTH_HOST}"

@@ -1,4 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - helmrelease-platform-issuers.yaml
+  - clusterissuer-selfsigned.yaml
+  - clusterissuer-letsencrypt-staging.yaml
+  - clusterissuer-letsencrypt-prod.yaml
+  - clusterissuer-letsencrypt.yaml

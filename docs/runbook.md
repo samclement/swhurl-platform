@@ -67,6 +67,7 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 Notes:
 - Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external; sync it with `make runtime-inputs-sync` before `make flux-reconcile`.
+- `ACME_EMAIL` is injected from `platform-runtime-inputs` into `homelab-issuers` (Flux `postBuild` substitution).
 - OTel exporters read `CLICKSTACK_INGESTION_KEY` from runtime inputs (falling back to `CLICKSTACK_API_KEY` when unset). After ClickStack first-login/team setup, update `profiles/secrets.env`, run `make runtime-inputs-sync`, then reconcile OTel.
 - ClickStack first-team bootstrap is handled manually in the ClickStack UI.
 - Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.

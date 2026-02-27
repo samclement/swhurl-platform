@@ -96,11 +96,17 @@ metadata:
 spec:
   dependsOn:
     - name: homelab-cert-manager
+    - name: homelab-runtime-inputs
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
   path: ./cluster/base/cert-manager/issuers
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 10m

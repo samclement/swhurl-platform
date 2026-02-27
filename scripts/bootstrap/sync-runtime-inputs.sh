@@ -34,6 +34,7 @@ require_non_empty() {
 oidc_client_id="${OIDC_CLIENT_ID:-}"
 oidc_client_secret="${OIDC_CLIENT_SECRET:-}"
 oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
+acme_email="${ACME_EMAIL:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 
@@ -46,6 +47,8 @@ if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
     *) die "OAUTH_COOKIE_SECRET must be exactly 16, 24, or 32 characters" ;;
   esac
 fi
+
+require_non_empty "ACME_EMAIL" "$acme_email"
 
 if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
@@ -62,6 +65,7 @@ kubectl create secret generic platform-runtime-inputs \
   --from-literal=OIDC_CLIENT_ID="$oidc_client_id" \
   --from-literal=OIDC_CLIENT_SECRET="$oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
+  --from-literal=ACME_EMAIL="$acme_email" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
   --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -

@@ -4,6 +4,7 @@ resources:
   - secret-platform-runtime-inputs.yaml
   - secret-oauth2-proxy.yaml
   - secret-hyperdx.yaml
+  - secret-clickstack-runtime-inputs.yaml
 replacements:
   - source:
       kind: Secret
@@ -49,3 +50,9 @@ replacements:
           namespace: logging
         fieldPaths:
           - stringData.HYPERDX_API_KEY
+      - select:
+          kind: Secret
+          name: clickstack-runtime-inputs
+          namespace: observability
+        fieldPaths:
+          - stringData.CLICKSTACK_API_KEY

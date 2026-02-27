@@ -208,16 +208,6 @@ if feature_is_enabled clickstack; then
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/36_sync_helmfile_phase_platform.sh"
     check_eq "clickstack.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/36_sync_helmfile_phase_platform.sh"
-    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
-      expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
-      expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
-      actual_auth_url=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
-      actual_auth_signin=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
-      check_eq "clickstack.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/36_sync_helmfile_phase_platform.sh"
-      check_eq "clickstack.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/36_sync_helmfile_phase_platform.sh"
-    elif feature_is_enabled oauth2_proxy; then
-      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping NGINX auth annotation checks for clickstack"
-    fi
   else
     mismatch "clickstack ingress not found"
     add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
@@ -262,18 +252,26 @@ if feature_is_enabled otel_k8s; then
   if [[ -z "$sender_token" ]]; then
     mismatch "CLICKSTACK_API_KEY is empty; cannot verify otel token alignment"
     add_suggest "scripts/94_verify_config_inputs.sh"
-  elif kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
+  elif kubectl -n observability get secret clickstack-app-secrets >/dev/null 2>&1; then
     receiver_token="$(
-      kubectl -n observability exec deploy/clickstack-otel-collector -- sh -lc \
-        "sed -n '40,60p' /etc/otel/supervisor-data/effective.yaml | sed -n 's/^[[:space:]]*-[[:space:]]*//p' | head -n1" \
-        2>/dev/null || true
+      kubectl -n observability get secret clickstack-app-secrets -o jsonpath='{.data.api-key}' \
+        | base64 --decode 2>/dev/null || true
     )"
-    if [[ -n "$sender_token" && -n "$receiver_token" && "$sender_token" != "$receiver_token" ]]; then
-      mismatch "otel token mismatch: CLICKSTACK_API_KEY does not match clickstack receiver token"
-      add_suggest "scripts/36_sync_helmfile_phase_platform.sh"
+    if [[ -z "$receiver_token" ]]; then
+      mismatch "clickstack-app-secrets.api-key is empty"
+      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
+    elif [[ "$sender_token" != "$receiver_token" ]]; then
+      mismatch "otel token mismatch: CLICKSTACK_API_KEY does not match clickstack-app-secrets.api-key"
+      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-otel -n flux-system"
     else
       ok "otel token alignment check passed"
     fi
+  else
+    mismatch "clickstack-app-secrets not found"
+    add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
   fi
 else
   ok "$(feature_flag_var otel_k8s)=false; skipping"

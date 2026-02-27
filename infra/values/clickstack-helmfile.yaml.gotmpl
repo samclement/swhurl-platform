@@ -25,11 +25,6 @@ hyperdx:
     pathType: ImplementationSpecific
     annotations:
       cert-manager.io/cluster-issuer: {{ .Environment.Values.issuer | quote }}
-{{- if and .Environment.Values.features.oauth2Proxy (eq .Environment.Values.providers.ingress "nginx") }}
-      nginx.ingress.kubernetes.io/auth-url: {{ printf "https://%s/oauth2/auth" .Environment.Values.computed.oauthHost | quote }}
-      nginx.ingress.kubernetes.io/auth-signin: {{ printf "https://%s/oauth2/start?rd=$scheme://$host$request_uri" .Environment.Values.computed.oauthHost | quote }}
-      nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User,X-Auth-Request-Email,Authorization"
-{{- end }}
     tls:
       enabled: true
       secretName: clickstack-tls

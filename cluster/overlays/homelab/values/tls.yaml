@@ -1,4 +1,0 @@
-# TLS-related overlay values for homelab environments
-platformClusterIssuer: letsencrypt-staging
-appClusterIssuer: letsencrypt-staging
-letsencryptEnv: staging

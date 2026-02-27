@@ -19,9 +19,10 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - `cluster/flux/*` and bootstrap helper exist.
   - Flux dependency chain is active in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
 - Phase 3/4 (Core + Platform GitOps Migration): complete for default provider path
-  - Component-level Flux `HelmRelease` resources are defined and active for:
-    `cilium`, `cert-manager`, `platform-issuers`, `oauth2-proxy`, `clickstack`,
-    `otel-k8s-daemonset`, `otel-k8s-cluster`, `minio`, and `hello-web`.
+  - Component-level Flux resources are defined and active for:
+    `cilium`, `cert-manager`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`,
+    `otel-k8s-cluster`, `minio`, and `hello-web`, with issuer resources as
+    plain manifests under `cluster/base/cert-manager/issuers`.
   - Default homelab composition is explicit in `cluster/overlays/homelab/kustomization.yaml`
     (ingress-nginx + minio + staging app overlay).
   - Cert-manager issuer contract is explicit and always renders:
@@ -253,8 +254,8 @@ Tasks:
 | `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
 | `infra/values/*.yaml*` | HelmRelease/Kustomize values | component directories under `cluster/base/*` and `cluster/overlays/homelab/*` |
-| `charts/platform-namespaces` | GitOps base manifests | `cluster/base/namespaces/` |
-| `charts/platform-issuers` | GitOps cert-manager config | `cluster/base/cert-manager/issuers/` |
+| `charts/platform-namespaces` | Retired | `cluster/base/namespaces/` (plain manifests) |
+| `charts/platform-issuers` | Retired | `cluster/base/cert-manager/issuers/` (plain manifests) |
 | `charts/apps-hello` | GitOps app example | `cluster/base/apps/example/` |
 | `scripts/32_reconcile_flux_stack.sh` | Flux reconcile operations | `cluster/flux/*` + `cluster/overlays/homelab/flux/*` |
 | `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `cluster/base/runtime-inputs/` |

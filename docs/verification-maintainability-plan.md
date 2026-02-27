@@ -44,7 +44,7 @@ Adding Keycloak today likely requires manual updates in many places, including:
 - `scripts/25_prepare_helm_repositories.sh` (repo setup)
 - `config.env` (feature flag and variables)
 - `environments/common.yaml.gotmpl` (feature mapping)
-- `charts/platform-namespaces/values.yaml` (namespace, if needed)
+- `cluster/base/namespaces/namespaces.yaml` (namespace manifests, if needed)
 - `scripts/00_verify_contract_lib.sh` (required vars, expected releases)
 - `cluster/base/runtime-inputs/*` (runtime secrets/config if needed)
 - `scripts/91_verify_platform_state.sh` (runtime verification checks)

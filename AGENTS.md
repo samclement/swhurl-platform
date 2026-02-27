@@ -34,7 +34,7 @@
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing now actively reconciles default homelab layers in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> otel, storage} -> example-app`).
   - Runtime input targets live in `cluster/base/runtime-inputs`; Flux `homelab-runtime-inputs` now injects values via `postBuild.substituteFrom` from external `flux-system/platform-runtime-inputs`.
-  - `homelab-issuers` also consumes `platform-runtime-inputs` via Flux `postBuild.substituteFrom` for issuer controls (`ACME_EMAIL`, `LETSENCRYPT_ENV`); keep `make runtime-inputs-sync` in the issuer update path.
+  - `homelab-issuers` consumes `platform-runtime-inputs` via Flux `postBuild.substituteFrom` for issuer controls (`ACME_EMAIL`, `LETSENCRYPT_ENV`, `LETSENCRYPT_STAGING_SERVER`, `LETSENCRYPT_PROD_SERVER`, `LETSENCRYPT_ALIAS_SERVER`); keep `make runtime-inputs-sync` in the issuer update path.
   - `cluster/overlays/homelab/kustomization.yaml` now represents the default composition (base platform + ingress-nginx + minio + app staging overlay); change this file when changing default provider/environment behavior.
   - Flux platform component paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml` now default to component base paths (`cluster/base/*`); platform cert mode is toggled via `PLATFORM_CLUSTER_ISSUER` from `platform-runtime-inputs` (staging/prod) without path switching.
   - Flux stack scaffolding now models component-level dependencies (`namespaces -> cilium -> cert-manager -> issuers -> ingress-provider -> platform components -> example-app`) instead of generic `core/platform` layers to keep sequencing explicit by technology.
@@ -43,7 +43,8 @@
   - Storage provider overlay `cluster/overlays/homelab/providers/storage-minio` now targets `cluster/base/storage/minio`; cert issuer intent follows `PLATFORM_CLUSTER_ISSUER` substitution.
   - Ingress provider overlay `cluster/overlays/homelab/providers/ingress-nginx/helmrelease-ingress-nginx.yaml` is active (no `spec.suspend`) and is the default ingress layer in Flux stack sequencing.
   - Component-level GitOps base scaffolds now exist under `cluster/base/` (`cert-manager`, `cert-manager/issuers`, `oauth2-proxy`, `clickstack`, `otel`, `storage/minio`, `storage/ceph`, plus `apps/example`); prefer component-level paths directly (legacy `core/` and `platform/` placeholders were removed).
-  - Cert-manager and issuer Flux `HelmRelease` resources are active at `cluster/base/cert-manager/helmrelease-cert-manager.yaml` and `cluster/base/cert-manager/issuers/helmrelease-platform-issuers.yaml`.
+  - Cert-manager remains a Flux `HelmRelease` (`cluster/base/cert-manager/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `cluster/base/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
+  - `scripts/bootstrap/sync-runtime-inputs.sh` now publishes `LETSENCRYPT_STAGING_SERVER`/`LETSENCRYPT_PROD_SERVER` (with defaults) and computed `LETSENCRYPT_ALIAS_SERVER` so issuer manifests stay declarative without Helm templating.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
   - Example app Flux `HelmRelease` is active at `cluster/base/apps/example/helmrelease-hello-web.yaml`; default stack deploys via `cluster/overlays/homelab/apps/staging`.
   - Sample app TLS issuance can lag DNS propagation on first bootstraps; `cluster/base/apps/example/helmrelease-hello-web.yaml` now uses `timeout: 20m`, `interval: 10m`, and higher install/upgrade remediation retries to avoid permanent `RetriesExceeded` stalls.
@@ -95,9 +96,9 @@
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `scripts/02_print_plan.sh`.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `scripts/manual_install_k3s_minimal.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
   - Helm repositories are managed via `scripts/25_prepare_helm_repositories.sh`.
-  - Managed namespaces are created declaratively via a local Helm chart (`charts/platform-namespaces`) wired into Helmfile as release `platform-namespaces` (label `component=platform-namespaces`). This avoids Kustomize `commonLabels` deprecation noise and keeps namespace creation consistent with the Helmfile-driven model.
+  - Managed namespaces are plain manifests in `cluster/base/namespaces`; `scripts/20_reconcile_platform_namespaces.sh` applies that kustomization directly.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
-  - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not include it in `platform-namespaces` or Cilium install will fail due to conflicting Helm ownership. `scripts/26_manage_cilium_lifecycle.sh` adopts `cilium-secrets` to the `cilium` release if it already exists.
+  - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not pre-create/manage that namespace in repo namespace manifests.
   - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_execute_teardown.sh` runs before `scripts/26_manage_cilium_lifecycle.sh` (Cilium last) and then `scripts/98_verify_teardown_clean.sh`.
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.

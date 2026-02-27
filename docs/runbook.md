@@ -110,4 +110,5 @@ To test full lifecycle repeatedly (k3s uninstall/install + apply/delete), use:
 
 Notes:
 - `profiles/test-loop.env` keeps ACME issuer endpoints on staging (including the prod-named issuer) to avoid production Let’s Encrypt traffic.
-- Use `profiles/overlay-staging.env` for normal staging runs and `profiles/overlay-prod.env` for production promotion.
+- Use `profiles/overlay-staging.env` and `profiles/overlay-prod.env` for app staging/prod promotion.
+- Platform component cert mode is independent: set `PLATFORM_CLUSTER_ISSUER=letsencrypt-staging|letsencrypt-prod`, then run `make runtime-inputs-sync && make flux-reconcile`.

@@ -28,8 +28,9 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
     `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` alias.
 - Phase 5 (App + Contract Migration): mostly complete
   - Sample app has staging/prod namespace overlays with staging as the default deployed path.
-  - Platform components deploy once in their usual namespaces with staging issuer defaults,
-    and prod promotion overlays patch only issuer/host intent.
+  - Platform components deploy once in their usual namespaces and use a single
+    runtime-configured issuer toggle (`PLATFORM_CLUSTER_ISSUER`), while user apps
+    keep staging/prod overlay promotion paths.
   - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.

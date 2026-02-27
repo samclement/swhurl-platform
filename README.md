@@ -10,9 +10,9 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 4. Optional host dry-run: `./host/run-host.sh --dry-run`
 5. Optional host apply: `./host/run-host.sh`
 6. Bootstrap Flux + apply GitOps sources: `make flux-bootstrap`
-7. Sync runtime inputs from local env/profile: `make runtime-inputs-sync`
-8. Reconcile the stack: `make flux-reconcile` (also syncs runtime inputs first)
-9. Compatibility path (legacy orchestrator): `./run.sh`
+7. Reconcile the stack: `make flux-reconcile` (this syncs runtime inputs first)
+8. If you change secrets later, run `make runtime-inputs-sync` then `make flux-reconcile`.
+9. Compatibility path (scripted Helmfile pipeline): `./run.sh`
 10. Destructive repeat-test profiles:
    - `profiles/test-loop.env` (Let’s Encrypt alias + prod endpoint overridden to staging)
    - `profiles/test-loop-selfsigned.env` (workloads selfsigned; ACME endpoints overridden to staging)
@@ -29,7 +29,7 @@ Optional unified run (host + cluster):
 
 You can also set `RUN_HOST_LAYER=true` in env/config to make this the default behavior.
 
-## Clean Install (From Scratch)
+## Clean Install (From Scratch, Flux-First)
 
 Use this for repeatable rebuild/testing loops:
 
@@ -50,13 +50,10 @@ $EDITOR config.env profiles/secrets.env
 #    - auto-bootstraps Cilium first when no ready CNI exists
 make flux-bootstrap
 
-# 4) Sync runtime inputs from local env/profile
-make runtime-inputs-sync
-
-# 5) Reconcile the stack
+# 4) Reconcile the stack (includes runtime-inputs sync)
 make flux-reconcile
 
-# 6) Watch progress
+# 5) Watch progress
 flux get kustomizations -n flux-system --watch
 flux get helmreleases -A --watch
 kubectl -n flux-system get events --sort-by=.lastTimestamp -w
@@ -67,6 +64,95 @@ Notes:
 - Host defaults disable bundled k3s `metrics-server`; this repo deploys metrics-server declaratively.
 - OTel exporters use `CLICKSTACK_INGESTION_KEY` when set. After first ClickStack login, copy the ingestion key from UI into `profiles/secrets.env`, then run `make runtime-inputs-sync` and `flux reconcile kustomization homelab-otel -n flux-system --with-source`.
 
+## Common Use Cases
+
+### 1) Clean install / teardown
+
+Install:
+
+```bash
+cp -n profiles/secrets.example.env profiles/secrets.env
+$EDITOR config.env profiles/secrets.env
+./host/run-host.sh
+make flux-bootstrap
+make flux-reconcile
+```
+
+Teardown:
+
+```bash
+# If Flux is still reconciling, suspend first or workloads may be recreated.
+flux suspend kustomization homelab-flux-stack -n flux-system || true
+flux suspend kustomization homelab-flux-sources -n flux-system || true
+
+# Delete platform workloads + run teardown verification gates.
+./run.sh --delete
+
+# Optional: remove Flux controllers.
+./scripts/bootstrap/install-flux.sh --delete
+
+# Optional: remove host layer tasks (set K3S_UNINSTALL=true to remove k3s).
+./host/run-host.sh --delete
+```
+
+### 2) Partial run (platform components only, no sample app)
+
+Legacy scripted pipeline:
+
+```bash
+./run.sh --only 01,15,94,25,20,26,31,36
+```
+
+Flux path (disable sample app reconciliation):
+
+```bash
+flux suspend kustomization homelab-example-app -n flux-system
+make flux-reconcile
+
+# Re-enable later:
+flux resume kustomization homelab-example-app -n flux-system
+flux reconcile kustomization homelab-example-app -n flux-system --with-source
+```
+
+### 3) Post-install secrets updates and ClickStack caveats
+
+After editing `profiles/secrets.env`:
+
+```bash
+make runtime-inputs-sync
+make flux-reconcile
+```
+
+Secret requirements:
+- `OAUTH_COOKIE_SECRET` must be exactly 16, 24, or 32 characters.
+- `ACME_EMAIL` is required for issuer reconciliation.
+- `CLICKSTACK_API_KEY` is required when ClickStack/OTel features are enabled.
+- `CLICKSTACK_INGESTION_KEY` is optional initially; when unset it falls back to `CLICKSTACK_API_KEY`.
+
+ClickStack first-login caveat:
+1. Open `https://${CLICKSTACK_HOST}` and complete first team/user setup.
+2. Create/copy the ingestion key from the ClickStack UI.
+3. Set `CLICKSTACK_INGESTION_KEY` in `profiles/secrets.env`.
+4. Run:
+
+```bash
+make runtime-inputs-sync
+flux reconcile kustomization homelab-runtime-inputs -n flux-system --with-source
+flux reconcile kustomization homelab-otel -n flux-system --with-source
+```
+
+If OTel still reports auth errors (`401` / token mismatch), run `scripts/91_verify_platform_state.sh` and resync runtime inputs.
+
+### 4) Promote platform components to production certificates
+
+Use the runbook at `docs/runbooks/promote-platform-certs-to-prod.md`.
+It documents the platform issuer toggle flow using:
+- `PLATFORM_CLUSTER_ISSUER=letsencrypt-staging|letsencrypt-prod`
+- `make runtime-inputs-sync`
+- `make flux-reconcile`
+
+Both `letsencrypt-staging` and `letsencrypt-prod` ClusterIssuers stay deployed; the toggle only changes which issuer platform ingresses reference.
+
 Docs:
 - Phase runbook: `docs/runbook.md`
 - Orchestration API (CLI + env contracts): `docs/orchestration-api.md`
@@ -76,6 +162,7 @@ Docs:
 - Migration runbooks:
   - `docs/runbooks/migrate-ingress-nginx-to-traefik.md`
   - `docs/runbooks/migrate-minio-to-ceph.md`
+  - `docs/runbooks/promote-platform-certs-to-prod.md`
 - ADRs:
   - `docs/adr/0001-ingress-provider-strategy.md`
   - `docs/adr/0002-storage-provider-strategy.md`

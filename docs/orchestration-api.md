@@ -65,7 +65,8 @@ As-of-step contract (default delete):
 
 Notes:
 
-- Runtime input source/target secrets are reconciled declaratively via `cluster/base/runtime-inputs`; no dedicated runtime-input script phase exists in default apply/delete plans.
+- Runtime input target secrets are reconciled declaratively via `cluster/base/runtime-inputs`; source secret `flux-system/platform-runtime-inputs` is synced via `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync`.
+- `run.sh` apply/delete plans still have no dedicated runtime-input step.
 - Delete-time legacy runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
 
 ## Host Orchestrator (`host/run-host.sh`)
@@ -114,4 +115,4 @@ The orchestrators invoke step scripts as executable files. Step scripts should f
 Compatibility notes:
 
 - `scripts/manual_install_k3s_minimal.sh` and `scripts/manual_configure_route53_dns_updater.sh` are compatibility wrappers into host-layer tasks.
-- Runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`; secret updates are GitOps-owned rather than orchestrator-owned.
+- Runtime input targets are declarative in `cluster/base/runtime-inputs`; source secret updates are done with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync`.

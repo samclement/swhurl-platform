@@ -10,12 +10,13 @@ This repo provides a k3s-focused, declarative platform setup: Cilium CNI, cert-m
 4. Optional host dry-run: `./host/run-host.sh --dry-run`
 5. Optional host apply: `./host/run-host.sh`
 6. Bootstrap Flux + apply GitOps sources: `make flux-bootstrap`
-7. Reconcile the stack: `make flux-reconcile`
-8. Compatibility path (legacy orchestrator): `./run.sh`
-9. Destructive repeat-test profiles:
+7. Sync runtime inputs from local env/profile: `make runtime-inputs-sync`
+8. Reconcile the stack: `make flux-reconcile` (also syncs runtime inputs first)
+9. Compatibility path (legacy orchestrator): `./run.sh`
+10. Destructive repeat-test profiles:
    - `profiles/test-loop.env` (Let’s Encrypt alias + prod endpoint overridden to staging)
    - `profiles/test-loop-selfsigned.env` (workloads selfsigned; ACME endpoints overridden to staging)
-10. Promotion overlay profiles:
+11. Promotion overlay profiles:
    - `./run.sh --profile profiles/overlay-staging.env` (apps namespace `apps-staging`, host `staging.hello.${BASE_DOMAIN}`)
    - `./run.sh --profile profiles/overlay-prod.env` (apps namespace `apps-prod`, host `prod.hello.${BASE_DOMAIN}`)
 
@@ -49,10 +50,13 @@ $EDITOR config.env profiles/secrets.env
 #    - auto-bootstraps Cilium first when no ready CNI exists
 make flux-bootstrap
 
-# 4) Reconcile the stack
+# 4) Sync runtime inputs from local env/profile
+make runtime-inputs-sync
+
+# 5) Reconcile the stack
 make flux-reconcile
 
-# 5) Watch progress
+# 6) Watch progress
 flux get kustomizations -n flux-system --watch
 flux get helmreleases -A --watch
 kubectl -n flux-system get events --sort-by=.lastTimestamp -w
@@ -82,9 +86,10 @@ Operational helpers:
 - `scripts/compat/verify-legacy-contracts.sh` runs the legacy verification suite.
 
 Convenience task runner:
-- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, `flux-reconcile`, etc.).
+- `make help` prints common host/cluster/bootstrap targets (`host-plan`, `host-apply`, `cluster-plan`, `cluster-apply-traefik`, `cluster-apply-ceph`, `verify-provider-matrix`, `test-loop`, `all-apply`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, etc.).
 
 GitOps sequencing:
+- `cluster/flux/kustomizations.yaml` first reconciles `homelab-flux-sources`, then `homelab-flux-stack`.
 - `cluster/overlays/homelab/flux/stack-kustomizations.yaml` defines the active Flux `dependsOn` chain (`namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`).
 - `cluster/overlays/homelab/kustomization.yaml` is the default composition (nginx + minio + staging app overlay).
 - `cluster/overlays/homelab/providers/` and `cluster/overlays/homelab/platform/` provide explicit promotion/provider overlays.
@@ -127,7 +132,8 @@ The default `./run.sh` path uses these scripts:
 - `scripts/31_sync_helmfile_phase_core.sh`: `helmfile sync/destroy -l phase=core` and waits for cert-manager webhook CA injection (needed before creating issuers).
 - `scripts/36_sync_helmfile_phase_platform.sh`: `helmfile sync/destroy -l phase=platform`.
 
-Runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`.
+Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
+Source secret `flux-system/platform-runtime-inputs` is external and should be synced with `make runtime-inputs-sync`.
 Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by the Helmfile phase scripts above.
 
@@ -221,7 +227,7 @@ helmfile -f helmfile.yaml.gotmpl -e "${HELMFILE_ENV:-default}" diff
 4) `kubectl` (apply and context)
 - `kubectl` reads `KUBECONFIG` (or `~/.kube/config`) for cluster access.
 - `kubectl apply --dry-run=server` talks to the API server and **runs admission** (including validating webhooks). You can’t “skip admission hooks” in server dry-run; if you need webhook-free validation, use client dry-run.
-- Runtime input source/target secrets are declarative under `cluster/base/runtime-inputs`.
+- Runtime input target secrets are declarative under `cluster/base/runtime-inputs`; source secret `flux-system/platform-runtime-inputs` is synced from local env/profile via `make runtime-inputs-sync`.
 
 5) `kustomize` (optional)
 - Kustomize is not used by the default pipeline anymore; it’s kept as an optional tool for teams that prefer raw manifests for apps.

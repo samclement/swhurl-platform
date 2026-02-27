@@ -64,13 +64,25 @@ else
 fi
 
 runtime_inputs_kustomization_file="$root/cluster/base/runtime-inputs/kustomization.yaml"
-if rg -q 'name: homelab-runtime-inputs' "$flux_stack_file" \
-  && rg -q 'path: ./cluster/base/runtime-inputs' "$flux_stack_file" \
-  && rg -q 'secret-platform-runtime-inputs\.yaml' "$runtime_inputs_kustomization_file" \
-  && rg -q 'replacements:' "$runtime_inputs_kustomization_file"; then
-  ok "Flux stack: runtime input kustomization + declarative source secret projection wired"
+runtime_inputs_flux_block="$(rg -n 'name: homelab-runtime-inputs' -A25 "$flux_stack_file" || true)"
+if [[ -n "$runtime_inputs_flux_block" ]] \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'path: ./cluster/base/runtime-inputs' \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'postBuild:' \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'substituteFrom:' \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'name: platform-runtime-inputs' \
+  && ! rg -q 'secret-platform-runtime-inputs\.yaml' "$runtime_inputs_kustomization_file" \
+  && ! rg -q '^replacements:' "$runtime_inputs_kustomization_file"; then
+  ok "Flux stack: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
 else
-  bad "Flux stack: runtime input kustomization + declarative source secret projection wired"
+  bad "Flux stack: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
+fi
+
+if [[ -x "$SCRIPT_DIR/bootstrap/sync-runtime-inputs.sh" ]] \
+  && rg -q '^runtime-inputs-sync:' "$root/Makefile" \
+  && rg -q 'sync-runtime-inputs\.sh' "$root/Makefile"; then
+  ok "Runtime input sync command is available (scripts/bootstrap/sync-runtime-inputs.sh + Makefile target)"
+else
+  bad "Runtime input sync command is available (scripts/bootstrap/sync-runtime-inputs.sh + Makefile target)"
 fi
 
 if rg -q 'name: homelab-clickstack-bootstrap' "$flux_stack_file" \

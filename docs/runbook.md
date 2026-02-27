@@ -9,15 +9,18 @@ Cluster ownership is Flux-first (`cluster/`), with legacy script orchestration r
    - `make flux-bootstrap`
    - If `flux` CLI is missing, bootstrap auto-installs it to `~/.local/bin` by default.
    - If no ready CNI exists yet, bootstrap auto-runs the Cilium lifecycle scripts first.
-2. Reconcile source + stack:
+2. Sync runtime inputs from local env/profile:
+   - `make runtime-inputs-sync`
+3. Reconcile source + stack:
    - `make flux-reconcile`
-3. Observe stack health:
+4. Observe stack health:
    - `flux get kustomizations -n flux-system`
    - `flux get helmreleases -A`
 
 Default active dependency chain:
 
-- `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`
+- `homelab-flux-sources -> homelab-flux-stack`
+- inside `homelab-flux-stack`: `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress-provider -> {oauth2-proxy, clickstack -> clickstack-bootstrap -> otel, storage}} -> example-app`
 
 Default deployed app path:
 
@@ -62,8 +65,8 @@ Manual prerequisite (optional): Local host bootstrap (k3s)
 - `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile: `phase=platform`, installs oauth2-proxy/clickstack/otel/minio based on feature flags and provider settings; MinIO only when `OBJECT_STORAGE_PROVIDER=minio`)
 
 Notes:
-- Runtime input source/target secrets are declarative in `cluster/base/runtime-inputs`.
-- Update `cluster/base/runtime-inputs/secret-platform-runtime-inputs.yaml` (or patch it from a private overlay) to set runtime credentials.
+- Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
+- Source secret `flux-system/platform-runtime-inputs` is external; sync it with `make runtime-inputs-sync` before `make flux-reconcile`.
 - ClickStack first-team bootstrap is handled by in-cluster Job `observability/clickstack-team-bootstrap` and requires `CLICKSTACK_BOOTSTRAP_EMAIL` + `CLICKSTACK_BOOTSTRAP_PASSWORD` in runtime inputs.
 - Delete-time runtime input cleanup is handled by `scripts/99_execute_teardown.sh`.
 - `scripts/30_manage_cert_manager_cleanup.sh --delete` still exists as a delete-helper for cert-manager finalizers/CRDs; the apply path is driven by `scripts/31_sync_helmfile_phase_core.sh`.

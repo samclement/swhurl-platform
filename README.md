@@ -23,6 +23,10 @@ Equivalent single-command cluster path:
 - Apply: `./run.sh`
 - Delete: `./run.sh --delete`
 
+Overlay selection note:
+- Active ingress/storage/app overlays are selected declaratively in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- `--profile` values (for example `profiles/overlay-staging.env`, `profiles/overlay-prod.env`) affect runtime-input/cert intent, not Flux overlay path selection.
+
 ## Common Use Cases
 
 ### 1) Clean install / teardown

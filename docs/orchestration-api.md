@@ -13,7 +13,7 @@ Usage:
 ```
 
 Options:
-- `--profile FILE`: load additional env vars (highest precedence in cluster config layering).
+- `--profile FILE`: load additional env vars (highest precedence in cluster config layering), mainly for runtime-input/cert intent and feature toggles.
 - `--host-env FILE`: pass host-layer env overrides through to `./host/run-host.sh` when host layer is enabled.
 - `--only LIST`: comma-separated step numbers or basenames.
 - `--dry-run`: print resolved plan and exit without executing.
@@ -55,6 +55,7 @@ Default delete steps:
 Notes:
 - Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
+- Provider/app overlay selection is path-based in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; `--profile` does not switch those Flux kustomization paths.
 
 ## Host Orchestrator (`host/run-host.sh`)
 

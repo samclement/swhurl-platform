@@ -34,14 +34,13 @@ Config layering (`run.sh`):
 4. `--profile FILE` (`PROFILE_FILE`, highest precedence)
 
 Default apply steps:
-1. `01_check_prereqs.sh`
-2. `15_verify_cluster_access.sh`
-3. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
-4. `bootstrap/install-flux.sh`
-5. `bootstrap/sync-runtime-inputs.sh`
-6. `32_reconcile_flux_stack.sh`
-7. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
-8. `90/93/95/96` deep checks (when `FEAT_VERIFY_DEEP=true`)
+1. `15_verify_cluster_access.sh`
+2. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
+3. `bootstrap/install-flux.sh`
+4. `bootstrap/sync-runtime-inputs.sh`
+5. `32_reconcile_flux_stack.sh`
+6. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
+7. `90/93/95/96` deep checks (when `FEAT_VERIFY_DEEP=true`)
 
 Default delete steps:
 1. `15_verify_cluster_access.sh`
@@ -56,7 +55,7 @@ Notes:
 - Runtime input target secrets are declarative in `infrastructure/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
 - Shared infrastructure composition is path-based in `infrastructure/overlays/home/kustomization.yaml`; `--profile` does not switch those path selections.
-- App deployment intent is runtime-input driven through `platform-runtime-inputs` (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`).
+- App deployment URL/issuer intent is path-based in `clusters/home/tenants.yaml` (`./tenants/overlays/app-*-le-*`).
 
 ## Host Orchestrator (`host/run-host.sh`)
 
@@ -94,9 +93,9 @@ Step scripts should:
 
 Key runtime-intent targets:
 - `make platform-certs CERT_ENV=staging|prod [DRY_RUN=true]`
-  - Writes a temporary profile with `PLATFORM_CLUSTER_ISSUER` + `LETSENCRYPT_ENV` and runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
+  - Updates Flux paths for infrastructure and platform overlays, then runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
 - `make app-test APP_ENV=staging|prod LE_ENV=staging|prod [DRY_RUN=true]`
-  - Maps `APP_ENV` to app host/namespace (`staging.hello.${BASE_DOMAIN}` + `apps-staging`, or `hello.${BASE_DOMAIN}` + `apps-prod`), maps `LE_ENV` to `APP_CLUSTER_ISSUER`, then runs the same reconcile-only flow.
+  - Updates `clusters/home/tenants.yaml` path to one of `./tenants/overlays/app-<env>-le-<env>` and runs the same reconcile-only flow.
 
 Design boundary:
-- Env vars are consumed at one layer (`platform-runtime-inputs` source secret sync). Flux overlays and base manifests stay declarative and profile-agnostic.
+- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys). Cert issuer/app mode is path-selected in Flux CRDs.

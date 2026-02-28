@@ -30,14 +30,13 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Default homelab composition is explicit across:
     `infrastructure/overlays/home/kustomization.yaml`,
     `platform-services/overlays/home/kustomization.yaml`,
-    and `tenants/kustomization.yaml`.
+    and tenant-mode overlays under `tenants/overlays/`.
   - Cert-manager issuer contract is explicit and always renders:
-    `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` alias.
+    `selfsigned`, `letsencrypt-staging`, and `letsencrypt-prod`.
 - Phase 5 (App + Contract Migration): mostly complete
   - Sample app has staging/prod namespace overlays with staging as the default deployed path.
-  - Platform components deploy once in their usual namespaces and use a single
-    runtime-configured issuer toggle (`PLATFORM_CLUSTER_ISSUER`), while user apps
-    keep staging/prod overlay promotion paths.
+  - Platform and app cert issuer intent is path-selected in Flux CRDs
+    (`clusters/home/infrastructure.yaml`, `clusters/home/platform.yaml`, `clusters/home/tenants.yaml`).
   - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
@@ -256,7 +255,7 @@ Tasks:
 | `host/run-host.sh --only 20_install_k3s.sh` | Host Bash module | `host/tasks/20_install_k3s.sh` + `host/lib/30_k3s_lib.sh` |
 | `host/run-host.sh --only 10_dynamic_dns.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
-| `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
+| `scripts/01_check_prereqs.sh` | Retired (dependency checks documented in README) | n/a |
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
 | `charts/platform-namespaces` | Retired | `infrastructure/namespaces/` (plain manifests) |
 | `charts/platform-issuers` | Retired | `infrastructure/cert-manager/issuers/` (plain manifests) |

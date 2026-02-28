@@ -1,13 +1,33 @@
 # Swhurl Platform (k3s-only)
 
-This repo manages a homelab Kubernetes platform with Flux GitOps. Default stack components:
+## Scope of the repo
+
+This repo manages a homelab Kubernetes platform with Flux GitOps.
+
+Default stack components:
 - Cilium
-- cert-manager + ClusterIssuers (`selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, `letsencrypt` alias)
+- cert-manager + ClusterIssuers (`selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`)
 - ingress-nginx
 - oauth2-proxy
 - ClickStack + OTel collectors
 - MinIO
-- sample app (`hello-web`) with runtime-input driven hostname/issuer/namespace
+- sample app (`hello-web`) with tenant-overlay selected hostname/issuer/namespace mode
+
+## Dependencies that need to be installed
+
+Required:
+- `bash`
+- `kubectl`
+- `helm`
+- `curl`
+- `rg` (ripgrep)
+- `envsubst` (usually from `gettext`)
+- `base64`
+- `hexdump`
+
+Notes:
+- Flux CLI can be auto-installed by `make flux-bootstrap` (`AUTO_INSTALL_FLUX=true` by default).
+- Optional tooling used in some workflows: `jq`, `yq`, `sops`, `age`.
 
 ## Quickstart
 
@@ -26,9 +46,9 @@ Equivalent single-command cluster path:
 Layer selection note:
 - Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
-- Tenant environments are declared in `tenants/app-envs/*`.
-- App URL/issuer/namespace remain runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
-- Prefer Makefile args for runtime intent (`CERT_ENV`, `APP_ENV`, `LE_ENV`); `--profile` is optional compatibility for ad-hoc overrides.
+- Tenant app URL/issuer composition is declared in `tenants/overlays/*`.
+- Cert and app mode selection is path-driven in Flux CRDs under `clusters/home/*.yaml`.
+- Prefer Makefile args for mode switching (`CERT_ENV`, `APP_ENV`, `LE_ENV`); `--profile` is optional compatibility for ad-hoc overrides.
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
@@ -65,17 +85,20 @@ Notes:
   - `make reinstall` (teardown then install)
   - `make install-all` / `make teardown-all` (include host layer)
 
-### 2) Promote platform certs: staging -> prod
+### 2) Promote infrastructure/platform cert mode: staging -> prod
 
 ```bash
-# staging platform cert intent
 make platform-certs CERT_ENV=staging
-
-# production platform cert intent
 make platform-certs CERT_ENV=prod
 ```
 
-Shortcuts are also available: `make platform-certs-staging`, `make platform-certs-prod`.
+`platform-certs` updates Flux paths:
+- `clusters/home/infrastructure.yaml`:
+  - `./infrastructure/overlays/home`
+  - `./infrastructure/overlays/home-letsencrypt-prod`
+- `clusters/home/platform.yaml`:
+  - `./platform-services/overlays/home`
+  - `./platform-services/overlays/home-letsencrypt-prod`
 
 ### 3) Post-install secrets updates + ClickStack caveats
 
@@ -88,7 +111,6 @@ make flux-reconcile
 
 Important contracts:
 - `OAUTH_COOKIE_SECRET` must be exactly 16, 24, or 32 characters.
-- `ACME_EMAIL` is required.
 - `CLICKSTACK_API_KEY` is required when ClickStack/OTel are enabled.
 - `CLICKSTACK_INGESTION_KEY` is optional initially; when unset it falls back to `CLICKSTACK_API_KEY`.
 
@@ -116,7 +138,7 @@ make app-test APP_ENV=prod LE_ENV=prod
 ```
 
 URL mapping:
-- staging URL: `staging.hello.homelab.swhurl.com`
+- staging URL: `staging-hello.homelab.swhurl.com`
 - prod URL: `hello.homelab.swhurl.com`
 
 Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
@@ -124,7 +146,7 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 ## Orchestration
 
 `run.sh` is the cluster orchestrator. Default apply flow:
-1. prerequisites + cluster access checks
+1. cluster access check
 2. config contract verify
 3. Flux bootstrap
 4. runtime-input secret sync

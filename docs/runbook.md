@@ -54,9 +54,13 @@ Cluster level (`clusters/home/*.yaml`):
 - `homelab-infrastructure -> homelab-platform -> homelab-tenants`
 
 Layer composition:
-- `homelab-infrastructure` points to `infrastructure/overlays/home` (shared infra + issuer variants + runtime-input targets).
-- `homelab-platform` points to `platform-services/overlays/home` (shared platform services).
-- `homelab-tenants` points to `tenants` (tenant env namespaces + sample app).
+- `homelab-infrastructure` points to one of:
+  - `infrastructure/overlays/home`
+  - `infrastructure/overlays/home-letsencrypt-prod`
+- `homelab-platform` points to one of:
+  - `platform-services/overlays/home`
+  - `platform-services/overlays/home-letsencrypt-prod`
+- `homelab-tenants` points to one of `tenants/overlays/app-*-le-*` (tenant env namespaces + sample app mode).
 
 ## Runtime Inputs
 
@@ -86,6 +90,15 @@ Deep checks (opt-in):
 
 ## Promotion / Profiles
 
-- Platform cert issuer mode is controlled by `PLATFORM_CLUSTER_ISSUER` and runtime-input sync.
-- Sample app host/issuer/namespace intent is controlled by runtime-input vars (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`) via Makefile args + sync/reconcile.
+- Infrastructure cert issuer mode is path-based via `clusters/home/infrastructure.yaml`:
+  - `./infrastructure/overlays/home` (staging)
+  - `./infrastructure/overlays/home-letsencrypt-prod` (prod)
+- Platform-services cert issuer mode (`oauth2-proxy`, `clickstack`) is path-based via `clusters/home/platform.yaml`:
+  - `./platform-services/overlays/home` (staging)
+  - `./platform-services/overlays/home-letsencrypt-prod` (prod)
+- Sample app URL/issuer mode is path-based via `clusters/home/tenants.yaml`:
+  - `./tenants/overlays/app-staging-le-staging`
+  - `./tenants/overlays/app-staging-le-prod`
+  - `./tenants/overlays/app-prod-le-staging`
+  - `./tenants/overlays/app-prod-le-prod`
 - Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.

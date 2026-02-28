@@ -11,7 +11,7 @@ Default stack components:
 - oauth2-proxy
 - ClickStack + OTel collectors
 - MinIO
-- sample app (`hello-web`) with tenant-overlay selected hostname/issuer/namespace mode
+- sample app (`hello-web`) with app-overlay selected hostname/issuer/namespace mode
 
 ## Dependencies that need to be installed
 
@@ -96,9 +96,10 @@ Equivalent single-command cluster path:
 Layer selection note:
 - Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
-- Tenant app URL/issuer composition is declared in `tenants/overlays/*`.
+- Tenant environments are declared in `tenants/app-envs`.
+- App URL/issuer composition is declared in app overlays (for example `tenants/apps/example/overlays/*`).
 - Platform cert issuer selection is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
-- App URL/issuer mode selection is path-driven in `clusters/home/tenants.yaml`.
+- App URL/issuer mode selection is path-driven in app Flux Kustomizations (for example `clusters/home/app-example.yaml`).
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
@@ -185,7 +186,7 @@ make app-test-prod-le-staging
 make app-test-prod-le-prod
 ```
 
-These targets edit `clusters/home/tenants.yaml` locally; commit + push, then run `make flux-reconcile`.
+These targets edit `clusters/home/app-example.yaml` locally; commit + push, then run `make flux-reconcile`.
 
 URL mapping:
 - staging URL: `staging-hello.homelab.swhurl.com`

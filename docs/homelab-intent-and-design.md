@@ -29,7 +29,7 @@ Separate these axes and do not collapse them:
   - runtime-input target secrets (`platform-services/runtime-inputs`)
 - `tenants/`
   - app environment namespaces (`apps-staging`, `apps-prod`)
-  - sample app and environment/issuer overlays
+  - sample app manifests and app overlays (`tenants/apps/example/overlays/*`)
 
 ## Runtime Inputs Principle
 
@@ -43,7 +43,7 @@ Use environment variables only for runtime secrets that must stay out of Git.
 
 - `make install` / `make teardown`: default cluster lifecycle.
 - `make platform-certs-*`: edits `CERT_ISSUER` in Git.
-- `make app-test-*-le-*`: edits `clusters/home/tenants.yaml` path in Git.
+- `make app-test-*-le-*`: edits `clusters/home/app-example.yaml` path in Git.
 - After any mode target: commit + push, then `make flux-reconcile`.
 
 ## Simplification Rules

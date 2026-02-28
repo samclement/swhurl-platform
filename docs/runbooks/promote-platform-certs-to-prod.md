@@ -82,4 +82,4 @@ Expected:
 ## Notes
 
 - App URL/issuer test mode is separate and controlled by `make app-test-*-le-*`
-  (updates `clusters/home/tenants.yaml` path).
+  (updates `clusters/home/app-example.yaml` path).

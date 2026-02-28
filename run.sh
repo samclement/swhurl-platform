@@ -32,7 +32,6 @@ Env:
   ONLY                 Same as --only (overridden by CLI flag)
   RUN_HOST_LAYER       If true, include host layer orchestration (default false)
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
-  FEAT_VERIFY_DEEP      If true, run extra/diagnostic verification scripts (default false)
 
 Manual prereqs:
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
@@ -131,17 +130,9 @@ add_step_if() {
 }
 
 FEAT_VERIFY="${FEAT_VERIFY:-true}"
-FEAT_VERIFY_DEEP="${FEAT_VERIFY_DEEP:-false}"
 if [[ "$FEAT_VERIFY" != "true" && "$FEAT_VERIFY" != "false" ]]; then
   echo "[ERROR] FEAT_VERIFY must be true or false (got: $FEAT_VERIFY)" >&2
   exit 1
-fi
-if [[ "$FEAT_VERIFY_DEEP" != "true" && "$FEAT_VERIFY_DEEP" != "false" ]]; then
-  echo "[ERROR] FEAT_VERIFY_DEEP must be true or false (got: $FEAT_VERIFY_DEEP)" >&2
-  exit 1
-fi
-if [[ "$FEAT_VERIFY" != "true" ]]; then
-  FEAT_VERIFY_DEEP="false"
 fi
 
 build_apply_plan() {
@@ -160,13 +151,8 @@ build_apply_plan() {
   add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
 
   # 4) Verification
-  # Core verification gates (default)
+  # Core verification gates.
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_verify_platform_state.sh)"
-  # Extra verification/diagnostics (opt-in)
-  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 90_verify_runtime_smoke.sh)"
-  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 93_verify_expected_releases.sh)"
-  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 95_capture_cluster_diagnostics.sh)"
-  add_step_if out_arr "$FEAT_VERIFY_DEEP" "$(step_path 96_verify_orchestrator_contract.sh)"
 }
 
 build_delete_plan() {
@@ -256,8 +242,6 @@ run_step() {
       [[ "${FEAT_CILIUM:-true}" == "true" || "$DELETE_MODE" == true ]] || { echo "[skip] $base (FEAT_CILIUM=false)"; return 0; } ;;
     91_verify_platform_state.sh|94_verify_config_inputs.sh)
       [[ "$DELETE_MODE" == false && "$FEAT_VERIFY" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY=false or delete mode)"; return 0; } ;;
-    90_verify_runtime_smoke.sh|93_verify_expected_releases.sh|95_capture_cluster_diagnostics.sh|96_verify_orchestrator_contract.sh)
-      [[ "$DELETE_MODE" == false && "$FEAT_VERIFY_DEEP" == "true" ]] || { echo "[skip] $base (FEAT_VERIFY_DEEP=false or delete mode)"; return 0; } ;;
     98_verify_teardown_clean.sh|99_execute_teardown.sh)
       [[ "$DELETE_MODE" == true ]] || { echo "[skip] $base (delete-only)"; return 0; } ;;
   esac

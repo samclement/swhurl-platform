@@ -89,9 +89,3 @@ app-test:
 verify:
 	./scripts/94_verify_config_inputs.sh
 	./scripts/91_verify_platform_state.sh
-ifeq ($(FEAT_VERIFY_DEEP),true)
-	./scripts/90_verify_runtime_smoke.sh
-	./scripts/93_verify_expected_releases.sh
-	./scripts/95_capture_cluster_diagnostics.sh
-	./scripts/96_verify_orchestrator_contract.sh
-endif

@@ -178,11 +178,13 @@
   - Runtime-input sync fallback: `scripts/bootstrap/sync-runtime-inputs.sh` sets `CLICKSTACK_INGESTION_KEY` to `CLICKSTACK_API_KEY` when ingestion key is unset so first install can proceed before UI bootstrap.
   - MinIO values use `rootUser`/`rootPassword` directly in `infrastructure/storage/minio/base/helmrelease-minio.yaml`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml`).
+  - k3s kubelet scrape gotcha: from pod-network, node `InternalIP:10250` may be unreachable (`connect: connection refused`). `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml` now runs OTel daemonset with `hostNetwork: true` and overrides `kubeletstats.endpoint=127.0.0.1:10250` (`tls.insecure_skip_verify: true`) to keep node metrics flowing.
   - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, `scripts/compat/repeat-scratch-cycles.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
   - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
   - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer mode switching, and app URL/issuer mode switching that run runtime-input sync + Flux reconcile.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-infrastructure` and `homelab-platform`.
+  - Practical key recovery: if ingestion key ownership is unclear, read `hyperdx.teams.apiKey` in `observability/clickstack-mongodb` and ensure `logging/hyperdx-secret.HYPERDX_API_KEY` matches it.
 
 - Secrets hygiene
   - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.

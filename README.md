@@ -31,7 +31,7 @@ Required for host tasks (`./host/run-host.sh`):
 - `curl` and `kubectl` (`host/tasks/20_install_k3s.sh`)
 
 Optional tooling used in some workflows:
-- Flux CLI can be auto-installed by `make flux-bootstrap` (`AUTO_INSTALL_FLUX=true` by default).
+- Flux CLI (`flux`) for reconcile/bootstrap operations.
 - `jq`, `yq`, `sops`, `age`.
 
 ## Quickstart
@@ -39,10 +39,55 @@ Optional tooling used in some workflows:
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (copy `profiles/secrets.example.env`).
 3. Optional host bootstrap: `./host/run-host.sh`.
-4. Bootstrap Flux controllers + bootstrap manifests:
+4. Install Flux manually (one-time per cluster):
+
+```bash
+flux check --pre
+flux install --namespace flux-system
+```
+
+5. Apply Flux bootstrap manifests:
    - `make flux-bootstrap`
-5. Reconcile sources + stack (includes runtime-input secret sync):
+6. Reconcile sources + stack (includes runtime-input secret sync):
    - `make flux-reconcile`
+
+### Manual Flux Installation (No Repo Installer Script)
+
+Install Flux CLI locally (if missing):
+
+```bash
+curl -fsSL https://fluxcd.io/install.sh | bash
+```
+
+Manual bootstrap sequence:
+
+```bash
+# 1) Verify cluster reachability
+kubectl get nodes
+
+# 2) Ensure CNI is ready (Cilium in this repo)
+kubectl -n kube-system get ds cilium
+# If needed:
+./scripts/20_reconcile_platform_namespaces.sh
+./scripts/26_manage_cilium_lifecycle.sh
+
+# 3) Install Flux controllers
+flux check --pre
+flux install --namespace flux-system
+
+# 4) Apply repo bootstrap manifests
+kubectl apply -k clusters/home/flux-system
+
+# 5) Sync runtime inputs and reconcile
+./scripts/bootstrap/sync-runtime-inputs.sh
+./scripts/32_reconcile_flux_stack.sh
+```
+
+Teardown (manual Flux uninstall):
+
+```bash
+flux uninstall --silent
+```
 
 Equivalent single-command cluster path:
 - Apply: `./run.sh`
@@ -53,11 +98,10 @@ Layer selection note:
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
 - Tenant app URL/issuer composition is declared in `tenants/overlays/*`.
 - Platform cert issuer selection is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
-- App URL/issuer mode selection is path-driven in `clusters/home/tenants.yaml` using templates from `clusters/home/modes/`.
+- App URL/issuer mode selection is path-driven in `clusters/home/tenants.yaml`.
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
-- `clusters/home/modes/` stores declarative Flux path mode templates used by Makefile mode targets.
 - `infrastructure/` is shared cluster infra (networking, cert-manager, issuers, ingress/storage providers).
 - `platform-services/` is shared platform service installs.
 - `tenants/` is app-environment scope (staging/prod namespaces + sample app).
@@ -154,10 +198,9 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 `run.sh` is the cluster orchestrator. Default apply flow:
 1. cluster access check
 2. config contract verify
-3. Flux bootstrap
-4. runtime-input secret sync
-5. Flux reconcile
-6. verification
+3. runtime-input secret sync
+4. Flux reconcile
+5. verification
 
 Default delete flow:
 1. cluster access check

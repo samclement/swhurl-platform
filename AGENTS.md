@@ -25,7 +25,7 @@ Mode boundaries:
   - `CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`
 - App URL/issuer mode is path-selected in:
   - `clusters/home/tenants.yaml`
-  - templates in `clusters/home/modes/`
+  - `spec.path` value (`./tenants/overlays/app-*-le-*`)
 
 ## Operator Surface
 
@@ -57,6 +57,8 @@ Important contract:
   - Avoid self-referential showboat commands inside executable walkthrough blocks.
   - Keep README quickstart aligned with `Makefile` behavior.
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
+  - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
+  - `clusters/home/modes/` was removed; app-test mode targets now patch only `clusters/home/tenants.yaml` `spec.path` to avoid duplicate template drift.
 
 - Runtime inputs and substitution
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).

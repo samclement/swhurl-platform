@@ -59,7 +59,7 @@ Changes
 - Replace scattered `kubectl create secret` logic with one script that:
   - sources env via `scripts/00_lib.sh`
   - applies required Secrets/ConfigMaps idempotently
-  - labels them `platform.swhurl.io/managed=true`
+  - labels them `platform.swhurl.com/managed=true`
 - Helmfile releases use `existingSecret:` / existing resources only.
 
 Validation

@@ -42,8 +42,8 @@ else
   log_info "Sweeping platform-managed secrets/configmaps in managed namespaces only (DELETE_SCOPE=managed)"
   for ns in "${managed_namespaces[@]}"; do
     kubectl get ns "$ns" >/dev/null 2>&1 || continue
-    kubectl -n "$ns" delete secret -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
-    kubectl -n "$ns" delete configmap -l platform.swhurl.io/managed=true --ignore-not-found >/dev/null 2>&1 || true
+    kubectl -n "$ns" delete secret -l platform.swhurl.com/managed=true --ignore-not-found >/dev/null 2>&1 || true
+    kubectl -n "$ns" delete configmap -l platform.swhurl.com/managed=true --ignore-not-found >/dev/null 2>&1 || true
   done
 
   # Runtime-input source/target cleanup.

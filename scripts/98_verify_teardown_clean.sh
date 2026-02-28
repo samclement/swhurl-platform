@@ -82,7 +82,7 @@ while IFS= read -r row; do
 
     # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
     is_platform_managed_namespace "$ns" || continue
-    if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.io/managed}' 2>/dev/null | rg -q '^true$'; then
+    if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.com/managed}' 2>/dev/null | rg -q '^true$'; then
       continue
     fi
   else

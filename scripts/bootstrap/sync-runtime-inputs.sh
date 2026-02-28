@@ -67,5 +67,5 @@ kubectl create secret generic platform-runtime-inputs \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n flux-system annotate secret platform-runtime-inputs kustomize.toolkit.fluxcd.io/prune=disabled --overwrite >/dev/null
-kubectl -n flux-system label secret platform-runtime-inputs platform.swhurl.io/managed=true --overwrite >/dev/null
+kubectl -n flux-system label secret platform-runtime-inputs platform.swhurl.com/managed=true --overwrite >/dev/null
 log_info "Synchronized flux-system/platform-runtime-inputs from local env/profile"

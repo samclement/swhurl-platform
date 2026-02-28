@@ -3,6 +3,6 @@ kind: ClusterIssuer
 metadata:
   name: selfsigned
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 spec:
   selfSigned: {}

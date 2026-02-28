@@ -6,10 +6,6 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Shared feature registry.
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/00_feature_registry_lib.sh"
-
 # Shared verification/teardown contract.
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/00_verify_contract_lib.sh"

@@ -49,7 +49,6 @@ ensure_cni() {
     exit 1
   fi
   echo "[INFO] No ready CNI detected; bootstrapping Cilium before Flux install"
-  "$ROOT_DIR/scripts/25_prepare_helm_repositories.sh"
   "$ROOT_DIR/scripts/20_reconcile_platform_namespaces.sh"
   "$ROOT_DIR/scripts/26_manage_cilium_lifecycle.sh"
   if ! cilium_ready; then

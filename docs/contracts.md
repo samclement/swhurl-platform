@@ -21,7 +21,6 @@ Variables are exported (`set -a`) so child commands (for example `flux`, `helm`,
 ## Required Contract Sources
 
 Source-of-truth files:
-- `scripts/00_feature_registry_lib.sh`
 - `scripts/00_verify_contract_lib.sh`
 
 Verification toggles:

@@ -81,5 +81,5 @@ Expected:
 
 ## Notes
 
-- App URL/issuer test mode is separate and controlled by `make app-test-*-le-*`
-  (updates `clusters/home/app-example.yaml` path).
+- Example app overlays are fixed at `clusters/home/app-example.yaml -> ./tenants/apps/example`.
+- Both example app overlays (`staging` and `prod`) use `letsencrypt-prod`.

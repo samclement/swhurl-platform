@@ -97,9 +97,9 @@ Layer selection note:
 - Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
 - Tenant environments are declared in `tenants/app-envs`.
-- App URL/issuer composition is declared in app overlays (for example `tenants/apps/example/overlays/*`).
+- App composition is declared in `tenants/apps/example` (deploys both `staging` and `prod` overlays).
 - Platform cert issuer selection is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
-- App URL/issuer mode selection is path-driven in app Flux Kustomizations (for example `clusters/home/app-example.yaml`).
+- Example app issuer intent is fixed in overlays (`staging` and `prod` both use `letsencrypt-prod`).
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
@@ -175,22 +175,15 @@ make runtime-inputs-sync
 flux reconcile kustomization homelab-platform -n flux-system --with-source
 ```
 
-### 4) App deployment test matrix (URL x Let's Encrypt)
-
-Use explicit mode targets:
-
-```bash
-make app-test-staging-le-staging
-make app-test-staging-le-prod
-make app-test-prod-le-staging
-make app-test-prod-le-prod
-```
-
-These targets edit `clusters/home/app-example.yaml` locally; commit + push, then run `make flux-reconcile`.
+### 4) Example app deployment defaults
 
 URL mapping:
 - staging URL: `staging-hello.homelab.swhurl.com`
 - prod URL: `hello.homelab.swhurl.com`
+
+Certificate issuer mapping:
+- staging URL certificate issuer: `letsencrypt-prod`
+- prod URL certificate issuer: `letsencrypt-prod`
 
 Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
@@ -229,7 +222,6 @@ Show plans:
 - `make runtime-inputs-sync`
 - `make flux-reconcile`
 - `make platform-certs-staging|platform-certs-prod`
-- `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod`
 - `make verify`
 
 ## Repo Layout

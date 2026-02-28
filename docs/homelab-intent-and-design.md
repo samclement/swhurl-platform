@@ -29,7 +29,7 @@ Separate these axes and do not collapse them:
   - runtime-input target secrets (`platform-services/runtime-inputs`)
 - `tenants/`
   - app environment namespaces (`apps-staging`, `apps-prod`)
-  - sample app manifests and app overlays (`tenants/apps/example/overlays/*`)
+  - sample app manifests and overlays (`tenants/apps/example`)
 
 ## Runtime Inputs Principle
 
@@ -43,8 +43,7 @@ Use environment variables only for runtime secrets that must stay out of Git.
 
 - `make install` / `make teardown`: default cluster lifecycle.
 - `make platform-certs-*`: edits `CERT_ISSUER` in Git.
-- `make app-test-*-le-*`: edits `clusters/home/app-example.yaml` path in Git.
-- After any mode target: commit + push, then `make flux-reconcile`.
+- Example app staging/prod overlays are always deployed; both override base cert issuer to `letsencrypt-prod`.
 
 ## Simplification Rules
 
@@ -56,6 +55,6 @@ Use environment variables only for runtime secrets that must stay out of Git.
 ## Success Criteria
 
 1. A fresh setup converges with documented commands and minimal manual edits.
-2. Mode changes are transparent Git diffs and reconciled through Flux.
+2. Certificate-mode changes are transparent Git diffs and reconciled through Flux.
 3. Layer boundaries are clear enough that missing app secrets never block infrastructure.
 4. Delete/apply loops are deterministic and verifiable.

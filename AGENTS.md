@@ -12,7 +12,7 @@
 - Shared infrastructure layer: `infrastructure/overlays/home`.
 - Shared platform-services layer: `platform-services/overlays/home`.
 - Tenant environment layer: `tenants/app-envs`.
-- App deployment layer: app-specific overlays (for example `tenants/apps/example/overlays/*`) reconciled by app-level Flux Kustomizations in `clusters/home/`.
+- App deployment layer: `tenants/apps/example` (staging + prod overlays) reconciled by app-level Flux Kustomizations in `clusters/home/`.
 - Runtime secret source (external): `flux-system/platform-runtime-inputs`.
 - Runtime secret targets (declarative): `platform-services/runtime-inputs`.
 
@@ -24,9 +24,9 @@ Mode boundaries:
 - Platform cert issuer mode is a Git-tracked ConfigMap value:
   - `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
   - `CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`
-- App URL/issuer mode is path-selected in:
+- Example app path is fixed in:
   - `clusters/home/app-example.yaml`
-  - `spec.path` value (`./tenants/apps/example/overlays/*`)
+  - `spec.path` value (`./tenants/apps/example`)
 
 ## Operator Surface
 
@@ -41,13 +41,9 @@ Primary commands:
 Mode commands (edit Git files only):
 - `make platform-certs-staging`
 - `make platform-certs-prod`
-- `make app-test-staging-le-staging`
-- `make app-test-staging-le-prod`
-- `make app-test-prod-le-staging`
-- `make app-test-prod-le-prod`
 
 Important contract:
-- Mode targets only edit local files. They do not mutate cluster state directly.
+- `platform-certs-*` targets only edit local files. They do not mutate cluster state directly.
 - Commit + push mode edits before running `make flux-reconcile`.
 
 ## Current Learnings
@@ -59,20 +55,20 @@ Important contract:
   - Keep README quickstart aligned with `Makefile` behavior.
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
-  - `clusters/home/modes/` and `tenants/overlays/app-*-le-*` were removed; app-test mode targets now patch only `clusters/home/app-example.yaml` `spec.path`, while `clusters/home/tenants.yaml` stays fixed to `./tenants/app-envs`.
+  - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.
 
 - Runtime inputs and substitution
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
-  - App deployment overlays are selected by Flux path (`clusters/home/app-example.yaml`) and do not use runtime-input substitution.
+  - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
   - Issuer local chart (`charts/platform-issuers`) is retired.
   - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
-  - Apps keep issuer selection in app overlays/manifests.
+  - Apps keep issuer selection in app overlays/manifests; current example app staging/prod overlays both use `letsencrypt-prod`.
   - Example app base now includes `tenants/apps/example/base/ciliumnetworkpolicy-hello-web-l7-observe.yaml` to keep Hubble L7 HTTP visibility declarative for test app flows.
 
 - DNS and host layer
@@ -114,5 +110,5 @@ When changing orchestration/layout:
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`
   - `kubectl kustomize platform-services/overlays/home >/dev/null`
   - `kubectl kustomize tenants/app-envs >/dev/null`
-  - `kubectl kustomize tenants/apps/example/overlays/staging >/dev/null`
+  - `kubectl kustomize tenants/apps/example >/dev/null`
   - `./run.sh --dry-run`

@@ -58,7 +58,7 @@ Layer composition:
 - `homelab-infrastructure` points to `infrastructure/overlays/home`.
 - `homelab-platform` points to `platform-services/overlays/home`.
 - `homelab-tenants` points to `tenants/app-envs` (tenant env namespaces only).
-- `homelab-app-example` points to one of `tenants/apps/example/overlays/*` (sample app mode).
+- `homelab-app-example` points to `tenants/apps/example` (sample app staging+prod overlays).
 - Platform cert issuer intent is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
 
 ## Runtime Inputs
@@ -86,10 +86,7 @@ Core checks:
 - Infrastructure/platform cert issuer mode is Git-managed in:
   - `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
   - `CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`
-- Sample app URL/issuer mode is path-based via `clusters/home/app-example.yaml`:
-  - `./tenants/apps/example/overlays/staging`
-  - `./tenants/apps/example/overlays/staging-url-prod`
-  - `./tenants/apps/example/overlays/prod-url-staging`
-  - `./tenants/apps/example/overlays/prod`
-- Mode targets edit local files only; commit + push before `make flux-reconcile`.
+- Sample app path is fixed via `clusters/home/app-example.yaml`:
+  - `./tenants/apps/example`
+- Example app staging/prod overlays both use `letsencrypt-prod`.
 - Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.

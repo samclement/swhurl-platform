@@ -32,13 +32,81 @@ check_eq() {
 }
 
 say "ClusterIssuer"
-expected_platform_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
-if is_allowed_cluster_issuer "$expected_platform_issuer"; then
-  ok "PLATFORM_CLUSTER_ISSUER resolved to ${expected_platform_issuer}"
+expected_infrastructure_issuer="letsencrypt-staging"
+infrastructure_path=""
+if kubectl -n flux-system get kustomization homelab-infrastructure >/dev/null 2>&1; then
+  infrastructure_path="$(kubectl -n flux-system get kustomization homelab-infrastructure -o jsonpath='{.spec.path}')"
+  case "$infrastructure_path" in
+    ./infrastructure/overlays/home)
+      expected_infrastructure_issuer="letsencrypt-staging"
+      ;;
+    ./infrastructure/overlays/home-letsencrypt-prod)
+      expected_infrastructure_issuer="letsencrypt-prod"
+      ;;
+    *)
+      warn "homelab-infrastructure path '$infrastructure_path' is not a recognized infrastructure issuer overlay; defaulting expected infrastructure issuer to letsencrypt-staging"
+      ;;
+  esac
 else
-  mismatch "PLATFORM_CLUSTER_ISSUER invalid: ${expected_platform_issuer}"
-  add_suggest "scripts/94_verify_config_inputs.sh"
+  warn "homelab-infrastructure kustomization not found; defaulting expected infrastructure issuer to letsencrypt-staging"
 fi
+ok "infrastructure issuer expectation: ${expected_infrastructure_issuer} (path: ${infrastructure_path:-<unknown>})"
+
+expected_platform_services_issuer="letsencrypt-staging"
+platform_services_path=""
+if kubectl -n flux-system get kustomization homelab-platform >/dev/null 2>&1; then
+  platform_services_path="$(kubectl -n flux-system get kustomization homelab-platform -o jsonpath='{.spec.path}')"
+  case "$platform_services_path" in
+    ./platform-services/overlays/home)
+      expected_platform_services_issuer="letsencrypt-staging"
+      ;;
+    ./platform-services/overlays/home-letsencrypt-prod)
+      expected_platform_services_issuer="letsencrypt-prod"
+      ;;
+    *)
+      warn "homelab-platform path '$platform_services_path' is not a recognized platform-services issuer overlay; defaulting expected oauth2-proxy/clickstack issuer to letsencrypt-staging"
+      ;;
+  esac
+else
+  warn "homelab-platform kustomization not found; defaulting expected oauth2-proxy/clickstack issuer to letsencrypt-staging"
+fi
+ok "platform-services issuer expectation: ${expected_platform_services_issuer} (path: ${platform_services_path:-<unknown>})"
+
+expected_app_namespace="apps-staging"
+expected_app_host="staging-hello.homelab.swhurl.com"
+expected_app_issuer="letsencrypt-staging"
+tenants_path=""
+if kubectl -n flux-system get kustomization homelab-tenants >/dev/null 2>&1; then
+  tenants_path="$(kubectl -n flux-system get kustomization homelab-tenants -o jsonpath='{.spec.path}')"
+  case "$tenants_path" in
+    ./tenants/overlays/app-staging-le-staging)
+      expected_app_namespace="apps-staging"
+      expected_app_host="staging-hello.homelab.swhurl.com"
+      expected_app_issuer="letsencrypt-staging"
+      ;;
+    ./tenants/overlays/app-staging-le-prod)
+      expected_app_namespace="apps-staging"
+      expected_app_host="staging-hello.homelab.swhurl.com"
+      expected_app_issuer="letsencrypt-prod"
+      ;;
+    ./tenants/overlays/app-prod-le-staging)
+      expected_app_namespace="apps-prod"
+      expected_app_host="hello.homelab.swhurl.com"
+      expected_app_issuer="letsencrypt-staging"
+      ;;
+    ./tenants/overlays/app-prod-le-prod)
+      expected_app_namespace="apps-prod"
+      expected_app_host="hello.homelab.swhurl.com"
+      expected_app_issuer="letsencrypt-prod"
+      ;;
+    *)
+      warn "homelab-tenants path '$tenants_path' is not a recognized app mode overlay; defaulting expected app mode to staging+staging"
+      ;;
+  esac
+else
+  warn "homelab-tenants kustomization not found; defaulting expected app mode to staging+staging"
+fi
+ok "app mode expectation: namespace=${expected_app_namespace} host=${expected_app_host} issuer=${expected_app_issuer} (path: ${tenants_path:-<unknown>})"
 
 if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
   ok "selfsigned ClusterIssuer present"
@@ -47,11 +115,7 @@ else
   add_suggest "scripts/32_reconcile_flux_stack.sh"
 fi
 
-if [[ -z "${ACME_EMAIL:-}" ]]; then
-  warn "ACME_EMAIL is empty; cannot validate letsencrypt issuer emails"
-fi
-
-for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
+for issuer_name in letsencrypt-staging letsencrypt-prod; do
   if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
     ok "${issuer_name} ClusterIssuer present"
   else
@@ -60,18 +124,8 @@ for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
   fi
 done
 
-if [[ -n "${ACME_EMAIL:-}" ]]; then
-  for issuer_name in letsencrypt-staging letsencrypt-prod letsencrypt; do
-    if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
-      actual_email=$(kubectl get clusterissuer "$issuer_name" -o jsonpath='{.spec.acme.email}')
-      check_eq "${issuer_name}.email" "${ACME_EMAIL}" "$actual_email" "scripts/32_reconcile_flux_stack.sh"
-    fi
-  done
-fi
-
 expected_staging_server="$(verify_expected_letsencrypt_server staging)"
 expected_prod_server="$(verify_expected_letsencrypt_server prod)"
-expected_alias_server="$(verify_expected_letsencrypt_server alias "${LETSENCRYPT_ENV:-staging}")"
 if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-staging -o jsonpath='{.spec.acme.server}')
   check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
@@ -79,10 +133,6 @@ fi
 if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.server}')
   check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl get clusterissuer letsencrypt >/dev/null 2>&1; then
-  actual_server=$(kubectl get clusterissuer letsencrypt -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt.server" "${expected_alias_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
 fi
 
 say "Cilium"
@@ -121,7 +171,7 @@ if feature_is_enabled cilium; then
     actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
-    check_eq "hubble-ui.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/26_manage_cilium_lifecycle.sh"
+    check_eq "hubble-ui.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
     if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
@@ -192,7 +242,7 @@ if feature_is_enabled oauth2_proxy; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "oauth2-proxy.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "oauth2-proxy.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
   else
     mismatch "oauth2-proxy ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -207,7 +257,7 @@ if feature_is_enabled clickstack; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "clickstack.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "clickstack.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
   else
     mismatch "clickstack ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -310,7 +360,7 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "minio.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "minio.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
   else
     mismatch "minio ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -319,7 +369,7 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
     actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
     check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "minio-console.issuer" "${expected_platform_issuer}" "$actual_issuer" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "minio-console.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
   else
     mismatch "minio-console ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -330,6 +380,25 @@ else
   else
     ok "$(feature_flag_var minio)=false; skipping"
   fi
+fi
+
+say "Example App"
+if kubectl -n "$expected_app_namespace" get ingress hello-web >/dev/null 2>&1; then
+  actual_host="$(kubectl -n "$expected_app_namespace" get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
+  check_eq "hello-web.host" "$expected_app_host" "$actual_host" "clusters/home/tenants.yaml"
+else
+  mismatch "hello-web ingress not found in namespace ${expected_app_namespace}"
+  add_suggest "clusters/home/tenants.yaml"
+fi
+
+if kubectl -n "$expected_app_namespace" get certificate hello-web >/dev/null 2>&1; then
+  actual_cert_host="$(kubectl -n "$expected_app_namespace" get certificate hello-web -o jsonpath='{.spec.dnsNames[0]}')"
+  actual_cert_issuer="$(kubectl -n "$expected_app_namespace" get certificate hello-web -o jsonpath='{.spec.issuerRef.name}')"
+  check_eq "hello-web.certificate.host" "$expected_app_host" "$actual_cert_host" "clusters/home/tenants.yaml"
+  check_eq "hello-web.certificate.issuer" "$expected_app_issuer" "$actual_cert_issuer" "clusters/home/tenants.yaml"
+else
+  mismatch "hello-web certificate not found in namespace ${expected_app_namespace}"
+  add_suggest "clusters/home/tenants.yaml"
 fi
 
 if [[ "$fail" -eq 1 ]]; then

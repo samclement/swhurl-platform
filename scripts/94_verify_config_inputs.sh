@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DELETE=false
 for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
@@ -22,38 +23,40 @@ for key in "${VERIFY_REQUIRED_BASE_VARS[@]}"; do
 done
 [[ "${!VERIFY_REQUIRED_TIMEOUT_VAR:-}" =~ ^[0-9]+$ ]] && ok "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric" || bad "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric"
 
-if is_allowed_letsencrypt_env "${LETSENCRYPT_ENV:-staging}"; then
-  ok "LETSENCRYPT_ENV is valid"
-else
-  bad "LETSENCRYPT_ENV must be staging|prod|production"
-fi
+read_flux_path() {
+  local file="$1"
+  awk '/^[[:space:]]*path:[[:space:]]*/ { print $2; exit }' "$REPO_ROOT/$file"
+}
 
-platform_issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
-if is_allowed_cluster_issuer "$platform_issuer"; then
-  ok "PLATFORM_CLUSTER_ISSUER is valid (${platform_issuer})"
-else
-  bad "PLATFORM_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
-fi
+infra_flux_path="$(read_flux_path "clusters/home/infrastructure.yaml")"
+case "$infra_flux_path" in
+  ./infrastructure/overlays/home|./infrastructure/overlays/home-letsencrypt-prod)
+    ok "infrastructure Flux path is valid (${infra_flux_path})"
+    ;;
+  *)
+    bad "infrastructure Flux path must be ./infrastructure/overlays/home or ./infrastructure/overlays/home-letsencrypt-prod (got: ${infra_flux_path:-<empty>})"
+    ;;
+esac
 
-app_issuer="${APP_CLUSTER_ISSUER:-$platform_issuer}"
-if is_allowed_cluster_issuer "$app_issuer"; then
-  ok "APP_CLUSTER_ISSUER is valid (${app_issuer})"
-else
-  bad "APP_CLUSTER_ISSUER must be one of: selfsigned, letsencrypt, letsencrypt-staging, letsencrypt-prod"
-fi
+platform_flux_path="$(read_flux_path "clusters/home/platform.yaml")"
+case "$platform_flux_path" in
+  ./platform-services/overlays/home|./platform-services/overlays/home-letsencrypt-prod)
+    ok "platform Flux path is valid (${platform_flux_path})"
+    ;;
+  *)
+    bad "platform Flux path must be ./platform-services/overlays/home or ./platform-services/overlays/home-letsencrypt-prod (got: ${platform_flux_path:-<empty>})"
+    ;;
+esac
 
-app_namespace="${APP_NAMESPACE:-apps-staging}"
-if [[ "$app_namespace" == "apps-staging" || "$app_namespace" == "apps-prod" ]]; then
-  ok "APP_NAMESPACE is valid (${app_namespace})"
-else
-  bad "APP_NAMESPACE must be apps-staging or apps-prod (got: ${app_namespace})"
-fi
-
-if [[ -n "${APP_HOST:-}" ]]; then
-  ok "APP_HOST is set (${APP_HOST})"
-else
-  bad "APP_HOST is set"
-fi
+tenants_flux_path="$(read_flux_path "clusters/home/tenants.yaml")"
+case "$tenants_flux_path" in
+  ./tenants/overlays/app-staging-le-staging|./tenants/overlays/app-staging-le-prod|./tenants/overlays/app-prod-le-staging|./tenants/overlays/app-prod-le-prod)
+    ok "tenants Flux path is valid (${tenants_flux_path})"
+    ;;
+  *)
+    bad "tenants Flux path must be one of ./tenants/overlays/app-{staging,prod}-le-{staging,prod} (got: ${tenants_flux_path:-<empty>})"
+    ;;
+esac
 
 if [[ -n "${INGRESS_PROVIDER:-}" ]]; then
   if is_allowed_ingress_provider "${INGRESS_PROVIDER}"; then

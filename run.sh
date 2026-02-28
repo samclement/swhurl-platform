@@ -148,21 +148,18 @@ build_apply_plan() {
   local -n out_arr=$1
   out_arr=()
 
-  # 1) Prerequisites
-  add_step out_arr "$(step_path 01_check_prereqs.sh)"
-
-  # 2) Cluster Access (kubeconfig)
+  # 1) Cluster Access (kubeconfig)
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
 
-  # 3) Environment & Config Contract
+  # 2) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
-  # 4) Flux Bootstrap + Reconcile
+  # 3) Flux Bootstrap + Reconcile
   add_step out_arr "$(step_path bootstrap/install-flux.sh)"
   add_step out_arr "$(step_path bootstrap/sync-runtime-inputs.sh)"
   add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
 
-  # 5) Verification
+  # 4) Verification
   # Core verification gates (default)
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 91_verify_platform_state.sh)"
   # Extra verification/diagnostics (opt-in)
@@ -204,11 +201,10 @@ print_plan() {
 
   # Phase headings are informational only; script order is the source of truth.
   if [[ "$DELETE_MODE" != true ]]; then
-    echo "  - 1) Prerequisites & verify"
-    echo "  - 2) Basic Kubernetes Cluster (kubeconfig)"
-    echo "  - 3) Environment (profiles/secrets) & verification"
-    echo "  - 4) Flux bootstrap + reconcile"
-    echo "  - 5) Cluster verification suite"
+    echo "  - 1) Basic Kubernetes Cluster (kubeconfig)"
+    echo "  - 2) Environment (profiles/secrets) & verification"
+    echo "  - 3) Flux bootstrap + reconcile"
+    echo "  - 4) Cluster verification suite"
   else
     echo "  - Delete (reverse phases; cilium + flux cleanup last)"
   fi

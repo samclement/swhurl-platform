@@ -20,17 +20,17 @@ help:
 	@echo "  host-delete         Delete host layer"
 	@echo "  cluster-plan        Print cluster plan"
 	@echo "  cluster-apply       Apply cluster layer"
-	@echo "  cluster-apply-staging  Apply with staging cert intent (no profile file)"
-	@echo "  cluster-apply-prod  Apply with production cert intent (no profile file)"
+	@echo "  cluster-apply-staging  Apply with staging infrastructure/platform cert overlays"
+	@echo "  cluster-apply-prod  Apply with production infrastructure/platform cert overlays"
 	@echo "  cluster-delete      Delete cluster layer"
-	@echo "  test-loop           Run destructive scratch cycles (LOOP_CERT_MODE=staging|selfsigned CYCLES=N)"
+	@echo "  test-loop           Run destructive scratch cycles (LOOP_CERT_MODE=staging|prod CYCLES=N)"
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
 	@echo "  verify              Run verification scripts against current context"
-	@echo "  platform-certs      Reconcile platform cert mode (CERT_ENV=staging|prod, optional DRY_RUN=true)"
+	@echo "  platform-certs      Reconcile infrastructure+platform cert overlays (CERT_ENV=staging|prod, optional DRY_RUN=true)"
 	@echo "  platform-certs-staging  Shortcut for CERT_ENV=staging"
 	@echo "  platform-certs-prod  Shortcut for CERT_ENV=prod"
-	@echo "  app-test            Reconcile app test mode (APP_ENV=staging|prod LE_ENV=staging|prod, optional DRY_RUN=true)"
+	@echo "  app-test            Reconcile app test mode by tenants path (APP_ENV=staging|prod LE_ENV=staging|prod, optional DRY_RUN=true)"
 	@echo "  flux-bootstrap      Install Flux and apply clusters/home/flux-system bootstrap manifests"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
@@ -87,17 +87,12 @@ cluster-apply-cert:
 	  staging|prod) ;; \
 	  *) echo "CERT_ENV must be staging or prod (got: $(CERT_ENV))" >&2; exit 1 ;; \
 	esac; \
-	tmp_profile="$$(mktemp)"; \
-	trap 'rm -f "$$tmp_profile"' EXIT; \
-	printf '%s\n' \
-	  "PLATFORM_CLUSTER_ISSUER=letsencrypt-$(CERT_ENV)" \
-	  "LETSENCRYPT_ENV=$(CERT_ENV)" > "$$tmp_profile"; \
-	if [[ "$(CERT_ENV)" == "staging" ]]; then \
-	  printf '%s\n' "LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory" >> "$$tmp_profile"; \
-	fi; \
+	mode_flags=""; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then mode_flags="--dry-run"; fi; \
+	./scripts/bootstrap/set-flux-path-modes.sh $$mode_flags --platform-cert-env "$(CERT_ENV)"; \
 	dry_run_flag=""; \
 	if [[ "$(DRY_RUN)" == "true" ]]; then dry_run_flag="--dry-run"; fi; \
-	./run.sh $$dry_run_flag --profile "$$tmp_profile"
+	./run.sh $$dry_run_flag
 
 .PHONY: cluster-delete
 cluster-delete:
@@ -146,14 +141,12 @@ platform-certs:
 	  staging|prod) ;; \
 	  *) echo "CERT_ENV must be staging or prod (got: $(CERT_ENV))" >&2; exit 1 ;; \
 	esac; \
-	tmp_profile="$$(mktemp)"; \
-	trap 'rm -f "$$tmp_profile"' EXIT; \
-	printf '%s\n' \
-	  "PLATFORM_CLUSTER_ISSUER=letsencrypt-$(CERT_ENV)" \
-	  "LETSENCRYPT_ENV=$(CERT_ENV)" > "$$tmp_profile"; \
+	mode_flags=""; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then mode_flags="--dry-run"; fi; \
+	./scripts/bootstrap/set-flux-path-modes.sh $$mode_flags --platform-cert-env "$(CERT_ENV)"; \
 	dry_run_flag=""; \
 	if [[ "$(DRY_RUN)" == "true" ]]; then dry_run_flag="--dry-run"; fi; \
-	./run.sh $$dry_run_flag --profile "$$tmp_profile" --only $(RECONCILE_ONLY)
+	./run.sh $$dry_run_flag --only $(RECONCILE_ONLY)
 
 .PHONY: platform-certs-staging
 platform-certs-staging:
@@ -167,21 +160,16 @@ platform-certs-prod:
 app-test:
 	@set -eu; \
 	case "$(APP_ENV)" in \
-	  staging) app_namespace="apps-staging"; app_host='staging.hello.$${BASE_DOMAIN}' ;; \
-	  prod) app_namespace="apps-prod"; app_host='hello.$${BASE_DOMAIN}' ;; \
+	  staging|prod) ;; \
 	  *) echo "APP_ENV must be staging or prod (got: $(APP_ENV))" >&2; exit 1 ;; \
 	esac; \
 	case "$(LE_ENV)" in \
-	  staging) app_issuer="letsencrypt-staging" ;; \
-	  prod) app_issuer="letsencrypt-prod" ;; \
+	  staging|prod) ;; \
 	  *) echo "LE_ENV must be staging or prod (got: $(LE_ENV))" >&2; exit 1 ;; \
 	esac; \
-	tmp_profile="$$(mktemp)"; \
-	trap 'rm -f "$$tmp_profile"' EXIT; \
-	printf '%s\n' \
-	  "APP_NAMESPACE=$$app_namespace" \
-	  "APP_HOST=$$app_host" \
-	  "APP_CLUSTER_ISSUER=$$app_issuer" > "$$tmp_profile"; \
+	mode_flags=""; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then mode_flags="--dry-run"; fi; \
+	./scripts/bootstrap/set-flux-path-modes.sh $$mode_flags --app-env "$(APP_ENV)" --app-le-env "$(LE_ENV)"; \
 	dry_run_flag=""; \
 	if [[ "$(DRY_RUN)" == "true" ]]; then dry_run_flag="--dry-run"; fi; \
-	./run.sh $$dry_run_flag --profile "$$tmp_profile" --only $(RECONCILE_ONLY)
+	./run.sh $$dry_run_flag --only $(RECONCILE_ONLY)

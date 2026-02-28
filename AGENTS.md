@@ -151,9 +151,9 @@
   - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration
-  - `SWHURL_SUBDOMAINS` accepts raw subdomain tokens and the updater appends `.swhurl.com`. Example: `oauth.homelab` becomes `oauth.homelab.swhurl.com`. Do not prepend `BASE_DOMAIN` to these tokens.
-  - If `SWHURL_SUBDOMAINS` is empty and `BASE_DOMAIN` ends with `.swhurl.com`, `host/run-host.sh --only 10_dynamic_dns.sh` derives a sensible set: `<base> oauth.<base> staging.hello.<base> hello.<base> clickstack.<base> hubble.<base> minio.<base> minio-console.<base>`.
-  - To expose the sample app over DNS intent profiles, add `staging.hello.<base>` and `hello.<base>` to `SWHURL_SUBDOMAINS`.
+  - Dynamic DNS is wildcard-only: `scripts/aws-dns-updater.sh` updates a single Route53 A record for `*.homelab.swhurl.com` (no per-subdomain token list).
+  - DNS wildcard scope caveat: `*.homelab.swhurl.com` matches one-label hosts (for example `oauth.homelab.swhurl.com`) but not multi-label names like `staging.hello.homelab.swhurl.com`; add explicit records (or another wildcard) for multi-label hosts if needed.
+  - `host/run-host.sh --only 10_dynamic_dns.sh` installs/restarts a systemd timer that runs the wildcard updater helper with no args.
   - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.
 
 - OIDC for applications

@@ -76,7 +76,6 @@ Guiding rule:
 │  │  ├─ 20_dynamic_dns_lib.sh
 │  │  └─ 30_k3s_lib.sh
 │  ├─ tasks/
-│  │  ├─ 00_bootstrap_host.sh
 │  │  ├─ 10_dynamic_dns.sh
 │  │  └─ 20_install_k3s.sh
 │  ├─ scripts/

@@ -78,8 +78,9 @@
   - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Flux `HelmRelease` values under `infrastructure/*` and `platform-services/*` and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
   - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
-  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
-  - Host package-manager automation was removed (`host/lib/10_packages_lib.sh` deleted); `host/tasks/00_bootstrap_host.sh` is now a compatibility no-op and dependency prerequisites are documented in `README.md`.
+  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/10_dynamic_dns.sh` and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
+  - Host package-manager automation was removed (`host/lib/10_packages_lib.sh` deleted); dependency prerequisites are documented in `README.md`.
+  - `host/tasks/00_bootstrap_host.sh` was removed as obsolete no-op scaffolding; keep host apply flow focused on actionable tasks only.
   - Host script simplification: keep `host/run-host.sh` as static apply/delete task arrays with inline `--only` filtering; avoid extra plan-construction helper layers.
   - `host/lib/20_dynamic_dns_lib.sh` should stay compact (constants + `apply/delete` + one write-if-changed helper); avoid many one-line path/name wrapper functions.
   - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`, `host_has_flag`); remove unused host-common helpers to keep host-task surface lean.

@@ -58,7 +58,6 @@ Current gaps against intent:
 ## Recommended Improvements
 
 1. Tighten host bootstrap adoption
-- Keep `host/tasks/00_bootstrap_host.sh` as a lightweight compatibility no-op.
 - Keep dependency requirements documented in README instead of maintaining a separate prereq-check step script.
 
 2. Continue provider switch rollout for ingress and object storage

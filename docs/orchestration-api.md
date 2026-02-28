@@ -70,9 +70,8 @@ Config layering (`host/run-host.sh`):
 4. `--host-env FILE`
 
 Default host apply tasks:
-1. `host/tasks/00_bootstrap_host.sh`
-2. `host/tasks/10_dynamic_dns.sh`
-3. `host/tasks/20_install_k3s.sh`
+1. `host/tasks/10_dynamic_dns.sh`
+2. `host/tasks/20_install_k3s.sh`
 
 Default host delete tasks:
 1. `host/tasks/20_install_k3s.sh --delete`

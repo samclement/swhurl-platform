@@ -47,7 +47,6 @@ set +a
 export HOST_REPO_ROOT="$ROOT_DIR"
 
 APPLY_STEPS=(
-  "$(task_path 00_bootstrap_host.sh)"
   "$(task_path 10_dynamic_dns.sh)"
   "$(task_path 20_install_k3s.sh)"
 )

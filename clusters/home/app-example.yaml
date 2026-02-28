@@ -1,16 +1,16 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-tenants
+  name: homelab-app-example
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-platform
+    - name: homelab-tenants
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./tenants/app-envs
+  path: ./tenants/apps/example/overlays/staging
   prune: true
   wait: true
   timeout: 20m

@@ -1,9 +1,8 @@
 # Tenants Layer
 
-App-environment scope resources.
+App-environment scope resources (landing zones only).
 
 - `app-envs/staging` and `app-envs/prod` namespace landing zones
-- sample app manifests under `apps/example`
-- app URL/issuer selection overlays under `overlays/`
+- sample app manifests live under `apps/example`, reconciled by app-level Flux Kustomizations
 
-Flux entrypoint path defaults to: `tenants/overlays/app-staging-le-staging`.
+Flux tenants entrypoint path: `tenants/app-envs`.

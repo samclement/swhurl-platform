@@ -83,7 +83,7 @@ Notes:
   - `make install` (cluster default apply path)
   - `make teardown` (cluster default delete path)
   - `make reinstall` (teardown then install)
-  - `make install-all` / `make teardown-all` (include host layer)
+- Host layer remains direct: `./host/run-host.sh` (`--dry-run` or `--delete` as needed).
 
 ### 2) Promote infrastructure/platform cert mode: staging -> prod
 
@@ -172,13 +172,14 @@ Show plans:
 ## Useful Targets
 
 - `make help`
+- `make install`
+- `make teardown`
+- `make reinstall`
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
 - `make flux-reconcile`
-- `make cluster-apply`
-- `make cluster-delete`
-- `make all-apply`
-- `make all-delete`
+- `make platform-certs CERT_ENV=staging|prod`
+- `make app-test APP_ENV=staging|prod LE_ENV=staging|prod`
 - `make verify`
 
 ## Repo Layout

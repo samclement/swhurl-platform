@@ -61,7 +61,6 @@ jobs:
           kubectl kustomize clusters/home >/dev/null
           kubectl kustomize infrastructure/overlays/home >/dev/null
           kubectl kustomize infrastructure/namespaces >/dev/null
-          kubectl kustomize infrastructure/runtime-inputs >/dev/null
           kubectl kustomize infrastructure/cert-manager/base >/dev/null
           kubectl kustomize infrastructure/cert-manager/issuers >/dev/null
           kubectl kustomize infrastructure/cilium/base >/dev/null
@@ -71,6 +70,7 @@ jobs:
           kubectl kustomize infrastructure/storage/minio/base >/dev/null
           kubectl kustomize infrastructure/storage/ceph/base >/dev/null
           kubectl kustomize platform-services/overlays/home >/dev/null
+          kubectl kustomize platform-services/runtime-inputs >/dev/null
           kubectl kustomize platform-services/oauth2-proxy/base >/dev/null
           kubectl kustomize platform-services/clickstack/base >/dev/null
           kubectl kustomize platform-services/otel/base >/dev/null
@@ -78,4 +78,10 @@ jobs:
           kubectl kustomize tenants/app-envs >/dev/null
           kubectl kustomize tenants/apps/example/base >/dev/null
           kubectl kustomize tenants/apps/example/overlays/staging >/dev/null
+          kubectl kustomize tenants/apps/example/overlays/staging-url-prod >/dev/null
           kubectl kustomize tenants/apps/example/overlays/prod >/dev/null
+          kubectl kustomize tenants/apps/example/overlays/prod-url-staging >/dev/null
+          kubectl kustomize tenants/overlays/app-staging-le-staging >/dev/null
+          kubectl kustomize tenants/overlays/app-staging-le-prod >/dev/null
+          kubectl kustomize tenants/overlays/app-prod-le-staging >/dev/null
+          kubectl kustomize tenants/overlays/app-prod-le-prod >/dev/null

@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hello-web
+  namespace: "${APP_NAMESPACE}"
+  labels:
+    app.kubernetes.io/name: hello-web
+    app.kubernetes.io/instance: hello-web
+    platform.swhurl.io/managed: "true"
+spec:
+  secretName: hello-web-tls
+  issuerRef:
+    name: "${APP_CLUSTER_ISSUER}"
+    kind: ClusterIssuer
+  dnsNames:
+    - "${APP_HOST}"

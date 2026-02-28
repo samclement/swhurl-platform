@@ -69,6 +69,8 @@ Validation
 
 ## Step 4: Move Hello App to a Local Chart (Apps Phase)
 
+> Historical update: completed and then retired. The sample app now uses plain manifests under `tenants/apps/example/base/`; `charts/apps-hello` has been removed.
+
 Changes
 - Add `charts/apps-hello/` for deployment/service/ingress/cert as needed.
 - Helmfile release `apps-hello` with `labels.phase=apps` and `needs: [ingress-nginx, cert-manager]`

@@ -33,7 +33,7 @@ Planned direction changes:
 
 ## Design Principles
 
-1. Declarative first: Helmfile + charts/values define desired state.
+1. Declarative first: Flux-managed manifests and Kustomizations define desired state.
 2. Imperative only where necessary: bootstrap, input generation, lifecycle/finalizer cleanup.
 3. Explicit orchestration: fixed phase plan in `run.sh`, no hidden script discovery.
 4. Provider-oriented architecture: ingress/storage implementations should be swappable behind stable contracts.

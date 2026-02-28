@@ -58,7 +58,7 @@ Layer selection note:
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
 - `clusters/home/modes/` stores declarative Flux path mode templates used by Makefile mode targets.
-- `infrastructure/` is shared cluster infra (networking, cert-manager, issuers, ingress/storage providers, runtime-input targets).
+- `infrastructure/` is shared cluster infra (networking, cert-manager, issuers, ingress/storage providers).
 - `platform-services/` is shared platform service installs.
 - `tenants/` is app-environment scope (staging/prod namespaces + sample app).
 - `platform-runtime-inputs` is the only env-input bridge layer (`make runtime-inputs-sync`).

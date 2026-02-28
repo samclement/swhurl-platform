@@ -10,7 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./tenants/apps/example/overlays/staging
+  path: ./tenants/apps/example
   prune: true
   wait: true
   timeout: 20m

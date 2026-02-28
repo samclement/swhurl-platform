@@ -22,7 +22,7 @@
   - Keep `profiles/secrets.example.env` comments aligned with `scripts/bootstrap/sync-runtime-inputs.sh` validation (for example `OAUTH_COOKIE_SECRET` is required and must be 16/24/32 chars when oauth2-proxy is enabled).
   - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; platform cert issuer mode is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`), not path-switched overlays.
   - Legacy homelab overlay scaffolding was removed; keep active manifests in `infrastructure/`, `platform-services/`, and `tenants/`.
-  - Runtime input targets are declarative in `infrastructure/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
+  - Runtime input targets are declarative in `platform-services/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
   - Active layout boundary: `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
@@ -40,8 +40,8 @@
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
   - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant app mode composition is in `tenants/overlays/`.
-  - Runtime input targets live in `infrastructure/runtime-inputs`; Flux `homelab-infrastructure` injects substitutions from external `flux-system/platform-runtime-inputs`.
-  - `homelab-infrastructure`/`homelab-platform` consume `platform-settings` via Flux `postBuild.substituteFrom` for `CERT_ISSUER`; `platform-runtime-inputs` remains for runtime secrets only.
+  - Runtime input targets live in `platform-services/runtime-inputs`; Flux `homelab-platform` injects substitutions from external `flux-system/platform-runtime-inputs`.
+  - `homelab-infrastructure` consumes `platform-settings` for `CERT_ISSUER`; `homelab-platform` consumes both `platform-settings` and `platform-runtime-inputs` for runtime secrets.
   - Provider selection is composition-driven: switch ingress/storage resources in `infrastructure/overlays/home/kustomization.yaml` (for example `ingress-nginx/base` vs `ingress-traefik/base`, `storage/minio/base` vs `storage/ceph/base`).
   - Component-level GitOps scaffolds are split by ownership: shared infra in `infrastructure/`, shared services in `platform-services/`, app envs/apps in `tenants/`.
   - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
@@ -111,7 +111,7 @@
   - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
     - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
     - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh` is retired; runtime-input ownership is declarative in `infrastructure/runtime-inputs`.
+    - `scripts/29_prepare_platform_runtime_inputs.sh` is retired; runtime-input ownership is declarative in `platform-services/runtime-inputs`.
     - Update runtime credentials with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync` (sources `config.env` + profiles, writes `flux-system/platform-runtime-inputs`).
   - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
   - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
@@ -169,7 +169,7 @@
   - ClickStack/HyperDX ingress is intentionally not oauth2-proxy protected; app-level ingresses should own oauth2-proxy auth annotations when required.
   - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
   - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
-  - Flux path key wiring is split-key: `infrastructure/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` to `observability/clickstack-runtime-inputs` (ClickStack chart input) and `platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` to `logging/hyperdx-secret` (OTel exporter authorization).
+  - Flux path key wiring is split-key: `platform-services/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` to `observability/clickstack-runtime-inputs` (ClickStack chart input) and `platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` to `logging/hyperdx-secret` (OTel exporter authorization).
   - ClickStack first-team bootstrap is manual via the ClickStack UI; the repo no longer deploys an in-cluster bootstrap job.
   - Runtime gotcha: `clickstack-otel-collector` may show service ports `4317/4318` but still refuse OTLP traffic when its active OpAMP config does not attach `otlp/hyperdx` to any pipeline. Verify with `kubectl exec ... netstat -lntp` (only `13133/8888/24225` means OTLP is inactive) and `kubectl exec ... tail /etc/otel/supervisor-data/agent.log`.
   - Bootstrap gotcha: OTLP ingestion is disabled until at least one ClickStack team exists (`/installation` returns `{"isTeamExisting":false}`), because OpAMP only enables `otlp/hyperdx` receivers when team API keys exist. Complete initial UI registration/team setup before expecting `:4317/:4318` listeners.
@@ -182,7 +182,7 @@
   - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
   - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer mode switching, and app URL/issuer mode switching that run runtime-input sync + Flux reconcile.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-infrastructure` and `homelab-platform`.
+  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-platform`.
   - Practical key recovery: if ingestion key ownership is unclear, read `hyperdx.teams.apiKey` in `observability/clickstack-mongodb` and ensure `logging/hyperdx-secret.HYPERDX_API_KEY` matches it.
 
 - Secrets hygiene

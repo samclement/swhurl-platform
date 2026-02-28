@@ -127,7 +127,6 @@ ClickStack first-login flow:
 
 ```bash
 make runtime-inputs-sync
-flux reconcile kustomization homelab-infrastructure -n flux-system --with-source
 flux reconcile kustomization homelab-platform -n flux-system --with-source
 ```
 

@@ -62,7 +62,7 @@ Layer composition:
 ## Runtime Inputs
 
 Targets are declarative under:
-- `infrastructure/runtime-inputs`
+- `platform-services/runtime-inputs`
 
 Source secret is external:
 - `flux-system/platform-runtime-inputs`

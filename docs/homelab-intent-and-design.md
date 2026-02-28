@@ -96,9 +96,8 @@ Current gaps against intent:
 8. Add CI contract checks for maintainability
 - Add CI targets for:
   - script lint (`shellcheck`)
-  - Helmfile template + lint
   - verification scripts in dry/simulated modes
-  - orchestrator contract check (`96_verify_orchestrator_contract.sh`)
+  - `./run.sh --dry-run`
 
 9. Adopt ADR-style decisions for major migrations
 - Record ingress and storage provider decisions in lightweight ADR docs.

@@ -34,7 +34,6 @@ Use this as a single contract that drives:
   - `environments/common.yaml.gotmpl`
   - `helmfile.yaml.gotmpl`
   - `infra/values/*`
-  - `scripts/90_verify_runtime_smoke.sh`
   - `scripts/91_verify_platform_state.sh`
 
 ## Follow-ups

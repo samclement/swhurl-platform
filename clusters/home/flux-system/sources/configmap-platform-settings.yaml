@@ -4,4 +4,4 @@ metadata:
   name: platform-settings
   namespace: flux-system
 data:
-  CERT_ISSUER: letsencrypt-staging
+  CERT_ISSUER: letsencrypt-prod

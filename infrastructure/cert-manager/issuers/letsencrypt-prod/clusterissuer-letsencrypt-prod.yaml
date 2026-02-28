@@ -6,8 +6,8 @@ metadata:
     platform.swhurl.io/managed: "true"
 spec:
   acme:
-    email: "${ACME_EMAIL}"
-    server: "${LETSENCRYPT_PROD_SERVER}"
+    email: ops@homelab.swhurl.com
+    server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: acme-account-key-prod
     solvers:

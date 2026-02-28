@@ -12,10 +12,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: staging.hello.homelab.swhurl.com
+        value: staging-hello.homelab.swhurl.com
       - op: replace
         path: /spec/tls/0/hosts/0
-        value: staging.hello.homelab.swhurl.com
+        value: staging-hello.homelab.swhurl.com
       - op: replace
         path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-url
         value: https://oauth.homelab.swhurl.com/oauth2/auth
@@ -33,4 +33,4 @@ patches:
         value: letsencrypt-staging
       - op: replace
         path: /spec/dnsNames/0
-        value: staging.hello.homelab.swhurl.com
+        value: staging-hello.homelab.swhurl.com

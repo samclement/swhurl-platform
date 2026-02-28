@@ -11,11 +11,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./platform-services/overlays/home
-  postBuild:
-    substituteFrom:
-      - kind: Secret
-        name: platform-runtime-inputs
-        optional: false
   prune: true
   wait: true
   timeout: 20m

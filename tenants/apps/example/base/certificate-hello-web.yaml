@@ -2,7 +2,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: hello-web
-  namespace: "${APP_NAMESPACE}"
+  namespace: apps-staging
   labels:
     app.kubernetes.io/name: hello-web
     app.kubernetes.io/instance: hello-web
@@ -10,7 +10,7 @@ metadata:
 spec:
   secretName: hello-web-tls
   issuerRef:
-    name: "${APP_CLUSTER_ISSUER}"
+    name: letsencrypt-staging
     kind: ClusterIssuer
   dnsNames:
-    - "${APP_HOST}"
+    - staging-hello.homelab.swhurl.com

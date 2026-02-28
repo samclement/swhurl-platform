@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hello-web
-  namespace: "${APP_NAMESPACE}"
+  namespace: apps-staging
   labels:
     app.kubernetes.io/name: hello-web
     app.kubernetes.io/instance: hello-web
@@ -10,16 +10,16 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/auth-url: "https://${OAUTH_HOST}/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://${OAUTH_HOST}/oauth2/start?rd=$scheme://$host$request_uri"
+    nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "${APP_HOST}"
+        - staging-hello.homelab.swhurl.com
       secretName: hello-web-tls
   rules:
-    - host: "${APP_HOST}"
+    - host: staging-hello.homelab.swhurl.com
       http:
         paths:
           - path: /

@@ -6,11 +6,14 @@ source "$SCRIPT_DIR/00_lib.sh"
 ensure_context
 
 DELETE=false
-for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
+for arg in "$@"; do
+  case "$arg" in
+    --delete) DELETE=true ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
 if [[ "$DELETE" == true ]]; then
-  # Namespace deletion is intentionally owned by scripts/99_execute_teardown.sh.
-  log_info "Namespace reconcile is apply-only; skipping in delete mode"
-  exit 0
+  die "scripts/20_reconcile_platform_namespaces.sh is apply-only (namespace deletion is owned by scripts/99_execute_teardown.sh)"
 fi
 
 kubectl apply -k "$ROOT_DIR/infrastructure/namespaces" >/dev/null

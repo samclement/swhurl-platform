@@ -9,19 +9,16 @@ This document defines the current command and environment contract for orchestra
 Usage:
 
 ```bash
-./run.sh [--profile FILE] [--host-env FILE] [--only N[,N...]] [--dry-run] [--delete] [--with-host]
+./run.sh [--profile FILE] [--only N[,N...]] [--dry-run] [--delete]
 ```
 
 Options:
 - `--profile FILE`: load additional env vars (highest precedence in cluster config layering). Prefer Makefile parameterized targets for common runtime intent; use `--profile` for ad-hoc overrides.
-- `--host-env FILE`: pass host-layer env overrides through to `./host/run-host.sh` when host layer is enabled.
 - `--only LIST`: comma-separated step numbers or basenames.
 - `--dry-run`: print resolved plan and exit without executing.
 - `--delete`: execute delete flow, passing `--delete` to delete-capable steps.
-- `--with-host`: include host orchestration (`./host/run-host.sh`) before apply or after delete.
 
 Environment controls:
-- `RUN_HOST_LAYER=true|false`: default for host-layer inclusion.
 - `ONLY`: fallback filter when `--only` is not provided.
 - `PROFILE_EXCLUSIVE=true|false`: if `true`, skip auto-loading `profiles/local.env` and `profiles/secrets.env`.
 - `FEAT_VERIFY=true|false`: include/exclude core verification steps.
@@ -80,8 +77,8 @@ Default host delete tasks:
 ## Script Contract
 
 Step scripts should:
-1. Parse `--delete` and treat it as delete mode.
-2. Use apply mode by default.
+1. Parse `--delete` consistently.
+2. Fail fast when called in an unsupported mode (apply-only/delete-only).
 3. Exit non-zero on unrecoverable failures.
 4. Keep output operator-readable.
 5. Be idempotent where practical.

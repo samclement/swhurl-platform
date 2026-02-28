@@ -112,7 +112,7 @@ Current gaps against intent:
 ## Suggested Implementation Sequence
 
 1. Add this intent as a tracked design target (this document).
-2. Increase adoption of the host layer in day-to-day workflows (`host/run-host.sh` or `run.sh --with-host`).
+2. Increase adoption of the host layer in day-to-day workflows (`host/run-host.sh`).
 3. Finalize ingress provider migration policy (Traefik default timing + rollback criteria).
 4. Finalize storage provider migration policy (Ceph default timing + data-migration checklist).
 5. Expand sample app to cover telemetry and storage integration.

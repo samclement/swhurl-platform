@@ -5,10 +5,14 @@ source "$SCRIPT_DIR/00_lib.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DELETE=false
-for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
+for arg in "$@"; do
+  case "$arg" in
+    --delete) DELETE=true ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
 if [[ "$DELETE" == true ]]; then
-  log_info "Config contract check is apply-only; skipping in delete mode"
-  exit 0
+  die "scripts/94_verify_config_inputs.sh is apply-only"
 fi
 
 ok(){ printf "[OK] %s\n" "$1"; }

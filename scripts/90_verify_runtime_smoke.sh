@@ -39,7 +39,7 @@ if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
 
   # End-to-end reachability test through ingress-nginx NodePort.
   if command -v curl >/dev/null 2>&1; then
-    host="${APP_HOST:-${VERIFY_SAMPLE_INGRESS_HOST_PREFIX}.${BASE_DOMAIN}}"
+    host="${VERIFY_SAMPLE_INGRESS_HOST_PREFIX}.${BASE_DOMAIN}"
     log_info "Smoke tests: HTTPS NodePort ${VERIFY_INGRESS_NODEPORT_HTTPS} -> Host: ${host}"
     set +e
     code="$(curl -sk -o /dev/null -w "%{http_code}" -H "Host: ${host}" "https://127.0.0.1:${VERIFY_INGRESS_NODEPORT_HTTPS}/")"

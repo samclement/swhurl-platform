@@ -79,7 +79,7 @@ if [[ "${INGRESS_PROVIDER:-nginx}" == "traefik" ]]; then
   ingress_class="traefik"
 fi
 
-issuer="${PLATFORM_CLUSTER_ISSUER:-${CLUSTER_ISSUER:-letsencrypt-staging}}"
+issuer="letsencrypt-staging"
 hubble_host="${HUBBLE_HOST:-hubble.${BASE_DOMAIN}}"
 oauth_host="${OAUTH_HOST:-oauth.${BASE_DOMAIN}}"
 

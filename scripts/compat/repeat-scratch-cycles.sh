@@ -6,14 +6,13 @@ cd "$ROOT_DIR"
 
 CYCLES="${CYCLES:-3}"
 PROFILE_FILE="${PROFILE_FILE:-}"
-CERT_MODE="${CERT_MODE:-staging}" # staging|selfsigned (ignored when --profile is provided)
+CERT_MODE="${CERT_MODE:-staging}" # staging|prod
 HOST_ENV_FILE=""
 CONFIRM=false
-TMP_PROFILE=""
 
 usage() {
   cat <<USAGE
-Usage: ./scripts/compat/repeat-scratch-cycles.sh [--cycles N] [--cert-mode staging|selfsigned] [--profile FILE] [--host-env FILE] --yes
+Usage: ./scripts/compat/repeat-scratch-cycles.sh [--cycles N] [--cert-mode staging|prod] [--profile FILE] [--host-env FILE] --yes
 
 Destructive loop:
   1) Uninstall k3s
@@ -23,10 +22,8 @@ Destructive loop:
   5) Uninstall k3s
 
 Safety:
-  - Refuses loops that would hit Let’s Encrypt production endpoints unless ALLOW_LETSENCRYPT_PROD_LOOP=true.
+  - Refuses loops in production cert mode unless ALLOW_LETSENCRYPT_PROD_LOOP=true.
   - Requires explicit --yes.
-Defaults:
-  - If --profile is omitted, a temporary profile is generated from --cert-mode (default: staging).
 USAGE
 }
 
@@ -50,56 +47,13 @@ log() { printf "[INFO] %s\n" "$*"; }
 [[ "$CYCLES" -ge 1 ]] || die "--cycles must be >= 1"
 
 case "$CERT_MODE" in
-  staging|selfsigned) ;;
-  *) die "--cert-mode must be staging or selfsigned (got: ${CERT_MODE})" ;;
+  staging|prod) ;;
+  *) die "--cert-mode must be staging or prod (got: ${CERT_MODE})" ;;
 esac
 
-if [[ -z "$PROFILE_FILE" ]]; then
-  TMP_PROFILE="$(mktemp)"
-  case "$CERT_MODE" in
-    staging)
-      cat >"$TMP_PROFILE" <<EOF
-PLATFORM_CLUSTER_ISSUER=letsencrypt-staging
-LETSENCRYPT_ENV=staging
-LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
-EOF
-      ;;
-    selfsigned)
-      cat >"$TMP_PROFILE" <<EOF
-PLATFORM_CLUSTER_ISSUER=selfsigned
-LETSENCRYPT_ENV=staging
-LETSENCRYPT_STAGING_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
-LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
-EOF
-      ;;
-  esac
-  PROFILE_FILE="$TMP_PROFILE"
-fi
-[[ -f "$PROFILE_FILE" ]] || die "Profile not found: $PROFILE_FILE"
-trap '[[ -n "$TMP_PROFILE" ]] && rm -f "$TMP_PROFILE"' EXIT
-
-# Load env contract for safety checks.
-set -a
-[[ -f "$ROOT_DIR/config.env" ]] && source "$ROOT_DIR/config.env"
-if [[ "${PROFILE_EXCLUSIVE:-false}" == "false" ]]; then
-  [[ -f "$ROOT_DIR/profiles/local.env" ]] && source "$ROOT_DIR/profiles/local.env"
-  [[ -f "$ROOT_DIR/profiles/secrets.env" ]] && source "$ROOT_DIR/profiles/secrets.env"
-fi
-source "$PROFILE_FILE"
-set +a
-
-prod_server="https://acme-v02.api.letsencrypt.org/directory"
-staging_server="${LETSENCRYPT_STAGING_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
-configured_prod_server="${LETSENCRYPT_PROD_SERVER:-$prod_server}"
-le_env="${LETSENCRYPT_ENV:-staging}"
-case "$le_env" in
-  prod|production) alias_server="$configured_prod_server" ;;
-  *) alias_server="$staging_server" ;;
-esac
-
-if [[ "$configured_prod_server" == "$prod_server" || "$alias_server" == "$prod_server" ]]; then
+if [[ "$CERT_MODE" == "prod" ]]; then
   [[ "${ALLOW_LETSENCRYPT_PROD_LOOP:-false}" == "true" ]] || die \
-    "This loop would hit Let’s Encrypt production (LETSENCRYPT_ENV=$le_env LETSENCRYPT_PROD_SERVER=$configured_prod_server). Set ALLOW_LETSENCRYPT_PROD_LOOP=true to override."
+    "This loop is set to production cert mode. Set ALLOW_LETSENCRYPT_PROD_LOOP=true to override."
 fi
 
 run_k3s_uninstall() {
@@ -127,11 +81,23 @@ for i in $(seq 1 "$CYCLES"); do
   run_k3s_uninstall
   run_k3s_install
 
-  log "Applying platform with profile: $PROFILE_FILE"
-  ./run.sh --profile "$PROFILE_FILE"
+  log "Setting platform cert mode: ${CERT_MODE}"
+  ./scripts/bootstrap/set-flux-path-modes.sh --platform-cert-env "$CERT_MODE"
 
-  log "Deleting platform with profile: $PROFILE_FILE"
-  ./run.sh --profile "$PROFILE_FILE" --delete
+  log "Applying platform"
+  if [[ -n "$PROFILE_FILE" ]]; then
+    [[ -f "$PROFILE_FILE" ]] || die "Profile not found: $PROFILE_FILE"
+    ./run.sh --profile "$PROFILE_FILE"
+  else
+    ./run.sh
+  fi
+
+  log "Deleting platform"
+  if [[ -n "$PROFILE_FILE" ]]; then
+    ./run.sh --profile "$PROFILE_FILE" --delete
+  else
+    ./run.sh --delete
+  fi
 
   run_k3s_uninstall
 done

@@ -67,7 +67,7 @@ runtime_inputs_kustomization_file="$root/infrastructure/runtime-inputs/kustomiza
 runtime_inputs_flux_block="$(cat "$flux_infrastructure_file" 2>/dev/null || true)"
 infrastructure_overlay_block="$(cat "$root/infrastructure/overlays/home/kustomization.yaml" 2>/dev/null || true)"
 if [[ -n "$runtime_inputs_flux_block" ]] \
-  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'path: ./infrastructure/overlays/home' \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'path: ./infrastructure/overlays/home(-letsencrypt-prod)?' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'postBuild:' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'substituteFrom:' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'name: platform-runtime-inputs' \

@@ -23,7 +23,7 @@ readonly VERIFY_CONTRACT_LOADED="1"
 readonly VERIFY_INGRESS_SERVICE_TYPE="NodePort"
 readonly VERIFY_INGRESS_NODEPORT_HTTP="31514"
 readonly VERIFY_INGRESS_NODEPORT_HTTPS="30313"
-readonly VERIFY_SAMPLE_INGRESS_HOST_PREFIX="staging.hello"
+readonly VERIFY_SAMPLE_INGRESS_HOST_PREFIX="staging-hello"
 
 # Teardown/delete-clean contract.
 readonly -a PLATFORM_MANAGED_NAMESPACES=(apps-staging apps-prod cert-manager ingress logging observability platform-system storage)
@@ -45,21 +45,12 @@ readonly -a VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM=(
 )
 
 # Config input contract.
-readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN PLATFORM_CLUSTER_ISSUER APP_CLUSTER_ISSUER APP_NAMESPACE APP_HOST ACME_EMAIL)
+readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN)
 readonly VERIFY_REQUIRED_TIMEOUT_VAR="TIMEOUT_SECS"
-readonly -a VERIFY_ALLOWED_CLUSTER_ISSUERS=(selfsigned letsencrypt letsencrypt-staging letsencrypt-prod)
-readonly -a VERIFY_ALLOWED_LETSENCRYPT_ENVS=(staging prod production)
 readonly -a VERIFY_ALLOWED_INGRESS_PROVIDERS=(nginx traefik)
 readonly -a VERIFY_ALLOWED_OBJECT_STORAGE_PROVIDERS=(minio ceph)
 readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
-  PLATFORM_CLUSTER_ISSUER
-  APP_CLUSTER_ISSUER
-  APP_NAMESPACE
-  APP_HOST
-  LETSENCRYPT_ENV
-  LETSENCRYPT_STAGING_SERVER
-  LETSENCRYPT_PROD_SERVER
   INGRESS_PROVIDER
   OBJECT_STORAGE_PROVIDER
 )
@@ -94,16 +85,6 @@ is_allowed_k3s_secret_for_verify() {
   name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM[@]}"
 }
 
-is_allowed_letsencrypt_env() {
-  local value="$1"
-  name_matches_any_pattern "$value" "${VERIFY_ALLOWED_LETSENCRYPT_ENVS[@]}"
-}
-
-is_allowed_cluster_issuer() {
-  local value="$1"
-  name_matches_any_pattern "$value" "${VERIFY_ALLOWED_CLUSTER_ISSUERS[@]}"
-}
-
 is_allowed_ingress_provider() {
   local value="$1"
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_INGRESS_PROVIDERS[@]}"
@@ -125,20 +106,13 @@ verify_oauth_auth_signin() {
 }
 
 verify_expected_letsencrypt_server() {
-  local server_type="${1:-alias}"
-  local le_env="${2:-${LETSENCRYPT_ENV:-staging}}"
-  local staging_server="${LETSENCRYPT_STAGING_SERVER:-https://acme-staging-v02.api.letsencrypt.org/directory}"
-  local prod_server="${LETSENCRYPT_PROD_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
+  local server_type="${1:-staging}"
+  local staging_server="https://acme-staging-v02.api.letsencrypt.org/directory"
+  local prod_server="https://acme-v02.api.letsencrypt.org/directory"
 
   case "$server_type" in
     staging) printf '%s' "$staging_server" ;;
     prod) printf '%s' "$prod_server" ;;
-    alias)
-      case "$le_env" in
-        prod|production) printf '%s' "$prod_server" ;;
-        *) printf '%s' "$staging_server" ;;
-      esac
-      ;;
     *)
       printf '%s' "$staging_server"
       ;;

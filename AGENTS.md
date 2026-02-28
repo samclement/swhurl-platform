@@ -28,7 +28,7 @@
   - Active layout boundary: `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
   - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
-  - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
+  - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs`, `app-test`, `verify`) and run host tasks directly via `host/run-host.sh`.
   - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
   - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/25_prepare_helm_repositories.sh`, `scripts/20_reconcile_platform_namespaces.sh`, and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
@@ -57,7 +57,7 @@
   - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
   - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
   - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, kustomize structure rendering for flux scaffolding, and provider-matrix validation through `scripts/97_verify_provider_matrix.sh`).
-  - Destructive lifecycle loop helper: `scripts/compat/repeat-scratch-cycles.sh` performs uninstall/install/apply/delete cycles and blocks Let’s Encrypt prod usage unless `ALLOW_LETSENCRYPT_PROD_LOOP=true`.
+  - Destructive scratch-cycle helper `scripts/compat/repeat-scratch-cycles.sh` was removed to keep the operator surface minimal; use explicit `run.sh --delete` / `run.sh` loops only when needed.
 
 - k3s-only focus
   - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
@@ -179,7 +179,7 @@
   - Runtime-input sync fallback: `scripts/bootstrap/sync-runtime-inputs.sh` sets `CLICKSTACK_INGESTION_KEY` to `CLICKSTACK_API_KEY` when ingestion key is unset so first install can proceed before UI bootstrap.
   - MinIO values use `rootUser`/`rootPassword` directly in `infrastructure/storage/minio/base/helmrelease-minio.yaml`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml`).
-  - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
+  - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, `scripts/compat/repeat-scratch-cycles.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
   - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
   - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer mode switching, and app URL/issuer mode switching that run runtime-input sync + Flux reconcile.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.

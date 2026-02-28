@@ -143,7 +143,7 @@
   - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
 
 - Domains and DNS registration
-  - Dynamic DNS is wildcard-only: `scripts/aws-dns-updater.sh` updates a single Route53 A record for `*.homelab.swhurl.com` (no per-subdomain token list).
+  - Dynamic DNS is wildcard-only: `host/scripts/aws-dns-updater.sh` updates a single Route53 A record for `*.homelab.swhurl.com` (no per-subdomain token list).
   - DNS wildcard scope caveat: `*.homelab.swhurl.com` matches one-label hosts (for example `oauth.homelab.swhurl.com`) but not multi-label names like `api.staging.homelab.swhurl.com`; add explicit records (or another wildcard) for multi-label hosts if needed.
   - `host/run-host.sh --only 10_dynamic_dns.sh` installs/restarts a systemd timer that runs the wildcard updater helper with no args.
   - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.

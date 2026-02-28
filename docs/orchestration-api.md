@@ -13,7 +13,7 @@ Usage:
 ```
 
 Options:
-- `--profile FILE`: load additional env vars (highest precedence in cluster config layering), mainly for runtime-input/cert intent and feature toggles.
+- `--profile FILE`: load additional env vars (highest precedence in cluster config layering). Prefer Makefile parameterized targets for common runtime intent; use `--profile` for ad-hoc overrides.
 - `--host-env FILE`: pass host-layer env overrides through to `./host/run-host.sh` when host layer is enabled.
 - `--only LIST`: comma-separated step numbers or basenames.
 - `--dry-run`: print resolved plan and exit without executing.

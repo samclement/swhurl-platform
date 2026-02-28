@@ -28,7 +28,7 @@ Layer selection note:
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
 - Tenant environments are declared in `tenants/app-envs/*`.
 - App URL/issuer/namespace remain runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
-- `--profile` values drive runtime-input intent (including app URL/issuer and cert mode).
+- Prefer Makefile args for runtime intent (`CERT_ENV`, `APP_ENV`, `LE_ENV`); `--profile` is optional compatibility for ad-hoc overrides.
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
@@ -167,5 +167,5 @@ Show plans:
 - `tenants/`: app environment manifests
 - `scripts/`: orchestration and verification scripts
 - `host/`: optional host-layer bootstrap tasks
-- `profiles/`: local and secret overlays for runtime configuration
+- `profiles/`: local optional overrides (`local.env`) and secret template/example (`secrets*.env`)
 - `docs/`: runbooks, ADRs, and architecture/design notes

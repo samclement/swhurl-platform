@@ -22,7 +22,7 @@ make flux-reconcile
 ```
 
 Behavior:
-- Syncs `flux-system/platform-runtime-inputs` from local config/profile.
+- Syncs `flux-system/platform-runtime-inputs` from local config (`config.env` + `profiles/local.env` + `profiles/secrets.env`, plus optional ad-hoc `--profile` overrides).
 - Reconciles `swhurl-platform` source, `homelab-flux-sources`, then `homelab-flux-stack`.
 
 ### Full apply via orchestrator
@@ -87,5 +87,5 @@ Deep checks (opt-in):
 ## Promotion / Profiles
 
 - Platform cert issuer mode is controlled by `PLATFORM_CLUSTER_ISSUER` and runtime-input sync.
-- Sample app host/issuer/namespace intent is controlled by runtime-input vars (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`) via profile + sync/reconcile.
+- Sample app host/issuer/namespace intent is controlled by runtime-input vars (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`) via Makefile args + sync/reconcile.
 - Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.

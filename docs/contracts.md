@@ -10,6 +10,10 @@ All scripts load config via `scripts/00_lib.sh` with precedence:
 3. `profiles/secrets.env`
 4. `$PROFILE_FILE` (`./run.sh --profile ...`)
 
+Operational preference:
+- Keep committed profile files minimal (`profiles/local.env` and `profiles/secrets.example.env`).
+- Express runtime intent via Makefile args; use `--profile` for ad-hoc temporary overrides.
+
 If `PROFILE_EXCLUSIVE=true`, only `config.env` and `$PROFILE_FILE` are loaded.
 
 Variables are exported (`set -a`) so child commands (for example `flux`, `helm`, `kubectl`) see the resolved values.

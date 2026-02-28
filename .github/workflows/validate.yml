@@ -34,16 +34,14 @@ jobs:
           chmod +x run.sh host/run-host.sh scripts/compat/*.sh scripts/bootstrap/*.sh
           ./host/run-host.sh --dry-run
           ./run.sh --dry-run
-          ./run.sh --dry-run --profile profiles/overlay-staging.env
-          ./run.sh --dry-run --profile profiles/overlay-prod.env
+          make cluster-apply-staging DRY_RUN=true
+          make cluster-apply-prod DRY_RUN=true
           make platform-certs CERT_ENV=staging DRY_RUN=true
           make platform-certs CERT_ENV=prod DRY_RUN=true
           make app-test APP_ENV=staging LE_ENV=staging DRY_RUN=true
           make app-test APP_ENV=staging LE_ENV=prod DRY_RUN=true
           make app-test APP_ENV=prod LE_ENV=staging DRY_RUN=true
           make app-test APP_ENV=prod LE_ENV=prod DRY_RUN=true
-          ./run.sh --dry-run --profile profiles/test-loop.env
-          ./run.sh --dry-run --profile profiles/test-loop-selfsigned.env
           ./run.sh --dry-run --with-host
           ./run.sh --dry-run --with-host --delete
           ./scripts/compat/repeat-scratch-cycles.sh --help

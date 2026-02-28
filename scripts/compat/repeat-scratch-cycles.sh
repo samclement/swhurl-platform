@@ -5,13 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 CYCLES="${CYCLES:-3}"
-PROFILE_FILE="${PROFILE_FILE:-profiles/test-loop.env}"
+PROFILE_FILE="${PROFILE_FILE:-}"
+CERT_MODE="${CERT_MODE:-staging}" # staging|selfsigned (ignored when --profile is provided)
 HOST_ENV_FILE=""
 CONFIRM=false
+TMP_PROFILE=""
 
 usage() {
   cat <<USAGE
-Usage: ./scripts/compat/repeat-scratch-cycles.sh [--cycles N] [--profile FILE] [--host-env FILE] --yes
+Usage: ./scripts/compat/repeat-scratch-cycles.sh [--cycles N] [--cert-mode staging|selfsigned] [--profile FILE] [--host-env FILE] --yes
 
 Destructive loop:
   1) Uninstall k3s
@@ -23,12 +25,15 @@ Destructive loop:
 Safety:
   - Refuses loops that would hit Let’s Encrypt production endpoints unless ALLOW_LETSENCRYPT_PROD_LOOP=true.
   - Requires explicit --yes.
+Defaults:
+  - If --profile is omitted, a temporary profile is generated from --cert-mode (default: staging).
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cycles) CYCLES="$2"; shift 2 ;;
+    --cert-mode) CERT_MODE="$2"; shift 2 ;;
     --profile) PROFILE_FILE="$2"; shift 2 ;;
     --host-env) HOST_ENV_FILE="$2"; shift 2 ;;
     --yes) CONFIRM=true; shift ;;
@@ -43,7 +48,35 @@ log() { printf "[INFO] %s\n" "$*"; }
 [[ "$CONFIRM" == "true" ]] || die "Refusing destructive test loop without --yes"
 [[ "$CYCLES" =~ ^[0-9]+$ ]] || die "--cycles must be numeric"
 [[ "$CYCLES" -ge 1 ]] || die "--cycles must be >= 1"
+
+case "$CERT_MODE" in
+  staging|selfsigned) ;;
+  *) die "--cert-mode must be staging or selfsigned (got: ${CERT_MODE})" ;;
+esac
+
+if [[ -z "$PROFILE_FILE" ]]; then
+  TMP_PROFILE="$(mktemp)"
+  case "$CERT_MODE" in
+    staging)
+      cat >"$TMP_PROFILE" <<EOF
+PLATFORM_CLUSTER_ISSUER=letsencrypt-staging
+LETSENCRYPT_ENV=staging
+LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
+EOF
+      ;;
+    selfsigned)
+      cat >"$TMP_PROFILE" <<EOF
+PLATFORM_CLUSTER_ISSUER=selfsigned
+LETSENCRYPT_ENV=staging
+LETSENCRYPT_STAGING_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
+LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
+EOF
+      ;;
+  esac
+  PROFILE_FILE="$TMP_PROFILE"
+fi
 [[ -f "$PROFILE_FILE" ]] || die "Profile not found: $PROFILE_FILE"
+trap '[[ -n "$TMP_PROFILE" ]] && rm -f "$TMP_PROFILE"' EXIT
 
 # Load env contract for safety checks.
 set -a

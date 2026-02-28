@@ -4,6 +4,8 @@ CERT_ENV ?= staging
 APP_ENV ?= staging
 LE_ENV ?= staging
 DRY_RUN ?= false
+LOOP_CERT_MODE ?= staging
+CYCLES ?= 3
 
 .PHONY: help
 help:
@@ -18,10 +20,10 @@ help:
 	@echo "  host-delete         Delete host layer"
 	@echo "  cluster-plan        Print cluster plan"
 	@echo "  cluster-apply       Apply cluster layer"
-	@echo "  cluster-apply-staging  Apply with staging cert/runtime profile"
-	@echo "  cluster-apply-prod  Apply with production cert/runtime profile"
+	@echo "  cluster-apply-staging  Apply with staging cert intent (no profile file)"
+	@echo "  cluster-apply-prod  Apply with production cert intent (no profile file)"
 	@echo "  cluster-delete      Delete cluster layer"
-	@echo "  test-loop           Run destructive scratch cycles (k3s uninstall/install + apply/delete)"
+	@echo "  test-loop           Run destructive scratch cycles (LOOP_CERT_MODE=staging|selfsigned CYCLES=N)"
 	@echo "  all-apply           Apply host + cluster"
 	@echo "  all-delete          Delete cluster + host"
 	@echo "  verify              Run verification scripts against current context"
@@ -72,11 +74,30 @@ cluster-apply:
 
 .PHONY: cluster-apply-staging
 cluster-apply-staging:
-	./run.sh --profile profiles/overlay-staging.env
+	@$(MAKE) cluster-apply-cert CERT_ENV=staging DRY_RUN=$(DRY_RUN)
 
 .PHONY: cluster-apply-prod
 cluster-apply-prod:
-	./run.sh --profile profiles/overlay-prod.env
+	@$(MAKE) cluster-apply-cert CERT_ENV=prod DRY_RUN=$(DRY_RUN)
+
+.PHONY: cluster-apply-cert
+cluster-apply-cert:
+	@set -eu; \
+	case "$(CERT_ENV)" in \
+	  staging|prod) ;; \
+	  *) echo "CERT_ENV must be staging or prod (got: $(CERT_ENV))" >&2; exit 1 ;; \
+	esac; \
+	tmp_profile="$$(mktemp)"; \
+	trap 'rm -f "$$tmp_profile"' EXIT; \
+	printf '%s\n' \
+	  "PLATFORM_CLUSTER_ISSUER=letsencrypt-$(CERT_ENV)" \
+	  "LETSENCRYPT_ENV=$(CERT_ENV)" > "$$tmp_profile"; \
+	if [[ "$(CERT_ENV)" == "staging" ]]; then \
+	  printf '%s\n' "LETSENCRYPT_PROD_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory" >> "$$tmp_profile"; \
+	fi; \
+	dry_run_flag=""; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then dry_run_flag="--dry-run"; fi; \
+	./run.sh $$dry_run_flag --profile "$$tmp_profile"
 
 .PHONY: cluster-delete
 cluster-delete:
@@ -84,7 +105,7 @@ cluster-delete:
 
 .PHONY: test-loop
 test-loop:
-	./scripts/compat/repeat-scratch-cycles.sh --yes
+	./scripts/compat/repeat-scratch-cycles.sh --cycles "$(CYCLES)" --cert-mode "$(LOOP_CERT_MODE)" --yes
 
 .PHONY: all-apply
 all-apply:

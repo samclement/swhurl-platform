@@ -29,6 +29,10 @@ Env:
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
 
 Manual prereqs:
+  Flux CLI/controllers are not installed by this orchestrator.
+  Install Flux manually (see README), then apply bootstrap manifests:
+    flux check --pre && flux install --namespace flux-system
+    kubectl apply -k clusters/home/flux-system
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
   domains and want automatic Route53 updates, run: ./host/run-host.sh --only 10_dynamic_dns.sh
   Host bootstrap (k3s install) is also manual: ./host/run-host.sh --only 20_install_k3s.sh
@@ -134,8 +138,7 @@ build_apply_plan() {
   # 2) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
-  # 3) Flux Bootstrap + Reconcile
-  add_step out_arr "$(step_path bootstrap/install-flux.sh)"
+  # 3) Flux Reconcile
   add_step out_arr "$(step_path bootstrap/sync-runtime-inputs.sh)"
   add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
 
@@ -158,7 +161,6 @@ build_delete_plan() {
   # Deterministic finalizers: teardown -> cilium -> verify.
   add_step out_arr "$(step_path 99_execute_teardown.sh)"
   add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
-  add_step out_arr "$(step_path bootstrap/install-flux.sh)"
   add_step out_arr "$(step_path 98_verify_teardown_clean.sh)"
 }
 
@@ -170,10 +172,10 @@ print_plan() {
   if [[ "$DELETE_MODE" != true ]]; then
     echo "  - 1) Basic Kubernetes Cluster (kubeconfig)"
     echo "  - 2) Environment (profiles/secrets) & verification"
-    echo "  - 3) Flux bootstrap + reconcile"
+    echo "  - 3) Flux reconcile"
     echo "  - 4) Cluster verification suite"
   else
-    echo "  - Delete (reverse phases; cilium + flux cleanup last)"
+    echo "  - Delete (reverse phases; cilium + Flux uninstall in stack delete)"
   fi
 
   for s in "${steps[@]}"; do

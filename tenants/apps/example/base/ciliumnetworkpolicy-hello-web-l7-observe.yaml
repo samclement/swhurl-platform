@@ -11,8 +11,8 @@ spec:
       app.kubernetes.io/name: hello-web
       app.kubernetes.io/instance: hello-web
   ingress:
-    - fromEndpoints:
-        - {}
+    - fromEntities:
+        - cluster
       toPorts:
         - ports:
             - port: "80"

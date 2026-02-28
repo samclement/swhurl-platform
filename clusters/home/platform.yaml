@@ -16,6 +16,9 @@ spec:
       - kind: ConfigMap
         name: platform-settings
         optional: false
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 20m

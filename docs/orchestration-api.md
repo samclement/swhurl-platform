@@ -47,7 +47,7 @@ Default delete steps:
 7. `98_verify_teardown_clean.sh --delete`
 
 Notes:
-- Runtime input target secrets are declarative in `infrastructure/runtime-inputs`.
+- Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).

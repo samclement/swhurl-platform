@@ -15,7 +15,7 @@ Use this checklist when adding a new platform feature.
 
 ## 3) Runtime inputs (if feature needs secrets)
 
-- Add/update target manifests in `infrastructure/runtime-inputs/*`.
+- Add/update target manifests in `platform-services/runtime-inputs/*`.
 - Update `scripts/bootstrap/sync-runtime-inputs.sh` validation and secret projection values.
 
 ## 4) Verification updates

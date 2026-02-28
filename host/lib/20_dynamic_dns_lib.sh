@@ -57,7 +57,7 @@ host_dynamic_dns_apply() {
   root="${HOST_REPO_ROOT:-$(host_repo_root_from_lib)}"
   run_user="${SUDO_USER:-$(id -un)}"
   run_home="$(host_dynamic_dns_user_home "$run_user")"
-  helper_source="${root}/scripts/aws-dns-updater.sh"
+  helper_source="${root}/host/scripts/aws-dns-updater.sh"
   helper_target="${run_home}/.local/scripts/aws-dns-updater.sh"
   service_template="${root}/host/templates/systemd/dynamic-dns.service.tmpl"
   timer_template="${root}/host/templates/systemd/dynamic-dns.timer.tmpl"

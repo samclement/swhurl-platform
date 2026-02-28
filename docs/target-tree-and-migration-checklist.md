@@ -79,6 +79,8 @@ Guiding rule:
 │  │  ├─ 00_bootstrap_host.sh
 │  │  ├─ 10_dynamic_dns.sh
 │  │  └─ 20_install_k3s.sh
+│  ├─ scripts/
+│  │  └─ aws-dns-updater.sh
 │  ├─ templates/
 │  │  └─ systemd/
 │  │     ├─ dynamic-dns.service.tmpl
@@ -251,7 +253,7 @@ Tasks:
 |---|---|---|
 | `host/run-host.sh --only 20_install_k3s.sh` | Host Bash module | `host/tasks/20_install_k3s.sh` + `host/lib/30_k3s_lib.sh` |
 | `host/run-host.sh --only 10_dynamic_dns.sh` | Host Bash module | `host/tasks/10_dynamic_dns.sh` + `host/lib/20_dynamic_dns_lib.sh` |
-| `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
+| `host/scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/01_check_prereqs.sh` | Retired (dependency checks documented in README) | n/a |
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
 | `charts/platform-namespaces` | Retired | `infrastructure/namespaces/` (plain manifests) |

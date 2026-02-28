@@ -80,35 +80,45 @@ expected_app_issuer="letsencrypt-staging"
 tenants_path=""
 if kubectl -n flux-system get kustomization homelab-tenants >/dev/null 2>&1; then
   tenants_path="$(kubectl -n flux-system get kustomization homelab-tenants -o jsonpath='{.spec.path}')"
-  case "$tenants_path" in
-    ./tenants/overlays/app-staging-le-staging)
+  if [[ "$tenants_path" != "./tenants/app-envs" ]]; then
+    warn "homelab-tenants path '$tenants_path' is unexpected (expected ./tenants/app-envs)"
+  fi
+else
+  warn "homelab-tenants kustomization not found"
+fi
+
+app_example_path=""
+if kubectl -n flux-system get kustomization homelab-app-example >/dev/null 2>&1; then
+  app_example_path="$(kubectl -n flux-system get kustomization homelab-app-example -o jsonpath='{.spec.path}')"
+  case "$app_example_path" in
+    ./tenants/apps/example/overlays/staging)
       expected_app_namespace="apps-staging"
       expected_app_host="staging-hello.homelab.swhurl.com"
       expected_app_issuer="letsencrypt-staging"
       ;;
-    ./tenants/overlays/app-staging-le-prod)
+    ./tenants/apps/example/overlays/staging-url-prod)
       expected_app_namespace="apps-staging"
       expected_app_host="staging-hello.homelab.swhurl.com"
       expected_app_issuer="letsencrypt-prod"
       ;;
-    ./tenants/overlays/app-prod-le-staging)
+    ./tenants/apps/example/overlays/prod-url-staging)
       expected_app_namespace="apps-prod"
       expected_app_host="hello.homelab.swhurl.com"
       expected_app_issuer="letsencrypt-staging"
       ;;
-    ./tenants/overlays/app-prod-le-prod)
+    ./tenants/apps/example/overlays/prod)
       expected_app_namespace="apps-prod"
       expected_app_host="hello.homelab.swhurl.com"
       expected_app_issuer="letsencrypt-prod"
       ;;
     *)
-      warn "homelab-tenants path '$tenants_path' is not a recognized app mode overlay; defaulting expected app mode to staging+staging"
+      warn "homelab-app-example path '$app_example_path' is not a recognized app overlay; defaulting expected app mode to staging+staging"
       ;;
   esac
 else
-  warn "homelab-tenants kustomization not found; defaulting expected app mode to staging+staging"
+  warn "homelab-app-example kustomization not found; defaulting expected app mode to staging+staging"
 fi
-ok "app mode expectation: namespace=${expected_app_namespace} host=${expected_app_host} issuer=${expected_app_issuer} (path: ${tenants_path:-<unknown>})"
+ok "app mode expectation: namespace=${expected_app_namespace} host=${expected_app_host} issuer=${expected_app_issuer} (path: ${app_example_path:-<unknown>})"
 
 if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
   ok "selfsigned ClusterIssuer present"
@@ -387,20 +397,20 @@ fi
 say "Example App"
 if kubectl -n "$expected_app_namespace" get ingress hello-web >/dev/null 2>&1; then
   actual_host="$(kubectl -n "$expected_app_namespace" get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
-  check_eq "hello-web.host" "$expected_app_host" "$actual_host" "clusters/home/tenants.yaml"
+  check_eq "hello-web.host" "$expected_app_host" "$actual_host" "clusters/home/app-example.yaml"
 else
   mismatch "hello-web ingress not found in namespace ${expected_app_namespace}"
-  add_suggest "clusters/home/tenants.yaml"
+  add_suggest "clusters/home/app-example.yaml"
 fi
 
 if kubectl -n "$expected_app_namespace" get certificate hello-web >/dev/null 2>&1; then
   actual_cert_host="$(kubectl -n "$expected_app_namespace" get certificate hello-web -o jsonpath='{.spec.dnsNames[0]}')"
   actual_cert_issuer="$(kubectl -n "$expected_app_namespace" get certificate hello-web -o jsonpath='{.spec.issuerRef.name}')"
-  check_eq "hello-web.certificate.host" "$expected_app_host" "$actual_cert_host" "clusters/home/tenants.yaml"
-  check_eq "hello-web.certificate.issuer" "$expected_app_issuer" "$actual_cert_issuer" "clusters/home/tenants.yaml"
+  check_eq "hello-web.certificate.host" "$expected_app_host" "$actual_cert_host" "clusters/home/app-example.yaml"
+  check_eq "hello-web.certificate.issuer" "$expected_app_issuer" "$actual_cert_issuer" "clusters/home/app-example.yaml"
 else
   mismatch "hello-web certificate not found in namespace ${expected_app_namespace}"
-  add_suggest "clusters/home/tenants.yaml"
+  add_suggest "clusters/home/app-example.yaml"
 fi
 
 if [[ "$fail" -eq 1 ]]; then

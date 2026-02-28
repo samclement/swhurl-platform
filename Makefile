@@ -1,5 +1,5 @@
 SHELL := /usr/bin/env bash
-FLUX_TENANTS_FILE := clusters/home/tenants.yaml
+FLUX_APP_EXAMPLE_FILE := clusters/home/app-example.yaml
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 
@@ -25,22 +25,22 @@ define update_cert_issuer
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
 endef
 
-define update_tenants_overlay_path
+define update_app_example_overlay_path
 	@set -eu; \
-	file="$(FLUX_TENANTS_FILE)"; path="$(1)"; \
-	[[ -f "$$file" ]] || { echo "Missing tenants file: $$file" >&2; exit 1; }; \
+	file="$(FLUX_APP_EXAMPLE_FILE)"; path="$(1)"; \
+	[[ -f "$$file" ]] || { echo "Missing app file: $$file" >&2; exit 1; }; \
 	tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; \
-	awk -v path="$$path" 'BEGIN{updated=0} /^  path:[[:space:]]*\.\/tenants\/overlays\// {print "  path: " path; updated=1; next} {print} END{ if (updated==0) exit 42 }' "$$file" > "$$tmp" || status="$$?"; \
-	if [[ "$${status:-0}" == "42" ]]; then echo "Missing tenants overlay path key in $$file" >&2; exit 1; fi; \
+	awk -v path="$$path" 'BEGIN{updated=0} /^  path:[[:space:]]*\.\/tenants\/apps\/example\/overlays\// {print "  path: " path; updated=1; next} {print} END{ if (updated==0) exit 42 }' "$$file" > "$$tmp" || status="$$?"; \
+	if [[ "$${status:-0}" == "42" ]]; then echo "Missing app overlay path key in $$file" >&2; exit 1; fi; \
 	if cmp -s "$$file" "$$tmp"; then \
-	  echo "[INFO] tenants path already set to $$path"; \
+	  echo "[INFO] app path already set to $$path"; \
 	elif [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "[INFO] tenants path would update to $$path in $$file"; \
+	  echo "[INFO] app path would update to $$path in $$file"; \
 	  diff -u "$$file" "$$tmp" || true; \
 	else \
 	  mv "$$tmp" "$$file"; \
 	  trap - EXIT; \
-	  echo "[INFO] tenants path updated to $$path in $$file"; \
+	  echo "[INFO] app path updated to $$path in $$file"; \
 	fi; \
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
 endef
@@ -101,19 +101,19 @@ platform-certs-prod:
 
 .PHONY: app-test-staging-le-staging
 app-test-staging-le-staging:
-	$(call update_tenants_overlay_path,./tenants/overlays/app-staging-le-staging)
+	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/staging)
 
 .PHONY: app-test-staging-le-prod
 app-test-staging-le-prod:
-	$(call update_tenants_overlay_path,./tenants/overlays/app-staging-le-prod)
+	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/staging-url-prod)
 
 .PHONY: app-test-prod-le-staging
 app-test-prod-le-staging:
-	$(call update_tenants_overlay_path,./tenants/overlays/app-prod-le-staging)
+	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/prod-url-staging)
 
 .PHONY: app-test-prod-le-prod
 app-test-prod-le-prod:
-	$(call update_tenants_overlay_path,./tenants/overlays/app-prod-le-prod)
+	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/prod)
 
 .PHONY: verify
 verify:

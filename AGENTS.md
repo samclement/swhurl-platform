@@ -71,6 +71,7 @@ Important contract:
   - Issuer local chart (`charts/platform-issuers`) is retired.
   - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
   - Apps keep issuer selection in app overlays/manifests.
+  - Example app base now includes `tenants/apps/example/base/ciliumnetworkpolicy-hello-web-l7-observe.yaml` to keep Hubble L7 HTTP visibility declarative for test app flows.
 
 - DNS and host layer
   - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh` and updates Route53 wildcard `*.homelab.swhurl.com`.
@@ -81,6 +82,7 @@ Important contract:
   - k3s is a manual prerequisite path (`host/run-host.sh --only 20_install_k3s.sh`).
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - Keep Cilium teardown last in delete flows.
+  - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

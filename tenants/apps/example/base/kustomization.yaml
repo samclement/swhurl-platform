@@ -5,3 +5,4 @@ resources:
   - service-hello-web.yaml
   - ingress-hello-web.yaml
   - certificate-hello-web.yaml
+  - ciliumnetworkpolicy-hello-web-l7-observe.yaml

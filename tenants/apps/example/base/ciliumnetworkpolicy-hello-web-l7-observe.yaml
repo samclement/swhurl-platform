@@ -1,0 +1,22 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hello-web-l7-observe
+  namespace: apps-staging
+  labels:
+    platform.swhurl.com/managed: "true"
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: hello-web
+      app.kubernetes.io/instance: hello-web
+  ingress:
+    - fromEndpoints:
+        - {}
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+          rules:
+            http:
+              - {}

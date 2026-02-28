@@ -53,10 +53,11 @@ Layer selection note:
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
 - Tenant app URL/issuer composition is declared in `tenants/overlays/*`.
 - Cert and app mode selection is path-driven in Flux CRDs under `clusters/home/*.yaml`.
-- Prefer Makefile args for mode switching (`CERT_ENV`, `APP_ENV`, `LE_ENV`); `--profile` is optional compatibility for ad-hoc overrides.
+- Mode switching uses declarative templates in `clusters/home/modes/` applied via Makefile targets.
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
+- `clusters/home/modes/` stores declarative Flux path mode templates used by Makefile mode targets.
 - `infrastructure/` is shared cluster infra (networking, cert-manager, issuers, ingress/storage providers, runtime-input targets).
 - `platform-services/` is shared platform service installs.
 - `tenants/` is app-environment scope (staging/prod namespaces + sample app).
@@ -93,8 +94,8 @@ Notes:
 ### 2) Promote infrastructure/platform cert mode: staging -> prod
 
 ```bash
-make platform-certs CERT_ENV=staging
-make platform-certs CERT_ENV=prod
+make platform-certs-staging
+make platform-certs-prod
 ```
 
 `platform-certs` updates Flux paths:
@@ -136,10 +137,10 @@ flux reconcile kustomization homelab-platform -n flux-system --with-source
 Use one target with explicit intent flags:
 
 ```bash
-make app-test APP_ENV=staging LE_ENV=staging
-make app-test APP_ENV=staging LE_ENV=prod
-make app-test APP_ENV=prod LE_ENV=staging
-make app-test APP_ENV=prod LE_ENV=prod
+make app-test-staging-le-staging
+make app-test-staging-le-prod
+make app-test-prod-le-staging
+make app-test-prod-le-prod
 ```
 
 URL mapping:
@@ -183,8 +184,8 @@ Show plans:
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
 - `make flux-reconcile`
-- `make platform-certs CERT_ENV=staging|prod`
-- `make app-test APP_ENV=staging|prod LE_ENV=staging|prod`
+- `make platform-certs-staging|platform-certs-prod`
+- `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod`
 - `make verify`
 
 ## Repo Layout

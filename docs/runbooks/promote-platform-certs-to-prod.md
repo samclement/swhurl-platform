@@ -22,7 +22,7 @@ Both concrete ClusterIssuers stay deployed in the cluster:
 Use:
 
 ```bash
-make platform-certs CERT_ENV=prod
+make platform-certs-prod
 ```
 
 This updates:
@@ -32,7 +32,7 @@ This updates:
 ## Roll Back To Staging Certificates
 
 ```bash
-make platform-certs CERT_ENV=staging
+make platform-certs-staging
 ```
 
 ## Verify Effective Issuer
@@ -62,5 +62,5 @@ Expected:
 
 ## Notes
 
-- App URL/issuer test mode is separate and controlled by `make app-test APP_ENV=... LE_ENV=...`
+- App URL/issuer test mode is separate and controlled by `make app-test-*-le-*`
   (updates `clusters/home/tenants.yaml` path).

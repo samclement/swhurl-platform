@@ -53,7 +53,7 @@ spec:
         otlphttp:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
-            authorization: ${env:HYPERDX_API_KEY}
+            authorization: "$${env:HYPERDX_API_KEY}"
       service:
         pipelines:
           logs:

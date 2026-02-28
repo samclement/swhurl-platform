@@ -29,11 +29,12 @@
   - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs`, `app-test`, `verify`) and run host tasks directly via `host/run-host.sh`.
-  - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
+  - Flux path mode switching is template-based: keep mode templates in `clusters/home/modes/` and apply via Makefile targets (`platform-certs-*`, `app-test-*-le-*`); do not reintroduce YAML rewrite scripts.
+  - `scripts/bootstrap/set-flux-path-modes.sh` was removed; mode changes are now file-sync operations from `clusters/home/modes/` into `clusters/home/{infrastructure,platform,tenants}.yaml`.
   - `scripts/00_feature_registry_lib.sh` was removed; keep feature flags/required-var metadata in `scripts/00_verify_contract_lib.sh` and avoid reintroducing a separate registry layer.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
   - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/20_reconcile_platform_namespaces.sh` and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
-  - Profiles are now minimal: keep `profiles/local.env` (optional non-secret overrides) and `profiles/secrets.env` (gitignored secrets). Express runtime intent via Makefile args instead of committed profile matrices.
+  - Profiles are now minimal: keep `profiles/local.env` (optional non-secret overrides) and `profiles/secrets.env` (gitignored secrets). Express runtime intent via mode targets/templates instead of committed profile matrices.
   - Provider migration runbooks should use explicit composition edits and inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of profile files.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
@@ -124,7 +125,7 @@
     - platform-services issuer mode: `clusters/home/platform.yaml` (`platform-services/overlays/home` vs `platform-services/overlays/home-letsencrypt-prod`)
     - sample app URL/issuer mode: `clusters/home/tenants.yaml` (`tenants/overlays/app-*-le-*`)
   - Managed app namespaces remain `apps-staging` and `apps-prod`; sample app URL/issuer combinations are overlay-selected, not runtime-input driven.
-  - Promotion/runtime intent is Makefile-driven via path updates (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) followed by Flux reconcile.
+  - Promotion/runtime intent is Makefile-driven via declarative mode templates in `clusters/home/modes/` followed by Flux reconcile.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

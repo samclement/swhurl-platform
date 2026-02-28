@@ -86,10 +86,13 @@ Step scripts should:
 ## Makefile Operator API
 
 Key runtime-intent targets:
-- `make platform-certs CERT_ENV=staging|prod [DRY_RUN=true]`
-  - Updates Flux paths for infrastructure and platform overlays, then runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
-- `make app-test APP_ENV=staging|prod LE_ENV=staging|prod [DRY_RUN=true]`
-  - Updates `clusters/home/tenants.yaml` path to one of `./tenants/overlays/app-<env>-le-<env>` and runs the same reconcile-only flow.
+- `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
+  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/{infrastructure,platform}.yaml`, then runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
+- `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod [DRY_RUN=true]`
+  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/tenants.yaml`, then runs the same reconcile-only flow.
+- Compatibility wrappers still exist:
+  - `make platform-certs CERT_ENV=staging|prod [DRY_RUN=true]`
+  - `make app-test APP_ENV=staging|prod LE_ENV=staging|prod [DRY_RUN=true]`
 
 Design boundary:
 - Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys). Cert issuer/app mode is path-selected in Flux CRDs.

@@ -10,7 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/overlays/home
+  path: ./infrastructure/overlays/home-letsencrypt-prod
   postBuild:
     substituteFrom:
       - kind: Secret

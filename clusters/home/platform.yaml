@@ -10,7 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./platform-services/overlays/home
+  path: ./platform-services/overlays/home-letsencrypt-prod
   prune: true
   wait: true
   timeout: 20m

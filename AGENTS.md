@@ -25,8 +25,9 @@
   - `cluster/README.md` should call out that runtime input targets are declarative in `cluster/base/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
-  - Keep overlay-selection docs explicit: active ingress/storage overlays are selected by Flux kustomization `path` values in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; app host/issuer/namespace intent is runtime-input driven (not selected by overlay path).
-  - GitOps scaffolding now lives under `cluster/` with Flux sources in `cluster/flux/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
+  - Active layout boundary (supersedes older `cluster/*` references): `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
+  - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app host/issuer/namespace intent is runtime-input driven (not selected by provider-path overlays).
+  - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).

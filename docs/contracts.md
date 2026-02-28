@@ -34,8 +34,8 @@ Let’s Encrypt controls:
 ### Flux
 
 Primary declarative control plane:
-- Bootstrap manifests: `cluster/flux`
-- Stack manifests: `cluster/overlays/homelab/flux`
+- Bootstrap manifests: `clusters/home/flux-system`
+- Stack manifests: `clusters/home` (infrastructure/platform/tenants Flux Kustomizations)
 
 Primary operations:
 - `scripts/bootstrap/install-flux.sh`

@@ -1,5 +1,9 @@
 # Target Tree and Migration Checklist
 
+> Update (2026-02-28): this checklist is now historical. The active tree uses
+> `clusters/home/`, `infrastructure/`, `platform-services/`, and `tenants/`.
+> Keep this document only for migration context, not as the current source of truth.
+
 ## Scope
 
 This document defines:

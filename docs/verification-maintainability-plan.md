@@ -13,7 +13,7 @@ Current state (2026-02-26):
   - `scripts/91_verify_platform_state.sh` gates feature checks via registry helpers (`feature_is_enabled`).
   - `scripts/96_verify_orchestrator_contract.sh` validates registry/config flag coverage and registry/Helmfile release mappings.
 - Intentional simplification:
-  - Keep `scripts/25_prepare_helm_repositories.sh` explicit and runtime-input wiring declarative in `cluster/base/runtime-inputs`.
+  - Keep `scripts/25_prepare_helm_repositories.sh` explicit and runtime-input wiring declarative in `infrastructure/runtime-inputs`.
   - Keep runtime verification mostly centralized in `scripts/91_verify_platform_state.sh` unless maintenance pain clearly justifies splitting.
   - Use `docs/add-feature-checklist.md` as the primary maintainer workflow.
 
@@ -44,9 +44,9 @@ Adding Keycloak today likely requires manual updates in many places, including:
 - `scripts/25_prepare_helm_repositories.sh` (repo setup)
 - `config.env` (feature flag and variables)
 - `environments/common.yaml.gotmpl` (feature mapping)
-- `cluster/base/namespaces/namespaces.yaml` (namespace manifests, if needed)
+- `infrastructure/namespaces/namespaces.yaml` (shared namespace manifests, if needed)
 - `scripts/00_verify_contract_lib.sh` (required vars, expected releases)
-- `cluster/base/runtime-inputs/*` (runtime secrets/config if needed)
+- `infrastructure/runtime-inputs/*` (runtime secrets/config if needed)
 - `scripts/91_verify_platform_state.sh` (runtime verification checks)
 - `README.md` and `docs/runbook.md` (documentation updates)
 
@@ -153,7 +153,7 @@ Issue VER-009: Risk of false positives in strict release inventory checks (share
 Resolution target: explicit allowlist and scope controls in Phase 3.
 
 Issue VER-010: Secret-handling drift for runtime inputs.
-Resolution target: keep runtime-input contracts declarative in `cluster/base/runtime-inputs` and verified by orchestrator contract checks.
+Resolution target: keep runtime-input contracts declarative in `infrastructure/runtime-inputs` and verified by orchestrator contract checks.
 
 ## Acceptance Criteria
 

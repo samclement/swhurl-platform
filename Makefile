@@ -29,7 +29,7 @@ help:
 	@echo "  platform-certs-staging  Shortcut for CERT_ENV=staging"
 	@echo "  platform-certs-prod  Shortcut for CERT_ENV=prod"
 	@echo "  app-test            Reconcile app test mode (APP_ENV=staging|prod LE_ENV=staging|prod, optional DRY_RUN=true)"
-	@echo "  flux-bootstrap      Install Flux and apply cluster/flux bootstrap manifests"
+	@echo "  flux-bootstrap      Install Flux and apply clusters/home/flux-system bootstrap manifests"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 

@@ -12,7 +12,7 @@ make flux-bootstrap
 
 Behavior:
 - Installs Flux controllers.
-- Applies `cluster/flux` bootstrap manifests.
+- Applies `clusters/home/flux-system` bootstrap manifests.
 - Auto-bootstraps Cilium first when no ready CNI exists.
 
 ### Reconcile
@@ -50,16 +50,18 @@ Delete ordering is intentional:
 Parent level:
 - `homelab-flux-sources -> homelab-flux-stack`
 
-Stack level (`cluster/overlays/homelab/flux/stack-kustomizations.yaml`):
-- `namespaces -> runtime-inputs`
-- `namespaces -> cilium -> {metrics-server, cert-manager -> issuers -> ingress}`
-- `ingress + runtime-inputs -> {oauth2-proxy, clickstack -> otel, storage}`
-- `oauth2-proxy + clickstack + otel + storage -> example-app`
+Cluster level (`clusters/home/*.yaml`):
+- `homelab-infrastructure -> homelab-platform -> homelab-tenants`
+
+Layer composition:
+- `homelab-infrastructure` points to `infrastructure/overlays/home` (shared infra + issuer variants + runtime-input targets).
+- `homelab-platform` points to `platform-services/overlays/home` (shared platform services).
+- `homelab-tenants` points to `tenants` (tenant env namespaces + sample app).
 
 ## Runtime Inputs
 
 Targets are declarative under:
-- `cluster/base/runtime-inputs`
+- `infrastructure/runtime-inputs`
 
 Source secret is external:
 - `flux-system/platform-runtime-inputs`
@@ -86,4 +88,4 @@ Deep checks (opt-in):
 
 - Platform cert issuer mode is controlled by `PLATFORM_CLUSTER_ISSUER` and runtime-input sync.
 - Sample app host/issuer/namespace intent is controlled by runtime-input vars (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`) via profile + sync/reconcile.
-- Provider selection is controlled by Flux kustomization paths in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.

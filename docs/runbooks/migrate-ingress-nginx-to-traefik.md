@@ -15,9 +15,9 @@ make flux-reconcile
 
 ## Migration
 
-1. Update Flux stack ingress path in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`:
-- from: `./cluster/overlays/homelab/providers/ingress-nginx`
-- to: `./cluster/overlays/homelab/providers/ingress-traefik`
+1. Update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
+- replace: `../../ingress-nginx/base`
+- with: `../../ingress-traefik/base`
 
 2. Commit the path change.
 
@@ -36,7 +36,7 @@ kubectl get ingress -A
 
 ## Rollback
 
-Revert the path change in `stack-kustomizations.yaml`, then:
+Revert the composition change in `infrastructure/overlays/home/kustomization.yaml`, then:
 
 ```bash
 make flux-reconcile

@@ -1,0 +1,11 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: clickstack
+  namespace: observability
+spec:
+  values:
+    hyperdx:
+      ingress:
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod

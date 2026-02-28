@@ -39,7 +39,7 @@ spec:
       enabled: true
       className: nginx
       annotations:
-        cert-manager.io/cluster-issuer: "${PLATFORM_CLUSTER_ISSUER}"
+        cert-manager.io/cluster-issuer: letsencrypt-staging
       hosts:
         - oauth.homelab.swhurl.com
       tls:

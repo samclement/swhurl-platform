@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: apps-staging
+namespace: apps-prod
 resources:
   - ../../base
 patches:
@@ -12,10 +12,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: staging-hello.homelab.swhurl.com
+        value: hello.homelab.swhurl.com
       - op: replace
         path: /spec/tls/0/hosts/0
-        value: staging-hello.homelab.swhurl.com
+        value: hello.homelab.swhurl.com
       - op: replace
         path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-url
         value: https://oauth.homelab.swhurl.com/oauth2/auth
@@ -33,4 +33,4 @@ patches:
         value: letsencrypt-staging
       - op: replace
         path: /spec/dnsNames/0
-        value: staging-hello.homelab.swhurl.com
+        value: hello.homelab.swhurl.com

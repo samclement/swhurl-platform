@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hello-web
-  namespace: "${APP_NAMESPACE}"
+  namespace: apps-staging
   labels:
     app.kubernetes.io/name: hello-web
     app.kubernetes.io/instance: hello-web

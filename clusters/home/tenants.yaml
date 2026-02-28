@@ -10,12 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./tenants
-  postBuild:
-    substituteFrom:
-      - kind: Secret
-        name: platform-runtime-inputs
-        optional: false
+  path: ./tenants/overlays/app-staging-le-staging
   prune: true
   wait: true
   timeout: 20m

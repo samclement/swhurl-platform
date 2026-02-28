@@ -13,7 +13,7 @@ Companion implementation plan:
 
 Primary goals:
 
-1. Install host/package-manager dependencies required by this repo.
+1. Keep host dependency prerequisites explicit in README.
 2. Configure dynamic DNS updates for homelab domains.
 3. Install k3s.
 4. Install platform components:
@@ -46,11 +46,11 @@ Current strengths:
 - Phase-based orchestration already exists and is readable (`run.sh`).
 - Helmfile labels (`phase`, `component`) already support composable orchestration.
 - Verification/teardown contracts are centralized (`00_verify_contract_lib.sh`).
-- Feature registry model exists (`00_feature_registry_lib.sh`).
+- Feature flag/required-var verification metadata is centralized (`00_verify_contract_lib.sh`).
 
 Current gaps against intent:
 
-- Host dependency installation is managed in `host/tasks/00_bootstrap_host.sh`, but host orchestration is still opt-in (not default in cluster-only runs).
+- Host orchestration is still opt-in (not default in cluster-only runs).
 - Ingress and object storage provider intent flags now exist; remaining gap is provider default/promotion policy over time (Traefik/Ceph direction).
 - k3s bootstrap defaults align with Traefik-first (`K3S_INGRESS_MODE=traefik`), but cluster provisioning remains a manual prerequisite path.
 - Example app currently demonstrates basic ingress/OIDC/TLS, but not full platform integrations (telemetry/object storage usage).
@@ -58,8 +58,7 @@ Current gaps against intent:
 ## Recommended Improvements
 
 1. Tighten host bootstrap adoption
-- Continue using `host/tasks/00_bootstrap_host.sh` for idempotent package installation.
-- Keep distro-specific logic isolated (`apt`, `dnf`, etc.) in dedicated host Bash modules (`host/lib/`).
+- Keep `host/tasks/00_bootstrap_host.sh` as a lightweight compatibility no-op.
 - Keep dependency requirements documented in README instead of maintaining a separate prereq-check step script.
 
 2. Continue provider switch rollout for ingress and object storage

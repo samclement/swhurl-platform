@@ -15,7 +15,7 @@ Default stack components:
 
 ## Dependencies that need to be installed
 
-Required:
+Required for cluster orchestration (`make install`, `./run.sh`, Flux reconcile):
 - `bash`
 - `kubectl`
 - `helm`
@@ -25,9 +25,14 @@ Required:
 - `base64`
 - `hexdump`
 
-Notes:
+Required for host tasks (`./host/run-host.sh`):
+- Linux with `systemd` (`host/tasks/10_dynamic_dns.sh`)
+- `aws` CLI configured with Route53 permissions (`host/tasks/10_dynamic_dns.sh`)
+- `curl` and `kubectl` (`host/tasks/20_install_k3s.sh`)
+
+Optional tooling used in some workflows:
 - Flux CLI can be auto-installed by `make flux-bootstrap` (`AUTO_INSTALL_FLUX=true` by default).
-- Optional tooling used in some workflows: `jq`, `yq`, `sops`, `age`.
+- `jq`, `yq`, `sops`, `age`.
 
 ## Quickstart
 

@@ -60,7 +60,7 @@ Use a two-layer model:
 
 Guiding rule:
 
-- Host bootstraps host concerns (packages, systemd timers, k3s install/config).
+- Host bootstraps host concerns (systemd timers, k3s install/config).
 - Cluster layer owns Kubernetes resources and sequencing (`dependsOn` graph), not bash step ordering.
 
 ## Target Repository Tree
@@ -73,7 +73,6 @@ Guiding rule:
 │  │  └─ host.env.example
 │  ├─ lib/
 │  │  ├─ 00_common.sh
-│  │  ├─ 10_packages_lib.sh
 │  │  ├─ 20_dynamic_dns_lib.sh
 │  │  └─ 30_k3s_lib.sh
 │  ├─ tasks/
@@ -173,7 +172,7 @@ Outcomes:
 
 Tasks:
 
-1. Add `host/` with `lib/` + `tasks/` + `templates/` modules (`packages`, `dynamic-dns`, `k3s`).
+1. Add `host/` with `lib/` + `tasks/` + `templates/` modules (`dynamic-dns`, `k3s`).
 2. Move logic from manual host scripts into host task scripts and shared libs.
 3. Keep thin wrappers in old script paths that call `host/run-host.sh` phases.
 

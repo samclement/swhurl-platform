@@ -10,9 +10,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/overlays/home-letsencrypt-prod
+  path: ./infrastructure/overlays/home
   postBuild:
     substituteFrom:
+      - kind: ConfigMap
+        name: platform-settings
+        optional: false
       - kind: Secret
         name: platform-runtime-inputs
         optional: false

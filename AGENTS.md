@@ -43,7 +43,6 @@
   - Component-level GitOps scaffolds are split by ownership: shared infra in `infrastructure/`, shared services in `platform-services/`, app envs/apps in `tenants/`.
   - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
   - `scripts/bootstrap/sync-runtime-inputs.sh` now syncs only runtime secret inputs (oauth2-proxy + ClickStack/OTel); issuer/app mode variables are no longer part of the runtime-input secret contract.
-  - `scripts/96_verify_orchestrator_contract.sh` must treat both infrastructure issuer overlay paths as valid (`./infrastructure/overlays/home` and `./infrastructure/overlays/home-letsencrypt-prod`) when asserting runtime-input wiring.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
   - Example app now uses plain manifests in `tenants/apps/example/base/` with explicit staging defaults; URL/issuer test combinations are selected by tenant overlay paths (`tenants/apps/example/overlays/*`, `tenants/overlays/*`).
   - Sample app TLS issuance can lag DNS propagation on first bootstraps; keep reconcile timeout expectations aligned at the tenant layer when adjusting app rollout behavior.
@@ -76,7 +75,7 @@
   - Provider gating is wired in `helmfile.yaml.gotmpl`: ingress-nginx installs only when `INGRESS_PROVIDER=nginx`, MinIO installs only when `OBJECT_STORAGE_PROVIDER=minio`, and ingress-nginx `needs` edges are conditional for provider-flexible releases.
   - Provider-aware ingress templating is centralized in `environments/common.yaml.gotmpl` as `computed.ingressClass`; chart values consume this for ingress class names so swapping `INGRESS_PROVIDER` does not require per-chart rewrites.
   - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Flux `HelmRelease` values under `infrastructure/*` and `platform-services/*` and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
-  - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/90_verify_runtime_smoke.sh` and `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
+  - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
   - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
   - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`); remove unused host-common helpers to keep host-task surface lean.
@@ -125,23 +124,13 @@
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
   - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_teardown_clean.sh` checks it even when `DELETE_SCOPE=managed`.
   - `scripts/98_verify_teardown_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
-  - Verification tiers:
-    - Core (default, `FEAT_VERIFY=true`): `94_verify_config_inputs.sh`, `91_verify_platform_state.sh`, `92_verify_helmfile_drift.sh`.
-    - Deep (opt-in, `FEAT_VERIFY_DEEP=true`): `90_verify_runtime_smoke.sh`, `93_verify_expected_releases.sh`, `95_capture_cluster_diagnostics.sh`, `96_verify_orchestrator_contract.sh`, `97_verify_provider_matrix.sh`.
-  - `scripts/95_capture_cluster_diagnostics.sh` writes diagnostics to `./artifacts/cluster-diagnostics-<timestamp>/` by default (or a custom output dir when passed as arg).
+  - Verification contract is core-only:
+    - `FEAT_VERIFY=true` runs `scripts/94_verify_config_inputs.sh` and `scripts/91_verify_platform_state.sh`.
+    - `FEAT_VERIFY=false` skips apply-mode verification gates.
   - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
-  - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, drift ignore headers, expected release inventory, and config-contract required variable sets.
-  - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags, required vars, expected releases). Keep `scripts/94_verify_config_inputs.sh` and `scripts/93_verify_expected_releases.sh` registry-driven to avoid per-feature duplication.
+  - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, and config-contract required variable sets.
+  - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags and required vars). Keep `scripts/94_verify_config_inputs.sh` registry-driven to avoid per-feature duplication.
   - Keep verification helper libs lean; remove unused exports from `scripts/00_feature_registry_lib.sh` / `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
-  - `scripts/96_verify_orchestrator_contract.sh` now enforces that `scripts/29_prepare_platform_runtime_inputs.sh` is absent and runtime-input wiring is declarative (`infrastructure/runtime-inputs` + `clusters/home/infrastructure.yaml` path).
-  - `scripts/96_verify_orchestrator_contract.sh` now enforces feature registry consistency against `config.env`/profiles and Helmfile release mappings.
-  - `scripts/97_verify_provider_matrix.sh` validates provider flag behavior without cluster access by rendering Helmfile for provider combinations and asserting `ingress-nginx`/`minio` installed states.
-  - `scripts/93_verify_expected_releases.sh` is now Flux-first (`VERIFY_INVENTORY_MODE=auto|flux|helm`, default `auto`) and falls back to Helm release inventory when Flux stack resources are absent.
-  - `scripts/93_verify_expected_releases.sh` can optionally fail on unexpected inventory extras. Tune with:
-    - `VERIFY_RELEASE_SCOPE=platform|cluster`
-    - `VERIFY_RELEASE_ALLOWLIST` (comma-separated glob patterns, e.g. `kube-system/traefik,apps/custom-app`)
-    - `VERIFY_RELEASE_STRICT_EXTRAS=true` to enable extra-release checks (default `false`)
-  - Verification maintainability roadmap (including Keycloak as the pilot feature) is documented in `docs/verification-maintainability-plan.md`; use it as the source for future verification framework refactors and follow-up prompts.
   - Documentation consistency gotcha: avoid hard-coding hypothetical script paths in planning docs. Keep references either aligned to existing files or clearly marked as future/proposed so script-reference checks stay actionable.
   - For day-to-day maintainer changes, prefer explicit updates using `docs/add-feature-checklist.md` rather than introducing new script abstraction layers.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.

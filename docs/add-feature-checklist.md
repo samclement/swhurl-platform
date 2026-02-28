@@ -22,8 +22,6 @@ Use this checklist when adding a new platform feature.
 
 - `scripts/94_verify_config_inputs.sh`
 - `scripts/91_verify_platform_state.sh`
-- `scripts/93_verify_expected_releases.sh` (if inventory expectations change)
-- `scripts/96_verify_orchestrator_contract.sh` (if orchestrator/contract changes)
 
 ## 5) Documentation
 
@@ -34,9 +32,7 @@ Use this checklist when adding a new platform feature.
 ## 6) Validation before PR
 
 - `bash -n scripts/*.sh host/**/*.sh`
-- `./scripts/96_verify_orchestrator_contract.sh`
 - `./run.sh --dry-run`
 - Optional cluster-backed checks:
   - `./scripts/94_verify_config_inputs.sh`
-  - `./scripts/93_verify_expected_releases.sh`
   - `./scripts/91_verify_platform_state.sh`

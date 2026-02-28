@@ -25,7 +25,6 @@ Environment controls:
 - `ONLY`: fallback filter when `--only` is not provided.
 - `PROFILE_EXCLUSIVE=true|false`: if `true`, skip auto-loading `profiles/local.env` and `profiles/secrets.env`.
 - `FEAT_VERIFY=true|false`: include/exclude core verification steps.
-- `FEAT_VERIFY_DEEP=true|false`: include/exclude deep verification steps (auto-disabled when `FEAT_VERIFY=false`).
 
 Config layering (`run.sh`):
 1. `config.env`
@@ -40,7 +39,6 @@ Default apply steps:
 4. `bootstrap/sync-runtime-inputs.sh`
 5. `32_reconcile_flux_stack.sh`
 6. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
-7. `90/93/95/96` deep checks (when `FEAT_VERIFY_DEEP=true`)
 
 Default delete steps:
 1. `15_verify_cluster_access.sh`

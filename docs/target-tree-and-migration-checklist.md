@@ -37,7 +37,7 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Sample app has staging/prod namespace overlays with staging as the default deployed path.
   - Platform and app cert issuer intent is path-selected in Flux CRDs
     (`clusters/home/infrastructure.yaml`, `clusters/home/platform.yaml`, `clusters/home/tenants.yaml`).
-  - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
+  - Core verification remains Flux-first and focused on config/runtime state contracts (`scripts/94_verify_config_inputs.sh`, `scripts/91_verify_platform_state.sh`).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
   - Runtime secret targets are declarative in `infrastructure/runtime-inputs` via Flux (`homelab-infrastructure`).

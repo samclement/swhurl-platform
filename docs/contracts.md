@@ -26,7 +26,6 @@ Source-of-truth files:
 
 Verification toggles:
 - `FEAT_VERIFY=true|false`: core checks (`94`, `91`)
-- `FEAT_VERIFY_DEEP=true|false`: deep checks (`90`, `93`, `95`, `96`)
 
 Cert issuer mode controls:
 - Path-based in Flux CRDs (`clusters/home/infrastructure.yaml`, `clusters/home/platform.yaml`, `clusters/home/tenants.yaml`).

@@ -82,12 +82,6 @@ Core checks:
 - `scripts/94_verify_config_inputs.sh`
 - `scripts/91_verify_platform_state.sh`
 
-Deep checks (opt-in):
-- `scripts/90_verify_runtime_smoke.sh`
-- `scripts/93_verify_expected_releases.sh`
-- `scripts/95_capture_cluster_diagnostics.sh`
-- `scripts/96_verify_orchestrator_contract.sh`
-
 ## Promotion / Profiles
 
 - Infrastructure cert issuer mode is path-based via `clusters/home/infrastructure.yaml`:

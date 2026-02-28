@@ -3,7 +3,7 @@ kind: ClusterIssuer
 metadata:
   name: letsencrypt-prod
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 spec:
   acme:
     email: ops@homelab.swhurl.com

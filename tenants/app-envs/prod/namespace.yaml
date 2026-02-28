@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: apps-prod
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"

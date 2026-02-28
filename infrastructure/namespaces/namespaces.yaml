@@ -3,39 +3,39 @@ kind: Namespace
 metadata:
   name: platform-system
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ingress
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: cert-manager
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: logging
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: observability
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: storage
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"

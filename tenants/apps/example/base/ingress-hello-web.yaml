@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: hello-web
     app.kubernetes.io/instance: hello-web
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"

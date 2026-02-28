@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: apps-staging
   labels:
-    platform.swhurl.io/managed: "true"
+    platform.swhurl.com/managed: "true"

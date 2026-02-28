@@ -11,7 +11,7 @@ Use this checklist when adding a new platform feature.
 ## 2) Feature flags and config
 
 - Add/verify feature flag default in `config.env` (`FEAT_*`).
-- Update `scripts/00_feature_registry_lib.sh` required vars and expected release mapping.
+- Update feature required vars in `scripts/00_verify_contract_lib.sh`.
 
 ## 3) Runtime inputs (if feature needs secrets)
 

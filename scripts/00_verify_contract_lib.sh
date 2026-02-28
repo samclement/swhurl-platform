@@ -2,14 +2,6 @@
 
 # Helper library (not a runnable phase step).
 # Sourced by scripts/00_lib.sh to provide shared verification/teardown contracts.
-# Depends on scripts/00_feature_registry_lib.sh.
-
-if [[ -z "${FEATURE_REGISTRY_LOADED:-}" ]]; then
-  _VERIFY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  # shellcheck disable=SC1091
-  source "$_VERIFY_SCRIPT_DIR/00_feature_registry_lib.sh"
-  unset _VERIFY_SCRIPT_DIR
-fi
 
 if [[ "${VERIFY_CONTRACT_LOADED:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
@@ -17,7 +9,39 @@ fi
 readonly VERIFY_CONTRACT_LOADED="1"
 
 # Shared verification and teardown expectations.
-# Feature-specific metadata is sourced from scripts/00_feature_registry_lib.sh.
+
+# Feature metadata used by config/runtime verification.
+readonly -a FEATURE_KEYS=(
+  cilium
+  oauth2_proxy
+  clickstack
+  otel_k8s
+  minio
+)
+
+readonly -A FEATURE_FLAGS=(
+  [cilium]="FEAT_CILIUM"
+  [oauth2_proxy]="FEAT_OAUTH2_PROXY"
+  [clickstack]="FEAT_CLICKSTACK"
+  [otel_k8s]="FEAT_OTEL_K8S"
+  [minio]="FEAT_MINIO"
+)
+
+readonly -A FEATURE_REQUIRED_VARS=(
+  [cilium]="HUBBLE_HOST"
+  [oauth2_proxy]="OAUTH_HOST OIDC_CLIENT_ID OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET"
+  [clickstack]="CLICKSTACK_HOST CLICKSTACK_API_KEY"
+  [otel_k8s]="CLICKSTACK_API_KEY"
+  [minio]="MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD"
+)
+
+readonly -A FEATURE_EFFECTIVE_NON_SECRET_VARS=(
+  [cilium]="HUBBLE_HOST"
+  [oauth2_proxy]="OAUTH_HOST"
+  [clickstack]="CLICKSTACK_HOST"
+  [otel_k8s]="CLICKSTACK_OTEL_ENDPOINT"
+  [minio]="MINIO_HOST MINIO_CONSOLE_HOST"
+)
 
 # Ingress runtime verification contract.
 readonly VERIFY_INGRESS_SERVICE_TYPE="NodePort"
@@ -62,6 +86,37 @@ name_matches_any_pattern() {
     [[ "$value" == $pattern ]] && return 0
   done
   return 1
+}
+
+feature_flag_var() {
+  local key="$1"
+  printf '%s' "${FEATURE_FLAGS[$key]:-}"
+}
+
+feature_is_enabled() {
+  local key="$1"
+  local flag
+  flag="$(feature_flag_var "$key")"
+  [[ -n "$flag" ]] || return 1
+  [[ "${!flag:-true}" == "true" ]]
+}
+
+feature_required_vars() {
+  local key="$1"
+  local vars="${FEATURE_REQUIRED_VARS[$key]:-}"
+  local v
+  for v in $vars; do
+    printf '%s\n' "$v"
+  done
+}
+
+feature_effective_non_secret_vars() {
+  local key="$1"
+  local vars="${FEATURE_EFFECTIVE_NON_SECRET_VARS[$key]:-}"
+  local v
+  for v in $vars; do
+    printf '%s\n' "$v"
+  done
 }
 
 is_platform_managed_namespace() {

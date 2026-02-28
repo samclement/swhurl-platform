@@ -39,7 +39,6 @@ readonly -A FEATURE_EFFECTIVE_NON_SECRET_VARS=(
   [cilium]="HUBBLE_HOST"
   [oauth2_proxy]="OAUTH_HOST"
   [clickstack]="CLICKSTACK_HOST"
-  [otel_k8s]="CLICKSTACK_OTEL_ENDPOINT"
   [minio]="MINIO_HOST MINIO_CONSOLE_HOST"
 )
 

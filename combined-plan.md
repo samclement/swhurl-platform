@@ -34,7 +34,7 @@ Confirmed constraints:
 - obsolete infra/platform mode template files tied only to staging/prod path switching.
 
 **Do not change in this step:**
-- Tenant app issuer overlays (`app-*-le-*`) stay as-is.
+- App issuer selection remains in app overlays (`tenants/apps/example/overlays/*`).
 
 ---
 
@@ -46,7 +46,7 @@ Confirmed constraints:
 - Deduplicate repeated `mode_sync_file()` logic in `Makefile`.
 - Update mode targets:
   - `platform-certs-staging|platform-certs-prod` edit only the Git-tracked `CERT_ISSUER` source file.
-  - app mode targets continue to update `clusters/home/tenants.yaml` path.
+  - app mode targets update `clusters/home/app-example.yaml` path.
 - Remove automatic `run.sh --only ...reconcile...` from mode targets.
 - Print explicit message after mode target:
   - "Local Git edits only. Commit + push, then run `make flux-reconcile`."
@@ -69,7 +69,7 @@ Confirmed constraints:
 - Update Flux substitution boundaries:
   - `clusters/home/infrastructure.yaml`: substitute from platform settings ConfigMap only.
   - `clusters/home/platform.yaml`: substitute from platform settings ConfigMap + `platform-runtime-inputs` Secret.
-  - `clusters/home/tenants.yaml`: no postBuild substitution.
+  - `clusters/home/tenants.yaml`: no postBuild substitution and fixed `./tenants/app-envs` path.
 
 ---
 
@@ -127,10 +127,11 @@ Run after each step:
 ```bash
 kubectl kustomize infrastructure/overlays/home >/dev/null
 kubectl kustomize platform-services/overlays/home >/dev/null
-kubectl kustomize tenants/overlays/app-staging-le-staging >/dev/null
-kubectl kustomize tenants/overlays/app-staging-le-prod >/dev/null
-kubectl kustomize tenants/overlays/app-prod-le-staging >/dev/null
-kubectl kustomize tenants/overlays/app-prod-le-prod >/dev/null
+kubectl kustomize tenants/app-envs >/dev/null
+kubectl kustomize tenants/apps/example/overlays/staging >/dev/null
+kubectl kustomize tenants/apps/example/overlays/staging-url-prod >/dev/null
+kubectl kustomize tenants/apps/example/overlays/prod-url-staging >/dev/null
+kubectl kustomize tenants/apps/example/overlays/prod >/dev/null
 kubectl kustomize clusters/home >/dev/null
 ./run.sh --dry-run
 make verify

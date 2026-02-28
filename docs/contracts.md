@@ -35,7 +35,7 @@ Cert issuer mode controls:
 
 Primary declarative control plane:
 - Bootstrap manifests: `clusters/home/flux-system`
-- Stack manifests: `clusters/home` (infrastructure/platform/tenants Flux Kustomizations)
+- Stack manifests: `clusters/home` (infrastructure/platform/tenants/app Flux Kustomizations)
 
 Primary operations:
 - `scripts/32_reconcile_flux_stack.sh`

@@ -12,7 +12,6 @@ for arg in "$@"; do
 done
 
 ensure_context
-need_cmd flux
 
 if [[ "$DELETE" == "true" ]]; then
   log_info "Deleting Flux stack kustomizations"
@@ -35,7 +34,21 @@ if [[ "$DELETE" == "true" ]]; then
     fi
     sleep 5
   done
+  if command -v flux >/dev/null 2>&1; then
+    log_info "Uninstalling Flux controllers"
+    flux uninstall --silent || true
+  else
+    log_warn "flux command not found; skipping 'flux uninstall'"
+  fi
   exit 0
+fi
+
+need_cmd flux
+if ! kubectl get crd kustomizations.kustomize.toolkit.fluxcd.io >/dev/null 2>&1; then
+  die "Flux CRDs are not installed. Install Flux manually first (see README), then rerun."
+fi
+if ! kubectl -n flux-system get kustomization homelab-flux-stack >/dev/null 2>&1; then
+  die "Flux bootstrap manifests are not applied. Run: make flux-bootstrap"
 fi
 
 log_info "Reconciling Flux source and stack"

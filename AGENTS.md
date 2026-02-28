@@ -20,7 +20,7 @@
   - Helmfile compatibility is fully retired: `run.sh` now uses Flux steps (`scripts/bootstrap/install-flux.sh`, `scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/32_reconcile_flux_stack.sh`) and no longer references `helmfile.yaml.gotmpl` or `environments/`.
   - Keep docs/scripts free of references to removed compatibility files: `scripts/31_sync_helmfile_phase_core.sh`, `scripts/36_sync_helmfile_phase_platform.sh`, `scripts/75_manage_sample_app_lifecycle.sh`, `scripts/92_verify_helmfile_drift.sh`, and `scripts/97_verify_provider_matrix.sh`.
   - Keep `profiles/secrets.example.env` comments aligned with `scripts/bootstrap/sync-runtime-inputs.sh` validation (for example `OAUTH_COOKIE_SECRET` is required and must be 16/24/32 chars when oauth2-proxy is enabled).
-  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; cert issuer mode is path-selected in Flux CRDs (`clusters/home/infrastructure.yaml` + `clusters/home/platform.yaml`) using staging/prod overlay paths.
+  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; platform cert issuer mode is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`), not path-switched overlays.
   - Legacy homelab overlay scaffolding was removed; keep active manifests in `infrastructure/`, `platform-services/`, and `tenants/`.
   - Runtime input targets are declarative in `infrastructure/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
@@ -29,9 +29,9 @@
   - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs-*`, `app-test-*-le-*`, `verify`) and run host tasks directly via `host/run-host.sh`.
-  - Flux path mode switching is template-based: keep mode templates in `clusters/home/modes/` and apply via Makefile targets (`platform-certs-*`, `app-test-*-le-*`); do not reintroduce YAML rewrite scripts.
+  - Mode switching split: `platform-certs-*` updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml`, while `app-test-*-le-*` remains tenant path-template based via `clusters/home/modes/`.
   - Removed wrapper selectors (`platform-certs CERT_ENV=...`, `app-test APP_ENV=... LE_ENV=...`); keep operator flows on fixed explicit targets only.
-  - `scripts/bootstrap/set-flux-path-modes.sh` was removed; mode changes are now file-sync operations from `clusters/home/modes/` into `clusters/home/{infrastructure,platform,tenants}.yaml`.
+  - `scripts/bootstrap/set-flux-path-modes.sh` was removed; platform cert mode is now a ConfigMap edit (`platform-settings.CERT_ISSUER`) and app mode changes remain file-sync operations from `clusters/home/modes/` into `clusters/home/tenants.yaml`.
   - `scripts/00_feature_registry_lib.sh` was removed; keep feature flags/required-var metadata in `scripts/00_verify_contract_lib.sh` and avoid reintroducing a separate registry layer.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
   - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/20_reconcile_platform_namespaces.sh` and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
@@ -41,7 +41,7 @@
   - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
   - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant app mode composition is in `tenants/overlays/`.
   - Runtime input targets live in `infrastructure/runtime-inputs`; Flux `homelab-infrastructure` injects substitutions from external `flux-system/platform-runtime-inputs`.
-  - `homelab-infrastructure` consumes `platform-runtime-inputs` only for runtime secrets (`OIDC_*`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`); issuer intent is path-selected by Flux overlay paths.
+  - `homelab-infrastructure`/`homelab-platform` consume `platform-settings` via Flux `postBuild.substituteFrom` for `CERT_ISSUER`; `platform-runtime-inputs` remains for runtime secrets only.
   - Provider selection is composition-driven: switch ingress/storage resources in `infrastructure/overlays/home/kustomization.yaml` (for example `ingress-nginx/base` vs `ingress-traefik/base`, `storage/minio/base` vs `storage/ceph/base`).
   - Component-level GitOps scaffolds are split by ownership: shared infra in `infrastructure/`, shared services in `platform-services/`, app envs/apps in `tenants/`.
   - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
@@ -122,13 +122,12 @@
   - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
   - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
   - ClusterIssuer manifests are file-managed and always include `selfsigned`, `letsencrypt-staging`, and `letsencrypt-prod` (alias issuer removed).
-  - Issuer intent is path-selected by Flux CRD paths:
-    - infrastructure issuer mode: `clusters/home/infrastructure.yaml` (`infrastructure/overlays/home` vs `infrastructure/overlays/home-letsencrypt-prod`)
-    - platform-services issuer mode: `clusters/home/platform.yaml` (`platform-services/overlays/home` vs `platform-services/overlays/home-letsencrypt-prod`)
-    - sample app URL/issuer mode: `clusters/home/tenants.yaml` (`tenants/overlays/app-*-le-*`)
-  - `infrastructure/overlays/home-letsencrypt-prod` keeps issuer overrides explicit per ingress (`hubble`, `minio`, `minio-console`) via separate patch files.
+  - Issuer intent split:
+    - platform issuer mode: `flux-system/platform-settings.CERT_ISSUER` consumed by infrastructure/platform overlays (single switch)
+    - sample app URL/issuer mode: `clusters/home/tenants.yaml` path (`tenants/overlays/app-*-le-*`)
+  - Legacy issuer-specific overlays `infrastructure/overlays/home-letsencrypt-prod` and `platform-services/overlays/home-letsencrypt-prod` were removed; keep issuer values substitution-driven in base manifests.
   - Managed app namespaces remain `apps-staging` and `apps-prod`; sample app URL/issuer combinations are overlay-selected, not runtime-input driven.
-  - Promotion/runtime intent is Makefile-driven via declarative mode templates in `clusters/home/modes/` followed by Flux reconcile.
+  - Promotion/runtime intent is Makefile-driven: mode targets edit Git-tracked files only; commit+push, then run `make flux-reconcile`.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

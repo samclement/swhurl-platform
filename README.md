@@ -52,8 +52,8 @@ Layer selection note:
 - Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
 - Tenant app URL/issuer composition is declared in `tenants/overlays/*`.
-- Cert and app mode selection is path-driven in Flux CRDs under `clusters/home/*.yaml`.
-- Mode switching uses declarative templates in `clusters/home/modes/` applied via Makefile targets.
+- Platform cert issuer selection is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
+- App URL/issuer mode selection is path-driven in `clusters/home/tenants.yaml` using templates from `clusters/home/modes/`.
 
 Layer boundaries:
 - `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
@@ -98,13 +98,12 @@ make platform-certs-staging
 make platform-certs-prod
 ```
 
-`platform-certs-*` targets update Flux paths:
-- `clusters/home/infrastructure.yaml`:
-  - `./infrastructure/overlays/home`
-  - `./infrastructure/overlays/home-letsencrypt-prod`
-- `clusters/home/platform.yaml`:
-  - `./platform-services/overlays/home`
-  - `./platform-services/overlays/home-letsencrypt-prod`
+`platform-certs-*` targets update:
+- `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`)
+
+Important:
+- These targets edit local Git-tracked files only.
+- Commit + push first, then run `make flux-reconcile`.
 
 ### 3) Post-install secrets updates + ClickStack caveats
 
@@ -142,6 +141,8 @@ make app-test-staging-le-prod
 make app-test-prod-le-staging
 make app-test-prod-le-prod
 ```
+
+These targets edit `clusters/home/tenants.yaml` locally; commit + push, then run `make flux-reconcile`.
 
 URL mapping:
 - staging URL: `staging-hello.homelab.swhurl.com`

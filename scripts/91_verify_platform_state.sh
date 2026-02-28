@@ -32,45 +32,47 @@ check_eq() {
 }
 
 say "ClusterIssuer"
-expected_infrastructure_issuer="letsencrypt-staging"
+platform_cert_issuer="letsencrypt-staging"
+if kubectl -n flux-system get configmap platform-settings >/dev/null 2>&1; then
+  configured_platform_cert_issuer="$(kubectl -n flux-system get configmap platform-settings -o jsonpath='{.data.CERT_ISSUER}')"
+  case "$configured_platform_cert_issuer" in
+    letsencrypt-staging|letsencrypt-prod)
+      platform_cert_issuer="$configured_platform_cert_issuer"
+      ;;
+    "")
+      warn "platform-settings.CERT_ISSUER is empty; defaulting expected platform issuer to letsencrypt-staging"
+      ;;
+    *)
+      warn "platform-settings.CERT_ISSUER has unsupported value '$configured_platform_cert_issuer'; expected letsencrypt-staging|letsencrypt-prod. Defaulting to letsencrypt-staging"
+      ;;
+  esac
+else
+  warn "platform-settings ConfigMap not found in flux-system; defaulting expected platform issuer to letsencrypt-staging"
+fi
+
+expected_infrastructure_issuer="$platform_cert_issuer"
 infrastructure_path=""
 if kubectl -n flux-system get kustomization homelab-infrastructure >/dev/null 2>&1; then
   infrastructure_path="$(kubectl -n flux-system get kustomization homelab-infrastructure -o jsonpath='{.spec.path}')"
-  case "$infrastructure_path" in
-    ./infrastructure/overlays/home)
-      expected_infrastructure_issuer="letsencrypt-staging"
-      ;;
-    ./infrastructure/overlays/home-letsencrypt-prod)
-      expected_infrastructure_issuer="letsencrypt-prod"
-      ;;
-    *)
-      warn "homelab-infrastructure path '$infrastructure_path' is not a recognized infrastructure issuer overlay; defaulting expected infrastructure issuer to letsencrypt-staging"
-      ;;
-  esac
+  if [[ "$infrastructure_path" != "./infrastructure/overlays/home" ]]; then
+    warn "homelab-infrastructure path '$infrastructure_path' is unexpected (expected ./infrastructure/overlays/home)"
+  fi
 else
-  warn "homelab-infrastructure kustomization not found; defaulting expected infrastructure issuer to letsencrypt-staging"
+  warn "homelab-infrastructure kustomization not found"
 fi
-ok "infrastructure issuer expectation: ${expected_infrastructure_issuer} (path: ${infrastructure_path:-<unknown>})"
+ok "infrastructure issuer expectation: ${expected_infrastructure_issuer} (path: ${infrastructure_path:-<unknown>}, source: flux-system/platform-settings.CERT_ISSUER)"
 
-expected_platform_services_issuer="letsencrypt-staging"
+expected_platform_services_issuer="$platform_cert_issuer"
 platform_services_path=""
 if kubectl -n flux-system get kustomization homelab-platform >/dev/null 2>&1; then
   platform_services_path="$(kubectl -n flux-system get kustomization homelab-platform -o jsonpath='{.spec.path}')"
-  case "$platform_services_path" in
-    ./platform-services/overlays/home)
-      expected_platform_services_issuer="letsencrypt-staging"
-      ;;
-    ./platform-services/overlays/home-letsencrypt-prod)
-      expected_platform_services_issuer="letsencrypt-prod"
-      ;;
-    *)
-      warn "homelab-platform path '$platform_services_path' is not a recognized platform-services issuer overlay; defaulting expected oauth2-proxy/clickstack issuer to letsencrypt-staging"
-      ;;
-  esac
+  if [[ "$platform_services_path" != "./platform-services/overlays/home" ]]; then
+    warn "homelab-platform path '$platform_services_path' is unexpected (expected ./platform-services/overlays/home)"
+  fi
 else
-  warn "homelab-platform kustomization not found; defaulting expected oauth2-proxy/clickstack issuer to letsencrypt-staging"
+  warn "homelab-platform kustomization not found"
 fi
-ok "platform-services issuer expectation: ${expected_platform_services_issuer} (path: ${platform_services_path:-<unknown>})"
+ok "platform-services issuer expectation: ${expected_platform_services_issuer} (path: ${platform_services_path:-<unknown>}, source: flux-system/platform-settings.CERT_ISSUER)"
 
 expected_app_namespace="apps-staging"
 expected_app_host="staging-hello.homelab.swhurl.com"

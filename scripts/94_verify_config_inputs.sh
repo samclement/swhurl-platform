@@ -34,21 +34,38 @@ read_flux_path() {
 
 infra_flux_path="$(read_flux_path "clusters/home/infrastructure.yaml")"
 case "$infra_flux_path" in
-  ./infrastructure/overlays/home|./infrastructure/overlays/home-letsencrypt-prod)
+  ./infrastructure/overlays/home)
     ok "infrastructure Flux path is valid (${infra_flux_path})"
     ;;
   *)
-    bad "infrastructure Flux path must be ./infrastructure/overlays/home or ./infrastructure/overlays/home-letsencrypt-prod (got: ${infra_flux_path:-<empty>})"
+    bad "infrastructure Flux path must be ./infrastructure/overlays/home (got: ${infra_flux_path:-<empty>})"
     ;;
 esac
 
 platform_flux_path="$(read_flux_path "clusters/home/platform.yaml")"
 case "$platform_flux_path" in
-  ./platform-services/overlays/home|./platform-services/overlays/home-letsencrypt-prod)
+  ./platform-services/overlays/home)
     ok "platform Flux path is valid (${platform_flux_path})"
     ;;
   *)
-    bad "platform Flux path must be ./platform-services/overlays/home or ./platform-services/overlays/home-letsencrypt-prod (got: ${platform_flux_path:-<empty>})"
+    bad "platform Flux path must be ./platform-services/overlays/home (got: ${platform_flux_path:-<empty>})"
+    ;;
+esac
+
+read_platform_setting() {
+  local key="$1"
+  local file="$REPO_ROOT/clusters/home/flux-system/sources/configmap-platform-settings.yaml"
+  [[ -f "$file" ]] || { printf ''; return 0; }
+  awk -v k="$key" '$1 == k ":" { print $2; exit }' "$file" | tr -d '"'
+}
+
+platform_cert_issuer="$(read_platform_setting CERT_ISSUER)"
+case "$platform_cert_issuer" in
+  letsencrypt-staging|letsencrypt-prod)
+    ok "platform-settings CERT_ISSUER is valid (${platform_cert_issuer})"
+    ;;
+  *)
+    bad "platform-settings CERT_ISSUER must be letsencrypt-staging|letsencrypt-prod (got: ${platform_cert_issuer:-<empty>})"
     ;;
 esac
 

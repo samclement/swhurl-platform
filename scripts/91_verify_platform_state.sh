@@ -241,18 +241,18 @@ if feature_is_enabled clickstack; then
       add_suggest "scripts/94_verify_config_inputs.sh"
     elif [[ -z "$runtime_api_key" ]]; then
       mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
-      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
     elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
       mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
       add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-clickstack -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
     else
       ok "clickstack runtime-input key alignment check passed"
     fi
   else
     mismatch "clickstack-runtime-inputs secret not found"
-    add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+    add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
   fi
 else
   ok "$(feature_flag_var clickstack)=false; skipping"
@@ -284,12 +284,12 @@ if feature_is_enabled otel_k8s; then
     if [[ -z "$receiver_token" ]]; then
       mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
       add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
     elif [[ "$sender_token" != "$receiver_token" ]]; then
       mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
       add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-otel -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
+      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
     else
       ok "otel token alignment check passed"
       if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
@@ -298,7 +298,7 @@ if feature_is_enabled otel_k8s; then
     fi
   else
     mismatch "hyperdx-secret not found"
-    add_suggest "flux reconcile kustomization homelab-runtime-inputs -n flux-system"
+    add_suggest "flux reconcile kustomization homelab-infrastructure -n flux-system"
   fi
 else
   ok "$(feature_flag_var otel_k8s)=false; skipping"

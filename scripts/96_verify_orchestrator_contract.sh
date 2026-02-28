@@ -19,7 +19,9 @@ printf "== Orchestrator Contract Verification ==\n"
 run="$SCRIPT_DIR/../run.sh"
 root="$SCRIPT_DIR/.."
 config_file="$root/config.env"
-flux_stack_file="$root/cluster/overlays/homelab/flux/stack-kustomizations.yaml"
+flux_home_dir="$root/clusters/home"
+flux_infrastructure_file="$flux_home_dir/infrastructure.yaml"
+platform_overlay_kustomization="$root/platform-services/overlays/home/kustomization.yaml"
 
 for s in scripts/bootstrap/install-flux.sh scripts/bootstrap/sync-runtime-inputs.sh scripts/32_reconcile_flux_stack.sh; do
   if [[ -x "$root/$s" ]]; then
@@ -55,24 +57,26 @@ else
   ok "environments/: removed"
 fi
 
-if [[ -d "$root/cluster/base/runtime-inputs" ]]; then
-  ok "cluster/base/runtime-inputs: present"
+if [[ -d "$root/infrastructure/runtime-inputs" ]]; then
+  ok "infrastructure/runtime-inputs: present"
 else
-  bad "cluster/base/runtime-inputs: present"
+  bad "infrastructure/runtime-inputs: present"
 fi
 
-runtime_inputs_kustomization_file="$root/cluster/base/runtime-inputs/kustomization.yaml"
-runtime_inputs_flux_block="$(rg -n 'name: homelab-runtime-inputs' -A25 "$flux_stack_file" || true)"
+runtime_inputs_kustomization_file="$root/infrastructure/runtime-inputs/kustomization.yaml"
+runtime_inputs_flux_block="$(cat "$flux_infrastructure_file" 2>/dev/null || true)"
+infrastructure_overlay_block="$(cat "$root/infrastructure/overlays/home/kustomization.yaml" 2>/dev/null || true)"
 if [[ -n "$runtime_inputs_flux_block" ]] \
-  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'path: ./cluster/base/runtime-inputs' \
+  && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'path: ./infrastructure/overlays/home' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'postBuild:' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'substituteFrom:' \
   && printf '%s\n' "$runtime_inputs_flux_block" | rg -q 'name: platform-runtime-inputs' \
+  && printf '%s\n' "$infrastructure_overlay_block" | rg -q '../../runtime-inputs' \
   && ! rg -q 'secret-platform-runtime-inputs\.yaml' "$runtime_inputs_kustomization_file" \
   && ! rg -q '^replacements:' "$runtime_inputs_kustomization_file"; then
-  ok "Flux stack: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
+  ok "Infrastructure layer: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
 else
-  bad "Flux stack: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
+  bad "Infrastructure layer: runtime inputs use postBuild substitution from external platform-runtime-inputs secret"
 fi
 
 if [[ -x "$SCRIPT_DIR/bootstrap/sync-runtime-inputs.sh" ]] \
@@ -83,11 +87,12 @@ else
   bad "Runtime input sync command is available (scripts/bootstrap/sync-runtime-inputs.sh + Makefile target)"
 fi
 
-if ! rg -q 'name: homelab-clickstack-bootstrap' "$flux_stack_file" \
-  && rg -n 'name: homelab-otel' -A12 "$flux_stack_file" | rg -q 'name: homelab-clickstack'; then
-  ok "Flux stack: clickstack bootstrap kustomization removed; otel depends directly on clickstack"
+if ! rg -q 'homelab-clickstack-bootstrap' "$flux_home_dir"/*.yaml \
+  && rg -q '../../clickstack/base' "$platform_overlay_kustomization" \
+  && rg -q '../../otel/base' "$platform_overlay_kustomization"; then
+  ok "Platform layer: clickstack + otel are modeled directly without bootstrap shim"
 else
-  bad "Flux stack: clickstack bootstrap kustomization removed; otel depends directly on clickstack"
+  bad "Platform layer: clickstack + otel are modeled directly without bootstrap shim"
 fi
 
 printf "\n== Feature Registry Contracts ==\n"
@@ -132,7 +137,7 @@ for flag in "${registry_flags[@]}"; do
 done
 
 mapfile -t manifest_releases < <(
-  find "$root/cluster" -name '*.yaml' -type f -print0 \
+  find "$root/infrastructure" "$root/platform-services" "$root/tenants" -name '*.yaml' -type f -print0 \
     | xargs -0 awk '
       BEGIN {kind=""; name=""; ns=""}
       /^kind:[[:space:]]*HelmRelease[[:space:]]*$/ {kind="HelmRelease"; name=""; ns=""; next}

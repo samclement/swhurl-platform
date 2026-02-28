@@ -1,6 +1,6 @@
 # Orchestration API
 
-Last updated: 2026-02-27
+Last updated: 2026-02-28
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
@@ -53,9 +53,9 @@ Default delete steps:
 7. `98_verify_teardown_clean.sh --delete`
 
 Notes:
-- Runtime input target secrets are declarative in `cluster/base/runtime-inputs`.
+- Runtime input target secrets are declarative in `infrastructure/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
-- Provider overlay selection is path-based in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`; `--profile` does not switch those Flux kustomization paths.
+- Shared infrastructure composition is path-based in `infrastructure/overlays/home/kustomization.yaml`; `--profile` does not switch those path selections.
 - App deployment intent is runtime-input driven through `platform-runtime-inputs` (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`).
 
 ## Host Orchestrator (`host/run-host.sh`)

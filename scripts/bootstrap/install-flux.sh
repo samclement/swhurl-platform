@@ -82,7 +82,7 @@ flux check --pre
 echo "[INFO] Installing Flux controllers"
 flux install --namespace flux-system
 
-echo "[INFO] Applying bootstrap manifests from cluster/flux"
-kubectl apply -k "$ROOT_DIR/cluster/flux"
+echo "[INFO] Applying bootstrap manifests from clusters/home/flux-system"
+kubectl apply -k "$ROOT_DIR/clusters/home/flux-system"
 
 echo "[INFO] Flux bootstrap complete"

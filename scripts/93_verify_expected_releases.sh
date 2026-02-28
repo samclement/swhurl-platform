@@ -45,7 +45,9 @@ mapfile -t expected_flux < <(
   {
     printf '%s\n' "homelab-flux-stack"
     printf '%s\n' "homelab-flux-sources"
-    manifest_kind_names "Kustomization" "$SCRIPT_DIR/../cluster/overlays/homelab/flux/stack-kustomizations.yaml"
+    manifest_kind_names "Kustomization" "$SCRIPT_DIR/../clusters/home/infrastructure.yaml"
+    manifest_kind_names "Kustomization" "$SCRIPT_DIR/../clusters/home/platform.yaml"
+    manifest_kind_names "Kustomization" "$SCRIPT_DIR/../clusters/home/tenants.yaml"
   } | sort -u
 )
 
@@ -71,7 +73,7 @@ done
 
 say "Required Flux Sources"
 mapfile -t expected_git_sources < <(
-  manifest_kind_names "GitRepository" "$SCRIPT_DIR/../cluster/flux/sources/gitrepositories.yaml" | sort -u
+  manifest_kind_names "GitRepository" "$SCRIPT_DIR/../clusters/home/flux-system/sources/gitrepositories.yaml" | sort -u
 )
 for item in "${expected_git_sources[@]}"; do
   if ! kubectl -n flux-system get gitrepository "$item" >/dev/null 2>&1; then

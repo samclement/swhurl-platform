@@ -25,9 +25,9 @@ Recommended sequence:
 
 ## Platform Migration
 
-1. Update Flux stack storage path in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`:
-- from: `./cluster/overlays/homelab/providers/storage-minio`
-- to: `./cluster/overlays/homelab/providers/storage-ceph`
+1. Update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
+- replace: `../../storage/minio/base`
+- with: `../../storage/ceph/base`
 
 2. Commit the path change.
 
@@ -41,7 +41,7 @@ make flux-reconcile
 
 ## Rollback
 
-Revert the storage path in `stack-kustomizations.yaml`, then:
+Revert the composition change in `infrastructure/overlays/home/kustomization.yaml`, then:
 
 ```bash
 make flux-reconcile

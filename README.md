@@ -23,13 +23,18 @@ Equivalent single-command cluster path:
 - Apply: `./run.sh`
 - Delete: `./run.sh --delete`
 
-Overlay selection note:
-- Active ingress/storage overlays are selected declaratively in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
-- App URL/issuer/namespace are runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
+Layer selection note:
+- Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
+- Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
+- Tenant environments are declared in `tenants/app-envs/*`.
+- App URL/issuer/namespace remain runtime-input driven (`APP_HOST`, `APP_CLUSTER_ISSUER`, `APP_NAMESPACE`).
 - `--profile` values drive runtime-input intent (including app URL/issuer and cert mode).
 
 Layer boundaries:
-- `cluster/` is the Flux desired-state layer (committed manifests and overlay paths).
+- `clusters/home/` is the Flux cluster entrypoint layer (`flux-system`, source + stack Kustomizations).
+- `infrastructure/` is shared cluster infra (networking, cert-manager, issuers, ingress/storage providers, runtime-input targets).
+- `platform-services/` is shared platform service installs.
+- `tenants/` is app-environment scope (staging/prod namespaces + sample app).
 - `platform-runtime-inputs` is the only env-input bridge layer (`make runtime-inputs-sync`).
 - `Makefile` is the operator API layer (invokes sync + reconcile workflows).
 
@@ -95,8 +100,8 @@ ClickStack first-login flow:
 
 ```bash
 make runtime-inputs-sync
-flux reconcile kustomization homelab-runtime-inputs -n flux-system --with-source
-flux reconcile kustomization homelab-otel -n flux-system --with-source
+flux reconcile kustomization homelab-infrastructure -n flux-system --with-source
+flux reconcile kustomization homelab-platform -n flux-system --with-source
 ```
 
 ### 4) App deployment test matrix (URL x Let's Encrypt)
@@ -156,7 +161,10 @@ Show plans:
 
 ## Repo Layout
 
-- `cluster/`: Flux bootstrap and GitOps stack manifests
+- `clusters/`: Flux cluster entrypoints and bootstrap manifests
+- `infrastructure/`: shared infrastructure manifests
+- `platform-services/`: shared platform-service manifests
+- `tenants/`: app environment manifests
 - `scripts/`: orchestration and verification scripts
 - `host/`: optional host-layer bootstrap tasks
 - `profiles/`: local and secret overlays for runtime configuration

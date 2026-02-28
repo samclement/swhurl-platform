@@ -39,5 +39,5 @@ Use this as a single contract that drives:
 
 ## Follow-ups
 
-1. Implement Traefik-specific overlays/resources in `cluster/overlays/homelab/providers/ingress-traefik`.
+1. Implement Traefik-specific resources in `infrastructure/ingress-traefik/base` and switch composition in `infrastructure/overlays/home/kustomization.yaml`.
 2. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned with real behavior.

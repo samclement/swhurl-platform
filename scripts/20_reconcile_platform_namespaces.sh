@@ -13,5 +13,5 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
-kubectl apply -k "$ROOT_DIR/cluster/base/namespaces" >/dev/null
-log_info "Namespaces ensured (cluster/base/namespaces)"
+kubectl apply -k "$ROOT_DIR/infrastructure/namespaces" >/dev/null
+log_info "Namespaces ensured (infrastructure/namespaces)"

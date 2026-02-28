@@ -1,6 +1,6 @@
 # Migration Plan: Local Charts + Env-Driven Secrets
 
-> Historical note: this document captures a superseded Helmfile migration path. Local charts `charts/platform-namespaces` and `charts/platform-issuers` have since been retired in favor of plain manifests under `cluster/base/`.
+> Historical note: this document captures a superseded Helmfile migration path. Local charts `charts/platform-namespaces` and `charts/platform-issuers` have since been retired in favor of plain manifests under `infrastructure/` and `platform-services/`.
 
 This plan migrates the repo toward a more declarative model:
 

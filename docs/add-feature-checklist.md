@@ -4,8 +4,8 @@ Use this checklist when adding a new platform feature.
 
 ## 1) Declarative wiring (Flux)
 
-- Add/update component manifests under `cluster/base/*` or `cluster/overlays/homelab/*`.
-- Add/update Flux stack wiring in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+- Add/update component manifests under `infrastructure/*`, `platform-services/*`, or `tenants/*`.
+- Add/update Flux stack wiring in `clusters/home/{infrastructure,platform,tenants}.yaml` and layer overlay kustomizations.
 - Keep `dependsOn` explicit.
 
 ## 2) Feature flags and config
@@ -15,7 +15,7 @@ Use this checklist when adding a new platform feature.
 
 ## 3) Runtime inputs (if feature needs secrets)
 
-- Add/update target manifests in `cluster/base/runtime-inputs/*`.
+- Add/update target manifests in `infrastructure/runtime-inputs/*`.
 - Update `scripts/bootstrap/sync-runtime-inputs.sh` validation and secret projection values.
 
 ## 4) Verification updates

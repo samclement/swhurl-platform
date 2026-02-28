@@ -32,5 +32,5 @@ Use this as the contract for:
 
 ## Follow-ups
 
-1. Implement Ceph provider overlay resources in `cluster/overlays/homelab/providers/storage-ceph`.
+1. Implement Ceph provider resources in `infrastructure/storage/ceph/base` and switch composition in `infrastructure/overlays/home/kustomization.yaml`.
 2. Keep `docs/runbooks/migrate-minio-to-ceph.md` aligned with actual migration tooling.

@@ -2,559 +2,110 @@
 
 ## Agents Operating Notes
 
-- Always update this AGENTS.md with new learnings, gotchas, and environment-specific fixes discovered while working on the repo. Keep entries concise, actionable, and tied to the relevant scripts/config.
-- Prefer adding learnings in the sections below. If a learning implies a code change, also open a TODO in the relevant script and reference it here.
+- Always update this file with concise, actionable learnings discovered while working in this repo.
+- Keep guidance tied to current files only. Remove stale references when architecture/scripts change.
+- If a learning implies a code change, also add/update a TODO in the relevant script or doc.
 
-### Current Learnings
+## Current Architecture (Flux-first)
+
+- Single cluster entrypoint: `clusters/home/`.
+- Shared infrastructure layer: `infrastructure/overlays/home`.
+- Shared platform-services layer: `platform-services/overlays/home`.
+- Tenant/app environment layer: `tenants/overlays/app-*-le-*`.
+- Runtime secret source (external): `flux-system/platform-runtime-inputs`.
+- Runtime secret targets (declarative): `platform-services/runtime-inputs`.
+
+Flux dependency chain:
+- `homelab-flux-sources -> homelab-flux-stack`
+- `homelab-infrastructure -> homelab-platform -> homelab-tenants`
+
+Mode boundaries:
+- Platform cert issuer mode is a Git-tracked ConfigMap value:
+  - `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
+  - `CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`
+- App URL/issuer mode is path-selected in:
+  - `clusters/home/tenants.yaml`
+  - templates in `clusters/home/modes/`
+
+## Operator Surface
+
+Primary commands:
+- `make flux-bootstrap`
+- `make runtime-inputs-sync`
+- `make flux-reconcile`
+- `make install`
+- `make teardown`
+- `make verify`
+
+Mode commands (edit Git files only):
+- `make platform-certs-staging`
+- `make platform-certs-prod`
+- `make app-test-staging-le-staging`
+- `make app-test-staging-le-prod`
+- `make app-test-prod-le-staging`
+- `make app-test-prod-le-prod`
+
+Important contract:
+- Mode targets only edit local files. They do not mutate cluster state directly.
+- Commit + push mode edits before running `make flux-reconcile`.
+
+## Current Learnings
 
 - Documentation workflow
-  - `showboat` is not installed globally in this repo environment; run it via `uvx showboat ...` (for example `uvx showboat init walkthrough.md ...`).
-  - After editing executable walkthrough docs, run `uvx showboat verify <file>` to catch malformed code fences/empty exec blocks before committing.
-  - If a `showboat exec`/`showboat note` append is wrong, use `uvx showboat pop <file>` immediately to drop only the most recent entry, then re-run the corrected command.
-  - The historical executable walkthrough drifted; `walkthrough.md` is now a concise current-state pointer. Regenerate it with `uvx showboat init ...` + fresh exec blocks when a full executable transcript is needed.
-  - Avoid self-referential Showboat commands inside executable walkthrough `bash` blocks (for example `showboat verify walkthrough.md`), which can cause recursive verification hangs.
-  - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
-  - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
-  - Keep README quickstart aligned with `Makefile`: `make flux-reconcile` already runs runtime-input sync, so docs should not require a separate pre-step unless called out as optional/manual.
-  - Keep dependency/tooling requirements documented in README (`Scope`, `Dependencies`) and avoid re-introducing a separate prereq-check step script in `run.sh`.
-  - Helmfile compatibility is fully retired: `run.sh` now uses Flux steps (`scripts/bootstrap/install-flux.sh`, `scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/32_reconcile_flux_stack.sh`) and no longer references `helmfile.yaml.gotmpl` or `environments/`.
-  - Keep docs/scripts free of references to removed compatibility files: `scripts/31_sync_helmfile_phase_core.sh`, `scripts/36_sync_helmfile_phase_platform.sh`, `scripts/75_manage_sample_app_lifecycle.sh`, `scripts/92_verify_helmfile_drift.sh`, and `scripts/97_verify_provider_matrix.sh`.
-  - Keep `profiles/secrets.example.env` comments aligned with `scripts/bootstrap/sync-runtime-inputs.sh` validation (for example `OAUTH_COOKIE_SECRET` is required and must be 16/24/32 chars when oauth2-proxy is enabled).
-  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; platform cert issuer mode is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`), not path-switched overlays.
-  - Legacy homelab overlay scaffolding was removed; keep active manifests in `infrastructure/`, `platform-services/`, and `tenants/`.
-  - Runtime input targets are declarative in `platform-services/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
-  - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
-  - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
-  - Active layout boundary: `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
-  - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
-  - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
-  - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs-*`, `app-test-*-le-*`, `verify`) and run host tasks directly via `host/run-host.sh`.
-  - Mode switching split: `platform-certs-*` updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml`, while `app-test-*-le-*` remains tenant path-template based via `clusters/home/modes/`.
-  - Removed wrapper selectors (`platform-certs CERT_ENV=...`, `app-test APP_ENV=... LE_ENV=...`); keep operator flows on fixed explicit targets only.
-  - `scripts/bootstrap/set-flux-path-modes.sh` was removed; platform cert mode is now a ConfigMap edit (`platform-settings.CERT_ISSUER`) and app mode changes remain file-sync operations from `clusters/home/modes/` into `clusters/home/tenants.yaml`.
-  - `scripts/00_feature_registry_lib.sh` was removed; keep feature flags/required-var metadata in `scripts/00_verify_contract_lib.sh` and avoid reintroducing a separate registry layer.
-  - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
-  - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/20_reconcile_platform_namespaces.sh` and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
-  - Profiles are now minimal: keep `profiles/local.env` (optional non-secret overrides) and `profiles/secrets.env` (gitignored secrets). Express runtime intent via mode targets/templates instead of committed profile matrices.
-  - Provider migration runbooks should use explicit composition edits and inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of profile files.
-  - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
-  - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
-  - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant app mode composition is in `tenants/overlays/`.
-  - Runtime input targets live in `platform-services/runtime-inputs`; Flux `homelab-platform` injects substitutions from external `flux-system/platform-runtime-inputs`.
-  - `homelab-infrastructure` consumes `platform-settings` for `CERT_ISSUER`; `homelab-platform` consumes both `platform-settings` and `platform-runtime-inputs` for runtime secrets.
-  - Provider selection is composition-driven: switch ingress/storage resources in `infrastructure/overlays/home/kustomization.yaml` (for example `ingress-nginx/base` vs `ingress-traefik/base`, `storage/minio/base` vs `storage/ceph/base`).
-  - Component-level GitOps scaffolds are split by ownership: shared infra in `infrastructure/`, shared services in `platform-services/`, app envs/apps in `tenants/`.
-  - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
-  - `scripts/bootstrap/sync-runtime-inputs.sh` now syncs only runtime secret inputs (oauth2-proxy + ClickStack/OTel); issuer/app mode variables are no longer part of the runtime-input secret contract.
-  - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
-  - Example app now uses plain manifests in `tenants/apps/example/base/` with explicit staging defaults; URL/issuer test combinations are selected by tenant overlay paths (`tenants/apps/example/overlays/*`, `tenants/overlays/*`).
-  - Sample app TLS issuance can lag DNS propagation on first bootstraps; keep reconcile timeout expectations aligned at the tenant layer when adjusting app rollout behavior.
-  - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
-  - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
-  - `make flux-reconcile` now syncs `flux-system/platform-runtime-inputs` from local env/profile first (`scripts/bootstrap/sync-runtime-inputs.sh`) and then reconciles `homelab-flux-sources` before `homelab-flux-stack`.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` fails fast on invalid runtime secrets (for example oauth2-proxy cookie length) before Flux reconcile.
-  - External runtime source secret gotcha: because `platform-runtime-inputs` was previously Flux inventory-owned, prune can delete it after migration. `scripts/bootstrap/sync-runtime-inputs.sh` now annotates `flux-system/platform-runtime-inputs` with `kustomize.toolkit.fluxcd.io/prune=disabled` to keep it external and persistent.
-  - `clusters/home/flux-system/kustomizations.yaml` includes `homelab-flux-sources`; `homelab-flux-stack` depends on it so HelmRepository drift (for example `metrics-server` source missing) is self-healed.
-  - Parent Flux `Kustomization` `clusters/home/flux-system/kustomizations.yaml` (`homelab-flux-stack`) uses `spec.timeout: 20m` so first-time chart installs do not report premature `HealthCheckFailed`.
-  - Migration runbooks for provider cutovers now live in `docs/runbooks/` (`migrate-ingress-nginx-to-traefik.md`, `migrate-minio-to-ceph.md`) and should be updated alongside provider behavior changes.
-  - Provider strategy decisions are documented as ADRs in `docs/adr/0001-ingress-provider-strategy.md` and `docs/adr/0002-storage-provider-strategy.md`; update these when provider defaults, contracts, or rollout assumptions change.
-  - CI validation now runs via `.github/workflows/validate.yml` (shell syntax checks, host/cluster dry-run checks, kustomize structure rendering for flux scaffolding, and provider-matrix validation through `scripts/97_verify_provider_matrix.sh`).
-  - Destructive scratch-cycle helper `scripts/compat/repeat-scratch-cycles.sh` was removed to keep the operator surface minimal; use explicit `run.sh --delete` / `run.sh` loops only when needed.
+  - `showboat` is not installed globally here; use `uvx showboat ...`.
+  - Run `uvx showboat verify walkthrough.md` after walkthrough edits.
+  - Avoid self-referential showboat commands inside executable walkthrough blocks.
+  - Keep README quickstart aligned with `Makefile` behavior.
+  - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
 
-- k3s-only focus
-  - kind/Podman provider support has been removed to reduce complexity. Cluster provisioning is out of scope; scripts assume a reachable kubeconfig.
-  - Host k3s bootstrap entrypoint is `host/run-host.sh --only 20_install_k3s.sh` (default `K3S_INGRESS_MODE=traefik` unless overridden); legacy wrapper `scripts/manual_install_k3s_minimal.sh` was removed.
-  - Host defaults disable bundled k3s `metrics-server` via `K3S_DISABLE_PACKAGED=metrics-server` so metrics-server is repo-managed.
-  - Repo-managed metrics-server is installed in `kube-system` (Flux base `infrastructure/metrics-server/base`, Helmfile release `metrics-server`) with `hostNetwork.enabled=true`, `--secure-port=4443`, and `--kubelet-insecure-tls` to avoid kubelet scrape failures (`connect: connection refused` to node `:10250`) seen on pod-network paths.
-  - Cilium is the standard CNI. k3s must be installed with `--flannel-backend=none --disable-network-policy` before running `scripts/26_manage_cilium_lifecycle.sh`. The script will refuse to install if flannel annotations are detected unless `CILIUM_SKIP_FLANNEL_CHECK=true` is set.
-  - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
-  - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override image repository settings in `infrastructure/cilium/base/helmrelease-cilium.yaml` as needed (for example pinning non-digest references).
-  - Hubble UI ingress is configured declaratively in `infrastructure/cilium/base/helmrelease-cilium.yaml`.
-  - Hubble relay connectivity gotcha on single-node k3s: relay peers may advertise node `InternalIP` (for example `192.168.x.x:4244`) that is unreachable from pod network, while `CiliumInternalIP` is reachable. Keep `hubble-relay` on host networking via HelmRelease post-render patch (`spec.postRenderers` in `infrastructure/cilium/base/helmrelease-cilium.yaml`) so relay remains healthy and UI streams flow data.
+- Runtime inputs and substitution
+  - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
+  - `homelab-infrastructure` substitutes from `platform-settings` only.
+  - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
 
-- Orchestrator run order
-  - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.
-  - Config contract now validates provider intent flags in `scripts/94_verify_config_inputs.sh`: `INGRESS_PROVIDER=nginx|traefik`, `OBJECT_STORAGE_PROVIDER=minio|ceph`.
-  - Keep `config.env` focused on active inputs: app-environment overlay selection (`staging/prod`) is path-driven in Flux stack, so avoid adding `APP_*` env vars that do not drive manifests.
-  - Provider gating is wired in `helmfile.yaml.gotmpl`: ingress-nginx installs only when `INGRESS_PROVIDER=nginx`, MinIO installs only when `OBJECT_STORAGE_PROVIDER=minio`, and ingress-nginx `needs` edges are conditional for provider-flexible releases.
-  - Provider-aware ingress templating is centralized in `environments/common.yaml.gotmpl` as `computed.ingressClass`; chart values consume this for ingress class names so swapping `INGRESS_PROVIDER` does not require per-chart rewrites.
-  - NGINX-specific auth/redirect annotations are now gated to `INGRESS_PROVIDER=nginx` in Flux `HelmRelease` values under `infrastructure/*` and `platform-services/*` and in verification checks (`scripts/91_verify_platform_state.sh`) to avoid false drift under Traefik.
-  - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
-  - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
-  - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/10_dynamic_dns.sh` and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
-  - Host package-manager automation was removed (`host/lib/10_packages_lib.sh` deleted); dependency prerequisites are documented in `README.md`.
-  - `host/tasks/00_bootstrap_host.sh` was removed as obsolete no-op scaffolding; keep host apply flow focused on actionable tasks only.
-  - Host script simplification: keep `host/run-host.sh` as static apply/delete task arrays with inline `--only` filtering; avoid extra plan-construction helper layers.
-  - `host/lib/20_dynamic_dns_lib.sh` should stay compact (constants + `apply/delete` + one write-if-changed helper); avoid many one-line path/name wrapper functions.
-  - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`, `host_has_flag`); remove unused host-common helpers to keep host-task surface lean.
-  - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
-  - Script naming convention:
-    - `00_*_lib.sh` for sourced helper libraries (not runnable steps; excluded from `run.sh` plans).
-    - `NN_verify_*` for validation gates (e.g. `15_verify_cluster_access.sh`).
-    - `NN_reconcile_*` / `NN_prepare_*` for declarative pre-Helm setup.
-    - `NN_manage_*_lifecycle` / `NN_manage_*_cleanup` for exception scripts that own imperative lifecycle/finalizer behavior.
-    - `NN_sync_helmfile_phase_*` for Helmfile phase wrappers.
-    - Keep repo/app utility steps aligned to this convention so plan ordering and purpose are obvious.
-  - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
-  - `scripts/00_lib.sh` no longer keeps an unused `helm_upsert` helper; prefer Helmfile selector helpers (`sync_release` / `destroy_release`) for release operations.
-  - Helmfile label conventions:
-    - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
-    - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
-  - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `run.sh --dry-run`.
-  - `run.sh` is cluster-layer only; host orchestration is intentionally direct via `host/run-host.sh` (no `run.sh --with-host`/`--host-env` coupling).
-  - Mode-scoped scripts should fail fast on unsupported mode (no silent apply/delete skips) to keep orchestration contracts explicit.
-  - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `host/run-host.sh --only 20_install_k3s.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
-  - Managed shared namespaces are plain manifests in `infrastructure/namespaces`; `scripts/20_reconcile_platform_namespaces.sh` applies that kustomization directly.
-  - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
-  - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not pre-create/manage that namespace in repo namespace manifests.
-  - In delete mode, `run.sh` keeps finalizers deterministic: `scripts/99_execute_teardown.sh` runs before `scripts/26_manage_cilium_lifecycle.sh` (Cilium last) and then `scripts/98_verify_teardown_clean.sh`.
-  - Platform Helm installs are now grouped by Helmfile phase (fewer scripts in the default run):
-    - `scripts/31_sync_helmfile_phase_core.sh`: sync/destroy Helmfile `phase=core` (cert-manager + ingress-nginx) and wait for webhook CA injection.
-    - `scripts/36_sync_helmfile_phase_platform.sh`: sync/destroy Helmfile `phase=platform` (oauth2-proxy/clickstack/otel/minio).
-    - `scripts/29_prepare_platform_runtime_inputs.sh` is retired; runtime-input ownership is declarative in `platform-services/runtime-inputs`.
-    - Update runtime credentials with `scripts/bootstrap/sync-runtime-inputs.sh` / `make runtime-inputs-sync` (sources `config.env` + profiles, writes `flux-system/platform-runtime-inputs`).
-  - `scripts/92_verify_helmfile_drift.sh` performs a real drift check via `helmfile diff` (requires the `helm-diff` plugin). Use `HELMFILE_SERVER_DRY_RUN=false` to avoid admission webhook failures during server dry-run.
-  - `scripts/92_verify_helmfile_drift.sh` ignores known non-actionable drift from Cilium CA/Hubble cert secret rotation.
-  - Helm lock gotcha: if a release is stuck in `pending-install`/`pending-upgrade`, Helmfile/Helm can fail with `another operation (install/upgrade/rollback) is in progress`. If workloads are already running, a simple way to clear the lock is to rollback to the last revision, e.g. `helm -n observability rollback clickstack 1 --wait` (creates a new deployed revision and unblocks upgrades).
-  - Cilium delete fallback must handle missing Helm release metadata: `scripts/26_manage_cilium_lifecycle.sh --delete` now deletes known cilium/hubble controllers/services directly, then forces deletion of any stuck `app.kubernetes.io/part-of=cilium` pods.
-  - Cert-manager Helm install: Some environments time out on the chart’s post-install API check job. `scripts/30_manage_cert_manager_cleanup.sh` disables `startupapicheck` and explicitly waits for Deployments instead. If you want the chart’s check back, set `CM_STARTUP_API_CHECK=true` and re-enable in the script.
-  - cert-manager webhook CA injection can lag after install; `scripts/30_manage_cert_manager_cleanup.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
-  - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
-  - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
-  - ClusterIssuer manifests are file-managed and always include `selfsigned`, `letsencrypt-staging`, and `letsencrypt-prod` (alias issuer removed).
-  - Issuer intent split:
-    - platform issuer mode: `flux-system/platform-settings.CERT_ISSUER` consumed by infrastructure/platform overlays (single switch)
-    - sample app URL/issuer mode: `clusters/home/tenants.yaml` path (`tenants/overlays/app-*-le-*`)
-  - Legacy issuer-specific overlays `infrastructure/overlays/home-letsencrypt-prod` and `platform-services/overlays/home-letsencrypt-prod` were removed; keep issuer values substitution-driven in base manifests.
-  - Managed app namespaces remain `apps-staging` and `apps-prod`; sample app URL/issuer combinations are overlay-selected, not runtime-input driven.
-  - Promotion/runtime intent is Makefile-driven: mode targets edit Git-tracked files only; commit+push, then run `make flux-reconcile`.
-  - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
-  - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
-  - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
-  - Delete gotcha: `kube-system/hubble-ui-tls` can be left behind after `--delete` because it is created by cert-manager (ingress-shim) and cert-manager/CRDs may be deleted before the shim can clean it up. `scripts/26_manage_cilium_lifecycle.sh --delete` deletes `hubble-ui-tls` explicitly, and `scripts/98_verify_teardown_clean.sh` checks it even when `DELETE_SCOPE=managed`.
-  - `scripts/98_verify_teardown_clean.sh --delete` now includes a kube-system Cilium residue check and fails if any `app.kubernetes.io/part-of=cilium` resources remain.
-  - Verification contract is core-only:
-    - `FEAT_VERIFY=true` runs `scripts/94_verify_config_inputs.sh` and `scripts/91_verify_platform_state.sh`.
-    - `FEAT_VERIFY=false` skips apply-mode verification gates.
-  - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
-  - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, and config-contract required variable sets.
-  - Feature-level verification metadata is centralized in `scripts/00_verify_contract_lib.sh` (feature flags and required vars). Keep `scripts/94_verify_config_inputs.sh` registry-driven to avoid per-feature duplication.
-  - Keep verification helper libs lean; remove unused exports from `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
-  - Documentation consistency gotcha: avoid hard-coding hypothetical script paths in planning docs. Keep references either aligned to existing files or clearly marked as future/proposed so script-reference checks stay actionable.
-  - For day-to-day maintainer changes, prefer explicit updates using `docs/add-feature-checklist.md` rather than introducing new script abstraction layers.
-  - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.
-  - `scripts/75_manage_sample_app_lifecycle.sh --delete` now checks whether `certificates.cert-manager.io` exists before deleting `Certificate`, avoiding errors after CRD teardown.
-  - `scripts/91_verify_platform_state.sh` compares live cluster state to local config (issuer email, ingress hosts/issuers, ClickStack resources) and suggests which scripts to re-run on mismatch.
-  - `scripts/91_verify_platform_state.sh` no longer treats `ingress/oauth2-proxy-secret` as a required runtime invariant for default Helmfile installs; it validates oauth2-proxy deployment/ingress state instead.
-  - Observability is installed via `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`).
+- Issuers and certificates
+  - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
+  - Issuer local chart (`charts/platform-issuers`) is retired.
+  - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
+  - Apps keep issuer selection in app overlays/manifests.
 
-- Domains and DNS registration
-  - Dynamic DNS is wildcard-only: `host/scripts/aws-dns-updater.sh` updates a single Route53 A record for `*.homelab.swhurl.com` (no per-subdomain token list).
-  - DNS wildcard scope caveat: `*.homelab.swhurl.com` matches one-label hosts (for example `oauth.homelab.swhurl.com`) but not multi-label names like `api.staging.homelab.swhurl.com`; add explicit records (or another wildcard) for multi-label hosts if needed.
-  - `host/run-host.sh --only 10_dynamic_dns.sh` installs/restarts a systemd timer that runs the wildcard updater helper with no args.
-  - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.
+- DNS and host layer
+  - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh` and updates Route53 wildcard `*.homelab.swhurl.com`.
+  - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
+  - Host automation is opt-in and runs via `host/run-host.sh`.
 
-- OIDC for applications
-  - Use oauth2-proxy at the edge and add NGINX auth annotations to your app’s Ingress:
-    - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
-    - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
-    - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OAUTH_COOKIE_SECRET` in `config.env`/`profiles/secrets.env`; oauth2-proxy is reconciled through the Flux stack.
-  - See README “Add OIDC To Your App” for a complete Ingress example.
-  - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
-  - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). `OAUTH_COOKIE_SECRET` is now required in config/contracts for the default apply path; the legacy bridge script can still generate one when used manually.
+- k3s/Cilium
+  - k3s is a manual prerequisite path (`host/run-host.sh --only 20_install_k3s.sh`).
+  - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
+  - Keep Cilium teardown last in delete flows.
 
-- Observability with ClickStack
-  - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (Helmfile `phase=platform`) to install ClickStack (ClickHouse + HyperDX + OTel Collector) in `observability`.
-  - ClickStack/HyperDX ingress is intentionally not oauth2-proxy protected; app-level ingresses should own oauth2-proxy auth annotations when required.
-  - Operational gotcha: ClickStack/HyperDX may generate or rotate runtime keys on first startup, so configured key values are not always deterministic post-install.
-  - Default install path uses `scripts/36_sync_helmfile_phase_platform.sh` (installs ClickStack + OTel collectors).
-  - Flux path key wiring is split-key: `platform-services/runtime-inputs` projects `platform-runtime-inputs.CLICKSTACK_API_KEY` to `observability/clickstack-runtime-inputs` (ClickStack chart input) and `platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` to `logging/hyperdx-secret` (OTel exporter authorization).
-  - ClickStack first-team bootstrap is manual via the ClickStack UI; the repo no longer deploys an in-cluster bootstrap job.
-  - Runtime gotcha: `clickstack-otel-collector` may show service ports `4317/4318` but still refuse OTLP traffic when its active OpAMP config does not attach `otlp/hyperdx` to any pipeline. Verify with `kubectl exec ... netstat -lntp` (only `13133/8888/24225` means OTLP is inactive) and `kubectl exec ... tail /etc/otel/supervisor-data/agent.log`.
-  - Bootstrap gotcha: OTLP ingestion is disabled until at least one ClickStack team exists (`/installation` returns `{"isTeamExisting":false}`), because OpAMP only enables `otlp/hyperdx` receivers when team API keys exist. Complete initial UI registration/team setup before expecting `:4317/:4318` listeners.
-  - Team bootstrap gotcha: ClickStack chart value `hyperdx.apiKey` alone does not create a Team record. In chart `1.1.1`, team creation still relies on registration/API flow (or local app mode only via `IS_LOCAL_APP_MODE=DANGEROUSLY_is_local_app_mode💀` in `hyperdx.env`, not recommended for shared/prod clusters).
-  - Runtime-input sync fallback: `scripts/bootstrap/sync-runtime-inputs.sh` sets `CLICKSTACK_INGESTION_KEY` to `CLICKSTACK_API_KEY` when ingestion key is unset so first install can proceed before UI bootstrap.
-  - MinIO values use `rootUser`/`rootPassword` directly in `infrastructure/storage/minio/base/helmrelease-minio.yaml`; legacy `minio-creds` cleanup is handled by `scripts/99_execute_teardown.sh`.
-  - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml`).
-  - k3s kubelet scrape gotcha: from pod-network, node `InternalIP:10250` may be unreachable (`connect: connection refused`). `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml` now runs OTel daemonset with `hostNetwork: true` and overrides `kubeletstats.endpoint=127.0.0.1:10250` (`tls.insecure_skip_verify: true`) to keep node metrics flowing.
-  - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, `scripts/compat/repeat-scratch-cycles.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
-  - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
-  - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer mode switching, and app URL/issuer mode switching that run runtime-input sync + Flux reconcile.
-  - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
-  - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-platform`.
-  - Practical key recovery: if ingestion key ownership is unclear, read `hyperdx.teams.apiKey` in `observability/clickstack-mongodb` and ensure `logging/hyperdx-secret.HYPERDX_API_KEY` matches it.
+- Observability/ClickStack
+  - ClickStack first-team setup is manual in UI.
+  - `CLICKSTACK_INGESTION_KEY` can initially fall back to `CLICKSTACK_API_KEY`.
+  - OTel daemonset node metrics on k3s use host networking + kubelet endpoint `127.0.0.1:10250`.
+
+- Labels and teardown ownership
+  - Managed label domain is `platform.swhurl.com/managed`.
+  - Teardown/verification selectors must stay aligned with that label.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
-  - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
-  - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
-  - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.
-
-- Architecture diagram (D2)
-  - Source: `docs/architecture.d2`. Render to SVG: `d2 --theme 200 docs/architecture.d2 docs/architecture.svg`.
-  - If the CLI complains about unknown shapes, ensure D2 v0.7+ or simplify shapes (use `rectangle`, `cloud`).
-
----
-
-This guide explains how to stand up and operate a lightweight Kubernetes platform for development and small environments. It targets k3s only. It covers platform components: Cilium CNI, cert-manager, ingress with OAuth proxy, observability via ClickStack (ClickHouse + HyperDX + OTel Collector), and object storage (MinIO). It also includes best practices for secrets and RBAC.
-
-If you already have a cluster, you can jump directly to the Bootstrap section.
-
-## Prerequisites
-
-- kubectl: Kubernetes CLI.
-- Helm: Package manager for Kubernetes.
-- age + sops: Secrets encryption for GitOps.
-- Optional: yq/jq for YAML/JSON processing; kustomize if desired.
-- k3s installed and kubeconfig set (local Linux host) or a reachable remote cluster.
-
-Install on Linux (Debian/Ubuntu example):
-
-```
-sudo apt-get update
-sudo apt-get install -y curl gnupg lsb-release jq
-curl -fsSL https://get.helm.sh/helm-v3.14.4-linux-amd64.tar.gz | tar -xz && sudo mv linux-amd64/helm /usr/local/bin/helm
-curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-sudo apt-get install -y sops
-curl -fsSL https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.1-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
-```
-
-Notes
-
-- Ensure `kubectl` context points to your target cluster before running Helm installs.
-
-## Choose a Cluster (k3s only)
-
-Install k3s with flannel off (for Cilium). Keep Traefik enabled by default unless you explicitly set `K3S_INGRESS_MODE=none`:
-
-```
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--flannel-backend=none --disable-network-policy" sh -
-```
-
-Kubeconfig path: `/etc/rancher/k3s/k3s.yaml` (copy to `~/.kube/config` or set `KUBECONFIG`). Example:
-
-```
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $(id -u):$(id -g) ~/.kube/config
-```
-
-If you already have a reachable cluster, just ensure `kubectl` points at it.
-
-## Bootstrap (Helm)
-
-We’ll install common namespaces, add Helm repos, then deploy core components. You can adjust names and values as needed.
-
-Create namespaces
-
-```
-kubectl create namespace platform-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace ingress --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace logging --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
-kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Add Helm repos
-
-```
-helm repo add jetstack https://charts.jetstack.io
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
-helm repo add cilium https://helm.cilium.io/
-helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo add minio https://charts.min.io/
-helm repo update
-```
-
-### TLS: cert-manager
-
-Install CRDs and cert-manager:
-
-```
-helm upgrade --install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --set installCRDs=true
-```
-
-ClusterIssuer examples (choose one):
-
-1) Self-signed (for air-gapped/dev)
-
-```
-cat <<'EOF' | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned
-spec:
-  selfSigned: {}
-EOF
-```
-
-2) Let’s Encrypt HTTP-01 (requires publicly reachable ingress)
-
-```
-cat <<'EOF' | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt
-spec:
-  acme:
-    email: you@example.com
-    server: https://acme-v02.api.letsencrypt.org/directory
-    privateKeySecretRef:
-      name: acme-account-key
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF
-```
-
-### Ingress: NGINX + OAuth2 Proxy
-
-Install ingress-nginx:
-
-```
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress \
-  --set controller.replicaCount=1 \
-  --set controller.ingressClassResource.default=true
-```
-
-Install OAuth2 Proxy (configure with your OIDC provider, e.g., Google, GitHub, Auth0):
-
-```
-kubectl -n ingress create secret generic oauth2-proxy-secret \
-  --from-literal=client-id="YOUR_CLIENT_ID" \
-  --from-literal=client-secret="YOUR_CLIENT_SECRET" \
-  --from-literal=cookie-secret="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
-
-helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --namespace ingress \
-  --set config.existingSecret=oauth2-proxy-secret \
-  --set extraArgs.provider=oidc \
-  --set extraArgs.oidc-issuer-url="https://YOUR_ISSUER" \
-  --set extraArgs.redirect-url="https://oauth.YOUR_DOMAIN/oauth2/callback" \
-  --set extraArgs.email-domain="*" \
-  --set ingress.enabled=true \
-  --set ingress.className=nginx \
-  --set ingress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set ingress.hosts[0]="oauth.YOUR_DOMAIN" \
-  --set ingress.tls[0].hosts[0]="oauth.YOUR_DOMAIN" \
-  --set ingress.tls[0].secretName=oauth2-proxy-tls
-```
-
-Protect an app behind OAuth2 Proxy by annotating its Ingress:
-
-```
-metadata:
-  annotations:
-    nginx.ingress.kubernetes.io/auth-url: "https://oauth.YOUR_DOMAIN/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://oauth.YOUR_DOMAIN/oauth2/start?rd=$scheme://$host$request_uri"
-```
-
-### Observability: ClickStack
-
-Install ClickStack (ClickHouse + HyperDX + OTel Collector):
-
-```
-./scripts/36_sync_helmfile_phase_platform.sh
-```
-
-This script syncs Helmfile releases labeled `phase=platform`, including ClickStack, and exposes HyperDX at `https://${CLICKSTACK_HOST}` with cert-manager TLS.
-
-If oauth2-proxy is enabled, auth annotations are applied declaratively by Helmfile values.
-
-### Kubernetes OTel Integration
-
-Install Kubernetes-focused OTel collectors (daemonset + deployment) and forward telemetry to ClickStack:
-
-```
-./scripts/36_sync_helmfile_phase_platform.sh
-```
-
-This follows the ClickStack Kubernetes integration pattern using the upstream `open-telemetry/opentelemetry-collector` chart.
-
-### Storage: MinIO (Object Storage)
-
-For k3s, the default `local-path` StorageClass handles PVs for simple workloads. For S3-compatible object storage inside the cluster, deploy MinIO:
-
-```
-helm upgrade --install minio minio/minio \
-  --namespace storage \
-  --set mode=standalone \
-  --set resources.requests.memory=512Mi \
-  --set replicas=1 \
-  --set persistence.enabled=true \
-  --set persistence.size=20Gi \
-  --set ingress.enabled=true \
-  --set ingress.ingressClassName=nginx \
-  --set ingress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set ingress.path="/" \
-  --set ingress.hosts[0]="minio.YOUR_DOMAIN" \
-  --set ingress.tls[0].hosts[0]="minio.YOUR_DOMAIN" \
-  --set ingress.tls[0].secretName=minio-tls \
-  --set consoleIngress.enabled=true \
-  --set consoleIngress.ingressClassName=nginx \
-  --set consoleIngress.annotations."cert-manager\.io/cluster-issuer"=letsencrypt \
-  --set consoleIngress.hosts[0]="minio-console.YOUR_DOMAIN" \
-  --set consoleIngress.tls[0].hosts[0]="minio-console.YOUR_DOMAIN" \
-  --set consoleIngress.tls[0].secretName=minio-console-tls
-```
-
-Set access keys via Helm values (or an external secret manager in production). Example:
-
-```
---set rootUser="minioadmin" \
---set rootPassword="CHANGE_ME_LONG_RANDOM"
-```
-
-## Secrets Management Best Practices
-
-- Prefer GitOps-friendly encryption:
-  - sops + age to encrypt YAML secrets in-repo.
-  - Alternatively, Sealed Secrets (Bitnami) for controller-side decryption.
-  - For cloud-managed secrets, use External Secrets Operator (ESO) to sync secrets from AWS/GCP/Azure.
-- Never commit plaintext secrets. Enforce pre-commit hooks guarding against accidental leaks.
-- Separate secrets by namespace and purpose; rotate regularly and on role changes.
-- Use distinct client IDs/secrets per environment for OAuth/OIDC.
-
-Quick start with sops + age
-
-```
-mkdir -p .keys
-age-keygen -o .keys/age.key
-echo "export SOPS_AGE_KEY_FILE=$(pwd)/.keys/age.key" >> .envrc
-export SOPS_AGE_KEY_FILE=$(pwd)/.keys/age.key
-cat > .sops.yaml <<'EOF'
-creation_rules:
-  - path_regex: secrets/.*\.ya?ml
-    encrypted_regex: '^(data|stringData)$'
-    age: ["REPLACE_WITH_YOUR_AGE_RECIPIENT"]
-EOF
-```
-
-Generate an age recipient from the key:
-
-```
-age-keygen -y .keys/age.key
-```
-
-Create and encrypt a Kubernetes Secret manifest:
-
-```
-mkdir -p secrets
-cat > secrets/oauth2-proxy.yaml <<'EOF'
-apiVersion: v1
-kind: Secret
-metadata:
-  name: oauth2-proxy-secret
-  namespace: ingress
-type: Opaque
-stringData:
-  client-id: YOUR_CLIENT_ID
-  client-secret: YOUR_CLIENT_SECRET
-  cookie-secret: CHANGE_ME
-EOF
-
-sops -e -i secrets/oauth2-proxy.yaml
-kubectl apply -f secrets/oauth2-proxy.yaml
-```
-
-External Secrets Operator (optional)
-
-- Install ESO Helm chart and configure a SecretStore pointing to your cloud secret manager.
-- Reference external secrets in namespaces using ExternalSecret resources.
-
-## RBAC, Security, and Multi-Tenancy
-
-- Namespaces: Isolate by domain/team; apply labels for ownership and cost tracking.
-- Least privilege: Avoid `cluster-admin`. Bind narrow Roles to ServiceAccounts.
-- Service accounts: One per app; mount only required secrets; use `automountServiceAccountToken: false` unless needed.
-- Network policies: Default deny all; allow only necessary egress/ingress between namespaces.
-- Pod Security: Enforce Kubernetes Pod Security Standards (baseline/restricted) via namespace labels.
-- Supply-chain: Pin images by digest; use image pull secrets; enable admission controls as appropriate.
-
-Example Role and RoleBinding
-
-```
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  namespace: apps
-  name: app-reader
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps", "secrets"]
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  namespace: apps
-  name: app-reader-binding
-subjects:
-  - kind: ServiceAccount
-    name: my-app
-    namespace: apps
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: app-reader
-```
-
-Pod Security labels (restricted)
-
-```
-kubectl label namespace apps pod-security.kubernetes.io/enforce=restricted \
-  pod-security.kubernetes.io/audit=restricted \
-  pod-security.kubernetes.io/warn=restricted
-```
-
-## DNS and Domains
-
-- For local dev without DNS, use magic hosts like `127.0.0.1.nip.io` or `sslip.io` to test Ingress quickly.
-- For remote clusters, create DNS A/CNAME records for `*.YOUR_DOMAIN` pointing to the ingress controller LB/IP.
-
-## Day-2 Ops (Brief)
-
-- Backups: Back up etcd (or for k3s, use etcd or external DB); back up MinIO buckets; back up ClickStack PVCs and ClickHouse data.
-- Upgrades: Upgrade Helm charts one at a time; monitor logs/ingestion health in ClickStack; use staged environments when possible.
-- Teardown: `sudo /usr/local/bin/k3s-uninstall.sh` (server).
-
-## Troubleshooting
-
-- Ingress 404s: Check `ingressClassName`, controller logs, and Service/Endpoints readiness.
-- Certificates pending: Inspect cert-manager `Certificate`/`Order` events; verify DNS/HTTP-01 reachability and issuer name.
-- OAuth loops: Validate `redirect-url`, cookie secret length (32+ bytes base64), and time skew.
-- ClickStack ingestion gaps: verify app OTLP exporters target the ClickStack collector service and inspect `clickstack-otel-collector` logs.
-- Node storage: Ensure enough disk for local PVs; adjust MinIO persistence and requests.
-
-## Suggested Repo Structure (optional)
-
-```
-infra/
-  values/
-    cilium-helmfile.yaml.gotmpl
-    cert-manager-helmfile.yaml.gotmpl
-    ingress-nginx-logging.yaml
-    oauth2-proxy-helmfile.yaml.gotmpl
-    clickstack-helmfile.yaml.gotmpl
-    otel-k8s-daemonset.yaml.gotmpl
-    otel-k8s-deployment.yaml.gotmpl
-    minio-helmfile.yaml.gotmpl
-  manifests/
-    issuers/
-    apps/
-    templates/
-    namespaces.yaml
-secrets/
-  (sops-encrypted secrets)
-```
-
-This document is a baseline. Adjust chart values and security controls to meet your environment’s requirements.
+  - Keep secrets in `profiles/secrets.env` (gitignored), not `config.env`.
+  - Config layering for scripts:
+    - `config.env`
+    - `profiles/local.env`
+    - `profiles/secrets.env`
+    - optional `PROFILE_FILE` (highest precedence)
+  - `PROFILE_EXCLUSIVE=true` uses only `config.env` + explicit `PROFILE_FILE`.
+
+## Maintenance Checks
+
+When changing orchestration/layout:
+- Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
+- Run:
+  - `bash -n scripts/*.sh scripts/bootstrap/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
+  - `kubectl kustomize clusters/home >/dev/null`
+  - `kubectl kustomize infrastructure/overlays/home >/dev/null`
+  - `kubectl kustomize platform-services/overlays/home >/dev/null`
+  - `kubectl kustomize tenants/overlays/app-staging-le-staging >/dev/null`
+  - `./run.sh --dry-run`

@@ -5,38 +5,28 @@
 
 ## Context
 
-The platform historically used `ingress-nginx` as the default ingress controller.
-Homelab direction is to prefer k3s default Traefik while keeping a controlled rollback
-path to nginx during migration.
-
-Without an explicit provider strategy, ingress behavior leaks across scripts, values,
-and verification logic, making migrations risky and hard to reason about.
+The homelab cluster needs one active ingress provider at a time, with the ability to switch
+between `ingress-nginx` and `traefik` without restructuring repository layers.
 
 ## Decision
 
-Adopt explicit ingress provider intent via `INGRESS_PROVIDER` with allowed values:
+Use composition-driven provider selection in:
+- `infrastructure/overlays/home/kustomization.yaml`
 
-- `nginx`
-- `traefik`
+Current default is `ingress-nginx` (`../../ingress-nginx/base`).
+Optional Traefik composition path is `../../ingress-traefik/base`.
 
-Use this as a single contract that drives:
-
-- Helmfile release installation gating (`ingress-nginx` installs only for `nginx`)
-- ingress class templating (`computed.ingressClass`)
-- provider-specific annotations/verification expectations
-- runbook and overlay composition for migration
+Keep `INGRESS_PROVIDER` in `config.env` as an operator intent hint for verification and
+operational checks, not as the source of deployment truth.
 
 ## Consequences
 
-- Provider switching is declarative and profile-driven instead of ad-hoc script edits.
-- Verification noise is reduced by skipping NGINX-specific checks under Traefik.
-- Migration is safer, but requires keeping provider-aware logic synchronized in:
-  - `environments/common.yaml.gotmpl`
-  - `helmfile.yaml.gotmpl`
-  - `infra/values/*`
-  - `scripts/91_verify_platform_state.sh`
+- Provider changes are explicit Git diffs in overlay composition.
+- Flux reconciliation remains the only deployment mechanism.
+- Verification can still assert expected behavior from `INGRESS_PROVIDER` intent.
+- Switching providers requires matching ingress class/annotation behavior across platform and app manifests.
 
 ## Follow-ups
 
-1. Implement Traefik-specific resources in `infrastructure/ingress-traefik/base` and switch composition in `infrastructure/overlays/home/kustomization.yaml`.
-2. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned with real behavior.
+1. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned with actual manifests.
+2. When Traefik manifests become fully implemented, update default composition intentionally.

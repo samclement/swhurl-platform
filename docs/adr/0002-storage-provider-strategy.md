@@ -5,32 +5,29 @@
 
 ## Context
 
-The current platform deploys MinIO for object storage. Planned direction is to move to
-a Ceph-class storage model. The repo needs a clear contract so this transition does not
-require restructuring orchestration scripts.
+The platform currently runs MinIO and keeps a Ceph path available for future migration.
+The repo needs a stable way to switch storage providers without changing higher-level
+platform or tenant layering.
 
 ## Decision
 
-Adopt explicit storage provider intent via `OBJECT_STORAGE_PROVIDER` with allowed values:
+Use composition-driven provider selection in:
+- `infrastructure/overlays/home/kustomization.yaml`
 
-- `minio`
-- `ceph`
+Current default is MinIO (`../../storage/minio/base`).
+Optional Ceph composition path is `../../storage/ceph/base`.
 
-Use this as the contract for:
-
-- Helmfile installation gating (MinIO installed only for `minio`)
-- runtime input preparation (MinIO secrets only when `minio`)
-- provider-aware verification checks
-- migration runbook and overlay composition
+Keep `OBJECT_STORAGE_PROVIDER` in `config.env` as an operator intent hint for
+verification and operational checks, not as the source of deployment truth.
 
 ## Consequences
 
-- MinIO lifecycle becomes optional and can be disabled declaratively.
-- Ceph migration can proceed incrementally without breaking non-storage platform layers.
-- Data migration remains an operational responsibility; automation must not imply data
-  safety. Runbook-driven export/import validation is required.
+- Storage provider state is explicit in Git composition.
+- Flux remains the single reconciler for provider resources.
+- Migration work can proceed incrementally behind a stable layer contract.
+- Data migration remains an operational concern and must be handled by runbook.
 
 ## Follow-ups
 
-1. Implement Ceph provider resources in `infrastructure/storage/ceph/base` and switch composition in `infrastructure/overlays/home/kustomization.yaml`.
-2. Keep `docs/runbooks/migrate-minio-to-ceph.md` aligned with actual migration tooling.
+1. Keep `docs/runbooks/migrate-minio-to-ceph.md` aligned with actual manifests.
+2. Define/implement Ceph resources before switching default composition.

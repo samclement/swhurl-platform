@@ -16,16 +16,17 @@
   - For architecture refactors, keep a concrete “current file -> target ownership/path” mapping document (`docs/target-tree-and-migration-checklist.md`) so sequencing and responsibility shifts are explicit.
   - Keep the migration phase status snapshot in `docs/target-tree-and-migration-checklist.md` current when major scaffolding/migration milestones land.
   - Keep README quickstart aligned with `Makefile`: `make flux-reconcile` already runs runtime-input sync, so docs should not require a separate pre-step unless called out as optional/manual.
+  - Keep dependency/tooling requirements documented in README (`Scope`, `Dependencies`) and avoid re-introducing a separate prereq-check step script in `run.sh`.
   - Helmfile compatibility is fully retired: `run.sh` now uses Flux steps (`scripts/bootstrap/install-flux.sh`, `scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/32_reconcile_flux_stack.sh`) and no longer references `helmfile.yaml.gotmpl` or `environments/`.
   - Keep docs/scripts free of references to removed compatibility files: `scripts/31_sync_helmfile_phase_core.sh`, `scripts/36_sync_helmfile_phase_platform.sh`, `scripts/75_manage_sample_app_lifecycle.sh`, `scripts/92_verify_helmfile_drift.sh`, and `scripts/97_verify_provider_matrix.sh`.
   - Keep `profiles/secrets.example.env` comments aligned with `scripts/bootstrap/sync-runtime-inputs.sh` validation (for example `OAUTH_COOKIE_SECRET` is required and must be 16/24/32 chars when oauth2-proxy is enabled).
-  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; default homelab flow is a single `PLATFORM_CLUSTER_ISSUER` toggle (`letsencrypt-staging|letsencrypt-prod`) synced via `make runtime-inputs-sync` and applied by Flux reconcile (no platform path switching required).
+  - Keep prod cert promotion instructions current in `docs/runbooks/promote-platform-certs-to-prod.md`; cert issuer mode is path-selected in Flux CRDs (`clusters/home/infrastructure.yaml` + `clusters/home/platform.yaml`) using staging/prod overlay paths.
   - Legacy homelab overlay scaffolding was removed; keep active manifests in `infrastructure/`, `platform-services/`, and `tenants/`.
   - Runtime input targets are declarative in `infrastructure/runtime-inputs`, while source secret `flux-system/platform-runtime-inputs` is synced externally (`make runtime-inputs-sync`).
   - `run.sh` apply/delete plans do not include any runtime-input bridge step; runtime-input cleanup is owned by `scripts/99_execute_teardown.sh`.
   - Keep `docs/orchestration-api.md` in sync with `run.sh` and `host/run-host.sh` whenever CLI flags, config layering, or default apply/delete step plans change.
   - Active layout boundary: `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
-  - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app host/issuer/namespace intent is runtime-input driven (not selected by provider-path overlays).
+  - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Use `Makefile` targets for common operations (`host-plan`, `host-apply`, `cluster-plan`, `all-apply`, `flux-bootstrap`) to keep operator flows consistent as scripts evolve.
   - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
@@ -35,15 +36,16 @@
   - Provider migration runbooks should use explicit composition edits and inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of profile files.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
-  - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant env composition is in `tenants/kustomization.yaml`.
+  - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant app mode composition is in `tenants/overlays/`.
   - Runtime input targets live in `infrastructure/runtime-inputs`; Flux `homelab-infrastructure` injects substitutions from external `flux-system/platform-runtime-inputs`.
-  - `homelab-infrastructure` consumes `platform-runtime-inputs` for issuer/runtime controls (`ACME_EMAIL`, `LETSENCRYPT_ENV`, `LETSENCRYPT_STAGING_SERVER`, `LETSENCRYPT_PROD_SERVER`, `LETSENCRYPT_ALIAS_SERVER`, and issuer intent vars); keep `make runtime-inputs-sync` in update paths.
+  - `homelab-infrastructure` consumes `platform-runtime-inputs` only for runtime secrets (`OIDC_*`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`); issuer intent is path-selected by Flux overlay paths.
   - Provider selection is composition-driven: switch ingress/storage resources in `infrastructure/overlays/home/kustomization.yaml` (for example `ingress-nginx/base` vs `ingress-traefik/base`, `storage/minio/base` vs `storage/ceph/base`).
   - Component-level GitOps scaffolds are split by ownership: shared infra in `infrastructure/`, shared services in `platform-services/`, app envs/apps in `tenants/`.
   - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
-  - `scripts/bootstrap/sync-runtime-inputs.sh` now publishes `LETSENCRYPT_STAGING_SERVER`/`LETSENCRYPT_PROD_SERVER` (with defaults) and computed `LETSENCRYPT_ALIAS_SERVER` so issuer manifests stay declarative without Helm templating.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` now syncs only runtime secret inputs (oauth2-proxy + ClickStack/OTel); issuer/app mode variables are no longer part of the runtime-input secret contract.
+  - `scripts/96_verify_orchestrator_contract.sh` must treat both infrastructure issuer overlay paths as valid (`./infrastructure/overlays/home` and `./infrastructure/overlays/home-letsencrypt-prod`) when asserting runtime-input wiring.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
-  - Example app now uses plain manifests in `tenants/apps/example/base/` (`Deployment`, `Service`, `Ingress`, `Certificate`) with runtime-input substitution (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`, `OAUTH_HOST`); local chart `charts/apps-hello` was removed.
+  - Example app now uses plain manifests in `tenants/apps/example/base/` with explicit staging defaults; URL/issuer test combinations are selected by tenant overlay paths (`tenants/apps/example/overlays/*`, `tenants/overlays/*`).
   - Sample app TLS issuance can lag DNS propagation on first bootstraps; keep reconcile timeout expectations aligned at the tenant layer when adjusting app rollout behavior.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
@@ -111,15 +113,13 @@
   - cert-manager webhook CA injection can lag after install; `scripts/30_manage_cert_manager_cleanup.sh` now waits for the webhook `caBundle` and restarts webhook/cainjector once if it’s empty to avoid issuer validation failures.
   - `scripts/30_manage_cert_manager_cleanup.sh --delete` now removes cert-manager CRDs by default (`CM_DELETE_CRDS=true`) so delete verification does not fail on orphaned CRDs.
   - Delete hang gotcha: cert-manager CRD deletion can block on `Order`/`Challenge` finalizers if controllers are already gone. `scripts/30_manage_cert_manager_cleanup.sh --delete` now clears finalizers on cert-manager/acme custom resources, deletes instances, then deletes CRDs with `--wait=false`.
-  - Let’s Encrypt issuer mode supports `LETSENCRYPT_ENV=staging|prod` (default staging). `scripts/31_sync_helmfile_phase_core.sh` applies ClusterIssuers via a local chart and always creates:
-    - `selfsigned`
-    - `letsencrypt-staging`
-    - `letsencrypt-prod`
-    - `letsencrypt` alias issuer pointing at `LETSENCRYPT_ENV`
-  - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, keep `LETSENCRYPT_PROD_SERVER` on staging unless explicitly testing production ACME behavior.
-  - Issuer intent is driven by `PLATFORM_CLUSTER_ISSUER` and applied via Flux substitutions from `platform-runtime-inputs`.
-  - Managed app namespaces remain `apps-staging` and `apps-prod`; active app URL/namespace/issuer intent is now runtime-input driven (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`) through `platform-runtime-inputs`.
-  - Promotion/runtime intent is Makefile-driven (`make cluster-apply-staging|cluster-apply-prod`, `make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) instead of committed overlay profile files.
+  - ClusterIssuer manifests are file-managed and always include `selfsigned`, `letsencrypt-staging`, and `letsencrypt-prod` (alias issuer removed).
+  - Issuer intent is path-selected by Flux CRD paths:
+    - infrastructure issuer mode: `clusters/home/infrastructure.yaml` (`infrastructure/overlays/home` vs `infrastructure/overlays/home-letsencrypt-prod`)
+    - platform-services issuer mode: `clusters/home/platform.yaml` (`platform-services/overlays/home` vs `platform-services/overlays/home-letsencrypt-prod`)
+    - sample app URL/issuer mode: `clusters/home/tenants.yaml` (`tenants/overlays/app-*-le-*`)
+  - Managed app namespaces remain `apps-staging` and `apps-prod`; sample app URL/issuer combinations are overlay-selected, not runtime-input driven.
+  - Promotion/runtime intent is Makefile-driven via path updates (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) followed by Flux reconcile.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.
@@ -152,7 +152,7 @@
 
 - Domains and DNS registration
   - Dynamic DNS is wildcard-only: `scripts/aws-dns-updater.sh` updates a single Route53 A record for `*.homelab.swhurl.com` (no per-subdomain token list).
-  - DNS wildcard scope caveat: `*.homelab.swhurl.com` matches one-label hosts (for example `oauth.homelab.swhurl.com`) but not multi-label names like `staging.hello.homelab.swhurl.com`; add explicit records (or another wildcard) for multi-label hosts if needed.
+  - DNS wildcard scope caveat: `*.homelab.swhurl.com` matches one-label hosts (for example `oauth.homelab.swhurl.com`) but not multi-label names like `api.staging.homelab.swhurl.com`; add explicit records (or another wildcard) for multi-label hosts if needed.
   - `host/run-host.sh --only 10_dynamic_dns.sh` installs/restarts a systemd timer that runs the wildcard updater helper with no args.
   - Dynamic DNS is a manual prerequisite (not part of `run.sh`); run `host/run-host.sh --only 10_dynamic_dns.sh` once per host to install/update the systemd timer, and run `host/run-host.sh --only 10_dynamic_dns.sh --delete` to uninstall.
 
@@ -161,7 +161,7 @@
     - `nginx.ingress.kubernetes.io/auth-url: https://oauth.${BASE_DOMAIN}/oauth2/auth`
     - `nginx.ingress.kubernetes.io/auth-signin: https://oauth.${BASE_DOMAIN}/oauth2/start?rd=$scheme://$host$request_uri`
     - Optionally: `nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email, Authorization`
-  - Ensure `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OAUTH_COOKIE_SECRET` in `config.env`/`profiles/secrets.env`; oauth2-proxy is installed by `scripts/36_sync_helmfile_phase_platform.sh`.
+  - Ensure `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OAUTH_COOKIE_SECRET` in `config.env`/`profiles/secrets.env`; oauth2-proxy is reconciled through the Flux stack.
   - See README “Add OIDC To Your App” for a complete Ingress example.
   - Chart values quirk: the oauth2-proxy chart expects `ingress.hosts` as a list of strings, not objects. Scripts set `ingress.hosts[0]="${OAUTH_HOST}"`. Do not set `ingress.hosts[0].host` for this chart.
   - Cookie secret length: oauth2-proxy requires a secret of exactly 16, 24, or 32 bytes (characters if ASCII). Avoid base64-generating 32 bytes (length becomes 44 chars). `OAUTH_COOKIE_SECRET` is now required in config/contracts for the default apply path; the legacy bridge script can still generate one when used manually.
@@ -181,12 +181,12 @@
   - Node CPU/memory in HyperDX requires daemonset metrics collection (`kubeletMetrics` + `hostMetrics`) plus a daemonset `metrics` pipeline exporting `kubeletstats` and `hostmetrics` (configured in `platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml`).
   - Script surface simplification: removed thin wrappers `scripts/manual_install_k3s_minimal.sh`, `scripts/manual_configure_route53_dns_updater.sh`, `scripts/compat/verify-legacy-contracts.sh`, and `scripts/02_print_plan.sh`; use `host/run-host.sh --only ...`, direct verify scripts/`make verify`, and `run.sh --dry-run`.
   - Keep `scripts/00_lib.sh` lean; remove unused helper exports when no active script references them.
-  - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer promotion, and app URL/issuer test profiles that run runtime-input sync + Flux reconcile.
+  - Keep key operator flows discoverable in `Makefile`: include top-level targets for install/teardown, platform cert issuer mode switching, and app URL/issuer mode switching that run runtime-input sync + Flux reconcile.
   - Preferred key contract: keep `CLICKSTACK_API_KEY` for ClickStack chart config and set `CLICKSTACK_INGESTION_KEY` from the HyperDX UI (API Keys) for OTel exporters.
   - Symptom of mismatch: OTel exporters log `HTTP Status Code 401` with `scheme or token does not match`; update `CLICKSTACK_INGESTION_KEY`, run `make runtime-inputs-sync`, then reconcile `homelab-infrastructure` and `homelab-platform`.
 
 - Secrets hygiene
-  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `ACME_EMAIL`, `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
+  - Do not commit secrets in `config.env`. Use `profiles/secrets.env` (gitignored) for `OIDC_*`, `OAUTH_COOKIE_SECRET`, `MINIO_ROOT_PASSWORD`, `CLICKSTACK_API_KEY`, `CLICKSTACK_INGESTION_KEY`.
   - `scripts/00_lib.sh` layers config as: `config.env` -> `profiles/local.env` -> `profiles/secrets.env` -> `$PROFILE_FILE` (highest precedence). This makes direct script runs consistent with `./run.sh`.
   - For a standalone profile (do not load local/secrets), set `PROFILE_EXCLUSIVE=true`.
   - A sample `profiles/secrets.example.env` is provided. Copy to `profiles/secrets.env` and fill in.

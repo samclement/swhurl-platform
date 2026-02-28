@@ -40,16 +40,14 @@ Validation
 - `helmfile -l phase=core apply`
 - `kubectl get ns` includes the expected managed namespaces.
 
-## Step 2: Move ClusterIssuers to a Local Chart (Staging Default)
+## Step 2: Move ClusterIssuers to Declarative Manifests (Staging/Prod)
 
 Changes
-- Add `charts/platform-issuers/` producing:
+- Add declarative issuer manifests producing:
   - `ClusterIssuer selfsigned`
   - `ClusterIssuer letsencrypt-staging`
   - `ClusterIssuer letsencrypt-prod`
-  - `ClusterIssuer letsencrypt` (alias via `LETSENCRYPT_ENV`)
-- Helmfile release `platform-issuers` (`phase=core`) with `needs: [cert-manager]`.
-- Use `LETSENCRYPT_ENV=staging|prod` (default `staging`) with explicit platform/app issuer vars.
+- Retire the alias issuer and runtime issuer toggles; select active cert mode via Flux path overlays.
 
 Validation
 - `kubectl get clusterissuers`
@@ -78,7 +76,7 @@ Changes
 - Retire Kustomize-based hello install in `scripts/75_manage_sample_app_lifecycle.sh`.
 
 Validation
-- `https://staging.hello.${BASE_DOMAIN}` works, TLS is issued.
+- `https://staging-hello.${BASE_DOMAIN}` works, TLS is issued.
 - OAuth annotations are correct when enabled.
 
 ## Step 5: Make Delete a First-Class Transaction (Reverse Needs)

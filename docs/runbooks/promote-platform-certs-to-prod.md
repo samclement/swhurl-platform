@@ -1,72 +1,66 @@
-# Toggle Platform Certificate Issuer (Staging vs Prod)
+# Promote Cluster Certificate Mode To Production
 
-This runbook covers homelab platform components that share one environment
-(no separate platform staging/prod overlays) while user apps can still have
-separate staging/prod overlays.
+This runbook covers cert issuer mode switching for shared infrastructure and platform-services:
+- Infrastructure: Hubble UI / MinIO ingresses
+- Platform-services: oauth2-proxy / clickstack ingresses
 
-Platform cert intent is controlled by one variable:
-- `PLATFORM_CLUSTER_ISSUER=letsencrypt-staging|letsencrypt-prod`
+Mode is path-selected in Flux CRDs (no runtime-input issuer toggles):
+- `clusters/home/infrastructure.yaml`
+- `clusters/home/platform.yaml`
 
-Both concrete ClusterIssuers stay deployed:
+Both concrete ClusterIssuers stay deployed in the cluster:
 - `letsencrypt-staging`
 - `letsencrypt-prod`
 
 ## Prerequisites
 
 1. DNS records for platform hosts resolve to your ingress endpoint.
-2. `ACME_EMAIL` is set in `profiles/secrets.env`.
-3. `profiles/secrets.env` / profile has the desired `PLATFORM_CLUSTER_ISSUER` value.
+2. You are reconciling from `clusters/home/*.yaml`.
 
-## Switch Platform Components to Production Certificates
+## Switch To Production Certificates
 
-Set:
-
-```bash
-PLATFORM_CLUSTER_ISSUER=letsencrypt-prod
-```
-
-in your active config/profile, then run:
+Use:
 
 ```bash
-make runtime-inputs-sync
-make flux-reconcile
+make platform-certs CERT_ENV=prod
 ```
 
-## Roll Back Platform Components to Staging Certificates
+This updates:
+- `clusters/home/infrastructure.yaml -> ./infrastructure/overlays/home-letsencrypt-prod`
+- `clusters/home/platform.yaml -> ./platform-services/overlays/home-letsencrypt-prod`
 
-Set:
+## Roll Back To Staging Certificates
 
 ```bash
-PLATFORM_CLUSTER_ISSUER=letsencrypt-staging
+make platform-certs CERT_ENV=staging
 ```
 
-then run:
-
-```bash
-make runtime-inputs-sync
-make flux-reconcile
-```
-
-## Verify Effective Platform Issuer
+## Verify Effective Issuer
 
 ```bash
 flux get kustomizations -n flux-system
 
-kubectl get ingress -A \
+kubectl get ingress -n ingress oauth2-proxy \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 
-kubectl get certificate -A
+kubectl get ingress -n observability clickstack-app-ingress \
+  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
+
+kubectl get ingress -n storage minio \
+  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
+
+kubectl get ingress -n storage minio-console \
+  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
+
+kubectl get ingress -n kube-system hubble-ui \
+  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 ```
 
 Expected:
-- Platform ingresses (`hubble-ui`, `oauth2-proxy`, `clickstack`, `minio`, `minio-console`) show the configured `PLATFORM_CLUSTER_ISSUER`.
-- New/renewed certificates are issued by the selected ClusterIssuer.
+- With staging paths (`.../overlays/home`): `letsencrypt-staging`
+- With prod paths (`.../overlays/home-letsencrypt-prod`): `letsencrypt-prod`
 
-## Note on User App Cert/URL Intent
+## Notes
 
-User app deployment intent is runtime-input driven:
-- `APP_HOST`
-- `APP_NAMESPACE`
-- `APP_CLUSTER_ISSUER`
-
-This app path remains independent from the single platform issuer toggle.
+- App URL/issuer test mode is separate and controlled by `make app-test APP_ENV=... LE_ENV=...`
+  (updates `clusters/home/tenants.yaml` path).

@@ -60,7 +60,7 @@ Current gaps against intent:
 1. Tighten host bootstrap adoption
 - Continue using `host/tasks/00_bootstrap_host.sh` for idempotent package installation.
 - Keep distro-specific logic isolated (`apt`, `dnf`, etc.) in dedicated host Bash modules (`host/lib/`).
-- Keep `01_check_prereqs.sh` as validation gate even after install support is added.
+- Keep dependency requirements documented in README instead of maintaining a separate prereq-check step script.
 
 2. Continue provider switch rollout for ingress and object storage
 - Keep stable consumer-facing env vars (`OAUTH_HOST`, `CLICKSTACK_HOST`, `MINIO_*` or generic storage host vars) while chart/release wiring changes by provider.

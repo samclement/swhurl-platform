@@ -71,11 +71,21 @@ esac
 
 tenants_flux_path="$(read_flux_path "clusters/home/tenants.yaml")"
 case "$tenants_flux_path" in
-  ./tenants/overlays/app-staging-le-staging|./tenants/overlays/app-staging-le-prod|./tenants/overlays/app-prod-le-staging|./tenants/overlays/app-prod-le-prod)
+  ./tenants/app-envs)
     ok "tenants Flux path is valid (${tenants_flux_path})"
     ;;
   *)
-    bad "tenants Flux path must be one of ./tenants/overlays/app-{staging,prod}-le-{staging,prod} (got: ${tenants_flux_path:-<empty>})"
+    bad "tenants Flux path must be ./tenants/app-envs (got: ${tenants_flux_path:-<empty>})"
+    ;;
+esac
+
+app_example_flux_path="$(read_flux_path "clusters/home/app-example.yaml")"
+case "$app_example_flux_path" in
+  ./tenants/apps/example/overlays/staging|./tenants/apps/example/overlays/staging-url-prod|./tenants/apps/example/overlays/prod-url-staging|./tenants/apps/example/overlays/prod)
+    ok "app-example Flux path is valid (${app_example_flux_path})"
+    ;;
+  *)
+    bad "app-example Flux path must be one of ./tenants/apps/example/overlays/{staging,staging-url-prod,prod-url-staging,prod} (got: ${app_example_flux_path:-<empty>})"
     ;;
 esac
 

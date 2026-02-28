@@ -61,6 +61,7 @@ Important contract:
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
+  - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
 

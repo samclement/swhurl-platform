@@ -81,6 +81,7 @@ Important contract:
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - Keep Cilium teardown last in delete flows.
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
+  - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

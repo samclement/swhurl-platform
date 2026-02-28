@@ -23,6 +23,8 @@ spec:
       retries: 3
   values:
     mode: daemonset
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
     image:
       repository: otel/opentelemetry-collector-k8s
     presets:
@@ -43,6 +45,10 @@ spec:
         cpu: 500m
         memory: 512Mi
     config:
+      receivers:
+        kubeletstats:
+          endpoint: 127.0.0.1:10250
+          insecure_skip_verify: true
       exporters:
         otlphttp:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318

@@ -4,13 +4,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 
 DELETE=false
-for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
+for arg in "$@"; do
+  case "$arg" in
+    --delete) DELETE=true ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
 
 ensure_context
 
 if [[ "$DELETE" != true ]]; then
-  log_info "cert-manager lifecycle is Flux-managed; skipping in apply mode"
-  exit 0
+  die "scripts/30_manage_cert_manager_cleanup.sh is delete-only"
 fi
 
 log_info "Uninstalling cert-manager"

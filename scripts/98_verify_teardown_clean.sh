@@ -4,11 +4,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 
 DELETE=false
-for arg in "$@"; do [[ "$arg" == "--delete" ]] && DELETE=true; done
+for arg in "$@"; do
+  case "$arg" in
+    --delete) DELETE=true ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
 
 if [[ "$DELETE" != true ]]; then
-  log_info "Delete-clean verification only applies in --delete mode; skipping"
-  exit 0
+  die "scripts/98_verify_teardown_clean.sh is delete-only"
 fi
 
 ensure_context

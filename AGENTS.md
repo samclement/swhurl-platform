@@ -98,6 +98,8 @@
     - `component=<id>` is the stable selector for single-release scripts (`sync_release` / `destroy_release`).
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `run.sh --dry-run`.
+  - `run.sh` is cluster-layer only; host orchestration is intentionally direct via `host/run-host.sh` (no `run.sh --with-host`/`--host-env` coupling).
+  - Mode-scoped scripts should fail fast on unsupported mode (no silent apply/delete skips) to keep orchestration contracts explicit.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `host/run-host.sh --only 20_install_k3s.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
   - Managed shared namespaces are plain manifests in `infrastructure/namespaces`; `scripts/20_reconcile_platform_namespaces.sh` applies that kustomization directly.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.

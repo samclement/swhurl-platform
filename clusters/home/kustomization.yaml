@@ -4,3 +4,4 @@ resources:
   - infrastructure.yaml
   - platform.yaml
   - tenants.yaml
+  - app-example.yaml

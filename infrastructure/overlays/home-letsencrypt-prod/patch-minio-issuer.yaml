@@ -8,6 +8,3 @@ spec:
     ingress:
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
-    consoleIngress:
-      annotations:
-        cert-manager.io/cluster-issuer: letsencrypt-prod

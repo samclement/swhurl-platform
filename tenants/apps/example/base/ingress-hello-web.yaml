@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-web
+  namespace: "${APP_NAMESPACE}"
+  labels:
+    app.kubernetes.io/name: hello-web
+    app.kubernetes.io/instance: hello-web
+    platform.swhurl.io/managed: "true"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-url: "https://${OAUTH_HOST}/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://${OAUTH_HOST}/oauth2/start?rd=$scheme://$host$request_uri"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "${APP_HOST}"
+      secretName: hello-web-tls
+  rules:
+    - host: "${APP_HOST}"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-web
+                port:
+                  number: 80

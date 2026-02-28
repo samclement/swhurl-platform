@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-web
+  namespace: "${APP_NAMESPACE}"
+  labels:
+    app.kubernetes.io/name: hello-web
+    app.kubernetes.io/instance: hello-web
+    platform.swhurl.io/managed: "true"
+spec:
+  selector:
+    app.kubernetes.io/name: hello-web
+    app.kubernetes.io/instance: hello-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

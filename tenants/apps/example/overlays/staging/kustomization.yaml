@@ -5,20 +5,32 @@ resources:
   - ../../base
 patches:
   - target:
-      group: helm.toolkit.fluxcd.io
-      version: v2
-      kind: HelmRelease
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
       name: hello-web
     patch: |-
       - op: replace
-        path: /spec/values/tls/issuerName
+        path: /spec/rules/0/host
+        value: staging.hello.homelab.swhurl.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: staging.hello.homelab.swhurl.com
+      - op: replace
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-url
+        value: https://oauth.homelab.swhurl.com/oauth2/auth
+      - op: replace
+        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-signin
+        value: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
+  - target:
+      group: cert-manager.io
+      version: v1
+      kind: Certificate
+      name: hello-web
+    patch: |-
+      - op: replace
+        path: /spec/issuerRef/name
         value: letsencrypt-staging
       - op: replace
-        path: /spec/values/ingress/host
+        path: /spec/dnsNames/0
         value: staging.hello.homelab.swhurl.com
-      - op: replace
-        path: /spec/values/tls/dnsNames/0
-        value: staging.hello.homelab.swhurl.com
-      - op: replace
-        path: /spec/values/auth/oauthHost
-        value: oauth.homelab.swhurl.com

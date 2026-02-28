@@ -260,7 +260,7 @@ Tasks:
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
 | `charts/platform-namespaces` | Retired | `infrastructure/namespaces/` (plain manifests) |
 | `charts/platform-issuers` | Retired | `infrastructure/cert-manager/issuers/` (plain manifests) |
-| `charts/apps-hello` | GitOps app example | `tenants/apps/example/base/` |
+| `charts/apps-hello` | Retired (replaced by plain manifests) | `tenants/apps/example/base/` |
 | `scripts/32_reconcile_flux_stack.sh` | Flux reconcile operations | `clusters/home/flux-system/*` + `clusters/home/{infrastructure,platform,tenants}.yaml` |
 | `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `infrastructure/runtime-inputs/` |
 | `scripts/9*_verify_*.sh` | GitOps health + policy checks | direct verify scripts + CI checks |

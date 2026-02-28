@@ -43,8 +43,8 @@
   - Cert-manager remains a Flux `HelmRelease` (`infrastructure/cert-manager/base/helmrelease-cert-manager.yaml`), while issuer resources are plain manifests in `infrastructure/cert-manager/issuers/` (local chart `charts/platform-issuers` retired).
   - `scripts/bootstrap/sync-runtime-inputs.sh` now publishes `LETSENCRYPT_STAGING_SERVER`/`LETSENCRYPT_PROD_SERVER` (with defaults) and computed `LETSENCRYPT_ALIAS_SERVER` so issuer manifests stay declarative without Helm templating.
   - Platform component Flux `HelmRelease` resources are active for `cilium`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`, `otel-k8s-cluster`, and `minio`.
-  - Example app Flux `HelmRelease` is active at `tenants/apps/example/base/helmrelease-hello-web.yaml`; tenant layer receives app intent via runtime-input substitution (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`, `OAUTH_HOST`).
-  - Sample app TLS issuance can lag DNS propagation on first bootstraps; `tenants/apps/example/base/helmrelease-hello-web.yaml` uses `timeout: 20m`, `interval: 10m`, and higher install/upgrade remediation retries to avoid permanent `RetriesExceeded` stalls.
+  - Example app now uses plain manifests in `tenants/apps/example/base/` (`Deployment`, `Service`, `Ingress`, `Certificate`) with runtime-input substitution (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`, `OAUTH_HOST`); local chart `charts/apps-hello` was removed.
+  - Sample app TLS issuance can lag DNS propagation on first bootstraps; keep reconcile timeout expectations aligned at the tenant layer when adjusting app rollout behavior.
   - `make flux-reconcile` is the preferred operator command after `make flux-bootstrap` for GitOps-driven applies.
   - `make flux-reconcile` sets `--timeout=20m` for both source and stack reconciliation to avoid false CLI deadline failures during initial chart installs.
   - `make flux-reconcile` now syncs `flux-system/platform-runtime-inputs` from local env/profile first (`scripts/bootstrap/sync-runtime-inputs.sh`) and then reconciles `homelab-flux-sources` before `homelab-flux-stack`.

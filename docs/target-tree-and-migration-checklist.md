@@ -14,21 +14,23 @@ This document defines:
 
 It is the implementation companion to `docs/homelab-intent-and-design.md`.
 
-## Current Status Snapshot (2026-02-26)
+## Current Status Snapshot (2026-02-28)
 
 - Phase 1 (Host Layer Introduction): complete (Bash-based host ownership)
   - `host/` task/lib structure is in place.
   - Host operations run through `host/run-host.sh` task selection (`--only`).
 - Phase 2 (GitOps Bootstrap): complete
-  - `cluster/flux/*` and bootstrap helper exist.
-  - Flux dependency chain is active in `cluster/overlays/homelab/flux/stack-kustomizations.yaml`.
+  - `clusters/home/flux-system/*` and bootstrap helper exist.
+  - Flux dependency chain is active in `clusters/home/{infrastructure,platform,tenants}.yaml`.
 - Phase 3/4 (Core + Platform GitOps Migration): complete for default provider path
   - Component-level Flux resources are defined and active for:
     `cilium`, `cert-manager`, `oauth2-proxy`, `clickstack`, `otel-k8s-daemonset`,
     `otel-k8s-cluster`, `minio`, and `hello-web`, with issuer resources as
-    plain manifests under `cluster/base/cert-manager/issuers`.
-  - Default homelab composition is explicit in `cluster/overlays/homelab/kustomization.yaml`
-    (ingress-nginx + minio + staging app overlay).
+    plain manifests under `infrastructure/cert-manager/issuers`.
+  - Default homelab composition is explicit across:
+    `infrastructure/overlays/home/kustomization.yaml`,
+    `platform-services/overlays/home/kustomization.yaml`,
+    and `tenants/kustomization.yaml`.
   - Cert-manager issuer contract is explicit and always renders:
     `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`, and `letsencrypt` alias.
 - Phase 5 (App + Contract Migration): mostly complete
@@ -39,7 +41,7 @@ It is the implementation companion to `docs/homelab-intent-and-design.md`.
   - Deep verification inventory now validates Flux stack/source health in `scripts/93_verify_expected_releases.sh` (with Helm inventory fallback for non-Flux compatibility mode).
 - Phase 6 (Legacy Retirement): in progress
   - Legacy script orchestration remains available as compatibility mode.
-  - Runtime secret targets are declarative in `cluster/base/runtime-inputs` via Flux (`homelab-runtime-inputs`).
+  - Runtime secret targets are declarative in `infrastructure/runtime-inputs` via Flux (`homelab-infrastructure`).
   - Legacy bridge script `scripts/29_prepare_platform_runtime_inputs.sh` is retired.
   - Legacy runtime input cleanup on delete is owned by `scripts/99_execute_teardown.sh`.
   - Remaining major migration item is provider default/promotion completion (Traefik/Ceph path).
@@ -187,7 +189,7 @@ Outcomes:
 
 Tasks:
 
-1. Add `cluster/flux/*` bootstrap manifests.
+1. Add `clusters/home/flux-system/*` bootstrap manifests.
 2. Add chart source definitions (`HelmRepository`) in GitOps layer.
 3. Keep Helmfile pipeline active as fallback until parity checks pass.
 
@@ -256,11 +258,11 @@ Tasks:
 | `scripts/aws-dns-updater.sh` | Host Bash helper/template input | `host/templates/systemd/` + `host/lib/20_dynamic_dns_lib.sh` |
 | `scripts/01_check_prereqs.sh` | Host validation + CI task | `host/tasks/00_bootstrap_host.sh` + `Makefile` target |
 | `run.sh` | Flux-first cluster orchestrator | `run.sh` |
-| `charts/platform-namespaces` | Retired | `cluster/base/namespaces/` (plain manifests) |
-| `charts/platform-issuers` | Retired | `cluster/base/cert-manager/issuers/` (plain manifests) |
-| `charts/apps-hello` | GitOps app example | `cluster/base/apps/example/` |
-| `scripts/32_reconcile_flux_stack.sh` | Flux reconcile operations | `cluster/flux/*` + `cluster/overlays/homelab/flux/*` |
-| `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `cluster/base/runtime-inputs/` |
+| `charts/platform-namespaces` | Retired | `infrastructure/namespaces/` (plain manifests) |
+| `charts/platform-issuers` | Retired | `infrastructure/cert-manager/issuers/` (plain manifests) |
+| `charts/apps-hello` | GitOps app example | `tenants/apps/example/base/` |
+| `scripts/32_reconcile_flux_stack.sh` | Flux reconcile operations | `clusters/home/flux-system/*` + `clusters/home/{infrastructure,platform,tenants}.yaml` |
+| `scripts/29_prepare_platform_runtime_inputs.sh` | Retired legacy bridge | `infrastructure/runtime-inputs/` |
 | `scripts/9*_verify_*.sh` | GitOps health + policy checks | direct verify scripts + CI checks |
 
 ## Sequencing in the Target Model

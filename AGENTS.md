@@ -28,8 +28,9 @@
   - Active layout boundary: `clusters/home/` (Flux entrypoints), `infrastructure/` (shared infra + runtime-input targets), `platform-services/` (shared platform services), `tenants/` (staging/prod app env namespaces + sample app). Keep new changes in these top-level paths.
   - Keep overlay-selection docs explicit: ingress/storage provider selection is composed in `infrastructure/overlays/home/kustomization.yaml`; app URL/issuer intent is selected by tenant overlay path in `clusters/home/tenants.yaml`.
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
-  - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs`, `app-test`, `verify`) and run host tasks directly via `host/run-host.sh`.
+  - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs-*`, `app-test-*-le-*`, `verify`) and run host tasks directly via `host/run-host.sh`.
   - Flux path mode switching is template-based: keep mode templates in `clusters/home/modes/` and apply via Makefile targets (`platform-certs-*`, `app-test-*-le-*`); do not reintroduce YAML rewrite scripts.
+  - Removed wrapper selectors (`platform-certs CERT_ENV=...`, `app-test APP_ENV=... LE_ENV=...`); keep operator flows on fixed explicit targets only.
   - `scripts/bootstrap/set-flux-path-modes.sh` was removed; mode changes are now file-sync operations from `clusters/home/modes/` into `clusters/home/{infrastructure,platform,tenants}.yaml`.
   - `scripts/00_feature_registry_lib.sh` was removed; keep feature flags/required-var metadata in `scripts/00_verify_contract_lib.sh` and avoid reintroducing a separate registry layer.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).

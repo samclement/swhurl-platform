@@ -98,7 +98,7 @@ make platform-certs-staging
 make platform-certs-prod
 ```
 
-`platform-certs` updates Flux paths:
+`platform-certs-*` targets update Flux paths:
 - `clusters/home/infrastructure.yaml`:
   - `./infrastructure/overlays/home`
   - `./infrastructure/overlays/home-letsencrypt-prod`
@@ -134,7 +134,7 @@ flux reconcile kustomization homelab-platform -n flux-system --with-source
 
 ### 4) App deployment test matrix (URL x Let's Encrypt)
 
-Use one target with explicit intent flags:
+Use explicit mode targets:
 
 ```bash
 make app-test-staging-le-staging

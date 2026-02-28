@@ -49,7 +49,8 @@ Default delete steps:
 Notes:
 - Runtime input target secrets are declarative in `infrastructure/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
-- Shared infrastructure composition is path-based in `infrastructure/overlays/home/kustomization.yaml`; `--profile` does not switch those path selections.
+- Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
+- Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - App deployment URL/issuer intent is path-based in `clusters/home/tenants.yaml` (`./tenants/overlays/app-*-le-*`).
 
 ## Host Orchestrator (`host/run-host.sh`)
@@ -87,9 +88,13 @@ Step scripts should:
 
 Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
-  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/{infrastructure,platform}.yaml`, then runs `./run.sh --only sync-runtime-inputs.sh,32_reconcile_flux_stack.sh`.
+  - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod [DRY_RUN=true]`
-  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/tenants.yaml`, then runs the same reconcile-only flow.
+  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/tenants.yaml` (local edit only).
+
+Mode target contract:
+- Mode targets do not reconcile directly; commit + push first, then run `make flux-reconcile`.
 
 Design boundary:
-- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys). Cert issuer/app mode is path-selected in Flux CRDs.
+- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys).
+- Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app URL/issuer mode remains path-selected in `clusters/home/tenants.yaml`.

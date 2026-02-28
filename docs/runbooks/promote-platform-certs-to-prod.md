@@ -4,9 +4,9 @@ This runbook covers cert issuer mode switching for shared infrastructure and pla
 - Infrastructure: Hubble UI / MinIO ingresses
 - Platform-services: oauth2-proxy / clickstack ingresses
 
-Mode is path-selected in Flux CRDs (no runtime-input issuer toggles):
-- `clusters/home/infrastructure.yaml`
-- `clusters/home/platform.yaml`
+Mode is Git-managed in:
+- `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
+- key: `CERT_ISSUER` (`letsencrypt-staging|letsencrypt-prod`)
 
 Both concrete ClusterIssuers stay deployed in the cluster:
 - `letsencrypt-staging`
@@ -25,20 +25,39 @@ Use:
 make platform-certs-prod
 ```
 
-This updates:
-- `clusters/home/infrastructure.yaml -> ./infrastructure/overlays/home-letsencrypt-prod`
-- `clusters/home/platform.yaml -> ./platform-services/overlays/home-letsencrypt-prod`
+This updates `CERT_ISSUER=letsencrypt-prod` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml`.
+
+Then:
+1. Commit
+2. Push
+3. Reconcile
+
+Apply changes:
+
+```bash
+git add clusters/home/flux-system/sources/configmap-platform-settings.yaml
+git commit -m "platform: switch CERT_ISSUER to letsencrypt-prod"
+git push
+make flux-reconcile
+```
 
 ## Roll Back To Staging Certificates
 
 ```bash
 make platform-certs-staging
+git add clusters/home/flux-system/sources/configmap-platform-settings.yaml
+git commit -m "platform: switch CERT_ISSUER to letsencrypt-staging"
+git push
+make flux-reconcile
 ```
 
 ## Verify Effective Issuer
 
 ```bash
 flux get kustomizations -n flux-system
+
+kubectl -n flux-system get configmap platform-settings \
+  -o custom-columns=NAME:.metadata.name,CERT_ISSUER:.data.CERT_ISSUER
 
 kubectl get ingress -n ingress oauth2-proxy \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
@@ -57,8 +76,8 @@ kubectl get ingress -n kube-system hubble-ui \
 ```
 
 Expected:
-- With staging paths (`.../overlays/home`): `letsencrypt-staging`
-- With prod paths (`.../overlays/home-letsencrypt-prod`): `letsencrypt-prod`
+- `platform-settings.CERT_ISSUER=letsencrypt-staging` -> platform ingresses use `letsencrypt-staging`
+- `platform-settings.CERT_ISSUER=letsencrypt-prod` -> platform ingresses use `letsencrypt-prod`
 
 ## Notes
 

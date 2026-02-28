@@ -8,6 +8,6 @@ Shared platform services deployed once per cluster.
 
 Composition entrypoint: `platform-services/overlays/home/kustomization.yaml`.
 
-Certificate issuer overlays:
-- Default: `platform-services/overlays/home` (uses `letsencrypt-staging` for oauth2-proxy and clickstack ingresses).
-- Production cert issuer: `platform-services/overlays/home-letsencrypt-prod` (patches oauth2-proxy and clickstack to `letsencrypt-prod`).
+Certificate issuer for platform-service ingresses is substituted via Flux post-build from:
+- `flux-system/configmap-platform-settings`
+- key: `CERT_ISSUER` (`letsencrypt-staging|letsencrypt-prod`)

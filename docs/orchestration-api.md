@@ -13,7 +13,7 @@ Usage:
 ```
 
 Options:
-- `--profile FILE`: load additional env vars (highest precedence in cluster config layering). Prefer explicit Makefile mode targets for common runtime intent; use `--profile` for ad-hoc overrides.
+- `--profile FILE`: load additional env vars (highest precedence in cluster config layering). Use for ad-hoc overrides.
 - `--only LIST`: comma-separated step numbers or basenames.
 - `--dry-run`: print resolved plan and exit without executing.
 - `--delete`: execute delete flow, passing `--delete` to delete-capable steps.
@@ -52,7 +52,7 @@ Notes:
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
-- App deployment URL/issuer intent is path-based in app Flux Kustomizations (for example `clusters/home/app-example.yaml` -> `./tenants/apps/example/overlays/*`).
+- Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).
 
 ## Host Orchestrator (`host/run-host.sh`)
 
@@ -90,12 +90,7 @@ Step scripts should:
 Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
-- `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod [DRY_RUN=true]`
-  - Updates `clusters/home/app-example.yaml` `spec.path` to the selected `./tenants/apps/example/overlays/*` mode (local edit only).
-
-Mode target contract:
-- Mode targets do not reconcile directly; commit + push first, then run `make flux-reconcile`.
 
 Design boundary:
 - Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys).
-- Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app URL/issuer mode remains path-selected in app Flux Kustomizations (for example `clusters/home/app-example.yaml`).
+- Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

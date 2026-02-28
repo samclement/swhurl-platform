@@ -70,6 +70,7 @@
   - `scripts/26_manage_cilium_lifecycle.sh --delete` now removes Cilium CRDs by default (`CILIUM_DELETE_CRDS=true`) to prevent orphaned Cilium API resources after teardown.
   - If Cilium/Hubble pods fail to pull from `quay.io` (DNS errors on `cdn01.quay.io`), fix node DNS or mirror images and override image repository settings in `infrastructure/cilium/base/helmrelease-cilium.yaml` as needed (for example pinning non-digest references).
   - Hubble UI ingress is configured declaratively in `infrastructure/cilium/base/helmrelease-cilium.yaml`.
+  - Hubble relay connectivity gotcha on single-node k3s: relay peers may advertise node `InternalIP` (for example `192.168.x.x:4244`) that is unreachable from pod network, while `CiliumInternalIP` is reachable. Keep `hubble-relay` on host networking via HelmRelease post-render patch (`spec.postRenderers` in `infrastructure/cilium/base/helmrelease-cilium.yaml`) so relay remains healthy and UI streams flow data.
 
 - Orchestrator run order
   - Planned homelab direction: model ingress and object storage as provider choices (`INGRESS_PROVIDER`, `OBJECT_STORAGE_PROVIDER`) so transitions (nginx->traefik, minio->ceph) stay declarative and do not require script rewrites.

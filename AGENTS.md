@@ -31,8 +31,8 @@
   - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
   - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/25_prepare_helm_repositories.sh`, `scripts/20_reconcile_platform_namespaces.sh`, and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
-  - Provider profile examples now live in `profiles/provider-traefik.env`, `profiles/provider-ceph.env`, and `profiles/provider-traefik-ceph.env`; prefer these for repeatable provider-intent test runs instead of ad-hoc inline env vars.
-  - Provider migration runbooks should reference committed provider profiles (`profiles/provider-traefik.env`, `profiles/provider-ceph.env`) and use inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of ad-hoc profile filenames.
+  - Profiles are now minimal: keep `profiles/local.env` (optional non-secret overrides) and `profiles/secrets.env` (gitignored secrets). Express runtime intent via Makefile args instead of committed profile matrices.
+  - Provider migration runbooks should use explicit composition edits and inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of profile files.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
   - Flux dependency sequencing is now boundary-first: `homelab-flux-sources -> homelab-flux-stack -> homelab-infrastructure -> homelab-platform -> homelab-tenants`.
   - Shared infrastructure composition is in `infrastructure/overlays/home/kustomization.yaml`; shared platform composition is in `platform-services/overlays/home/kustomization.yaml`; tenant env composition is in `tenants/kustomization.yaml`.
@@ -116,12 +116,10 @@
     - `letsencrypt-staging`
     - `letsencrypt-prod`
     - `letsencrypt` alias issuer pointing at `LETSENCRYPT_ENV`
-  - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, point `LETSENCRYPT_PROD_SERVER` to staging (see `profiles/test-loop.env` / `profiles/overlay-staging.env`) to avoid production ACME traffic.
+  - ACME endpoint overrides are explicit: `LETSENCRYPT_STAGING_SERVER` and `LETSENCRYPT_PROD_SERVER`. For repeated scratch cycles, keep `LETSENCRYPT_PROD_SERVER` on staging unless explicitly testing production ACME behavior.
   - Issuer intent is driven by `PLATFORM_CLUSTER_ISSUER` and applied via Flux substitutions from `platform-runtime-inputs`.
   - Managed app namespaces remain `apps-staging` and `apps-prod`; active app URL/namespace/issuer intent is now runtime-input driven (`APP_HOST`, `APP_NAMESPACE`, `APP_CLUSTER_ISSUER`) through `platform-runtime-inputs`.
-  - Overlay profiles for promotion flow now represent cert/runtime intent only:
-    - `profiles/overlay-staging.env`: staging ACME safety overrides.
-    - `profiles/overlay-prod.env`: production issuer defaults.
+  - Promotion/runtime intent is Makefile-driven (`make cluster-apply-staging|cluster-apply-prod`, `make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) instead of committed overlay profile files.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.
   - `scripts/99_execute_teardown.sh --delete` explicit legacy secret cleanup now includes `flux-system/platform-runtime-inputs` so Flux runtime-input source data is removed in managed-scope teardowns.
   - `scripts/99_execute_teardown.sh --delete` is a hard gate before `scripts/26_manage_cilium_lifecycle.sh --delete`: it now fails if managed namespaces or PVCs (including ClickStack PVCs in `observability`) still exist, preventing premature Cilium removal.

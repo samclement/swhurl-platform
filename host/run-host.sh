@@ -21,6 +21,8 @@ Options:
 USAGE
 }
 
+task_path() { printf "%s/tasks/%s\n" "$HOST_DIR" "$1"; }
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --delete) DELETE_MODE=true; shift ;;
@@ -44,99 +46,73 @@ set +a
 
 export HOST_REPO_ROOT="$ROOT_DIR"
 
-task_path() { printf "%s/tasks/%s\n" "$HOST_DIR" "$1"; }
+APPLY_STEPS=(
+  "$(task_path 00_bootstrap_host.sh)"
+  "$(task_path 10_dynamic_dns.sh)"
+  "$(task_path 20_install_k3s.sh)"
+)
+DELETE_STEPS=(
+  "$(task_path 20_install_k3s.sh)"
+  "$(task_path 10_dynamic_dns.sh)"
+)
 
-filter_steps() {
-  local -n in_arr=$1 out_arr=$2
-  local only="$3"
-  if [[ -z "$only" ]]; then
-    out_arr=("${in_arr[@]}")
-    return
-  fi
-  IFS=',' read -r -a tokens <<< "$only"
-  out_arr=()
-  local s base num t
-  for s in "${in_arr[@]}"; do
-    base="$(basename "$s")"
+if [[ "$DELETE_MODE" == true ]]; then
+  ALL_STEPS=("${DELETE_STEPS[@]}")
+else
+  ALL_STEPS=("${APPLY_STEPS[@]}")
+fi
+
+SELECTED_STEPS=()
+if [[ -z "$ONLY_FILTER" ]]; then
+  SELECTED_STEPS=("${ALL_STEPS[@]}")
+else
+  IFS=',' read -r -a FILTER_TOKENS <<< "$ONLY_FILTER"
+  for step in "${ALL_STEPS[@]}"; do
+    base="$(basename "$step")"
     num="${base%%_*}"
-    for t in "${tokens[@]}"; do
-      if [[ "$t" == "$num" || "$t" == "$base" ]]; then
-        out_arr+=("$s")
+    for token in "${FILTER_TOKENS[@]}"; do
+      if [[ "$token" == "$num" || "$token" == "$base" ]]; then
+        SELECTED_STEPS+=("$step")
         break
       fi
     done
   done
-}
-
-build_apply_plan() {
-  local -n out=$1
-  out=(
-    "$(task_path 00_bootstrap_host.sh)"
-    "$(task_path 10_dynamic_dns.sh)"
-    "$(task_path 20_install_k3s.sh)"
-  )
-}
-
-build_delete_plan() {
-  local -n out=$1
-  out=(
-    "$(task_path 20_install_k3s.sh)"
-    "$(task_path 10_dynamic_dns.sh)"
-  )
-}
-
-print_plan() {
-  local -n steps=$1
-  echo "Host Plan:"
-  if [[ "$DELETE_MODE" == true ]]; then
-    echo "  - delete (reverse order)"
-  else
-    echo "  - apply"
-  fi
-  local s base
-  for s in "${steps[@]}"; do
-    base="$(basename "$s")"
-    if [[ "$DELETE_MODE" == true ]]; then
-      echo "  - ${base} (delete)"
-    else
-      echo "  - ${base}"
-    fi
-  done
-}
-
-run_step() {
-  local s="$1"
-  local base="$(basename "$s")"
-  if [[ ! -x "$s" ]]; then
-    echo "[host][skip] $base (not executable or missing)"
-    return 0
-  fi
-
-  if [[ "$DELETE_MODE" == true ]]; then
-    echo "[host][run] $base --delete"
-    "$s" --delete
-  else
-    echo "[host][run] $base"
-    "$s"
-  fi
-}
-
-if [[ "$DELETE_MODE" == true ]]; then
-  build_delete_plan ALL_STEPS
-else
-  build_apply_plan ALL_STEPS
 fi
 
-filter_steps ALL_STEPS SELECTED_STEPS "$ONLY_FILTER"
-print_plan SELECTED_STEPS
+echo "Host Plan:"
+if [[ "$DELETE_MODE" == true ]]; then
+  echo "  - delete (reverse order)"
+else
+  echo "  - apply"
+fi
+for step in "${SELECTED_STEPS[@]}"; do
+  base="$(basename "$step")"
+  if [[ "$DELETE_MODE" == true ]]; then
+    echo "  - ${base} (delete)"
+  else
+    echo "  - ${base}"
+  fi
+done
 
 if [[ "$DRY_RUN" == true ]]; then
   echo "Host dry run: exiting without executing."
   exit 0
 fi
 
-for s in "${SELECTED_STEPS[@]}"; do
-  run_step "$s"
+for step in "${SELECTED_STEPS[@]}"; do
+  base="$(basename "$step")"
+  if [[ ! -x "$step" ]]; then
+    echo "[host][skip] $base (not executable or missing)"
+    continue
+  fi
+
+  if [[ "$DELETE_MODE" == true ]]; then
+    echo "[host][run] $base --delete"
+    "$step" --delete
+  else
+    echo "[host][run] $base"
+    "$step"
+  fi
 done
 
 echo "Host run complete."

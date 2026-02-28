@@ -30,8 +30,9 @@
   - GitOps scaffolding now uses `clusters/home/` entrypoints with Flux sources in `clusters/home/flux-system/sources/`; use `scripts/bootstrap/install-flux.sh` to install controllers and apply bootstrap manifests.
   - Keep the `Makefile` operator surface minimal (`install`, `teardown`, `reinstall`, `flux-bootstrap`, `runtime-inputs-sync`, `flux-reconcile`, `platform-certs`, `app-test`, `verify`) and run host tasks directly via `host/run-host.sh`.
   - Keep runtime-intent switches parameterized in `Makefile` (`make platform-certs CERT_ENV=...`, `make app-test APP_ENV=... LE_ENV=...`) and avoid committing combinatorial app-test profile files.
+  - `scripts/00_feature_registry_lib.sh` was removed; keep feature flags/required-var metadata in `scripts/00_verify_contract_lib.sh` and avoid reintroducing a separate registry layer.
   - `scripts/bootstrap/install-flux.sh` auto-installs the Flux CLI by default (`AUTO_INSTALL_FLUX=true`, install dir `~/.local/bin` unless `FLUX_INSTALL_DIR` is set).
-  - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/25_prepare_helm_repositories.sh`, `scripts/20_reconcile_platform_namespaces.sh`, and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
+  - Flux bootstrap now ensures Cilium networking is ready before installing Flux controllers; if no ready CNI exists it auto-runs `scripts/20_reconcile_platform_namespaces.sh` and `scripts/26_manage_cilium_lifecycle.sh` (disable with `FLUX_BOOTSTRAP_AUTO_CNI=false`).
   - Profiles are now minimal: keep `profiles/local.env` (optional non-secret overrides) and `profiles/secrets.env` (gitignored secrets). Express runtime intent via Makefile args instead of committed profile matrices.
   - Provider migration runbooks should use explicit composition edits and inline rollback overrides (`INGRESS_PROVIDER=nginx`, `OBJECT_STORAGE_PROVIDER=minio`) instead of profile files.
   - CI dry-run validation now uses `./run.sh --dry-run` directly; the legacy compat alias wrapper was removed.
@@ -78,7 +79,10 @@
   - Verification gating follows provider intent: ingress-nginx-specific checks in `scripts/91_verify_platform_state.sh` are skipped when `INGRESS_PROVIDER!=nginx`; MinIO checks/required vars are skipped when `OBJECT_STORAGE_PROVIDER!=minio`.
   - Planned host direction: keep host automation in Bash (no Ansible), but organize it as `host/lib` + `host/tasks` + `host/run-host.sh` to keep sequencing and ownership explicit.
   - Host scaffolding now exists: `host/run-host.sh` orchestrates `host/tasks/00_bootstrap_host.sh`, `host/tasks/10_dynamic_dns.sh`, and `host/tasks/20_install_k3s.sh`; dynamic DNS management is native in `host/lib/20_dynamic_dns_lib.sh` (systemd unit rendering/install).
-  - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`); remove unused host-common helpers to keep host-task surface lean.
+  - Host package-manager automation was removed (`host/lib/10_packages_lib.sh` deleted); `host/tasks/00_bootstrap_host.sh` is now a compatibility no-op and dependency prerequisites are documented in `README.md`.
+  - Host script simplification: keep `host/run-host.sh` as static apply/delete task arrays with inline `--only` filtering; avoid extra plan-construction helper layers.
+  - `host/lib/20_dynamic_dns_lib.sh` should stay compact (constants + `apply/delete` + one write-if-changed helper); avoid many one-line path/name wrapper functions.
+  - `host/lib/00_common.sh` should keep only actively used host helpers (`host_log_*`, `host_need_cmd`, `host_sudo`, `host_repo_root_from_lib`, `host_has_flag`); remove unused host-common helpers to keep host-task surface lean.
   - `scripts/00_lib.sh` is a helper and is excluded by `run.sh`.
   - Script naming convention:
     - `00_*_lib.sh` for sourced helper libraries (not runnable steps; excluded from `run.sh` plans).
@@ -86,7 +90,7 @@
     - `NN_reconcile_*` / `NN_prepare_*` for declarative pre-Helm setup.
     - `NN_manage_*_lifecycle` / `NN_manage_*_cleanup` for exception scripts that own imperative lifecycle/finalizer behavior.
     - `NN_sync_helmfile_phase_*` for Helmfile phase wrappers.
-    - Keep repo/app utility steps aligned to this convention (for example `25_prepare_helm_repositories.sh`, `75_manage_sample_app_lifecycle.sh`) so plan ordering and purpose are obvious.
+    - Keep repo/app utility steps aligned to this convention so plan ordering and purpose are obvious.
   - Helm releases are declarative in `helmfile.yaml.gotmpl`; release scripts are thin wrappers that call shared `sync_release` / `destroy_release`.
   - `scripts/00_lib.sh` no longer keeps an unused `helm_upsert` helper; prefer Helmfile selector helpers (`sync_release` / `destroy_release`) for release operations.
   - Helmfile label conventions:
@@ -94,7 +98,6 @@
     - `phase=core|core-issuers|platform` is reserved for Helmfile phase group sync/destroy.
   - `run.sh` uses an explicit phase plan (no implicit script discovery). Print the plan via `run.sh --dry-run`.
   - Host bootstrap (k3s install) is intentionally not part of the default platform pipeline. Run `host/run-host.sh --only 20_install_k3s.sh` manually if needed, then verify kubeconfig with `scripts/15_verify_cluster_access.sh`.
-  - Helm repositories are managed via `scripts/25_prepare_helm_repositories.sh`.
   - Managed shared namespaces are plain manifests in `infrastructure/namespaces`; `scripts/20_reconcile_platform_namespaces.sh` applies that kustomization directly.
   - Adoption gotcha: Helm will refuse to install a release that renders pre-existing resources (notably `Namespace` and `ClusterIssuer`) unless those resources already have Helm ownership metadata. The scripts `scripts/20_reconcile_platform_namespaces.sh` and `scripts/31_sync_helmfile_phase_core.sh` pre-label/annotate existing namespaces/issuers so Helmfile can converge on existing clusters.
   - Ownership gotcha: `cilium-secrets` is owned by the Cilium chart. Do not pre-create/manage that namespace in repo namespace manifests.
@@ -129,8 +132,8 @@
     - `FEAT_VERIFY=false` skips apply-mode verification gates.
   - `scripts/91_verify_platform_state.sh` only validates Hubble OAuth auth annotations when `FEAT_OAUTH2_PROXY=true` to avoid false mismatches on non-OAuth installs.
   - Verification/teardown invariants are centralized in `scripts/00_verify_contract_lib.sh` (sourced by `scripts/00_lib.sh`), including managed namespaces/CRD regex, ingress NodePort expectations, and config-contract required variable sets.
-  - Feature-level verification metadata is centralized in `scripts/00_feature_registry_lib.sh` (feature flags and required vars). Keep `scripts/94_verify_config_inputs.sh` registry-driven to avoid per-feature duplication.
-  - Keep verification helper libs lean; remove unused exports from `scripts/00_feature_registry_lib.sh` / `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
+  - Feature-level verification metadata is centralized in `scripts/00_verify_contract_lib.sh` (feature flags and required vars). Keep `scripts/94_verify_config_inputs.sh` registry-driven to avoid per-feature duplication.
+  - Keep verification helper libs lean; remove unused exports from `scripts/00_verify_contract_lib.sh` when they are no longer referenced by verify/orchestrator scripts.
   - Documentation consistency gotcha: avoid hard-coding hypothetical script paths in planning docs. Keep references either aligned to existing files or clearly marked as future/proposed so script-reference checks stay actionable.
   - For day-to-day maintainer changes, prefer explicit updates using `docs/add-feature-checklist.md` rather than introducing new script abstraction layers.
   - Delete paths are idempotent/noise-reduced: uninstall scripts check `helm status` before `helm uninstall` so reruns do not spam `release: not found`.

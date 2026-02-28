@@ -10,6 +10,16 @@ host_log_warn() { printf "[HOST][WARN] %s\n" "$*"; }
 host_log_error() { printf "[HOST][ERROR] %s\n" "$*" >&2; }
 host_die() { host_log_error "$*"; exit 1; }
 
+host_has_flag() {
+  local flag="$1"
+  shift || true
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == "$flag" ]] && return 0
+  done
+  return 1
+}
+
 host_need_cmd() {
   command -v "$1" >/dev/null 2>&1 || host_die "Missing required command: $1"
 }

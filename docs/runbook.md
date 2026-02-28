@@ -7,13 +7,14 @@ This repo is operated through Flux GitOps with optional script orchestration (`r
 ### Bootstrap
 
 ```bash
+flux check --pre
+flux install --namespace flux-system
 make flux-bootstrap
 ```
 
 Behavior:
-- Installs Flux controllers.
-- Applies `clusters/home/flux-system` bootstrap manifests.
-- Auto-bootstraps Cilium first when no ready CNI exists.
+- Flux installation is manual (outside repo scripts).
+- `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
 
 ### Reconcile
 
@@ -42,7 +43,7 @@ Delete ordering is intentional:
 2. Clean cert-manager finalizers/CRDs.
 3. Teardown namespaces/secrets/CRDs.
 4. Remove Cilium last.
-5. Uninstall Flux controllers.
+5. Uninstall Flux controllers (via `flux uninstall` inside `32_reconcile_flux_stack.sh --delete` when Flux CLI is present).
 6. Verify cleanup.
 
 ## Active Flux Dependency Chain

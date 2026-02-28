@@ -27,7 +27,7 @@ Verification toggles:
 - `FEAT_VERIFY=true|false`: core checks (`94`, `91`)
 
 Cert issuer mode controls:
-- Path-based in Flux CRDs (`clusters/home/infrastructure.yaml`, `clusters/home/platform.yaml`, `clusters/home/tenants.yaml`).
+- Git-tracked ConfigMap value in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 
 ## Tool Contract
 
@@ -38,8 +38,9 @@ Primary declarative control plane:
 - Stack manifests: `clusters/home` (infrastructure/platform/tenants Flux Kustomizations)
 
 Primary operations:
-- `scripts/bootstrap/install-flux.sh`
 - `scripts/32_reconcile_flux_stack.sh`
+  - apply mode: reconciles source/stack (requires bootstrap manifests already applied)
+  - delete mode: removes stack kustomizations and runs `flux uninstall` when Flux CLI is present
 
 ### Helm
 

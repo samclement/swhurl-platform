@@ -32,10 +32,9 @@ Config layering (`run.sh`):
 Default apply steps:
 1. `15_verify_cluster_access.sh`
 2. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
-3. `bootstrap/install-flux.sh`
-4. `bootstrap/sync-runtime-inputs.sh`
-5. `32_reconcile_flux_stack.sh`
-6. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
+3. `bootstrap/sync-runtime-inputs.sh`
+4. `32_reconcile_flux_stack.sh`
+5. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
 
 Default delete steps:
 1. `15_verify_cluster_access.sh`
@@ -43,10 +42,11 @@ Default delete steps:
 3. `30_manage_cert_manager_cleanup.sh --delete`
 4. `99_execute_teardown.sh --delete`
 5. `26_manage_cilium_lifecycle.sh --delete` (when `FEAT_CILIUM=true`)
-6. `bootstrap/install-flux.sh --delete`
-7. `98_verify_teardown_clean.sh --delete`
+6. `98_verify_teardown_clean.sh --delete`
 
 Notes:
+- Flux CLI/controller installation is manual and documented in `README.md`.
+- Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.
 - Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
@@ -90,7 +90,7 @@ Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make app-test-staging-le-staging|app-test-staging-le-prod|app-test-prod-le-staging|app-test-prod-le-prod [DRY_RUN=true]`
-  - Copies declarative mode templates from `clusters/home/modes/` into `clusters/home/tenants.yaml` (local edit only).
+  - Updates `clusters/home/tenants.yaml` `spec.path` to the selected `./tenants/overlays/app-*-le-*` mode (local edit only).
 
 Mode target contract:
 - Mode targets do not reconcile directly; commit + push first, then run `make flux-reconcile`.

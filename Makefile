@@ -1,5 +1,4 @@
 SHELL := /usr/bin/env bash
-MODE_DIR := clusters/home/modes
 FLUX_TENANTS_FILE := clusters/home/tenants.yaml
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
@@ -26,18 +25,22 @@ define update_cert_issuer
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
 endef
 
-define sync_tenants_mode
+define update_tenants_overlay_path
 	@set -eu; \
-	src="$(MODE_DIR)/$(1)"; dst="$(FLUX_TENANTS_FILE)"; \
-	[[ -f "$$src" ]] || { echo "Missing mode file: $$src" >&2; exit 1; }; \
-	if cmp -s "$$src" "$$dst"; then \
-	  echo "[INFO] tenants mode already set ($$src)"; \
+	file="$(FLUX_TENANTS_FILE)"; path="$(1)"; \
+	[[ -f "$$file" ]] || { echo "Missing tenants file: $$file" >&2; exit 1; }; \
+	tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; \
+	awk -v path="$$path" 'BEGIN{updated=0} /^  path:[[:space:]]*\.\/tenants\/overlays\// {print "  path: " path; updated=1; next} {print} END{ if (updated==0) exit 42 }' "$$file" > "$$tmp" || status="$$?"; \
+	if [[ "$${status:-0}" == "42" ]]; then echo "Missing tenants overlay path key in $$file" >&2; exit 1; fi; \
+	if cmp -s "$$file" "$$tmp"; then \
+	  echo "[INFO] tenants path already set to $$path"; \
 	elif [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "[INFO] tenants mode would update: $$dst <= $$src"; \
-	  diff -u "$$dst" "$$src" || true; \
+	  echo "[INFO] tenants path would update to $$path in $$file"; \
+	  diff -u "$$file" "$$tmp" || true; \
 	else \
-	  cp "$$src" "$$dst"; \
-	  echo "[INFO] tenants mode updated: $$dst <= $$src"; \
+	  mv "$$tmp" "$$file"; \
+	  trap - EXIT; \
+	  echo "[INFO] tenants path updated to $$path in $$file"; \
 	fi; \
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
 endef
@@ -51,7 +54,7 @@ help:
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  app-test-staging-le-staging | app-test-staging-le-prod"
 	@echo "  app-test-prod-le-staging    | app-test-prod-le-prod"
-	@echo "  flux-bootstrap      Install Flux and apply clusters/home/flux-system bootstrap manifests"
+	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify              Run verification scripts against current context"
@@ -76,7 +79,8 @@ reinstall:
 
 .PHONY: flux-bootstrap
 flux-bootstrap:
-	./scripts/bootstrap/install-flux.sh
+	@echo "[INFO] Requires Flux controllers already installed (see README: Manual Flux installation)."
+	kubectl apply -k clusters/home/flux-system
 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
@@ -97,19 +101,19 @@ platform-certs-prod:
 
 .PHONY: app-test-staging-le-staging
 app-test-staging-le-staging:
-	$(call sync_tenants_mode,tenants-app-staging-le-staging.yaml)
+	$(call update_tenants_overlay_path,./tenants/overlays/app-staging-le-staging)
 
 .PHONY: app-test-staging-le-prod
 app-test-staging-le-prod:
-	$(call sync_tenants_mode,tenants-app-staging-le-prod.yaml)
+	$(call update_tenants_overlay_path,./tenants/overlays/app-staging-le-prod)
 
 .PHONY: app-test-prod-le-staging
 app-test-prod-le-staging:
-	$(call sync_tenants_mode,tenants-app-prod-le-staging.yaml)
+	$(call update_tenants_overlay_path,./tenants/overlays/app-prod-le-staging)
 
 .PHONY: app-test-prod-le-prod
 app-test-prod-le-prod:
-	$(call sync_tenants_mode,tenants-app-prod-le-prod.yaml)
+	$(call update_tenants_overlay_path,./tenants/overlays/app-prod-le-prod)
 
 .PHONY: verify
 verify:

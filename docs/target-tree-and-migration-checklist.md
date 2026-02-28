@@ -135,8 +135,6 @@ Guiding rule:
 │     └─ migrate-minio-to-ceph.md
 │
 ├─ scripts/
-│  ├─ compat/
-│  │  └─ repeat-scratch-cycles.sh
 │  └─ bootstrap/
 │     └─ install-flux.sh
 │

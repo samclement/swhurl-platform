@@ -56,33 +56,6 @@ host_dynamic_dns_template_path() {
   printf '%s/host/templates/systemd/%s' "$root" "$file"
 }
 
-host_dynamic_dns_subdomains() {
-  local raw="${SWHURL_SUBDOMAINS:-}"
-
-  if [[ -z "$raw" ]]; then
-    if [[ -n "${SWHURL_SUBDOMAIN:-}" ]]; then
-      raw="$SWHURL_SUBDOMAIN"
-    elif [[ -n "${BASE_DOMAIN:-}" && "$BASE_DOMAIN" =~ \.swhurl\.com$ ]]; then
-      local base
-      base="${BASE_DOMAIN%.swhurl.com}"
-      base="${base%.}"
-      raw="$base oauth.$base staging.hello.$base hello.$base clickstack.$base hubble.$base minio.$base minio-console.$base"
-      host_log_warn "SWHURL_SUBDOMAINS not set; derived defaults: $raw"
-    else
-      raw="homelab"
-      host_log_warn "SWHURL_SUBDOMAINS not set; defaulting to '$raw'"
-    fi
-  fi
-
-  raw="${raw//,/ }"
-  # shellcheck disable=SC2206
-  local arr=($raw)
-  local s
-  for s in "${arr[@]}"; do
-    [[ -n "$s" ]] && printf '%s\n' "$s"
-  done
-}
-
 host_dynamic_dns_install_helper() {
   local source="$1" target="$2" run_user="$3"
   [[ -f "$source" ]] || host_die "Helper script not found: $source"
@@ -143,17 +116,7 @@ host_dynamic_dns_apply() {
 
   host_dynamic_dns_install_helper "$helper_source" "$helper_target" "$run_user"
 
-  local -a subdomains=()
-  while IFS= read -r sub; do
-    [[ -n "$sub" ]] && subdomains+=("$sub")
-  done < <(host_dynamic_dns_subdomains)
-  [[ "${#subdomains[@]}" -gt 0 ]] || host_die "No subdomains provided or derived"
-
   local exec_start="/bin/bash ${helper_target}"
-  local s
-  for s in "${subdomains[@]}"; do
-    exec_start+=" ${s}"
-  done
 
   local service_content timer_content
   service_content="$(host_dynamic_dns_render_service_content "$service_template" "$exec_start" "$run_user")"
@@ -187,7 +150,7 @@ host_dynamic_dns_apply() {
     host_sudo systemctl start "$timer" || true
   fi
 
-  host_log_info "Configured dynamic DNS subdomains: ${subdomains[*]} (under swhurl.com)"
+  host_log_info "Configured dynamic DNS updater for *.homelab.swhurl.com"
 }
 
 host_dynamic_dns_delete() {

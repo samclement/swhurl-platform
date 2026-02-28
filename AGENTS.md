@@ -125,6 +125,7 @@
     - infrastructure issuer mode: `clusters/home/infrastructure.yaml` (`infrastructure/overlays/home` vs `infrastructure/overlays/home-letsencrypt-prod`)
     - platform-services issuer mode: `clusters/home/platform.yaml` (`platform-services/overlays/home` vs `platform-services/overlays/home-letsencrypt-prod`)
     - sample app URL/issuer mode: `clusters/home/tenants.yaml` (`tenants/overlays/app-*-le-*`)
+  - `infrastructure/overlays/home-letsencrypt-prod` keeps issuer overrides explicit per ingress (`hubble`, `minio`, `minio-console`) via separate patch files.
   - Managed app namespaces remain `apps-staging` and `apps-prod`; sample app URL/issuer combinations are overlay-selected, not runtime-input driven.
   - Promotion/runtime intent is Makefile-driven via declarative mode templates in `clusters/home/modes/` followed by Flux reconcile.
   - `scripts/99_execute_teardown.sh --delete` now performs real cleanup (platform secret sweep, managed namespace deletion/wait, and platform CRD deletion) before optional k3s uninstall. Use `DELETE_SCOPE=dedicated-cluster` to opt into cluster-wide secret sweeping.

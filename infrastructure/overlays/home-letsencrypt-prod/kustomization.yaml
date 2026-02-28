@@ -3,5 +3,6 @@ kind: Kustomization
 resources:
   - ../home
 patches:
-  - path: patch-cilium-issuer.yaml
+  - path: patch-cilium-hubble-issuer.yaml
   - path: patch-minio-issuer.yaml
+  - path: patch-minio-console-issuer.yaml

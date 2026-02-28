@@ -5,6 +5,6 @@ metadata:
   namespace: storage
 spec:
   values:
-    ingress:
+    consoleIngress:
       annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod

@@ -1,5 +1,4 @@
 SHELL := /usr/bin/env bash
-FLUX_APP_EXAMPLE_FILE := clusters/home/app-example.yaml
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 
@@ -25,26 +24,6 @@ define update_cert_issuer
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
 endef
 
-define update_app_example_overlay_path
-	@set -eu; \
-	file="$(FLUX_APP_EXAMPLE_FILE)"; path="$(1)"; \
-	[[ -f "$$file" ]] || { echo "Missing app file: $$file" >&2; exit 1; }; \
-	tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; \
-	awk -v path="$$path" 'BEGIN{updated=0} /^  path:[[:space:]]*\.\/tenants\/apps\/example\/overlays\// {print "  path: " path; updated=1; next} {print} END{ if (updated==0) exit 42 }' "$$file" > "$$tmp" || status="$$?"; \
-	if [[ "$${status:-0}" == "42" ]]; then echo "Missing app overlay path key in $$file" >&2; exit 1; fi; \
-	if cmp -s "$$file" "$$tmp"; then \
-	  echo "[INFO] app path already set to $$path"; \
-	elif [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "[INFO] app path would update to $$path in $$file"; \
-	  diff -u "$$file" "$$tmp" || true; \
-	else \
-	  mv "$$tmp" "$$file"; \
-	  trap - EXIT; \
-	  echo "[INFO] app path updated to $$path in $$file"; \
-	fi; \
-	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
-endef
-
 .PHONY: help
 help:
 	@echo "Targets:"
@@ -52,14 +31,12 @@ help:
 	@echo "  teardown            Clean teardown path (cluster defaults)"
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
-	@echo "  app-test-staging-le-staging | app-test-staging-le-prod"
-	@echo "  app-test-prod-le-staging    | app-test-prod-le-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify              Run verification scripts against current context"
 	@echo ""
-	@echo "Mode targets edit Git-tracked files only. Commit + push before flux-reconcile."
+	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
 	@echo ""
 	@echo "Host operations are intentionally direct:"
 	@echo "  ./host/run-host.sh [--dry-run|--delete]"
@@ -98,22 +75,6 @@ platform-certs-staging:
 .PHONY: platform-certs-prod
 platform-certs-prod:
 	$(call update_cert_issuer,letsencrypt-prod)
-
-.PHONY: app-test-staging-le-staging
-app-test-staging-le-staging:
-	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/staging)
-
-.PHONY: app-test-staging-le-prod
-app-test-staging-le-prod:
-	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/staging-url-prod)
-
-.PHONY: app-test-prod-le-staging
-app-test-prod-le-staging:
-	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/prod-url-staging)
-
-.PHONY: app-test-prod-le-prod
-app-test-prod-le-prod:
-	$(call update_app_example_overlay_path,./tenants/apps/example/overlays/prod)
 
 .PHONY: verify
 verify:

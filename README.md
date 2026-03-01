@@ -187,6 +187,44 @@ Certificate issuer mapping:
 
 Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
+## New Machine Gotchas
+
+1. Cilium prerequisite: k3s must be installed with flannel/network-policy disabled (`--flannel-backend=none --disable-network-policy`) before Cilium is reconciled.
+2. Runtime inputs are external to Git: after changing local config/secrets, run `make runtime-inputs-sync` before `make flux-reconcile`.
+3. DNS wildcard scope: `*.homelab.swhurl.com` only matches one-label hosts. Multi-label names like `staging.hello.homelab.swhurl.com` need explicit records (or a deeper wildcard) in Route53.
+4. cert-manager issuance timing: first reconcile can fail until DNS records propagate and ACME HTTP-01 checks can reach ingress.
+5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial ClickStack team setup is completed in the UI.
+
+## Addendum: Native k3s Metrics Server + Traefik
+
+This repo currently deploys `metrics-server` and `ingress-nginx` via Flux by default. To move to native k3s components:
+
+1. Update host defaults in `host/config/homelab.env`:
+   - `K3S_INGRESS_MODE=traefik`
+   - `K3S_DISABLE_PACKAGED=` (ensure `metrics-server` is not disabled)
+2. Update infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
+   - remove `../../metrics-server/base`
+   - remove `../../ingress-nginx/base`
+3. Set operator intent in `config.env`:
+   - `INGRESS_PROVIDER=traefik`
+4. Update cert-manager ACME solvers to Traefik ingress class:
+   - `infrastructure/cert-manager/issuers/letsencrypt-staging/clusterissuer-letsencrypt-staging.yaml`
+   - `infrastructure/cert-manager/issuers/letsencrypt-prod/clusterissuer-letsencrypt-prod.yaml`
+   - change solver `class: nginx` to `class: traefik`
+5. Migrate app/platform ingresses from NGINX-specific config:
+   - change `ingressClassName: nginx` to `traefik`
+   - replace/remove `nginx.ingress.kubernetes.io/*` annotations
+   - add Traefik `Middleware` resources for oauth2-proxy `ForwardAuth` if edge auth is still required
+6. Reconcile and verify:
+
+```bash
+make flux-reconcile
+kubectl -n kube-system get deploy metrics-server traefik
+kubectl get ingress -A
+```
+
+Important: `infrastructure/ingress-traefik/base` is currently scaffold-only. Native Traefik mode in this repo means relying on the k3s-packaged Traefik, plus ingress/annotation migration to Traefik conventions.
+
 ## Orchestration
 
 `run.sh` is the cluster orchestrator. Default apply flow:

@@ -81,6 +81,7 @@ Important contract:
   - k3s is a manual prerequisite path (`host/run-host.sh --only 20_install_k3s.sh`).
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - Keep Cilium teardown last in delete flows.
+  - Native k3s `metrics-server`/Traefik mode requires removing Flux-managed `infrastructure/metrics-server/base` and `infrastructure/ingress-nginx/base` from `infrastructure/overlays/home`, plus migrating issuer solver class and ingress annotations/class from NGINX conventions to Traefik conventions.
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
 

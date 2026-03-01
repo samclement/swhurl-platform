@@ -90,3 +90,40 @@ Core checks:
   - `./tenants/apps/example`
 - Example app staging/prod overlays both use `letsencrypt-prod`.
 - Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.
+
+## Addendum: Native k3s Metrics Server + Traefik
+
+Current default composition uses Flux-managed `metrics-server` and `ingress-nginx`.
+
+To switch to native k3s packaged components:
+
+1. Update host defaults (`host/config/homelab.env`):
+   - `K3S_INGRESS_MODE=traefik`
+   - `K3S_DISABLE_PACKAGED=` (do not disable `metrics-server`)
+2. Update infra composition (`infrastructure/overlays/home/kustomization.yaml`):
+   - remove `../../metrics-server/base`
+   - remove `../../ingress-nginx/base`
+3. Set verification/provider intent in `config.env`:
+   - `INGRESS_PROVIDER=traefik`
+4. Update ACME solver ingress class from `nginx` to `traefik` in:
+   - `infrastructure/cert-manager/issuers/letsencrypt-staging/clusterissuer-letsencrypt-staging.yaml`
+   - `infrastructure/cert-manager/issuers/letsencrypt-prod/clusterissuer-letsencrypt-prod.yaml`
+5. Migrate ingresses and auth config:
+   - `ingressClassName: traefik`
+   - replace `nginx.ingress.kubernetes.io/*` annotations
+   - use Traefik `Middleware` + `ForwardAuth` for oauth2-proxy auth flows
+6. Reconcile:
+
+```bash
+make flux-reconcile
+```
+
+7. Verify:
+
+```bash
+kubectl -n kube-system get deploy metrics-server traefik
+kubectl get ingress -A
+./scripts/91_verify_platform_state.sh
+```
+
+Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this path assumes k3s-packaged Traefik rather than a Flux-managed Traefik chart in this repo.

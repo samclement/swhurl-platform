@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
   annotations:
     cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
+    traefik.ingress.kubernetes.io/router.middlewares: kube-system-oauth2-proxy-forward-auth@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
@@ -22,4 +23,3 @@ spec:
     - secretName: hubble-ui-tls
       hosts:
         - hubble.homelab.swhurl.com
-

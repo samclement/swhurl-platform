@@ -16,12 +16,10 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: staging-hello.homelab.swhurl.com
-      - op: replace
-        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-url
-        value: https://oauth.homelab.swhurl.com/oauth2/auth
-      - op: replace
-        path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-signin
-        value: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
+      - op: add
+        path: /metadata/annotations
+        value:
+          traefik.ingress.kubernetes.io/router.middlewares: apps-staging-oauth2-proxy-forward-auth@kubernetescrd
   - target:
       group: cert-manager.io
       version: v1

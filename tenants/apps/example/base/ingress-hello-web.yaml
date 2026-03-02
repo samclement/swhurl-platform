@@ -7,13 +7,8 @@ metadata:
     app.kubernetes.io/name: hello-web
     app.kubernetes.io/instance: hello-web
     platform.swhurl.com/managed: "true"
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   tls:
     - hosts:
         - staging-hello.homelab.swhurl.com

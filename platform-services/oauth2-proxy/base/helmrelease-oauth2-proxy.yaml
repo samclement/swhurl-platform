@@ -37,7 +37,7 @@ spec:
       silence-ping-logging: true
     ingress:
       enabled: true
-      className: nginx
+      className: traefik
       annotations:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
       hosts:

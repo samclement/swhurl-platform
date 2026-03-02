@@ -5,6 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
+  timeout: 15m
   releaseName: clickstack
   valuesFrom:
     - kind: Secret
@@ -45,10 +46,10 @@ spec:
       frontendUrl: https://clickstack.homelab.swhurl.com
       ingress:
         enabled: true
-        ingressClassName: nginx
+        ingressClassName: traefik
         host: clickstack.homelab.swhurl.com
-        path: /(.*)
-        pathType: ImplementationSpecific
+        path: /
+        pathType: Prefix
         annotations:
           cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
         tls:

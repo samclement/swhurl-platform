@@ -97,8 +97,10 @@ Important contract:
   - `scripts/91_verify_platform_state.sh` now enforces ingress-class alignment (`INGRESS_PROVIDER`) for hubble, oauth2-proxy, clickstack, minio/minio-console, and example app ingresses to catch split-route states early.
   - Traefik `Middleware.spec.errors.service` cross-namespace references are rejected in this setup; use `forwardAuth.address` to `http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth` for cross-namespace auth checks.
   - Current Traefik forward-auth protects routes (`401` when unauthenticated) for `hubble-ui` and `hello-web`; it does not yet replicate nginx `auth-signin` redirect behavior.
+  - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
   - TODO (`README.md`, `docs/runbook.md`): document current Traefik forward-auth behavior (`401` unauthenticated) and add explicit 401->oauth2 start redirect middleware pattern for parity with prior nginx `auth-signin` UX.
+  - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

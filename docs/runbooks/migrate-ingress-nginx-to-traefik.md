@@ -38,6 +38,8 @@ make flux-reconcile
 5. Commit these changes, but do not reconcile yet if external `:80/:443` traffic still lands on ingress-nginx.
 
 6. Cut over external `:80/:443` traffic to Traefik (router/NAT/service-LB path).
+   - Preferred: update router/NAT to point at Traefik entrypoints directly.
+   - Transitional (when router still targets legacy nginx NodePorts): move Traefik service NodePorts to the legacy values (`31514`/`30313`) before removing ingress-nginx.
    If external traffic still lands on ingress-nginx while manifests are switched to Traefik, host routes will return 404s.
 
 7. Reconcile:

@@ -96,10 +96,10 @@ Important contract:
   - `hubble-ui` ingress class must match the active externally-routed ingress provider. If public traffic still lands on ingress-nginx and `hubble-ui` is switched to Traefik, TLS can remain valid but requests will return 404.
   - `scripts/91_verify_platform_state.sh` now enforces ingress-class alignment (`INGRESS_PROVIDER`) for hubble, oauth2-proxy, clickstack, minio/minio-console, and example app ingresses to catch split-route states early.
   - Traefik `Middleware.spec.errors.service` cross-namespace references are rejected in this setup; use `forwardAuth.address` to `http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth` for cross-namespace auth checks.
-  - Current Traefik forward-auth protects routes (`401` when unauthenticated) for `hubble-ui` and `hello-web`; it does not yet replicate nginx `auth-signin` redirect behavior.
+  - Current Traefik forward-auth protects example app routes (`401` when unauthenticated). `hubble-ui` auth middleware was removed to restore dashboard accessibility until a redirect-capable edge-auth pattern is added.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
-  - TODO (`README.md`, `docs/runbook.md`): document current Traefik forward-auth behavior (`401` unauthenticated) and add explicit 401->oauth2 start redirect middleware pattern for parity with prior nginx `auth-signin` UX.
+  - TODO (`README.md`, `docs/runbook.md`): add a redirect-capable Traefik edge-auth pattern for `hubble-ui` (prior nginx behavior was login redirect, not raw 401).
   - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
 
 - Observability/ClickStack

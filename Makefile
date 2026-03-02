@@ -31,6 +31,7 @@ help:
 	@echo "  teardown            Clean teardown path (cluster defaults)"
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
+	@echo "  cilium-bootstrap    Apply pre-Flux k3s HelmChart bootstrap for Cilium and wait ready"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
@@ -55,6 +56,18 @@ teardown:
 reinstall:
 	./run.sh --delete
 	./run.sh
+
+.PHONY: cilium-bootstrap
+cilium-bootstrap:
+	kubectl apply -f bootstrap/k3s-manifests/cilium-helmchart.yaml
+	kubectl -n kube-system rollout status ds/cilium --timeout=10m
+	kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
+	@if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then \
+	  kubectl -n kube-system rollout status deploy/hubble-relay --timeout=10m; \
+	fi
+	@if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then \
+	  kubectl -n kube-system rollout status deploy/hubble-ui --timeout=10m; \
+	fi
 
 .PHONY: flux-bootstrap
 flux-bootstrap:

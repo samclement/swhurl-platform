@@ -31,10 +31,11 @@ Config layering (`run.sh`):
 
 Default apply steps:
 1. `15_verify_cluster_access.sh`
-2. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
-3. `bootstrap/sync-runtime-inputs.sh`
-4. `32_reconcile_flux_stack.sh`
-5. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
+2. `16_verify_cilium_bootstrap.sh`
+3. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
+4. `bootstrap/sync-runtime-inputs.sh`
+5. `32_reconcile_flux_stack.sh`
+6. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
 
 Default delete steps:
 1. `15_verify_cluster_access.sh`
@@ -45,6 +46,8 @@ Default delete steps:
 6. `98_verify_teardown_clean.sh --delete`
 
 Notes:
+- Cilium is a pre-Flux dependency and is bootstrapped declaratively via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`).
+- Flux retains a suspended Cilium HelmRelease (`infrastructure/cilium/base/helmrelease-cilium.yaml`) as a migration handoff placeholder for existing clusters.
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.
 - Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
@@ -91,6 +94,8 @@ Step scripts should:
 Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
+- `make cilium-bootstrap`
+  - Applies `bootstrap/k3s-manifests/cilium-helmchart.yaml` and waits for Cilium readiness before Flux bootstrap/reconcile.
 - `make runtime-inputs-sync`
   - Syncs external source secret `flux-system/platform-runtime-inputs` from local env/profile.
 - `make flux-reconcile`

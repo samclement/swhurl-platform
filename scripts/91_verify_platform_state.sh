@@ -128,13 +128,13 @@ if feature_is_enabled cilium; then
     ok "cilium daemonset present"
   else
     mismatch "cilium daemonset not found"
-    add_suggest "scripts/26_manage_cilium_lifecycle.sh"
+    add_suggest "make cilium-bootstrap"
   fi
   if kubectl -n kube-system get deploy cilium-operator >/dev/null 2>&1; then
     ok "cilium-operator deployment present"
   else
     mismatch "cilium-operator deployment not found"
-    add_suggest "scripts/26_manage_cilium_lifecycle.sh"
+    add_suggest "make cilium-bootstrap"
   fi
 else
   ok "$(feature_flag_var cilium)=false; skipping"
@@ -146,41 +146,41 @@ if feature_is_enabled cilium; then
     ok "hubble-relay deployment present"
   else
     mismatch "hubble-relay deployment not found"
-    add_suggest "scripts/26_manage_cilium_lifecycle.sh"
+    add_suggest "make cilium-bootstrap"
   fi
   if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then
     ok "hubble-ui deployment present"
   else
     mismatch "hubble-ui deployment not found"
-    add_suggest "scripts/26_manage_cilium_lifecycle.sh"
+    add_suggest "make cilium-bootstrap"
   fi
   if kubectl -n kube-system get ingress hubble-ui >/dev/null 2>&1; then
     actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/26_manage_cilium_lifecycle.sh"
+    check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "hubble-ui.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
-    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
+    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
       actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
       actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
-      check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/26_manage_cilium_lifecycle.sh"
-      check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/26_manage_cilium_lifecycle.sh"
+      check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/32_reconcile_flux_stack.sh"
+      check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/32_reconcile_flux_stack.sh"
     elif feature_is_enabled oauth2_proxy; then
-      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping NGINX auth annotation checks for hubble-ui"
+      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping NGINX auth annotation checks for hubble-ui"
     else
       ok "$(feature_flag_var oauth2_proxy)=false; skipping hubble-ui auth annotation checks"
     fi
   else
     mismatch "hubble-ui ingress not found"
-    add_suggest "scripts/26_manage_cilium_lifecycle.sh"
+    add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else
   ok "$(feature_flag_var cilium)=false; skipping"
 fi
 
 say "Ingress"
-if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
+if [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
   if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
     actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
     check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/32_reconcile_flux_stack.sh"
@@ -213,8 +213,22 @@ if [[ "${INGRESS_PROVIDER:-nginx}" == "nginx" ]]; then
     mismatch "ingressclass nginx not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
+elif [[ "${INGRESS_PROVIDER:-traefik}" == "traefik" ]]; then
+  if kubectl -n kube-system get deploy traefik >/dev/null 2>&1; then
+    ok "traefik deployment present"
+  else
+    mismatch "traefik deployment not found in kube-system"
+    add_suggest "verify k3s packaged traefik is enabled"
+  fi
+
+  if kubectl get ingressclass traefik >/dev/null 2>&1; then
+    ok "ingressclass traefik present"
+  else
+    mismatch "ingressclass traefik not found"
+    add_suggest "verify k3s packaged traefik is enabled"
+  fi
 else
-  ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-nginx}; skipping ingress-nginx specific checks"
+  ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping ingress controller specific checks"
 fi
 
 say "oauth2-proxy"

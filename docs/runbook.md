@@ -14,17 +14,37 @@ chmod 600 "$HOME/.kube/config"
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
+Bootstrap Cilium before Flux:
+
+```bash
+make cilium-bootstrap
+```
+
+Optional k3s auto-deploy mode:
+
+```bash
+sudo install -D -m 0644 bootstrap/k3s-manifests/cilium-helmchart.yaml \
+  /var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml
+kubectl -n kube-system rollout status ds/cilium --timeout=10m
+kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
+```
+
+Migration safety note:
+- `infrastructure/cilium/base/helmrelease-cilium.yaml` remains suspended as a handoff placeholder for existing clusters. Active Cilium install ownership is the k3s bootstrap manifest.
+
 ## Standard Operations
 
 ### Bootstrap
 
 ```bash
+make cilium-bootstrap
 flux check --pre
 flux install --namespace flux-system
 make flux-bootstrap
 ```
 
 Behavior:
+- `make cilium-bootstrap` applies `bootstrap/k3s-manifests/cilium-helmchart.yaml` and waits for Cilium readiness.
 - Flux installation is manual (outside repo scripts).
 - `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
 - If `homelab-infrastructure` fails with `no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"`, install cert-manager CRDs once and rerun reconcile:
@@ -153,3 +173,7 @@ kubectl get ingress -A
 ```
 
 Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this path assumes k3s-packaged Traefik rather than a Flux-managed Traefik chart in this repo.
+
+## TODO
+
+- Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.

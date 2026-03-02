@@ -17,10 +17,11 @@ spec:
       replicas: 1
     hubble:
       enabled: true
+      # Keep relay peer connectivity stable on IPv4-only node addresses.
+      listenAddress: "0.0.0.0:4244"
       relay:
         enabled: true
       ui:
         enabled: true
         ingress:
           enabled: false
-

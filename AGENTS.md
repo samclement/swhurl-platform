@@ -86,6 +86,7 @@ Important contract:
 - k3s/Cilium
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Cilium install is pre-Flux bootstrap via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`) and `make cilium-bootstrap`.
+  - Keep `hubble.listenAddress: "0.0.0.0:4244"` in Cilium bootstrap values (`bootstrap/k3s-manifests/cilium-helmchart.yaml`; mirrored in `infrastructure/cilium/base/helmrelease-cilium.yaml` and `scripts/26_manage_cilium_lifecycle.sh`) to avoid `hubble-relay` peer instability on IPv4-only node addressing.
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - `infrastructure/cilium/base/helmrelease-cilium.yaml` is intentionally `spec.suspend: true` as a migration handoff placeholder; active install ownership is k3s bootstrap manifest.
   - `infrastructure/cilium/base` carries post-bootstrap Cilium-adjacent resources (for example, Hubble UI ingress).
@@ -101,6 +102,7 @@ Important contract:
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
   - TODO (`README.md`, `docs/runbook.md`): add a redirect-capable Traefik edge-auth pattern for `hubble-ui` (prior nginx behavior was login redirect, not raw 401).
   - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
+  - TODO (`scripts/91_verify_platform_state.sh`): add an active `hubble-ui` stream probe (`/api/control-stream`) so verify catches relay/data-plane issues beyond deployment readiness.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

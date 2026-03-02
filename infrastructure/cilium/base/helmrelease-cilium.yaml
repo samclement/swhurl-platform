@@ -26,10 +26,10 @@ spec:
       replicas: 1
     hubble:
       enabled: true
+      listenAddress: "0.0.0.0:4244"
       relay:
         enabled: true
       ui:
         enabled: true
         ingress:
           enabled: false
-

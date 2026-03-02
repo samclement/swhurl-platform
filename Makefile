@@ -33,6 +33,8 @@ help:
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
+	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
+	@echo "  runtime-inputs-refresh-otel Sync+reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify              Run verification scripts against current context"
 	@echo ""
@@ -62,6 +64,28 @@ flux-bootstrap:
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
 	./scripts/bootstrap/sync-runtime-inputs.sh
+
+.PHONY: otel-collectors-restart
+otel-collectors-restart:
+	@set -Eeuo pipefail; \
+	echo "[INFO] Restarting otel-k8s collectors to reload logging/hyperdx-secret"; \
+	if kubectl -n logging get deploy otel-k8s-cluster-opentelemetry-collector >/dev/null 2>&1; then \
+	  kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector; \
+	  kubectl -n logging rollout status deploy/otel-k8s-cluster-opentelemetry-collector --timeout=5m; \
+	else \
+	  echo "[WARN] logging/otel-k8s-cluster-opentelemetry-collector not found; skipping"; \
+	fi; \
+	if kubectl -n logging get ds otel-k8s-daemonset-opentelemetry-collector-agent >/dev/null 2>&1; then \
+	  kubectl -n logging rollout restart ds/otel-k8s-daemonset-opentelemetry-collector-agent; \
+	  kubectl -n logging rollout status ds/otel-k8s-daemonset-opentelemetry-collector-agent --timeout=5m; \
+	else \
+	  echo "[WARN] logging/otel-k8s-daemonset-opentelemetry-collector-agent not found; skipping"; \
+	fi
+
+.PHONY: runtime-inputs-refresh-otel
+runtime-inputs-refresh-otel:
+	$(MAKE) flux-reconcile
+	$(MAKE) otel-collectors-restart
 
 .PHONY: flux-reconcile
 flux-reconcile:

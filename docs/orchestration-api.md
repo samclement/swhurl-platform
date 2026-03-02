@@ -1,6 +1,6 @@
 # Orchestration API
 
-Last updated: 2026-02-28
+Last updated: 2026-03-02
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
@@ -70,11 +70,12 @@ Config layering (`host/run-host.sh`):
 
 Default host apply tasks:
 1. `host/tasks/10_dynamic_dns.sh`
-2. `host/tasks/20_install_k3s.sh`
 
 Default host delete tasks:
-1. `host/tasks/20_install_k3s.sh --delete`
-2. `host/tasks/10_dynamic_dns.sh --delete`
+1. `host/tasks/10_dynamic_dns.sh --delete`
+
+Manual prerequisite:
+- k3s installation is manual and documented in `README.md`.
 
 ## Script Contract
 
@@ -90,6 +91,14 @@ Step scripts should:
 Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
+- `make runtime-inputs-sync`
+  - Syncs external source secret `flux-system/platform-runtime-inputs` from local env/profile.
+- `make flux-reconcile`
+  - Syncs runtime inputs then reconciles Flux source + stack.
+- `make otel-collectors-restart`
+  - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
+- `make runtime-inputs-refresh-otel`
+  - Runs `flux-reconcile` plus collector restarts so rotated ClickStack ingestion keys are loaded by running OTel pods.
 
 Design boundary:
 - Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys).

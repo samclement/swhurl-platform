@@ -47,6 +47,7 @@ Default delete steps:
 
 Notes:
 - Cilium is a pre-Flux dependency and is bootstrapped declaratively via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`).
+- Cilium bootstrap values explicitly set `hubble.listenAddress: "0.0.0.0:4244"` to keep `hubble-relay` peer connectivity stable on IPv4-only node addressing.
 - Flux retains a suspended Cilium HelmRelease (`infrastructure/cilium/base/helmrelease-cilium.yaml`) as a migration handoff placeholder for existing clusters.
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.

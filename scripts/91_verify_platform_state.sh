@@ -31,6 +31,25 @@ check_eq() {
   fi
 }
 
+check_deploy_ready() {
+  local namespace="$1" name="$2" suggest="$3"
+  local desired ready available
+  desired="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+  ready="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
+  available="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+
+  [[ -z "$desired" ]] && desired="0"
+  [[ -z "$ready" ]] && ready="0"
+  [[ -z "$available" ]] && available="0"
+
+  if [[ "$ready" == "$desired" && "$available" == "$desired" ]]; then
+    ok "${namespace}/${name} ready (${ready}/${desired})"
+  else
+    mismatch "${namespace}/${name} not ready (ready=${ready} available=${available} desired=${desired})"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+  fi
+}
+
 expected_ingress_class="${INGRESS_PROVIDER:-traefik}"
 
 ingress_class() {
@@ -155,12 +174,14 @@ say "Hubble"
 if feature_is_enabled cilium; then
   if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
     ok "hubble-relay deployment present"
+    check_deploy_ready kube-system hubble-relay "make cilium-bootstrap"
   else
     mismatch "hubble-relay deployment not found"
     add_suggest "make cilium-bootstrap"
   fi
   if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then
     ok "hubble-ui deployment present"
+    check_deploy_ready kube-system hubble-ui "make cilium-bootstrap"
   else
     mismatch "hubble-ui deployment not found"
     add_suggest "make cilium-bootstrap"

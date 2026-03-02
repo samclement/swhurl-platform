@@ -75,7 +75,7 @@ if kubectl get ns cilium-secrets >/dev/null 2>&1; then
 fi
 
 ingress_class="nginx"
-if [[ "${INGRESS_PROVIDER:-nginx}" == "traefik" ]]; then
+if [[ "${INGRESS_PROVIDER:-traefik}" == "traefik" ]]; then
   ingress_class="traefik"
 fi
 
@@ -92,6 +92,7 @@ operator:
   replicas: 1
 hubble:
   enabled: true
+  listenAddress: "0.0.0.0:4244"
   relay:
     enabled: true
   ui:

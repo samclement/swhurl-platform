@@ -31,6 +31,7 @@ kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
 
 Migration safety note:
 - `infrastructure/cilium/base/helmrelease-cilium.yaml` remains suspended as a handoff placeholder for existing clusters. Active Cilium install ownership is the k3s bootstrap manifest.
+- Keep `hubble.listenAddress: "0.0.0.0:4244"` in `bootstrap/k3s-manifests/cilium-helmchart.yaml` (and the suspended handoff HelmRelease) so `hubble-relay` can maintain peer connectivity on IPv4-only node addressing.
 
 ## Standard Operations
 

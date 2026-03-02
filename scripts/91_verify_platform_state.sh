@@ -31,6 +31,17 @@ check_eq() {
   fi
 }
 
+expected_ingress_class="${INGRESS_PROVIDER:-traefik}"
+
+ingress_class() {
+  local namespace="$1" name="$2" class=""
+  class="$(kubectl -n "$namespace" get ingress "$name" -o jsonpath='{.spec.ingressClassName}' 2>/dev/null || true)"
+  if [[ -z "$class" ]]; then
+    class="$(kubectl -n "$namespace" get ingress "$name" -o jsonpath='{.metadata.annotations.kubernetes\.io/ingress\.class}' 2>/dev/null || true)"
+  fi
+  printf '%s' "$class"
+}
+
 say "ClusterIssuer"
 platform_cert_issuer="letsencrypt-staging"
 if kubectl -n flux-system get configmap platform-settings >/dev/null 2>&1; then
@@ -157,8 +168,10 @@ if feature_is_enabled cilium; then
   if kubectl -n kube-system get ingress hubble-ui >/dev/null 2>&1; then
     actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class kube-system hubble-ui)"
     check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "hubble-ui.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
+    check_eq "hubble-ui.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
     if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
       expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
       expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
@@ -242,8 +255,10 @@ if feature_is_enabled oauth2_proxy; then
   if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
     actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class ingress oauth2-proxy)"
     check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "oauth2-proxy.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+    check_eq "oauth2-proxy.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
     mismatch "oauth2-proxy ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -257,8 +272,10 @@ if feature_is_enabled clickstack; then
   if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
     actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class observability clickstack-app-ingress)"
     check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "clickstack.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+    check_eq "clickstack.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
     mismatch "clickstack ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -360,8 +377,10 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class storage minio)"
     check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "minio.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
+    check_eq "minio.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
     mismatch "minio ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -369,8 +388,10 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
   if kubectl -n storage get ingress minio-console >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class storage minio-console)"
     check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
     check_eq "minio-console.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
+    check_eq "minio-console.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
     mismatch "minio-console ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
@@ -386,7 +407,9 @@ fi
 say "Example App"
 if kubectl -n apps-staging get ingress hello-web >/dev/null 2>&1; then
   actual_host="$(kubectl -n apps-staging get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
+  actual_class="$(ingress_class apps-staging hello-web)"
   check_eq "hello-web.staging.host" "staging-hello.homelab.swhurl.com" "$actual_host" "clusters/home/app-example.yaml"
+  check_eq "hello-web.staging.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
 else
   mismatch "hello-web ingress not found in namespace apps-staging"
   add_suggest "clusters/home/app-example.yaml"
@@ -404,7 +427,9 @@ fi
 
 if kubectl -n apps-prod get ingress hello-web >/dev/null 2>&1; then
   actual_host="$(kubectl -n apps-prod get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
+  actual_class="$(ingress_class apps-prod hello-web)"
   check_eq "hello-web.prod.host" "hello.homelab.swhurl.com" "$actual_host" "clusters/home/app-example.yaml"
+  check_eq "hello-web.prod.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
 else
   mismatch "hello-web ingress not found in namespace apps-prod"
   add_suggest "clusters/home/app-example.yaml"

@@ -93,8 +93,12 @@ Important contract:
   - TODO (`docs/runbook.md`): add an explicit host-level remove flow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown cannot resurrect Cilium.
   - Default `infrastructure/overlays/home` now relies on k3s-packaged `traefik` + `metrics-server` (no Flux-managed ingress-nginx/metrics-server in active composition).
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
+  - `hubble-ui` ingress class must match the active externally-routed ingress provider. If public traffic still lands on ingress-nginx and `hubble-ui` is switched to Traefik, TLS can remain valid but requests will return 404.
+  - `scripts/91_verify_platform_state.sh` now enforces ingress-class alignment (`INGRESS_PROVIDER`) for hubble, oauth2-proxy, clickstack, minio/minio-console, and example app ingresses to catch split-route states early.
+  - Traefik `Middleware.spec.errors.service` cross-namespace references are rejected in this setup; use `forwardAuth.address` to `http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth` for cross-namespace auth checks.
+  - Current Traefik forward-auth protects routes (`401` when unauthenticated) for `hubble-ui` and `hello-web`; it does not yet replicate nginx `auth-signin` redirect behavior.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
-  - TODO (`README.md`, `docs/runbook.md`): add Traefik Middleware/ForwardAuth resources to restore oauth2-proxy edge-auth parity for app/hubble ingresses.
+  - TODO (`README.md`, `docs/runbook.md`): document current Traefik forward-auth behavior (`401` unauthenticated) and add explicit 401->oauth2 start redirect middleware pattern for parity with prior nginx `auth-signin` UX.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

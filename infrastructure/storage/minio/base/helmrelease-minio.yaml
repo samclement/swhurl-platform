@@ -34,7 +34,7 @@ spec:
       size: 20Gi
     ingress:
       enabled: true
-      ingressClassName: nginx
+      ingressClassName: traefik
       annotations:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
       path: /
@@ -46,7 +46,7 @@ spec:
             - minio.homelab.swhurl.com
     consoleIngress:
       enabled: true
-      ingressClassName: nginx
+      ingressClassName: traefik
       annotations:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
       path: /

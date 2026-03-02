@@ -29,13 +29,15 @@ Env:
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
 
 Manual prereqs:
+  Cilium must be bootstrapped before Flux reconcile:
+    make cilium-bootstrap
   Flux CLI/controllers are not installed by this orchestrator.
   Install Flux manually (see README), then apply bootstrap manifests:
     flux check --pre && flux install --namespace flux-system
     kubectl apply -k clusters/home/flux-system
   DNS registration is not part of the orchestrator plan. If you use .swhurl.com
   domains and want automatic Route53 updates, run: ./host/run-host.sh --only 10_dynamic_dns.sh
-  Host bootstrap (k3s install) is also manual: ./host/run-host.sh --only 20_install_k3s.sh
+  k3s installation is a manual prerequisite (see README).
 USAGE
 }
 
@@ -134,6 +136,7 @@ build_apply_plan() {
 
   # 1) Cluster Access (kubeconfig)
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
+  add_step out_arr "$(step_path 16_verify_cilium_bootstrap.sh)"
 
   # 2) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"

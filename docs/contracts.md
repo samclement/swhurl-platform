@@ -44,8 +44,9 @@ Primary operations:
 
 ### Helm
 
-Used for imperative bootstrap/cleanup helpers where needed:
-- Cilium pre-Flux bootstrap (`scripts/26_manage_cilium_lifecycle.sh`)
+Used for bootstrap/cleanup helpers where needed:
+- Cilium pre-Flux bootstrap via k3s helm-controller (`bootstrap/k3s-manifests/cilium-helmchart.yaml`, applied with `make cilium-bootstrap` or copied into `/var/lib/rancher/k3s/server/manifests/`)
+- Flux keeps a suspended Cilium HelmRelease placeholder (`infrastructure/cilium/base/helmrelease-cilium.yaml`) for migration safety.
 - cert-manager cleanup during delete (`scripts/30_manage_cert_manager_cleanup.sh`)
 
 ### kubectl

@@ -1,0 +1,26 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cilium
+  namespace: kube-system
+spec:
+  # Mark as a bootstrap dependency for k3s helm-controller.
+  bootstrap: true
+  chart: cilium
+  repo: https://helm.cilium.io/
+  version: 1.19.0
+  targetNamespace: kube-system
+  failurePolicy: abort
+  valuesContent: |-
+    kubeProxyReplacement: "false"
+    operator:
+      replicas: 1
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true
+        ingress:
+          enabled: false
+

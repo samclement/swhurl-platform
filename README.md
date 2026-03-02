@@ -47,21 +47,40 @@ kubectl get nodes
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
+Bootstrap Cilium before Flux:
+
+```bash
+make cilium-bootstrap
+```
+
+Optional k3s auto-deploy mode (persisted at host level):
+
+```bash
+sudo install -D -m 0644 bootstrap/k3s-manifests/cilium-helmchart.yaml \
+  /var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml
+kubectl -n kube-system rollout status ds/cilium --timeout=10m
+kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
+```
+
+Migration safety note:
+- The repo keeps `infrastructure/cilium/base/helmrelease-cilium.yaml` suspended as a handoff placeholder for existing clusters. Active install ownership is the k3s bootstrap manifest.
+
 ## Quickstart
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (copy `profiles/secrets.example.env`).
 3. Optional host bootstrap (dynamic DNS only): `./host/run-host.sh`.
-4. Install Flux manually (one-time per cluster):
+4. Bootstrap Cilium (pre-Flux): `make cilium-bootstrap`
+5. Install Flux manually (one-time per cluster):
 
 ```bash
 flux check --pre
 flux install --namespace flux-system
 ```
 
-5. Apply Flux bootstrap manifests:
+6. Apply Flux bootstrap manifests:
    - `make flux-bootstrap`
-6. Reconcile sources + stack (includes runtime-input secret sync):
+7. Reconcile sources + stack (includes runtime-input secret sync):
    - `make flux-reconcile`
 
 ### Manual Flux Installation (No Repo Installer Script)
@@ -78,11 +97,8 @@ Manual bootstrap sequence:
 # 1) Verify cluster reachability
 kubectl get nodes
 
-# 2) Ensure CNI is ready (Cilium in this repo)
-kubectl -n kube-system get ds cilium
-# If needed:
-./scripts/20_reconcile_platform_namespaces.sh
-./scripts/26_manage_cilium_lifecycle.sh
+# 2) Bootstrap Cilium (pre-Flux requirement)
+make cilium-bootstrap
 
 # 3) Install Flux controllers
 flux check --pre
@@ -207,7 +223,7 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
 ## New Machine Gotchas
 
-1. Cilium prerequisite: k3s must be installed with flannel/network-policy disabled (`--flannel-backend=none --disable-network-policy`) before Cilium is reconciled.
+1. Cilium prerequisite: k3s must be installed with flannel/network-policy disabled (`--flannel-backend=none --disable-network-policy`) and Cilium must be bootstrapped (`make cilium-bootstrap`) before Flux install/reconcile.
 2. Runtime inputs are external to Git: after changing local config/secrets, run `make runtime-inputs-sync` before `make flux-reconcile`.
 3. DNS wildcard scope: `*.homelab.swhurl.com` only matches one-label hosts. Multi-label names like `staging.hello.homelab.swhurl.com` need explicit records (or a deeper wildcard) in Route53.
 4. cert-manager issuance timing: first reconcile can fail until DNS records propagate and ACME HTTP-01 checks can reach ingress.
@@ -275,6 +291,7 @@ Show plans:
 - `make install`
 - `make teardown`
 - `make reinstall`
+- `make cilium-bootstrap`
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
 - `make runtime-inputs-refresh-otel`

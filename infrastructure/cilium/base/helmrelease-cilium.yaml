@@ -3,23 +3,14 @@ kind: HelmRelease
 metadata:
   name: cilium
   namespace: kube-system
+  annotations:
+    platform.swhurl.com/mode: legacy-handoff
 spec:
+  # Keep this resource suspended to avoid uninstall/recreate churn while
+  # migrating ownership to k3s bootstrap manifests.
+  suspend: true
   interval: 30m
   releaseName: cilium
-  postRenderers:
-    - kustomize:
-        patches:
-          - target:
-              kind: Deployment
-              name: hubble-relay
-              namespace: kube-system
-            patch: |
-              - op: add
-                path: /spec/template/spec/hostNetwork
-                value: true
-              - op: add
-                path: /spec/template/spec/dnsPolicy
-                value: ClusterFirstWithHostNet
   chart:
     spec:
       chart: cilium
@@ -29,12 +20,6 @@ spec:
         name: cilium
         namespace: flux-system
       interval: 30m
-  install:
-    remediation:
-      retries: 3
-  upgrade:
-    remediation:
-      retries: 3
   values:
     kubeProxyReplacement: "false"
     operator:
@@ -46,15 +31,5 @@ spec:
       ui:
         enabled: true
         ingress:
-          enabled: true
-          className: nginx
-          annotations:
-            cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
-            nginx.ingress.kubernetes.io/auth-url: https://oauth.homelab.swhurl.com/oauth2/auth
-            nginx.ingress.kubernetes.io/auth-signin: https://oauth.homelab.swhurl.com/oauth2/start?rd=$scheme://$host$request_uri
-          hosts:
-            - hubble.homelab.swhurl.com
-          tls:
-            - secretName: hubble-ui-tls
-              hosts:
-                - hubble.homelab.swhurl.com
+          enabled: false
+

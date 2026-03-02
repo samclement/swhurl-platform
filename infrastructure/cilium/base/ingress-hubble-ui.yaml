@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hubble-ui
+  namespace: kube-system
+  annotations:
+    cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hubble.homelab.swhurl.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hubble-ui
+                port:
+                  name: http
+  tls:
+    - secretName: hubble-ui-tls
+      hosts:
+        - hubble.homelab.swhurl.com
+

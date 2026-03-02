@@ -174,6 +174,10 @@ say "Hubble"
 if feature_is_enabled cilium; then
   if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
     ok "hubble-relay deployment present"
+    actual_relay_host_network=$(kubectl -n kube-system get deploy hubble-relay -o jsonpath='{.spec.template.spec.hostNetwork}')
+    actual_relay_dns_policy=$(kubectl -n kube-system get deploy hubble-relay -o jsonpath='{.spec.template.spec.dnsPolicy}')
+    check_eq "hubble-relay.hostNetwork" "true" "$actual_relay_host_network" "scripts/bootstrap/patch-hubble-relay-hostnetwork.sh"
+    check_eq "hubble-relay.dnsPolicy" "ClusterFirstWithHostNet" "$actual_relay_dns_policy" "scripts/bootstrap/patch-hubble-relay-hostnetwork.sh"
     check_deploy_ready kube-system hubble-relay "make cilium-bootstrap"
   else
     mismatch "hubble-relay deployment not found"

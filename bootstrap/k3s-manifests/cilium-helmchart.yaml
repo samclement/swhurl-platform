@@ -21,6 +21,9 @@ spec:
       listenAddress: "0.0.0.0:4244"
       relay:
         enabled: true
+        # Cilium chart v1.19.0 does not expose relay hostNetwork in values.
+        # `make cilium-bootstrap` and `scripts/26_manage_cilium_lifecycle.sh`
+        # patch hubble-relay to hostNetwork=true after install.
       ui:
         enabled: true
         ingress:

@@ -63,7 +63,7 @@ cilium-bootstrap:
 	kubectl -n kube-system rollout status ds/cilium --timeout=10m
 	kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
 	@if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then \
-	  kubectl -n kube-system rollout status deploy/hubble-relay --timeout=10m; \
+	  ./scripts/bootstrap/patch-hubble-relay-hostnetwork.sh; \
 	fi
 	@if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then \
 	  kubectl -n kube-system rollout status deploy/hubble-ui --timeout=10m; \

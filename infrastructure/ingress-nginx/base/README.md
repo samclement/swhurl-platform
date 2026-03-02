@@ -1,3 +1,5 @@
 # Ingress Provider: NGINX
 
-Active ingress-nginx provider overlay used by the default homelab composition.
+Legacy/optional ingress-nginx provider overlay.
+
+This is not included in `infrastructure/overlays/home/kustomization.yaml` by default.

@@ -5,16 +5,17 @@
 
 ## Context
 
-The homelab cluster needs one active ingress provider at a time, with the ability to switch
-between `ingress-nginx` and `traefik` without restructuring repository layers.
+The homelab cluster needs one active ingress provider at a time.
+Native k3s `traefik` is the default provider, and the repo keeps legacy `ingress-nginx`
+manifests available for optional composition overrides.
 
 ## Decision
 
 Use composition-driven provider selection in:
 - `infrastructure/overlays/home/kustomization.yaml`
 
-Current default is `ingress-nginx` (`../../ingress-nginx/base`).
-Optional Traefik composition path is `../../ingress-traefik/base`.
+Current default relies on k3s-packaged `traefik` (no Flux ingress controller release in `home`).
+Optional legacy provider path remains `../../ingress-nginx/base`.
 
 Keep `INGRESS_PROVIDER` in `config.env` as an operator intent hint for verification and
 operational checks, not as the source of deployment truth.
@@ -28,5 +29,5 @@ operational checks, not as the source of deployment truth.
 
 ## Follow-ups
 
-1. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned with actual manifests.
-2. When Traefik manifests become fully implemented, update default composition intentionally.
+1. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned for legacy cluster migrations.
+2. If Flux-managed Traefik ownership is introduced, add explicit manifests under `infrastructure/ingress-traefik/base` and update this ADR.

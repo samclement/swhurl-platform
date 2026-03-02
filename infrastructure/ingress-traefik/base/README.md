@@ -1,6 +1,6 @@
 # Ingress Provider: Traefik
 
-Target overlay for k3s default ingress.
+Optional Flux-managed Traefik provider overlay.
 
-Populate this folder with Traefik `HelmRelease`/manifests when core ingress migration
-moves from legacy scripts to Flux ownership.
+Native k3s Traefik is the default ingress path in this repo; this folder is reserved for
+future explicit Flux ownership if needed.

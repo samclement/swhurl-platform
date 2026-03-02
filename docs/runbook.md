@@ -2,6 +2,18 @@
 
 This repo is operated through Flux GitOps with optional script orchestration (`run.sh`).
 
+## Manual k3s prerequisite
+
+Install k3s manually before Flux bootstrap. Keep packaged `traefik` and `metrics-server` enabled:
+
+```bash
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server --flannel-backend=none --disable-network-policy" sh -
+sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+chmod 600 "$HOME/.kube/config"
+kubectl -n kube-system get deploy traefik metrics-server
+```
+
 ## Standard Operations
 
 ### Bootstrap
@@ -15,6 +27,12 @@ make flux-bootstrap
 Behavior:
 - Flux installation is manual (outside repo scripts).
 - `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
+- If `homelab-infrastructure` fails with `no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"`, install cert-manager CRDs once and rerun reconcile:
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.3/cert-manager.crds.yaml
+make flux-reconcile
+```
 
 ### Reconcile
 
@@ -73,6 +91,14 @@ Sync/update source secret:
 
 ```bash
 make runtime-inputs-sync
+```
+
+Note:
+- `logging/hyperdx-secret` value changes do not hot-reload into already-running `otel-k8s-*` collectors because `secretKeyRef` env vars are read at container start. If Kubernetes telemetry keeps returning 401 after key rotation, restart collector workloads.
+- For ClickStack key rotations, prefer:
+
+```bash
+make runtime-inputs-refresh-otel
 ```
 
 ## Verification

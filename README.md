@@ -7,7 +7,8 @@ This repo manages a homelab Kubernetes platform with Flux GitOps.
 Default stack components:
 - Cilium
 - cert-manager + ClusterIssuers (`selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`)
-- ingress-nginx
+- k3s-packaged Traefik ingress controller
+- k3s-packaged metrics-server
 - oauth2-proxy
 - ClickStack + OTel collectors
 - MinIO
@@ -28,17 +29,29 @@ Required for cluster orchestration (`make install`, `./run.sh`, Flux reconcile):
 Required for host tasks (`./host/run-host.sh`):
 - Linux with `systemd` (`host/tasks/10_dynamic_dns.sh`)
 - `aws` CLI configured with Route53 permissions (`host/tasks/10_dynamic_dns.sh`)
-- `curl` and `kubectl` (`host/tasks/20_install_k3s.sh`)
 
 Optional tooling used in some workflows:
 - Flux CLI (`flux`) for reconcile/bootstrap operations.
 - `jq`, `yq`, `sops`, `age`.
 
+## Manual k3s prerequisite
+
+Install k3s manually before running Flux workflows. Keep packaged `traefik` and `metrics-server` enabled, and disable flannel/network-policy for Cilium:
+
+```bash
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server --flannel-backend=none --disable-network-policy" sh -
+sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+chmod 600 "$HOME/.kube/config"
+kubectl get nodes
+kubectl -n kube-system get deploy traefik metrics-server
+```
+
 ## Quickstart
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (copy `profiles/secrets.example.env`).
-3. Optional host bootstrap: `./host/run-host.sh`.
+3. Optional host bootstrap (dynamic DNS only): `./host/run-host.sh`.
 4. Install Flux manually (one-time per cluster):
 
 ```bash
@@ -159,6 +172,12 @@ make runtime-inputs-sync
 make flux-reconcile
 ```
 
+If you changed ClickStack keys (`CLICKSTACK_INGESTION_KEY` and/or `CLICKSTACK_API_KEY`), use:
+
+```bash
+make runtime-inputs-refresh-otel
+```
+
 Important contracts:
 - `OAUTH_COOKIE_SECRET` must be exactly 16, 24, or 32 characters.
 - `CLICKSTACK_API_KEY` is required when ClickStack/OTel are enabled.
@@ -171,8 +190,7 @@ ClickStack first-login flow:
 4. Re-sync:
 
 ```bash
-make runtime-inputs-sync
-flux reconcile kustomization homelab-platform -n flux-system --with-source
+make runtime-inputs-refresh-otel
 ```
 
 ### 4) Example app deployment defaults
@@ -194,6 +212,7 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 3. DNS wildcard scope: `*.homelab.swhurl.com` only matches one-label hosts. Multi-label names like `staging.hello.homelab.swhurl.com` need explicit records (or a deeper wildcard) in Route53.
 4. cert-manager issuance timing: first reconcile can fail until DNS records propagate and ACME HTTP-01 checks can reach ingress.
 5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial ClickStack team setup is completed in the UI.
+6. OTel collector key reload: after rotating ClickStack keys, restart collector pods (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.
 
 ## Addendum: Native k3s Metrics Server + Traefik
 
@@ -258,6 +277,8 @@ Show plans:
 - `make reinstall`
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
+- `make runtime-inputs-refresh-otel`
+- `make otel-collectors-restart`
 - `make flux-reconcile`
 - `make platform-certs-staging|platform-certs-prod`
 - `make verify`

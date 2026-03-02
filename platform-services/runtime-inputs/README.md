@@ -23,3 +23,9 @@ Create/update the source secret with:
 ```bash
 make runtime-inputs-sync
 ```
+
+For ClickStack key updates, run the full refresh flow so running `otel-k8s-*` collectors pick up the new `HYPERDX_API_KEY` env value:
+
+```bash
+make runtime-inputs-refresh-otel
+```

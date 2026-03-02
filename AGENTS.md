@@ -33,6 +33,7 @@ Mode boundaries:
 Primary commands:
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
+- `make runtime-inputs-refresh-otel`
 - `make flux-reconcile`
 - `make install`
 - `make teardown`
@@ -69,26 +70,38 @@ Important contract:
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
   - Issuer local chart (`charts/platform-issuers`) is retired.
   - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
+  - First-time bootstrap can race on cert-manager CRDs (`ClusterIssuer` dry-run failure) because issuers are currently in the same infrastructure layer as the cert-manager HelmRelease.
   - Apps keep issuer selection in app overlays/manifests; current example app staging/prod overlays both use `letsencrypt-prod`.
   - Example app base now includes `tenants/apps/example/base/ciliumnetworkpolicy-hello-web-l7-observe.yaml` to keep Hubble L7 HTTP visibility declarative for test app flows.
+  - TODO (`docs/runbook.md`): split cert-manager issuers into a dedicated Flux Kustomization that depends on cert-manager readiness.
 
 - DNS and host layer
-  - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh` and updates Route53 wildcard `*.homelab.swhurl.com`.
+  - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh` and updates Route53 A records for `homelab.swhurl.com` and `*.homelab.swhurl.com`.
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
+  - TODO (`host/scripts/aws-dns-updater.sh`): support an env-provided record list for additional explicit hostnames.
   - Host automation is opt-in and runs via `host/run-host.sh`.
 
 - k3s/Cilium
-  - k3s is a manual prerequisite path (`host/run-host.sh --only 20_install_k3s.sh`).
+  - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - Keep Cilium teardown last in delete flows.
-  - Native k3s `metrics-server`/Traefik mode requires removing Flux-managed `infrastructure/metrics-server/base` and `infrastructure/ingress-nginx/base` from `infrastructure/overlays/home`, plus migrating issuer solver class and ingress annotations/class from NGINX conventions to Traefik conventions.
+  - Default `infrastructure/overlays/home` now relies on k3s-packaged `traefik` + `metrics-server` (no Flux-managed ingress-nginx/metrics-server in active composition).
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
+  - TODO (`README.md`, `docs/runbook.md`): add Traefik Middleware/ForwardAuth resources to restore oauth2-proxy edge-auth parity for app/hubble ingresses.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.
   - `CLICKSTACK_INGESTION_KEY` can initially fall back to `CLICKSTACK_API_KEY`.
   - OTel daemonset node metrics on k3s use host networking + kubelet endpoint `127.0.0.1:10250`.
+  - Cold-start image pulls can exceed default Helm action wait; set `spec.timeout` in `platform-services/clickstack/base/helmrelease-clickstack.yaml` to reduce bootstrap retries.
+  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; refresh `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `profiles/secrets.env` and run `make runtime-inputs-sync && make flux-reconcile`.
+  - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
+  - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
+  - TODO (`docs/runbook.md`): document and/or automate collector rollout restart on `hyperdx-secret` changes (e.g., checksum annotation strategy).
+
+- kubectl / kubeconfig behavior
+  - On hosts where `/usr/local/bin/kubectl` is the `k3s` wrapper, non-interactive shells can default to `/etc/rancher/k3s/k3s.yaml`; export `KUBECONFIG=$HOME/.kube/config` explicitly for scripted checks.
 
 - Labels and teardown ownership
   - Managed label domain is `platform.swhurl.com/managed`.

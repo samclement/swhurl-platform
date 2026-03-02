@@ -48,6 +48,7 @@ Default delete steps:
 Notes:
 - Cilium is a pre-Flux dependency and is bootstrapped declaratively via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`).
 - Cilium bootstrap values explicitly set `hubble.listenAddress: "0.0.0.0:4244"` to keep `hubble-relay` peer connectivity stable on IPv4-only node addressing.
+- Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` (`ClusterFirstWithHostNet`) after Cilium rollout.
 - Flux retains a suspended Cilium HelmRelease (`infrastructure/cilium/base/helmrelease-cilium.yaml`) as a migration handoff placeholder for existing clusters.
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.
@@ -96,7 +97,7 @@ Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make cilium-bootstrap`
-  - Applies `bootstrap/k3s-manifests/cilium-helmchart.yaml` and waits for Cilium readiness before Flux bootstrap/reconcile.
+  - Applies `bootstrap/k3s-manifests/cilium-helmchart.yaml`, waits for Cilium readiness, and patches `kube-system/hubble-relay` to `hostNetwork=true` before Flux bootstrap/reconcile.
 - `make runtime-inputs-sync`
   - Syncs external source secret `flux-system/platform-runtime-inputs` from local env/profile.
 - `make flux-reconcile`

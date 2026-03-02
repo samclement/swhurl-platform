@@ -87,11 +87,13 @@ Important contract:
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Cilium install is pre-Flux bootstrap via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`) and `make cilium-bootstrap`.
   - Keep `hubble.listenAddress: "0.0.0.0:4244"` in Cilium bootstrap values (`bootstrap/k3s-manifests/cilium-helmchart.yaml`; mirrored in `infrastructure/cilium/base/helmrelease-cilium.yaml` and `scripts/26_manage_cilium_lifecycle.sh`) to avoid `hubble-relay` peer instability on IPv4-only node addressing.
+  - Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` via `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh` (called by `make cilium-bootstrap` and `scripts/26_manage_cilium_lifecycle.sh`).
   - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
   - `infrastructure/cilium/base/helmrelease-cilium.yaml` is intentionally `spec.suspend: true` as a migration handoff placeholder; active install ownership is k3s bootstrap manifest.
   - `infrastructure/cilium/base` carries post-bootstrap Cilium-adjacent resources (for example, Hubble UI ingress).
   - Keep Cilium teardown last in delete flows.
   - TODO (`docs/runbook.md`): add an explicit host-level remove flow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown cannot resurrect Cilium.
+  - TODO (`docs/runbook.md`): replace post-install `hubble-relay` hostNetwork patching once Cilium exposes chart-native relay host-network values.
   - Default `infrastructure/overlays/home` now relies on k3s-packaged `traefik` + `metrics-server` (no Flux-managed ingress-nginx/metrics-server in active composition).
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
   - `hubble-ui` ingress class must match the active externally-routed ingress provider. If public traffic still lands on ingress-nginx and `hubble-ui` is switched to Traefik, TLS can remain valid but requests will return 404.

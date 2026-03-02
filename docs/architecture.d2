@@ -5,7 +5,7 @@ direction: right
 legend: {
   Browser: "End user accessing apps"
   DNS: "Public DNS (*.BASE_DOMAIN / swhurl.com)"
-  Ingress: "ingress-nginx Controller (namespace: ingress)"
+  Ingress: "Traefik Controller (k3s packaged)"
   OAuth2Proxy: "oauth2-proxy (namespace: ingress)"
   OIDC: "External Identity Provider (e.g., Google, Auth0)"
   CertManager: "cert-manager (namespace: cert-manager)"
@@ -26,8 +26,8 @@ Cluster: {
   shape: rectangle
 
   IngressNS: {
-    label: "Namespace: ingress"
-    Ingress: "ingress-nginx"
+    label: "Namespaces: kube-system + ingress"
+    Ingress: "traefik"
     OAuth2Proxy: "oauth2-proxy"
   }
 
@@ -74,7 +74,7 @@ External.DNS -> Cluster.IngressNS.Ingress: "HTTPS (80/443)"
 Cluster.IngressNS.Ingress -> Cluster.AppsNS.App: "Route to app Service"
 
 # Edge auth with oauth2-proxy
-Cluster.IngressNS.Ingress -> Cluster.IngressNS.OAuth2Proxy: "auth-url/auth-signin"
+Cluster.IngressNS.Ingress -> Cluster.IngressNS.OAuth2Proxy: "forward-auth middleware (optional)"
 Cluster.IngressNS.OAuth2Proxy -> External.OIDC: "OIDC (authorize/token/userinfo)"
 Cluster.IngressNS.OAuth2Proxy -> Cluster.AppsNS.App: "forward auth headers"
 

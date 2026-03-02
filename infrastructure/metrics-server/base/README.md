@@ -1,6 +1,8 @@
 # Metrics Server (Flux)
 
-Repo-managed metrics-server deployment for kube-system.
+Legacy/optional repo-managed metrics-server deployment for kube-system.
+
+This is not included in `infrastructure/overlays/home/kustomization.yaml` by default.
 
 Why this exists:
 - Some homelab CNI/network combinations can prevent pod-network access to kubelet on `:10250`.

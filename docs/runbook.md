@@ -27,11 +27,13 @@ sudo install -D -m 0644 bootstrap/k3s-manifests/cilium-helmchart.yaml \
   /var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml
 kubectl -n kube-system rollout status ds/cilium --timeout=10m
 kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
+./scripts/bootstrap/patch-hubble-relay-hostnetwork.sh
 ```
 
 Migration safety note:
 - `infrastructure/cilium/base/helmrelease-cilium.yaml` remains suspended as a handoff placeholder for existing clusters. Active Cilium install ownership is the k3s bootstrap manifest.
 - Keep `hubble.listenAddress: "0.0.0.0:4244"` in `bootstrap/k3s-manifests/cilium-helmchart.yaml` (and the suspended handoff HelmRelease) so `hubble-relay` can maintain peer connectivity on IPv4-only node addressing.
+- Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` so relay reconnects do not fail on node-IP peer dialing.
 
 ## Standard Operations
 
@@ -45,7 +47,7 @@ make flux-bootstrap
 ```
 
 Behavior:
-- `make cilium-bootstrap` applies `bootstrap/k3s-manifests/cilium-helmchart.yaml` and waits for Cilium readiness.
+- `make cilium-bootstrap` applies `bootstrap/k3s-manifests/cilium-helmchart.yaml`, waits for Cilium readiness, then patches `kube-system/hubble-relay` to `hostNetwork=true`.
 - Flux installation is manual (outside repo scripts).
 - `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
 - If `homelab-infrastructure` fails with `no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"`, install cert-manager CRDs once and rerun reconcile:
@@ -178,3 +180,4 @@ Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this 
 ## TODO
 
 - Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.
+- Replace post-install `hubble-relay` hostNetwork patching with chart-native values once Cilium exposes relay host-network configuration.

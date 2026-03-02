@@ -107,7 +107,7 @@ host_dynamic_dns_apply() {
     host_sudo systemctl start "$HOST_DDNS_TIMER" || true
   fi
 
-  host_log_info "Configured dynamic DNS updater for *.homelab.swhurl.com"
+  host_log_info "Configured dynamic DNS updater for homelab.swhurl.com and *.homelab.swhurl.com"
 }
 
 host_dynamic_dns_delete() {

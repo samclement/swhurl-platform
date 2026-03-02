@@ -131,6 +131,8 @@ wait_ds kube-system cilium
 wait_deploy kube-system cilium-operator
 
 if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
+  # TODO: remove this patch when Cilium chart exposes a hubble-relay hostNetwork value.
+  "$SCRIPT_DIR/bootstrap/patch-hubble-relay-hostnetwork.sh"
   wait_deploy kube-system hubble-relay
 fi
 if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then

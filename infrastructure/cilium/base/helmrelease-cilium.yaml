@@ -29,6 +29,8 @@ spec:
       listenAddress: "0.0.0.0:4244"
       relay:
         enabled: true
+        # Cilium chart v1.19.0 does not expose relay hostNetwork in values.
+        # Active install flows patch hubble-relay post-install.
       ui:
         enabled: true
         ingress:

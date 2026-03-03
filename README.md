@@ -199,6 +199,8 @@ make runtime-inputs-refresh-otel
 ```
 
 Important contracts:
+ - `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET` are used by shared hello/staging oauth2-proxy auth.
+ - `HUBBLE_OIDC_CLIENT_ID` / `HUBBLE_OIDC_CLIENT_SECRET` are used by dedicated `oauth2-proxy-hubble` auth.
 - `OAUTH_COOKIE_SECRET` must be exactly 16, 24, or 32 characters.
 - `CLICKSTACK_API_KEY` is required when ClickStack/OTel are enabled.
 - `CLICKSTACK_INGESTION_KEY` is optional initially; when unset it falls back to `CLICKSTACK_API_KEY`.

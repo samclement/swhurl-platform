@@ -67,9 +67,9 @@ Important contract:
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
   - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
-  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); runtime secret wiring uses `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
-  - Hubble reverse-proxy auth uses `platform-services/oauth2-proxy-hubble/base/helmrelease-oauth2-proxy-hubble.yaml` with runtime target secret `platform-services/runtime-inputs/secret-oauth2-proxy-hubble.yaml` (same OIDC/cookie inputs, separate cookie name).
-  - TODO (`scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/00_verify_contract_lib.sh`, `config.env`, `README.md`): rename `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` to provider-neutral names (`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`) if multi-IdP provider switching is expected.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); runtime secret wiring uses `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET`.
+  - Hubble reverse-proxy auth uses `platform-services/oauth2-proxy-hubble/base/helmrelease-oauth2-proxy-hubble.yaml` with runtime target secret `platform-services/runtime-inputs/secret-oauth2-proxy-hubble.yaml` wired to `HUBBLE_OIDC_CLIENT_ID` / `HUBBLE_OIDC_CLIENT_SECRET` (shared cookie secret, separate cookie name).
+  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` as fallback, but warns they are deprecated in favor of `HELLO_OIDC_*` and `HUBBLE_OIDC_*`.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.

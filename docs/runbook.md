@@ -94,12 +94,14 @@ Parent level:
 
 Cluster level (`clusters/home/*.yaml`):
 - `homelab-infrastructure -> homelab-platform -> homelab-tenants -> homelab-app-example`
+- `homelab-app-example-keycloak-canary` (suspended-by-default canary route, depends on `homelab-app-example`)
 
 Layer composition:
 - `homelab-infrastructure` points to `infrastructure/overlays/home`.
 - `homelab-platform` points to `platform-services/overlays/home`.
 - `homelab-tenants` points to `tenants/app-envs` (tenant env namespaces only).
 - `homelab-app-example` points to `tenants/apps/example` (sample app staging+prod overlays).
+- `homelab-app-example-keycloak-canary` points to `tenants/apps/example/canary/keycloak` (canary ingress/cert/middleware only).
 - Platform cert issuer intent is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
 
 ## Runtime Inputs
@@ -147,7 +149,11 @@ Canary oauth2-proxy sequence:
 2. `make runtime-inputs-sync`
 3. `make flux-reconcile`
 4. Unsuspend `platform-services/oauth2-proxy-keycloak-canary/base/helmrelease-oauth2-proxy-keycloak-canary.yaml`.
-5. Reconcile and validate `https://oauth-keycloak.homelab.swhurl.com` before any app-route cutover.
+5. Unsuspend `clusters/home/app-example-keycloak-canary.yaml`.
+6. Reconcile and validate:
+   - `https://oauth-keycloak.homelab.swhurl.com`
+   - `https://keycloak-canary-hello.homelab.swhurl.com`
+7. Keep existing app ingresses on the current oauth2-proxy issuer until canary auth flow is verified end-to-end.
 
 ## Verification
 

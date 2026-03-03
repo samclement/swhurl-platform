@@ -66,6 +66,8 @@ Important contract:
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
+  - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy` and `kube-system/oauth2-proxy-hubble` (or automate via checksum strategy) to load new client credentials.
+  - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so hello/hubble client-id/client-secret changes are picked up without manual deployment restarts.
   - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
   - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); runtime secret wiring uses `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET`.
   - Hubble reverse-proxy auth uses `platform-services/oauth2-proxy-hubble/base/helmrelease-oauth2-proxy-hubble.yaml` with runtime target secret `platform-services/runtime-inputs/secret-oauth2-proxy-hubble.yaml` wired to `HUBBLE_OIDC_CLIENT_ID` / `HUBBLE_OIDC_CLIENT_SECRET` (shared cookie secret, separate cookie name).

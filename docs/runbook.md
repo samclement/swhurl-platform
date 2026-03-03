@@ -182,3 +182,4 @@ Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this 
 
 - Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.
 - Replace post-install `hubble-relay` hostNetwork patching with chart-native values once Cilium exposes relay host-network configuration.
+- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy` and `kube-system/oauth2-proxy-hubble` pick up updated client credentials automatically.

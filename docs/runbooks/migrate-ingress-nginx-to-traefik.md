@@ -64,7 +64,7 @@ curl -I https://minio-console.homelab.swhurl.com
 ```
 
 Expected auth behavior during current Traefik forward-auth mode:
-- `hello` / `staging-hello` redirect to oauth2-proxy sign-in when unauthenticated.
+- `hello` / `staging-hello` return `401` when unauthenticated.
 - `hubble` is currently left unauthenticated (`200`) until redirect-capable edge-auth is added.
 
 ## Rollback

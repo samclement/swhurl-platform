@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - deployment-hello-web.yaml
   - service-hello-web.yaml
-  - middleware-oauth2-proxy.yaml
   - ingress-hello-web.yaml
   - certificate-hello-web.yaml
   - ciliumnetworkpolicy-hello-web-l7-observe.yaml

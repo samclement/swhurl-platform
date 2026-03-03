@@ -15,7 +15,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: hubble-ui
+                name: oauth2-proxy-hubble
                 port:
                   name: http
   tls:

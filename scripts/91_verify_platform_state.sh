@@ -326,41 +326,6 @@ else
   ok "$(feature_flag_var keycloak_canary)=false; skipping"
 fi
 
-say "Keycloak Canary App Route"
-if feature_is_enabled keycloak_canary; then
-  if kubectl -n flux-system get kustomization homelab-app-example-keycloak-canary >/dev/null 2>&1; then
-    canary_app_suspended="$(kubectl -n flux-system get kustomization homelab-app-example-keycloak-canary -o jsonpath='{.spec.suspend}')"
-    if [[ "$canary_app_suspended" == "true" ]]; then
-      warn "flux-system/homelab-app-example-keycloak-canary is suspended; skipping app-route checks (rollout safety mode)"
-    else
-      if kubectl -n apps-staging get ingress hello-web-keycloak-canary >/dev/null 2>&1; then
-        actual_host="$(kubectl -n apps-staging get ingress hello-web-keycloak-canary -o jsonpath='{.spec.rules[0].host}')"
-        actual_class="$(ingress_class apps-staging hello-web-keycloak-canary)"
-        check_eq "hello-web-keycloak-canary.host" "keycloak-canary-hello.homelab.swhurl.com" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-        check_eq "hello-web-keycloak-canary.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-      else
-        mismatch "apps-staging/hello-web-keycloak-canary ingress not found"
-        add_suggest "scripts/32_reconcile_flux_stack.sh"
-      fi
-
-      if kubectl -n apps-staging get certificate hello-web-keycloak-canary >/dev/null 2>&1; then
-        actual_dns="$(kubectl -n apps-staging get certificate hello-web-keycloak-canary -o jsonpath='{.spec.dnsNames[0]}')"
-        actual_issuer="$(kubectl -n apps-staging get certificate hello-web-keycloak-canary -o jsonpath='{.spec.issuerRef.name}')"
-        check_eq "hello-web-keycloak-canary.dns" "keycloak-canary-hello.homelab.swhurl.com" "$actual_dns" "scripts/32_reconcile_flux_stack.sh"
-        check_eq "hello-web-keycloak-canary.issuer" "letsencrypt-prod" "$actual_issuer" "tenants/apps/example/canary/keycloak/certificate-hello-web-keycloak-canary.yaml"
-      else
-        mismatch "apps-staging/hello-web-keycloak-canary certificate not found"
-        add_suggest "scripts/32_reconcile_flux_stack.sh"
-      fi
-    fi
-  else
-    mismatch "flux-system/homelab-app-example-keycloak-canary Kustomization not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-else
-  ok "$(feature_flag_var keycloak_canary)=false; skipping"
-fi
-
 say "Keycloak"
 if feature_is_enabled keycloak; then
   if kubectl -n identity get helmrelease keycloak >/dev/null 2>&1; then

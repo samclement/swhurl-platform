@@ -126,14 +126,12 @@ Important contract:
 
 - Identity/Keycloak
   - Keycloak platform-service skeleton lives in `platform-services/keycloak/base`.
-  - On this cluster's current Flux/source-controller, Bitnami `keycloak` chart `25.x` fails with `unsupported protocol scheme "oci"` from `HelmRepository` index URLs. Keep `platform-services/keycloak/base/helmrelease-keycloak.yaml` pinned to `24.2.0` (HTTP `.tgz`) unless chart sourcing is migrated to an OCI-compatible flow.
   - Rollout safety default is `spec.suspend: true` in `HelmRelease/keycloak` to avoid accidental issuer cutover.
   - Keycloak oauth2-proxy canary skeleton lives in `platform-services/oauth2-proxy-keycloak-canary/base` with dedicated host `oauth-keycloak.homelab.swhurl.com` and `spec.suspend: true`.
   - Keycloak app-route canary is isolated in `clusters/home/app-example-keycloak-canary.yaml` (points to `tenants/apps/example/canary/keycloak`) and stays active by default to avoid first-reconcile health-check stalls on parent `homelab-flux-stack`.
   - `scripts/91_verify_platform_state.sh` checks `hello-web-keycloak-canary` ingress/certificate only after `homelab-app-example-keycloak-canary` is unsuspended, and warns/skips while suspended.
   - New Flux `Kustomization` objects added under `clusters/home/` can block `homelab-flux-stack` first reconcile when `spec.suspend: true` and `wait: true` is enabled on the parent; suspend downstream `HelmRelease`/workloads instead when possible.
   - TODO (`docs/runbook.md`): publish a full Keycloak cutover runbook (realm bootstrap, oauth2-proxy client config, rollback).
-  - TODO (`docs/runbook.md`): document Keycloak chart-source migration path (or Flux controller upgrade requirement) before moving chart pin above `24.2.0`.
 
 - kubectl / kubeconfig behavior
   - On hosts where `/usr/local/bin/kubectl` is the `k3s` wrapper, non-interactive shells can default to `/etc/rancher/k3s/k3s.yaml`; export `KUBECONFIG=$HOME/.kube/config` explicitly for scripted checks.

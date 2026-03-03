@@ -64,8 +64,8 @@ curl -I https://minio-console.homelab.swhurl.com
 ```
 
 Expected auth behavior during current Traefik forward-auth mode:
-- `hello` / `staging-hello` return oauth2-proxy auth responses when unauthenticated (`401` with IdP auth `Location` header via `oauth-signin` + `oauth-auth` middlewares).
-- `hubble` is currently left unauthenticated (`200`) until redirect-capable edge-auth is added.
+- `hello` / `staging-hello` return direct `302` redirects to the IdP when unauthenticated (shared `ingress-oauth-auth@kubernetescrd`, oauth2-proxy `upstream=static://202`).
+- `hubble` is protected by dedicated reverse-proxy auth (`kube-system/oauth2-proxy-hubble`).
 
 ## Rollback
 

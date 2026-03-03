@@ -2,6 +2,6 @@
 
 Active Flux-owned oauth2-proxy release definition.
 
-- Includes shared Traefik middlewares in `ingress` namespace:
-  - `oauth-auth` (`forwardAuth` to `/oauth2/auth`)
-  - `oauth-signin` (`errors` middleware mapping `401-403` to `/oauth2/start?rd={url}`)
+- Uses `upstream=static://202` for ForwardAuth mode with redirect responses from the auth service itself.
+- Includes shared Traefik middleware in `ingress` namespace:
+  - `oauth-auth` (`forwardAuth` to `/`)

@@ -5,7 +5,7 @@ metadata:
   namespace: ingress
 spec:
   forwardAuth:
-    address: http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth
+    address: http://oauth2-proxy.ingress.svc.cluster.local/
     trustForwardHeader: true
     authResponseHeaders:
       - X-Auth-Request-Access-Token

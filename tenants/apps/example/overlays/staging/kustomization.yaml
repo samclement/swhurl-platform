@@ -19,7 +19,7 @@ patches:
       - op: add
         path: /metadata/annotations
         value:
-          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-signin@kubernetescrd,ingress-oauth-auth@kubernetescrd
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth@kubernetescrd
   - target:
       group: cert-manager.io
       version: v1

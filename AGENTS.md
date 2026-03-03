@@ -67,8 +67,8 @@ Important contract:
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
   - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
-  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` now uses GitHub provider args (`provider: github`, `scope: read:user user:email`); runtime secret wiring still uses `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
-  - TODO (`scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/00_verify_contract_lib.sh`, `config.env`, `README.md`): rename `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` to provider-neutral names (`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`) after GitHub migration stabilizes.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); runtime secret wiring uses `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
+  - TODO (`scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/00_verify_contract_lib.sh`, `config.env`, `README.md`): rename `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` to provider-neutral names (`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`) if multi-IdP provider switching is expected.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -100,12 +100,14 @@ Important contract:
   - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
   - `hubble-ui` ingress class must match the active externally-routed ingress provider. If public traffic still lands on ingress-nginx and `hubble-ui` is switched to Traefik, TLS can remain valid but requests will return 404.
   - `scripts/91_verify_platform_state.sh` now enforces ingress-class alignment (`INGRESS_PROVIDER`) for hubble, oauth2-proxy, clickstack, minio/minio-console, and example app ingresses to catch split-route states early.
-  - k3s-packaged Traefik currently rejects `ExternalName` backends for `Middleware.spec.errors.service` (`externalName services not allowed`), so a redirect-via-errors pattern is not active for app ingresses.
-  - Example app ingress currently uses only `forwardAuth` to `http://oauth2-proxy.ingress.svc.cluster.local/oauth2/auth`; unauthenticated `hello`/`staging-hello` requests return raw `401`.
+  - k3s-packaged Traefik currently rejects `ExternalName` backends for `Middleware.spec.errors.service` (`externalName services not allowed`); keep oauth2-proxy `errors` middleware in the same namespace as the oauth2-proxy Service (`ingress`).
+  - Shared oauth2-proxy edge-auth middlewares now live in `platform-services/oauth2-proxy/base` (`oauth-signin` + `oauth-auth` in namespace `ingress`) and app ingresses reference them as `ingress-oauth-signin@kubernetescrd,ingress-oauth-auth@kubernetescrd`.
+  - Current `oauth-signin` uses `/oauth2/start?rd={url}` so unauthenticated app requests include IdP authorize `Location` headers instead of raw backend `401` responses.
   - `hubble-ui` auth middleware was removed to restore dashboard accessibility until a redirect-capable edge-auth pattern is added.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
   - TODO (`README.md`, `docs/runbook.md`): add a redirect-capable Traefik edge-auth pattern for `hubble-ui` (prior nginx behavior was login redirect, not raw 401).
+  - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-signin@kubernetescrd,ingress-oauth-auth@kubernetescrd` for both `apps-staging` and `apps-prod`.
   - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
   - TODO (`scripts/91_verify_platform_state.sh`): add an active `hubble-ui` stream probe (`/api/control-stream`) so verify catches relay/data-plane issues beyond deployment readiness.
 

@@ -14,8 +14,6 @@ readonly VERIFY_CONTRACT_LOADED="1"
 readonly -a FEATURE_KEYS=(
   cilium
   oauth2_proxy
-  keycloak_canary
-  keycloak
   clickstack
   otel_k8s
   minio
@@ -24,8 +22,6 @@ readonly -a FEATURE_KEYS=(
 readonly -A FEATURE_FLAGS=(
   [cilium]="FEAT_CILIUM"
   [oauth2_proxy]="FEAT_OAUTH2_PROXY"
-  [keycloak_canary]="FEAT_KEYCLOAK_CANARY"
-  [keycloak]="FEAT_KEYCLOAK"
   [clickstack]="FEAT_CLICKSTACK"
   [otel_k8s]="FEAT_OTEL_K8S"
   [minio]="FEAT_MINIO"
@@ -34,8 +30,6 @@ readonly -A FEATURE_FLAGS=(
 readonly -A FEATURE_REQUIRED_VARS=(
   [cilium]="HUBBLE_HOST"
   [oauth2_proxy]="OAUTH_HOST OIDC_CLIENT_ID OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET"
-  [keycloak_canary]="KEYCLOAK_CANARY_OIDC_CLIENT_ID KEYCLOAK_CANARY_OIDC_CLIENT_SECRET KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET"
-  [keycloak]="KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_POSTGRES_PASSWORD"
   [clickstack]="CLICKSTACK_HOST CLICKSTACK_API_KEY"
   [otel_k8s]="CLICKSTACK_API_KEY"
   [minio]="MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD"
@@ -44,8 +38,6 @@ readonly -A FEATURE_REQUIRED_VARS=(
 readonly -A FEATURE_EFFECTIVE_NON_SECRET_VARS=(
   [cilium]="HUBBLE_HOST"
   [oauth2_proxy]="OAUTH_HOST"
-  [keycloak_canary]=""
-  [keycloak]=""
   [clickstack]="CLICKSTACK_HOST"
   [minio]="MINIO_HOST MINIO_CONSOLE_HOST"
 )

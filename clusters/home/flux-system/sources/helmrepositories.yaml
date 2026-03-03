@@ -46,15 +46,6 @@ spec:
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: bitnami
-  namespace: flux-system
-spec:
-  interval: 30m
-  url: https://charts.bitnami.com/bitnami
----
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
-metadata:
   name: minio
   namespace: flux-system
 spec:

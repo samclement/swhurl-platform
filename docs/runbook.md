@@ -160,7 +160,7 @@ To switch to native k3s packaged components:
 5. Migrate ingresses and auth config:
    - `ingressClassName: traefik`
    - replace `nginx.ingress.kubernetes.io/*` annotations
-   - use Traefik oauth2-proxy middleware chain (`ingress-oauth-signin@kubernetescrd,ingress-oauth-auth@kubernetescrd`) for edge auth flows
+   - use Traefik oauth2-proxy middleware (`ingress-oauth-auth@kubernetescrd`) for edge auth flows; oauth2-proxy should run with `upstream=static://202` and `skip-provider-button=true` and ForwardAuth should target `/`
    - for `hubble.homelab.swhurl.com`, route ingress backend to `kube-system/oauth2-proxy-hubble` (reverse-proxy mode) rather than middleware chaining
 6. Reconcile:
 

@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - helmrelease-oauth2-proxy.yaml
   - middleware-oauth-auth.yaml
-  - middleware-oauth-signin.yaml

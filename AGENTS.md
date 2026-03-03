@@ -63,9 +63,13 @@ Important contract:
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
+  - oauth2-proxy Keycloak canary runtime-input target is `ingress/oauth2-proxy-keycloak-canary-secret` (`client-id`, `client-secret`, `cookie-secret` from `KEYCLOAK_CANARY_*` env vars).
+  - Keycloak runtime-input target is `identity/keycloak-runtime-inputs` (`admin-password`, `postgres-password` from `KEYCLOAK_*` env vars).
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
+  - `FEAT_KEYCLOAK_CANARY=true` gates required Keycloak canary oauth2-proxy credentials in runtime-input sync (`KEYCLOAK_CANARY_OIDC_CLIENT_ID`, `KEYCLOAK_CANARY_OIDC_CLIENT_SECRET`, `KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET`).
+  - `FEAT_KEYCLOAK=true` gates required Keycloak credentials in runtime-input sync (`KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_POSTGRES_PASSWORD`).
   - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
 
 - Issuers and certificates
@@ -115,6 +119,12 @@ Important contract:
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
   - TODO (`docs/runbook.md`): document and/or automate collector rollout restart on `hyperdx-secret` changes (e.g., checksum annotation strategy).
+
+- Identity/Keycloak
+  - Keycloak platform-service skeleton lives in `platform-services/keycloak/base`.
+  - Rollout safety default is `spec.suspend: true` in `HelmRelease/keycloak` to avoid accidental issuer cutover.
+  - Keycloak oauth2-proxy canary skeleton lives in `platform-services/oauth2-proxy-keycloak-canary/base` with dedicated host `oauth-keycloak.homelab.swhurl.com` and `spec.suspend: true`.
+  - TODO (`docs/runbook.md`): publish a full Keycloak cutover runbook (realm bootstrap, oauth2-proxy client config, rollback).
 
 - kubectl / kubeconfig behavior
   - On hosts where `/usr/local/bin/kubectl` is the `k3s` wrapper, non-interactive shells can default to `/etc/rancher/k3s/k3s.yaml`; export `KUBECONFIG=$HOME/.kube/config` explicitly for scripted checks.

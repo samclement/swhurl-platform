@@ -108,5 +108,5 @@ Key runtime-intent targets:
   - Runs `flux-reconcile` plus collector restarts so rotated ClickStack ingestion keys are loaded by running OTel pods.
 
 Design boundary:
-- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy` + ClickStack/OTel keys).
+- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy`, `oauth2-proxy-keycloak-canary`, `keycloak`, and ClickStack/OTel keys).
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

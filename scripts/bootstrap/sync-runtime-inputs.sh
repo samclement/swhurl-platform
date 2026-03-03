@@ -34,6 +34,11 @@ require_non_empty() {
 oidc_client_id="${OIDC_CLIENT_ID:-}"
 oidc_client_secret="${OIDC_CLIENT_SECRET:-}"
 oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
+keycloak_canary_oidc_client_id="${KEYCLOAK_CANARY_OIDC_CLIENT_ID:-}"
+keycloak_canary_oidc_client_secret="${KEYCLOAK_CANARY_OIDC_CLIENT_SECRET:-}"
+keycloak_canary_oauth_cookie_secret="${KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET:-}"
+keycloak_admin_password="${KEYCLOAK_ADMIN_PASSWORD:-}"
+keycloak_postgres_password="${KEYCLOAK_POSTGRES_PASSWORD:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 
@@ -51,6 +56,21 @@ if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true"
   require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
 fi
 
+if [[ "${FEAT_KEYCLOAK_CANARY:-false}" == "true" ]]; then
+  require_non_empty "KEYCLOAK_CANARY_OIDC_CLIENT_ID" "$keycloak_canary_oidc_client_id"
+  require_non_empty "KEYCLOAK_CANARY_OIDC_CLIENT_SECRET" "$keycloak_canary_oidc_client_secret"
+  require_non_empty "KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET" "$keycloak_canary_oauth_cookie_secret"
+  case "${#keycloak_canary_oauth_cookie_secret}" in
+    16|24|32) ;;
+    *) die "KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET must be exactly 16, 24, or 32 characters" ;;
+  esac
+fi
+
+if [[ "${FEAT_KEYCLOAK:-false}" == "true" ]]; then
+  require_non_empty "KEYCLOAK_ADMIN_PASSWORD" "$keycloak_admin_password"
+  require_non_empty "KEYCLOAK_POSTGRES_PASSWORD" "$keycloak_postgres_password"
+fi
+
 if [[ "${FEAT_OTEL_K8S:-true}" == "true" && -z "$clickstack_ingestion_key" ]]; then
   clickstack_ingestion_key="$clickstack_api_key"
   log_warn "CLICKSTACK_INGESTION_KEY is not set; defaulting to CLICKSTACK_API_KEY for OTel exporters"
@@ -62,6 +82,11 @@ kubectl create secret generic platform-runtime-inputs \
   --from-literal=OIDC_CLIENT_ID="$oidc_client_id" \
   --from-literal=OIDC_CLIENT_SECRET="$oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
+  --from-literal=KEYCLOAK_CANARY_OIDC_CLIENT_ID="$keycloak_canary_oidc_client_id" \
+  --from-literal=KEYCLOAK_CANARY_OIDC_CLIENT_SECRET="$keycloak_canary_oidc_client_secret" \
+  --from-literal=KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET="$keycloak_canary_oauth_cookie_secret" \
+  --from-literal=KEYCLOAK_ADMIN_PASSWORD="$keycloak_admin_password" \
+  --from-literal=KEYCLOAK_POSTGRES_PASSWORD="$keycloak_postgres_password" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
   --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -

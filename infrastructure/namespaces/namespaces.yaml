@@ -36,6 +36,13 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: identity
+  labels:
+    platform.swhurl.com/managed: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: storage
   labels:
     platform.swhurl.com/managed: "true"

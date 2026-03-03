@@ -106,9 +106,11 @@ Important contract:
   - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth@kubernetescrd`.
   - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - `hubble-ui` ingress now uses a dedicated reverse-proxy backend (`oauth2-proxy-hubble` in `kube-system`) instead of shared Traefik auth middlewares; this restores browser redirect login semantics for Hubble UI while keeping app ingress auth shared.
+  - `oauth2-proxy-hubble` also needs `skip-provider-button=true` to return direct IdP redirects from `/`; otherwise `/` returns oauth2-proxy sign-in HTML and only `/oauth2/start` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
   - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
   - TODO (`scripts/91_verify_platform_state.sh`): verify `kube-system/hubble-ui` ingress backend service is `oauth2-proxy-hubble` when Traefik is the active ingress provider.
+  - TODO (`scripts/91_verify_platform_state.sh`): add a hubble redirect behavior check (`curl -I https://${HUBBLE_HOST}` should include IdP `Location` for unauthenticated requests) so regressions to sign-in HTML are caught.
   - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-auth@kubernetescrd` for both `apps-staging` and `apps-prod`.
   - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
   - TODO (`scripts/91_verify_platform_state.sh`): add an active `hubble-ui` stream probe (`/api/control-stream`) so verify catches relay/data-plane issues beyond deployment readiness.

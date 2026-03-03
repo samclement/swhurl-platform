@@ -10,6 +10,7 @@ Default stack components:
 - k3s-packaged Traefik ingress controller
 - k3s-packaged metrics-server
 - oauth2-proxy
+- keycloak (optional, suspended-by-default rollout skeleton)
 - ClickStack + OTel collectors
 - MinIO
 - sample app (`hello-web`) with app-overlay selected hostname/issuer/namespace mode
@@ -223,6 +224,56 @@ Certificate issuer mapping:
 - prod URL certificate issuer: `letsencrypt-prod`
 
 Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
+
+### 5) Stage Keycloak rollout safely (no oauth2-proxy cutover yet)
+
+This repo now includes a Keycloak HelmRelease skeleton for `https://keycloak.homelab.swhurl.com`, but it is suspended by default for safe rollout.
+
+1. Configure Keycloak secrets in `profiles/secrets.env`.
+2. Enable Keycloak feature gate:
+
+```bash
+# config.env
+FEAT_KEYCLOAK=true
+```
+
+3. Sync runtime inputs and reconcile:
+
+```bash
+make runtime-inputs-sync
+make flux-reconcile
+```
+
+4. Unsuspend Keycloak by editing:
+   - `platform-services/keycloak/base/helmrelease-keycloak.yaml` (`spec.suspend: false`)
+5. Reconcile and validate Keycloak login + OIDC discovery endpoints before changing oauth2-proxy issuer.
+
+### 6) Enable oauth2-proxy Keycloak canary (separate host)
+
+This canary path is isolated from existing protected app routes and keeps current oauth2-proxy behavior unchanged.
+
+1. Set canary secrets in `profiles/secrets.env`:
+   - `KEYCLOAK_CANARY_OIDC_CLIENT_ID`
+   - `KEYCLOAK_CANARY_OIDC_CLIENT_SECRET`
+   - `KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET` (16/24/32 chars)
+2. Enable feature gate:
+
+```bash
+# config.env
+FEAT_KEYCLOAK_CANARY=true
+```
+
+3. Sync and reconcile:
+
+```bash
+make runtime-inputs-sync
+make flux-reconcile
+```
+
+4. Unsuspend canary release:
+   - `platform-services/oauth2-proxy-keycloak-canary/base/helmrelease-oauth2-proxy-keycloak-canary.yaml`
+   - set `spec.suspend: false`
+5. Reconcile and test at `https://oauth-keycloak.homelab.swhurl.com`.
 
 ## New Machine Gotchas
 

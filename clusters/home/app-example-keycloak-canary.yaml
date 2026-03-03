@@ -4,8 +4,8 @@ metadata:
   name: homelab-app-example-keycloak-canary
   namespace: flux-system
 spec:
-  # Rollout safety: isolated canary route does not alter existing app auth paths.
-  suspend: false
+  # Rollout safety: opt-in canary app route remains disabled until explicitly unsuspended.
+  suspend: true
   dependsOn:
     - name: homelab-app-example
   interval: 10m

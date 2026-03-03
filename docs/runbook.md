@@ -160,7 +160,7 @@ To switch to native k3s packaged components:
 5. Migrate ingresses and auth config:
    - `ingressClassName: traefik`
    - replace `nginx.ingress.kubernetes.io/*` annotations
-   - use Traefik `Middleware` + `ForwardAuth` for oauth2-proxy auth flows
+   - use Traefik `Middleware` (`errors` + `ForwardAuth`) for oauth2-proxy redirect-capable auth flows
 6. Reconcile:
 
 ```bash

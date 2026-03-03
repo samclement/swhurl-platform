@@ -252,7 +252,7 @@ This repo currently deploys `metrics-server` and `ingress-nginx` via Flux by def
 5. Migrate app/platform ingresses from NGINX-specific config:
    - change `ingressClassName: nginx` to `traefik`
    - replace/remove `nginx.ingress.kubernetes.io/*` annotations
-   - add Traefik `Middleware` resources for oauth2-proxy `ForwardAuth` if edge auth is still required
+   - add Traefik `Middleware` resources (`errors` + `ForwardAuth`) for oauth2-proxy if redirect-capable edge auth is required
 6. Reconcile and verify:
 
 ```bash

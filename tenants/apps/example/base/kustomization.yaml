@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - deployment-hello-web.yaml
   - service-hello-web.yaml
+  - service-oauth2-proxy-externalname.yaml
+  - middleware-oauth2-proxy-errors.yaml
   - middleware-oauth2-proxy.yaml
   - ingress-hello-web.yaml
   - certificate-hello-web.yaml

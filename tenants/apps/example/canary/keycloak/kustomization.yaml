@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: apps-staging
-resources:
-  - middleware-oauth2-proxy-keycloak-canary.yaml
-  - ingress-hello-web-keycloak-canary.yaml
-  - certificate-hello-web-keycloak-canary.yaml

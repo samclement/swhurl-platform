@@ -4,8 +4,8 @@ metadata:
   name: keycloak
   namespace: identity
 spec:
-  # Rollout safety: enabled after runtime inputs are confirmed.
-  suspend: false
+  # Rollout safety: keep suspended until runtime inputs and realm/client setup are complete.
+  suspend: true
   interval: 30m
   timeout: 15m
   releaseName: keycloak

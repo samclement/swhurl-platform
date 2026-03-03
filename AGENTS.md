@@ -67,6 +67,8 @@ Important contract:
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
   - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` now uses GitHub provider args (`provider: github`, `scope: read:user user:email`); runtime secret wiring still uses `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
+  - TODO (`scripts/bootstrap/sync-runtime-inputs.sh`, `scripts/00_verify_contract_lib.sh`, `config.env`, `README.md`): rename `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` to provider-neutral names (`OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET`) after GitHub migration stabilizes.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.

@@ -25,8 +25,8 @@ spec:
     config:
       existingSecret: oauth2-proxy-secret
     extraArgs:
-      provider: oidc
-      oidc-issuer-url: https://accounts.google.com
+      provider: github
+      scope: read:user user:email
       redirect-url: https://oauth.homelab.swhurl.com/oauth2/callback
       email-domain: "*"
       cookie-domain: .homelab.swhurl.com

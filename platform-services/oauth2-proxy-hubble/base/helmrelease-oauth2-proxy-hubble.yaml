@@ -34,6 +34,7 @@ spec:
       cookie-domain: .homelab.swhurl.com
       whitelist-domain: .homelab.swhurl.com
       reverse-proxy: true
+      skip-provider-button: true
       standard-logging: true
       request-logging: true
       auth-logging: true

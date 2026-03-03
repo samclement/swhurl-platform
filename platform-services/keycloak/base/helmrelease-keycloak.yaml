@@ -25,6 +25,9 @@ spec:
     remediation:
       retries: 3
   values:
+    image:
+      repository: bitnamilegacy/keycloak
+      tag: 26.3.3-debian-12-r0
     auth:
       adminUser: admin
       existingSecret: keycloak-runtime-inputs
@@ -43,6 +46,9 @@ spec:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
     postgresql:
       enabled: true
+      image:
+        repository: bitnamilegacy/postgresql
+        tag: 17.6.0-debian-12-r4
       auth:
         existingSecret: keycloak-runtime-inputs
         secretKeys:

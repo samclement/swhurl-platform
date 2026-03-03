@@ -133,6 +133,9 @@ Keycloak manifests are present as a platform-service component, but the HelmRele
 - `platform-services/keycloak/base/helmrelease-keycloak.yaml`
 - `spec.suspend: true`
 
+Compatibility note:
+- Current repo pin uses Bitnami chart `24.2.0` plus `bitnamilegacy/*` image overrides to avoid OCI chart-source and image-tag pull failures seen with older Flux/controller environments.
+
 Safety sequence:
 1. Set `FEAT_KEYCLOAK=true` and provide `KEYCLOAK_ADMIN_PASSWORD` + `KEYCLOAK_POSTGRES_PASSWORD`.
 2. `make runtime-inputs-sync`

@@ -10,6 +10,7 @@ Default stack components:
 - k3s-packaged Traefik ingress controller
 - k3s-packaged metrics-server
 - oauth2-proxy
+- oauth2-proxy-hubble (dedicated reverse-proxy auth for Hubble UI)
 - ClickStack + OTel collectors
 - MinIO
 - sample app (`hello-web`) with app-overlay selected hostname/issuer/namespace mode

@@ -19,7 +19,7 @@ patches:
       - op: add
         path: /metadata/annotations
         value:
-          traefik.ingress.kubernetes.io/router.middlewares: apps-staging-oauth2-proxy-errors@kubernetescrd,apps-staging-oauth2-proxy-forward-auth@kubernetescrd
+          traefik.ingress.kubernetes.io/router.middlewares: apps-staging-oauth2-proxy-forward-auth@kubernetescrd
   - target:
       group: cert-manager.io
       version: v1

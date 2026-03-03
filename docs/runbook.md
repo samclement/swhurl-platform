@@ -212,3 +212,4 @@ Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this 
 - Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.
 - Replace post-install `hubble-relay` hostNetwork patching with chart-native values once Cilium exposes relay host-network configuration.
 - Add a dedicated Keycloak cutover runbook covering realm bootstrap, oauth2-proxy client config, and rollback to prior issuer.
+- Document Keycloak chart-source migration (or Flux controller upgrade) before raising `platform-services/keycloak/base/helmrelease-keycloak.yaml` above chart `24.2.0` (Bitnami index URLs switch to `oci://`).

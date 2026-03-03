@@ -58,6 +58,7 @@ Notes:
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
 - Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).
+- Keycloak app canary route is isolated in `clusters/home/app-example-keycloak-canary.yaml` (`./tenants/apps/example/canary/keycloak`) and is suspended by default for rollout safety.
 
 ## Host Orchestrator (`host/run-host.sh`)
 

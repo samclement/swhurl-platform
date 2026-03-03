@@ -273,7 +273,12 @@ make flux-reconcile
 4. Unsuspend canary release:
    - `platform-services/oauth2-proxy-keycloak-canary/base/helmrelease-oauth2-proxy-keycloak-canary.yaml`
    - set `spec.suspend: false`
-5. Reconcile and test at `https://oauth-keycloak.homelab.swhurl.com`.
+5. Unsuspend canary app-route kustomization:
+   - `clusters/home/app-example-keycloak-canary.yaml`
+   - set `spec.suspend: false`
+6. Reconcile and test:
+   - `https://oauth-keycloak.homelab.swhurl.com`
+   - `https://keycloak-canary-hello.homelab.swhurl.com`
 
 ## New Machine Gotchas
 

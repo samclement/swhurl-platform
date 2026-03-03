@@ -5,3 +5,4 @@ resources:
   - platform.yaml
   - tenants.yaml
   - app-example.yaml
+  - app-example-keycloak-canary.yaml

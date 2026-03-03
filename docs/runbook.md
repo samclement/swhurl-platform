@@ -124,31 +124,6 @@ Note:
 make runtime-inputs-refresh-otel
 ```
 
-## Keycloak Staged Rollout (Safety-First)
-
-Keycloak manifests are present as a platform-service component, but the HelmRelease is intentionally suspended by default:
-
-- `platform-services/keycloak/base/helmrelease-keycloak.yaml`
-- `spec.suspend: true`
-
-Safety sequence:
-1. Set `FEAT_KEYCLOAK=true` and provide `KEYCLOAK_ADMIN_PASSWORD` + `KEYCLOAK_POSTGRES_PASSWORD`.
-2. `make runtime-inputs-sync`
-3. `make flux-reconcile`
-4. Unsuspend Keycloak (`spec.suspend: false`) and reconcile again.
-5. Verify Keycloak realm/client setup and `https://keycloak.homelab.swhurl.com` end-to-end.
-6. Only after verification, migrate oauth2-proxy `oidc-issuer-url` from the current provider to Keycloak.
-
-Canary oauth2-proxy sequence:
-1. Set `FEAT_KEYCLOAK_CANARY=true` and provide:
-   - `KEYCLOAK_CANARY_OIDC_CLIENT_ID`
-   - `KEYCLOAK_CANARY_OIDC_CLIENT_SECRET`
-   - `KEYCLOAK_CANARY_OAUTH_COOKIE_SECRET` (16/24/32 chars)
-2. `make runtime-inputs-sync`
-3. `make flux-reconcile`
-4. Unsuspend `platform-services/oauth2-proxy-keycloak-canary/base/helmrelease-oauth2-proxy-keycloak-canary.yaml`.
-5. Reconcile and validate `https://oauth-keycloak.homelab.swhurl.com` before any app-route cutover.
-
 ## Verification
 
 Core checks:
@@ -206,4 +181,3 @@ Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this 
 
 - Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.
 - Replace post-install `hubble-relay` hostNetwork patching with chart-native values once Cilium exposes relay host-network configuration.
-- Add a dedicated Keycloak cutover runbook covering realm bootstrap, oauth2-proxy client config, and rollback to prior issuer.

@@ -3,8 +3,6 @@
 Shared platform services deployed once per cluster.
 
 - `oauth2-proxy`
-- `oauth2-proxy-keycloak-canary` (suspended by default)
-- `keycloak` (rollout-safe skeleton, suspended by default)
 - `clickstack`
 - `otel`
 

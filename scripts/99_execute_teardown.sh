@@ -48,6 +48,7 @@ else
 
   # Runtime-input source/target cleanup.
   kubectl -n flux-system delete secret platform-runtime-inputs --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n ingress delete secret oauth2-proxy-shared-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n ingress delete secret oauth2-proxy-hello-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n logging delete secret hyperdx-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n logging delete configmap otel-config-vars --ignore-not-found >/dev/null 2>&1 || true

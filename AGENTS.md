@@ -65,11 +65,11 @@ Important contract:
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
-  - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-hello` (or automate via checksum strategy) to load new client credentials.
-  - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the Google OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` redirect host/path aligned with the active client credentials wired from `platform-runtime-inputs`.
-  - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so hello client-id/client-secret changes are picked up without manual deployment restarts.
-  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); hello release name is `oauth2-proxy-hello`, callback is `https://hello.homelab.swhurl.com/oauth2/callback`, and runtime secret wiring uses `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET`.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` as fallback, but warns they are deprecated in favor of `HELLO_OIDC_*`.
+  - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-shared` (or automate via checksum strategy) to load new client credentials.
+  - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the Google OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` redirect host/path aligned with the active client credentials wired from `platform-runtime-inputs`.
+  - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so shared oauth client-id/client-secret changes are picked up without manual deployment restarts.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET`.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `HELLO_OIDC_*` and `OIDC_CLIENT_*` fallback values, but warns they are deprecated in favor of `SHARED_OIDC_*`.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -93,10 +93,10 @@ Important contract:
   - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, `bootstrap/k3s-manifests/cilium-helmchart.yaml`).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
   - `config.env` and `profiles/secrets.example.env` no longer carry `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
-  - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-hello` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-hello@kubernetescrd`.
-  - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-hello.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
+  - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-shared` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-shared@kubernetescrd`.
+  - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-shared.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
-  - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-auth-hello@kubernetescrd` for both `apps-staging` and `apps-prod`.
+  - TODO (`scripts/91_verify_platform_state.sh`): verify app ingresses reference `ingress-oauth-auth-shared@kubernetescrd` where edge auth is expected.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

@@ -204,23 +204,23 @@ else
   ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping ingress controller specific checks"
 fi
 
-say "oauth2-proxy-hello"
+say "oauth2-proxy-shared"
 if feature_is_enabled oauth2_proxy; then
-  if kubectl -n ingress get deploy oauth2-proxy-hello >/dev/null 2>&1; then
-    ok "oauth2-proxy-hello deployment present"
+  if kubectl -n ingress get deploy oauth2-proxy-shared >/dev/null 2>&1; then
+    ok "oauth2-proxy-shared deployment present"
   else
-    mismatch "oauth2-proxy-hello deployment not found"
+    mismatch "oauth2-proxy-shared deployment not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
-  if kubectl -n ingress get ingress oauth2-proxy-hello >/dev/null 2>&1; then
-    actual_host=$(kubectl -n ingress get ingress oauth2-proxy-hello -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-hello -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class ingress oauth2-proxy-hello)"
-    check_eq "oauth2-proxy-hello.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "oauth2-proxy-hello.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-    check_eq "oauth2-proxy-hello.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+  if kubectl -n ingress get ingress oauth2-proxy-shared >/dev/null 2>&1; then
+    actual_host=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.spec.rules[0].host}')
+    actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class ingress oauth2-proxy-shared)"
+    check_eq "oauth2-proxy-shared.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "oauth2-proxy-shared.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+    check_eq "oauth2-proxy-shared.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
-    mismatch "oauth2-proxy-hello ingress not found"
+    mismatch "oauth2-proxy-shared ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else

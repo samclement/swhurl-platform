@@ -130,4 +130,4 @@ Legacy optional manifests (`infrastructure/metrics-server/base`, `infrastructure
 
 ## TODO
 
-- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy-hello` picks up updated client credentials automatically.
+- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy-shared` picks up updated client credentials automatically.

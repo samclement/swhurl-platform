@@ -33,22 +33,29 @@ require_non_empty() {
 
 legacy_oidc_client_id="${OIDC_CLIENT_ID:-}"
 legacy_oidc_client_secret="${OIDC_CLIENT_SECRET:-}"
-hello_oidc_client_id="${HELLO_OIDC_CLIENT_ID:-${legacy_oidc_client_id}}"
-hello_oidc_client_secret="${HELLO_OIDC_CLIENT_SECRET:-${legacy_oidc_client_secret}}"
+legacy_hello_oidc_client_id="${HELLO_OIDC_CLIENT_ID:-}"
+legacy_hello_oidc_client_secret="${HELLO_OIDC_CLIENT_SECRET:-}"
+shared_oidc_client_id="${SHARED_OIDC_CLIENT_ID:-${legacy_hello_oidc_client_id:-${legacy_oidc_client_id}}}"
+shared_oidc_client_secret="${SHARED_OIDC_CLIENT_SECRET:-${legacy_hello_oidc_client_secret:-${legacy_oidc_client_secret}}}"
 oauth_cookie_secret="${OAUTH_COOKIE_SECRET:-}"
+oauth_host="${OAUTH_HOST:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 
 if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  require_non_empty "HELLO_OIDC_CLIENT_ID" "$hello_oidc_client_id"
-  require_non_empty "HELLO_OIDC_CLIENT_SECRET" "$hello_oidc_client_secret"
+  require_non_empty "SHARED_OIDC_CLIENT_ID" "$shared_oidc_client_id"
+  require_non_empty "SHARED_OIDC_CLIENT_SECRET" "$shared_oidc_client_secret"
   require_non_empty "OAUTH_COOKIE_SECRET" "$oauth_cookie_secret"
+  require_non_empty "OAUTH_HOST" "$oauth_host"
   case "${#oauth_cookie_secret}" in
     16|24|32) ;;
     *) die "OAUTH_COOKIE_SECRET must be exactly 16, 24, or 32 characters" ;;
   esac
+  if [[ -n "$legacy_hello_oidc_client_id" || -n "$legacy_hello_oidc_client_secret" ]]; then
+    log_warn "HELLO_OIDC_CLIENT_ID/HELLO_OIDC_CLIENT_SECRET are deprecated; prefer SHARED_OIDC_*"
+  fi
   if [[ -n "$legacy_oidc_client_id" || -n "$legacy_oidc_client_secret" ]]; then
-    log_warn "OIDC_CLIENT_ID/OIDC_CLIENT_SECRET are deprecated; prefer HELLO_OIDC_*"
+    log_warn "OIDC_CLIENT_ID/OIDC_CLIENT_SECRET are deprecated; prefer SHARED_OIDC_*"
   fi
 fi
 
@@ -64,9 +71,10 @@ fi
 
 kubectl create secret generic platform-runtime-inputs \
   -n flux-system \
-  --from-literal=HELLO_OIDC_CLIENT_ID="$hello_oidc_client_id" \
-  --from-literal=HELLO_OIDC_CLIENT_SECRET="$hello_oidc_client_secret" \
+  --from-literal=SHARED_OIDC_CLIENT_ID="$shared_oidc_client_id" \
+  --from-literal=SHARED_OIDC_CLIENT_SECRET="$shared_oidc_client_secret" \
   --from-literal=OAUTH_COOKIE_SECRET="$oauth_cookie_secret" \
+  --from-literal=OAUTH_HOST="$oauth_host" \
   --from-literal=CLICKSTACK_API_KEY="$clickstack_api_key" \
   --from-literal=CLICKSTACK_INGESTION_KEY="$clickstack_ingestion_key" \
   --dry-run=client -o yaml | kubectl apply -f -

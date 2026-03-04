@@ -1,11 +1,11 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: oauth2-proxy
+  name: oauth2-proxy-hello
   namespace: ingress
 spec:
   interval: 30m
-  releaseName: oauth2-proxy
+  releaseName: oauth2-proxy-hello
   chart:
     spec:
       chart: oauth2-proxy
@@ -23,14 +23,15 @@ spec:
       retries: 3
   values:
     config:
-      existingSecret: oauth2-proxy-secret
+      existingSecret: oauth2-proxy-hello-secret
     extraArgs:
       provider: oidc
       oidc-issuer-url: https://accounts.google.com
-      redirect-url: https://oauth.homelab.swhurl.com/oauth2/callback
+      redirect-url: https://hello.homelab.swhurl.com/oauth2/callback
       upstream: static://202
       reverse-proxy: true
       skip-provider-button: true
+      cookie-name: _oauth2_proxy_hello
       email-domain: "*"
       cookie-domain: .homelab.swhurl.com
       whitelist-domain: .homelab.swhurl.com
@@ -43,9 +44,11 @@ spec:
       className: traefik
       annotations:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
+      path: /oauth2
+      pathType: Prefix
       hosts:
-        - oauth.homelab.swhurl.com
+        - hello.homelab.swhurl.com
       tls:
-        - secretName: oauth2-proxy-tls
+        - secretName: oauth2-proxy-hello-tls
           hosts:
-            - oauth.homelab.swhurl.com
+            - hello.homelab.swhurl.com

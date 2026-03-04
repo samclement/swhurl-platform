@@ -122,6 +122,9 @@ Active `home` composition assumes:
 - k3s default CNI (`flannel`)
 - k3s packaged `traefik`
 - k3s packaged `metrics-server`
+- Traefik NodePorts are pinned declaratively through k3s `HelmChartConfig` in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`:
+  - HTTP `80 -> 31514`
+  - HTTPS `443 -> 30313`
 
 Legacy optional manifests (`infrastructure/metrics-server/base`, `infrastructure/ingress-nginx/base`) are kept in-repo for compatibility but are not part of `infrastructure/overlays/home`.
 

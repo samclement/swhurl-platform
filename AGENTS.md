@@ -87,6 +87,7 @@ Important contract:
 - k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Active default stack uses k3s defaults: flannel CNI + packaged `traefik` + packaged `metrics-server`.
+  - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; `infrastructure/overlays/home` includes `../../ingress-traefik/base` so Flux reconciles the override (`80 -> 31514`, `443 -> 30313`).
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
   - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, `bootstrap/k3s-manifests/cilium-helmchart.yaml`).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
@@ -95,7 +96,6 @@ Important contract:
   - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-hello.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
   - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-auth-hello@kubernetescrd` for both `apps-staging` and `apps-prod`.
-  - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

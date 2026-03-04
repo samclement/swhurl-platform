@@ -214,6 +214,9 @@ Active composition already assumes native k3s components:
 - CNI: flannel (k3s default)
 - ingress: Traefik (k3s packaged)
 - metrics: metrics-server (k3s packaged)
+- Traefik NodePorts are declaratively pinned via Flux (`infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`):
+  - `80 -> 31514`
+  - `443 -> 30313`
 - Flux-managed `infrastructure/ingress-nginx/base` and `infrastructure/metrics-server/base` remain legacy/optional manifests and are not part of `infrastructure/overlays/home`.
 
 ## Orchestration

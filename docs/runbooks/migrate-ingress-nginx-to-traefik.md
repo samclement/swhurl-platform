@@ -28,7 +28,7 @@ make flux-reconcile
 
 4. Align ingress manifests/charts to Traefik:
    - set `ingressClassName`/`className: traefik` for:
-     - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml`
+     - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml`
      - `platform-services/clickstack/base/helmrelease-clickstack.yaml`
      - `infrastructure/storage/minio/base/helmrelease-minio.yaml`
      - `tenants/apps/example/base/ingress-hello-web.yaml`
@@ -52,7 +52,7 @@ make flux-reconcile
 ```bash
 kubectl -n kube-system get deploy traefik metrics-server
 kubectl get ingress -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,CLASS:.spec.ingressClassName,HOSTS:.spec.rules[*].host'
-curl -I https://hello.homelab.swhurl.com/oauth2/callback
+curl -I https://oauth.homelab.swhurl.com/oauth2/callback
 curl -I https://clickstack.homelab.swhurl.com
 curl -I https://staging-hello.homelab.swhurl.com
 curl -I https://hello.homelab.swhurl.com
@@ -62,7 +62,7 @@ curl -I https://minio-console.homelab.swhurl.com
 ```
 
 Expected auth behavior during current Traefik forward-auth mode:
-- `hello` / `staging-hello` return direct `302` redirects to the IdP when unauthenticated (shared `ingress-oauth-auth-hello@kubernetescrd`, oauth2-proxy `upstream=static://202`).
+- `hello` / `staging-hello` return direct `302` redirects to the IdP when unauthenticated (shared `ingress-oauth-auth-shared@kubernetescrd`, oauth2-proxy `upstream=static://202`).
 
 ## Rollback
 

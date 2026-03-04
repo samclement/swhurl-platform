@@ -39,6 +39,14 @@ if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
 fi
 set +a
 
+# Backward compatibility while migrating oauth2-proxy inputs to shared naming.
+if [[ -z "${SHARED_OIDC_CLIENT_ID:-}" && -n "${HELLO_OIDC_CLIENT_ID:-}" ]]; then
+  export SHARED_OIDC_CLIENT_ID="$HELLO_OIDC_CLIENT_ID"
+fi
+if [[ -z "${SHARED_OIDC_CLIENT_SECRET:-}" && -n "${HELLO_OIDC_CLIENT_SECRET:-}" ]]; then
+  export SHARED_OIDC_CLIENT_SECRET="$HELLO_OIDC_CLIENT_SECRET"
+fi
+
 log_info() { printf "[INFO] %s\n" "$*"; }
 log_warn() { printf "[WARN] %s\n" "$*"; }
 log_error() { printf "[ERROR] %s\n" "$*" >&2; }

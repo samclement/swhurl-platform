@@ -59,7 +59,7 @@ flux get kustomizations -n flux-system
 kubectl -n flux-system get configmap platform-settings \
   -o custom-columns=NAME:.metadata.name,CERT_ISSUER:.data.CERT_ISSUER
 
-kubectl get ingress -n ingress oauth2-proxy-hello \
+kubectl get ingress -n ingress oauth2-proxy-shared \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 
 kubectl get ingress -n observability clickstack-app-ingress \

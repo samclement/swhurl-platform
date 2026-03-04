@@ -4,4 +4,5 @@ resources:
   - ../../namespaces
   - ../../cert-manager/base
   - ../../cert-manager/issuers
+  - ../../ingress-traefik/base
   - ../../storage/minio/base

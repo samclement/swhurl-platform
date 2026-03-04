@@ -45,8 +45,6 @@ Primary operations:
 ### Helm
 
 Used for bootstrap/cleanup helpers where needed:
-- Cilium pre-Flux bootstrap via k3s helm-controller (`bootstrap/k3s-manifests/cilium-helmchart.yaml`, applied with `make cilium-bootstrap` or copied into `/var/lib/rancher/k3s/server/manifests/`)
-- Flux keeps a suspended Cilium HelmRelease placeholder (`infrastructure/cilium/base/helmrelease-cilium.yaml`) for migration safety.
 - cert-manager cleanup during delete (`scripts/30_manage_cert_manager_cleanup.sh`)
 
 ### kubectl
@@ -59,9 +57,8 @@ Delete flow contract:
 1. Remove Flux stack kustomizations.
 2. Run cleanup helpers for cert-manager/finalizers.
 3. Sweep managed namespaces/secrets/CRDs.
-4. Remove Cilium last.
-5. Uninstall Flux controllers.
-6. Verify clean teardown.
+4. Uninstall Flux controllers.
+5. Verify clean teardown.
 
 Delete scopes:
 - `DELETE_SCOPE=managed` (default)

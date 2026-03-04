@@ -7,47 +7,24 @@ This repo is operated through Flux GitOps with optional script orchestration (`r
 Install k3s manually before Flux bootstrap. Keep packaged `traefik` and `metrics-server` enabled:
 
 ```bash
-curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server --flannel-backend=none --disable-network-policy" sh -
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server" sh -
 sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
 sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
 chmod 600 "$HOME/.kube/config"
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Bootstrap Cilium before Flux:
-
-```bash
-make cilium-bootstrap
-```
-
-Optional k3s auto-deploy mode:
-
-```bash
-sudo install -D -m 0644 bootstrap/k3s-manifests/cilium-helmchart.yaml \
-  /var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml
-kubectl -n kube-system rollout status ds/cilium --timeout=10m
-kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
-./scripts/bootstrap/patch-hubble-relay-hostnetwork.sh
-```
-
-Migration safety note:
-- `infrastructure/cilium/base/helmrelease-cilium.yaml` remains suspended as a handoff placeholder for existing clusters. Active Cilium install ownership is the k3s bootstrap manifest.
-- Keep `hubble.listenAddress: "0.0.0.0:4244"` in `bootstrap/k3s-manifests/cilium-helmchart.yaml` (and the suspended handoff HelmRelease) so `hubble-relay` can maintain peer connectivity on IPv4-only node addressing.
-- Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` so relay reconnects do not fail on node-IP peer dialing.
-
 ## Standard Operations
 
 ### Bootstrap
 
 ```bash
-make cilium-bootstrap
 flux check --pre
 flux install --namespace flux-system
 make flux-bootstrap
 ```
 
 Behavior:
-- `make cilium-bootstrap` applies `bootstrap/k3s-manifests/cilium-helmchart.yaml`, waits for Cilium readiness, then patches `kube-system/hubble-relay` to `hostNetwork=true`.
 - Flux installation is manual (outside repo scripts).
 - `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
 - If `homelab-infrastructure` fails with `no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"`, install cert-manager CRDs once and rerun reconcile:
@@ -83,9 +60,8 @@ Delete ordering is intentional:
 1. Remove Flux stack kustomizations.
 2. Clean cert-manager finalizers/CRDs.
 3. Teardown namespaces/secrets/CRDs.
-4. Remove Cilium last.
-5. Uninstall Flux controllers (via `flux uninstall` inside `32_reconcile_flux_stack.sh --delete` when Flux CLI is present).
-6. Verify cleanup.
+4. Uninstall Flux controllers (via `flux uninstall` inside `32_reconcile_flux_stack.sh --delete` when Flux CLI is present).
+5. Verify cleanup.
 
 ## Active Flux Dependency Chain
 
@@ -140,46 +116,15 @@ Core checks:
 - Example app staging/prod overlays both use `letsencrypt-prod`.
 - Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.
 
-## Addendum: Native k3s Metrics Server + Traefik
+## Native k3s Defaults
 
-Current default composition uses Flux-managed `metrics-server` and `ingress-nginx`.
+Active `home` composition assumes:
+- k3s default CNI (`flannel`)
+- k3s packaged `traefik`
+- k3s packaged `metrics-server`
 
-To switch to native k3s packaged components:
-
-1. Update host defaults (`host/config/homelab.env`):
-   - `K3S_INGRESS_MODE=traefik`
-   - `K3S_DISABLE_PACKAGED=` (do not disable `metrics-server`)
-2. Update infra composition (`infrastructure/overlays/home/kustomization.yaml`):
-   - remove `../../metrics-server/base`
-   - remove `../../ingress-nginx/base`
-3. Set verification/provider intent in `config.env`:
-   - `INGRESS_PROVIDER=traefik`
-4. Update ACME solver ingress class from `nginx` to `traefik` in:
-   - `infrastructure/cert-manager/issuers/letsencrypt-staging/clusterissuer-letsencrypt-staging.yaml`
-   - `infrastructure/cert-manager/issuers/letsencrypt-prod/clusterissuer-letsencrypt-prod.yaml`
-5. Migrate ingresses and auth config:
-   - `ingressClassName: traefik`
-   - replace `nginx.ingress.kubernetes.io/*` annotations
-   - use Traefik oauth2-proxy middleware (`ingress-oauth-auth@kubernetescrd`) for edge auth flows; oauth2-proxy should run with `upstream=static://202` and `skip-provider-button=true` and ForwardAuth should target `/`
-   - for `hubble.homelab.swhurl.com`, route ingress backend to `kube-system/oauth2-proxy-hubble` (reverse-proxy mode) rather than middleware chaining
-6. Reconcile:
-
-```bash
-make flux-reconcile
-```
-
-7. Verify:
-
-```bash
-kubectl -n kube-system get deploy metrics-server traefik
-kubectl get ingress -A
-./scripts/91_verify_platform_state.sh
-```
-
-Note: `infrastructure/ingress-traefik/base` is currently scaffold-only, so this path assumes k3s-packaged Traefik rather than a Flux-managed Traefik chart in this repo.
+Legacy optional manifests (`infrastructure/metrics-server/base`, `infrastructure/ingress-nginx/base`) are kept in-repo for compatibility but are not part of `infrastructure/overlays/home`.
 
 ## TODO
 
-- Add a host-level remove workflow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown does not resurrect Cilium.
-- Replace post-install `hubble-relay` hostNetwork patching with chart-native values once Cilium exposes relay host-network configuration.
-- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy` and `kube-system/oauth2-proxy-hubble` pick up updated client credentials automatically.
+- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy-hello` picks up updated client credentials automatically.

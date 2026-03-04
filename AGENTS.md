@@ -31,7 +31,6 @@ Mode boundaries:
 ## Operator Surface
 
 Primary commands:
-- `make cilium-bootstrap`
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
 - `make runtime-inputs-refresh-otel`
@@ -66,12 +65,10 @@ Important contract:
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
-  - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy` and `kube-system/oauth2-proxy-hubble` (or automate via checksum strategy) to load new client credentials.
-  - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so hello/hubble client-id/client-secret changes are picked up without manual deployment restarts.
-  - `scripts/16_verify_cilium_bootstrap.sh` enforces Cilium preflight in apply flow before Flux reconcile.
-  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); runtime secret wiring uses `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET`.
-  - Hubble reverse-proxy auth uses `platform-services/oauth2-proxy-hubble/base/helmrelease-oauth2-proxy-hubble.yaml` with runtime target secret `platform-services/runtime-inputs/secret-oauth2-proxy-hubble.yaml` wired to `HUBBLE_OIDC_CLIENT_ID` / `HUBBLE_OIDC_CLIENT_SECRET` (shared cookie secret, separate cookie name).
-  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` as fallback, but warns they are deprecated in favor of `HELLO_OIDC_*` and `HUBBLE_OIDC_*`.
+  - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-hello` (or automate via checksum strategy) to load new client credentials.
+  - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so hello client-id/client-secret changes are picked up without manual deployment restarts.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); hello release name is `oauth2-proxy-hello`, callback is `https://hello.homelab.swhurl.com/oauth2/callback`, and runtime secret wiring uses `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET`.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` as fallback, but warns they are deprecated in favor of `HELLO_OIDC_*`.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -79,7 +76,6 @@ Important contract:
   - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
   - First-time bootstrap can race on cert-manager CRDs (`ClusterIssuer` dry-run failure) because issuers are currently in the same infrastructure layer as the cert-manager HelmRelease.
   - Apps keep issuer selection in app overlays/manifests; current example app staging/prod overlays both use `letsencrypt-prod`.
-  - Example app base now includes `tenants/apps/example/base/ciliumnetworkpolicy-hello-web-l7-observe.yaml` to keep Hubble L7 HTTP visibility declarative for test app flows.
   - TODO (`docs/runbook.md`): split cert-manager issuers into a dedicated Flux Kustomization that depends on cert-manager readiness.
 
 - DNS and host layer
@@ -88,32 +84,18 @@ Important contract:
   - TODO (`host/scripts/aws-dns-updater.sh`): support an env-provided record list for additional explicit hostnames.
   - Host automation is opt-in and runs via `host/run-host.sh`.
 
-- k3s/Cilium
+- k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
-  - Cilium install is pre-Flux bootstrap via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`) and `make cilium-bootstrap`.
-  - Keep `hubble.listenAddress: "0.0.0.0:4244"` in Cilium bootstrap values (`bootstrap/k3s-manifests/cilium-helmchart.yaml`; mirrored in `infrastructure/cilium/base/helmrelease-cilium.yaml` and `scripts/26_manage_cilium_lifecycle.sh`) to avoid `hubble-relay` peer instability on IPv4-only node addressing.
-  - Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` via `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh` (called by `make cilium-bootstrap` and `scripts/26_manage_cilium_lifecycle.sh`).
-  - Cilium is the standard CNI; k3s must disable flannel/network-policy before Cilium install.
-  - `infrastructure/cilium/base/helmrelease-cilium.yaml` is intentionally `spec.suspend: true` as a migration handoff placeholder; active install ownership is k3s bootstrap manifest.
-  - `infrastructure/cilium/base` carries post-bootstrap Cilium-adjacent resources (for example, Hubble UI ingress).
-  - Keep Cilium teardown last in delete flows.
-  - TODO (`docs/runbook.md`): add an explicit host-level remove flow for `/var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml` when using k3s auto-deploy mode, so teardown cannot resurrect Cilium.
-  - TODO (`docs/runbook.md`): replace post-install `hubble-relay` hostNetwork patching once Cilium exposes chart-native relay host-network values.
-  - Default `infrastructure/overlays/home` now relies on k3s-packaged `traefik` + `metrics-server` (no Flux-managed ingress-nginx/metrics-server in active composition).
-  - Hubble L7 details are policy-driven. With default permissive mode (no `CiliumNetworkPolicy` selecting app endpoints), Hubble shows only `L3_L4` flows; HTTP/DNS L7 events appear only when L7-aware Cilium policy rules are applied to target workloads/ports.
-  - `hubble-ui` ingress class must match the active externally-routed ingress provider. If public traffic still lands on ingress-nginx and `hubble-ui` is switched to Traefik, TLS can remain valid but requests will return 404.
-  - `scripts/91_verify_platform_state.sh` now enforces ingress-class alignment (`INGRESS_PROVIDER`) for hubble, oauth2-proxy, clickstack, minio/minio-console, and example app ingresses to catch split-route states early.
-  - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth@kubernetescrd`.
-  - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
-  - `hubble-ui` ingress now uses a dedicated reverse-proxy backend (`oauth2-proxy-hubble` in `kube-system`) instead of shared Traefik auth middlewares; this restores browser redirect login semantics for Hubble UI while keeping app ingress auth shared.
-  - `oauth2-proxy-hubble` also needs `skip-provider-button=true` to return direct IdP redirects from `/`; otherwise `/` returns oauth2-proxy sign-in HTML and only `/oauth2/start` redirects.
+  - Active default stack uses k3s defaults: flannel CNI + packaged `traefik` + packaged `metrics-server`.
+  - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
+  - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, `bootstrap/k3s-manifests/cilium-helmchart.yaml`).
+  - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
+  - `config.env` and `profiles/secrets.example.env` no longer carry `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
+  - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-hello` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-hello@kubernetescrd`.
+  - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-hello.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
-  - Namespace-scoped `CiliumNetworkPolicy` gotcha: `fromEndpoints: [{}]` in a namespaced policy does not permit traffic from arbitrary namespaces. For cross-namespace ingress-controller traffic to app pods, use `fromEntities: [cluster]` (or explicit cross-namespace endpoint selectors).
-  - TODO (`scripts/91_verify_platform_state.sh`): verify `kube-system/hubble-ui` ingress backend service is `oauth2-proxy-hubble` when Traefik is the active ingress provider.
-  - TODO (`scripts/91_verify_platform_state.sh`): add a hubble redirect behavior check (`curl -I https://${HUBBLE_HOST}` should include IdP `Location` for unauthenticated requests) so regressions to sign-in HTML are caught.
-  - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-auth@kubernetescrd` for both `apps-staging` and `apps-prod`.
+  - TODO (`scripts/91_verify_platform_state.sh`): verify hello ingress middleware chain points at `ingress-oauth-auth-hello@kubernetescrd` for both `apps-staging` and `apps-prod`.
   - TODO (`docs/runbook.md`): add declarative k3s `HelmChartConfig` guidance for Traefik NodePort pinning when edge router migration cannot happen immediately.
-  - TODO (`scripts/91_verify_platform_state.sh`): add an active `hubble-ui` stream probe (`/api/control-stream`) so verify catches relay/data-plane issues beyond deployment readiness.
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.

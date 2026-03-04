@@ -19,7 +19,6 @@ Confirmed constraints:
 **Approach:**
 - Define `CERT_ISSUER` in a Git-managed ConfigMap (for example in `clusters/home/flux-system/sources/`).
 - Use `${CERT_ISSUER}` in platform-scope manifests only:
-  - `infrastructure/cilium/base/helmrelease-cilium.yaml`
   - `infrastructure/storage/minio/base/helmrelease-minio.yaml`
   - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy.yaml`
   - `platform-services/clickstack/base/helmrelease-clickstack.yaml`

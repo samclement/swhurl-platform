@@ -48,7 +48,7 @@ else
 
   # Runtime-input source/target cleanup.
   kubectl -n flux-system delete secret platform-runtime-inputs --ignore-not-found >/dev/null 2>&1 || true
-  kubectl -n ingress delete secret oauth2-proxy-secret --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n ingress delete secret oauth2-proxy-hello-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n logging delete secret hyperdx-secret --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n logging delete configmap otel-config-vars --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n storage delete secret minio-creds --ignore-not-found >/dev/null 2>&1 || true
@@ -88,10 +88,10 @@ if [[ "${#ns_left[@]}" -gt 0 ]]; then
 fi
 
 if [[ "${#leftover_pvcs[@]}" -gt 0 || "${#ns_left[@]}" -gt 0 ]]; then
-  die "Refusing to continue delete while non-k3s workloads are still terminating. Resolve stuck PVC/namespace teardown before deleting Cilium."
+  die "Refusing to continue delete while non-k3s workloads are still terminating. Resolve stuck PVC/namespace teardown before delete verification."
 fi
 
-log_info "Deleting platform CRDs (cert-manager/acme/cilium)"
+log_info "Deleting platform CRDs (cert-manager/acme)"
 crds="$(kubectl get crd -o name 2>/dev/null | rg "$PLATFORM_CRD_NAME_REGEX" || true)"
 if [[ -n "$crds" ]]; then
   # shellcheck disable=SC2086

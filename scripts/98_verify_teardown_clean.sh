@@ -49,14 +49,7 @@ else
   bad "Managed namespaces still present: ${ns_left[*]}"
 fi
 
-# 2b) Cilium-owned namespace should be removed after cilium delete.
-if kubectl get ns cilium-secrets >/dev/null 2>&1; then
-  bad "Cilium namespace still present: cilium-secrets"
-else
-  ok "Cilium namespace removed: cilium-secrets"
-fi
-
-# 3) Cilium/cert-manager CRDs should be gone.
+# 3) Platform CRDs should be gone.
 if kubectl get crd -o name | rg -q "$PLATFORM_CRD_NAME_REGEX"; then
   bad "Platform CRDs still present"
   kubectl get crd -o name | rg "$PLATFORM_CRD_NAME_REGEX" || true
@@ -73,13 +66,6 @@ while IFS= read -r row; do
   name="${row#*/}"
 
   if [[ "$DELETE_SCOPE" == "managed" ]]; then
-    # kube-system is normally excluded in managed scope, but this secret is created by the
-    # platform (Cilium Hubble UI + cert-manager ingress-shim) and should be deleted.
-    if [[ "$ns" == "kube-system" && "$name" == "hubble-ui-tls" ]]; then
-      non_native+=("$row")
-      continue
-    fi
-
     # Only enforce cleanup expectations for platform-managed secrets in managed namespaces.
     is_platform_managed_namespace "$ns" || continue
     if ! kubectl -n "$ns" get secret "$name" -o jsonpath='{.metadata.labels.platform\.swhurl\.com/managed}' 2>/dev/null | rg -q '^true$'; then
@@ -100,16 +86,6 @@ if [[ "${#non_native[@]}" -eq 0 ]]; then
   ok "No platform-managed secrets remain (scope: ${DELETE_SCOPE})"
 else
   bad "Non-k3s-native secrets still present: ${non_native[*]}"
-fi
-
-# 5) No Cilium/Hubble resources should remain in kube-system.
-kubectl -n kube-system wait --for=delete pod -l app.kubernetes.io/part-of=cilium --timeout=60s >/dev/null 2>&1 || true
-cilium_left="$(kubectl -n kube-system get all -l app.kubernetes.io/part-of=cilium -o name 2>/dev/null || true)"
-if [[ -z "$cilium_left" ]]; then
-  ok "No Cilium resources remain in kube-system"
-else
-  bad "Cilium resources still present in kube-system"
-  printf "%s\n" "$cilium_left"
 fi
 
 if [[ "$fail" -ne 0 ]]; then

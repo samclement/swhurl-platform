@@ -1,11 +1,11 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: oauth-auth
+  name: oauth-auth-hello
   namespace: ingress
 spec:
   forwardAuth:
-    address: http://oauth2-proxy.ingress.svc.cluster.local/
+    address: http://oauth2-proxy-hello.ingress.svc.cluster.local/
     trustForwardHeader: true
     authResponseHeaders:
       - X-Auth-Request-Access-Token

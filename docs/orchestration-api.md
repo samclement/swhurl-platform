@@ -1,6 +1,6 @@
 # Orchestration API
 
-Last updated: 2026-03-02
+Last updated: 2026-03-04
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
@@ -31,25 +31,21 @@ Config layering (`run.sh`):
 
 Default apply steps:
 1. `15_verify_cluster_access.sh`
-2. `16_verify_cilium_bootstrap.sh`
-3. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
-4. `bootstrap/sync-runtime-inputs.sh`
-5. `32_reconcile_flux_stack.sh`
-6. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
+2. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
+3. `bootstrap/sync-runtime-inputs.sh`
+4. `32_reconcile_flux_stack.sh`
+5. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
 
 Default delete steps:
 1. `15_verify_cluster_access.sh`
 2. `32_reconcile_flux_stack.sh --delete`
 3. `30_manage_cert_manager_cleanup.sh --delete`
 4. `99_execute_teardown.sh --delete`
-5. `26_manage_cilium_lifecycle.sh --delete` (when `FEAT_CILIUM=true`)
-6. `98_verify_teardown_clean.sh --delete`
+5. `98_verify_teardown_clean.sh --delete`
 
 Notes:
-- Cilium is a pre-Flux dependency and is bootstrapped declaratively via k3s helm-controller manifest (`bootstrap/k3s-manifests/cilium-helmchart.yaml`).
-- Cilium bootstrap values explicitly set `hubble.listenAddress: "0.0.0.0:4244"` to keep `hubble-relay` peer connectivity stable on IPv4-only node addressing.
-- Cilium chart `v1.19.0` does not expose `hubble-relay` host-network values; install flows patch `kube-system/hubble-relay` to `hostNetwork=true` (`ClusterFirstWithHostNet`) after Cilium rollout.
-- Flux retains a suspended Cilium HelmRelease (`infrastructure/cilium/base/helmrelease-cilium.yaml`) as a migration handoff placeholder for existing clusters.
+- Legacy Cilium lifecycle scripts were removed from repo orchestration.
+- Default stack uses k3s flannel and does not require Cilium bootstrap helpers.
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.
 - Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
@@ -96,8 +92,6 @@ Step scripts should:
 Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
-- `make cilium-bootstrap`
-  - Applies `bootstrap/k3s-manifests/cilium-helmchart.yaml`, waits for Cilium readiness, and patches `kube-system/hubble-relay` to `hostNetwork=true` before Flux bootstrap/reconcile.
 - `make runtime-inputs-sync`
   - Syncs external source secret `flux-system/platform-runtime-inputs` from local env/profile.
 - `make flux-reconcile`
@@ -108,5 +102,5 @@ Key runtime-intent targets:
   - Runs `flux-reconcile` plus collector restarts so rotated ClickStack ingestion keys are loaded by running OTel pods.
 
 Design boundary:
-- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy`, `oauth2-proxy-hubble`, and ClickStack/OTel keys).
+- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy-hello` and ClickStack/OTel keys in active composition).
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

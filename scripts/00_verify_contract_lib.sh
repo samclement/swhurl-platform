@@ -12,7 +12,6 @@ readonly VERIFY_CONTRACT_LOADED="1"
 
 # Feature metadata used by config/runtime verification.
 readonly -a FEATURE_KEYS=(
-  cilium
   oauth2_proxy
   clickstack
   otel_k8s
@@ -20,7 +19,6 @@ readonly -a FEATURE_KEYS=(
 )
 
 readonly -A FEATURE_FLAGS=(
-  [cilium]="FEAT_CILIUM"
   [oauth2_proxy]="FEAT_OAUTH2_PROXY"
   [clickstack]="FEAT_CLICKSTACK"
   [otel_k8s]="FEAT_OTEL_K8S"
@@ -28,15 +26,13 @@ readonly -A FEATURE_FLAGS=(
 )
 
 readonly -A FEATURE_REQUIRED_VARS=(
-  [cilium]="HUBBLE_HOST"
-  [oauth2_proxy]="OAUTH_HOST HELLO_OIDC_CLIENT_ID HELLO_OIDC_CLIENT_SECRET HUBBLE_OIDC_CLIENT_ID HUBBLE_OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET"
+  [oauth2_proxy]="OAUTH_HOST HELLO_OIDC_CLIENT_ID HELLO_OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET"
   [clickstack]="CLICKSTACK_HOST CLICKSTACK_API_KEY"
   [otel_k8s]="CLICKSTACK_API_KEY"
   [minio]="MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD"
 )
 
 readonly -A FEATURE_EFFECTIVE_NON_SECRET_VARS=(
-  [cilium]="HUBBLE_HOST"
   [oauth2_proxy]="OAUTH_HOST"
   [clickstack]="CLICKSTACK_HOST"
   [minio]="MINIO_HOST MINIO_CONSOLE_HOST"
@@ -50,18 +46,10 @@ readonly VERIFY_SAMPLE_INGRESS_HOST_PREFIX="staging-hello"
 
 # Teardown/delete-clean contract.
 readonly -a PLATFORM_MANAGED_NAMESPACES=(apps-staging apps-prod cert-manager ingress logging observability platform-system storage)
-readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io|\.cilium\.io$'
+readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io'
 
-# During teardown (before Cilium delete), keep Cilium helm release metadata.
-readonly -a VERIFY_K3S_ALLOWED_SECRETS_PRE_CILIUM=(
-  "k3s-serving"
-  "*.node-password.k3s"
-  "bootstrap-token-*"
-  "sh.helm.release.v1.cilium.*"
-)
-
-# After full delete, Cilium release metadata should also be gone.
-readonly -a VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM=(
+# k3s-native secrets allowed during teardown verification.
+readonly -a VERIFY_K3S_ALLOWED_SECRETS=(
   "k3s-serving"
   "*.node-password.k3s"
   "bootstrap-token-*"
@@ -130,13 +118,13 @@ is_platform_managed_namespace() {
 is_allowed_k3s_secret_for_teardown() {
   local ns="$1" name="$2"
   [[ "$ns" == "kube-system" ]] || return 1
-  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS_PRE_CILIUM[@]}"
+  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS[@]}"
 }
 
 is_allowed_k3s_secret_for_verify() {
   local ns="$1" name="$2"
   [[ "$ns" == "kube-system" ]] || return 1
-  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS_POST_CILIUM[@]}"
+  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS[@]}"
 }
 
 is_allowed_ingress_provider() {

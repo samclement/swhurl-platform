@@ -29,8 +29,6 @@ Env:
   FEAT_VERIFY           If false, skip verification scripts in apply runs (default true)
 
 Manual prereqs:
-  Cilium must be bootstrapped before Flux reconcile:
-    make cilium-bootstrap
   Flux CLI/controllers are not installed by this orchestrator.
   Install Flux manually (see README), then apply bootstrap manifests:
     flux check --pre && flux install --namespace flux-system
@@ -136,7 +134,6 @@ build_apply_plan() {
 
   # 1) Cluster Access (kubeconfig)
   add_step out_arr "$(step_path 15_verify_cluster_access.sh)"
-  add_step out_arr "$(step_path 16_verify_cilium_bootstrap.sh)"
 
   # 2) Environment & Config Contract
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
@@ -161,9 +158,8 @@ build_delete_plan() {
   add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
   add_step out_arr "$(step_path 30_manage_cert_manager_cleanup.sh)"
 
-  # Deterministic finalizers: teardown -> cilium -> verify.
+  # Deterministic finalizers: teardown -> verify.
   add_step out_arr "$(step_path 99_execute_teardown.sh)"
-  add_step_if out_arr "${FEAT_CILIUM:-true}" "$(step_path 26_manage_cilium_lifecycle.sh)"
   add_step out_arr "$(step_path 98_verify_teardown_clean.sh)"
 }
 
@@ -178,7 +174,7 @@ print_plan() {
     echo "  - 3) Flux reconcile"
     echo "  - 4) Cluster verification suite"
   else
-    echo "  - Delete (reverse phases; cilium + Flux uninstall in stack delete)"
+    echo "  - Delete (reverse phases; Flux uninstall in stack delete)"
   fi
 
   for s in "${steps[@]}"; do

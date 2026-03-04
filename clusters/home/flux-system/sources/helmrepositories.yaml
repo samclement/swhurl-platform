@@ -10,15 +10,6 @@ spec:
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: cilium
-  namespace: flux-system
-spec:
-  interval: 30m
-  url: https://helm.cilium.io/
----
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
-metadata:
   name: oauth2-proxy
   namespace: flux-system
 spec:

@@ -1,11 +1,5 @@
 # k3s Bootstrap Manifests
 
-These manifests are applied by k3s' built-in helm-controller and are intended
-for pre-Flux bootstrap dependencies.
+This directory previously held pre-Flux k3s helm-controller manifests.
 
-Use this layer for components that must exist before Flux controllers can run
-reliably (for example, CNI when k3s is started with `--flannel-backend=none`).
-
-Current manifest:
-- `cilium-helmchart.yaml`: pre-Flux Cilium install managed by k3s helm-controller.
-
+Current active stack does not require any k3s bootstrap manifests.

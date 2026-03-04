@@ -152,71 +152,6 @@ if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
   check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
 fi
 
-say "Cilium"
-if feature_is_enabled cilium; then
-  if kubectl -n kube-system get ds cilium >/dev/null 2>&1; then
-    ok "cilium daemonset present"
-  else
-    mismatch "cilium daemonset not found"
-    add_suggest "make cilium-bootstrap"
-  fi
-  if kubectl -n kube-system get deploy cilium-operator >/dev/null 2>&1; then
-    ok "cilium-operator deployment present"
-  else
-    mismatch "cilium-operator deployment not found"
-    add_suggest "make cilium-bootstrap"
-  fi
-else
-  ok "$(feature_flag_var cilium)=false; skipping"
-fi
-
-say "Hubble"
-if feature_is_enabled cilium; then
-  if kubectl -n kube-system get deploy hubble-relay >/dev/null 2>&1; then
-    ok "hubble-relay deployment present"
-    actual_relay_host_network=$(kubectl -n kube-system get deploy hubble-relay -o jsonpath='{.spec.template.spec.hostNetwork}')
-    actual_relay_dns_policy=$(kubectl -n kube-system get deploy hubble-relay -o jsonpath='{.spec.template.spec.dnsPolicy}')
-    check_eq "hubble-relay.hostNetwork" "true" "$actual_relay_host_network" "scripts/bootstrap/patch-hubble-relay-hostnetwork.sh"
-    check_eq "hubble-relay.dnsPolicy" "ClusterFirstWithHostNet" "$actual_relay_dns_policy" "scripts/bootstrap/patch-hubble-relay-hostnetwork.sh"
-    check_deploy_ready kube-system hubble-relay "make cilium-bootstrap"
-  else
-    mismatch "hubble-relay deployment not found"
-    add_suggest "make cilium-bootstrap"
-  fi
-  if kubectl -n kube-system get deploy hubble-ui >/dev/null 2>&1; then
-    ok "hubble-ui deployment present"
-    check_deploy_ready kube-system hubble-ui "make cilium-bootstrap"
-  else
-    mismatch "hubble-ui deployment not found"
-    add_suggest "make cilium-bootstrap"
-  fi
-  if kubectl -n kube-system get ingress hubble-ui >/dev/null 2>&1; then
-    actual_host=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class kube-system hubble-ui)"
-    check_eq "hubble-ui.host" "${HUBBLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "hubble-ui.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
-    check_eq "hubble-ui.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-    if feature_is_enabled oauth2_proxy && [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
-      expected_auth_url="$(verify_oauth_auth_url "${OAUTH_HOST}")"
-      expected_auth_signin="$(verify_oauth_auth_signin "${OAUTH_HOST}")"
-      actual_auth_url=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-url}')
-      actual_auth_signin=$(kubectl -n kube-system get ingress hubble-ui -o jsonpath='{.metadata.annotations.nginx\.ingress\.kubernetes\.io/auth-signin}')
-      check_eq "hubble-ui.auth-url" "${expected_auth_url}" "$actual_auth_url" "scripts/32_reconcile_flux_stack.sh"
-      check_eq "hubble-ui.auth-signin" "${expected_auth_signin}" "$actual_auth_signin" "scripts/32_reconcile_flux_stack.sh"
-    elif feature_is_enabled oauth2_proxy; then
-      ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping NGINX auth annotation checks for hubble-ui"
-    else
-      ok "$(feature_flag_var oauth2_proxy)=false; skipping hubble-ui auth annotation checks"
-    fi
-  else
-    mismatch "hubble-ui ingress not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-else
-  ok "$(feature_flag_var cilium)=false; skipping"
-fi
-
 say "Ingress"
 if [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
   if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
@@ -269,23 +204,23 @@ else
   ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping ingress controller specific checks"
 fi
 
-say "oauth2-proxy"
+say "oauth2-proxy-hello"
 if feature_is_enabled oauth2_proxy; then
-  if kubectl -n ingress get deploy oauth2-proxy >/dev/null 2>&1; then
-    ok "oauth2-proxy deployment present"
+  if kubectl -n ingress get deploy oauth2-proxy-hello >/dev/null 2>&1; then
+    ok "oauth2-proxy-hello deployment present"
   else
-    mismatch "oauth2-proxy deployment not found"
+    mismatch "oauth2-proxy-hello deployment not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
-  if kubectl -n ingress get ingress oauth2-proxy >/dev/null 2>&1; then
-    actual_host=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class ingress oauth2-proxy)"
-    check_eq "oauth2-proxy.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "oauth2-proxy.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-    check_eq "oauth2-proxy.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+  if kubectl -n ingress get ingress oauth2-proxy-hello >/dev/null 2>&1; then
+    actual_host=$(kubectl -n ingress get ingress oauth2-proxy-hello -o jsonpath='{.spec.rules[0].host}')
+    actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-hello -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+    actual_class="$(ingress_class ingress oauth2-proxy-hello)"
+    check_eq "oauth2-proxy-hello.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "oauth2-proxy-hello.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+    check_eq "oauth2-proxy-hello.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
   else
-    mismatch "oauth2-proxy ingress not found"
+    mismatch "oauth2-proxy-hello ingress not found"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else

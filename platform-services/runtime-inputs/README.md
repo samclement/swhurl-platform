@@ -2,22 +2,19 @@
 
 Declarative runtime secret targets used by platform components:
 
-- `ingress/oauth2-proxy-secret`
-- `kube-system/oauth2-proxy-hubble-secret`
+- `ingress/oauth2-proxy-hello-secret`
 - `logging/hyperdx-secret`
 - `observability/clickstack-runtime-inputs`
 - source values in `flux-system/platform-runtime-inputs` (external prerequisite)
 
 Key mapping:
 
-- `ingress/oauth2-proxy-secret.client-id` <- `${HELLO_OIDC_CLIENT_ID}`
-- `ingress/oauth2-proxy-secret.client-secret` <- `${HELLO_OIDC_CLIENT_SECRET}`
-- `kube-system/oauth2-proxy-hubble-secret.client-id` <- `${HUBBLE_OIDC_CLIENT_ID}`
-- `kube-system/oauth2-proxy-hubble-secret.client-secret` <- `${HUBBLE_OIDC_CLIENT_SECRET}`
+- `ingress/oauth2-proxy-hello-secret.client-id` <- `${HELLO_OIDC_CLIENT_ID}`
+- `ingress/oauth2-proxy-hello-secret.client-secret` <- `${HELLO_OIDC_CLIENT_SECRET}`
 - `observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY` <- `${CLICKSTACK_API_KEY}`
 - `logging/hyperdx-secret.HYPERDX_API_KEY` <- `${CLICKSTACK_INGESTION_KEY}`
   - fallback behavior in `scripts/bootstrap/sync-runtime-inputs.sh`: if `CLICKSTACK_INGESTION_KEY` is unset, it uses `CLICKSTACK_API_KEY` until you update from ClickStack UI.
-- Flux post-build substitutions from this source secret are used only for runtime secret targets (`oauth2-proxy`, `clickstack`, `otel`).
+- Flux post-build substitutions from this source secret are used only for runtime secret targets (`oauth2-proxy-hello`, `clickstack`, `otel`).
 
 `homelab-platform` in `clusters/home/platform.yaml` uses Flux
 `postBuild.substituteFrom` to inject values from `flux-system/platform-runtime-inputs`

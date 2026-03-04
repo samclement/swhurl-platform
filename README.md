@@ -5,12 +5,10 @@
 This repo manages a homelab Kubernetes platform with Flux GitOps.
 
 Default stack components:
-- Cilium
 - cert-manager + ClusterIssuers (`selfsigned`, `letsencrypt-staging`, `letsencrypt-prod`)
 - k3s-packaged Traefik ingress controller
 - k3s-packaged metrics-server
 - oauth2-proxy
-- oauth2-proxy-hubble (dedicated reverse-proxy auth for Hubble UI)
 - ClickStack + OTel collectors
 - MinIO
 - sample app (`hello-web`) with app-overlay selected hostname/issuer/namespace mode
@@ -37,10 +35,10 @@ Optional tooling used in some workflows:
 
 ## Manual k3s prerequisite
 
-Install k3s manually before running Flux workflows. Keep packaged `traefik` and `metrics-server` enabled, and disable flannel/network-policy for Cilium:
+Install k3s manually before running Flux workflows. Keep packaged `traefik` and `metrics-server` enabled:
 
 ```bash
-curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server --flannel-backend=none --disable-network-policy" sh -
+curl -sfL https://get.k3s.io | sudo INSTALL_K3S_EXEC="server" sh -
 sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
 sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
 chmod 600 "$HOME/.kube/config"
@@ -48,43 +46,21 @@ kubectl get nodes
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Bootstrap Cilium before Flux:
-
-```bash
-make cilium-bootstrap
-```
-
-Optional k3s auto-deploy mode (persisted at host level):
-
-```bash
-sudo install -D -m 0644 bootstrap/k3s-manifests/cilium-helmchart.yaml \
-  /var/lib/rancher/k3s/server/manifests/cilium-helmchart.yaml
-kubectl -n kube-system rollout status ds/cilium --timeout=10m
-kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
-./scripts/bootstrap/patch-hubble-relay-hostnetwork.sh
-```
-
-Migration safety note:
-- The repo keeps `infrastructure/cilium/base/helmrelease-cilium.yaml` suspended as a handoff placeholder for existing clusters. Active install ownership is the k3s bootstrap manifest.
-- Keep `hubble.listenAddress: "0.0.0.0:4244"` in Cilium bootstrap values so `hubble-relay` can keep peer connectivity stable on IPv4-only node addressing.
-- Cilium chart `v1.19.0` does not expose a `hubble-relay` host-network value. Install flows patch `kube-system/hubble-relay` to `hostNetwork=true` (`ClusterFirstWithHostNet`) so relay reconnects do not fail on node-IP peer dialing.
-
 ## Quickstart
 
 1. Configure non-secrets in `config.env`.
 2. Configure secrets in `profiles/secrets.env` (copy `profiles/secrets.example.env`).
 3. Optional host bootstrap (dynamic DNS only): `./host/run-host.sh`.
-4. Bootstrap Cilium (pre-Flux): `make cilium-bootstrap`
-5. Install Flux manually (one-time per cluster):
+4. Install Flux manually (one-time per cluster):
 
 ```bash
 flux check --pre
 flux install --namespace flux-system
 ```
 
-6. Apply Flux bootstrap manifests:
+5. Apply Flux bootstrap manifests:
    - `make flux-bootstrap`
-7. Reconcile sources + stack (includes runtime-input secret sync):
+6. Reconcile sources + stack (includes runtime-input secret sync):
    - `make flux-reconcile`
 
 ### Manual Flux Installation (No Repo Installer Script)
@@ -101,17 +77,14 @@ Manual bootstrap sequence:
 # 1) Verify cluster reachability
 kubectl get nodes
 
-# 2) Bootstrap Cilium (pre-Flux requirement)
-make cilium-bootstrap
-
-# 3) Install Flux controllers
+# 2) Install Flux controllers
 flux check --pre
 flux install --namespace flux-system
 
-# 4) Apply repo bootstrap manifests
+# 3) Apply repo bootstrap manifests
 kubectl apply -k clusters/home/flux-system
 
-# 5) Sync runtime inputs and reconcile
+# 4) Sync runtime inputs and reconcile
 ./scripts/bootstrap/sync-runtime-inputs.sh
 ./scripts/32_reconcile_flux_stack.sh
 ```
@@ -161,7 +134,7 @@ make teardown
 ```
 
 Notes:
-- `./run.sh --delete` removes Flux stack kustomizations, performs teardown cleanup, removes Cilium, uninstalls Flux controllers, and runs delete verification.
+- `./run.sh --delete` removes Flux stack kustomizations, performs teardown cleanup, uninstalls Flux controllers, and runs delete verification.
 - `DELETE_SCOPE=dedicated-cluster` enables aggressive secret cleanup for dedicated clusters.
 - Makefile shortcuts:
   - `make install` (cluster default apply path)
@@ -200,7 +173,6 @@ make runtime-inputs-refresh-otel
 
 Important contracts:
  - `HELLO_OIDC_CLIENT_ID` / `HELLO_OIDC_CLIENT_SECRET` are used by shared hello/staging oauth2-proxy auth.
- - `HUBBLE_OIDC_CLIENT_ID` / `HUBBLE_OIDC_CLIENT_SECRET` are used by dedicated `oauth2-proxy-hubble` auth.
 - `OAUTH_COOKIE_SECRET` must be exactly 16, 24, or 32 characters.
 - `CLICKSTACK_API_KEY` is required when ClickStack/OTel are enabled.
 - `CLICKSTACK_INGESTION_KEY` is optional initially; when unset it falls back to `CLICKSTACK_API_KEY`.
@@ -229,42 +201,20 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
 ## New Machine Gotchas
 
-1. Cilium prerequisite: k3s must be installed with flannel/network-policy disabled (`--flannel-backend=none --disable-network-policy`) and Cilium must be bootstrapped (`make cilium-bootstrap`) before Flux install/reconcile.
+1. k3s prerequisite: install k3s with default networking (`flannel`) and packaged `traefik` + `metrics-server` enabled.
 2. Runtime inputs are external to Git: after changing local config/secrets, run `make runtime-inputs-sync` before `make flux-reconcile`.
 3. DNS wildcard scope: `*.homelab.swhurl.com` only matches one-label hosts. Multi-label names like `staging.hello.homelab.swhurl.com` need explicit records (or a deeper wildcard) in Route53.
 4. cert-manager issuance timing: first reconcile can fail until DNS records propagate and ACME HTTP-01 checks can reach ingress.
 5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial ClickStack team setup is completed in the UI.
 6. OTel collector key reload: after rotating ClickStack keys, restart collector pods (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.
 
-## Addendum: Native k3s Metrics Server + Traefik
+## Native k3s Defaults
 
-This repo currently deploys `metrics-server` and `ingress-nginx` via Flux by default. To move to native k3s components:
-
-1. Update host defaults in `host/config/homelab.env`:
-   - `K3S_INGRESS_MODE=traefik`
-   - `K3S_DISABLE_PACKAGED=` (ensure `metrics-server` is not disabled)
-2. Update infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
-   - remove `../../metrics-server/base`
-   - remove `../../ingress-nginx/base`
-3. Set operator intent in `config.env`:
-   - `INGRESS_PROVIDER=traefik`
-4. Update cert-manager ACME solvers to Traefik ingress class:
-   - `infrastructure/cert-manager/issuers/letsencrypt-staging/clusterissuer-letsencrypt-staging.yaml`
-   - `infrastructure/cert-manager/issuers/letsencrypt-prod/clusterissuer-letsencrypt-prod.yaml`
-   - change solver `class: nginx` to `class: traefik`
-5. Migrate app/platform ingresses from NGINX-specific config:
-   - change `ingressClassName: nginx` to `traefik`
-   - replace/remove `nginx.ingress.kubernetes.io/*` annotations
-   - add Traefik `Middleware` resources for oauth2-proxy edge auth (recommended shared middleware: `ingress-oauth-auth@kubernetescrd`)
-6. Reconcile and verify:
-
-```bash
-make flux-reconcile
-kubectl -n kube-system get deploy metrics-server traefik
-kubectl get ingress -A
-```
-
-Important: `infrastructure/ingress-traefik/base` is currently scaffold-only. Native Traefik mode in this repo means relying on the k3s-packaged Traefik, plus ingress/annotation migration to Traefik conventions.
+Active composition already assumes native k3s components:
+- CNI: flannel (k3s default)
+- ingress: Traefik (k3s packaged)
+- metrics: metrics-server (k3s packaged)
+- Flux-managed `infrastructure/ingress-nginx/base` and `infrastructure/metrics-server/base` remain legacy/optional manifests and are not part of `infrastructure/overlays/home`.
 
 ## Orchestration
 
@@ -280,9 +230,8 @@ Default delete flow:
 2. delete Flux stack kustomizations
 3. cert-manager cleanup helper
 4. teardown cleanup (`99`)
-5. Cilium cleanup
-6. Flux uninstall
-7. delete verification
+5. Flux uninstall
+6. delete verification
 
 Show plans:
 
@@ -297,7 +246,6 @@ Show plans:
 - `make install`
 - `make teardown`
 - `make reinstall`
-- `make cilium-bootstrap`
 - `make flux-bootstrap`
 - `make runtime-inputs-sync`
 - `make runtime-inputs-refresh-otel`

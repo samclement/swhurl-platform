@@ -3,6 +3,5 @@ kind: Kustomization
 resources:
   - ../../runtime-inputs
   - ../../oauth2-proxy/base
-  - ../../oauth2-proxy-hubble/base
   - ../../clickstack/base
   - ../../otel/base

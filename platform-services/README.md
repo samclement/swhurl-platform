@@ -3,7 +3,6 @@
 Shared platform services deployed once per cluster.
 
 - `oauth2-proxy`
-- `oauth2-proxy-hubble`
 - `clickstack`
 - `otel`
 

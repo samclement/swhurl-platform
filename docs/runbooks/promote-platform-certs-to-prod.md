@@ -1,7 +1,7 @@
 # Promote Cluster Certificate Mode To Production
 
 This runbook covers cert issuer mode switching for shared infrastructure and platform-services:
-- Infrastructure: Hubble UI / MinIO ingresses
+- Infrastructure: MinIO ingresses
 - Platform-services: oauth2-proxy / clickstack ingresses
 
 Mode is Git-managed in:
@@ -59,7 +59,7 @@ flux get kustomizations -n flux-system
 kubectl -n flux-system get configmap platform-settings \
   -o custom-columns=NAME:.metadata.name,CERT_ISSUER:.data.CERT_ISSUER
 
-kubectl get ingress -n ingress oauth2-proxy \
+kubectl get ingress -n ingress oauth2-proxy-hello \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 
 kubectl get ingress -n observability clickstack-app-ingress \
@@ -69,9 +69,6 @@ kubectl get ingress -n storage minio \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 
 kubectl get ingress -n storage minio-console \
-  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
-
-kubectl get ingress -n kube-system hubble-ui \
   -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ISSUER:.metadata.annotations.cert-manager\\.io/cluster-issuer
 ```
 

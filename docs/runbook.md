@@ -93,7 +93,8 @@ make runtime-inputs-sync
 ```
 
 Note:
-- `logging/hyperdx-secret` value changes do not hot-reload into already-running `otel-k8s-*` collectors because `secretKeyRef` env vars are read at container start. If Kubernetes telemetry keeps returning 401 after key rotation, restart collector workloads.
+- `logging/hyperdx-secret` value changes do not hot-reload into already-running `otel-k8s-*` collectors because `secretKeyRef` env vars are read at container start.
+- `make runtime-inputs-refresh-otel` now waits for `hyperdx-secret` propagation before collector restart to avoid stale-token rollouts.
 - For ClickStack key rotations, prefer:
 
 ```bash

@@ -69,7 +69,7 @@ Important contract:
   - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the Google OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` redirect host/path aligned with the active client credentials wired from `platform-runtime-inputs`.
   - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so shared oauth client-id/client-secret changes are picked up without manual deployment restarts.
   - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET`.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` supports legacy `HELLO_OIDC_*` and `OIDC_CLIENT_*` fallback values, but warns they are deprecated in favor of `SHARED_OIDC_*`.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` requires `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET` explicitly; legacy `HELLO_OIDC_*` and `OIDC_CLIENT_*` fallback support was removed.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -103,10 +103,10 @@ Important contract:
   - `CLICKSTACK_INGESTION_KEY` can initially fall back to `CLICKSTACK_API_KEY`.
   - OTel daemonset node metrics on k3s use host networking + kubelet endpoint `127.0.0.1:10250`.
   - Cold-start image pulls can exceed default Helm action wait; set `spec.timeout` in `platform-services/clickstack/base/helmrelease-clickstack.yaml` to reduce bootstrap retries.
-  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; refresh `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `profiles/secrets.env` and run `make runtime-inputs-sync && make flux-reconcile`.
+  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; refresh `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `profiles/secrets.env` and run `make runtime-inputs-refresh-otel`.
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
-  - TODO (`docs/runbook.md`): document and/or automate collector rollout restart on `hyperdx-secret` changes (e.g., checksum annotation strategy).
+  - `make runtime-inputs-refresh-otel` reconciles `homelab-platform` and waits for `logging/hyperdx-secret` to match `flux-system/platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` before restarting collectors; this avoids stale-token restarts after key rotation.
 
 - kubectl / kubeconfig behavior
   - On hosts where `/usr/local/bin/kubectl` is the `k3s` wrapper, non-interactive shells can default to `/etc/rancher/k3s/k3s.yaml`; export `KUBECONFIG=$HOME/.kube/config` explicitly for scripted checks.
@@ -123,6 +123,10 @@ Important contract:
     - `profiles/secrets.env`
     - optional `PROFILE_FILE` (highest precedence)
   - `PROFILE_EXCLUSIVE=true` uses only `config.env` + explicit `PROFILE_FILE`.
+
+- Local process hygiene
+  - Use `scripts/cleanup-hanging-mosh.sh` to prune stale `mosh-server`/`mosh-client` processes; defaults are conservative (age >= 3600s, detached/no TTY, and detached server `ppid=1`).
+  - Run `./scripts/cleanup-hanging-mosh.sh --dry-run` first to inspect matches before termination.
 
 ## Maintenance Checks
 

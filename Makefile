@@ -84,8 +84,35 @@ otel-collectors-restart:
 
 .PHONY: runtime-inputs-refresh-otel
 runtime-inputs-refresh-otel:
-	$(MAKE) flux-reconcile
+	./scripts/bootstrap/sync-runtime-inputs.sh
+	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
+	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
+
+.PHONY: wait-runtime-inputs-otel
+wait-runtime-inputs-otel:
+	@set -Eeuo pipefail; \
+	echo "[INFO] Waiting for logging/hyperdx-secret to match flux-system/platform-runtime-inputs.CLICKSTACK_INGESTION_KEY"; \
+	if ! kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then \
+	  echo "[WARN] logging/hyperdx-secret not found; skipping wait"; \
+	  exit 0; \
+	fi; \
+	timeout_secs=$${TIMEOUT_SECS:-300}; \
+	start_time=$$(date +%s); \
+	while true; do \
+	  src="$$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}' 2>/dev/null || true)"; \
+	  dst="$$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"; \
+	  if [[ -n "$$src" && -n "$$dst" && "$$src" == "$$dst" ]]; then \
+	    echo "[INFO] Runtime input propagation confirmed"; \
+	    break; \
+	  fi; \
+	  now=$$(date +%s); \
+	  if (( now - start_time >= timeout_secs )); then \
+	    echo "[ERROR] Timed out waiting for hyperdx-secret propagation ($${timeout_secs}s)" >&2; \
+	    exit 1; \
+	  fi; \
+	  sleep 5; \
+	done
 
 .PHONY: flux-reconcile
 flux-reconcile:

@@ -207,7 +207,7 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 3. DNS wildcard scope: `*.homelab.swhurl.com` only matches one-label hosts. Multi-label names like `staging.hello.homelab.swhurl.com` need explicit records (or a deeper wildcard) in Route53.
 4. cert-manager issuance timing: first reconcile can fail until DNS records propagate and ACME HTTP-01 checks can reach ingress.
 5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial ClickStack team setup is completed in the UI.
-6. OTel collector key reload: after rotating ClickStack keys, restart collector pods (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.
+6. OTel collector key reload: after rotating ClickStack keys, restart collector pods (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods. The refresh target now waits for runtime secret propagation before restart to avoid stale-token rollouts.
 
 ## Native k3s Defaults
 

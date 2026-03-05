@@ -4,3 +4,4 @@ resources:
   - configmap-platform-settings.yaml
   - helmrepositories.yaml
   - gitrepositories.yaml
+  - secrets.sops.yaml

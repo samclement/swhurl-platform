@@ -4,6 +4,10 @@ metadata:
   name: homelab-flux-sources
   namespace: flux-system
 spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   interval: 10m
   sourceRef:
     kind: GitRepository

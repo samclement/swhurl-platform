@@ -16,6 +16,22 @@ spec:
       - kind: ConfigMap
         name: platform-settings
         optional: false
+      - kind: Secret
+        name: platform-runtime-inputs
+        optional: false
   prune: true
   wait: true
   timeout: 20m
+  healthChecks:
+    - kind: Deployment
+      name: cert-manager
+      namespace: cert-manager
+    - kind: Deployment
+      name: traefik
+      namespace: kube-system
+    - kind: Deployment
+      name: minio
+      namespace: storage
+    - kind: Deployment
+      name: external-dns
+      namespace: kube-system

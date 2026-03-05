@@ -32,6 +32,6 @@ spec:
     policy: "sync"
     domainFilters:
       - "${BASE_RECORD}"
-      - "${WILDCARD_RECORD}"
+      - '*.${BASE_RECORD}'
     sources:
       - ingress

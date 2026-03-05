@@ -139,7 +139,6 @@ build_apply_plan() {
   add_step_if out_arr "$FEAT_VERIFY" "$(step_path 94_verify_config_inputs.sh)"
 
   # 3) Flux Reconcile
-  add_step out_arr "$(step_path bootstrap/sync-runtime-inputs.sh)"
   add_step out_arr "$(step_path 32_reconcile_flux_stack.sh)"
 
   # 4) Verification

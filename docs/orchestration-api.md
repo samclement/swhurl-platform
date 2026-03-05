@@ -100,7 +100,7 @@ Key runtime-intent targets:
 - `make otel-collectors-restart`
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
-  - Runs `flux-reconcile` plus collector restarts so rotated ClickStack ingestion keys are loaded by running OTel pods.
+  - Syncs runtime inputs, reconciles `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
 
 Design boundary:
 - Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy-shared` and ClickStack/OTel keys in active composition).

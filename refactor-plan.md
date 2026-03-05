@@ -62,6 +62,7 @@ This plan outlines the transition from a script-heavy orchestration model to a f
 
 ## Success Criteria
 1. `make install` (or a fresh `flux bootstrap`) completes without manual secret syncing.
-2. DNS records for new apps are created automatically via Ingress annotations.
-3. Deleting a component in Git results in a clean, automatic prune by Flux.
-4. The platform state is observable directly via `kubectl get kustomizations`.
+2. DNS records for new apps are created automatically via Ingress annotations (ExternalDNS).
+3. The platform is truly declarative: orchestration is managed by Flux `dependsOn`.
+4. The repo is clean: unused providers (NGINX, Ceph) and legacy host scripts have been removed.
+5. Verification is baked in: Flux `healthChecks` and `make verify` confirm a healthy state.

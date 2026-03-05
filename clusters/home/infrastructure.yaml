@@ -12,6 +12,8 @@ spec:
     name: swhurl-platform
   path: ./infrastructure/overlays/home
   postBuild:
+    substitute:
+      quote: '"'
     substituteFrom:
       - kind: ConfigMap
         name: platform-settings

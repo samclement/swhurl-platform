@@ -32,9 +32,7 @@ help:
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
-	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
-	@echo "  runtime-inputs-refresh-otel Sync+reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify              Run verification scripts against current context"
 	@echo ""
@@ -61,10 +59,6 @@ flux-bootstrap:
 	@echo "[INFO] Requires Flux controllers already installed (see README: Manual Flux installation)."
 	kubectl apply -k clusters/home/flux-system
 
-.PHONY: runtime-inputs-sync
-runtime-inputs-sync:
-	./scripts/bootstrap/sync-runtime-inputs.sh
-
 .PHONY: otel-collectors-restart
 otel-collectors-restart:
 	@set -Eeuo pipefail; \
@@ -82,41 +76,8 @@ otel-collectors-restart:
 	  echo "[WARN] logging/otel-k8s-daemonset-opentelemetry-collector-agent not found; skipping"; \
 	fi
 
-.PHONY: runtime-inputs-refresh-otel
-runtime-inputs-refresh-otel:
-	./scripts/bootstrap/sync-runtime-inputs.sh
-	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
-	$(MAKE) wait-runtime-inputs-otel
-	$(MAKE) otel-collectors-restart
-
-.PHONY: wait-runtime-inputs-otel
-wait-runtime-inputs-otel:
-	@set -Eeuo pipefail; \
-	echo "[INFO] Waiting for logging/hyperdx-secret to match flux-system/platform-runtime-inputs.CLICKSTACK_INGESTION_KEY"; \
-	if ! kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then \
-	  echo "[WARN] logging/hyperdx-secret not found; skipping wait"; \
-	  exit 0; \
-	fi; \
-	timeout_secs=$${TIMEOUT_SECS:-300}; \
-	start_time=$$(date +%s); \
-	while true; do \
-	  src="$$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}' 2>/dev/null || true)"; \
-	  dst="$$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"; \
-	  if [[ -n "$$src" && -n "$$dst" && "$$src" == "$$dst" ]]; then \
-	    echo "[INFO] Runtime input propagation confirmed"; \
-	    break; \
-	  fi; \
-	  now=$$(date +%s); \
-	  if (( now - start_time >= timeout_secs )); then \
-	    echo "[ERROR] Timed out waiting for hyperdx-secret propagation ($${timeout_secs}s)" >&2; \
-	    exit 1; \
-	  fi; \
-	  sleep 5; \
-	done
-
 .PHONY: flux-reconcile
 flux-reconcile:
-	./scripts/bootstrap/sync-runtime-inputs.sh
 	./scripts/32_reconcile_flux_stack.sh
 
 .PHONY: platform-certs-staging

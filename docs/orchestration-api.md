@@ -14,7 +14,7 @@ Preferred entrypoints:
 Environment controls:
 - `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer for scripts via `scripts/00_lib.sh`)
 - `PROFILE_EXCLUSIVE=true|false`
-- `FEAT_VERIFY=true|false`
+- `FEAT_VERIFY=true|false` (only active feature switch)
 
 Default apply flow (`make install`):
 1. `make verify-config` (when `FEAT_VERIFY=true`)
@@ -27,15 +27,13 @@ Default delete flow (`make teardown`):
 3. `99_execute_teardown.sh --delete`
 4. `98_verify_teardown_clean.sh --delete`
 
-Notes:
-- Legacy Cilium lifecycle scripts were removed from repo orchestration.
-- Default stack uses k3s flannel and does not require Cilium bootstrap helpers.
+State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
-- Bootstrap manifests must be applied first (`make flux-bootstrap`), then `32_reconcile_flux_stack.sh` reconciles source/stack.
+- Bootstrap manifests must be applied first (`make flux-bootstrap`) before reconcile/apply flows.
 - Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
 - Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
-- k3s-packaged Traefik config is declaratively managed via `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts pinned to `31514`/`30313`).
+- k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
 - Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).

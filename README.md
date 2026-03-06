@@ -49,50 +49,37 @@ kubectl -n kube-system get deploy traefik metrics-server
 ## Quickstart
 
 1. Configure non-secrets in `config.env`.
-2. Configure secrets in `profiles/secrets.env` (copy `profiles/secrets.example.env`).
-3. Optional host bootstrap (dynamic DNS only): `./host/run-host.sh`.
+2. Configure secrets in `profiles/secrets.env`:
+
+```bash
+cp -n profiles/secrets.example.env profiles/secrets.env
+$EDITOR config.env profiles/secrets.env
+```
+
+3. Optional host bootstrap (dynamic DNS only):
+
+```bash
+./host/run-host.sh
+```
+
 4. Install Flux manually (one-time per cluster):
 
 ```bash
-flux check --pre
-flux install --namespace flux-system
-```
-
-5. Apply Flux bootstrap manifests:
-   - `make flux-bootstrap`
-6. Reconcile sources + stack (includes runtime-input secret sync):
-   - `make flux-reconcile`
-
-### Manual Flux Installation (No Repo Installer Script)
-
-Install Flux CLI locally (if missing):
-
-```bash
 curl -fsSL https://fluxcd.io/install.sh | bash
-```
-
-Manual bootstrap sequence:
-
-```bash
-# 1) Verify cluster reachability
-kubectl get nodes
-
-# 2) Install Flux controllers
 flux check --pre
 flux install --namespace flux-system
-
-# 3) Apply repo bootstrap manifests
-kubectl apply -k clusters/home/flux-system
-
-# 4) Sync runtime inputs and reconcile
-./scripts/bootstrap/sync-runtime-inputs.sh
-./scripts/32_reconcile_flux_stack.sh
 ```
 
-Teardown (manual Flux uninstall):
+5. Apply repo bootstrap manifests:
 
 ```bash
-flux uninstall --silent
+make flux-bootstrap
+```
+
+6. Run the standard apply flow (verification + runtime-input sync + Flux reconcile):
+
+```bash
+make install
 ```
 
 Layer selection note:
@@ -110,6 +97,10 @@ Layer boundaries:
 - `tenants/` is app-environment scope (staging/prod namespaces + sample app).
 - `platform-runtime-inputs` is the only env-input bridge layer (`make runtime-inputs-sync`).
 - `Makefile` is the operator API layer (invokes sync + reconcile workflows).
+
+Detailed operational flow:
+- `docs/runbook.md`
+- `docs/orchestration-api.md`
 
 ## Common Use Cases
 

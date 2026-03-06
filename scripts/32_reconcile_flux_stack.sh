@@ -14,32 +14,11 @@ done
 ensure_context
 
 if [[ "$DELETE" == "true" ]]; then
-  log_info "Deleting Flux stack kustomizations"
+  log_info "Deleting Flux stack kustomizations (stack-only teardown)"
   kubectl -n flux-system delete kustomization homelab-flux-stack --ignore-not-found >/dev/null 2>&1 || true
   kubectl -n flux-system delete kustomization homelab-flux-sources --ignore-not-found >/dev/null 2>&1 || true
-
-  # Wait for HelmRelease resources to be removed while controllers are still present.
-  timeout_secs="${TIMEOUT_SECS:-300}"
-  start="$(date +%s)"
-  while true; do
-    hr_count="$(kubectl get helmreleases.helm.toolkit.fluxcd.io -A --no-headers 2>/dev/null | wc -l | tr -d '[:space:]')"
-    if [[ "$hr_count" == "0" ]]; then
-      log_info "Flux-managed HelmRelease resources removed"
-      break
-    fi
-
-    now="$(date +%s)"
-    if (( now - start >= timeout_secs )); then
-      die "Timed out waiting for HelmRelease resources to be deleted (${hr_count} remaining)"
-    fi
-    sleep 5
-  done
-  if command -v flux >/dev/null 2>&1; then
-    log_info "Uninstalling Flux controllers"
-    flux uninstall --silent || true
-  else
-    log_warn "flux command not found; skipping 'flux uninstall'"
-  fi
+  log_info "Requested deletion of homelab-flux-stack and homelab-flux-sources"
+  log_info "Flux controllers and cluster services remain installed"
   exit 0
 fi
 

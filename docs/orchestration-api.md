@@ -23,9 +23,6 @@ Default apply flow (`make install`):
 
 Default delete flow (`make teardown`):
 1. `32_reconcile_flux_stack.sh --delete`
-2. `30_manage_cert_manager_cleanup.sh --delete`
-3. `99_execute_teardown.sh --delete`
-4. `98_verify_teardown_clean.sh --delete`
 
 State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
@@ -76,7 +73,7 @@ Key runtime-intent targets:
 - `make install [DRY_RUN=true]`
   - Runs optional verification (`FEAT_VERIFY`), runtime-input sync, and Flux reconcile.
 - `make teardown [DRY_RUN=true]`
-  - Runs Flux stack delete/uninstall, cert-manager cleanup, teardown cleanup, and delete verification.
+  - Runs stack-only teardown by deleting `homelab-flux-stack` and `homelab-flux-sources`.
 - `make reinstall`
   - Runs `make teardown` then `make install`.
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`

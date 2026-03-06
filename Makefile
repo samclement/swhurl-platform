@@ -26,7 +26,7 @@ endef
 help:
 	@echo "Targets:"
 	@echo "  install             Clean install path (cluster defaults)"
-	@echo "  teardown            Clean teardown path (cluster defaults)"
+	@echo "  teardown            Stack-only teardown (delete Flux stack kustomizations)"
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
@@ -71,15 +71,9 @@ teardown:
 	if [[ "$(DRY_RUN)" == "true" ]]; then \
 	  echo "Plan (teardown):"; \
 	  echo "  - ./scripts/32_reconcile_flux_stack.sh --delete"; \
-	  echo "  - ./scripts/30_manage_cert_manager_cleanup.sh --delete"; \
-	  echo "  - ./scripts/99_execute_teardown.sh --delete"; \
-	  echo "  - ./scripts/98_verify_teardown_clean.sh --delete"; \
 	  exit 0; \
 	fi; \
-	./scripts/32_reconcile_flux_stack.sh --delete; \
-	./scripts/30_manage_cert_manager_cleanup.sh --delete; \
-	./scripts/99_execute_teardown.sh --delete; \
-	./scripts/98_verify_teardown_clean.sh --delete
+	./scripts/32_reconcile_flux_stack.sh --delete
 
 .PHONY: reinstall
 reinstall:

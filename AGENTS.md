@@ -89,6 +89,7 @@ Important contract:
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
   - Runtime-input source secret is Git-managed in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` and decrypted by `homelab-flux-sources` (`spec.decryption.secretRef.name=sops-age`).
+  - Local SOPS edits require an age private key in a default SOPS location (`~/.config/sops/age/keys.txt`) or `SOPS_AGE_KEY_FILE`; in this repo, `SOPS_AGE_KEY_FILE=./age.agekey` enables local decrypt/edit flows.
   - Keep app-specific secrets with each app (`tenants/apps/<app>/.../secret-*.sops.yaml`); when app paths include encrypted manifests, set `spec.decryption` on that app-level Flux Kustomization (for example `clusters/home/app-*.yaml`) to use `sops-age`.
   - `.sops.yaml` creation rules currently cover `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
   - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` now reconciles `homelab-flux-sources` from pushed Git state.
@@ -98,6 +99,7 @@ Important contract:
   - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the Google OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` redirect host/path aligned with the active client credentials wired from `platform-runtime-inputs`.
   - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so shared oauth client-id/client-secret changes are picked up without manual deployment restarts.
   - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET`.
+  - GitHub migration for shared oauth2-proxy: set `provider: github` and remove `oidc-issuer-url` in `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml`; keep callback `https://${OAUTH_HOST}/oauth2/callback` and update `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET` in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` with GitHub OAuth App credentials.
 
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
@@ -117,10 +119,11 @@ Important contract:
   - TODO (`docs/runbook.md`): split cert-manager issuers into a dedicated Flux Kustomization that depends on cert-manager readiness.
 
 - DNS and host layer
-  - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh` and updates Route53 A records for `homelab.swhurl.com` and `*.homelab.swhurl.com`.
+  - Dynamic DNS updater is `host/scripts/aws-dns-updater.sh`; record targets are driven by `DYNAMIC_DNS_RECORDS` (comma-separated FQDNs) with defaults from `host/host.env.example`.
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
-  - TODO (`host/scripts/aws-dns-updater.sh`): support an env-provided record list for additional explicit hostnames.
-  - Host automation is opt-in and runs via `host/run-host.sh`.
+  - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--host-env`, `--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
+  - Host config naming was simplified to a single base name pair: repo defaults in `host/host.env.example` and local overrides in `host/host.env`; `host/dynamic-dns.sh` still reads legacy `host/homelab.env` and `host/config/*.env` files when present for compatibility.
+  - Makefile wrappers `make host-dns` and `make host-dns-delete` call `host/dynamic-dns.sh` and pass through `DRY_RUN=true` and optional `HOST_ENV=/path/to/host.env`.
 
 - k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
@@ -182,7 +185,7 @@ Important contract:
 When changing orchestration/layout:
 - Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
 - Run:
-  - `bash -n scripts/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
+  - `bash -n scripts/*.sh host/dynamic-dns.sh`
   - `kubectl kustomize clusters/home >/dev/null`
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`
   - `kubectl kustomize platform-services/overlays/home >/dev/null`

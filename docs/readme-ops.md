@@ -41,7 +41,7 @@ Notes:
 - `make teardown` is stack-only: deletes `homelab-flux-stack` and `homelab-flux-sources`
 - Flux controllers, cert-manager, CRDs, and cluster-level services remain installed
 - Shortcuts: `make install`, `make teardown`, `make reinstall`
-- Host layer remains direct: `./host/run-host.sh` (`--dry-run` or `--delete`)
+- Host dynamic DNS: `make host-dns` / `make host-dns-delete` (or `./host/dynamic-dns.sh`)
 
 ### Cert mode
 
@@ -127,7 +127,7 @@ Detailed cert runbook: `docs/runbooks/promote-platform-certs-to-prod.md`
 
 1. k3s prerequisite: use default networking (`flannel`) with packaged `traefik` + `metrics-server` enabled.
 2. Runtime inputs are Git-managed via SOPS: commit + push encrypted changes before `make runtime-inputs-sync` (or `make flux-reconcile`).
-3. DNS wildcard scope: `*.homelab.swhurl.com` matches one-label hosts only; multi-label names need explicit records (or deeper wildcard).
+3. DNS wildcard scope: `*.homelab.swhurl.com` matches one-label hosts only; multi-label names need explicit records (or deeper wildcard). Add explicit hosts to `DYNAMIC_DNS_RECORDS` in `host/host.env`.
 4. cert-manager issuance timing: first reconcile can fail until DNS propagates and ACME HTTP-01 checks can reach ingress.
 5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial team setup completes in UI.
 6. OTel collector key reload: after key rotation, restart collectors (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.

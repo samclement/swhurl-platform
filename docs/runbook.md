@@ -77,6 +77,21 @@ Not part of default teardown:
 - cert-manager/CRD cleanup
 - cluster-wide namespace/secret sweeping
 
+## Host Dynamic DNS (Optional)
+
+Host DNS automation is a standalone entrypoint:
+
+```bash
+make host-dns
+make host-dns-delete
+```
+
+Direct script usage:
+
+```bash
+./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
+```
+
 ## Active Flux Dependency Chain
 
 Parent level:

@@ -41,7 +41,7 @@ Use this checklist when adding a new platform feature.
 
 ## 6) Validation before PR
 
-- `bash -n scripts/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
+- `bash -n scripts/*.sh host/dynamic-dns.sh`
 - `make install DRY_RUN=true`
 - `make teardown DRY_RUN=true`
 - Optional cluster-backed checks:

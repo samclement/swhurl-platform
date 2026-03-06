@@ -35,25 +35,28 @@ State contracts:
 - Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
 - Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).
 
-## Host Orchestrator (`host/run-host.sh`)
+## Host Dynamic DNS (`host/dynamic-dns.sh`)
 
 Usage:
 
 ```bash
-./host/run-host.sh [--host-env FILE] [--only N[,N...]] [--dry-run] [--delete]
+./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
 ```
 
-Config layering (`host/run-host.sh`):
+Config layering (`host/dynamic-dns.sh`):
 1. `config.env`
-2. `host/config/homelab.env`
-3. `host/config/host.env`
+2. `host/host.env.example`
+3. `host/host.env`
 4. `--host-env FILE`
 
-Default host apply tasks:
-1. `host/tasks/10_dynamic_dns.sh`
+Modes:
+- apply: `host/dynamic-dns.sh`
+- delete: `host/dynamic-dns.sh --delete`
 
-Default host delete tasks:
-1. `host/tasks/10_dynamic_dns.sh --delete`
+Host dynamic DNS knobs (via `host/host.env.example`, `host/host.env`, or `--host-env`):
+- `DYNAMIC_DNS_RECORDS` (comma-separated FQDNs to UPSERT as Route53 A records)
+- `AWS_ZONE_ID` (Route53 hosted zone id)
+- `AWS_PROFILE` (AWS CLI profile for Route53 API access)
 
 Manual prerequisite:
 - k3s installation is manual and documented in `README.md`.
@@ -88,6 +91,10 @@ Key runtime-intent targets:
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
 - `make charts-generate`
   - Renders C4 architecture charts from `docs/charts/c4/*.d2` to `docs/charts/c4/rendered/*.svg`.
+- `make host-dns [DRY_RUN=true] [HOST_ENV=/path/to/host.env]`
+  - Configures the host dynamic DNS updater systemd service/timer.
+- `make host-dns-delete [DRY_RUN=true] [HOST_ENV=/path/to/host.env]`
+  - Removes host-managed dynamic DNS systemd service/timer.
 
 Design boundary:
 - Runtime-input secrets are Git-managed through SOPS (`platform-runtime-inputs` source -> `platform-services/runtime-inputs` targets).

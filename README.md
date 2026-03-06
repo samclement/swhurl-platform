@@ -53,7 +53,8 @@ make install
 4. Optional host bootstrap (dynamic DNS):
 
 ```bash
-./host/run-host.sh
+# Optional: set custom records in host/host.env via DYNAMIC_DNS_RECORDS
+make host-dns
 ```
 
 ## Layout

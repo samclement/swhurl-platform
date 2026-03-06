@@ -35,14 +35,17 @@ help:
 	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  charts-generate     Render C4 architecture charts from D2 sources"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
+	@echo "  host-dns            Configure host dynamic DNS systemd updater"
+	@echo "  host-dns-delete     Remove host dynamic DNS systemd updater"
 	@echo "  verify-config       Run config input contract checks"
 	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
 	@echo ""
-	@echo "Host operations are intentionally direct:"
-	@echo "  ./host/run-host.sh [--dry-run|--delete]"
+	@echo "Host dynamic DNS:"
+	@echo "  make host-dns [DRY_RUN=true] [HOST_ENV=/path/to/host.env]"
+	@echo "  make host-dns-delete [DRY_RUN=true] [HOST_ENV=/path/to/host.env]"
 
 .PHONY: install
 install:
@@ -146,6 +149,30 @@ wait-runtime-inputs-otel:
 .PHONY: flux-reconcile
 flux-reconcile:
 	./scripts/32_reconcile_flux_stack.sh
+
+.PHONY: host-dns
+host-dns:
+	@set -Eeuo pipefail; \
+	args=(); \
+	if [[ -n "$(HOST_ENV)" ]]; then \
+	  args+=(--host-env "$(HOST_ENV)"); \
+	fi; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  args+=(--dry-run); \
+	fi; \
+	./host/dynamic-dns.sh "$${args[@]}"
+
+.PHONY: host-dns-delete
+host-dns-delete:
+	@set -Eeuo pipefail; \
+	args=(--delete); \
+	if [[ -n "$(HOST_ENV)" ]]; then \
+	  args+=(--host-env "$(HOST_ENV)"); \
+	fi; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  args+=(--dry-run); \
+	fi; \
+	./host/dynamic-dns.sh "$${args[@]}"
 
 .PHONY: platform-certs-staging
 platform-certs-staging:

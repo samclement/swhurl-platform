@@ -25,9 +25,7 @@ Recommended sequence:
 
 ## Platform Migration
 
-1. Update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
-- replace: `../../storage/minio/base`
-- with: `../../../legacy/infrastructure/storage/ceph/base`
+1. Introduce Ceph manifests under active repo paths, then update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml` to replace `../../storage/minio/base` with your Ceph path.
 
 2. Commit the path change.
 

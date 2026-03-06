@@ -103,11 +103,7 @@ Important contract:
 
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
-  - Legacy-only provider/migration manifests are isolated under `legacy/`:
-    - `legacy/infrastructure/ingress-nginx/base`
-    - `legacy/infrastructure/metrics-server/base`
-    - `legacy/infrastructure/storage/ceph/base`
-    - `legacy/bootstrap/k3s-manifests`
+  - `legacy/` and top-level `bootstrap/` directories were removed from the active repo to reduce stale migration scaffolding.
   - Active Flux composition and NodePort ownership remain in `infrastructure/overlays/home -> ../../ingress-traefik/base` and `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (`31514`/`30313`).
 
 - Issuers and certificates
@@ -131,7 +127,7 @@ Important contract:
   - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; `infrastructure/overlays/home` includes `../../ingress-traefik/base` so Flux reconciles the override (`80 -> 31514`, `443 -> 30313`).
   - `scripts/91_verify_platform_state.sh` validates live Traefik service NodePorts (`web=31514`, `websecure=30313`) when `INGRESS_PROVIDER=traefik`.
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
-  - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and legacy bootstrap Cilium HelmChart manifests).
+  - Cilium/Hubble manifests were removed from active composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and old bootstrap Cilium HelmChart manifests).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
   - `config.env` no longer carries `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
   - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-shared` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-shared@kubernetescrd`.

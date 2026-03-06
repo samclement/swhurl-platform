@@ -127,6 +127,7 @@ Important contract:
 
 - Secrets hygiene
   - Keep secrets in `profiles/secrets.env` (gitignored), not `config.env`.
+  - `config.env` no longer carries secret placeholders for `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, or `MINIO_ROOT_PASSWORD`; keep those only in `profiles/secrets.env`.
   - Config layering for scripts:
     - `config.env`
     - `profiles/local.env`

@@ -103,6 +103,7 @@ Important contract:
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Active default stack uses k3s defaults: flannel CNI + packaged `traefik` + packaged `metrics-server`.
   - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; `infrastructure/overlays/home` includes `../../ingress-traefik/base` so Flux reconciles the override (`80 -> 31514`, `443 -> 30313`).
+  - `scripts/91_verify_platform_state.sh` validates live Traefik service NodePorts (`web=31514`, `websecure=30313`) when `INGRESS_PROVIDER=traefik`.
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
   - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and legacy bootstrap Cilium HelmChart manifests).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.

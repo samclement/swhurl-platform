@@ -98,6 +98,26 @@ check_namespaced_selector_present() {
   fi
 }
 
+check_service_nodeport() {
+  local namespace="$1" service="$2" port_name="$3" expected_nodeport="$4" suggest="${5:-}"
+  local actual_nodeport
+
+  if ! kubectl -n "$namespace" get svc "$service" >/dev/null 2>&1; then
+    mismatch "${namespace}/${service} service not found"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+    return
+  fi
+
+  actual_nodeport="$(kubectl -n "$namespace" get svc "$service" -o jsonpath="{.spec.ports[?(@.name==\"${port_name}\")].nodePort}" 2>/dev/null || true)"
+  if [[ -z "$actual_nodeport" ]]; then
+    mismatch "${namespace}/${service} port '${port_name}' nodePort is empty"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+    return
+  fi
+
+  check_eq "${service}.nodePort.${port_name}" "$expected_nodeport" "$actual_nodeport" "$suggest"
+}
+
 check_ingress_contract() {
   local namespace="$1" name="$2" label_prefix="$3" expected_host="$4" expected_issuer="$5" expected_class="$6"
   local suggest_host="$7" suggest_issuer="$8" suggest_class="$9"
@@ -225,9 +245,17 @@ elif [[ "${INGRESS_PROVIDER:-traefik}" == "traefik" ]]; then
     "traefik deployment present" \
     "traefik deployment not found in kube-system" \
     "verify k3s packaged traefik is enabled"
+  check_namespaced_resource_present "svc" "kube-system" "traefik" \
+    "traefik service present" \
+    "traefik service not found in kube-system" \
+    "verify k3s packaged traefik is enabled"
   check_cluster_resource_present "ingressclass" "traefik" \
     "ingressclass traefik present" \
     "ingressclass traefik not found" \
+    "verify k3s packaged traefik is enabled"
+  check_service_nodeport "kube-system" "traefik" "web" "$VERIFY_INGRESS_NODEPORT_HTTP" \
+    "verify k3s packaged traefik is enabled"
+  check_service_nodeport "kube-system" "traefik" "websecure" "$VERIFY_INGRESS_NODEPORT_HTTPS" \
     "verify k3s packaged traefik is enabled"
 else
   ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping ingress controller specific checks"

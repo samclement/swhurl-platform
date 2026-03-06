@@ -121,6 +121,18 @@ Architecture charts:
 - Render charts: `make charts-generate`
 - Rendered output: `docs/charts/c4/rendered/*.svg`
 
+### C4 Context
+
+![C4 Context](docs/charts/c4/rendered/context.svg)
+
+### C4 Container
+
+![C4 Container](docs/charts/c4/rendered/container.svg)
+
+### C4 Component (Example App)
+
+![C4 Component Example App](docs/charts/c4/rendered/component-app-example.svg)
+
 ## Common Use Cases
 
 ### 1) Clean install / teardown

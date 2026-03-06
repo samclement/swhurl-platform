@@ -18,7 +18,7 @@ if [[ -f "$ROOT_DIR/config.env" ]]; then
 fi
 
 # Profile layering:
-# - By default: config.env -> profiles/local.env -> profiles/secrets.env -> PROFILE_FILE (highest precedence)
+# - By default: config.env -> profiles/local.env -> profiles/secrets.env (legacy optional) -> PROFILE_FILE (highest precedence)
 # - Opt out (standalone profile): PROFILE_EXCLUSIVE=true uses only config.env -> PROFILE_FILE
 PROFILE_EXCLUSIVE="${PROFILE_EXCLUSIVE:-false}"
 if [[ "$PROFILE_EXCLUSIVE" != "true" && "$PROFILE_EXCLUSIVE" != "false" ]]; then

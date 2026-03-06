@@ -89,6 +89,29 @@ case "$app_example_flux_path" in
     ;;
 esac
 
+runtime_inputs_sops_file="$REPO_ROOT/clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml"
+if [[ -f "$runtime_inputs_sops_file" ]]; then
+  ok "runtime-inputs SOPS secret exists (${runtime_inputs_sops_file#$REPO_ROOT/})"
+else
+  bad "runtime-inputs SOPS secret exists (${runtime_inputs_sops_file#$REPO_ROOT/})"
+fi
+
+if [[ -f "$runtime_inputs_sops_file" ]]; then
+  if rg -q '^sops:' "$runtime_inputs_sops_file"; then
+    ok "runtime-inputs secret is SOPS-encrypted"
+  else
+    bad "runtime-inputs secret must be SOPS-encrypted (missing top-level sops metadata)"
+  fi
+
+  for secret_key in SHARED_OIDC_CLIENT_ID SHARED_OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET OAUTH_HOST CLICKSTACK_API_KEY CLICKSTACK_INGESTION_KEY; do
+    if rg -q "^[[:space:]]+${secret_key}:" "$runtime_inputs_sops_file"; then
+      ok "runtime-inputs key present: ${secret_key}"
+    else
+      bad "runtime-inputs key missing: ${secret_key}"
+    fi
+  done
+fi
+
 if [[ -n "${INGRESS_PROVIDER:-}" ]]; then
   if is_allowed_ingress_provider "${INGRESS_PROVIDER}"; then
     ok "INGRESS_PROVIDER is valid"
@@ -103,10 +126,6 @@ if [[ -n "${OBJECT_STORAGE_PROVIDER:-}" ]]; then
   else
     bad "OBJECT_STORAGE_PROVIDER must be minio|ceph"
   fi
-fi
-
-if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
-  warn "CLICKSTACK_INGESTION_KEY is unset; OTel exporters will fall back to CLICKSTACK_API_KEY until you set it from ClickStack UI"
 fi
 
 printf "\n== Runtime Contracts ==\n"

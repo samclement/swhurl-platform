@@ -31,7 +31,7 @@ jobs:
       - name: Run dry-run commands
         run: |
           set -Eeuo pipefail
-          chmod +x host/run-host.sh scripts/bootstrap/*.sh
+          chmod +x host/run-host.sh
           ./host/run-host.sh --dry-run
           make install DRY_RUN=true
           make teardown DRY_RUN=true

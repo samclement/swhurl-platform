@@ -25,6 +25,9 @@ Preferred day-to-day entrypoints:
 ```bash
 flux check --pre
 flux install --namespace flux-system
+kubectl -n flux-system create secret generic sops-age \
+  --from-file=age.agekey=./age.agekey \
+  --dry-run=client -o yaml | kubectl apply -f -
 make flux-bootstrap
 ```
 
@@ -45,7 +48,7 @@ make flux-reconcile
 ```
 
 Behavior:
-- Syncs `flux-system/platform-runtime-inputs` from local config (`config.env` + `profiles/local.env` + `profiles/secrets.env`, plus optional `PROFILE_FILE=...` overrides).
+- Reconciles runtime input source (`homelab-flux-sources`) and stack (`homelab-flux-stack`) from Git.
 - Reconciles `swhurl-platform` source, `homelab-flux-sources`, then `homelab-flux-stack`.
 
 ### Full apply (`make install`)
@@ -94,12 +97,16 @@ Layer composition:
 Targets are declarative under:
 - `platform-services/runtime-inputs`
 
-Source secret is external:
-- `flux-system/platform-runtime-inputs`
+Source secret is Git-managed and SOPS-encrypted:
+- `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`
+- applied to cluster as `flux-system/platform-runtime-inputs` by `homelab-flux-sources` decryption
 
-Sync/update source secret:
+After editing encrypted runtime inputs in Git:
 
 ```bash
+git add clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+git commit -m "runtime-inputs: update platform secrets"
+git push
 make runtime-inputs-sync
 ```
 

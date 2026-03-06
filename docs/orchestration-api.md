@@ -28,7 +28,8 @@ State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`) before reconcile/apply flows.
 - Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
-- Source secret `flux-system/platform-runtime-inputs` is external and synced by `scripts/bootstrap/sync-runtime-inputs.sh`.
+- Source secret is Git-managed and SOPS-encrypted in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`, then decrypted/applied by `homelab-flux-sources`.
+- Flux decryption key secret must exist in-cluster as `flux-system/sops-age`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
 - k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
@@ -71,7 +72,7 @@ Step scripts should:
 
 Key runtime-intent targets:
 - `make install [DRY_RUN=true]`
-  - Runs optional verification (`FEAT_VERIFY`), runtime-input sync, and Flux reconcile.
+  - Runs optional verification (`FEAT_VERIFY`) and Flux reconcile.
 - `make teardown [DRY_RUN=true]`
   - Runs stack-only teardown by deleting `homelab-flux-stack` and `homelab-flux-sources`.
 - `make reinstall`
@@ -79,14 +80,14 @@ Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make runtime-inputs-sync`
-  - Syncs external source secret `flux-system/platform-runtime-inputs` from local env/profile.
+  - Reconciles `homelab-flux-sources` so pushed Git-managed runtime input secret updates are applied.
 - `make flux-reconcile`
-  - Syncs runtime inputs then reconciles Flux source + stack.
+  - Reconciles Flux source + stack.
 - `make otel-collectors-restart`
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
-  - Syncs runtime inputs, reconciles `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
+  - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
 
 Design boundary:
-- Runtime-input env vars are consumed only for runtime secrets (`oauth2-proxy-shared` and ClickStack/OTel keys in active composition).
+- Runtime-input secrets are Git-managed through SOPS (`platform-runtime-inputs` source -> `platform-services/runtime-inputs` targets).
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

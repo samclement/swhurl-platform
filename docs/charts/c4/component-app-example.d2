@@ -1,0 +1,37 @@
+title: "C4 Component - Example App Request Path"
+
+direction: right
+
+browser: "Browser"
+oidc: "OIDC Provider"
+
+edge: "Ingress Edge" {
+  direction: down
+  traefik_entry: "Traefik router"
+  oauth_mw: "oauth-auth-shared middleware"
+  oauth_proxy: "oauth2-proxy-shared service"
+}
+
+app_stack: "hello-web app stack" {
+  direction: down
+  ingress: "hello-web ingress"
+  service: "hello-web service"
+  deployment: "hello-web deployment"
+}
+
+certs: "TLS automation" {
+  cert_manager: "cert-manager"
+  cert: "hello-web certificate"
+}
+
+browser -> edge.traefik_entry: "HTTPS request"
+edge.traefik_entry -> edge.oauth_mw: "Invoke ForwardAuth"
+edge.oauth_mw -> edge.oauth_proxy: "Auth check"
+edge.oauth_proxy -> oidc: "OIDC login/token"
+edge.oauth_proxy -> edge.oauth_mw: "Auth result + headers"
+edge.traefik_entry -> app_stack.ingress: "Route host/path"
+app_stack.ingress -> app_stack.service: "Backend service"
+app_stack.service -> app_stack.deployment: "Pod traffic"
+
+certs.cert_manager -> certs.cert: "Reconcile cert"
+certs.cert -> app_stack.ingress: "TLS secret"

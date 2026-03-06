@@ -1,0 +1,23 @@
+title: "C4 Context - Swhurl Platform"
+
+direction: right
+
+operator: "Platform Operator"
+end_user: "App End User"
+github: "GitHub Repo\nswhurl-platform"
+oidc: "OIDC Provider\n(Google)"
+route53: "Route53 DNS"
+
+platform: "Swhurl Platform\n(k3s + Flux + platform services)" {
+  style.fill: "#E8F3FF"
+}
+
+operator -> github: "Commit manifests"
+github -> platform: "Flux pull + reconcile"
+operator -> platform: "kubectl / flux / make"
+
+end_user -> route53: "Resolve app hostnames"
+route53 -> platform: "Ingress routing"
+end_user -> platform: "HTTPS requests"
+
+platform -> oidc: "OIDC auth flow"

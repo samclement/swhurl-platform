@@ -1,0 +1,57 @@
+title: "C4 Container - Swhurl Platform"
+
+direction: down
+
+user: "User Browser"
+route53: "Route53 DNS"
+oidc: "OIDC Provider"
+git_repo: "GitRepository source\nswhurl-platform"
+
+cluster: "k3s cluster" {
+  direction: right
+
+  inbound: "Inbound / edge" {
+    direction: down
+    traefik: "Traefik ingress\n(kube-system)"
+    oauth2: "oauth2-proxy-shared\n(ingress)"
+    cert_manager: "cert-manager\n(cert-manager)"
+  }
+
+  platform: "Platform services" {
+    direction: down
+    flux: "Flux controllers\n(flux-system)"
+    clickstack: "ClickStack app + storage\n(observability)"
+    clickstack_otel: "ClickStack OTel collector\n(observability)"
+    otel_daemonset: "OTel collector daemonset\n(logging)"
+    kubelet: "kubelet endpoint\n(node)"
+    minio: "MinIO\n(storage)"
+  }
+
+  apps: "Apps" {
+    direction: down
+    app: "hello-web app\n(apps-staging/apps-prod)"
+  }
+}
+
+user -> route53: "DNS query"
+route53 -> cluster.inbound.traefik: "Host -> ingress"
+user -> cluster.inbound.traefik: "HTTPS"
+cluster.inbound.traefik -> cluster.apps.app: "Route to app service"
+cluster.inbound.traefik -> cluster.inbound.oauth2: "ForwardAuth middleware"
+cluster.inbound.oauth2 -> oidc: "OIDC authorization"
+cluster.inbound.cert_manager -> cluster.inbound.traefik: "Issue TLS certs"
+
+cluster.apps.app -> cluster.platform.otel_daemonset: "App logs / optional OTLP"
+cluster.platform.otel_daemonset -> cluster.platform.kubelet: "kubeletstats receiver"
+cluster.platform.otel_daemonset -> cluster.platform.clickstack_otel: "OTLP telemetry"
+cluster.platform.clickstack_otel -> cluster.platform.clickstack: "Ingest / store"
+
+cluster.platform.flux -> git_repo: "Pull manifests"
+cluster.platform.flux -> cluster.inbound.traefik: "Apply/reconcile"
+cluster.platform.flux -> cluster.inbound.oauth2: "Apply/reconcile"
+cluster.platform.flux -> cluster.inbound.cert_manager: "Apply/reconcile"
+cluster.platform.flux -> cluster.platform.clickstack: "Apply/reconcile"
+cluster.platform.flux -> cluster.platform.clickstack_otel: "Apply/reconcile"
+cluster.platform.flux -> cluster.platform.otel_daemonset: "Apply/reconcile"
+cluster.platform.flux -> cluster.platform.minio: "Apply/reconcile"
+cluster.platform.flux -> cluster.apps.app: "Apply/reconcile"

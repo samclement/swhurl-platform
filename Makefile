@@ -33,6 +33,7 @@ help:
 	@echo "  runtime-inputs-sync Reconcile Git-managed flux-system/platform-runtime-inputs (SOPS)"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
 	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
+	@echo "  charts-generate     Render C4 architecture charts from D2 sources"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify-config       Run config input contract checks"
 	@echo "  verify-platform     Run in-cluster platform state checks"
@@ -88,6 +89,10 @@ flux-bootstrap:
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
 	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
+
+.PHONY: charts-generate
+charts-generate:
+	./scripts/generate-charts.sh
 
 .PHONY: otel-collectors-restart
 otel-collectors-restart:

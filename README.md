@@ -34,6 +34,7 @@ Required for host tasks (`./host/run-host.sh`):
 
 Optional tooling used in some workflows:
 - `jq`, `yq`.
+- `d2` (for architecture chart rendering)
 
 ## Manual k3s prerequisite
 
@@ -113,6 +114,12 @@ Layer boundaries:
 Detailed operational flow:
 - `docs/runbook.md`
 - `docs/orchestration-api.md`
+- `docs/architecture.md`
+
+Architecture charts:
+- C4 chart sources: `docs/charts/c4/*.d2`
+- Render charts: `make charts-generate`
+- Rendered output: `docs/charts/c4/rendered/*.svg`
 
 ## Common Use Cases
 
@@ -238,6 +245,7 @@ Preferred orchestration path is Makefile-driven:
 - `make runtime-inputs-sync`
 - `make runtime-inputs-refresh-otel`
 - `make otel-collectors-restart`
+- `make charts-generate`
 - `make flux-reconcile`
 - `make platform-certs-staging|platform-certs-prod`
 - `make verify`

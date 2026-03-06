@@ -54,6 +54,10 @@ Important contract:
   - Run `uvx showboat verify walkthrough.md` after walkthrough edits.
   - Avoid self-referential showboat commands inside executable walkthrough blocks.
   - Keep README quickstart aligned with `Makefile` behavior.
+  - Architecture docs now use C4 chart sources in `docs/charts/c4/*.d2`; use `make charts-generate` to render `docs/charts/c4/rendered/*.svg`.
+  - `docs/architecture.md` is the canonical C4 architecture entrypoint; keep it aligned with Flux layering and active app path wiring.
+  - C4 container view orientation convention: top-to-bottom for inbound request flow, left-to-right lanes for logical grouping (`Inbound/edge`, `Platform services`, `Apps`).
+  - C4 container view should explicitly show telemetry flow (`apps -> otel-k8s-daemonset -> clickstack-otel-collector`) so observability troubleshooting paths are visible at container level.
   - Keep `docs/add-feature-checklist.md` aligned with current toggle policy: default to declarative wiring and runtime inputs; avoid introducing new `FEAT_*` switches unless strictly necessary.
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
@@ -64,12 +68,16 @@ Important contract:
   - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
   - Dead orchestration scripts were removed (`scripts/15_verify_cluster_access.sh`, `scripts/20_reconcile_platform_namespaces.sh`); `make install` now delegates sync+reconcile through `make flux-reconcile`, and unused helper functions were pruned from `scripts/00_lib.sh` / `scripts/00_verify_contract_lib.sh`.
   - Legacy hard-delete scripts were removed (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/98_verify_teardown_clean.sh`, `scripts/99_execute_teardown.sh`); default teardown remains stack-only via `scripts/32_reconcile_flux_stack.sh --delete`.
+  - TODO (`.github/workflows/validate.yml`): add optional C4 chart render validation when `d2` is available so `docs/charts/c4/*.d2` syntax drift is caught in CI.
+  - TODO (`docs/architecture.md`): add short per-view scope notes (what intentionally belongs in context/container/component) to reduce ambiguity when updating chart relationships.
 
 - Runtime inputs and substitution
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
   - Runtime-input source secret is Git-managed in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` and decrypted by `homelab-flux-sources` (`spec.decryption.secretRef.name=sops-age`).
+  - Keep app-specific secrets with each app (`tenants/apps/<app>/.../secret-*.sops.yaml`); when app paths include encrypted manifests, set `spec.decryption` on that app-level Flux Kustomization (for example `clusters/home/app-*.yaml`) to use `sops-age`.
+  - `.sops.yaml` creation rules currently cover `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
   - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` now reconciles `homelab-flux-sources` from pushed Git state.
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
@@ -141,10 +149,12 @@ Important contract:
   - TODO (`scripts/32_reconcile_flux_stack.sh`, `docs/runbook.md`): add a preflight/notice for long-running in-progress stack reconciliations (include expected timeout and optional suspend/resume workaround) so `make flux-reconcile` doesn’t appear silently hung.
 
 - Secrets hygiene
-  - Keep runtime secrets in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (SOPS-encrypted), not `config.env`.
+  - Keep shared platform runtime secrets in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (SOPS-encrypted), not `config.env`.
+  - Keep app-only secrets in app directories (`tenants/apps/<app>/.../secret-*.sops.yaml`) and decrypt via the app Flux Kustomization.
   - Ensure Flux decryption key secret exists in-cluster as `flux-system/sops-age` (`age.agekey`).
   - Keep local age private key material (`age.agekey`) gitignored.
   - `config.env` no longer carries secret placeholders for `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, or `MINIO_ROOT_PASSWORD`.
+  - TODO (`docs/contracts.md`, `docs/orchestration-api.md`): document shared-vs-app secret boundaries and app-level Flux decryption requirements alongside the central runtime-input source flow.
   - Config layering for scripts:
     - `config.env`
     - `profiles/local.env`

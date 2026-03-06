@@ -9,6 +9,10 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./clusters/home/flux-system/sources
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   prune: true
   wait: true
   timeout: 5m

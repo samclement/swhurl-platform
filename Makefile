@@ -30,9 +30,9 @@ help:
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
-	@echo "  runtime-inputs-sync Sync flux-system/platform-runtime-inputs from local env/profile"
+	@echo "  runtime-inputs-sync Reconcile Git-managed flux-system/platform-runtime-inputs (SOPS)"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
-	@echo "  runtime-inputs-refresh-otel Sync+reconcile runtime inputs, then restart otel-k8s collectors"
+	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  verify-config       Run config input contract checks"
 	@echo "  verify-platform     Run in-cluster platform state checks"
@@ -87,7 +87,7 @@ flux-bootstrap:
 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
-	./scripts/bootstrap/sync-runtime-inputs.sh
+	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
 
 .PHONY: otel-collectors-restart
 otel-collectors-restart:
@@ -108,7 +108,7 @@ otel-collectors-restart:
 
 .PHONY: runtime-inputs-refresh-otel
 runtime-inputs-refresh-otel:
-	./scripts/bootstrap/sync-runtime-inputs.sh
+	$(MAKE) runtime-inputs-sync
 	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
 	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
@@ -140,7 +140,6 @@ wait-runtime-inputs-otel:
 
 .PHONY: flux-reconcile
 flux-reconcile:
-	./scripts/bootstrap/sync-runtime-inputs.sh
 	./scripts/32_reconcile_flux_stack.sh
 
 .PHONY: platform-certs-staging

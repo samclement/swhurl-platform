@@ -10,14 +10,10 @@ readonly VERIFY_CONTRACT_LOADED="1"
 
 # Shared verification and teardown expectations.
 
-# Runtime/platform vars always required by active composition.
+# Runtime non-secret vars required by active composition.
 readonly -a VERIFY_REQUIRED_PLATFORM_VARS=(
   OAUTH_HOST
-  SHARED_OIDC_CLIENT_ID
-  SHARED_OIDC_CLIENT_SECRET
-  OAUTH_COOKIE_SECRET
   CLICKSTACK_HOST
-  CLICKSTACK_API_KEY
 )
 
 readonly -a VERIFY_PLATFORM_EFFECTIVE_NON_SECRET_VARS=(
@@ -118,7 +114,7 @@ verify_required_runtime_vars() {
   done
 
   if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
-    for var in MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD; do
+    for var in MINIO_HOST MINIO_CONSOLE_HOST; do
       [[ -n "${seen[$var]+x}" ]] && continue
       seen["$var"]=1
       printf '%s\n' "$var"

@@ -151,6 +151,12 @@ check_certificate_contract() {
   fi
 }
 
+read_secret_data() {
+  local namespace="$1" name="$2" key="$3"
+  kubectl -n "$namespace" get secret "$name" -o jsonpath="{.data.${key}}" 2>/dev/null \
+    | base64 --decode 2>/dev/null || true
+}
+
 say "ClusterIssuer"
 platform_cert_issuer="letsencrypt-staging"
 if kubectl -n flux-system get configmap platform-settings >/dev/null 2>&1; then
@@ -280,20 +286,18 @@ for clickstack_deploy in clickstack-app clickstack-otel-collector clickstack-cli
     "${clickstack_deploy} deployment not found" \
     "$SUGGEST_RECONCILE_STACK"
 done
+source_api_key="$(read_secret_data flux-system platform-runtime-inputs CLICKSTACK_API_KEY)"
+source_ingestion_key="$(read_secret_data flux-system platform-runtime-inputs CLICKSTACK_INGESTION_KEY)"
 if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
-  configured_api_key="${CLICKSTACK_API_KEY:-}"
-  runtime_api_key="$(
-    kubectl -n observability get secret clickstack-runtime-inputs -o jsonpath='{.data.CLICKSTACK_API_KEY}' \
-      | base64 --decode 2>/dev/null || true
-  )"
-  if [[ -z "$configured_api_key" ]]; then
-    mismatch "CLICKSTACK_API_KEY is empty; cannot verify clickstack runtime-input alignment"
-    add_suggest "scripts/94_verify_config_inputs.sh"
+  runtime_api_key="$(read_secret_data observability clickstack-runtime-inputs CLICKSTACK_API_KEY)"
+  if [[ -z "$source_api_key" ]]; then
+    mismatch "flux-system/platform-runtime-inputs.CLICKSTACK_API_KEY is empty; cannot verify clickstack runtime-input alignment"
+    add_suggest "make runtime-inputs-sync"
   elif [[ -z "$runtime_api_key" ]]; then
     mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
     suggest_reconcile_platform
-  elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
-    mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
+  elif [[ "$source_api_key" != "$runtime_api_key" ]]; then
+    mismatch "clickstack runtime-input mismatch: flux-system/platform-runtime-inputs.CLICKSTACK_API_KEY does not match observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY"
     add_suggest "make runtime-inputs-sync"
     suggest_reconcile_platform
   else
@@ -313,26 +317,23 @@ check_namespaced_selector_present "deploy" "logging" "app.kubernetes.io/instance
   "otel-k8s cluster deployment release present" \
   "otel-k8s cluster deployment release not found" \
   "$SUGGEST_RECONCILE_STACK"
-sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
+sender_token="${source_ingestion_key:-${source_api_key:-}}"
 if [[ -z "$sender_token" ]]; then
-  mismatch "CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
-  add_suggest "scripts/94_verify_config_inputs.sh"
+  mismatch "platform-runtime-inputs.CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
+  add_suggest "make runtime-inputs-sync"
 elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
-  receiver_token="$(
-    kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' \
-      | base64 --decode 2>/dev/null || true
-  )"
+  receiver_token="$(read_secret_data logging hyperdx-secret HYPERDX_API_KEY)"
   if [[ -z "$receiver_token" ]]; then
     mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
     add_suggest "make runtime-inputs-sync"
     suggest_reconcile_platform
   elif [[ "$sender_token" != "$receiver_token" ]]; then
-    mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
+    mismatch "otel token mismatch: platform-runtime-inputs.CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
     add_suggest "make runtime-inputs-sync"
     suggest_reconcile_platform
   else
     ok "otel token alignment check passed"
-    if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
+    if [[ -z "$source_ingestion_key" ]]; then
       warn "CLICKSTACK_INGESTION_KEY is not set; using CLICKSTACK_API_KEY fallback for OTel exporters"
     fi
   fi

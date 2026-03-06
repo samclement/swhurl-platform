@@ -201,12 +201,32 @@ Important contracts:
 
 ClickStack first-login flow:
 1. Open `https://${CLICKSTACK_HOST}` and complete first team/user setup.
-2. Create/copy ingestion key from ClickStack UI.
-3. Set `CLICKSTACK_INGESTION_KEY` in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`, then commit + push.
-4. Re-sync:
+2. In ClickStack UI, open API/Ingestion key settings and create a new ingestion key for OTel collectors.
+3. Copy the new ingestion key (store it immediately; treat it like a secret).
+4. Update the Git-managed SOPS secret source:
 
 ```bash
+sops clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+```
+
+Set `data.CLICKSTACK_INGESTION_KEY` to the new value, then save/exit.
+(`sops` re-encrypts the file on save.)
+
+5. Commit, push, and apply:
+
+```bash
+git add clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+git commit -m "runtime-inputs: rotate clickstack ingestion key"
+git push
 make runtime-inputs-refresh-otel
+```
+
+6. Verify source/target secret alignment (without printing secret values):
+
+```bash
+src="$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}')"
+dst="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}')"
+test -n "$src" && test "$src" = "$dst" && echo "OK: ingestion key propagated to logging/hyperdx-secret"
 ```
 
 ### 4) Example app deployment defaults

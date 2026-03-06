@@ -141,7 +141,7 @@ Active composition assumes native k3s components:
 - Traefik NodePorts pinned via `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`:
   - `80 -> 31514`
   - `443 -> 30313`
-- Legacy optional manifests are under `legacy/infrastructure/*` and are not part of `infrastructure/overlays/home`
+- Legacy optional manifests were removed; active composition is only the current `infrastructure/*` paths.
 
 ## Targets
 

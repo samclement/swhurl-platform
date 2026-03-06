@@ -11,7 +11,7 @@ Note:
 - Active defaults use k3s packaged networking (`flannel`), ingress (`traefik`), and metrics (`metrics-server`).
 - k3s packaged `metrics-server` and `traefik` are expected to remain enabled.
 - k3s-packaged Traefik is configured declaratively via `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts pinned to `31514`/`30313`).
-- Legacy/optional manifests are retained under `legacy/infrastructure/*` (`metrics-server/base`, `ingress-nginx/base`) and are not part of the active `home` composition.
+- Legacy provider manifests are removed from this repo; `infrastructure/overlays/home` is the active composition.
 
 Composition entrypoint: `infrastructure/overlays/home/kustomization.yaml`.
 

@@ -1,10 +1,18 @@
-title: "C4 Context - Swhurl Platform"
-
 direction: down
+
+diagram_title: "C4 Context\nSwhurl Platform" {
+  near: top-left
+  style: {
+    fill: transparent
+    stroke: transparent
+    bold: true
+    font-size: 20
+  }
+}
 
 layout_rows: "" {
   grid-rows: 2
-  vertical-gap: 88
+  vertical-gap: 10
   style.fill: transparent
   style.stroke: transparent
 
@@ -12,19 +20,19 @@ layout_rows: "" {
     grid-columns: 3
     horizontal-gap: 28
 
-    actors: "Human actors" {
-      grid-rows: 2
-      operator: "Platform Operator"
-      end_user: "App End User"
-    }
-
-    control: "Control & delivery" {
+    a_control: "Control & delivery" {
       grid-rows: 2
       github: "GitHub Repo\nswhurl-platform"
       route53: "Route53 DNS"
     }
 
-    providers: "Identity/TLS providers" {
+    b_actors: "Human actors" {
+      grid-rows: 2
+      operator: "Platform Operator"
+      end_user: "App End User"
+    }
+
+    c_providers: "Identity/TLS providers" {
       grid-rows: 2
       oidc: "OIDC Provider\n(Google)"
       letsencrypt: "Let's Encrypt\n(ACME)"
@@ -36,13 +44,13 @@ layout_rows: "" {
   }
 }
 
-layout_rows.external.actors.operator -> layout_rows.external.control.github: "Commit manifests"
-layout_rows.external.control.github -> layout_rows.platform: "Flux reconcile"
-layout_rows.external.actors.operator -> layout_rows.platform: "Operate platform"
+layout_rows.external.b_actors.operator -> layout_rows.external.a_control.github: "Commit manifests"
+layout_rows.external.a_control.github -> layout_rows.platform: "Flux reconcile"
+layout_rows.external.b_actors.operator -> layout_rows.platform: "Operate platform"
 
-layout_rows.external.actors.end_user -> layout_rows.external.control.route53: "Resolve DNS"
-layout_rows.external.control.route53 -> layout_rows.platform: "Ingress routing"
-layout_rows.external.actors.end_user -> layout_rows.platform: "HTTPS requests"
+layout_rows.external.b_actors.end_user -> layout_rows.external.a_control.route53: "Resolve DNS"
+layout_rows.external.a_control.route53 -> layout_rows.platform: "Ingress routing"
+layout_rows.external.b_actors.end_user -> layout_rows.platform: "HTTPS requests"
 
-layout_rows.platform -> layout_rows.external.providers.oidc: "OIDC auth"
-layout_rows.platform -> layout_rows.external.providers.letsencrypt: "ACME issuance"
+layout_rows.platform -> layout_rows.external.c_providers.oidc: "OIDC auth"
+layout_rows.platform -> layout_rows.external.c_providers.letsencrypt: "ACME issuance"

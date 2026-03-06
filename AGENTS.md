@@ -65,6 +65,7 @@ Important contract:
     - Treat single tall columns as a layout smell; rebalance into 2D grids unless the sequence is intentionally linear.
     - Regenerate with `make charts-generate` after each structural pass.
   - For dense C4 diagrams, reduce repeated edge labels first (especially repeated operational labels like `Apply/reconcile`) and keep labels on representative edges only.
+  - Use `diagram_title` with `near: top-left` for chart titles; avoid a plain `title` node that participates in layout and consumes chart width.
   - `docs/architecture.md` is the canonical C4 architecture entrypoint; keep it aligned with Flux layering and active app path wiring.
   - C4 container view orientation convention: top-to-bottom for inbound request flow, left-to-right lanes for logical grouping (`Inbound/edge`, `Platform services`, `Apps`).
   - C4 container view should explicitly show telemetry flow (`apps -> otel-k8s-daemonset -> clickstack-otel-collector`) so observability troubleshooting paths are visible at container level.

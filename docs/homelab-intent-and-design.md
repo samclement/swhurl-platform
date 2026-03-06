@@ -33,9 +33,10 @@ Separate these axes and do not collapse them:
 
 ## Runtime Inputs Principle
 
-Use environment variables only for runtime secrets that must stay out of Git.
+Use Git-managed SOPS encryption for runtime secrets.
 
-- Source secret: `flux-system/platform-runtime-inputs` (external, synced by script)
+- Source secret manifest: `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`
+- Applied source secret: `flux-system/platform-runtime-inputs` (decrypted by Flux `homelab-flux-sources`)
 - Targets: declarative manifests under `platform-services/runtime-inputs`
 - Non-secret mode controls stay Git-tracked in manifests/templates.
 

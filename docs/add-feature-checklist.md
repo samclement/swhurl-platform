@@ -11,14 +11,15 @@ Use this checklist when adding a new platform feature.
 ## 2) Config and contracts
 
 - Default model: prefer declarative composition and runtime-input wiring over new `FEAT_*` switches.
-- Keep non-secrets in `config.env` and secrets in `profiles/secrets.env`.
+- Keep non-secrets in `config.env` and runtime secrets in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`.
 - Update required vars/contracts in `scripts/00_verify_contract_lib.sh`.
 - If a new feature switch is absolutely necessary, document it in `docs/orchestration-api.md` and keep scope narrow (current default switch is `FEAT_VERIFY`).
 
 ## 3) Runtime inputs (if feature needs secrets)
 
 - Add/update target manifests in `platform-services/runtime-inputs/*`.
-- Update `scripts/bootstrap/sync-runtime-inputs.sh` validation and secret projection values.
+- Add/update source secret keys in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`.
+- Keep `clusters/home/flux-system/kustomizations.yaml` decryption contract (`spec.decryption.secretRef.name=sops-age`) valid.
 
 ## 4) Verification updates
 
@@ -33,7 +34,7 @@ Use this checklist when adding a new platform feature.
 
 ## 6) Validation before PR
 
-- `bash -n scripts/*.sh scripts/bootstrap/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
+- `bash -n scripts/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
 - `make install DRY_RUN=true`
 - `make teardown DRY_RUN=true`
 - Optional cluster-backed checks:

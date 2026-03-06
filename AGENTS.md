@@ -68,14 +68,14 @@ Important contract:
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes from `platform-settings` and `platform-runtime-inputs`.
+  - Runtime-input source secret is Git-managed in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` and decrypted by `homelab-flux-sources` (`spec.decryption.secretRef.name=sops-age`).
+  - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` now reconciles `homelab-flux-sources` from pushed Git state.
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` owns source secret sync and validates required secret inputs.
   - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-shared` (or automate via checksum strategy) to load new client credentials.
   - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the Google OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` redirect host/path aligned with the active client credentials wired from `platform-runtime-inputs`.
   - TODO (`Makefile`, `docs/runbook.md`): add an oauth2-proxy refresh target (or checksum rollout mechanism) after runtime credential updates so shared oauth client-id/client-secret changes are picked up without manual deployment restarts.
   - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET`.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` requires `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET` explicitly; legacy `HELLO_OIDC_*` and `OIDC_CLIENT_*` fallback support was removed.
 
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
@@ -121,7 +121,7 @@ Important contract:
   - Cold-start image pulls can exceed default Helm action wait; set `spec.timeout` in `platform-services/clickstack/base/helmrelease-clickstack.yaml` to reduce bootstrap retries.
   - On ClickHouse `25.7.x`, `system.query_log` does not expose `query_parameters`; for parameterized failures, match `query_id` against `observability/clickstack-app` logs and inspect `/clickhouse-proxy?...&param_HYPERDX_PARAM_*=` values.
   - `BAD_QUERY_PARAMETER (457)` with `Value nan cannot be parsed as Int64` can be confirmed in `clickstack-app` logs as `param_HYPERDX_PARAM_*=nan`; recent failures also carried `TraceId='undefined'` in the generated SQL from search row-side-panel flows.
-  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; refresh `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `profiles/secrets.env` and run `make runtime-inputs-refresh-otel`.
+  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; update `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` and run `make runtime-inputs-refresh-otel`.
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
   - `make runtime-inputs-refresh-otel` reconciles `homelab-platform` and waits for `logging/hyperdx-secret` to match `flux-system/platform-runtime-inputs.CLICKSTACK_INGESTION_KEY` before restarting collectors; this avoids stale-token restarts after key rotation.
@@ -140,13 +140,13 @@ Important contract:
   - TODO (`scripts/32_reconcile_flux_stack.sh`, `docs/runbook.md`): add a preflight/notice for long-running in-progress stack reconciliations (include expected timeout and optional suspend/resume workaround) so `make flux-reconcile` doesn’t appear silently hung.
 
 - Secrets hygiene
-  - Keep secrets in `profiles/secrets.env` (gitignored), not `config.env`.
+  - Keep runtime secrets in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (SOPS-encrypted), not `config.env`.
+  - Ensure Flux decryption key secret exists in-cluster as `flux-system/sops-age` (`age.agekey`).
   - Keep local age private key material (`age.agekey`) gitignored.
-  - `config.env` no longer carries secret placeholders for `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, or `MINIO_ROOT_PASSWORD`; keep those only in `profiles/secrets.env`.
+  - `config.env` no longer carries secret placeholders for `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, or `MINIO_ROOT_PASSWORD`.
   - Config layering for scripts:
     - `config.env`
     - `profiles/local.env`
-    - `profiles/secrets.env`
     - optional `PROFILE_FILE` (highest precedence)
   - `PROFILE_EXCLUSIVE=true` uses only `config.env` + explicit `PROFILE_FILE`.
 
@@ -159,7 +159,7 @@ Important contract:
 When changing orchestration/layout:
 - Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
 - Run:
-  - `bash -n scripts/*.sh scripts/bootstrap/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
+  - `bash -n scripts/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
   - `kubectl kustomize clusters/home >/dev/null`
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`
   - `kubectl kustomize platform-services/overlays/home >/dev/null`

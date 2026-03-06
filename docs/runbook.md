@@ -101,6 +101,11 @@ Source secret is Git-managed and SOPS-encrypted:
 - `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`
 - applied to cluster as `flux-system/platform-runtime-inputs` by `homelab-flux-sources` decryption
 
+Secret boundary:
+- Keep shared platform values in `secret-platform-runtime-inputs.sops.yaml`.
+- Keep app-only secrets with the app (`tenants/apps/<app>/.../secret-*.sops.yaml`).
+- App onboarding example: `docs/runbooks/onboard-app-with-sops-secrets.md`
+
 After editing encrypted runtime inputs in Git:
 
 ```bash
@@ -124,6 +129,11 @@ make runtime-inputs-refresh-otel
 Core checks:
 - `scripts/94_verify_config_inputs.sh`
 - `scripts/91_verify_platform_state.sh`
+
+Architecture chart generation:
+- C4 source files: `docs/charts/c4/*.d2`
+- Render command: `make charts-generate`
+- Output path: `docs/charts/c4/rendered/*.svg`
 
 ## Promotion / Profiles
 

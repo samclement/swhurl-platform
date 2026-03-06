@@ -5,5 +5,3 @@ metadata:
   namespace: flux-system
 data:
   CERT_ISSUER: letsencrypt-prod
-  BASE_RECORD: homelab.swhurl.com
-  WILDCARD_RECORD: "*.homelab.swhurl.com"

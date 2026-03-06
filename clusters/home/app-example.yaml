@@ -14,10 +14,3 @@ spec:
   prune: true
   wait: true
   timeout: 20m
-  healthChecks:
-    - kind: Deployment
-      name: hello-web
-      namespace: hello-web-prod
-    - kind: Deployment
-      name: hello-web
-      namespace: hello-web-staging

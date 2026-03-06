@@ -68,7 +68,6 @@ jobs:
           kubectl kustomize platform-services/oauth2-proxy/base >/dev/null
           kubectl kustomize platform-services/clickstack/base >/dev/null
           kubectl kustomize platform-services/otel/base >/dev/null
-          kubectl kustomize tenants >/dev/null
           kubectl kustomize tenants/app-envs >/dev/null
           kubectl kustomize tenants/apps/example >/dev/null
           kubectl kustomize tenants/apps/example/base >/dev/null

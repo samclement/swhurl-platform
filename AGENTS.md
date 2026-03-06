@@ -77,7 +77,7 @@ Important contract:
   - `scripts/bootstrap/sync-runtime-inputs.sh` requires `SHARED_OIDC_CLIENT_ID` / `SHARED_OIDC_CLIENT_SECRET` explicitly; legacy `HELLO_OIDC_*` and `OIDC_CLIENT_*` fallback support was removed.
 
 - Repo structure
-  - Active Flux paths do not use `tenants/kustomization.yaml`; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
+  - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
   - `bootstrap/k3s-manifests/` is currently a legacy doc-only placeholder and is not consumed by active workflows.
   - TODO (`README.md`, `docs/runbook.md`): decide whether to move legacy-only provider/migration manifests (`infrastructure/ingress-nginx/base`, `infrastructure/metrics-server/base`, `infrastructure/storage/ceph/base`, `bootstrap/k3s-manifests`) under a dedicated `legacy/` subtree or remove when migration consumers are no longer needed.
 

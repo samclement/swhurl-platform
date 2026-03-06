@@ -59,6 +59,7 @@ Important contract:
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
   - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.
   - `run.sh` was removed; cluster orchestration is `make`-first via `make install` / `make teardown` (use `DRY_RUN=true`, `FEAT_VERIFY=...`, and optional `PROFILE_FILE=...` env overrides).
+  - Keep `.github/workflows/validate.yml` aligned with active make targets and existing kustomize paths; remove deleted path checks (`run.sh`, `infrastructure/cilium/base`, and retired app-test overlays).
   - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
   - Dead orchestration scripts were removed (`scripts/15_verify_cluster_access.sh`, `scripts/20_reconcile_platform_namespaces.sh`); `make install` now delegates sync+reconcile through `make flux-reconcile`, and unused helper functions were pruned from `scripts/00_lib.sh` / `scripts/00_verify_contract_lib.sh`.
 

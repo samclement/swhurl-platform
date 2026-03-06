@@ -7,6 +7,7 @@ ensure_context
 
 fail=0
 declare -a SUGGEST=()
+SUGGEST_RECONCILE_STACK="scripts/32_reconcile_flux_stack.sh"
 SUGGEST_RECONCILE_PLATFORM="flux reconcile kustomization homelab-platform -n flux-system"
 
 say() { printf "\n== %s ==\n" "$1"; }
@@ -20,6 +21,10 @@ add_suggest() {
     [[ "$e" == "$s" ]] && return 0
   done
   SUGGEST+=("$s")
+}
+
+suggest_reconcile_stack() {
+  add_suggest "$SUGGEST_RECONCILE_STACK"
 }
 
 suggest_reconcile_platform() {
@@ -36,25 +41,6 @@ check_eq() {
   fi
 }
 
-check_deploy_ready() {
-  local namespace="$1" name="$2" suggest="$3"
-  local desired ready available
-  desired="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-  ready="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
-  available="$(kubectl -n "$namespace" get deploy "$name" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
-
-  [[ -z "$desired" ]] && desired="0"
-  [[ -z "$ready" ]] && ready="0"
-  [[ -z "$available" ]] && available="0"
-
-  if [[ "$ready" == "$desired" && "$available" == "$desired" ]]; then
-    ok "${namespace}/${name} ready (${ready}/${desired})"
-  else
-    mismatch "${namespace}/${name} not ready (ready=${ready} available=${available} desired=${desired})"
-    [[ -n "$suggest" ]] && add_suggest "$suggest"
-  fi
-}
-
 expected_ingress_class="${INGRESS_PROVIDER:-traefik}"
 
 ingress_class() {
@@ -64,6 +50,85 @@ ingress_class() {
     class="$(kubectl -n "$namespace" get ingress "$name" -o jsonpath='{.metadata.annotations.kubernetes\.io/ingress\.class}' 2>/dev/null || true)"
   fi
   printf '%s' "$class"
+}
+
+check_flux_kustomization_path() {
+  local name="$1" expected_path="$2"
+  local path=""
+  if kubectl -n flux-system get kustomization "$name" >/dev/null 2>&1; then
+    path="$(kubectl -n flux-system get kustomization "$name" -o jsonpath='{.spec.path}')"
+    if [[ "$path" != "$expected_path" ]]; then
+      warn "${name} path '$path' is unexpected (expected ${expected_path})"
+    fi
+  else
+    warn "${name} kustomization not found"
+  fi
+  printf '%s' "$path"
+}
+
+check_cluster_resource_present() {
+  local kind="$1" name="$2" present_msg="$3" missing_msg="$4" suggest="${5:-}"
+  if kubectl get "$kind" "$name" >/dev/null 2>&1; then
+    ok "$present_msg"
+  else
+    mismatch "$missing_msg"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+  fi
+}
+
+check_namespaced_resource_present() {
+  local kind="$1" namespace="$2" name="$3" present_msg="$4" missing_msg="$5" suggest="${6:-}"
+  if kubectl -n "$namespace" get "$kind" "$name" >/dev/null 2>&1; then
+    ok "$present_msg"
+  else
+    mismatch "$missing_msg"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+  fi
+}
+
+check_namespaced_selector_present() {
+  local kind="$1" namespace="$2" selector="$3" present_msg="$4" missing_msg="$5" suggest="${6:-}"
+  local names
+  names="$(kubectl -n "$namespace" get "$kind" -l "$selector" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)"
+  if [[ -n "$names" ]]; then
+    ok "$present_msg"
+  else
+    mismatch "$missing_msg"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+  fi
+}
+
+check_ingress_contract() {
+  local namespace="$1" name="$2" label_prefix="$3" expected_host="$4" expected_issuer="$5" expected_class="$6"
+  local suggest_host="$7" suggest_issuer="$8" suggest_class="$9"
+
+  if kubectl -n "$namespace" get ingress "$name" >/dev/null 2>&1; then
+    local actual_host actual_issuer actual_class
+    actual_host="$(kubectl -n "$namespace" get ingress "$name" -o jsonpath='{.spec.rules[0].host}')"
+    actual_issuer="$(kubectl -n "$namespace" get ingress "$name" -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')"
+    actual_class="$(ingress_class "$namespace" "$name")"
+    [[ -n "$expected_host" ]] && check_eq "${label_prefix}.host" "$expected_host" "$actual_host" "$suggest_host"
+    [[ -n "$expected_issuer" ]] && check_eq "${label_prefix}.issuer" "$expected_issuer" "$actual_issuer" "$suggest_issuer"
+    [[ -n "$expected_class" ]] && check_eq "${label_prefix}.class" "$expected_class" "$actual_class" "$suggest_class"
+  else
+    mismatch "${name} ingress not found in namespace ${namespace}"
+    [[ -n "$suggest_host" ]] && add_suggest "$suggest_host"
+  fi
+}
+
+check_certificate_contract() {
+  local namespace="$1" name="$2" label_prefix="$3" expected_host="$4" expected_issuer="$5" suggest="$6"
+
+  if kubectl -n "$namespace" get certificate "$name" >/dev/null 2>&1; then
+    local actual_cert_host actual_cert_issuer
+    actual_cert_host="$(kubectl -n "$namespace" get certificate "$name" -o jsonpath='{.spec.dnsNames[0]}')"
+    actual_cert_issuer="$(kubectl -n "$namespace" get certificate "$name" -o jsonpath='{.spec.issuerRef.name}')"
+    check_eq "${label_prefix}.host" "$expected_host" "$actual_cert_host" "$suggest"
+    check_eq "${label_prefix}.issuer" "$expected_issuer" "$actual_cert_issuer" "$suggest"
+  else
+    mismatch "${name} certificate not found in namespace ${namespace}"
+    [[ -n "$suggest" ]] && add_suggest "$suggest"
+  fi
 }
 
 say "ClusterIssuer"
@@ -86,89 +151,53 @@ else
 fi
 
 expected_infrastructure_issuer="$platform_cert_issuer"
-infrastructure_path=""
-if kubectl -n flux-system get kustomization homelab-infrastructure >/dev/null 2>&1; then
-  infrastructure_path="$(kubectl -n flux-system get kustomization homelab-infrastructure -o jsonpath='{.spec.path}')"
-  if [[ "$infrastructure_path" != "./infrastructure/overlays/home" ]]; then
-    warn "homelab-infrastructure path '$infrastructure_path' is unexpected (expected ./infrastructure/overlays/home)"
-  fi
-else
-  warn "homelab-infrastructure kustomization not found"
-fi
+infrastructure_path="$(check_flux_kustomization_path homelab-infrastructure ./infrastructure/overlays/home)"
 ok "infrastructure issuer expectation: ${expected_infrastructure_issuer} (path: ${infrastructure_path:-<unknown>}, source: flux-system/platform-settings.CERT_ISSUER)"
 
 expected_platform_services_issuer="$platform_cert_issuer"
-platform_services_path=""
-if kubectl -n flux-system get kustomization homelab-platform >/dev/null 2>&1; then
-  platform_services_path="$(kubectl -n flux-system get kustomization homelab-platform -o jsonpath='{.spec.path}')"
-  if [[ "$platform_services_path" != "./platform-services/overlays/home" ]]; then
-    warn "homelab-platform path '$platform_services_path' is unexpected (expected ./platform-services/overlays/home)"
-  fi
-else
-  warn "homelab-platform kustomization not found"
-fi
+platform_services_path="$(check_flux_kustomization_path homelab-platform ./platform-services/overlays/home)"
 ok "platform-services issuer expectation: ${expected_platform_services_issuer} (path: ${platform_services_path:-<unknown>}, source: flux-system/platform-settings.CERT_ISSUER)"
 
-tenants_path=""
-if kubectl -n flux-system get kustomization homelab-tenants >/dev/null 2>&1; then
-  tenants_path="$(kubectl -n flux-system get kustomization homelab-tenants -o jsonpath='{.spec.path}')"
-  if [[ "$tenants_path" != "./tenants/app-envs" ]]; then
-    warn "homelab-tenants path '$tenants_path' is unexpected (expected ./tenants/app-envs)"
-  fi
-else
-  warn "homelab-tenants kustomization not found"
-fi
+tenants_path="$(check_flux_kustomization_path homelab-tenants ./tenants/app-envs)"
 
-app_example_path=""
-if kubectl -n flux-system get kustomization homelab-app-example >/dev/null 2>&1; then
-  app_example_path="$(kubectl -n flux-system get kustomization homelab-app-example -o jsonpath='{.spec.path}')"
-  if [[ "$app_example_path" != "./tenants/apps/example" ]]; then
-    warn "homelab-app-example path '$app_example_path' is unexpected (expected ./tenants/apps/example)"
-  fi
-else
-  warn "homelab-app-example kustomization not found"
-fi
+app_example_path="$(check_flux_kustomization_path homelab-app-example ./tenants/apps/example)"
 ok "app expectation: staged and prod overlays both deployed with letsencrypt-prod (path: ${app_example_path:-<unknown>})"
 
-if kubectl get clusterissuer selfsigned >/dev/null 2>&1; then
-  ok "selfsigned ClusterIssuer present"
-else
-  mismatch "ClusterIssuer selfsigned not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
+check_cluster_resource_present "clusterissuer" "selfsigned" \
+  "selfsigned ClusterIssuer present" \
+  "ClusterIssuer selfsigned not found" \
+  "$SUGGEST_RECONCILE_STACK"
 
 for issuer_name in letsencrypt-staging letsencrypt-prod; do
-  if kubectl get clusterissuer "$issuer_name" >/dev/null 2>&1; then
-    ok "${issuer_name} ClusterIssuer present"
-  else
-    mismatch "ClusterIssuer ${issuer_name} not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
+  check_cluster_resource_present "clusterissuer" "$issuer_name" \
+    "${issuer_name} ClusterIssuer present" \
+    "ClusterIssuer ${issuer_name} not found" \
+    "$SUGGEST_RECONCILE_STACK"
 done
 
 expected_staging_server="$(verify_expected_letsencrypt_server staging)"
 expected_prod_server="$(verify_expected_letsencrypt_server prod)"
 if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-staging -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
+  check_eq "letsencrypt-staging.server" "${expected_staging_server}" "$actual_server" "$SUGGEST_RECONCILE_STACK"
 fi
 if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
   actual_server=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.server}')
-  check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "scripts/32_reconcile_flux_stack.sh"
+  check_eq "letsencrypt-prod.server" "${expected_prod_server}" "$actual_server" "$SUGGEST_RECONCILE_STACK"
 fi
 
 say "Ingress"
 if [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
   if kubectl -n ingress get svc ingress-nginx-controller >/dev/null 2>&1; then
     actual_svc_type=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.type}')
-    check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "service.type" "$VERIFY_INGRESS_SERVICE_TYPE" "$actual_svc_type" "$SUGGEST_RECONCILE_STACK"
     actual_http_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
     actual_https_np=$(kubectl -n ingress get svc ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-    check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "nodePort.http" "$VERIFY_INGRESS_NODEPORT_HTTP" "$actual_http_np" "$SUGGEST_RECONCILE_STACK"
+    check_eq "nodePort.https" "$VERIFY_INGRESS_NODEPORT_HTTPS" "$actual_https_np" "$SUGGEST_RECONCILE_STACK"
   else
     mismatch "ingress-nginx service not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
+    suggest_reconcile_stack
   fi
 
   if kubectl -n ingress get cm ingress-nginx-controller >/dev/null 2>&1; then
@@ -177,87 +206,52 @@ if [[ "${INGRESS_PROVIDER:-traefik}" == "nginx" ]]; then
       ok "log-format-upstream present"
     else
       mismatch "log-format-upstream missing"
-      add_suggest "scripts/32_reconcile_flux_stack.sh"
+      suggest_reconcile_stack
     fi
   else
     mismatch "ingress-nginx configmap not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
+    suggest_reconcile_stack
   fi
 
   if kubectl get ingressclass nginx >/dev/null 2>&1; then
     actual_default=$(kubectl get ingressclass nginx -o jsonpath='{.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class}')
-    check_eq "ingressclass.default" "true" "$actual_default" "scripts/32_reconcile_flux_stack.sh"
+    check_eq "ingressclass.default" "true" "$actual_default" "$SUGGEST_RECONCILE_STACK"
   else
     mismatch "ingressclass nginx not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
+    suggest_reconcile_stack
   fi
 elif [[ "${INGRESS_PROVIDER:-traefik}" == "traefik" ]]; then
-  if kubectl -n kube-system get deploy traefik >/dev/null 2>&1; then
-    ok "traefik deployment present"
-  else
-    mismatch "traefik deployment not found in kube-system"
-    add_suggest "verify k3s packaged traefik is enabled"
-  fi
-
-  if kubectl get ingressclass traefik >/dev/null 2>&1; then
-    ok "ingressclass traefik present"
-  else
-    mismatch "ingressclass traefik not found"
-    add_suggest "verify k3s packaged traefik is enabled"
-  fi
+  check_namespaced_resource_present "deploy" "kube-system" "traefik" \
+    "traefik deployment present" \
+    "traefik deployment not found in kube-system" \
+    "verify k3s packaged traefik is enabled"
+  check_cluster_resource_present "ingressclass" "traefik" \
+    "ingressclass traefik present" \
+    "ingressclass traefik not found" \
+    "verify k3s packaged traefik is enabled"
 else
   ok "INGRESS_PROVIDER=${INGRESS_PROVIDER:-traefik}; skipping ingress controller specific checks"
 fi
 
 say "oauth2-proxy-shared"
-if kubectl -n ingress get deploy oauth2-proxy-shared >/dev/null 2>&1; then
-  ok "oauth2-proxy-shared deployment present"
-else
-  mismatch "oauth2-proxy-shared deployment not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl -n ingress get ingress oauth2-proxy-shared >/dev/null 2>&1; then
-  actual_host=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.spec.rules[0].host}')
-  actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-  actual_class="$(ingress_class ingress oauth2-proxy-shared)"
-  check_eq "oauth2-proxy-shared.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-  check_eq "oauth2-proxy-shared.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-  check_eq "oauth2-proxy-shared.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-else
-  mismatch "oauth2-proxy-shared ingress not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
+check_namespaced_resource_present "deploy" "ingress" "oauth2-proxy-shared" \
+  "oauth2-proxy-shared deployment present" \
+  "oauth2-proxy-shared deployment not found" \
+  "$SUGGEST_RECONCILE_STACK"
+check_ingress_contract "ingress" "oauth2-proxy-shared" "oauth2-proxy-shared" \
+  "${OAUTH_HOST:-}" "${expected_platform_services_issuer}" "${expected_ingress_class}" \
+  "$SUGGEST_RECONCILE_STACK" "clusters/home/platform.yaml" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
 
 say "ClickStack"
-if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
-  actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
-  actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-  actual_class="$(ingress_class observability clickstack-app-ingress)"
-  check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-  check_eq "clickstack.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-  check_eq "clickstack.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-else
-  mismatch "clickstack ingress not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
-  ok "clickstack app deployment present"
-else
-  mismatch "clickstack app deployment not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
-  ok "clickstack otel collector deployment present"
-else
-  mismatch "clickstack otel collector deployment not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
-  ok "clickstack clickhouse deployment present"
-else
-  mismatch "clickstack clickhouse deployment not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
+check_ingress_contract "observability" "clickstack-app-ingress" "clickstack" \
+  "${CLICKSTACK_HOST:-}" "${expected_platform_services_issuer}" "${expected_ingress_class}" \
+  "$SUGGEST_RECONCILE_STACK" "clusters/home/platform.yaml" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+for clickstack_deploy in clickstack-app clickstack-otel-collector clickstack-clickhouse; do
+  check_namespaced_resource_present "deploy" "observability" "$clickstack_deploy" \
+    "${clickstack_deploy} deployment present" \
+    "${clickstack_deploy} deployment not found" \
+    "$SUGGEST_RECONCILE_STACK"
+done
 if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
   configured_api_key="${CLICKSTACK_API_KEY:-}"
   runtime_api_key="$(
@@ -283,18 +277,14 @@ else
 fi
 
 say "Kubernetes OTel Collectors"
-if kubectl -n logging get ds -l app.kubernetes.io/instance=otel-k8s-daemonset >/dev/null 2>&1; then
-  ok "otel-k8s daemonset release present"
-else
-  mismatch "otel-k8s daemonset release not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
-if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
-  ok "otel-k8s cluster deployment release present"
-else
-  mismatch "otel-k8s cluster deployment release not found"
-  add_suggest "scripts/32_reconcile_flux_stack.sh"
-fi
+check_namespaced_selector_present "ds" "logging" "app.kubernetes.io/instance=otel-k8s-daemonset" \
+  "otel-k8s daemonset release present" \
+  "otel-k8s daemonset release not found" \
+  "$SUGGEST_RECONCILE_STACK"
+check_namespaced_selector_present "deploy" "logging" "app.kubernetes.io/instance=otel-k8s-cluster" \
+  "otel-k8s cluster deployment release present" \
+  "otel-k8s cluster deployment release not found" \
+  "$SUGGEST_RECONCILE_STACK"
 sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
 if [[ -z "$sender_token" ]]; then
   mismatch "CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
@@ -325,72 +315,27 @@ fi
 
 say "MinIO"
 if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
-  if kubectl -n storage get ingress minio >/dev/null 2>&1; then
-    actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class storage minio)"
-    check_eq "minio.host" "${MINIO_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "minio.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
-    check_eq "minio.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-  else
-    mismatch "minio ingress not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n storage get ingress minio-console >/dev/null 2>&1; then
-    actual_host=$(kubectl -n storage get ingress minio-console -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n storage get ingress minio-console -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class storage minio-console)"
-    check_eq "minio-console.host" "${MINIO_CONSOLE_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "minio-console.issuer" "${expected_infrastructure_issuer}" "$actual_issuer" "clusters/home/infrastructure.yaml"
-    check_eq "minio-console.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-  else
-    mismatch "minio-console ingress not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
+  check_ingress_contract "storage" "minio" "minio" \
+    "${MINIO_HOST:-}" "${expected_infrastructure_issuer}" "${expected_ingress_class}" \
+    "$SUGGEST_RECONCILE_STACK" "clusters/home/infrastructure.yaml" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+  check_ingress_contract "storage" "minio-console" "minio-console" \
+    "${MINIO_CONSOLE_HOST:-}" "${expected_infrastructure_issuer}" "${expected_ingress_class}" \
+    "$SUGGEST_RECONCILE_STACK" "clusters/home/infrastructure.yaml" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
 else
   ok "OBJECT_STORAGE_PROVIDER=${OBJECT_STORAGE_PROVIDER:-minio}; skipping MinIO checks"
 fi
 
 say "Example App"
-if kubectl -n apps-staging get ingress hello-web >/dev/null 2>&1; then
-  actual_host="$(kubectl -n apps-staging get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
-  actual_class="$(ingress_class apps-staging hello-web)"
-  check_eq "hello-web.staging.host" "staging-hello.homelab.swhurl.com" "$actual_host" "clusters/home/app-example.yaml"
-  check_eq "hello-web.staging.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-else
-  mismatch "hello-web ingress not found in namespace apps-staging"
-  add_suggest "clusters/home/app-example.yaml"
-fi
-
-if kubectl -n apps-staging get certificate hello-web >/dev/null 2>&1; then
-  actual_cert_host="$(kubectl -n apps-staging get certificate hello-web -o jsonpath='{.spec.dnsNames[0]}')"
-  actual_cert_issuer="$(kubectl -n apps-staging get certificate hello-web -o jsonpath='{.spec.issuerRef.name}')"
-  check_eq "hello-web.staging.certificate.host" "staging-hello.homelab.swhurl.com" "$actual_cert_host" "clusters/home/app-example.yaml"
-  check_eq "hello-web.staging.certificate.issuer" "letsencrypt-prod" "$actual_cert_issuer" "clusters/home/app-example.yaml"
-else
-  mismatch "hello-web certificate not found in namespace apps-staging"
-  add_suggest "clusters/home/app-example.yaml"
-fi
-
-if kubectl -n apps-prod get ingress hello-web >/dev/null 2>&1; then
-  actual_host="$(kubectl -n apps-prod get ingress hello-web -o jsonpath='{.spec.rules[0].host}')"
-  actual_class="$(ingress_class apps-prod hello-web)"
-  check_eq "hello-web.prod.host" "hello.homelab.swhurl.com" "$actual_host" "clusters/home/app-example.yaml"
-  check_eq "hello-web.prod.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-else
-  mismatch "hello-web ingress not found in namespace apps-prod"
-  add_suggest "clusters/home/app-example.yaml"
-fi
-
-if kubectl -n apps-prod get certificate hello-web >/dev/null 2>&1; then
-  actual_cert_host="$(kubectl -n apps-prod get certificate hello-web -o jsonpath='{.spec.dnsNames[0]}')"
-  actual_cert_issuer="$(kubectl -n apps-prod get certificate hello-web -o jsonpath='{.spec.issuerRef.name}')"
-  check_eq "hello-web.prod.certificate.host" "hello.homelab.swhurl.com" "$actual_cert_host" "clusters/home/app-example.yaml"
-  check_eq "hello-web.prod.certificate.issuer" "letsencrypt-prod" "$actual_cert_issuer" "clusters/home/app-example.yaml"
-else
-  mismatch "hello-web certificate not found in namespace apps-prod"
-  add_suggest "clusters/home/app-example.yaml"
-fi
+check_ingress_contract "apps-staging" "hello-web" "hello-web.staging" \
+  "staging-hello.homelab.swhurl.com" "" "${expected_ingress_class}" \
+  "clusters/home/app-example.yaml" "" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+check_certificate_contract "apps-staging" "hello-web" "hello-web.staging.certificate" \
+  "staging-hello.homelab.swhurl.com" "letsencrypt-prod" "clusters/home/app-example.yaml"
+check_ingress_contract "apps-prod" "hello-web" "hello-web.prod" \
+  "hello.homelab.swhurl.com" "" "${expected_ingress_class}" \
+  "clusters/home/app-example.yaml" "" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+check_certificate_contract "apps-prod" "hello-web" "hello-web.prod.certificate" \
+  "hello.homelab.swhurl.com" "letsencrypt-prod" "clusters/home/app-example.yaml"
 
 if [[ "$fail" -eq 1 ]]; then
   printf "\nValidation failed.\n"

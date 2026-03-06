@@ -125,6 +125,7 @@ Important contract:
 - Labels and teardown ownership
   - Managed label domain is `platform.swhurl.com/managed`.
   - Teardown/verification selectors must stay aligned with that label.
+  - `scripts/91_verify_platform_state.sh` now centralizes repeated checks with helpers (`check_flux_kustomization_path`, `check_ingress_contract`, `check_certificate_contract`, and resource-presence helpers); extend those helpers instead of adding new ad-hoc blocks.
 
 - Flux reconcile behavior
   - `flux reconcile kustomization ... --with-source` does not preempt an already running `wait: true` reconciliation. If a prior revision is in `Running health checks ... timeout 20m`, new `requestedAt` values queue but the old in-flight revision continues until timeout/failure.

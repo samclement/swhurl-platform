@@ -1,0 +1,14 @@
+# Managed template for host dynamic DNS updater
+[Unit]
+Description=Homelab Dynamic DNS Update Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=__EXEC_START__
+User=__RUN_USER__
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

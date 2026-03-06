@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-cert-manager-issuers
+    - name: homelab-infrastructure
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -22,13 +22,3 @@ spec:
   prune: true
   wait: true
   timeout: 20m
-  healthChecks:
-    - kind: Deployment
-      name: oauth2-proxy
-      namespace: auth
-    - kind: Deployment
-      name: clickstack
-      namespace: observability
-    - kind: Deployment
-      name: otel-k8s-cluster-opentelemetry-collector
-      namespace: logging

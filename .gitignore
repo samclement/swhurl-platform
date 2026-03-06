@@ -5,6 +5,7 @@ host/config/host.env
 
 # Age/SOPS keys and encrypted secrets directory (if used)
 .keys/
+age.agekey
 secrets/
 !.gitkeep
 

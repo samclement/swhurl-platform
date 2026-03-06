@@ -31,8 +31,8 @@ jobs:
       - name: Run dry-run commands
         run: |
           set -Eeuo pipefail
-          chmod +x host/run-host.sh
-          ./host/run-host.sh --dry-run
+          chmod +x host/dynamic-dns.sh
+          ./host/dynamic-dns.sh --dry-run
           make install DRY_RUN=true
           make teardown DRY_RUN=true
           make platform-certs-staging DRY_RUN=true
@@ -58,11 +58,8 @@ jobs:
           kubectl kustomize infrastructure/namespaces >/dev/null
           kubectl kustomize infrastructure/cert-manager/base >/dev/null
           kubectl kustomize infrastructure/cert-manager/issuers >/dev/null
-          kubectl kustomize legacy/infrastructure/metrics-server/base >/dev/null
-          kubectl kustomize legacy/infrastructure/ingress-nginx/base >/dev/null
           kubectl kustomize infrastructure/ingress-traefik/base >/dev/null
           kubectl kustomize infrastructure/storage/minio/base >/dev/null
-          kubectl kustomize legacy/infrastructure/storage/ceph/base >/dev/null
           kubectl kustomize platform-services/overlays/home >/dev/null
           kubectl kustomize platform-services/runtime-inputs >/dev/null
           kubectl kustomize platform-services/oauth2-proxy/base >/dev/null

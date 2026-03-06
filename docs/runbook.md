@@ -16,6 +16,10 @@ kubectl -n kube-system get deploy traefik metrics-server
 
 ## Standard Operations
 
+Preferred day-to-day entrypoints:
+- `make install`
+- `make teardown`
+
 ### Bootstrap
 
 ```bash
@@ -44,13 +48,18 @@ Behavior:
 - Syncs `flux-system/platform-runtime-inputs` from local config (`config.env` + `profiles/local.env` + `profiles/secrets.env`, plus optional `PROFILE_FILE=...` overrides).
 - Reconciles `swhurl-platform` source, `homelab-flux-sources`, then `homelab-flux-stack`.
 
-### Full apply
+### Full apply (`make install`)
 
 ```bash
 make install
 ```
 
-### Full delete
+Flow:
+1. `make verify-config` (when `FEAT_VERIFY=true`)
+2. `make flux-reconcile`
+3. `make verify-platform` (when `FEAT_VERIFY=true`)
+
+### Full delete (`make teardown`)
 
 ```bash
 make teardown

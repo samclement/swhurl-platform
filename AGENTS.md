@@ -54,6 +54,7 @@ Important contract:
   - Run `uvx showboat verify walkthrough.md` after walkthrough edits.
   - Avoid self-referential showboat commands inside executable walkthrough blocks.
   - Keep README quickstart aligned with `Makefile` behavior.
+  - Keep `docs/add-feature-checklist.md` aligned with current toggle policy: default to declarative wiring and runtime inputs; avoid introducing new `FEAT_*` switches unless strictly necessary.
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
   - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.

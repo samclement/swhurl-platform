@@ -8,10 +8,12 @@ Use this checklist when adding a new platform feature.
 - Add/update Flux stack wiring in `clusters/home/{infrastructure,platform,tenants}.yaml` and layer overlay kustomizations.
 - Keep `dependsOn` explicit.
 
-## 2) Feature flags and config
+## 2) Config and contracts
 
-- Add/verify feature flag default in `config.env` (`FEAT_*`).
-- Update feature required vars in `scripts/00_verify_contract_lib.sh`.
+- Default model: prefer declarative composition and runtime-input wiring over new `FEAT_*` switches.
+- Keep non-secrets in `config.env` and secrets in `profiles/secrets.env`.
+- Update required vars/contracts in `scripts/00_verify_contract_lib.sh`.
+- If a new feature switch is absolutely necessary, document it in `docs/orchestration-api.md` and keep scope narrow (current default switch is `FEAT_VERIFY`).
 
 ## 3) Runtime inputs (if feature needs secrets)
 
@@ -31,7 +33,7 @@ Use this checklist when adding a new platform feature.
 
 ## 6) Validation before PR
 
-- `bash -n scripts/*.sh host/**/*.sh`
+- `bash -n scripts/*.sh scripts/bootstrap/*.sh host/run-host.sh host/tasks/*.sh host/lib/*.sh`
 - `make install DRY_RUN=true`
 - `make teardown DRY_RUN=true`
 - Optional cluster-backed checks:

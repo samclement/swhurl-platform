@@ -7,6 +7,7 @@ ensure_context
 
 fail=0
 declare -a SUGGEST=()
+SUGGEST_RECONCILE_PLATFORM="flux reconcile kustomization homelab-platform -n flux-system"
 
 say() { printf "\n== %s ==\n" "$1"; }
 ok() { printf "[OK] %s\n" "$1"; }
@@ -19,6 +20,10 @@ add_suggest() {
     [[ "$e" == "$s" ]] && return 0
   done
   SUGGEST+=("$s")
+}
+
+suggest_reconcile_platform() {
+  add_suggest "$SUGGEST_RECONCILE_PLATFORM"
 }
 
 check_eq() {
@@ -264,18 +269,17 @@ if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1
     add_suggest "scripts/94_verify_config_inputs.sh"
   elif [[ -z "$runtime_api_key" ]]; then
     mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    suggest_reconcile_platform
   elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
     mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
     add_suggest "make runtime-inputs-sync"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    suggest_reconcile_platform
   else
     ok "clickstack runtime-input key alignment check passed"
   fi
 else
   mismatch "clickstack-runtime-inputs secret not found"
-  add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  suggest_reconcile_platform
 fi
 
 say "Kubernetes OTel Collectors"
@@ -303,12 +307,11 @@ elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
   if [[ -z "$receiver_token" ]]; then
     mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
     add_suggest "make runtime-inputs-sync"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    suggest_reconcile_platform
   elif [[ "$sender_token" != "$receiver_token" ]]; then
     mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
     add_suggest "make runtime-inputs-sync"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    suggest_reconcile_platform
   else
     ok "otel token alignment check passed"
     if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
@@ -317,7 +320,7 @@ elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
   fi
 else
   mismatch "hyperdx-secret not found"
-  add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  suggest_reconcile_platform
 fi
 
 say "MinIO"

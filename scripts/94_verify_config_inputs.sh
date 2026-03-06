@@ -113,13 +113,13 @@ printf "\n== Runtime Contracts ==\n"
 while IFS= read -r key; do
   [[ -n "$key" ]] || continue
   need "$key"
-done < <(verify_required_vars_for_enabled_features)
+done < <(verify_required_runtime_vars)
 
 printf "\n== Effective (non-secret) ==\n"
 while IFS= read -r key; do
   [[ -n "$key" ]] || continue
   printf "%s=%s\n" "$key" "${!key:-}"
-done < <(verify_effective_non_secret_vars)
+done < <(verify_effective_runtime_non_secret_vars)
 
 if [[ "$fail" -ne 0 ]]; then
   exit 1

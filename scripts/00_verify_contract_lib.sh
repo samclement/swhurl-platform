@@ -107,7 +107,7 @@ verify_expected_letsencrypt_server() {
   esac
 }
 
-verify_required_vars_for_enabled_features() {
+verify_required_runtime_vars() {
   local -A seen=()
   local var
 
@@ -126,7 +126,7 @@ verify_required_vars_for_enabled_features() {
   fi
 }
 
-verify_effective_non_secret_vars() {
+verify_effective_runtime_non_secret_vars() {
   local -A seen=()
   local var
 

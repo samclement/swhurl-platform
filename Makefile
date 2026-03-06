@@ -2,8 +2,6 @@ SHELL := /usr/bin/env bash
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 
-run_dry_flag = $(if $(filter true,$(DRY_RUN)),--dry-run,)
-
 define update_cert_issuer
 	@set -eu; \
 	file="$(PLATFORM_SETTINGS_FILE)"; issuer="$(1)"; \
@@ -36,6 +34,8 @@ help:
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
 	@echo "  runtime-inputs-refresh-otel Sync+reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
+	@echo "  verify-config       Run config input contract checks"
+	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
@@ -45,16 +45,46 @@ help:
 
 .PHONY: install
 install:
-	./run.sh $(call run_dry_flag)
+	@set -Eeuo pipefail; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  echo "Plan (install):"; \
+	  if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
+	    echo "  - make verify-config"; \
+	  fi; \
+	  echo "  - make flux-reconcile"; \
+	  if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
+	    echo "  - make verify-platform"; \
+	  fi; \
+	  exit 0; \
+	fi; \
+	if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
+	  $(MAKE) verify-config; \
+	fi; \
+	$(MAKE) flux-reconcile; \
+	if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
+	  $(MAKE) verify-platform; \
+	fi
 
 .PHONY: teardown
 teardown:
-	./run.sh $(call run_dry_flag) --delete
+	@set -Eeuo pipefail; \
+	if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  echo "Plan (teardown):"; \
+	  echo "  - ./scripts/32_reconcile_flux_stack.sh --delete"; \
+	  echo "  - ./scripts/30_manage_cert_manager_cleanup.sh --delete"; \
+	  echo "  - ./scripts/99_execute_teardown.sh --delete"; \
+	  echo "  - ./scripts/98_verify_teardown_clean.sh --delete"; \
+	  exit 0; \
+	fi; \
+	./scripts/32_reconcile_flux_stack.sh --delete; \
+	./scripts/30_manage_cert_manager_cleanup.sh --delete; \
+	./scripts/99_execute_teardown.sh --delete; \
+	./scripts/98_verify_teardown_clean.sh --delete
 
 .PHONY: reinstall
 reinstall:
-	./run.sh --delete
-	./run.sh
+	$(MAKE) teardown
+	$(MAKE) install
 
 .PHONY: flux-bootstrap
 flux-bootstrap:
@@ -127,7 +157,13 @@ platform-certs-staging:
 platform-certs-prod:
 	$(call update_cert_issuer,letsencrypt-prod)
 
-.PHONY: verify
-verify:
+.PHONY: verify-config
+verify-config:
 	./scripts/94_verify_config_inputs.sh
+
+.PHONY: verify-platform
+verify-platform:
 	./scripts/91_verify_platform_state.sh
+
+.PHONY: verify
+verify: verify-config verify-platform

@@ -15,7 +15,7 @@ Default stack components:
 
 ## Dependencies that need to be installed
 
-Required for cluster orchestration (`make install`, `./run.sh`, Flux reconcile):
+Required for cluster orchestration (`make install`, `make teardown`, Flux reconcile):
 - `bash`
 - `kubectl`
 - `helm`
@@ -95,10 +95,6 @@ Teardown (manual Flux uninstall):
 flux uninstall --silent
 ```
 
-Equivalent single-command cluster path:
-- Apply: `./run.sh`
-- Delete: `./run.sh --delete`
-
 Layer selection note:
 - Shared infrastructure composition is declared in `infrastructure/overlays/home/kustomization.yaml`.
 - Shared platform services composition is declared in `platform-services/overlays/home/kustomization.yaml`.
@@ -134,7 +130,7 @@ make teardown
 ```
 
 Notes:
-- `./run.sh --delete` removes Flux stack kustomizations, performs teardown cleanup, uninstalls Flux controllers, and runs delete verification.
+- `make teardown` removes Flux stack kustomizations, performs teardown cleanup, uninstalls Flux controllers (if `flux` is installed), and runs delete verification.
 - `DELETE_SCOPE=dedicated-cluster` enables aggressive secret cleanup for dedicated clusters.
 - Makefile shortcuts:
   - `make install` (cluster default apply path)
@@ -222,27 +218,9 @@ Active composition already assumes native k3s components:
 
 ## Orchestration
 
-`run.sh` is the cluster orchestrator. Default apply flow:
-1. cluster access check
-2. config contract verify
-3. runtime-input secret sync
-4. Flux reconcile
-5. verification
-
-Default delete flow:
-1. cluster access check
-2. delete Flux stack kustomizations
-3. cert-manager cleanup helper
-4. teardown cleanup (`99`)
-5. Flux uninstall
-6. delete verification
-
-Show plans:
-
-```bash
-./run.sh --dry-run
-./run.sh --dry-run --delete
-```
+Preferred orchestration path is Makefile-driven:
+1. `make install` (optional config verification, runtime-input sync, Flux reconcile, optional platform verification)
+2. `make teardown` (Flux delete/uninstall, cert-manager cleanup, teardown cleanup, delete verification)
 
 ## Useful Targets
 

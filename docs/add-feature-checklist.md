@@ -32,7 +32,8 @@ Use this checklist when adding a new platform feature.
 ## 6) Validation before PR
 
 - `bash -n scripts/*.sh host/**/*.sh`
-- `./run.sh --dry-run`
+- `make install DRY_RUN=true`
+- `make teardown DRY_RUN=true`
 - Optional cluster-backed checks:
   - `./scripts/94_verify_config_inputs.sh`
   - `./scripts/91_verify_platform_state.sh`

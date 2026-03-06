@@ -8,11 +8,11 @@ All scripts load config via `scripts/00_lib.sh` with precedence:
 1. `config.env`
 2. `profiles/local.env`
 3. `profiles/secrets.env`
-4. `$PROFILE_FILE` (`./run.sh --profile ...`)
+4. `$PROFILE_FILE` (for example: `PROFILE_FILE=profiles/foo.env make install`)
 
 Operational preference:
 - Keep committed profile files minimal (`profiles/local.env` and `profiles/secrets.example.env`).
-- Express runtime intent via Makefile args; use `--profile` for ad-hoc temporary overrides.
+- Express runtime intent via Makefile args; use `PROFILE_FILE=...` for ad-hoc temporary overrides.
 
 If `PROFILE_EXCLUSIVE=true`, only `config.env` and `$PROFILE_FILE` are loaded.
 

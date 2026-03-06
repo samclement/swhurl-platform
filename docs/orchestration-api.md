@@ -86,6 +86,8 @@ Key runtime-intent targets:
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
+- `make charts-generate`
+  - Renders C4 architecture charts from `docs/charts/c4/*.d2` to `docs/charts/c4/rendered/*.svg`.
 
 Design boundary:
 - Runtime-input secrets are Git-managed through SOPS (`platform-runtime-inputs` source -> `platform-services/runtime-inputs` targets).

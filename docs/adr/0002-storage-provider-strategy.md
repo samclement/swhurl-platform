@@ -15,7 +15,7 @@ Use composition-driven provider selection in:
 - `infrastructure/overlays/home/kustomization.yaml`
 
 Current default is MinIO (`../../storage/minio/base`).
-Optional Ceph composition path is `../../storage/ceph/base`.
+Optional Ceph composition path is `../../../legacy/infrastructure/storage/ceph/base`.
 
 Keep `OBJECT_STORAGE_PROVIDER` in `config.env` as an operator intent hint for
 verification and operational checks, not as the source of deployment truth.

@@ -78,8 +78,12 @@ Important contract:
 
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
-  - `bootstrap/k3s-manifests/` is currently a legacy doc-only placeholder and is not consumed by active workflows.
-  - TODO (`README.md`, `docs/runbook.md`): decide whether to move legacy-only provider/migration manifests (`infrastructure/ingress-nginx/base`, `infrastructure/metrics-server/base`, `infrastructure/storage/ceph/base`, `bootstrap/k3s-manifests`) under a dedicated `legacy/` subtree or remove when migration consumers are no longer needed.
+  - Legacy-only provider/migration manifests are isolated under `legacy/`:
+    - `legacy/infrastructure/ingress-nginx/base`
+    - `legacy/infrastructure/metrics-server/base`
+    - `legacy/infrastructure/storage/ceph/base`
+    - `legacy/bootstrap/k3s-manifests`
+  - Active Flux composition and NodePort ownership remain in `infrastructure/overlays/home -> ../../ingress-traefik/base` and `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (`31514`/`30313`).
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -100,7 +104,7 @@ Important contract:
   - Active default stack uses k3s defaults: flannel CNI + packaged `traefik` + packaged `metrics-server`.
   - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; `infrastructure/overlays/home` includes `../../ingress-traefik/base` so Flux reconciles the override (`80 -> 31514`, `443 -> 30313`).
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
-  - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, `bootstrap/k3s-manifests/cilium-helmchart.yaml`).
+  - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and legacy bootstrap Cilium HelmChart manifests).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
   - `config.env` and `profiles/secrets.example.env` no longer carry `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
   - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-shared` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-shared@kubernetescrd`.

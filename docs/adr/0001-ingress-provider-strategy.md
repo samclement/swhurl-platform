@@ -15,7 +15,7 @@ Use composition-driven provider selection in:
 - `infrastructure/overlays/home/kustomization.yaml`
 
 Current default relies on k3s-packaged `traefik` (no Flux ingress controller release in `home`).
-Optional legacy provider path remains `../../ingress-nginx/base`.
+Optional legacy provider path remains `../../../legacy/infrastructure/ingress-nginx/base`.
 
 Keep `INGRESS_PROVIDER` in `config.env` as an operator intent hint for verification and
 operational checks, not as the source of deployment truth.

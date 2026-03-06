@@ -16,8 +16,8 @@ make flux-reconcile
 ## Migration
 
 1. Update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
-   - remove: `../../ingress-nginx/base`
-   - ensure `../../metrics-server/base` is also removed (native k3s `metrics-server` path)
+   - remove: `../../../legacy/infrastructure/ingress-nginx/base`
+   - ensure `../../../legacy/infrastructure/metrics-server/base` is also removed (native k3s `metrics-server` path)
 
 2. Ensure k3s packaged Traefik is enabled (no `--disable traefik` in k3s server args).
 
@@ -66,7 +66,7 @@ Expected auth behavior during current Traefik forward-auth mode:
 
 ## Rollback
 
-Re-add `../../ingress-nginx/base` to `infrastructure/overlays/home/kustomization.yaml`, revert manifest ingress-class changes, then:
+Re-add `../../../legacy/infrastructure/ingress-nginx/base` to `infrastructure/overlays/home/kustomization.yaml`, revert manifest ingress-class changes, then:
 
 ```bash
 make flux-reconcile

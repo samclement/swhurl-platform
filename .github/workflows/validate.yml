@@ -58,11 +58,11 @@ jobs:
           kubectl kustomize infrastructure/namespaces >/dev/null
           kubectl kustomize infrastructure/cert-manager/base >/dev/null
           kubectl kustomize infrastructure/cert-manager/issuers >/dev/null
-          kubectl kustomize infrastructure/metrics-server/base >/dev/null
-          kubectl kustomize infrastructure/ingress-nginx/base >/dev/null
+          kubectl kustomize legacy/infrastructure/metrics-server/base >/dev/null
+          kubectl kustomize legacy/infrastructure/ingress-nginx/base >/dev/null
           kubectl kustomize infrastructure/ingress-traefik/base >/dev/null
           kubectl kustomize infrastructure/storage/minio/base >/dev/null
-          kubectl kustomize infrastructure/storage/ceph/base >/dev/null
+          kubectl kustomize legacy/infrastructure/storage/ceph/base >/dev/null
           kubectl kustomize platform-services/overlays/home >/dev/null
           kubectl kustomize platform-services/runtime-inputs >/dev/null
           kubectl kustomize platform-services/oauth2-proxy/base >/dev/null

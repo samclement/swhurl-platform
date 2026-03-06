@@ -1,23 +1,48 @@
 title: "C4 Context - Swhurl Platform"
 
-direction: right
+direction: down
 
-operator: "Platform Operator"
-end_user: "App End User"
-github: "GitHub Repo\nswhurl-platform"
-oidc: "OIDC Provider\n(Google)"
-route53: "Route53 DNS"
+layout_rows: "" {
+  grid-rows: 2
+  vertical-gap: 88
+  style.fill: transparent
+  style.stroke: transparent
 
-platform: "Swhurl Platform\n(k3s + Flux + platform services)" {
-  style.fill: "#E8F3FF"
+  external: "External actors/systems" {
+    grid-columns: 3
+    horizontal-gap: 28
+
+    actors: "Human actors" {
+      grid-rows: 2
+      operator: "Platform Operator"
+      end_user: "App End User"
+    }
+
+    control: "Control & delivery" {
+      grid-rows: 2
+      github: "GitHub Repo\nswhurl-platform"
+      route53: "Route53 DNS"
+    }
+
+    providers: "Identity/TLS providers" {
+      grid-rows: 2
+      oidc: "OIDC Provider\n(Google)"
+      letsencrypt: "Let's Encrypt\n(ACME)"
+    }
+  }
+
+  platform: "Swhurl Platform\n(k3s + Flux + platform services)" {
+    style.fill: "#E8F3FF"
+  }
 }
 
-operator -> github: "Commit manifests"
-github -> platform: "Flux pull + reconcile"
-operator -> platform: "kubectl / flux / make"
+layout_rows.external.actors.operator -> layout_rows.external.control.github: "Commit manifests"
+layout_rows.external.control.github -> layout_rows.platform: "Flux reconcile"
+layout_rows.external.actors.operator -> layout_rows.platform: "Operate platform"
 
-end_user -> route53: "Resolve app hostnames"
-route53 -> platform: "Ingress routing"
-end_user -> platform: "HTTPS requests"
+layout_rows.external.actors.end_user -> layout_rows.external.control.route53: "Resolve DNS"
+layout_rows.external.control.route53 -> layout_rows.platform: "Ingress routing"
+layout_rows.external.actors.end_user -> layout_rows.platform: "HTTPS requests"
 
-platform -> oidc: "OIDC auth flow"
+layout_rows.platform -> layout_rows.external.providers.oidc: "OIDC auth"
+layout_rows.platform -> layout_rows.external.providers.letsencrypt: "ACME issuance"

@@ -1,37 +1,57 @@
 title: "C4 Component - Example App Request Path"
 
-direction: right
+direction: down
 
-browser: "Browser"
-oidc: "OIDC Provider"
+layout_rows: "" {
+  grid-rows: 2
+  vertical-gap: 84
+  style.fill: transparent
+  style.stroke: transparent
 
-edge: "Ingress Edge" {
-  direction: down
-  traefik_entry: "Traefik router"
-  oauth_mw: "oauth-auth-shared middleware"
-  oauth_proxy: "oauth2-proxy-shared service"
+  external: "External actors/systems" {
+    grid-columns: 3
+    horizontal-gap: 30
+
+    browser: "Browser"
+    oidc: "OIDC Provider"
+    letsencrypt: "Let's Encrypt\n(ACME)"
+  }
+
+  app_path: "App request path" {
+    grid-columns: 3
+    horizontal-gap: 44
+
+    edge: "Ingress edge" {
+      grid-rows: 3
+      traefik_entry: "Traefik router"
+      oauth_mw: "oauth-auth-shared middleware"
+      oauth_proxy: "oauth2-proxy-shared service"
+    }
+
+    app_stack: "hello-web app stack" {
+      grid-rows: 3
+      ingress: "hello-web ingress"
+      service: "hello-web service"
+      deployment: "hello-web deployment"
+    }
+
+    certs: "TLS automation" {
+      grid-rows: 2
+      cert_manager: "cert-manager"
+      cert: "hello-web certificate"
+    }
+  }
 }
 
-app_stack: "hello-web app stack" {
-  direction: down
-  ingress: "hello-web ingress"
-  service: "hello-web service"
-  deployment: "hello-web deployment"
-}
+layout_rows.external.browser -> layout_rows.app_path.edge.traefik_entry: "HTTPS request"
+layout_rows.app_path.edge.traefik_entry -> layout_rows.app_path.edge.oauth_mw
+layout_rows.app_path.edge.oauth_mw -> layout_rows.app_path.edge.oauth_proxy
+layout_rows.app_path.edge.oauth_proxy -> layout_rows.external.oidc: "OIDC login/token"
+layout_rows.app_path.edge.oauth_proxy -> layout_rows.app_path.edge.oauth_mw
+layout_rows.app_path.edge.traefik_entry -> layout_rows.app_path.app_stack.ingress: "Route host/path"
+layout_rows.app_path.app_stack.ingress -> layout_rows.app_path.app_stack.service
+layout_rows.app_path.app_stack.service -> layout_rows.app_path.app_stack.deployment
 
-certs: "TLS automation" {
-  cert_manager: "cert-manager"
-  cert: "hello-web certificate"
-}
-
-browser -> edge.traefik_entry: "HTTPS request"
-edge.traefik_entry -> edge.oauth_mw: "Invoke ForwardAuth"
-edge.oauth_mw -> edge.oauth_proxy: "Auth check"
-edge.oauth_proxy -> oidc: "OIDC login/token"
-edge.oauth_proxy -> edge.oauth_mw: "Auth result + headers"
-edge.traefik_entry -> app_stack.ingress: "Route host/path"
-app_stack.ingress -> app_stack.service: "Backend service"
-app_stack.service -> app_stack.deployment: "Pod traffic"
-
-certs.cert_manager -> certs.cert: "Reconcile cert"
-certs.cert -> app_stack.ingress: "TLS secret"
+layout_rows.app_path.certs.cert_manager -> layout_rows.app_path.certs.cert
+layout_rows.app_path.certs.cert_manager -> layout_rows.external.letsencrypt: "ACME challenge"
+layout_rows.app_path.certs.cert -> layout_rows.app_path.app_stack.ingress: "TLS secret"

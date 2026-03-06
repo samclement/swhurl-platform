@@ -55,9 +55,21 @@ Important contract:
   - Avoid self-referential showboat commands inside executable walkthrough blocks.
   - Keep README quickstart aligned with `Makefile` behavior.
   - Architecture docs now use C4 chart sources in `docs/charts/c4/*.d2`; use `make charts-generate` to render `docs/charts/c4/rendered/*.svg`.
+  - D2 default layouts here (`dagre`/`elk`) only honor root-level `direction`; for C4 container lane/row placement, prefer `grid-rows`/`grid-columns` wrappers over nested `direction` blocks.
+  - C4 container layout principle: keep inbound/request flow top-down, and use horizontal sections (lanes) to group related containers informatively.
+  - C4 chart fast-path:
+    - Start from a `layout_rows` skeleton with a top external row and a lower system/cluster row.
+    - Define section containers first with `grid-columns`/`grid-rows`; avoid starting from free-floating nodes.
+    - If a section exceeds 3-4 nodes, split it into named sub-sections (for example `control`, `telemetry`) before tuning spacing.
+    - Add edges only after node placement is stable; then adjust `horizontal-gap`/`vertical-gap` for readability.
+    - Treat single tall columns as a layout smell; rebalance into 2D grids unless the sequence is intentionally linear.
+    - Regenerate with `make charts-generate` after each structural pass.
+  - For dense C4 diagrams, reduce repeated edge labels first (especially repeated operational labels like `Apply/reconcile`) and keep labels on representative edges only.
   - `docs/architecture.md` is the canonical C4 architecture entrypoint; keep it aligned with Flux layering and active app path wiring.
   - C4 container view orientation convention: top-to-bottom for inbound request flow, left-to-right lanes for logical grouping (`Inbound/edge`, `Platform services`, `Apps`).
   - C4 container view should explicitly show telemetry flow (`apps -> otel-k8s-daemonset -> clickstack-otel-collector`) so observability troubleshooting paths are visible at container level.
+  - When TLS automation/cert-manager is present in C4 views, include `Let's Encrypt (ACME)` as an external system with explicit ACME interaction edges.
+  - For C4 context views, avoid a flat external row when relationships are hierarchical; group external systems into labeled sections (for example actors, control/delivery, identity/TLS providers).
   - Keep `docs/add-feature-checklist.md` aligned with current toggle policy: default to declarative wiring and runtime inputs; avoid introducing new `FEAT_*` switches unless strictly necessary.
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.

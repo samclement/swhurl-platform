@@ -2,56 +2,82 @@ title: "C4 Container - Swhurl Platform"
 
 direction: down
 
-user: "User Browser"
-route53: "Route53 DNS"
-oidc: "OIDC Provider"
-git_repo: "GitRepository source\nswhurl-platform"
+layout_rows: "" {
+  grid-rows: 2
+  vertical-gap: 80
+  style.fill: transparent
+  style.stroke: transparent
 
-cluster: "k3s cluster" {
-  direction: right
+  external: "External actors/systems" {
+    grid-columns: 5
+    horizontal-gap: 30
 
-  inbound: "Inbound / edge" {
-    direction: down
-    traefik: "Traefik ingress\n(kube-system)"
-    oauth2: "oauth2-proxy-shared\n(ingress)"
-    cert_manager: "cert-manager\n(cert-manager)"
+    user: "User Browser"
+    route53: "Route53 DNS"
+    oidc: "OIDC Provider"
+    letsencrypt: "Let's Encrypt\n(ACME)"
+    git_repo: "GitRepository source\nswhurl-platform"
   }
 
-  platform: "Platform services" {
-    direction: down
-    flux: "Flux controllers\n(flux-system)"
-    clickstack: "ClickStack app + storage\n(observability)"
-    clickstack_otel: "ClickStack OTel collector\n(observability)"
-    otel_daemonset: "OTel collector daemonset\n(logging)"
-    kubelet: "kubelet endpoint\n(node)"
-    minio: "MinIO\n(storage)"
-  }
+  cluster: "k3s cluster" {
+    grid-columns: 2
+    horizontal-gap: 72
+    vertical-gap: 56
 
-  apps: "Apps" {
-    direction: down
-    app: "hello-web app\n(apps-staging/apps-prod)"
+    inbound: "Inbound / edge" {
+      grid-rows: 3
+      traefik: "Traefik ingress\n(kube-system)"
+      oauth2: "oauth2-proxy-shared\n(ingress)"
+      cert_manager: "cert-manager\n(cert-manager)"
+    }
+
+    platform: "Platform services" {
+      grid-columns: 2
+      horizontal-gap: 32
+
+      control: "Control plane" {
+        grid-rows: 2
+        flux: "Flux controllers\n(flux-system)"
+        minio: "MinIO\n(storage)"
+      }
+
+      telemetry: "Telemetry pipeline" {
+        grid-columns: 2
+        grid-rows: 2
+        horizontal-gap: 24
+        otel_daemonset: "OTel collector daemonset\n(logging)"
+        kubelet: "kubelet endpoint\n(node)"
+        clickstack_otel: "ClickStack OTel collector\n(observability)"
+        clickstack: "ClickStack app + storage\n(observability)"
+      }
+    }
+
+    apps: "Apps" {
+      app: "hello-web app\n(apps-staging/apps-prod)"
+    }
   }
 }
 
-user -> route53: "DNS query"
-route53 -> cluster.inbound.traefik: "Host -> ingress"
-user -> cluster.inbound.traefik: "HTTPS"
-cluster.inbound.traefik -> cluster.apps.app: "Route to app service"
-cluster.inbound.traefik -> cluster.inbound.oauth2: "ForwardAuth middleware"
-cluster.inbound.oauth2 -> oidc: "OIDC authorization"
-cluster.inbound.cert_manager -> cluster.inbound.traefik: "Issue TLS certs"
+layout_rows.external.user -> layout_rows.external.route53: "DNS query"
+layout_rows.external.route53 -> layout_rows.cluster.inbound.traefik: "Host -> ingress"
+layout_rows.external.user -> layout_rows.cluster.inbound.traefik: "HTTPS"
+layout_rows.cluster.inbound.traefik -> layout_rows.cluster.apps.app: "Route to app service"
+layout_rows.cluster.inbound.traefik -> layout_rows.cluster.inbound.oauth2: "ForwardAuth middleware"
+layout_rows.cluster.inbound.oauth2 -> layout_rows.external.oidc: "OIDC authorization"
+layout_rows.cluster.inbound.cert_manager -> layout_rows.cluster.inbound.traefik: "Issue TLS certs"
+layout_rows.cluster.inbound.cert_manager -> layout_rows.external.letsencrypt: "ACME challenge"
 
-cluster.apps.app -> cluster.platform.otel_daemonset: "App logs / optional OTLP"
-cluster.platform.otel_daemonset -> cluster.platform.kubelet: "kubeletstats receiver"
-cluster.platform.otel_daemonset -> cluster.platform.clickstack_otel: "OTLP telemetry"
-cluster.platform.clickstack_otel -> cluster.platform.clickstack: "Ingest / store"
+layout_rows.cluster.apps.app -> layout_rows.cluster.platform.telemetry.otel_daemonset: "App logs / OTLP"
+layout_rows.cluster.platform.telemetry.otel_daemonset -> layout_rows.cluster.platform.telemetry.kubelet: "kubelet stats"
+layout_rows.cluster.platform.telemetry.otel_daemonset -> layout_rows.cluster.platform.telemetry.clickstack_otel: "OTLP telemetry"
+layout_rows.cluster.platform.telemetry.clickstack_otel -> layout_rows.cluster.platform.telemetry.clickstack: "Ingest / store"
 
-cluster.platform.flux -> git_repo: "Pull manifests"
-cluster.platform.flux -> cluster.inbound.traefik: "Apply/reconcile"
-cluster.platform.flux -> cluster.inbound.oauth2: "Apply/reconcile"
-cluster.platform.flux -> cluster.inbound.cert_manager: "Apply/reconcile"
-cluster.platform.flux -> cluster.platform.clickstack: "Apply/reconcile"
-cluster.platform.flux -> cluster.platform.clickstack_otel: "Apply/reconcile"
-cluster.platform.flux -> cluster.platform.otel_daemonset: "Apply/reconcile"
-cluster.platform.flux -> cluster.platform.minio: "Apply/reconcile"
-cluster.platform.flux -> cluster.apps.app: "Apply/reconcile"
+layout_rows.cluster.platform.control.flux -> layout_rows.external.git_repo: "Pull manifests"
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.inbound.traefik: "Apply/reconcile"
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.inbound.oauth2
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.inbound.cert_manager
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.clickstack
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.clickstack_otel
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.otel_daemonset
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.control.minio
+layout_rows.cluster.platform.control.flux -> layout_rows.cluster.apps.app

@@ -38,22 +38,18 @@ oauth_host="${OAUTH_HOST:-}"
 clickstack_api_key="${CLICKSTACK_API_KEY:-}"
 clickstack_ingestion_key="${CLICKSTACK_INGESTION_KEY:-}"
 
-if [[ "${FEAT_OAUTH2_PROXY:-true}" == "true" ]]; then
-  require_non_empty "SHARED_OIDC_CLIENT_ID" "$shared_oidc_client_id"
-  require_non_empty "SHARED_OIDC_CLIENT_SECRET" "$shared_oidc_client_secret"
-  require_non_empty "OAUTH_COOKIE_SECRET" "$oauth_cookie_secret"
-  require_non_empty "OAUTH_HOST" "$oauth_host"
-  case "${#oauth_cookie_secret}" in
-  16 | 24 | 32) ;;
-  *) die "OAUTH_COOKIE_SECRET must be exactly 16, 24, or 32 characters" ;;
-  esac
-fi
+require_non_empty "SHARED_OIDC_CLIENT_ID" "$shared_oidc_client_id"
+require_non_empty "SHARED_OIDC_CLIENT_SECRET" "$shared_oidc_client_secret"
+require_non_empty "OAUTH_COOKIE_SECRET" "$oauth_cookie_secret"
+require_non_empty "OAUTH_HOST" "$oauth_host"
+case "${#oauth_cookie_secret}" in
+16 | 24 | 32) ;;
+*) die "OAUTH_COOKIE_SECRET must be exactly 16, 24, or 32 characters" ;;
+esac
 
-if [[ "${FEAT_CLICKSTACK:-true}" == "true" || "${FEAT_OTEL_K8S:-true}" == "true" ]]; then
-  require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
-fi
+require_non_empty "CLICKSTACK_API_KEY" "$clickstack_api_key"
 
-if [[ "${FEAT_OTEL_K8S:-true}" == "true" && -z "$clickstack_ingestion_key" ]]; then
+if [[ -z "$clickstack_ingestion_key" ]]; then
   clickstack_ingestion_key="$clickstack_api_key"
   log_warn "CLICKSTACK_INGESTION_KEY is not set; defaulting to CLICKSTACK_API_KEY for OTel exporters"
   log_warn "After first ClickStack login, set CLICKSTACK_INGESTION_KEY in profiles/secrets.env and rerun: make runtime-inputs-sync"

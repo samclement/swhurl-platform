@@ -10,32 +10,19 @@ readonly VERIFY_CONTRACT_LOADED="1"
 
 # Shared verification and teardown expectations.
 
-# Feature metadata used by config/runtime verification.
-readonly -a FEATURE_KEYS=(
-  oauth2_proxy
-  clickstack
-  otel_k8s
-  minio
+# Runtime/platform vars always required by active composition.
+readonly -a VERIFY_REQUIRED_PLATFORM_VARS=(
+  OAUTH_HOST
+  SHARED_OIDC_CLIENT_ID
+  SHARED_OIDC_CLIENT_SECRET
+  OAUTH_COOKIE_SECRET
+  CLICKSTACK_HOST
+  CLICKSTACK_API_KEY
 )
 
-readonly -A FEATURE_FLAGS=(
-  [oauth2_proxy]="FEAT_OAUTH2_PROXY"
-  [clickstack]="FEAT_CLICKSTACK"
-  [otel_k8s]="FEAT_OTEL_K8S"
-  [minio]="FEAT_MINIO"
-)
-
-readonly -A FEATURE_REQUIRED_VARS=(
-  [oauth2_proxy]="OAUTH_HOST SHARED_OIDC_CLIENT_ID SHARED_OIDC_CLIENT_SECRET OAUTH_COOKIE_SECRET"
-  [clickstack]="CLICKSTACK_HOST CLICKSTACK_API_KEY"
-  [otel_k8s]="CLICKSTACK_API_KEY"
-  [minio]="MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD"
-)
-
-readonly -A FEATURE_EFFECTIVE_NON_SECRET_VARS=(
-  [oauth2_proxy]="OAUTH_HOST"
-  [clickstack]="CLICKSTACK_HOST"
-  [minio]="MINIO_HOST MINIO_CONSOLE_HOST"
+readonly -a VERIFY_PLATFORM_EFFECTIVE_NON_SECRET_VARS=(
+  OAUTH_HOST
+  CLICKSTACK_HOST
 )
 
 # Ingress runtime verification contract.
@@ -75,37 +62,6 @@ name_matches_any_pattern() {
   return 1
 }
 
-feature_flag_var() {
-  local key="$1"
-  printf '%s' "${FEATURE_FLAGS[$key]:-}"
-}
-
-feature_is_enabled() {
-  local key="$1"
-  local flag
-  flag="$(feature_flag_var "$key")"
-  [[ -n "$flag" ]] || return 1
-  [[ "${!flag:-true}" == "true" ]]
-}
-
-feature_required_vars() {
-  local key="$1"
-  local vars="${FEATURE_REQUIRED_VARS[$key]:-}"
-  local v
-  for v in $vars; do
-    printf '%s\n' "$v"
-  done
-}
-
-feature_effective_non_secret_vars() {
-  local key="$1"
-  local vars="${FEATURE_EFFECTIVE_NON_SECRET_VARS[$key]:-}"
-  local v
-  for v in $vars; do
-    printf '%s\n' "$v"
-  done
-}
-
 is_platform_managed_namespace() {
   local ns="$1"
   local item
@@ -137,16 +93,6 @@ is_allowed_object_storage_provider() {
   name_matches_any_pattern "$value" "${VERIFY_ALLOWED_OBJECT_STORAGE_PROVIDERS[@]}"
 }
 
-verify_oauth_auth_url() {
-  local oauth_host="$1"
-  printf 'https://%s/oauth2/auth' "$oauth_host"
-}
-
-verify_oauth_auth_signin() {
-  local oauth_host="$1"
-  printf 'https://%s/oauth2/start?rd=$scheme://$host$request_uri' "$oauth_host"
-}
-
 verify_expected_letsencrypt_server() {
   local server_type="${1:-staging}"
   local staging_server="https://acme-staging-v02.api.letsencrypt.org/directory"
@@ -163,24 +109,26 @@ verify_expected_letsencrypt_server() {
 
 verify_required_vars_for_enabled_features() {
   local -A seen=()
-  local key var
-  for key in "${FEATURE_KEYS[@]}"; do
-    feature_is_enabled "$key" || continue
-    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
-      continue
-    fi
-    while IFS= read -r var; do
-      [[ -n "$var" ]] || continue
+  local var
+
+  for var in "${VERIFY_REQUIRED_PLATFORM_VARS[@]}"; do
+    [[ -n "${seen[$var]+x}" ]] && continue
+    seen["$var"]=1
+    printf '%s\n' "$var"
+  done
+
+  if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
+    for var in MINIO_HOST MINIO_CONSOLE_HOST MINIO_ROOT_PASSWORD; do
       [[ -n "${seen[$var]+x}" ]] && continue
       seen["$var"]=1
       printf '%s\n' "$var"
-    done < <(feature_required_vars "$key")
-  done
+    done
+  fi
 }
 
 verify_effective_non_secret_vars() {
   local -A seen=()
-  local key var
+  local var
 
   for var in "${VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS[@]}"; do
     [[ -n "${seen[$var]+x}" ]] && continue
@@ -188,16 +136,17 @@ verify_effective_non_secret_vars() {
     printf '%s\n' "$var"
   done
 
-  for key in "${FEATURE_KEYS[@]}"; do
-    feature_is_enabled "$key" || continue
-    if [[ "$key" == "minio" && "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
-      continue
-    fi
-    while IFS= read -r var; do
-      [[ -n "$var" ]] || continue
+  for var in "${VERIFY_PLATFORM_EFFECTIVE_NON_SECRET_VARS[@]}"; do
+    [[ -n "${seen[$var]+x}" ]] && continue
+    seen["$var"]=1
+    printf '%s\n' "$var"
+  done
+
+  if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
+    for var in MINIO_HOST MINIO_CONSOLE_HOST; do
       [[ -n "${seen[$var]+x}" ]] && continue
       seen["$var"]=1
       printf '%s\n' "$var"
-    done < <(feature_effective_non_secret_vars "$key")
-  done
+    done
+  fi
 }

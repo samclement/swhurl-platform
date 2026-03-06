@@ -53,13 +53,3 @@ ensure_context() {
   # Robust reachability check that works across kubectl versions
   kubectl get --raw=/version >/dev/null 2>&1 || die "kubectl cannot reach a cluster; ensure kubeconfig is set"
 }
-
-wait_deploy() {
-  local ns="$1" name="$2" timeout="${3:-${TIMEOUT_SECS:-300}}"
-  kubectl -n "$ns" rollout status deploy/"$name" --timeout="${timeout}s"
-}
-
-wait_ds() {
-  local ns="$1" name="$2" timeout="${3:-${TIMEOUT_SECS:-300}}"
-  kubectl -n "$ns" rollout status ds/"$name" --timeout="${timeout}s"
-}

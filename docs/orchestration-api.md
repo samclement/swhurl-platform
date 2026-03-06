@@ -13,7 +13,6 @@ Preferred entrypoints:
 
 Environment controls:
 - `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer for scripts via `scripts/00_lib.sh`)
-- `PROFILE_EXCLUSIVE=true|false`
 - `FEAT_VERIFY=true|false` (only active feature switch)
 
 Default apply flow (`make install`):

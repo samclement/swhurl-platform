@@ -250,5 +250,5 @@ Preferred orchestration path is Makefile-driven:
 - `tenants/`: app environment manifests
 - `scripts/`: orchestration and verification scripts
 - `host/`: optional host-layer bootstrap tasks
-- `profiles/`: local optional overrides (`local.env`) and legacy secret examples
+- `profiles/`: local optional overrides (`local.env`)
 - `docs/`: runbooks, ADRs, and architecture/design notes

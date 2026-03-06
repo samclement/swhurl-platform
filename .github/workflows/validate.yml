@@ -31,17 +31,12 @@ jobs:
       - name: Run dry-run commands
         run: |
           set -Eeuo pipefail
-          chmod +x run.sh host/run-host.sh scripts/bootstrap/*.sh
+          chmod +x host/run-host.sh scripts/bootstrap/*.sh
           ./host/run-host.sh --dry-run
-          ./run.sh --dry-run
           make install DRY_RUN=true
           make teardown DRY_RUN=true
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true
-          make app-test-staging-le-staging DRY_RUN=true
-          make app-test-staging-le-prod DRY_RUN=true
-          make app-test-prod-le-staging DRY_RUN=true
-          make app-test-prod-le-prod DRY_RUN=true
           make help
 
   kustomize-structure:
@@ -63,7 +58,6 @@ jobs:
           kubectl kustomize infrastructure/namespaces >/dev/null
           kubectl kustomize infrastructure/cert-manager/base >/dev/null
           kubectl kustomize infrastructure/cert-manager/issuers >/dev/null
-          kubectl kustomize infrastructure/cilium/base >/dev/null
           kubectl kustomize infrastructure/metrics-server/base >/dev/null
           kubectl kustomize infrastructure/ingress-nginx/base >/dev/null
           kubectl kustomize infrastructure/ingress-traefik/base >/dev/null
@@ -76,12 +70,7 @@ jobs:
           kubectl kustomize platform-services/otel/base >/dev/null
           kubectl kustomize tenants >/dev/null
           kubectl kustomize tenants/app-envs >/dev/null
+          kubectl kustomize tenants/apps/example >/dev/null
           kubectl kustomize tenants/apps/example/base >/dev/null
           kubectl kustomize tenants/apps/example/overlays/staging >/dev/null
-          kubectl kustomize tenants/apps/example/overlays/staging-url-prod >/dev/null
           kubectl kustomize tenants/apps/example/overlays/prod >/dev/null
-          kubectl kustomize tenants/apps/example/overlays/prod-url-staging >/dev/null
-          kubectl kustomize tenants/overlays/app-staging-le-staging >/dev/null
-          kubectl kustomize tenants/overlays/app-staging-le-prod >/dev/null
-          kubectl kustomize tenants/overlays/app-prod-le-staging >/dev/null
-          kubectl kustomize tenants/overlays/app-prod-le-prod >/dev/null

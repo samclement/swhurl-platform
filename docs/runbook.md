@@ -136,7 +136,7 @@ Active `home` composition assumes:
   - HTTP `80 -> 31514`
   - HTTPS `443 -> 30313`
 
-Legacy optional manifests (`infrastructure/metrics-server/base`, `infrastructure/ingress-nginx/base`) are kept in-repo for compatibility but are not part of `infrastructure/overlays/home`.
+Legacy optional manifests (`legacy/infrastructure/metrics-server/base`, `legacy/infrastructure/ingress-nginx/base`) are kept in-repo for compatibility but are not part of `infrastructure/overlays/home`.
 
 ## TODO
 

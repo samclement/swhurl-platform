@@ -27,7 +27,7 @@ Recommended sequence:
 
 1. Update shared infrastructure composition in `infrastructure/overlays/home/kustomization.yaml`:
 - replace: `../../storage/minio/base`
-- with: `../../storage/ceph/base`
+- with: `../../../legacy/infrastructure/storage/ceph/base`
 
 2. Commit the path change.
 

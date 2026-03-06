@@ -121,8 +121,8 @@ make teardown
 ```
 
 Notes:
-- `make teardown` removes Flux stack kustomizations, performs teardown cleanup, uninstalls Flux controllers (if `flux` is installed), and runs delete verification.
-- `DELETE_SCOPE=dedicated-cluster` enables aggressive secret cleanup for dedicated clusters.
+- `make teardown` is stack-only: it deletes `homelab-flux-stack` and `homelab-flux-sources`.
+- Flux controllers, cert-manager, CRDs, and cluster-level services remain installed.
 - Makefile shortcuts:
   - `make install` (cluster default apply path)
   - `make teardown` (cluster default delete path)
@@ -211,7 +211,7 @@ Active composition already assumes native k3s components:
 
 Preferred orchestration path is Makefile-driven:
 1. `make install` (optional config verification, runtime-input sync, Flux reconcile, optional platform verification)
-2. `make teardown` (Flux delete/uninstall, cert-manager cleanup, teardown cleanup, delete verification)
+2. `make teardown` (stack-only: delete Flux stack kustomizations)
 
 ## Useful Targets
 

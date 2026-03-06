@@ -65,12 +65,14 @@ Flow:
 make teardown
 ```
 
-Delete ordering is intentional:
-1. Remove Flux stack kustomizations.
-2. Clean cert-manager finalizers/CRDs.
-3. Teardown namespaces/secrets/CRDs.
-4. Uninstall Flux controllers (via `flux uninstall` inside `32_reconcile_flux_stack.sh --delete` when Flux CLI is present).
-5. Verify cleanup.
+Delete behavior is stack-only:
+1. Delete Flux stack kustomizations (`homelab-flux-stack`, `homelab-flux-sources`).
+2. Let Flux prune stack-managed resources.
+
+Not part of default teardown:
+- Flux controller uninstall
+- cert-manager/CRD cleanup
+- cluster-wide namespace/secret sweeping
 
 ## Active Flux Dependency Chain
 

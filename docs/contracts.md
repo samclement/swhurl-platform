@@ -1,6 +1,6 @@
 # Contracts (Config, Tooling, Delete)
 
-This repo is Flux-first. Bash scripts are used for orchestration glue, runtime-input sync, and teardown/finalizer cleanup.
+This repo is Flux-first. Bash scripts are used for orchestration glue, runtime-input sync, and verification.
 
 ## Environment Contract
 
@@ -40,12 +40,11 @@ Primary declarative control plane:
 Primary operations:
 - `scripts/32_reconcile_flux_stack.sh`
   - apply mode: reconciles source/stack (requires bootstrap manifests already applied)
-  - delete mode: removes stack kustomizations and runs `flux uninstall` when Flux CLI is present
+  - delete mode: stack-only teardown (deletes `homelab-flux-stack` and `homelab-flux-sources`)
 
 ### Helm
 
-Used for bootstrap/cleanup helpers where needed:
-- cert-manager cleanup during delete (`scripts/30_manage_cert_manager_cleanup.sh`)
+Used by platform components and optional/manual cleanup helpers.
 
 ### kubectl
 
@@ -55,11 +54,7 @@ Used for cluster access checks, manifest apply/delete, and runtime verification.
 
 Delete flow contract:
 1. Remove Flux stack kustomizations.
-2. Run cleanup helpers for cert-manager/finalizers.
-3. Sweep managed namespaces/secrets/CRDs.
-4. Uninstall Flux controllers.
-5. Verify clean teardown.
+2. Let Flux prune stack-managed resources.
+3. Keep Flux controllers and cluster-level services installed by default.
 
-Delete scopes:
-- `DELETE_SCOPE=managed` (default)
-- `DELETE_SCOPE=dedicated-cluster` (aggressive, dedicated clusters only)
+Legacy/manual cleanup scripts (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/99_execute_teardown.sh`, `scripts/98_verify_teardown_clean.sh`) are intentionally not part of default `make teardown`.

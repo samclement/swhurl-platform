@@ -205,135 +205,123 @@ else
 fi
 
 say "oauth2-proxy-shared"
-if feature_is_enabled oauth2_proxy; then
-  if kubectl -n ingress get deploy oauth2-proxy-shared >/dev/null 2>&1; then
-    ok "oauth2-proxy-shared deployment present"
-  else
-    mismatch "oauth2-proxy-shared deployment not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n ingress get ingress oauth2-proxy-shared >/dev/null 2>&1; then
-    actual_host=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class ingress oauth2-proxy-shared)"
-    check_eq "oauth2-proxy-shared.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "oauth2-proxy-shared.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-    check_eq "oauth2-proxy-shared.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-  else
-    mismatch "oauth2-proxy-shared ingress not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
+if kubectl -n ingress get deploy oauth2-proxy-shared >/dev/null 2>&1; then
+  ok "oauth2-proxy-shared deployment present"
 else
-  ok "$(feature_flag_var oauth2_proxy)=false; skipping"
+  mismatch "oauth2-proxy-shared deployment not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n ingress get ingress oauth2-proxy-shared >/dev/null 2>&1; then
+  actual_host=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.spec.rules[0].host}')
+  actual_issuer=$(kubectl -n ingress get ingress oauth2-proxy-shared -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+  actual_class="$(ingress_class ingress oauth2-proxy-shared)"
+  check_eq "oauth2-proxy-shared.host" "${OAUTH_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+  check_eq "oauth2-proxy-shared.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+  check_eq "oauth2-proxy-shared.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+else
+  mismatch "oauth2-proxy-shared ingress not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
 fi
 
 say "ClickStack"
-if feature_is_enabled clickstack; then
-  if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
-    actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
-    actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
-    actual_class="$(ingress_class observability clickstack-app-ingress)"
-    check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
-    check_eq "clickstack.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
-    check_eq "clickstack.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
-  else
-    mismatch "clickstack ingress not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
-    ok "clickstack app deployment present"
-  else
-    mismatch "clickstack app deployment not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
-    ok "clickstack otel collector deployment present"
-  else
-    mismatch "clickstack otel collector deployment not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
-    ok "clickstack clickhouse deployment present"
-  else
-    mismatch "clickstack clickhouse deployment not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
-    configured_api_key="${CLICKSTACK_API_KEY:-}"
-    runtime_api_key="$(
-      kubectl -n observability get secret clickstack-runtime-inputs -o jsonpath='{.data.CLICKSTACK_API_KEY}' \
-        | base64 --decode 2>/dev/null || true
-    )"
-    if [[ -z "$configured_api_key" ]]; then
-      mismatch "CLICKSTACK_API_KEY is empty; cannot verify clickstack runtime-input alignment"
-      add_suggest "scripts/94_verify_config_inputs.sh"
-    elif [[ -z "$runtime_api_key" ]]; then
-      mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
-      mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
-      add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    else
-      ok "clickstack runtime-input key alignment check passed"
-    fi
-  else
-    mismatch "clickstack-runtime-inputs secret not found"
+if kubectl -n observability get ingress clickstack-app-ingress >/dev/null 2>&1; then
+  actual_host=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.spec.rules[0].host}')
+  actual_issuer=$(kubectl -n observability get ingress clickstack-app-ingress -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
+  actual_class="$(ingress_class observability clickstack-app-ingress)"
+  check_eq "clickstack.host" "${CLICKSTACK_HOST:-}" "$actual_host" "scripts/32_reconcile_flux_stack.sh"
+  check_eq "clickstack.issuer" "${expected_platform_services_issuer}" "$actual_issuer" "clusters/home/platform.yaml"
+  check_eq "clickstack.class" "${expected_ingress_class}" "$actual_class" "docs/runbooks/migrate-ingress-nginx-to-traefik.md"
+else
+  mismatch "clickstack ingress not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n observability get deploy clickstack-app >/dev/null 2>&1; then
+  ok "clickstack app deployment present"
+else
+  mismatch "clickstack app deployment not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n observability get deploy clickstack-otel-collector >/dev/null 2>&1; then
+  ok "clickstack otel collector deployment present"
+else
+  mismatch "clickstack otel collector deployment not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n observability get deploy clickstack-clickhouse >/dev/null 2>&1; then
+  ok "clickstack clickhouse deployment present"
+else
+  mismatch "clickstack clickhouse deployment not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n observability get secret clickstack-runtime-inputs >/dev/null 2>&1; then
+  configured_api_key="${CLICKSTACK_API_KEY:-}"
+  runtime_api_key="$(
+    kubectl -n observability get secret clickstack-runtime-inputs -o jsonpath='{.data.CLICKSTACK_API_KEY}' \
+      | base64 --decode 2>/dev/null || true
+  )"
+  if [[ -z "$configured_api_key" ]]; then
+    mismatch "CLICKSTACK_API_KEY is empty; cannot verify clickstack runtime-input alignment"
+    add_suggest "scripts/94_verify_config_inputs.sh"
+  elif [[ -z "$runtime_api_key" ]]; then
+    mismatch "clickstack-runtime-inputs.CLICKSTACK_API_KEY is empty"
     add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  elif [[ "$configured_api_key" != "$runtime_api_key" ]]; then
+    mismatch "clickstack runtime-input mismatch: CLICKSTACK_API_KEY does not match clickstack-runtime-inputs.CLICKSTACK_API_KEY"
+    add_suggest "make runtime-inputs-sync"
+    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  else
+    ok "clickstack runtime-input key alignment check passed"
   fi
 else
-  ok "$(feature_flag_var clickstack)=false; skipping"
+  mismatch "clickstack-runtime-inputs secret not found"
+  add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
 fi
 
 say "Kubernetes OTel Collectors"
-if feature_is_enabled otel_k8s; then
-  if kubectl -n logging get ds -l app.kubernetes.io/instance=otel-k8s-daemonset >/dev/null 2>&1; then
-    ok "otel-k8s daemonset release present"
-  else
-    mismatch "otel-k8s daemonset release not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
-    ok "otel-k8s cluster deployment release present"
-  else
-    mismatch "otel-k8s cluster deployment release not found"
-    add_suggest "scripts/32_reconcile_flux_stack.sh"
-  fi
-  sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
-  if [[ -z "$sender_token" ]]; then
-    mismatch "CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
-    add_suggest "scripts/94_verify_config_inputs.sh"
-  elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
-    receiver_token="$(
-      kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' \
-        | base64 --decode 2>/dev/null || true
-    )"
-    if [[ -z "$receiver_token" ]]; then
-      mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
-      add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    elif [[ "$sender_token" != "$receiver_token" ]]; then
-      mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
-      add_suggest "make runtime-inputs-sync"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-      add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
-    else
-      ok "otel token alignment check passed"
-      if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
-        warn "CLICKSTACK_INGESTION_KEY is not set; using CLICKSTACK_API_KEY fallback for OTel exporters"
-      fi
-    fi
-  else
-    mismatch "hyperdx-secret not found"
+if kubectl -n logging get ds -l app.kubernetes.io/instance=otel-k8s-daemonset >/dev/null 2>&1; then
+  ok "otel-k8s daemonset release present"
+else
+  mismatch "otel-k8s daemonset release not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+if kubectl -n logging get deploy -l app.kubernetes.io/instance=otel-k8s-cluster >/dev/null 2>&1; then
+  ok "otel-k8s cluster deployment release present"
+else
+  mismatch "otel-k8s cluster deployment release not found"
+  add_suggest "scripts/32_reconcile_flux_stack.sh"
+fi
+sender_token="${CLICKSTACK_INGESTION_KEY:-${CLICKSTACK_API_KEY:-}}"
+if [[ -z "$sender_token" ]]; then
+  mismatch "CLICKSTACK_INGESTION_KEY/CLICKSTACK_API_KEY are empty; cannot verify otel token alignment"
+  add_suggest "scripts/94_verify_config_inputs.sh"
+elif kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then
+  receiver_token="$(
+    kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' \
+      | base64 --decode 2>/dev/null || true
+  )"
+  if [[ -z "$receiver_token" ]]; then
+    mismatch "hyperdx-secret.HYPERDX_API_KEY is empty"
+    add_suggest "make runtime-inputs-sync"
     add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  elif [[ "$sender_token" != "$receiver_token" ]]; then
+    mismatch "otel token mismatch: CLICKSTACK_INGESTION_KEY (or CLICKSTACK_API_KEY fallback) does not match hyperdx-secret.HYPERDX_API_KEY"
+    add_suggest "make runtime-inputs-sync"
+    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+    add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
+  else
+    ok "otel token alignment check passed"
+    if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
+      warn "CLICKSTACK_INGESTION_KEY is not set; using CLICKSTACK_API_KEY fallback for OTel exporters"
+    fi
   fi
 else
-  ok "$(feature_flag_var otel_k8s)=false; skipping"
+  mismatch "hyperdx-secret not found"
+  add_suggest "flux reconcile kustomization homelab-platform -n flux-system"
 fi
 
 say "MinIO"
-if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
+if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio" ]]; then
   if kubectl -n storage get ingress minio >/dev/null 2>&1; then
     actual_host=$(kubectl -n storage get ingress minio -o jsonpath='{.spec.rules[0].host}')
     actual_issuer=$(kubectl -n storage get ingress minio -o jsonpath='{.metadata.annotations.cert-manager\.io/cluster-issuer}')
@@ -357,11 +345,7 @@ if feature_is_enabled minio && [[ "${OBJECT_STORAGE_PROVIDER:-minio}" == "minio"
     add_suggest "scripts/32_reconcile_flux_stack.sh"
   fi
 else
-  if [[ "${OBJECT_STORAGE_PROVIDER:-minio}" != "minio" ]]; then
-    ok "OBJECT_STORAGE_PROVIDER=${OBJECT_STORAGE_PROVIDER:-minio}; skipping MinIO checks"
-  else
-    ok "$(feature_flag_var minio)=false; skipping"
-  fi
+  ok "OBJECT_STORAGE_PROVIDER=${OBJECT_STORAGE_PROVIDER:-minio}; skipping MinIO checks"
 fi
 
 say "Example App"

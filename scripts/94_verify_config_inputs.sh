@@ -105,11 +105,11 @@ if [[ -n "${OBJECT_STORAGE_PROVIDER:-}" ]]; then
   fi
 fi
 
-if [[ "${FEAT_OTEL_K8S:-true}" == "true" && -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
+if [[ -z "${CLICKSTACK_INGESTION_KEY:-}" ]]; then
   warn "CLICKSTACK_INGESTION_KEY is unset; OTel exporters will fall back to CLICKSTACK_API_KEY until you set it from ClickStack UI"
 fi
 
-printf "\n== Feature Contracts ==\n"
+printf "\n== Runtime Contracts ==\n"
 while IFS= read -r key; do
   [[ -n "$key" ]] || continue
   need "$key"

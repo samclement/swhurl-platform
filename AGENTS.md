@@ -57,6 +57,9 @@ Important contract:
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
   - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.
+  - `run.sh` was removed; cluster orchestration is `make`-first via `make install` / `make teardown` (use `DRY_RUN=true`, `FEAT_VERIFY=...`, and optional `PROFILE_FILE=...` env overrides).
+  - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
+  - Dead orchestration scripts were removed (`scripts/15_verify_cluster_access.sh`, `scripts/20_reconcile_platform_namespaces.sh`); `make install` now delegates sync+reconcile through `make flux-reconcile`, and unused helper functions were pruned from `scripts/00_lib.sh` / `scripts/00_verify_contract_lib.sh`.
 
 - Runtime inputs and substitution
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
@@ -103,6 +106,8 @@ Important contract:
   - `CLICKSTACK_INGESTION_KEY` can initially fall back to `CLICKSTACK_API_KEY`.
   - OTel daemonset node metrics on k3s use host networking + kubelet endpoint `127.0.0.1:10250`.
   - Cold-start image pulls can exceed default Helm action wait; set `spec.timeout` in `platform-services/clickstack/base/helmrelease-clickstack.yaml` to reduce bootstrap retries.
+  - On ClickHouse `25.7.x`, `system.query_log` does not expose `query_parameters`; for parameterized failures, match `query_id` against `observability/clickstack-app` logs and inspect `/clickhouse-proxy?...&param_HYPERDX_PARAM_*=` values.
+  - `BAD_QUERY_PARAMETER (457)` with `Value nan cannot be parsed as Int64` can be confirmed in `clickstack-app` logs as `param_HYPERDX_PARAM_*=nan`; recent failures also carried `TraceId='undefined'` in the generated SQL from search row-side-panel flows.
   - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; refresh `CLICKSTACK_INGESTION_KEY`/`CLICKSTACK_API_KEY` in `profiles/secrets.env` and run `make runtime-inputs-refresh-otel`.
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
@@ -114,6 +119,11 @@ Important contract:
 - Labels and teardown ownership
   - Managed label domain is `platform.swhurl.com/managed`.
   - Teardown/verification selectors must stay aligned with that label.
+
+- Flux reconcile behavior
+  - `flux reconcile kustomization ... --with-source` does not preempt an already running `wait: true` reconciliation. If a prior revision is in `Running health checks ... timeout 20m`, new `requestedAt` values queue but the old in-flight revision continues until timeout/failure.
+  - During this window, `flux get kustomizations` can show stale `lastAttemptedRevision` (older sha) even when `homelab-flux-sources` already applied a newer source revision.
+  - TODO (`scripts/32_reconcile_flux_stack.sh`, `docs/runbook.md`): add a preflight/notice for long-running in-progress stack reconciliations (include expected timeout and optional suspend/resume workaround) so `make flux-reconcile` doesn’t appear silently hung.
 
 - Secrets hygiene
   - Keep secrets in `profiles/secrets.env` (gitignored), not `config.env`.
@@ -139,4 +149,5 @@ When changing orchestration/layout:
   - `kubectl kustomize platform-services/overlays/home >/dev/null`
   - `kubectl kustomize tenants/app-envs >/dev/null`
   - `kubectl kustomize tenants/apps/example >/dev/null`
-  - `./run.sh --dry-run`
+  - `make install DRY_RUN=true`
+  - `make teardown DRY_RUN=true`

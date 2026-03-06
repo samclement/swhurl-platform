@@ -18,20 +18,10 @@ if [[ -f "$ROOT_DIR/config.env" ]]; then
 fi
 
 # Profile layering:
-# - By default: config.env -> profiles/local.env -> profiles/secrets.env (legacy optional) -> PROFILE_FILE (highest precedence)
-# - Opt out (standalone profile): PROFILE_EXCLUSIVE=true uses only config.env -> PROFILE_FILE
-PROFILE_EXCLUSIVE="${PROFILE_EXCLUSIVE:-false}"
-if [[ "$PROFILE_EXCLUSIVE" != "true" && "$PROFILE_EXCLUSIVE" != "false" ]]; then
-  die "PROFILE_EXCLUSIVE must be true or false (got: $PROFILE_EXCLUSIVE)"
-fi
-
-if [[ "$PROFILE_EXCLUSIVE" == "false" && -f "$ROOT_DIR/profiles/local.env" ]]; then
+# config.env -> profiles/local.env -> PROFILE_FILE (highest precedence)
+if [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
   # shellcheck disable=SC1090
   source "$ROOT_DIR/profiles/local.env"
-fi
-if [[ "$PROFILE_EXCLUSIVE" == "false" && -f "$ROOT_DIR/profiles/secrets.env" ]]; then
-  # shellcheck disable=SC1090
-  source "$ROOT_DIR/profiles/secrets.env"
 fi
 if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
   # shellcheck disable=SC1090

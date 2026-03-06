@@ -13,7 +13,7 @@
 - Shared platform-services layer: `platform-services/overlays/home`.
 - Tenant environment layer: `tenants/app-envs`.
 - App deployment layer: `tenants/apps/example` (staging + prod overlays) reconciled by app-level Flux Kustomizations in `clusters/home/`.
-- Runtime secret source (external): `flux-system/platform-runtime-inputs`.
+- Runtime secret source (Git-managed SOPS): `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` -> `flux-system/platform-runtime-inputs`.
 - Runtime secret targets (declarative): `platform-services/runtime-inputs`.
 
 Flux dependency chain:
@@ -63,6 +63,7 @@ Important contract:
   - Keep `.github/workflows/validate.yml` aligned with active make targets and existing kustomize paths; remove deleted path checks (`run.sh`, `infrastructure/cilium/base`, and retired app-test overlays).
   - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
   - Dead orchestration scripts were removed (`scripts/15_verify_cluster_access.sh`, `scripts/20_reconcile_platform_namespaces.sh`); `make install` now delegates sync+reconcile through `make flux-reconcile`, and unused helper functions were pruned from `scripts/00_lib.sh` / `scripts/00_verify_contract_lib.sh`.
+  - Legacy hard-delete scripts were removed (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/98_verify_teardown_clean.sh`, `scripts/99_execute_teardown.sh`); default teardown remains stack-only via `scripts/32_reconcile_flux_stack.sh --delete`.
 
 - Runtime inputs and substitution
   - Runtime-input targets are in `platform-services/runtime-inputs` (not infrastructure).
@@ -108,7 +109,7 @@ Important contract:
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
   - Cilium/Hubble manifests were removed from active and legacy composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and legacy bootstrap Cilium HelmChart manifests).
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
-  - `config.env` and `profiles/secrets.example.env` no longer carry `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
+  - `config.env` no longer carries `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
   - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-shared` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-shared@kubernetescrd`.
   - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-shared.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
@@ -148,7 +149,6 @@ Important contract:
     - `config.env`
     - `profiles/local.env`
     - optional `PROFILE_FILE` (highest precedence)
-  - `PROFILE_EXCLUSIVE=true` uses only `config.env` + explicit `PROFILE_FILE`.
 
 - Local process hygiene
   - Use `scripts/cleanup-hanging-mosh.sh` to prune stale `mosh-server`/`mosh-client` processes; defaults are conservative (age >= 3600s, detached/no TTY, and detached server `ppid=1`).

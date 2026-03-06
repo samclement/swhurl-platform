@@ -78,7 +78,7 @@ Confirmed constraints:
 
 **Approach:**
 - Remove unused/dead vars from `config.env` (for example `RUN_HOST_LAYER`, verify-only leftovers not used by manifests).
-- Keep secrets in `profiles/secrets.env` and runtime-input secret sync path.
+- Keep runtime secrets in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` and sync via `make runtime-inputs-sync`.
 - Update verify scripts/contracts to avoid requiring removed vars:
   - `scripts/00_verify_contract_lib.sh`
   - `scripts/91_verify_platform_state.sh`

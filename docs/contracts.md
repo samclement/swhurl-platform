@@ -7,15 +7,12 @@ This repo is Flux-first. Bash scripts are used for orchestration glue, runtime-i
 All scripts load config via `scripts/00_lib.sh` with precedence:
 1. `config.env`
 2. `profiles/local.env`
-3. `profiles/secrets.env` (legacy optional local overrides; runtime cluster secrets are SOPS Git-managed)
-4. `$PROFILE_FILE` (for example: `PROFILE_FILE=profiles/foo.env make install`)
+3. `$PROFILE_FILE` (for example: `PROFILE_FILE=profiles/foo.env make install`)
 
 Operational preference:
-- Keep committed profile files minimal (`profiles/local.env`; `profiles/secrets.example.env` is legacy/reference only).
+- Keep committed profile files minimal (`profiles/local.env`).
 - Runtime cluster secrets are Git-managed via SOPS in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (not sourced from local env at reconcile time).
 - Use `PROFILE_FILE=...` only for ad-hoc local script overrides.
-
-If `PROFILE_EXCLUSIVE=true`, only `config.env` and `$PROFILE_FILE` are loaded.
 
 Variables are exported (`set -a`) so child commands (for example `flux`, `helm`, `kubectl`) see the resolved values.
 
@@ -45,7 +42,7 @@ Primary operations:
 
 ### Helm
 
-Used by platform components and optional/manual cleanup helpers.
+Used by platform components.
 
 ### kubectl
 
@@ -57,5 +54,3 @@ Delete flow contract:
 1. Remove Flux stack kustomizations.
 2. Let Flux prune stack-managed resources.
 3. Keep Flux controllers and cluster-level services installed by default.
-
-Legacy/manual cleanup scripts (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/99_execute_teardown.sh`, `scripts/98_verify_teardown_clean.sh`) are intentionally not part of default `make teardown`.

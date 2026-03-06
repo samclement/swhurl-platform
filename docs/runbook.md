@@ -1,6 +1,6 @@
 # Platform Runbook (Flux-First)
 
-This repo is operated through Flux GitOps with optional script orchestration (`run.sh`).
+This repo is operated through Flux GitOps with Makefile-first orchestration.
 
 ## Manual k3s prerequisite
 
@@ -41,19 +41,19 @@ make flux-reconcile
 ```
 
 Behavior:
-- Syncs `flux-system/platform-runtime-inputs` from local config (`config.env` + `profiles/local.env` + `profiles/secrets.env`, plus optional ad-hoc `--profile` overrides).
+- Syncs `flux-system/platform-runtime-inputs` from local config (`config.env` + `profiles/local.env` + `profiles/secrets.env`, plus optional `PROFILE_FILE=...` overrides).
 - Reconciles `swhurl-platform` source, `homelab-flux-sources`, then `homelab-flux-stack`.
 
-### Full apply via orchestrator
+### Full apply
 
 ```bash
-./run.sh
+make install
 ```
 
-### Full delete via orchestrator
+### Full delete
 
 ```bash
-./run.sh --delete
+make teardown
 ```
 
 Delete ordering is intentional:

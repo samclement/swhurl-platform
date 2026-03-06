@@ -46,7 +46,7 @@ Confirmed constraints:
 - Update mode targets:
   - `platform-certs-staging|platform-certs-prod` edit only the Git-tracked `CERT_ISSUER` source file.
   - app mode targets update `clusters/home/app-example.yaml` path.
-- Remove automatic `run.sh --only ...reconcile...` from mode targets.
+- Remove automatic reconcile side effects from mode targets.
 - Print explicit message after mode target:
   - "Local Git edits only. Commit + push, then run `make flux-reconcile`."
 
@@ -132,7 +132,7 @@ kubectl kustomize tenants/apps/example/overlays/staging-url-prod >/dev/null
 kubectl kustomize tenants/apps/example/overlays/prod-url-staging >/dev/null
 kubectl kustomize tenants/apps/example/overlays/prod >/dev/null
 kubectl kustomize clusters/home >/dev/null
-./run.sh --dry-run
+make install DRY_RUN=true
 make verify
 ```
 

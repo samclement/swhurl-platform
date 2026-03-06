@@ -2,7 +2,7 @@
 
 1. **High: Makefile mode switches are GitOps-no-op until commit/push, but the workflow implies immediate apply.**  
 `make platform-certs-*` / `make app-test-*` copy local files, then call reconcile. Reconcile pulls from Git remote, not your local working tree, so changes won’t reach cluster unless pushed.  
-Refs: [Makefile](/home/sam/ghq/github.com/samclement/swhurl-platform/Makefile#L58), [run.sh](/home/sam/ghq/github.com/samclement/swhurl-platform/run.sh#L42), [gitrepositories.yaml](/home/sam/ghq/github.com/samclement/swhurl-platform/clusters/home/flux-system/sources/gitrepositories.yaml#L11), [README.md](/home/sam/ghq/github.com/samclement/swhurl-platform/README.md#L94)
+Refs: [Makefile](/home/sam/ghq/github.com/samclement/swhurl-platform/Makefile#L58), [gitrepositories.yaml](/home/sam/ghq/github.com/samclement/swhurl-platform/clusters/home/flux-system/sources/gitrepositories.yaml#L11), [README.md](/home/sam/ghq/github.com/samclement/swhurl-platform/README.md#L94)
 
 2. **High: Infrastructure layer is coupled to platform runtime secrets, violating layer boundaries.**  
 `homelab-infrastructure` requires `platform-runtime-inputs` and includes runtime-input secret targets used by oauth2/clickstack/otel. Missing app secrets can block infra reconciliation.  

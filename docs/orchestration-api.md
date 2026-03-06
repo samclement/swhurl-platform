@@ -1,47 +1,31 @@
 # Orchestration API
 
-Last updated: 2026-03-04
+Last updated: 2026-03-06
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
-## Cluster Orchestrator (`run.sh`)
+## Cluster Orchestration (Makefile-first)
 
-Usage:
-
-```bash
-./run.sh [--profile FILE] [--only N[,N...]] [--dry-run] [--delete]
-```
-
-Options:
-- `--profile FILE`: load additional env vars (highest precedence in cluster config layering). Use for ad-hoc overrides.
-- `--only LIST`: comma-separated step numbers or basenames.
-- `--dry-run`: print resolved plan and exit without executing.
-- `--delete`: execute delete flow, passing `--delete` to delete-capable steps.
+Preferred entrypoints:
+- `make install [DRY_RUN=true]`
+- `make teardown [DRY_RUN=true]`
+- `make reinstall`
 
 Environment controls:
-- `ONLY`: fallback filter when `--only` is not provided.
-- `PROFILE_EXCLUSIVE=true|false`: if `true`, skip auto-loading `profiles/local.env` and `profiles/secrets.env`.
-- `FEAT_VERIFY=true|false`: include/exclude core verification steps.
+- `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer for scripts via `scripts/00_lib.sh`)
+- `PROFILE_EXCLUSIVE=true|false`
+- `FEAT_VERIFY=true|false`
 
-Config layering (`run.sh`):
-1. `config.env`
-2. `profiles/local.env` (unless `PROFILE_EXCLUSIVE=true`)
-3. `profiles/secrets.env` (unless `PROFILE_EXCLUSIVE=true`)
-4. `--profile FILE` (`PROFILE_FILE`, highest precedence)
+Default apply flow (`make install`):
+1. `make verify-config` (when `FEAT_VERIFY=true`)
+2. `make flux-reconcile`
+3. `make verify-platform` (when `FEAT_VERIFY=true`)
 
-Default apply steps:
-1. `15_verify_cluster_access.sh`
-2. `94_verify_config_inputs.sh` (when `FEAT_VERIFY=true`)
-3. `bootstrap/sync-runtime-inputs.sh`
-4. `32_reconcile_flux_stack.sh`
-5. `91_verify_platform_state.sh` (when `FEAT_VERIFY=true`)
-
-Default delete steps:
-1. `15_verify_cluster_access.sh`
-2. `32_reconcile_flux_stack.sh --delete`
-3. `30_manage_cert_manager_cleanup.sh --delete`
-4. `99_execute_teardown.sh --delete`
-5. `98_verify_teardown_clean.sh --delete`
+Default delete flow (`make teardown`):
+1. `32_reconcile_flux_stack.sh --delete`
+2. `30_manage_cert_manager_cleanup.sh --delete`
+3. `99_execute_teardown.sh --delete`
+4. `98_verify_teardown_clean.sh --delete`
 
 Notes:
 - Legacy Cilium lifecycle scripts were removed from repo orchestration.
@@ -91,6 +75,12 @@ Step scripts should:
 ## Makefile Operator API
 
 Key runtime-intent targets:
+- `make install [DRY_RUN=true]`
+  - Runs optional verification (`FEAT_VERIFY`), runtime-input sync, and Flux reconcile.
+- `make teardown [DRY_RUN=true]`
+  - Runs Flux stack delete/uninstall, cert-manager cleanup, teardown cleanup, and delete verification.
+- `make reinstall`
+  - Runs `make teardown` then `make install`.
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make runtime-inputs-sync`

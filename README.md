@@ -2,43 +2,22 @@
 
 Flux-managed k3s homelab platform.
 
-## Scope
+The active repo layout is:
 
-This repo manages the platform stack with Flux GitOps.
+- `clusters/home`: Flux entrypoint and reconciliation chain
+- `infrastructure/overlays/home`: shared cluster infrastructure
+- `platform-services/overlays/home`: shared platform services
+- `tenants/app-envs`: tenant landing zones
+- `tenants/apps/example`: sample app deployed by its own Flux Kustomization
 
-- cert-manager + ClusterIssuers
-- Traefik ingress controller (k3s packaged)
-- metrics-server (k3s packaged)
-- oauth2-proxy
-- ClickStack + OTel collectors
-- MinIO
-- sample app (`hello-web`) via `tenants/apps/example`
+## Quick Start
 
-![C4 Container](docs/charts/c4/rendered/container.svg)
-
-- Architecture: `docs/architecture.md`
-- C4 sources: `docs/charts/c4/*.d2`
-- Render charts: `make charts-generate`
-
-## Prereqs
-
-- Tools: `bash`, `kubectl`, `helm`, `flux`, `curl`, `rg`, `envsubst`, `base64`, `hexdump`, `sops`, `age`
-- Optional: `jq`, `yq`, `d2`
-- Cluster: install k3s with packaged `traefik` and `metrics-server` enabled
-
-## Start
-
-1. Configure non-secrets in `config.env`.
-2. Configure runtime secrets (Git-managed SOPS source):
-
-```bash
-sops clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
-git add clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
-git commit -m "runtime-inputs: set platform secrets"
-git push
-```
-
-3. Install Flux (one-time) and apply the stack:
+1. Install k3s manually with packaged `traefik` and `metrics-server` enabled.
+2. Install the required CLI tools: `bash`, `kubectl`, `helm`, `flux`, `sops`, and `age`.
+3. Review [`config.env`](config.env) for non-secret local defaults and intent hints.
+4. Edit the Git-managed runtime secret at [`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`](clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml).
+5. Install Flux controllers and create the `flux-system/sops-age` secret from `age.agekey`.
+6. Apply the bootstrap manifests and reconcile the stack:
 
 ```bash
 flux check --pre
@@ -50,23 +29,16 @@ make flux-bootstrap
 make install
 ```
 
-4. Optional host bootstrap (dynamic DNS):
+7. Optional host dynamic DNS bootstrap:
 
 ```bash
-# Optional: set custom records in host/host.env via DYNAMIC_DNS_RECORDS
 make host-dns
 ```
 
-## Layout
-
-- `clusters/`: Flux cluster entrypoints and bootstrap manifests
-- `infrastructure/`: shared infrastructure manifests
-- `platform-services/`: shared platform-service manifests
-- `tenants/`: app environment manifests
-- `docs/`: runbooks, ADRs, and architecture/design notes
-
 ## Docs
 
-- Detailed operations moved to `docs/readme-ops.md`
-- Runbook: `docs/runbook.md`
-- Orchestration API: `docs/orchestration-api.md`
+- [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md)
+- [`docs/PLATFORM-SERVICES.md`](docs/PLATFORM-SERVICES.md)
+- [`docs/TENANTS.md`](docs/TENANTS.md)
+- [`docs/runbook.md`](docs/runbook.md)
+- [`docs/architecture.md`](docs/architecture.md)

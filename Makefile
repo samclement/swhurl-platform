@@ -6,17 +6,13 @@ define update_cert_issuer
 	@set -eu; \
 	file="$(PLATFORM_SETTINGS_FILE)"; issuer="$(1)"; \
 	[[ -f "$$file" ]] || { echo "Missing settings file: $$file" >&2; exit 1; }; \
-	tmp="$$(mktemp)"; trap 'rm -f "$$tmp"' EXIT; \
-	awk -v issuer="$$issuer" 'BEGIN{updated=0} /^  CERT_ISSUER:/ {print "  CERT_ISSUER: " issuer; updated=1; next} {print} END{ if (updated==0) exit 42 }' "$$file" > "$$tmp" || status="$$?"; \
-	if [[ "$${status:-0}" == "42" ]]; then echo "Missing key '  CERT_ISSUER:' in $$file" >&2; exit 1; fi; \
-	if cmp -s "$$file" "$$tmp"; then \
+	grep -q '^\s*CERT_ISSUER:' "$$file" || { echo "Missing key 'CERT_ISSUER' in $$file" >&2; exit 1; }; \
+	if grep -q "CERT_ISSUER: $$issuer$$" "$$file"; then \
 	  echo "[INFO] CERT_ISSUER already set to $$issuer"; \
 	elif [[ "$(DRY_RUN)" == "true" ]]; then \
 	  echo "[INFO] CERT_ISSUER would update to $$issuer in $$file"; \
-	  diff -u "$$file" "$$tmp" || true; \
 	else \
-	  mv "$$tmp" "$$file"; \
-	  trap - EXIT; \
+	  sed -i "s/^\(\s*CERT_ISSUER:\).*/\1 $$issuer/" "$$file"; \
 	  echo "[INFO] CERT_ISSUER updated to $$issuer in $$file"; \
 	fi; \
 	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"

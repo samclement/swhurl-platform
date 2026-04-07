@@ -139,6 +139,46 @@ Note:
 make runtime-inputs-refresh-otel
 ```
 
+## ClickStack First-Login and Key Rotation
+
+ClickStack first-login flow:
+1. Open `https://${CLICKSTACK_HOST}` and complete first team/user setup.
+2. In ClickStack UI, create a new ingestion key for OTel collectors.
+3. Copy the ingestion key.
+4. Update the Git-managed SOPS source:
+
+```bash
+sops clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+```
+
+Set `data.CLICKSTACK_INGESTION_KEY` to the new value and save.
+
+5. Commit, push, and apply:
+
+```bash
+git add clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+git commit -m "runtime-inputs: rotate clickstack ingestion key"
+git push
+make runtime-inputs-refresh-otel
+```
+
+6. Verify source/target secret alignment (without printing secret values):
+
+```bash
+src="$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}')"
+dst="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}')"
+test -n "$src" && test "$src" = "$dst" && echo "OK: ingestion key propagated to logging/hyperdx-secret"
+```
+
+## Gotchas
+
+1. k3s prerequisite: use default networking (`flannel`) with packaged `traefik` + `metrics-server` enabled.
+2. Runtime inputs are Git-managed via SOPS: commit + push encrypted changes before `make runtime-inputs-sync` (or `make flux-reconcile`).
+3. DNS wildcard scope: `*.homelab.swhurl.com` matches one-label hosts only; multi-label names need explicit records (or deeper wildcard). Add explicit hosts to `DYNAMIC_DNS_RECORDS` in `host/host.env`.
+4. cert-manager issuance timing: first reconcile can fail until DNS propagates and ACME HTTP-01 checks can reach ingress.
+5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial team setup completes in UI.
+6. OTel collector key reload: after key rotation, restart collectors (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.
+
 ## Verification
 
 Core checks:
@@ -171,7 +211,3 @@ Active `home` composition assumes:
   - HTTPS `443 -> 30313`
 
 Legacy provider manifests were removed from this repo; `infrastructure/overlays/home` now targets only active paths.
-
-## TODO
-
-- Add an oauth2-proxy refresh workflow after runtime credential changes (rollout restart or checksum strategy) so `ingress/oauth2-proxy-shared` picks up updated client credentials automatically.

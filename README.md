@@ -15,7 +15,7 @@ The active repo layout is:
 1. Install k3s manually with packaged `traefik` and `metrics-server` enabled.
 2. Install the required CLI tools: `bash`, `kubectl`, `helm`, `flux`, `sops`, and `age`.
 3. Review [`config.env`](config.env) for non-secret local defaults and intent hints.
-4. Edit the Git-managed runtime secret at [`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`](clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml).
+4. Edit the Git-managed runtime secrets under `platform-services/*/base/*.sops.yaml`.
 5. Install Flux controllers and create the `flux-system/sops-age` secret from `age.agekey`.
 6. Apply the bootstrap manifests and reconcile the stack:
 
@@ -41,4 +41,5 @@ make host-dns
 - [`docs/PLATFORM-SERVICES.md`](docs/PLATFORM-SERVICES.md)
 - [`docs/TENANTS.md`](docs/TENANTS.md)
 - [`docs/runbook.md`](docs/runbook.md)
+- [`docs/orchestration-api.md`](docs/orchestration-api.md)
 - [`docs/architecture.md`](docs/architecture.md)

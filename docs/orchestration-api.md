@@ -4,6 +4,24 @@ Last updated: 2026-03-06
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
+## Environment Contract
+
+All scripts load config via `scripts/00_lib.sh` with precedence:
+1. `config.env`
+2. `$PROFILE_FILE` (for example: `PROFILE_FILE=my-overrides.env make install`)
+
+Variables are exported (`set -a`) so child commands (`flux`, `helm`, `kubectl`) see the resolved values.
+
+Operational preference:
+- Runtime cluster secrets are Git-managed via SOPS in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (not sourced from local env at reconcile time).
+- Use `PROFILE_FILE=...` only for ad-hoc local script overrides.
+
+## Delete Contract
+
+1. Remove Flux stack kustomizations.
+2. Let Flux prune stack-managed resources.
+3. Keep Flux controllers and cluster-level services installed by default.
+
 ## Cluster Orchestration (Makefile-first)
 
 Preferred entrypoints:

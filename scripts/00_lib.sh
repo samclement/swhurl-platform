@@ -10,18 +10,11 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/00_verify_contract_lib.sh"
 
-# Load config and profile and export for child process consumption.
+# Load config (and optional local override) and export for child processes.
 set -a
 if [[ -f "$ROOT_DIR/config.env" ]]; then
   # shellcheck disable=SC1090
   source "$ROOT_DIR/config.env"
-fi
-
-# Profile layering:
-# config.env -> profiles/local.env -> PROFILE_FILE (highest precedence)
-if [[ -f "$ROOT_DIR/profiles/local.env" ]]; then
-  # shellcheck disable=SC1090
-  source "$ROOT_DIR/profiles/local.env"
 fi
 if [[ -n "${PROFILE_FILE:-}" && -f "$PROFILE_FILE" ]]; then
   # shellcheck disable=SC1090

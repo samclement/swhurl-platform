@@ -112,22 +112,6 @@ if [[ -f "$runtime_inputs_sops_file" ]]; then
   done
 fi
 
-if [[ -n "${INGRESS_PROVIDER:-}" ]]; then
-  if is_allowed_ingress_provider "${INGRESS_PROVIDER}"; then
-    ok "INGRESS_PROVIDER is valid"
-  else
-    bad "INGRESS_PROVIDER must be nginx|traefik"
-  fi
-fi
-
-if [[ -n "${OBJECT_STORAGE_PROVIDER:-}" ]]; then
-  if is_allowed_object_storage_provider "${OBJECT_STORAGE_PROVIDER}"; then
-    ok "OBJECT_STORAGE_PROVIDER is valid"
-  else
-    bad "OBJECT_STORAGE_PROVIDER must be minio|ceph"
-  fi
-fi
-
 printf "\n== Runtime Contracts ==\n"
 while IFS= read -r key; do
   [[ -n "$key" ]] || continue

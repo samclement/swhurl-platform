@@ -16,14 +16,12 @@ Use composition-driven provider selection in:
 Current default relies on k3s-packaged `traefik` (no Flux ingress controller release in `home`).
 Legacy `ingress-nginx` provider manifests are no longer retained in this repo.
 
-Keep `INGRESS_PROVIDER` in `config.env` as an operator intent hint for verification and
-operational checks, not as the source of deployment truth.
+Verification checks traefik directly (hardcoded); there is no config-level provider switch.
 
 ## Consequences
 
 - Provider changes are explicit Git diffs in overlay composition.
 - Flux reconciliation remains the only deployment mechanism.
-- Verification can still assert expected behavior from `INGRESS_PROVIDER` intent.
 - Switching providers requires matching ingress class/annotation behavior across platform and app manifests.
 
 ## Follow-ups

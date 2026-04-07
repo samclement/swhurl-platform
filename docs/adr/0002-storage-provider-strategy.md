@@ -17,14 +17,12 @@ Use composition-driven provider selection in:
 Current default is MinIO (`../../storage/minio/base`).
 Legacy Ceph composition manifests are no longer retained in this repo.
 
-Keep `OBJECT_STORAGE_PROVIDER` in `config.env` as an operator intent hint for
-verification and operational checks, not as the source of deployment truth.
+Verification checks MinIO directly (hardcoded); there is no config-level provider switch.
 
 ## Consequences
 
 - Storage provider state is explicit in Git composition.
 - Flux remains the single reconciler for provider resources.
-- Migration work can proceed incrementally behind a stable layer contract.
 - Data migration remains an operational concern and must be handled by runbook.
 
 ## Follow-ups

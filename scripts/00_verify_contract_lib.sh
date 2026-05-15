@@ -26,53 +26,12 @@ readonly VERIFY_INGRESS_NODEPORT_HTTP="31514"
 readonly VERIFY_INGRESS_NODEPORT_HTTPS="30313"
 readonly VERIFY_SAMPLE_INGRESS_HOST_PREFIX="staging-hello"
 
-# Teardown/delete-clean contract.
-readonly -a PLATFORM_MANAGED_NAMESPACES=(apps-staging apps-prod cert-manager ingress logging observability platform-system storage)
-readonly PLATFORM_CRD_NAME_REGEX='cert-manager\.io|acme\.cert-manager\.io'
-
-# k3s-native secrets allowed during teardown verification.
-readonly -a VERIFY_K3S_ALLOWED_SECRETS=(
-  "k3s-serving"
-  "*.node-password.k3s"
-  "bootstrap-token-*"
-)
-
 # Config input contract.
 readonly -a VERIFY_REQUIRED_BASE_VARS=(BASE_DOMAIN)
 readonly VERIFY_REQUIRED_TIMEOUT_VAR="TIMEOUT_SECS"
 readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
   BASE_DOMAIN
 )
-
-name_matches_any_pattern() {
-  local value="$1"; shift
-  local pattern
-  for pattern in "$@"; do
-    [[ "$value" == $pattern ]] && return 0
-  done
-  return 1
-}
-
-is_platform_managed_namespace() {
-  local ns="$1"
-  local item
-  for item in "${PLATFORM_MANAGED_NAMESPACES[@]}"; do
-    [[ "$item" == "$ns" ]] && return 0
-  done
-  return 1
-}
-
-is_allowed_k3s_secret_for_teardown() {
-  local ns="$1" name="$2"
-  [[ "$ns" == "kube-system" ]] || return 1
-  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS[@]}"
-}
-
-is_allowed_k3s_secret_for_verify() {
-  local ns="$1" name="$2"
-  [[ "$ns" == "kube-system" ]] || return 1
-  name_matches_any_pattern "$name" "${VERIFY_K3S_ALLOWED_SECRETS[@]}"
-}
 
 verify_expected_letsencrypt_server() {
   local server_type="${1:-staging}"

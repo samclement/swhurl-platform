@@ -15,7 +15,7 @@ suggest_reconcile_platform() { verify_add_suggest "$SUGGEST_RECONCILE_PLATFORM";
 
 expected_ingress_class="traefik"
 
-verify_verify_say "ClusterIssuer"
+verify_say "ClusterIssuer"
 platform_cert_issuer="letsencrypt-staging"
 if kubectl -n flux-system get configmap platform-settings >/dev/null 2>&1; then
   configured_platform_cert_issuer="$(kubectl -n flux-system get configmap platform-settings -o jsonpath='{.data.CERT_ISSUER}')"

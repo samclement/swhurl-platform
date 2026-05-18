@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/00_lib.sh"
-ensure_context
+
+command -v kubectl >/dev/null 2>&1 || { echo "[ERROR] Missing required command: kubectl" >&2; exit 1; }
+kubectl get --raw=/version >/dev/null 2>&1 || { echo "[ERROR] kubectl cannot reach a cluster; ensure kubeconfig is set" >&2; exit 1; }
 
 fail=0
 say() { printf "\n== %s ==\n" "$1"; }

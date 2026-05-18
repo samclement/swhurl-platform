@@ -26,11 +26,30 @@ else
 fi
 
 say "Runtime Secrets"
-dst="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"
-if [[ -n "$dst" ]]; then
+hyperdx_key="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"
+if [[ -n "$hyperdx_key" ]]; then
   ok "logging/hyperdx-secret.HYPERDX_API_KEY present"
 else
   bad "logging/hyperdx-secret.HYPERDX_API_KEY is empty (run: make runtime-inputs-refresh-otel)"
+fi
+
+say "Ingestion Key Sync"
+mongo_key="$(kubectl -n observability exec deploy/clickstack-mongodb -- \
+  mongosh hyperdx --quiet --eval "db.teams.findOne({},{apiKey:1,_id:0}).apiKey" 2>/dev/null || true)"
+hyperdx_plain="$(kubectl -n logging get secret hyperdx-secret \
+  -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d | base64 -d 2>/dev/null || true)"
+if [[ -z "$mongo_key" ]]; then
+  bad "could not read MongoDB hyperdx.teams.apiKey (is clickstack-mongodb running?)"
+elif [[ -z "$hyperdx_plain" ]]; then
+  bad "logging/hyperdx-secret.HYPERDX_API_KEY not found — cannot verify sync"
+elif [[ "$mongo_key" == "$hyperdx_plain" ]]; then
+  ok "HYPERDX_API_KEY matches MongoDB teams.apiKey — OTel collectors can authenticate to ClickStack"
+else
+  bad "HYPERDX_API_KEY does not match MongoDB teams.apiKey — OTel collectors cannot authenticate to ClickStack"
+  printf "       MongoDB key: %s\n" "$mongo_key"
+  printf "       HYPERDX_API_KEY: %s\n" "$hyperdx_plain"
+  printf "       Fix: update HYPERDX_API_KEY in platform-services/otel/base/secret-hyperdx.sops.yaml\n"
+  printf "            to the MongoDB value, commit+push, then run: make runtime-inputs-refresh-otel\n"
 fi
 
 (( fail )) && exit 1

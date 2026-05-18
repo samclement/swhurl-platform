@@ -35,6 +35,7 @@ spec:
       email-domain: "*"
       cookie-domain: .homelab.swhurl.com
       whitelist-domain: .homelab.swhurl.com
+      cookie-secure: "true"
       standard-logging: true
       request-logging: true
       auth-logging: true

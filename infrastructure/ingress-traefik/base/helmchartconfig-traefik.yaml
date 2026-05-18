@@ -8,5 +8,7 @@ spec:
     ports:
       web:
         nodePort: 31514
+        redirectTo:
+          port: websecure
       websecure:
         nodePort: 30313

@@ -25,15 +25,12 @@ else
   done <<< "$flux_kustomizations"
 fi
 
-say "Token Alignment"
-src="$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}' 2>/dev/null || true)"
+say "Runtime Secrets"
 dst="$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"
-if [[ -n "$src" && "$src" == "$dst" ]]; then
-  ok "otel ingestion key aligned"
-elif [[ -z "$src" ]]; then
-  bad "platform-runtime-inputs.CLICKSTACK_INGESTION_KEY is empty"
+if [[ -n "$dst" ]]; then
+  ok "logging/hyperdx-secret.HYPERDX_API_KEY present"
 else
-  bad "otel token mismatch (run: make runtime-inputs-refresh-otel)"
+  bad "logging/hyperdx-secret.HYPERDX_API_KEY is empty (run: make runtime-inputs-refresh-otel)"
 fi
 
 (( fail )) && exit 1

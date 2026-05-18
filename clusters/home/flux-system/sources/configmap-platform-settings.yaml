@@ -5,3 +5,4 @@ metadata:
   namespace: flux-system
 data:
   CERT_ISSUER: letsencrypt-prod
+  OAUTH_HOST: oauth.homelab.swhurl.com

@@ -181,21 +181,8 @@ done
 
 set -a
 [[ -f "$ROOT_DIR/config.env" ]] && source "$ROOT_DIR/config.env"
-if [[ -f "$HOST_DIR/host.env.example" ]]; then
-  source "$HOST_DIR/host.env.example"
-elif [[ -f "$HOST_DIR/homelab.env" ]]; then
-  host_log_info "Using legacy host config path: host/homelab.env"
-  source "$HOST_DIR/homelab.env"
-elif [[ -f "$HOST_DIR/config/homelab.env" ]]; then
-  host_log_info "Using legacy host config path: host/config/homelab.env"
-  source "$HOST_DIR/config/homelab.env"
-fi
-if [[ -f "$HOST_DIR/host.env" ]]; then
-  source "$HOST_DIR/host.env"
-elif [[ -f "$HOST_DIR/config/host.env" ]]; then
-  host_log_info "Using legacy host config path: host/config/host.env"
-  source "$HOST_DIR/config/host.env"
-fi
+[[ -f "$HOST_DIR/host.env.example" ]] && source "$HOST_DIR/host.env.example"
+[[ -f "$HOST_DIR/host.env" ]] && source "$HOST_DIR/host.env"
 if [[ -n "$HOST_ENV_FILE" ]]; then
   [[ -f "$HOST_ENV_FILE" ]] || { echo "Missing --host-env file: $HOST_ENV_FILE" >&2; exit 1; }
   source "$HOST_ENV_FILE"

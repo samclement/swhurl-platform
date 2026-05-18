@@ -67,7 +67,7 @@ Important contract:
   - Historical migration scaffolding docs were removed; keep design/operations docs focused on the active layout.
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
   - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.
-  - `run.sh` was removed; cluster orchestration is `make`-first via `make install` / `make teardown` (use `DRY_RUN=true`, `FEAT_VERIFY=...`, and optional `PROFILE_FILE=...` env overrides).
+  - `run.sh` was removed; cluster orchestration is `make`-first via `make install` / `make teardown` (use `DRY_RUN=true`, `FEAT_VERIFY=...` env overrides).
   - `make teardown` is now stack-only by default: it deletes `homelab-flux-stack` and `homelab-flux-sources` and leaves Flux controllers/cert-manager/CRDs installed.
   - Keep `.github/workflows/validate.yml` aligned with active make targets and existing kustomize paths; remove deleted path checks (`run.sh`, `infrastructure/cilium/base`, and retired app-test overlays).
   - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
@@ -106,7 +106,7 @@ Important contract:
   - Dynamic DNS updater is `host/aws-dns-updater.sh`; record targets are driven by `DYNAMIC_DNS_RECORDS` (comma-separated FQDNs) with defaults from `host/host.env.example`.
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
   - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--host-env`, `--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
-  - Host config naming was simplified to a single base name pair: repo defaults in `host/host.env.example` and local overrides in `host/host.env`; `host/dynamic-dns.sh` still reads legacy `host/homelab.env` and `host/config/*.env` files when present for compatibility.
+  - Host config naming: repo defaults in `host/host.env.example` and local overrides in `host/host.env`.
   - Makefile wrappers `make host-dns` and `make host-dns-delete` call `host/dynamic-dns.sh` and pass through `DRY_RUN=true` and optional `HOST_ENV=/path/to/host.env`.
 
 - k3s defaults
@@ -152,7 +152,7 @@ Important contract:
   - Ensure Flux decryption key secret exists in-cluster as `flux-system/sops-age` (`age.agekey`).
   - Keep local age private key material (`age.agekey`) gitignored.
   - `config.env` no longer carries secret placeholders for `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `CLICKSTACK_API_KEY`, or `MINIO_ROOT_PASSWORD`.
-  - Config layering for scripts: `config.env` then optional `PROFILE_FILE` (highest precedence).
+  - Config source: `config.env` (included by Makefile). `PROFILE_FILE` override mechanism was removed.
 
 ## Maintenance Checks
 

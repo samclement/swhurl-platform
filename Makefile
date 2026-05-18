@@ -1,4 +1,6 @@
 SHELL := /usr/bin/env bash
+include config.env
+export BASE_DOMAIN FEAT_VERIFY TIMEOUT_SECS
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 

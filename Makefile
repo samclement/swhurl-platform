@@ -172,9 +172,9 @@ platform-certs-prod:
 .PHONY: verify-config
 verify-config:
 	@[[ -n "$${BASE_DOMAIN:-}" ]] || { echo "BASE_DOMAIN not set in config.env"; exit 1; }
-	@[[ -f platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml ]] || { echo "oauth2-proxy runtime SOPS secret missing"; exit 1; }
-	@[[ -f platform-services/runtime-inputs/secret-hyperdx.sops.yaml ]] || { echo "hyperdx runtime SOPS secret missing"; exit 1; }
-	@[[ -f platform-services/runtime-inputs/secret-clickstack-runtime-inputs.sops.yaml ]] || { echo "clickstack runtime SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml ]] || { echo "oauth2-proxy runtime SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/otel/base/secret-hyperdx.sops.yaml ]] || { echo "otel runtime SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml ]] || { echo "clickstack runtime SOPS secret missing"; exit 1; }
 	@grep -q '^\s*OAUTH_HOST:' clusters/home/flux-system/sources/configmap-platform-settings.yaml || { echo "OAUTH_HOST missing from platform-settings"; exit 1; }
 
 .PHONY: verify-platform

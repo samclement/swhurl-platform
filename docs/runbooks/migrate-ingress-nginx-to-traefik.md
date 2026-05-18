@@ -8,7 +8,7 @@ This runbook migrates a legacy cluster from Flux-managed `ingress-nginx` to nati
 
 ```bash
 make flux-reconcile
-./scripts/91_verify_platform_state.sh
+make verify-platform
 ```
 
 2. Backup/snapshot exists.
@@ -56,7 +56,7 @@ curl -I https://staging-hello.homelab.swhurl.com
 curl -I https://hello.homelab.swhurl.com
 curl -I https://minio.homelab.swhurl.com
 curl -I https://minio-console.homelab.swhurl.com
-./scripts/91_verify_platform_state.sh
+make verify-platform
 ```
 
 Expected auth behavior during current Traefik forward-auth mode:

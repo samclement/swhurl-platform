@@ -105,7 +105,7 @@ Important contract:
 - DNS and host layer
   - Dynamic DNS updater is `host/aws-dns-updater.sh`; record targets are driven by `DYNAMIC_DNS_RECORDS` in `config.env`.
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
-  - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--host-env`, `--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
+  - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
   - Host config is in `config.env` (`DYNAMIC_DNS_RECORDS`); `host/host.env.example` and `host/host.env` layering were removed.
   - `make host-dns` renders effective DNS settings into `/etc/swhurl-platform/dynamic-dns.env`; rerun it after changing `DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, or `AWS_PROFILE`.
 

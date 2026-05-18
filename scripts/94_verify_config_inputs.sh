@@ -4,16 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/00_lib.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-DELETE=false
-for arg in "$@"; do
-  case "$arg" in
-    --delete) DELETE=true ;;
-    *) die "Unknown argument: $arg" ;;
-  esac
-done
-if [[ "$DELETE" == true ]]; then
-  die "scripts/94_verify_config_inputs.sh is apply-only"
-fi
+[[ "${1:-}" == "--delete" ]] && die "scripts/94_verify_config_inputs.sh is apply-only"
 
 ok(){ printf "[OK] %s\n" "$1"; }
 bad(){ printf "[BAD] %s\n" "$1"; fail=1; }
@@ -28,35 +19,24 @@ done
 [[ "${!VERIFY_REQUIRED_TIMEOUT_VAR:-}" =~ ^[0-9]+$ ]] && ok "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric" || bad "${VERIFY_REQUIRED_TIMEOUT_VAR} is numeric"
 
 read_flux_path() {
-  local file="$1"
-  awk '/^[[:space:]]*path:[[:space:]]*/ { print $2; exit }' "$REPO_ROOT/$file"
+  awk '/^[[:space:]]*path:[[:space:]]*/ { print $2; exit }' "$REPO_ROOT/$1"
 }
 
-infra_flux_path="$(read_flux_path "clusters/home/infrastructure.yaml")"
-case "$infra_flux_path" in
-  ./infrastructure/overlays/home)
-    ok "infrastructure Flux path is valid (${infra_flux_path})"
-    ;;
-  *)
-    bad "infrastructure Flux path must be ./infrastructure/overlays/home (got: ${infra_flux_path:-<empty>})"
-    ;;
-esac
+check_flux_path() {
+  local name="$1" file="$2" expected="$3"
+  local actual; actual="$(read_flux_path "$file")"
+  [[ "$actual" == "$expected" ]] && ok "$name Flux path is valid ($actual)" || bad "$name Flux path must be $expected (got: ${actual:-<empty>})"
+}
 
-platform_flux_path="$(read_flux_path "clusters/home/platform.yaml")"
-case "$platform_flux_path" in
-  ./platform-services/overlays/home)
-    ok "platform Flux path is valid (${platform_flux_path})"
-    ;;
-  *)
-    bad "platform Flux path must be ./platform-services/overlays/home (got: ${platform_flux_path:-<empty>})"
-    ;;
-esac
+check_flux_path "infrastructure" "clusters/home/infrastructure.yaml" "./infrastructure/overlays/home"
+check_flux_path "platform" "clusters/home/platform.yaml" "./platform-services/overlays/home"
+check_flux_path "tenants" "clusters/home/tenants.yaml" "./tenants/app-envs"
+check_flux_path "app-example" "clusters/home/app-example.yaml" "./tenants/apps/example"
 
 read_platform_setting() {
-  local key="$1"
   local file="$REPO_ROOT/clusters/home/flux-system/sources/configmap-platform-settings.yaml"
   [[ -f "$file" ]] || { printf ''; return 0; }
-  awk -v k="$key" '$1 == k ":" { print $2; exit }' "$file" | tr -d '"'
+  awk -v k="$1" '$1 == k ":" { print $2; exit }' "$file" | tr -d '"'
 }
 
 platform_cert_issuer="$(read_platform_setting CERT_ISSUER)"
@@ -69,34 +49,9 @@ case "$platform_cert_issuer" in
     ;;
 esac
 
-tenants_flux_path="$(read_flux_path "clusters/home/tenants.yaml")"
-case "$tenants_flux_path" in
-  ./tenants/app-envs)
-    ok "tenants Flux path is valid (${tenants_flux_path})"
-    ;;
-  *)
-    bad "tenants Flux path must be ./tenants/app-envs (got: ${tenants_flux_path:-<empty>})"
-    ;;
-esac
-
-app_example_flux_path="$(read_flux_path "clusters/home/app-example.yaml")"
-case "$app_example_flux_path" in
-  ./tenants/apps/example)
-    ok "app-example Flux path is valid (${app_example_flux_path})"
-    ;;
-  *)
-    bad "app-example Flux path must be ./tenants/apps/example (got: ${app_example_flux_path:-<empty>})"
-    ;;
-esac
-
 runtime_inputs_sops_file="$REPO_ROOT/clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml"
 if [[ -f "$runtime_inputs_sops_file" ]]; then
   ok "runtime-inputs SOPS secret exists (${runtime_inputs_sops_file#$REPO_ROOT/})"
-else
-  bad "runtime-inputs SOPS secret exists (${runtime_inputs_sops_file#$REPO_ROOT/})"
-fi
-
-if [[ -f "$runtime_inputs_sops_file" ]]; then
   if rg -q '^sops:' "$runtime_inputs_sops_file"; then
     ok "runtime-inputs secret is SOPS-encrypted"
   else
@@ -110,6 +65,8 @@ if [[ -f "$runtime_inputs_sops_file" ]]; then
       bad "runtime-inputs key missing: ${secret_key}"
     fi
   done
+else
+  bad "runtime-inputs SOPS secret exists (${runtime_inputs_sops_file#$REPO_ROOT/})"
 fi
 
 printf "\n== Runtime Contracts ==\n"

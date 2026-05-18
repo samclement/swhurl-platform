@@ -10,7 +10,6 @@ declare -a VERIFY_SUGGEST=()
 SUGGEST_RECONCILE_STACK="scripts/32_reconcile_flux_stack.sh"
 SUGGEST_RECONCILE_PLATFORM="flux reconcile kustomization homelab-platform -n flux-system"
 
-suggest_reconcile_stack() { verify_add_suggest "$SUGGEST_RECONCILE_STACK"; }
 suggest_reconcile_platform() { verify_add_suggest "$SUGGEST_RECONCILE_PLATFORM"; }
 
 expected_ingress_class="traefik"

@@ -2,14 +2,12 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST_DIR="$ROOT_DIR/host"
 
 usage() {
   cat <<USAGE
-Usage: ./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
+Usage: ./host/dynamic-dns.sh [--dry-run] [--delete]
 
 Options:
-  --host-env FILE  Load host-specific env overrides (highest precedence)
   --dry-run        Print plan without executing
   --delete         Remove host-managed dynamic DNS systemd units
 USAGE
@@ -163,31 +161,15 @@ host_dynamic_dns_delete() {
 
 DELETE_MODE=false
 DRY_RUN=false
-HOST_ENV_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --delete) DELETE_MODE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
-    --host-env)
-      [[ $# -ge 2 ]] || { echo "Missing value for --host-env" >&2; usage; exit 1; }
-      HOST_ENV_FILE="$2"
-      shift 2
-      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
-
-set -a
-[[ -f "$ROOT_DIR/config.env" ]] && source "$ROOT_DIR/config.env"
-[[ -f "$HOST_DIR/host.env.example" ]] && source "$HOST_DIR/host.env.example"
-[[ -f "$HOST_DIR/host.env" ]] && source "$HOST_DIR/host.env"
-if [[ -n "$HOST_ENV_FILE" ]]; then
-  [[ -f "$HOST_ENV_FILE" ]] || { echo "Missing --host-env file: $HOST_ENV_FILE" >&2; exit 1; }
-  source "$HOST_ENV_FILE"
-fi
-set +a
 
 if [[ "$DELETE_MODE" == true ]]; then
   print_plan "delete"

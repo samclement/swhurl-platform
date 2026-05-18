@@ -174,7 +174,7 @@ test -n "$src" && test "$src" = "$dst" && echo "OK: ingestion key propagated to 
 
 1. k3s prerequisite: use default networking (`flannel`) with packaged `traefik` + `metrics-server` enabled.
 2. Runtime inputs are Git-managed via SOPS: commit + push encrypted changes before `make runtime-inputs-sync` (or `make flux-reconcile`).
-3. DNS wildcard scope: `*.homelab.swhurl.com` matches one-label hosts only; multi-label names need explicit records (or deeper wildcard). Add explicit hosts to `DYNAMIC_DNS_RECORDS` in `host/host.env`.
+3. DNS wildcard scope: `*.homelab.swhurl.com` matches one-label hosts only; multi-label names need explicit records (or deeper wildcard). Add explicit hosts to `DYNAMIC_DNS_RECORDS` in `config.env`.
 4. cert-manager issuance timing: first reconcile can fail until DNS propagates and ACME HTTP-01 checks can reach ingress.
 5. ClickStack ingestion timing: OTLP ingestion is not fully active until initial team setup completes in UI.
 6. OTel collector key reload: after key rotation, restart collectors (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.

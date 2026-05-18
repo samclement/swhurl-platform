@@ -51,20 +51,11 @@ State contracts:
 Usage:
 
 ```bash
-./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
+make host-dns [DRY_RUN=true]
+make host-dns-delete [DRY_RUN=true]
 ```
 
-Config layering:
-1. `config.env` → `host/host.env.example` → `host/host.env` → `--host-env FILE`
-
-Modes:
-- apply: `host/dynamic-dns.sh`
-- delete: `host/dynamic-dns.sh --delete`
-
-Host dynamic DNS knobs (via `host/host.env.example`, `host/host.env`, or `--host-env`):
-- `DYNAMIC_DNS_RECORDS` (comma-separated FQDNs to UPSERT as Route53 A records)
-- `AWS_ZONE_ID` (Route53 hosted zone id)
-- `AWS_PROFILE` (AWS CLI profile for Route53 API access)
+Config is in `config.env` (`DYNAMIC_DNS_RECORDS`). Override `AWS_ZONE_ID` or `AWS_PROFILE` via environment if needed.
 
 Manual prerequisite:
 - k3s installation is manual and documented in `README.md`.
@@ -90,9 +81,9 @@ Key runtime-intent targets:
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
 - `make charts-generate`
   - Renders C4 architecture charts from `docs/charts/c4/*.d2` to `docs/charts/c4/rendered/*.svg`.
-- `make host-dns [DRY_RUN=true] [HOST_ENV=/path/to/host.env]`
+- `make host-dns [DRY_RUN=true]`
   - Configures the host dynamic DNS updater systemd service/timer.
-- `make host-dns-delete [DRY_RUN=true] [HOST_ENV=/path/to/host.env]`
+- `make host-dns-delete [DRY_RUN=true]`
   - Removes host-managed dynamic DNS systemd service/timer.
 
 Design boundary:

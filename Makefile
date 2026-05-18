@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 include config.env
-export BASE_DOMAIN FEAT_VERIFY TIMEOUT_SECS
+export BASE_DOMAIN FEAT_VERIFY TIMEOUT_SECS DYNAMIC_DNS_RECORDS
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 
@@ -42,8 +42,8 @@ help:
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
 	@echo ""
 	@echo "Host dynamic DNS:"
-	@echo "  make host-dns [DRY_RUN=true] [HOST_ENV=/path/to/host.env]"
-	@echo "  make host-dns-delete [DRY_RUN=true] [HOST_ENV=/path/to/host.env]"
+	@echo "  make host-dns [DRY_RUN=true]"
+	@echo "  make host-dns-delete [DRY_RUN=true]"
 
 .PHONY: install
 install:
@@ -153,27 +153,19 @@ flux-reconcile:
 
 .PHONY: host-dns
 host-dns:
-	@set -Eeuo pipefail; \
-	args=(); \
-	if [[ -n "$(HOST_ENV)" ]]; then \
-	  args+=(--host-env "$(HOST_ENV)"); \
-	fi; \
-	if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  args+=(--dry-run); \
-	fi; \
-	./host/dynamic-dns.sh "$${args[@]}"
+	@if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  ./host/dynamic-dns.sh --dry-run; \
+	else \
+	  ./host/dynamic-dns.sh; \
+	fi
 
 .PHONY: host-dns-delete
 host-dns-delete:
-	@set -Eeuo pipefail; \
-	args=(--delete); \
-	if [[ -n "$(HOST_ENV)" ]]; then \
-	  args+=(--host-env "$(HOST_ENV)"); \
-	fi; \
-	if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  args+=(--dry-run); \
-	fi; \
-	./host/dynamic-dns.sh "$${args[@]}"
+	@if [[ "$(DRY_RUN)" == "true" ]]; then \
+	  ./host/dynamic-dns.sh --delete --dry-run; \
+	else \
+	  ./host/dynamic-dns.sh --delete; \
+	fi
 
 .PHONY: platform-certs-staging
 platform-certs-staging:

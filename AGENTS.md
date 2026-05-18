@@ -103,11 +103,10 @@ Important contract:
   - Apps keep issuer selection in app overlays/manifests; current example app staging/prod overlays both use `letsencrypt-prod`.
 
 - DNS and host layer
-  - Dynamic DNS updater is `host/aws-dns-updater.sh`; record targets are driven by `DYNAMIC_DNS_RECORDS` (comma-separated FQDNs) with defaults from `host/host.env.example`.
+  - Dynamic DNS updater is `host/aws-dns-updater.sh`; record targets are driven by `DYNAMIC_DNS_RECORDS` in `config.env`.
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
   - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--host-env`, `--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
-  - Host config naming: repo defaults in `host/host.env.example` and local overrides in `host/host.env`.
-  - Makefile wrappers `make host-dns` and `make host-dns-delete` call `host/dynamic-dns.sh` and pass through `DRY_RUN=true` and optional `HOST_ENV=/path/to/host.env`.
+  - Host config is in `config.env` (`DYNAMIC_DNS_RECORDS`); `host/host.env.example` and `host/host.env` layering were removed.
 
 - k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.

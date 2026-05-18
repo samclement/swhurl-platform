@@ -32,6 +32,7 @@ make install
 7. Optional host dynamic DNS bootstrap:
 
 ```bash
+# Optional: set custom records via DYNAMIC_DNS_RECORDS in config.env
 make host-dns
 ```
 

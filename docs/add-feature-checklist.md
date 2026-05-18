@@ -12,7 +12,7 @@ Use this checklist when adding a new platform feature.
 
 - Default model: prefer declarative composition and runtime-input wiring over new `FEAT_*` switches.
 - Keep non-secrets in `config.env`.
-- Keep shared platform runtime Secrets as final SOPS Secret manifests in `platform-services/runtime-inputs`.
+- Keep shared platform runtime Secrets as final SOPS Secret manifests next to the platform service that consumes them.
 - Keep app-specific secrets in app paths (`tenants/apps/<app>/.../secret-*.sops.yaml`).
 - Update `make verify-config` and `scripts/verify-platform.sh` when feature contracts change.
 - If a new feature switch is absolutely necessary, document it in `docs/orchestration-api.md` and keep scope narrow (current default switch is `FEAT_VERIFY`).
@@ -20,7 +20,7 @@ Use this checklist when adding a new platform feature.
 ## 3) Runtime inputs (if feature needs secrets)
 
 - Shared platform secret flow:
-  - Add/update final `*.sops.yaml` Secret manifests in `platform-services/runtime-inputs/*`.
+  - Add/update final `*.sops.yaml` Secret manifests in the relevant `platform-services/<service>/base`.
   - Keep `clusters/home/platform.yaml` decryption contract (`spec.decryption.secretRef.name=sops-age`) valid.
 - App-specific secret flow:
   - Add app-local `secret-*.sops.yaml` under `tenants/apps/<app>/...`.

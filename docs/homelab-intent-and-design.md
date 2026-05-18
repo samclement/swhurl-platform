@@ -26,7 +26,7 @@ Separate these axes and do not collapse them:
   - cert-manager + issuer manifests
 - `platform-services/`
   - cluster-shared services (`oauth2-proxy`, `clickstack`, `otel`)
-  - runtime-input target secrets (`platform-services/runtime-inputs`)
+  - runtime-input target secrets co-located with service bases
 - `tenants/`
   - app environment namespaces (`apps-staging`, `apps-prod`)
   - sample app manifests and overlays (`tenants/apps/example`)
@@ -35,7 +35,7 @@ Separate these axes and do not collapse them:
 
 Use Git-managed SOPS encryption for runtime secrets.
 
-- Shared platform runtime Secrets: final SOPS Secret manifests under `platform-services/runtime-inputs`
+- Shared platform runtime Secrets: final SOPS Secret manifests under the consuming service base
 - Applied targets: service namespace Secrets such as `ingress/oauth2-proxy-shared-secret`, `logging/hyperdx-secret`, and `observability/clickstack-runtime-inputs`
 - Non-secret shared settings: `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
 - Non-secret mode controls stay Git-tracked in manifests/templates.

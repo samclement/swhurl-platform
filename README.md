@@ -16,10 +16,10 @@ The active repo layout is:
 2. Configure platform runtime Secrets (Git-managed SOPS target manifests):
 
 ```bash
-SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml
-SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-clickstack-runtime-inputs.sops.yaml
-SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-hyperdx.sops.yaml
-git add platform-services/runtime-inputs/*.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/otel/base/secret-hyperdx.sops.yaml
+git add platform-services/*/base/*.sops.yaml
 git commit -m "runtime-inputs: set platform secrets"
 git push
 ```
@@ -36,7 +36,17 @@ make flux-bootstrap
 make install
 ```
 
-4. Optional host dynamic DNS bootstrap:
+4. After ClickStack is available, create/copy the Ingestion API key in the ClickStack admin UI and update the standalone OTel collector Secret:
+
+```bash
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/otel/base/secret-hyperdx.sops.yaml
+git add platform-services/otel/base/secret-hyperdx.sops.yaml
+git commit -m "runtime-inputs: update clickstack ingestion key"
+git push
+make runtime-inputs-refresh-otel
+```
+
+5. Optional host dynamic DNS bootstrap:
 
 ```bash
 # Optional: set custom records via DYNAMIC_DNS_RECORDS in config.env

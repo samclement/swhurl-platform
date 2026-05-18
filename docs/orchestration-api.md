@@ -57,6 +57,8 @@ make host-dns-delete [DRY_RUN=true]
 
 Config is in `config.env` (`DYNAMIC_DNS_RECORDS`). Override `AWS_ZONE_ID` or `AWS_PROFILE` via environment if needed.
 
+`make host-dns` writes the effective DNS environment to `/etc/swhurl-platform/dynamic-dns.env`; the systemd service reads that file on timer runs. Rerun `make host-dns` after changing DNS config.
+
 Manual prerequisite:
 - k3s installation is manual and documented in `README.md`.
 

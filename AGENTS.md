@@ -107,6 +107,7 @@ Important contract:
   - Wildcard caveat: `*.homelab.swhurl.com` matches single-label hosts only; multi-label hosts need explicit records or deeper wildcard records.
   - Host dynamic DNS now uses a single entrypoint `host/dynamic-dns.sh` (`--host-env`, `--dry-run`, `--delete`) and `host/run-host.sh` has been removed.
   - Host config is in `config.env` (`DYNAMIC_DNS_RECORDS`); `host/host.env.example` and `host/host.env` layering were removed.
+  - `make host-dns` renders effective DNS settings into `/etc/swhurl-platform/dynamic-dns.env`; rerun it after changing `DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, or `AWS_PROFILE`.
 
 - k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.

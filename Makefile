@@ -31,6 +31,7 @@ help:
 	@echo "  runtime-inputs-sync Reconcile Git-managed platform runtime SOPS secrets"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
 	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
+	@echo "  runtime-inputs-refresh-clickstack-otel Reconcile ClickStack + OTel (use after rotating ingestion key)"
 	@echo "  charts-generate     Render C4 architecture charts from D2 sources"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  host-dns            Configure host dynamic DNS systemd updater"
@@ -118,6 +119,16 @@ runtime-inputs-refresh-otel:
 	$(MAKE) runtime-inputs-sync
 	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
+
+# Use this after rotating the ingestion key in both SOPS files:
+#   secret-clickstack-runtime-inputs.sops.yaml (CLICKSTACK_API_KEY)
+#   secret-hyperdx.sops.yaml (HYPERDX_API_KEY — must equal CLICKSTACK_API_KEY)
+.PHONY: runtime-inputs-refresh-clickstack-otel
+runtime-inputs-refresh-clickstack-otel:
+	$(MAKE) runtime-inputs-sync
+	$(MAKE) wait-runtime-inputs-otel
+	$(MAKE) otel-collectors-restart
+	$(MAKE) verify-platform
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel:

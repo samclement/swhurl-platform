@@ -188,7 +188,7 @@ verify-config:
 
 .PHONY: verify-platform
 verify-platform:
-	./scripts/91_verify_platform_state.sh
+	./scripts/verify-platform.sh
 
 .PHONY: verify
 verify: verify-config verify-platform

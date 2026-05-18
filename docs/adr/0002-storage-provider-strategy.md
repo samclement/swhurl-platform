@@ -27,5 +27,4 @@ Verification checks MinIO directly (hardcoded); there is no config-level provide
 
 ## Follow-ups
 
-1. Keep `docs/runbooks/migrate-minio-to-ceph.md` aligned with migration steps for external/older Ceph manifests.
-2. Define/implement Ceph resources under active paths before switching default composition.
+1. Define/implement Ceph resources under active paths before switching default composition.

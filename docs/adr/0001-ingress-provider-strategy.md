@@ -26,5 +26,4 @@ Verification checks traefik directly (hardcoded); there is no config-level provi
 
 ## Follow-ups
 
-1. Keep `docs/runbooks/migrate-ingress-nginx-to-traefik.md` aligned for migrations from older revisions that still had Flux-managed ingress-nginx.
-2. If Flux-managed Traefik ownership is introduced, add explicit manifests under `infrastructure/ingress-traefik/base` and update this ADR.
+1. If Flux-managed Traefik ownership is introduced, add explicit manifests under `infrastructure/ingress-traefik/base` and update this ADR.

@@ -6,10 +6,6 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Shared verification/teardown contract.
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/00_verify_contract_lib.sh"
-
 # Load config (and optional local override) and export for child processes.
 set -a
 if [[ -f "$ROOT_DIR/config.env" ]]; then

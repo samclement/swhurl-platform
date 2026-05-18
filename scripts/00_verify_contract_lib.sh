@@ -34,57 +34,18 @@ readonly -a VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS=(
 )
 
 verify_expected_letsencrypt_server() {
-  local server_type="${1:-staging}"
-  local staging_server="https://acme-staging-v02.api.letsencrypt.org/directory"
-  local prod_server="https://acme-v02.api.letsencrypt.org/directory"
-
-  case "$server_type" in
-    staging) printf '%s' "$staging_server" ;;
-    prod) printf '%s' "$prod_server" ;;
-    *)
-      printf '%s' "$staging_server"
-      ;;
+  case "${1:-staging}" in
+    prod) printf 'https://acme-v02.api.letsencrypt.org/directory' ;;
+    *) printf 'https://acme-staging-v02.api.letsencrypt.org/directory' ;;
   esac
 }
 
 verify_required_runtime_vars() {
-  local -A seen=()
-  local var
-
-  for var in "${VERIFY_REQUIRED_PLATFORM_VARS[@]}"; do
-    [[ -n "${seen[$var]+x}" ]] && continue
-    seen["$var"]=1
-    printf '%s\n' "$var"
-  done
-
-  for var in MINIO_HOST MINIO_CONSOLE_HOST; do
-    [[ -n "${seen[$var]+x}" ]] && continue
-    seen["$var"]=1
-    printf '%s\n' "$var"
-  done
+  printf '%s\n' "${VERIFY_REQUIRED_PLATFORM_VARS[@]}" MINIO_HOST MINIO_CONSOLE_HOST
 }
 
 verify_effective_runtime_non_secret_vars() {
-  local -A seen=()
-  local var
-
-  for var in "${VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS[@]}"; do
-    [[ -n "${seen[$var]+x}" ]] && continue
-    seen["$var"]=1
-    printf '%s\n' "$var"
-  done
-
-  for var in "${VERIFY_PLATFORM_EFFECTIVE_NON_SECRET_VARS[@]}"; do
-    [[ -n "${seen[$var]+x}" ]] && continue
-    seen["$var"]=1
-    printf '%s\n' "$var"
-  done
-
-  for var in MINIO_HOST MINIO_CONSOLE_HOST; do
-    [[ -n "${seen[$var]+x}" ]] && continue
-    seen["$var"]=1
-    printf '%s\n' "$var"
-  done
+  printf '%s\n' "${VERIFY_BASE_EFFECTIVE_NON_SECRET_VARS[@]}" "${VERIFY_PLATFORM_EFFECTIVE_NON_SECRET_VARS[@]}" MINIO_HOST MINIO_CONSOLE_HOST
 }
 
 # ── Reusable kubectl verification helpers ──

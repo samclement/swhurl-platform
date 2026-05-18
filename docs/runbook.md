@@ -182,8 +182,9 @@ test -n "$src" && test "$src" = "$dst" && echo "OK: ingestion key propagated to 
 ## Verification
 
 Core checks:
-- `scripts/94_verify_config_inputs.sh`
-- `scripts/91_verify_platform_state.sh`
+- `make verify-config` (config inputs)
+- `make verify-platform` (Flux kustomization health + token alignment)
+- `make verify` (both)
 
 Architecture chart generation:
 - C4 source files: `docs/charts/c4/*.d2`

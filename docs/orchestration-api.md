@@ -39,7 +39,7 @@ Default apply flow (`make install`):
 3. `make verify-platform` (when `FEAT_VERIFY=true`)
 
 Default delete flow (`make teardown`):
-1. `32_reconcile_flux_stack.sh --delete`
+1. Delete `homelab-flux-stack` and `homelab-flux-sources` kustomizations
 
 State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.

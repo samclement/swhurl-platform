@@ -30,7 +30,7 @@ Use this checklist when adding a new platform feature.
 
 ## 4) Verification updates
 
-- `scripts/94_verify_config_inputs.sh`
+- `make verify-config` (Makefile inline check)
 - `scripts/91_verify_platform_state.sh`
 
 ## 5) Documentation
@@ -45,5 +45,4 @@ Use this checklist when adding a new platform feature.
 - `make install DRY_RUN=true`
 - `make teardown DRY_RUN=true`
 - Optional cluster-backed checks:
-  - `./scripts/94_verify_config_inputs.sh`
-  - `./scripts/91_verify_platform_state.sh`
+  - `make verify`

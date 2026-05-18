@@ -5,6 +5,7 @@ After=network.target
 
 [Service]
 Type=simple
+EnvironmentFile=__ENV_FILE__
 ExecStart=__EXEC_START__
 User=__RUN_USER__
 Restart=on-failure

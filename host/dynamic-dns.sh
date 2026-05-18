@@ -34,7 +34,52 @@ readonly HOST_DDNS_SERVICE="aws-dns-updater.service"
 readonly HOST_DDNS_TIMER="aws-dns-updater.timer"
 readonly HOST_DDNS_SERVICE_PATH="/etc/systemd/system/${HOST_DDNS_SERVICE}"
 readonly HOST_DDNS_TIMER_PATH="/etc/systemd/system/${HOST_DDNS_TIMER}"
+readonly HOST_DDNS_ENV_DIR="/etc/swhurl-platform"
+readonly HOST_DDNS_ENV_PATH="${HOST_DDNS_ENV_DIR}/dynamic-dns.env"
 readonly HOST_DDNS_MANAGED_MARKER="Managed template for host dynamic DNS updater"
+
+load_config() {
+  local records_set="${DYNAMIC_DNS_RECORDS+x}" records_value="${DYNAMIC_DNS_RECORDS:-}"
+  local zone_set="${AWS_ZONE_ID+x}" zone_value="${AWS_ZONE_ID:-}"
+  local profile_set="${AWS_PROFILE+x}" profile_value="${AWS_PROFILE:-}"
+
+  if [[ -f "$ROOT_DIR/config.env" ]]; then
+    set -a
+    source "$ROOT_DIR/config.env"
+    set +a
+  fi
+
+  if [[ -n "$records_set" ]]; then
+    DYNAMIC_DNS_RECORDS="$records_value"
+    export DYNAMIC_DNS_RECORDS
+  fi
+  if [[ -n "$zone_set" ]]; then
+    AWS_ZONE_ID="$zone_value"
+    export AWS_ZONE_ID
+  fi
+  if [[ -n "$profile_set" ]]; then
+    AWS_PROFILE="$profile_value"
+    export AWS_PROFILE
+  fi
+}
+
+systemd_env_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
+
+host_dynamic_dns_env_content() {
+  local records="${DYNAMIC_DNS_RECORDS:-homelab.swhurl.com,*.homelab.swhurl.com}"
+  local zone_id="${AWS_ZONE_ID:-Z08316812BZVAZ9D79ZRO}"
+  local profile="${AWS_PROFILE:-default}"
+
+  printf '# Managed environment for host dynamic DNS updater\n'
+  printf 'DYNAMIC_DNS_RECORDS=%s\n' "$(systemd_env_quote "$records")"
+  printf 'AWS_ZONE_ID=%s\n' "$(systemd_env_quote "$zone_id")"
+  printf 'AWS_PROFILE=%s\n' "$(systemd_env_quote "$profile")"
+}
 
 print_plan() {
   local mode="$1"
@@ -108,16 +153,23 @@ host_dynamic_dns_apply() {
     host_log_info "Dynamic DNS helper already up-to-date: $helper_target"
   fi
 
-  local service_content timer_content
+  local env_content service_content timer_content
+  env_content="$(host_dynamic_dns_env_content)"
   service_content="$(
     sed \
+      -e "s|__ENV_FILE__|${HOST_DDNS_ENV_PATH}|g" \
       -e "s|__EXEC_START__|/bin/bash ${helper_target}|g" \
       -e "s|__RUN_USER__|${run_user}|g" \
       "$service_template"
   )"
   timer_content="$(cat "$timer_template")"
 
-  local unit_changed=0
+  host_sudo mkdir -p "$HOST_DDNS_ENV_DIR"
+
+  local config_changed=0 unit_changed=0
+  if host_dynamic_dns_write_unit_if_changed "$HOST_DDNS_ENV_PATH" "$env_content"; then
+    config_changed=1
+  fi
   if host_dynamic_dns_write_unit_if_changed "$HOST_DDNS_SERVICE_PATH" "$service_content"; then
     unit_changed=1
   fi
@@ -134,6 +186,9 @@ host_dynamic_dns_apply() {
   host_sudo systemctl enable "$HOST_DDNS_TIMER" >/dev/null || true
 
   if (( unit_changed == 1 )); then
+    host_sudo systemctl restart "$HOST_DDNS_SERVICE" || true
+    host_sudo systemctl restart "$HOST_DDNS_TIMER" || true
+  elif (( config_changed == 1 )); then
     host_sudo systemctl restart "$HOST_DDNS_SERVICE" || true
     host_sudo systemctl restart "$HOST_DDNS_TIMER" || true
   else
@@ -155,7 +210,8 @@ host_dynamic_dns_delete() {
   host_log_info "Deleting host-managed dynamic DNS units"
   host_sudo systemctl stop "$HOST_DDNS_TIMER" "$HOST_DDNS_SERVICE" || true
   host_sudo systemctl disable "$HOST_DDNS_TIMER" "$HOST_DDNS_SERVICE" >/dev/null || true
-  host_sudo rm -f "$HOST_DDNS_SERVICE_PATH" "$HOST_DDNS_TIMER_PATH" || true
+  host_sudo rm -f "$HOST_DDNS_SERVICE_PATH" "$HOST_DDNS_TIMER_PATH" "$HOST_DDNS_ENV_PATH" || true
+  host_sudo rmdir "$HOST_DDNS_ENV_DIR" 2>/dev/null || true
   host_sudo systemctl daemon-reload || true
 }
 
@@ -170,6 +226,8 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+load_config
 
 if [[ "$DELETE_MODE" == true ]]; then
   print_plan "delete"

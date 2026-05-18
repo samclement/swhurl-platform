@@ -70,10 +70,11 @@ teardown:
 	@set -Eeuo pipefail; \
 	if [[ "$(DRY_RUN)" == "true" ]]; then \
 	  echo "Plan (teardown):"; \
-	  echo "  - ./scripts/32_reconcile_flux_stack.sh --delete"; \
+	  echo "  - delete homelab-flux-stack and homelab-flux-sources kustomizations"; \
 	  exit 0; \
 	fi; \
-	./scripts/32_reconcile_flux_stack.sh --delete
+	kubectl -n flux-system delete kustomization homelab-flux-stack --ignore-not-found; \
+	kubectl -n flux-system delete kustomization homelab-flux-sources --ignore-not-found
 
 .PHONY: reinstall
 reinstall:
@@ -144,7 +145,9 @@ wait-runtime-inputs-otel:
 
 .PHONY: flux-reconcile
 flux-reconcile:
-	./scripts/32_reconcile_flux_stack.sh
+	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
+	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
+	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m
 
 .PHONY: host-dns
 host-dns:
@@ -180,7 +183,8 @@ platform-certs-prod:
 
 .PHONY: verify-config
 verify-config:
-	./scripts/94_verify_config_inputs.sh
+	@[[ -n "$${BASE_DOMAIN:-}" ]] || { echo "BASE_DOMAIN not set in config.env"; exit 1; }
+	@[[ -f clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml ]] || { echo "SOPS secret missing"; exit 1; }
 
 .PHONY: verify-platform
 verify-platform:

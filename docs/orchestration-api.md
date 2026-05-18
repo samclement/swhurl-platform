@@ -8,7 +8,7 @@ This document defines the current command and environment contract for orchestra
 
 Config source: `config.env` (included by Makefile).
 
-Runtime cluster secrets are Git-managed as final SOPS Secret manifests under `platform-services/runtime-inputs` (not sourced from local env at reconcile time).
+Runtime cluster secrets are Git-managed as final SOPS Secret manifests next to the platform service that consumes them (not sourced from local env at reconcile time).
 
 ## Delete Contract
 
@@ -37,7 +37,7 @@ Default delete flow (`make teardown`):
 State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`) before reconcile/apply flows.
-- Runtime input target secrets are SOPS-encrypted final Secret manifests in `platform-services/runtime-inputs`.
+- Runtime input target secrets are SOPS-encrypted final Secret manifests in service bases under `platform-services/*/base`.
 - Flux decryption key secret must exist in-cluster as `flux-system/sops-age`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
 - k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
@@ -80,7 +80,7 @@ Key runtime-intent targets:
 - `make otel-collectors-restart`
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
-  - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack ingestion keys are loaded by running OTel pods.
+  - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
 - `make charts-generate`
   - Renders C4 architecture charts from `docs/charts/c4/*.d2` to `docs/charts/c4/rendered/*.svg`.
 - `make host-dns [DRY_RUN=true]`
@@ -89,5 +89,5 @@ Key runtime-intent targets:
   - Removes host-managed dynamic DNS systemd service/timer.
 
 Design boundary:
-- Runtime-input secrets are Git-managed directly as SOPS Secret manifests under `platform-services/runtime-inputs`.
+- Runtime-input secrets are Git-managed directly as SOPS Secret manifests co-located with their consuming platform service.
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

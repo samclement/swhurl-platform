@@ -15,7 +15,7 @@ Use the docs in `docs/` as the detailed source of truth:
 - Shared platform-services layer: `platform-services/overlays/home`.
 - Tenant environment layer: `tenants/app-envs`.
 - App deployment layer: `tenants/apps/example` (staging + prod overlays) reconciled by app-level Flux Kustomizations in `clusters/home/`.
-- Runtime secret targets (Git-managed SOPS final Secrets): `platform-services/runtime-inputs/*.sops.yaml`.
+- Runtime secret targets (Git-managed SOPS final Secrets): co-located under `platform-services/*/base/*.sops.yaml`.
 
 Keep `README.md` short. It should describe the repo at a high level, explain the supported quick start, and link to the detailed docs.
 
@@ -86,21 +86,21 @@ Important contract:
   - Legacy hard-delete scripts were removed (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/98_verify_teardown_clean.sh`, `scripts/99_execute_teardown.sh`); default teardown remains stack-only via `make teardown` (inlined kubectl delete).
 
 - Runtime inputs and substitution
-  - Runtime-input targets are final SOPS-encrypted Kubernetes Secret manifests in `platform-services/runtime-inputs` (not infrastructure).
+  - Runtime-input targets are final SOPS-encrypted Kubernetes Secret manifests co-located with the platform service that consumes them (not infrastructure).
   - `homelab-infrastructure` substitutes from `platform-settings` only.
   - `homelab-platform` substitutes non-secret values from `platform-settings` and decrypts platform-service `*.sops.yaml` manifests directly with `spec.decryption.secretRef.name=sops-age`.
   - `homelab-flux-sources` no longer decrypts SOPS; its sources path contains plain ConfigMaps/repositories only.
   - The central runtime source secret (`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` -> `flux-system/platform-runtime-inputs`) was removed; do not reintroduce it for platform-service secrets.
   - Local SOPS edits require an age private key in a default SOPS location (`~/.config/sops/age/keys.txt`) or `SOPS_AGE_KEY_FILE`; in this repo, `SOPS_AGE_KEY_FILE=./age.agekey` enables local decrypt/edit flows.
   - Keep app-specific secrets with each app (`tenants/apps/<app>/.../secret-*.sops.yaml`); when app paths include encrypted manifests, set `spec.decryption` on that app-level Flux Kustomization (for example `clusters/home/app-*.yaml`) to use `sops-age`.
-  - `.sops.yaml` creation rules currently cover `platform-services/runtime-inputs` and `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
+  - `.sops.yaml` creation rules currently cover `platform-services/.*/base` and `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
   - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` now reconciles `homelab-platform` from pushed Git state.
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-shared` (or automate via checksum strategy) to load new client credentials.
   - `redirect_uri_mismatch` during login means the running oauth2-proxy `--redirect-url` does not match the OAuth client's allowed callback URI. Keep `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` redirect host/path aligned with `platform-settings.OAUTH_HOST`.
-  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml`.
-  - GitHub migration for shared oauth2-proxy: set `provider: github` and remove `oidc-issuer-url` in `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml`; keep callback `https://${OAUTH_HOST}/oauth2/callback` and update `client-id` / `client-secret` in `platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml` with GitHub OAuth App credentials.
+  - `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml` uses OIDC with Google issuer (`provider: oidc`, `oidc-issuer-url: https://accounts.google.com`); release name is `oauth2-proxy-shared`, callback host/path is `https://${OAUTH_HOST}/oauth2/callback`, and runtime secret wiring uses `platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml`.
+  - GitHub migration for shared oauth2-proxy: set `provider: github` and remove `oidc-issuer-url` in `platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml`; keep callback `https://${OAUTH_HOST}/oauth2/callback` and update `client-id` / `client-secret` in `platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml` with GitHub OAuth App credentials.
 
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
@@ -136,12 +136,14 @@ Important contract:
 
 - Observability/ClickStack
   - ClickStack first-team setup is manual in UI.
-  - `logging/hyperdx-secret.HYPERDX_API_KEY` can initially fall back to the ClickStack API key stored in `observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY`.
+  - `platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml` stores `CLICKSTACK_API_KEY`, the ClickStack chart bootstrap/app API key passed to `hyperdx.apiKey`; the chart renders the same value into `observability/clickstack-app-secrets.api-key`.
+  - `platform-services/otel/base/secret-hyperdx.sops.yaml` stores `HYPERDX_API_KEY`, the standalone OTel collector ingestion key copied from the ClickStack admin UI after first-login setup.
+  - `CLICKSTACK_API_KEY` and the OTel `HYPERDX_API_KEY` may temporarily match during bootstrap, but the expected steady state is separate values.
   - OTel daemonset node metrics on k3s use host networking + kubelet endpoint `127.0.0.1:10250`.
   - Cold-start image pulls can exceed default Helm action wait; set `spec.timeout` in `platform-services/clickstack/base/helmrelease-clickstack.yaml` to reduce bootstrap retries.
   - On ClickHouse `25.7.x`, `system.query_log` does not expose `query_parameters`; for parameterized failures, match `query_id` against `observability/clickstack-app` logs and inspect `/clickhouse-proxy?...&param_HYPERDX_PARAM_*=` values.
   - `BAD_QUERY_PARAMETER (457)` with `Value nan cannot be parsed as Int64` can be confirmed in `clickstack-app` logs as `param_HYPERDX_PARAM_*=nan`; recent failures also carried `TraceId='undefined'` in the generated SQL from search row-side-panel flows.
-  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; update `HYPERDX_API_KEY` in `platform-services/runtime-inputs/secret-hyperdx.sops.yaml` and run `make runtime-inputs-refresh-otel`.
+  - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; update `HYPERDX_API_KEY` in `platform-services/otel/base/secret-hyperdx.sops.yaml` and run `make runtime-inputs-refresh-otel`.
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
   - `make runtime-inputs-refresh-otel` reconciles `homelab-platform`, waits for `logging/hyperdx-secret.HYPERDX_API_KEY` to be present, then restarts collectors.
@@ -152,14 +154,14 @@ Important contract:
 - Labels and teardown ownership
   - Managed label domain is `platform.swhurl.com/managed`.
   - Teardown/verification selectors must stay aligned with that label.
-  - `scripts/verify-platform.sh` uses `flux get kustomizations` for health and a single token alignment check; `00_verify_contract_lib.sh` and `00_lib.sh` were removed.
+  - `scripts/verify-platform.sh` uses `flux get kustomizations` for health and checks that the OTel ingestion Secret is present; `00_verify_contract_lib.sh` and `00_lib.sh` were removed.
 
 - Flux reconcile behavior
   - `flux reconcile kustomization ... --with-source` does not preempt an already running `wait: true` reconciliation. If a prior revision is in `Running health checks ... timeout 20m`, new `requestedAt` values queue but the old in-flight revision continues until timeout/failure.
   - During this window, `flux get kustomizations` can show stale `lastAttemptedRevision` (older sha) even when `homelab-flux-sources` already applied a newer source revision.
 
 - Secrets hygiene
-  - Keep shared platform runtime secrets in `platform-services/runtime-inputs/*.sops.yaml` (SOPS-encrypted), not `config.env`.
+  - Keep shared platform runtime secrets co-located with their consuming service in `platform-services/*/base/*.sops.yaml` (SOPS-encrypted), not `config.env`.
   - Keep app-only secrets in app directories (`tenants/apps/<app>/.../secret-*.sops.yaml`) and decrypt via the app Flux Kustomization.
   - Ensure Flux decryption key secret exists in-cluster as `flux-system/sops-age` (`age.agekey`).
   - Keep local age private key material (`age.agekey`) gitignored.

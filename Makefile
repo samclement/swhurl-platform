@@ -28,7 +28,7 @@ help:
 	@echo "  reinstall           Teardown then install (cluster defaults)"
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
-	@echo "  runtime-inputs-sync Reconcile Git-managed flux-system/platform-runtime-inputs (SOPS)"
+	@echo "  runtime-inputs-sync Reconcile Git-managed platform runtime SOPS secrets"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
 	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
 	@echo "  charts-generate     Render C4 architecture charts from D2 sources"
@@ -90,7 +90,7 @@ flux-bootstrap:
 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
-	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
+	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
 
 .PHONY: charts-generate
 charts-generate:
@@ -116,25 +116,19 @@ otel-collectors-restart:
 .PHONY: runtime-inputs-refresh-otel
 runtime-inputs-refresh-otel:
 	$(MAKE) runtime-inputs-sync
-	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
 	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel:
 	@set -Eeuo pipefail; \
-	echo "[INFO] Waiting for logging/hyperdx-secret to match flux-system/platform-runtime-inputs.CLICKSTACK_INGESTION_KEY"; \
-	if ! kubectl -n logging get secret hyperdx-secret >/dev/null 2>&1; then \
-	  echo "[WARN] logging/hyperdx-secret not found; skipping wait"; \
-	  exit 0; \
-	fi; \
+	echo "[INFO] Waiting for logging/hyperdx-secret.HYPERDX_API_KEY to be present"; \
 	timeout_secs=$${TIMEOUT_SECS:-300}; \
 	start_time=$$(date +%s); \
 	while true; do \
-	  src="$$(kubectl -n flux-system get secret platform-runtime-inputs -o jsonpath='{.data.CLICKSTACK_INGESTION_KEY}' 2>/dev/null || true)"; \
 	  dst="$$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"; \
-	  if [[ -n "$$src" && -n "$$dst" && "$$src" == "$$dst" ]]; then \
-	    echo "[INFO] Runtime input propagation confirmed"; \
+	  if [[ -n "$$dst" ]]; then \
+	    echo "[INFO] logging/hyperdx-secret is present"; \
 	    break; \
 	  fi; \
 	  now=$$(date +%s); \
@@ -178,7 +172,10 @@ platform-certs-prod:
 .PHONY: verify-config
 verify-config:
 	@[[ -n "$${BASE_DOMAIN:-}" ]] || { echo "BASE_DOMAIN not set in config.env"; exit 1; }
-	@[[ -f clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml ]] || { echo "SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml ]] || { echo "oauth2-proxy runtime SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/runtime-inputs/secret-hyperdx.sops.yaml ]] || { echo "hyperdx runtime SOPS secret missing"; exit 1; }
+	@[[ -f platform-services/runtime-inputs/secret-clickstack-runtime-inputs.sops.yaml ]] || { echo "clickstack runtime SOPS secret missing"; exit 1; }
+	@grep -q '^\s*OAUTH_HOST:' clusters/home/flux-system/sources/configmap-platform-settings.yaml || { echo "OAUTH_HOST missing from platform-settings"; exit 1; }
 
 .PHONY: verify-platform
 verify-platform:

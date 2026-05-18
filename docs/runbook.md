@@ -89,7 +89,7 @@ make host-dns-delete
 Direct script usage:
 
 ```bash
-./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
+./host/dynamic-dns.sh [--dry-run] [--delete]
 ```
 
 ## Active Flux Dependency Chain

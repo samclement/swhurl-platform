@@ -7,8 +7,8 @@ This runbook explains where secrets should live when onboarding a new app, and g
 Use this split:
 
 1. Shared platform/runtime secrets:
-`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`
-Use for values shared across platform services or used as postBuild substitution inputs.
+`platform-services/runtime-inputs/*.sops.yaml`
+Use for Secrets consumed by shared platform services. Non-secret shared settings belong in `clusters/home/flux-system/sources/configmap-platform-settings.yaml`.
 
 2. App-specific secrets:
 `tenants/apps/<app>/.../secret-*.sops.yaml`
@@ -44,7 +44,7 @@ Add a creation rule in `.sops.yaml` so app-local `*.sops.yaml` files encrypt aut
 
 ```yaml
 creation_rules:
-  - path_regex: clusters/home/flux-system/sources/.*\.sops\.ya?ml$
+  - path_regex: platform-services/runtime-inputs/.*\.sops\.ya?ml$
     encrypted_regex: '^(data|stringData)$'
     age: <your-age-recipient>
   - path_regex: tenants/apps/.*/.*\.sops\.ya?ml$
@@ -139,6 +139,6 @@ kubectl -n apps-staging get secret weather-api-runtime
 kubectl -n apps-staging get deploy weather-api
 ```
 
-## When To Use The Central Platform Runtime Secret
+## When To Use Platform Runtime Inputs
 
-Use `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` only for shared keys that feed multiple platform components (for example shared OIDC settings or ClickStack ingestion values), not app-only credentials.
+Use `platform-services/runtime-inputs/*.sops.yaml` only for Secrets consumed by shared platform components (for example oauth2-proxy credentials or ClickStack ingestion values), not app-only credentials.

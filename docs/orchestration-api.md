@@ -6,15 +6,9 @@ This document defines the current command and environment contract for orchestra
 
 ## Environment Contract
 
-Config loading precedence:
-1. `config.env`
-2. `$PROFILE_FILE` (for example: `PROFILE_FILE=my-overrides.env make install`)
+Config source: `config.env` (included by Makefile).
 
-Variables are exported (`set -a`) so child commands (`flux`, `helm`, `kubectl`) see the resolved values.
-
-Operational preference:
-- Runtime cluster secrets are Git-managed via SOPS in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (not sourced from local env at reconcile time).
-- Use `PROFILE_FILE=...` only for ad-hoc local script overrides.
+Runtime cluster secrets are Git-managed via SOPS in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (not sourced from local env at reconcile time).
 
 ## Delete Contract
 
@@ -30,8 +24,7 @@ Preferred entrypoints:
 - `make reinstall`
 
 Environment controls:
-- `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer)
-- `FEAT_VERIFY=true|false` (only active feature switch)
+- `FEAT_VERIFY=true|false` (only active feature switch, default: true)
 
 Default apply flow (`make install`):
 1. `make verify-config` (when `FEAT_VERIFY=true`)
@@ -61,11 +54,8 @@ Usage:
 ./host/dynamic-dns.sh [--host-env FILE] [--dry-run] [--delete]
 ```
 
-Config layering (`host/dynamic-dns.sh`):
-1. `config.env`
-2. `host/host.env.example`
-3. `host/host.env`
-4. `--host-env FILE`
+Config layering:
+1. `config.env` → `host/host.env.example` → `host/host.env` → `--host-env FILE`
 
 Modes:
 - apply: `host/dynamic-dns.sh`
@@ -78,15 +68,6 @@ Host dynamic DNS knobs (via `host/host.env.example`, `host/host.env`, or `--host
 
 Manual prerequisite:
 - k3s installation is manual and documented in `README.md`.
-
-## Script Contract
-
-Step scripts should:
-1. Parse `--delete` consistently.
-2. Fail fast when called in an unsupported mode (apply-only/delete-only).
-3. Exit non-zero on unrecoverable failures.
-4. Keep output operator-readable.
-5. Be idempotent where practical.
 
 ## Makefile Operator API
 

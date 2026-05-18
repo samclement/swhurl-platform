@@ -6,7 +6,7 @@ This document defines the current command and environment contract for orchestra
 
 ## Environment Contract
 
-All scripts load config via `scripts/00_lib.sh` with precedence:
+Config loading precedence:
 1. `config.env`
 2. `$PROFILE_FILE` (for example: `PROFILE_FILE=my-overrides.env make install`)
 
@@ -30,7 +30,7 @@ Preferred entrypoints:
 - `make reinstall`
 
 Environment controls:
-- `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer for scripts via `scripts/00_lib.sh`)
+- `PROFILE_FILE=/path/to/profile.env` (highest-precedence config layer)
 - `FEAT_VERIFY=true|false` (only active feature switch)
 
 Default apply flow (`make install`):

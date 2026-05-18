@@ -31,7 +31,7 @@ Use this checklist when adding a new platform feature.
 ## 4) Verification updates
 
 - `make verify-config` (Makefile inline check)
-- `scripts/91_verify_platform_state.sh`
+- `scripts/verify-platform.sh`
 
 ## 5) Documentation
 

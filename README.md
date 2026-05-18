@@ -12,12 +12,19 @@ The active repo layout is:
 
 ## Quick Start
 
-1. Install k3s manually with packaged `traefik` and `metrics-server` enabled.
-2. Install the required CLI tools: `bash`, `kubectl`, `helm`, `flux`, `sops`, and `age`.
-3. Review [`config.env`](config.env) for non-secret local defaults and intent hints.
-4. Edit the Git-managed runtime secrets under `platform-services/*/base/*.sops.yaml`.
-5. Install Flux controllers and create the `flux-system/sops-age` secret from `age.agekey`.
-6. Apply the bootstrap manifests and reconcile the stack:
+1. Configure non-secrets in `config.env` and `clusters/home/flux-system/sources/configmap-platform-settings.yaml`.
+2. Configure platform runtime Secrets (Git-managed SOPS target manifests):
+
+```bash
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-oauth2-proxy-shared.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-clickstack-runtime-inputs.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/runtime-inputs/secret-hyperdx.sops.yaml
+git add platform-services/runtime-inputs/*.sops.yaml
+git commit -m "runtime-inputs: set platform secrets"
+git push
+```
+
+3. Install Flux (one-time) and apply the stack:
 
 ```bash
 flux check --pre
@@ -29,7 +36,7 @@ make flux-bootstrap
 make install
 ```
 
-7. Optional host dynamic DNS bootstrap:
+4. Optional host dynamic DNS bootstrap:
 
 ```bash
 # Optional: set custom records via DYNAMIC_DNS_RECORDS in config.env

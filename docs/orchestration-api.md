@@ -8,7 +8,7 @@ This document defines the current command and environment contract for orchestra
 
 Config source: `config.env` (included by Makefile).
 
-Runtime cluster secrets are Git-managed via SOPS in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` (not sourced from local env at reconcile time).
+Runtime cluster secrets are Git-managed as final SOPS Secret manifests under `platform-services/runtime-inputs` (not sourced from local env at reconcile time).
 
 ## Delete Contract
 
@@ -37,12 +37,12 @@ Default delete flow (`make teardown`):
 State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
 - Bootstrap manifests must be applied first (`make flux-bootstrap`) before reconcile/apply flows.
-- Runtime input target secrets are declarative in `platform-services/runtime-inputs`.
-- Source secret is Git-managed and SOPS-encrypted in `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`, then decrypted/applied by `homelab-flux-sources`.
+- Runtime input target secrets are SOPS-encrypted final Secret manifests in `platform-services/runtime-inputs`.
 - Flux decryption key secret must exist in-cluster as `flux-system/sops-age`.
 - Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
 - k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
+- Shared oauth callback host intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`OAUTH_HOST`).
 - Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
 - Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).
 
@@ -74,7 +74,7 @@ Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make runtime-inputs-sync`
-  - Reconciles `homelab-flux-sources` so pushed Git-managed runtime input secret updates are applied.
+  - Reconciles `homelab-platform` so pushed Git-managed runtime input Secret updates are applied.
 - `make flux-reconcile`
   - Reconciles Flux source + stack.
 - `make otel-collectors-restart`
@@ -89,5 +89,5 @@ Key runtime-intent targets:
   - Removes host-managed dynamic DNS systemd service/timer.
 
 Design boundary:
-- Runtime-input secrets are Git-managed through SOPS (`platform-runtime-inputs` source -> `platform-services/runtime-inputs` targets).
+- Runtime-input secrets are Git-managed directly as SOPS Secret manifests under `platform-services/runtime-inputs`.
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.

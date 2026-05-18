@@ -35,9 +35,9 @@ Separate these axes and do not collapse them:
 
 Use Git-managed SOPS encryption for runtime secrets.
 
-- Source secret manifest: `clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml`
-- Applied source secret: `flux-system/platform-runtime-inputs` (decrypted by Flux `homelab-flux-sources`)
-- Targets: declarative manifests under `platform-services/runtime-inputs`
+- Shared platform runtime Secrets: final SOPS Secret manifests under `platform-services/runtime-inputs`
+- Applied targets: service namespace Secrets such as `ingress/oauth2-proxy-shared-secret`, `logging/hyperdx-secret`, and `observability/clickstack-runtime-inputs`
+- Non-secret shared settings: `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
 - Non-secret mode controls stay Git-tracked in manifests/templates.
 
 ## Operational Model

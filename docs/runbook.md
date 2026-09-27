@@ -21,7 +21,7 @@ Preferred day-to-day entrypoints:
 - `make flux-reconcile` after committing and pushing Git changes
 - `make verify-config` for local config contracts
 
-The installed host's observed baseline and remaining live checks are in [current state](operations/current-state.md). `make teardown` and `make reinstall` are disabled. The current persistent volumes have `Delete` reclaim policy; the former root deletion could cascade into volume loss.
+The installed host's observed baseline and remaining live checks are in [current state](operations/current-state.md). `make teardown` and `make reinstall` are disabled; use the [lifecycle operations](#lifecycle-operations).
 
 ### Bootstrap
 
@@ -67,13 +67,25 @@ Flow:
 
 The verifier decodes Kubernetes Secret data once, checks against the unique ClickStack team ingestion key, and never prints the values. A byte match does not prove collector delivery: check fresh telemetry after restarting collectors. It fails if MongoDB is unavailable or there is no unique team key.
 
-### Lifecycle guard
+### Lifecycle operations
 
-`make teardown` and `make reinstall` exit nonzero before any cluster command. Their `DRY_RUN=true` variants report that they are disabled and exit successfully. There is no force bypass.
+Deploy, update and uninstall through Git: commit, push, `make flux-reconcile`. Uninstalling an app means removing its unit (for example `clusters/home/app-example.yaml`) from `clusters/home/kustomization.yaml`; its workloads are pruned, while namespaces and claims annotated `kustomize.toolkit.fluxcd.io/prune: disabled` stay. The commands below cover what Git cannot express safely:
 
-Routine updates use commit, push, and `make flux-reconcile`. The former teardown deleted root Flux Kustomizations, which could cascade through namespaces, Helm releases and PVs with `Delete` reclaim policy. It also removed the GitRepository required by install. Do not reproduce those deletions manually as a reset.
+| Command | Effect | Data |
+| --- | --- | --- |
+| `make suspend TARGET=kustomization/<name>` | Stops applying Git changes to that unit | Untouched; workloads keep running |
+| `make suspend TARGET=helmrelease/<ns>/<name>` | Freezes that Helm release (a suspended Kustomization does not stop its HelmReleases) | Untouched |
+| `make resume TARGET=...` | Reconciles again from Git | Untouched |
+| `make destroy-data TARGET=pvc/<ns>/<name> CONFIRM=pvc/<ns>/<name>` | Deletes an unused claim, its PV and host directory | **Destroyed** |
+| `make destroy-data TARGET=pv/<name> CONFIRM=pv/<name>` | Deletes a `Released` retained PV and its host directory | **Destroyed** |
 
-Suspend/resume, per-instance uninstall and explicit data destruction remain PR02 work. They require the ownership map in [architecture](architecture.md#current-reconciliation-ownership), disposable-scope deletion checks and the stateful restore in [Recovery](#recovery) before live handover.
+`destroy-data` is the only command that deletes data. It requires `CONFIRM` to repeat the target exactly and refuses while a pod mounts the claim, while its Helm release is installed, or while a Flux unit still manages it (either would recreate it). `DRY_RUN=true` runs the checks without deleting.
+
+Shared units (`homelab-flux-sources`, `homelab-flux-stack`, infrastructure, platform, tenants) use `deletionPolicy: Orphan`: deleting one by mistake leaves its resources running. Recreate a deleted root with `make flux-bootstrap`, which also applies root-unit changes because roots are not reconciled by Flux itself.
+
+`make teardown` and `make reinstall` stay disabled: there is no whole-platform reset.
+
+`make lifecycle-test` proves this contract on a disposable app (`tests/fixtures/lifecycle-app`, reconciled from the pushed Git revision): suspend/resume, uninstall keeping protected data, `destroy-data` refusal and deletion, and `Orphan` unit deletion. It touches only its own `lifecycle-test*` units, namespace and PVs, and cleans up afterwards.
 
 ## Recovery
 

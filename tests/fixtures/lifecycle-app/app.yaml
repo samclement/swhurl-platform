@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lifecycle-test
+  labels:
+    platform.swhurl.com/lifecycle-test: "true"
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: lifecycle-test
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-retain
+  resources:
+    requests:
+      storage: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: writer
+  namespace: lifecycle-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: writer}
+  template:
+    metadata:
+      labels: {app: writer}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: writer
+          image: busybox:1.37
+          command: ["sh", "-c", "[ -f /data/marker ] || date -u > /data/marker; exec sleep 3600000"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          resources:
+            requests: {cpu: 1m, memory: 8Mi}
+            limits: {memory: 16Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: data}

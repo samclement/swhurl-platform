@@ -11,6 +11,9 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./tenants/app-envs
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
   prune: true
   wait: true
   timeout: 20m

@@ -20,6 +20,9 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
   prune: true
   wait: true
   timeout: 20m

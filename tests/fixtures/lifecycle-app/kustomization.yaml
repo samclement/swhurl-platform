@@ -1,0 +1,5 @@
+# Disposable app used only by scripts/lifecycle-test.sh; not part of clusters/home.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - app.yaml

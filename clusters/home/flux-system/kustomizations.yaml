@@ -9,6 +9,9 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./clusters/home/flux-system/sources
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
   prune: true
   wait: true
   timeout: 5m
@@ -26,6 +29,9 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./clusters/home
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
   prune: true
   wait: true
   timeout: 20m

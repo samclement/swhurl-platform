@@ -12,7 +12,7 @@ Runtime cluster secrets are Git-managed as final SOPS Secret manifests next to t
 
 ## Delete Contract
 
-`make teardown` and `make reinstall` are disabled and exit nonzero without invoking cluster tools. `DRY_RUN=true` reports the guard and exits successfully. No force override is provided. The former root deletions could prune namespaces, releases, and persistent data and remove the GitRepository required by install. Explicit lifecycle operations await PR02 retention and restore validation.
+`make teardown` and `make reinstall` are disabled and exit nonzero without invoking cluster tools; `DRY_RUN=true` reports the guard. Lifecycle is explicit instead: `make suspend|resume TARGET=...` and `make destroy-data TARGET=... CONFIRM=...`, the only data-deleting command. Shared Flux units use `deletionPolicy: Orphan`. See [lifecycle operations](runbook.md#lifecycle-operations).
 
 ## Cluster Orchestration (Makefile-first)
 
@@ -81,6 +81,12 @@ Key runtime-intent targets:
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
+- `make suspend|resume TARGET=kustomization/<name>|helmrelease/<ns>/<name> [DRY_RUN=true]`
+  - Wraps `flux suspend|resume`; workloads and data are untouched.
+- `make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET> [DRY_RUN=true]`
+  - Deletes an unused, unmanaged claim or `Released` PV and its host data. Refuses without an exact `CONFIRM`.
+- `make lifecycle-test [DRY_RUN=true]`
+  - Runs the disposable lifecycle proof described in the [runbook](runbook.md#lifecycle-operations).
 - `make backup-clickstack-mongodb [DRY_RUN=true]`
   - Streams a `hyperdx` MongoDB dump through `age` into `~/.local/state/swhurl-platform/backups` (read-only on the cluster), then prunes to 7 daily + 4 weekly backups. Manual only; there is no schedule.
 - `make restore-test-clickstack-mongodb [DRY_RUN=true]`

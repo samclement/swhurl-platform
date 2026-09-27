@@ -167,6 +167,13 @@ Important contract:
   - Retention defaults: telemetry 30 days (collector-image TTL, verified not configured), ClickHouse system logs 7 days (`platform-services/clickstack/base/configmap-clickhouse-system-log-ttl.yaml` mounted by a HelmRelease `postRenderers` patch because the chart's `config.xml` is fixed), `global.keepPVC: true`, MongoDB PV patched to `Retain` (not in Git; `make verify-platform` checks it).
   - ClickHouse reads `config.d` only at startup and renames a system log table to `<name>_N` when its definition changes; drop the renamed tables after checking.
 
+- Lifecycle
+  - `make suspend|resume TARGET=...` wrap `flux suspend|resume`; `make destroy-data TARGET=... CONFIRM=<TARGET>` is the only data-deleting command and refuses while the claim is mounted, Helm-installed, or Flux-managed.
+  - Shared Flux units (`homelab-flux-sources`, `homelab-flux-stack`, infrastructure, platform, tenants) use `deletionPolicy: Orphan`; app units (`homelab-app-*`) keep `MirrorPrune` so removing them from Git uninstalls. `make test-safety` enforces this split.
+  - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux; apply changes with `make flux-bootstrap`.
+  - Namespaces/claims holding kept data carry `kustomize.toolkit.fluxcd.io/prune: disabled` (currently `observability`).
+  - `make lifecycle-test` uses `tests/fixtures/lifecycle-app` from the pushed Git revision; push fixture changes before running it.
+
 - Secrets hygiene
   - Keep shared platform runtime secrets co-located with their consuming service in `platform-services/*/base/*.sops.yaml` (SOPS-encrypted), not `config.env`.
   - Keep app-only secrets in app directories (`tenants/apps/<app>/.../secret-*.sops.yaml`) and decrypt via the app Flux Kustomization.
@@ -181,7 +188,7 @@ When changing orchestration/layout:
 - Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
 - Run:
   - `make test-safety`
-  - `make backup-clickstack-mongodb DRY_RUN=true` and `make restore-test-clickstack-mongodb DRY_RUN=true`
+  - `make backup-clickstack-mongodb DRY_RUN=true`, `make restore-test-clickstack-mongodb DRY_RUN=true` and `make lifecycle-test DRY_RUN=true`
   - `for file in scripts/*.sh host/*.sh; do bash -n "$file"; done`
   - `kubectl kustomize clusters/home >/dev/null`
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`

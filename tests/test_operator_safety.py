@@ -74,6 +74,34 @@ elif 'secret' in sys.argv:
                 self.assertFalse(self.calls.exists(), 'A recovery dry run called a cluster tool')
                 self.assertFalse((self.bin / 'backups').exists(), 'A recovery dry run wrote files')
 
+    def test_destroy_data_refuses_without_exact_confirmation(self):
+        cases = (('pvc/ns/data', ''), ('pvc/ns/data', 'pvc/ns/other'), ('pv/name', 'pv/other'),
+                 ('pvc/ns', 'pvc/ns'), ('secret/ns/x', 'secret/ns/x'), ('', ''))
+        for target, confirm in cases:
+            with self.subTest(target=target, confirm=confirm):
+                result = subprocess.run(['make', 'destroy-data', f'TARGET={target}', f'CONFIRM={confirm}'],
+                                        cwd=ROOT, env=self.env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.calls.exists(), 'A refused destroy-data called a cluster tool')
+
+    def test_lifecycle_test_dry_run_never_calls_cluster_tools(self):
+        result = subprocess.run(['make', 'lifecycle-test', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+
+    def test_shared_flux_units_orphan_on_deletion_and_apps_prune(self):
+        units = {}
+        for path in [ROOT / 'clusters/home/flux-system/kustomizations.yaml', *sorted((ROOT / 'clusters/home').glob('*.yaml'))]:
+            for doc in yaml.safe_load_all(path.read_text()):
+                if doc and doc.get('kind') == 'Kustomization' and 'spec' in doc:
+                    units[doc['metadata']['name']] = doc['spec'].get('deletionPolicy', 'MirrorPrune')
+        for name, policy in units.items():
+            with self.subTest(unit=name):
+                expected = 'MirrorPrune' if name.startswith('homelab-app-') else 'Orphan'
+                self.assertEqual(policy, expected)
+        self.assertIn('homelab-platform', units)
+
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
                          'newline', 'mongo-failure', 'unready'):

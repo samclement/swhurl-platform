@@ -40,6 +40,10 @@ help:
 	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
 	@echo "  validate-repo       Validate active manifests and shell scripts locally"
+	@echo "  suspend TARGET=kustomization/<name>|helmrelease/<ns>/<name>  Stop applying Git changes; workloads keep running"
+	@echo "  resume TARGET=...   Resume a suspended Kustomization or HelmRelease"
+	@echo "  destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>  Permanently delete a released claim/PV and its data"
+	@echo "  lifecycle-test      Prove suspend/uninstall/destroy-data/Orphan on a disposable app"
 	@echo "  backup-clickstack-mongodb      Dump ClickStack MongoDB to an age-encrypted local archive"
 	@echo "  restore-test-clickstack-mongodb Restore the latest backup into a disposable namespace and check it"
 	@echo "  test-safety         Test lifecycle guards, secret-safe verification and sign-in policy offline"
@@ -193,6 +197,14 @@ verify-platform:
 
 .PHONY: verify
 verify: verify-config verify-platform
+
+.PHONY: suspend resume destroy-data
+suspend resume destroy-data:
+	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" ./scripts/lifecycle.sh $@ "$(TARGET)"
+
+.PHONY: lifecycle-test
+lifecycle-test:
+	DRY_RUN=$(DRY_RUN) ./scripts/lifecycle-test.sh
 
 .PHONY: backup-clickstack-mongodb
 backup-clickstack-mongodb:

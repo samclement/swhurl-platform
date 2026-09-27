@@ -145,7 +145,7 @@ The validator requires `kubectl`, Python 3, Go 1.26 to install the `flux-schema`
 
 - k3s installation is manual. This repo does not provision the cluster.
 - Flux controller installation is manual. `make flux-bootstrap` only applies the Git-tracked Flux manifests.
-- `make teardown` and `make reinstall` are disabled pending tested lifecycle/retention procedures. The former root deletions could prune child Kustomizations, uninstall releases, delete namespaces and destroy local-path data; they also removed the GitRepository needed for reconciliation. See [ownership and lifecycle boundaries](architecture.md#current-reconciliation-ownership).
+- `make teardown` and `make reinstall` are disabled; use the explicit [lifecycle operations](runbook.md#lifecycle-operations). Shared Flux units use `deletionPolicy: Orphan`, so deleting one leaves its resources running. Root units (`clusters/home/flux-system/kustomizations.yaml`) are applied only by `make flux-bootstrap`; re-run it after changing them.
 - The source GitRepository is pinned to the `main` branch and the canonical GitHub URL in [`clusters/home/flux-system/sources/gitrepositories.yaml`](../clusters/home/flux-system/sources/gitrepositories.yaml). Forked use requires updating that manifest.
 - Certificate mode is controlled by [`clusters/home/flux-system/sources/configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml), not by `config.env`.
 - Runtime secrets belong in the service-local SOPS Secret manifests, not in `config.env`.

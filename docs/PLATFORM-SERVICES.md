@@ -61,6 +61,11 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Namespace: `storage`
 - Hosts: `minio.homelab.swhurl.com`, `minio-console.homelab.swhurl.com`
 
+### Storage classes
+
+- `local-path` (k3s default): `Delete` reclaim; deleting a claim deletes its data. Used by existing volumes.
+- `local-path-retain` ([`infrastructure/storage/local-path-retain`](../infrastructure/storage/local-path-retain)): `Retain` reclaim; deleting a claim leaves the PV `Released` and its directory under `/var/lib/rancher/k3s/storage`. Use it for new irreplaceable data.
+
 ### Shared oauth2-proxy
 
 - Path: [`platform-services/oauth2-proxy/base`](../platform-services/oauth2-proxy/base)
@@ -79,6 +84,7 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Release: `clickstack`
 - Runtime input: `CLICKSTACK_API_KEY`
 - Host: `clickstack.homelab.swhurl.com`
+- Retention: telemetry 30 days (collector image default, checked by `make verify-platform`); ClickHouse system logs 7 days (Git-managed `config.d` override); PVCs kept on Helm uninstall. Details in the [component README](../platform-services/clickstack/base/README.md#retention).
 
 ### OpenTelemetry collectors
 

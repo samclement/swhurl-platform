@@ -82,7 +82,7 @@ Key runtime-intent targets:
 - `make runtime-inputs-refresh-otel`
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
 - `make backup-clickstack-mongodb [DRY_RUN=true]`
-  - Streams a `hyperdx` MongoDB dump through `age` into `~/.local/state/swhurl-platform/backups` (read-only on the cluster).
+  - Streams a `hyperdx` MongoDB dump through `age` into `~/.local/state/swhurl-platform/backups` (read-only on the cluster), then prunes to 7 daily + 4 weekly backups. Manual only; there is no schedule.
 - `make restore-test-clickstack-mongodb [DRY_RUN=true]`
   - Restores the latest backup and the Git-managed `hyperdx-secret` into a disposable `recovery-test` namespace, checks them, then deletes the namespace. See [runbook recovery](runbook.md#recovery).
 - `make validate-repo`
@@ -98,4 +98,4 @@ Design boundary:
 - Runtime-input secrets are Git-managed directly as SOPS Secret manifests co-located with their consuming platform service.
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.
 
-`make verify-platform` checks Flux health and compares the once-decoded ingestion Secret with the unique ClickStack team key without printing credentials. It fails closed on lookup/decode errors, ambiguous team keys, or mismatches. Collector logs and fresh telemetry provide the separate delivery check. `make test-safety` tests the lifecycle guards and verifier offline with fake cluster commands, and checks that shared sign-in stays restricted to the approved email list.
+`make verify-platform` checks Flux health, retention (30-day telemetry TTL, 7-day ClickHouse system log TTL, MongoDB PV `Retain` and PVC keep annotation) and compares the once-decoded ingestion Secret with the unique ClickStack team key without printing credentials. It fails closed on lookup/decode errors, ambiguous team keys, or mismatches. Collector logs and fresh telemetry provide the separate delivery check. `make test-safety` tests the lifecycle guards and verifier offline with fake cluster commands, and checks that shared sign-in stays restricted to the approved email list.

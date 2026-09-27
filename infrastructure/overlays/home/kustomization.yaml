@@ -5,4 +5,5 @@ resources:
   - ../../cert-manager/base
   - ../../cert-manager/issuers
   - ../../ingress-traefik/base
+  - ../../storage/local-path-retain
   - ../../storage/minio/base

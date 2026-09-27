@@ -1,0 +1,9 @@
+# For irreplaceable data: deleting the claim leaves the PV and its directory
+# under /var/lib/rancher/k3s/storage (status Released) instead of removing them.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer

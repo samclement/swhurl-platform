@@ -69,7 +69,8 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | P0c | Fix verifier and double-encoded ingestion Secret; restart and verify collectors | Complete: live on 27 Sep 2026 after collector restart; no 401s, fresh logs/metrics in ClickHouse, verifier passes |
 | P0d | Restrict sign-in to approved identities; test accepted/rejected accounts | Complete: live (`sam@swhurl.com` only); approved sign-in verified and non-approved account refused by operator test, 27 Sep 2026 |
 | PR08a | Independent backup and tested restore of one stateful workload | Partial: data classified; encrypted ClickStack MongoDB backup and disposable restore proven 27 Sep 2026; off-host destination, schedule and app-level restore pending |
-| PR02 | Lifecycle and retention semantics | P0 and PR08a for live deletion |
+| PR02a | Retention defaults: telemetry 30d, ClickHouse system logs 7d, backup pruning 7 daily + 4 weekly, MongoDB PV Retain + PVC keep, `local-path-retain` class | Complete 27 Sep 2026; backups stay manual until an off-host destination is chosen |
+| PR02b | Lifecycle commands (suspend/resume/uninstall/destroy-data) and prune protection | P0 and PR08a for live deletion |
 | PR03 | Capability split and cert-manager/issuer ordering | PR02 and PR08a for ownership transfer |
 | PR07a | Narrow Secret rollout controller pilot | After P0c; before relying on automatic rotation |
 | PR04 | App-template contract, generator, rendered policy | Local work after PR01; rollout after PR03 |
@@ -92,6 +93,8 @@ Planning range: roughly 8–14 hands-on days for the core home workflow, plus im
 PR01 at 2bae8d0 inventories the home cluster, discovers active Flux render paths for local and CI checks, checks each tracked shell script, validates Kustomize/Flux manifests, and removes stale runtime-input references. CI passed. It does not render future Helm chart internals. Live verifier, teardown, sign-in, and ingestion faults remain.
 
 ## 6. PR02 — lifecycle and retention
+
+PR02a (retention defaults) is complete: telemetry keeps its 30-day TTL (now verified), ClickHouse system logs expire after 7 days via a Git-managed `config.d` override, backups prune to 7 daily + 4 weekly, the MongoDB PV is `Retain` and all ClickStack PVCs carry `helm.sh/resource-policy: keep`, and `local-path-retain` exists for new irreplaceable data. Backups remain manual until an off-host destination is chosen. The rest of this section is PR02b.
 
 Replace teardown/reinstall as a normal deploy path with explicit suspend, resume, uninstall-one-instance, and destroy-named-data operations. Recreate removed Flux parents/sources through bootstrap; reconciling an absent object is not reinstall. Capture current Flux inventory and Helm owners; test deletion effects in a disposable scope. Parent/child prune: true can cascade.
 

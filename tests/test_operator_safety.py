@@ -31,6 +31,12 @@ with open(os.environ['CALLS'], 'a') as f:
 scenario = os.environ.get('SCENARIO', 'match')
 if Path(sys.argv[0]).name == 'flux':
     print('homelab-platform main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
+elif 'clickhouse-client' in sys.argv:
+    print('9\\t9' if 'toIntervalDay(30)' in sys.argv[-1] else '0')
+elif 'pvc' in sys.argv:
+    print('keep' if 'resource-policy' in sys.argv[-1] else 'pv-mongodb')
+elif 'pv' in sys.argv:
+    print('Retain')
 elif 'exec' in sys.argv:
     print(os.environ['KEY'])
     if scenario == 'mongo-failure':

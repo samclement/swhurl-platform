@@ -1,0 +1,31 @@
+# Keep ClickHouse's own diagnostic logs for 7 days. The chart's config.xml
+# sets no TTL, so these tables grew without bound. Mounted into config.d by
+# the HelmRelease post-renderer. ClickHouse reads it only at startup; restart
+# clickstack-clickhouse after editing. On the first start with a changed
+# definition, ClickHouse renames the old table to <name>_N and creates a new one.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-system-log-ttl
+  namespace: observability
+data:
+  system-log-ttl.xml: |
+    <clickhouse>
+        <query_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_log>
+        <metric_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></metric_log>
+        <asynchronous_metric_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></asynchronous_metric_log>
+        <crash_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></crash_log>
+        <processors_profile_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></processors_profile_log>
+        <part_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></part_log>
+        <trace_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></trace_log>
+        <query_thread_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_thread_log>
+        <query_views_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_views_log>
+        <opentelemetry_span_log>
+            <engine>
+                engine MergeTree
+                partition by toYYYYMM(finish_date)
+                order by (finish_date, finish_time_us, trace_id)
+                ttl finish_date + INTERVAL 7 DAY DELETE
+            </engine>
+        </opentelemetry_span_log>
+    </clickhouse>

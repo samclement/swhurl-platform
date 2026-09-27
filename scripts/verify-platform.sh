@@ -50,5 +50,34 @@ else
 fi
 unset mongo_key hyperdx_plain hyperdx_key
 
+say "Retention"
+clickhouse() { kubectl -n observability exec deploy/clickstack-clickhouse -- clickhouse-client -q "$1" 2>/dev/null; }
+if ! telemetry="$(clickhouse "SELECT countIf(position(engine_full, 'toIntervalDay(30)') > 0), count() FROM system.tables WHERE database = 'default' AND engine LIKE '%MergeTree' FORMAT TSV")"; then
+  bad "could not read ClickHouse telemetry table TTLs"
+elif read -r with_ttl total <<< "$telemetry" && (( total > 0 && with_ttl == total )); then
+  ok "all $total telemetry tables expire after 30 days"
+else
+  bad "telemetry tables without a 30-day TTL ($telemetry with/total); the collector image default may have changed"
+fi
+system_logs="query_log','metric_log','asynchronous_metric_log','crash_log','processors_profile_log','part_log','trace_log','query_thread_log','query_views_log','opentelemetry_span_log"
+if ! untimed="$(clickhouse "SELECT count() FROM system.tables WHERE database = 'system' AND name IN ('$system_logs') AND position(engine_full, 'TTL ') = 0 FORMAT TSV")"; then
+  bad "could not read ClickHouse system log TTLs"
+elif [[ "$untimed" == "0" ]]; then
+  ok "ClickHouse system logs expire after 7 days"
+else
+  bad "$untimed ClickHouse system log table(s) have no TTL; restart clickstack-clickhouse after config changes"
+fi
+mongo_pv="$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)"
+if [[ -n "$mongo_pv" && "$(kubectl get pv "$mongo_pv" -o jsonpath='{.spec.persistentVolumeReclaimPolicy}' 2>/dev/null)" == "Retain" ]]; then
+  ok "ClickStack MongoDB PV reclaim policy is Retain"
+else
+  bad "ClickStack MongoDB PV is not Retain; see docs/runbook.md#recovery"
+fi
+if [[ "$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.metadata.annotations.helm\.sh/resource-policy}' 2>/dev/null)" == "keep" ]]; then
+  ok "ClickStack MongoDB PVC survives Helm uninstall"
+else
+  bad "ClickStack MongoDB PVC lacks helm.sh/resource-policy=keep"
+fi
+
 (( fail )) && exit 1
 printf "\nValidation passed.\n"

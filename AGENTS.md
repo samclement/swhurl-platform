@@ -163,6 +163,9 @@ Important contract:
 - Recovery
   - `make backup-clickstack-mongodb` / `make restore-test-clickstack-mongodb` are the PR08a backup and disposable restore check; backups are local-only (`~/.local/state/swhurl-platform/backups`) until an off-host destination is chosen.
   - The restore test owns only namespaces labelled `platform.swhurl.com/recovery-test=true`; keep it out of Flux paths.
+  - Backups are manual by decision (no timer) until an off-host destination exists; each run prunes to 7 daily + 4 weekly via `scripts/prune-backups.py`.
+  - Retention defaults: telemetry 30 days (collector-image TTL, verified not configured), ClickHouse system logs 7 days (`platform-services/clickstack/base/configmap-clickhouse-system-log-ttl.yaml` mounted by a HelmRelease `postRenderers` patch because the chart's `config.xml` is fixed), `global.keepPVC: true`, MongoDB PV patched to `Retain` (not in Git; `make verify-platform` checks it).
+  - ClickHouse reads `config.d` only at startup and renames a system log table to `<name>_N` when its definition changes; drop the renamed tables after checking.
 
 - Secrets hygiene
   - Keep shared platform runtime secrets co-located with their consuming service in `platform-services/*/base/*.sops.yaml` (SOPS-encrypted), not `config.env`.

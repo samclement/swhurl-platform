@@ -28,9 +28,32 @@ spec:
   upgrade:
     remediation:
       retries: 3
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: clickstack-clickhouse
+            patch: |
+              - op: add
+                path: /spec/template/spec/volumes/-
+                value:
+                  name: system-log-ttl
+                  configMap:
+                    name: clickhouse-system-log-ttl
+              - op: add
+                path: /spec/template/spec/containers/0/volumeMounts/-
+                value:
+                  name: system-log-ttl
+                  mountPath: /etc/clickhouse-server/config.d/system-log-ttl.xml
+                  subPath: system-log-ttl.xml
+                  readOnly: true
   values:
     global:
       storageClassName: local-path
+      # helm.sh/resource-policy: keep on all ClickStack PVCs, so a Helm
+      # uninstall cannot delete MongoDB configuration or ClickHouse data.
+      keepPVC: true
     clickhouse:
       persistence:
         enabled: true

@@ -7,6 +7,8 @@ The tenant model is split into two layers:
 - [`tenants/app-envs`](../tenants/app-envs): shared landing zones for tenant environments
 - [`tenants/apps`](../tenants/apps): application manifests and overlays
 
+The concepts and ownership contracts are defined in [architecture](architecture.md#concepts-and-boundaries). An application instance means one app in one environment; the current example still combines both instances in one Flux unit.
+
 The active example app is reconciled separately through [`clusters/home/app-example.yaml`](../clusters/home/app-example.yaml), which points to [`tenants/apps/example`](../tenants/apps/example).
 
 ## Current Architecture

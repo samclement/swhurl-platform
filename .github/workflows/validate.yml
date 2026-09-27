@@ -38,12 +38,16 @@ jobs:
       - name: Validate active manifests and scripts
         run: make validate-repo
 
+      - name: Test operator safety
+        run: make test-safety
+
       - name: Run operator dry runs
         run: |
           set -Eeuo pipefail
           ./host/dynamic-dns.sh --dry-run
           make install DRY_RUN=true
           make teardown DRY_RUN=true
+          make reinstall DRY_RUN=true
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true
           make help

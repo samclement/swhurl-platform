@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+set +x
 set -Eeuo pipefail
 
 command -v kubectl >/dev/null 2>&1 || { echo "[ERROR] Missing required command: kubectl" >&2; exit 1; }
 command -v flux >/dev/null 2>&1 || { echo "[ERROR] Missing required command: flux" >&2; exit 1; }
+command -v base64 >/dev/null 2>&1 || { echo "[ERROR] Missing required command: base64" >&2; exit 1; }
 kubectl get --raw=/version >/dev/null 2>&1 || { echo "[ERROR] kubectl cannot reach a cluster; ensure kubeconfig is set" >&2; exit 1; }
 
 fail=0
@@ -34,23 +36,19 @@ else
 fi
 
 say "Ingestion Key Sync"
-mongo_key="$(kubectl -n observability exec deploy/clickstack-mongodb -- \
-  mongosh hyperdx --quiet --eval "db.teams.findOne({},{apiKey:1,_id:0}).apiKey" 2>/dev/null || true)"
-hyperdx_plain="$(kubectl -n logging get secret hyperdx-secret \
-  -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null | base64 -d | base64 -d 2>/dev/null || true)"
-if [[ -z "$mongo_key" ]]; then
-  bad "could not read MongoDB hyperdx.teams.apiKey (is clickstack-mongodb running?)"
-elif [[ -z "$hyperdx_plain" ]]; then
-  bad "logging/hyperdx-secret.HYPERDX_API_KEY not found — cannot verify sync"
-elif [[ "$mongo_key" == "$hyperdx_plain" ]]; then
-  ok "HYPERDX_API_KEY matches MongoDB teams.apiKey — OTel collectors can authenticate to ClickStack"
+if ! mongo_key="$(kubectl -n observability exec deploy/clickstack-mongodb -- \
+  mongosh hyperdx --quiet --eval 'const keys = db.teams.distinct("apiKey").filter(k => typeof k === "string" && k.length > 0); if (keys.length !== 1) quit(2); print(keys[0]);' 2>/dev/null)" || [[ -z "$mongo_key" ]]; then
+  bad "cannot read a unique ClickStack team ingestion key; check MongoDB availability and team configuration"
+elif ! hyperdx_plain="$(printf '%s' "$hyperdx_key" | base64 --decode 2>/dev/null)" || [[ -z "$hyperdx_plain" ]]; then
+  bad "logging/hyperdx-secret.HYPERDX_API_KEY is empty or invalid base64"
+elif [[ "$mongo_key" == "$hyperdx_plain" && "$hyperdx_key" == "$(printf '%s' "$mongo_key" | base64 --wrap=0)" ]]; then
+  ok "ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart"
 else
-  bad "HYPERDX_API_KEY does not match MongoDB teams.apiKey — OTel collectors cannot authenticate to ClickStack"
-  printf "       MongoDB key: %s\n" "$mongo_key"
-  printf "       HYPERDX_API_KEY: %s\n" "$hyperdx_plain"
+  bad "HYPERDX_API_KEY does not match the ClickStack ingestion key"
   printf "       Fix: update HYPERDX_API_KEY in platform-services/otel/base/secret-hyperdx.sops.yaml\n"
-  printf "            to the MongoDB value, commit+push, then run: make runtime-inputs-refresh-otel\n"
+  printf "            using exactly one base64 layer in data; commit+push, then run: make runtime-inputs-refresh-otel\n"
 fi
+unset mongo_key hyperdx_plain hyperdx_key
 
 (( fail )) && exit 1
 printf "\nValidation passed.\n"

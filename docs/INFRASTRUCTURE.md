@@ -133,7 +133,7 @@ The validator requires `kubectl`, Python 3, Go 1.26 to install the `flux-schema`
 - `make install`: verify config, reconcile Flux, then verify platform state
 - `make flux-bootstrap`: apply Flux bootstrap manifests after Flux is manually installed
 - `make flux-reconcile`: reconcile the Git source and stack Kustomizations
-- `make teardown`: delete only `homelab-flux-stack` and `homelab-flux-sources`
+- `make teardown` / `make reinstall`: disabled; fail without running cluster commands (dry-run reports the guard)
 - `make verify-config`: validate repo/config contracts
 - `make verify-platform`: validate live platform state against expected contracts
 - `make host-dns`: install or update the host dynamic DNS updater
@@ -145,7 +145,7 @@ The validator requires `kubectl`, Python 3, Go 1.26 to install the `flux-schema`
 
 - k3s installation is manual. This repo does not provision the cluster.
 - Flux controller installation is manual. `make flux-bootstrap` only applies the Git-tracked Flux manifests.
-- `make teardown` is stack-only. It removes Flux stack Kustomizations and leaves Flux controllers, CRDs, and cluster services installed.
+- `make teardown` and `make reinstall` are disabled pending tested lifecycle/retention procedures. The former root deletions could prune child Kustomizations, uninstall releases, delete namespaces and destroy local-path data; they also removed the GitRepository needed for reconciliation. See [ownership and lifecycle boundaries](architecture.md#current-reconciliation-ownership).
 - The source GitRepository is pinned to the `main` branch and the canonical GitHub URL in [`clusters/home/flux-system/sources/gitrepositories.yaml`](../clusters/home/flux-system/sources/gitrepositories.yaml). Forked use requires updating that manifest.
 - Certificate mode is controlled by [`clusters/home/flux-system/sources/configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml), not by `config.env`.
 - Runtime secrets belong in the service-local SOPS Secret manifests, not in `config.env`.

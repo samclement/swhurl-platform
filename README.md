@@ -2,7 +2,7 @@
 
 Flux-managed k3s homelab platform.
 
-The current host already has k3s and Flux installed. For routine changes, validate locally, commit and push; Flux then reconciles Git. See [current state](docs/operations/current-state.md) before changing live resources.
+The current host already has k3s and Flux installed. For routine changes, validate locally, commit and push; Flux then reconciles Git. See [current state](docs/operations/current-state.md) before changing live resources. `make teardown` and `make reinstall` are disabled because cascading Flux deletion can destroy persistent data. The [architecture and ownership map](docs/architecture.md) defines the repository concepts and current dependencies.
 
 The active repo layout is:
 

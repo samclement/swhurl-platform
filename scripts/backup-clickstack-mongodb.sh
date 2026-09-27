@@ -10,6 +10,9 @@ WORKLOAD="${MONGO_WORKLOAD:-deploy/clickstack-mongodb}"
 DATABASE="${MONGO_DATABASE:-hyperdx}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/.local/state/swhurl-platform/backups}"
 DRY_RUN="${DRY_RUN:-false}"
+PRUNE="${PRUNE:-true}"
+KEEP_DAILY="${KEEP_DAILY:-7}"
+KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
 
 recipient="${AGE_RECIPIENT:-$(sed -n 's/^[[:space:]]*age:[[:space:]]*\(age1[0-9a-z]*\).*/\1/p' "$ROOT/.sops.yaml" | head -n 1)}"
 [[ -n "$recipient" ]] || { echo "[ERROR] No age recipient found in .sops.yaml (set AGE_RECIPIENT)" >&2; exit 1; }
@@ -22,6 +25,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo "  - mongodump --db $DATABASE from $NAMESPACE/$WORKLOAD"
   echo "  - encrypt to age recipient $recipient"
   echo "  - write $archive and a metadata file; no cluster changes"
+  [[ "$PRUNE" == "true" ]] && echo "  - prune $BACKUP_DIR to the newest backup of each of the last $KEEP_DAILY backup days and $KEEP_WEEKLY ISO weeks"
   exit 0
 fi
 
@@ -52,4 +56,8 @@ EOF
 
 echo "[OK] Encrypted backup: $archive"
 echo "[OK] Metadata: ${archive%.archive.gz.age}.json"
+
+if [[ "$PRUNE" == "true" ]]; then
+  python3 "$ROOT/scripts/prune-backups.py" "$BACKUP_DIR" --daily "$KEEP_DAILY" --weekly "$KEEP_WEEKLY"
+fi
 echo "[INFO] Copy both files off-host; restore needs the age private key (see docs/runbook.md#recovery)."

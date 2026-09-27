@@ -83,8 +83,8 @@ What must survive a host loss, and where it is:
 | --- | --- | --- |
 | Manifests and SOPS Secrets | Irreplaceable | GitHub (`origin`) |
 | age private key (`age.agekey`) | Irreplaceable | Encrypted off-host copy (P0b); location kept outside Git |
-| ClickStack MongoDB `hyperdx` (team, ingestion key, user, sources, connection) | Irreplaceable config | `make backup-clickstack-mongodb` archives |
-| ClickHouse telemetry | Expendable | Not backed up |
+| ClickStack MongoDB `hyperdx` (team, ingestion key, user, sources, connection) | Irreplaceable config | `make backup-clickstack-mongodb` archives; PV `Retain`, PVC kept on Helm uninstall |
+| ClickHouse telemetry | Expendable | Not backed up; expires after 30 days (system logs 7 days) |
 | MinIO (`storage/minio`) | Expendable today (no buckets) | Reclassify before storing data in it |
 
 Back up ClickStack MongoDB:
@@ -93,7 +93,9 @@ Back up ClickStack MongoDB:
 make backup-clickstack-mongodb
 ```
 
-This streams `mongodump --db hyperdx --archive --gzip` through `age` to the recipient in `.sops.yaml`, so the dump is never written in plaintext. It writes `clickstack-mongodb-<UTC>.archive.gz.age` and a `.json` metadata file (checksum, MongoDB version, collection counts) to `~/.local/state/swhurl-platform/backups` (override with `BACKUP_DIR`). **Backups are local only**: copy both files off-host yourself. There is no schedule yet.
+This streams `mongodump --db hyperdx --archive --gzip` through `age` to the recipient in `.sops.yaml`, so the dump is never written in plaintext. It writes `clickstack-mongodb-<UTC>.archive.gz.age` and a `.json` metadata file (checksum, MongoDB version, collection counts) to `~/.local/state/swhurl-platform/backups` (override with `BACKUP_DIR`). **Backups are manual and local only** until an off-host destination is chosen: run it at least daily or before risky changes, and copy both files off-host yourself.
+
+Each run then prunes the directory to the newest backup of each of the last 7 days that have backups, plus the newest of each of the last 4 ISO weeks (`KEEP_DAILY`, `KEEP_WEEKLY`; `PRUNE=false` skips it). Counting only days with backups means a pause never deletes the last good copies. Preview with `python3 scripts/prune-backups.py <dir> --dry-run`.
 
 Prove a backup restores:
 
@@ -102,6 +104,13 @@ make restore-test-clickstack-mongodb
 ```
 
 This creates the disposable namespace `recovery-test` (labelled `platform.swhurl.com/recovery-test=true`), starts a throwaway MongoDB of the backed-up version, decrypts and restores the latest archive with `age.agekey` (override with `AGE_KEY_FILE`, `BACKUP_FILE`), and restores `hyperdx-secret` from Git with the same key. It passes only if the archive checksum, restored collection counts and the restored team ingestion key all match. It deletes the namespace afterwards (`KEEP=true` keeps it), never touches live workloads and prints no key material. It refuses to reuse an existing `recovery-test` namespace.
+
+The MongoDB PV reclaim policy was patched to `Retain` on 27 September 2026. Dynamically provisioned PVs are not in Git, so a recreated claim returns to the storage class default; `make verify-platform` fails until it is patched again:
+
+```bash
+pv="$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.spec.volumeName}')"
+kubectl patch pv "$pv" -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+```
 
 To restore into the live service after data loss, restore with `mongorestore --archive --gzip --drop` into `observability/clickstack-mongodb` using the same decrypt pipe, then restart `observability/clickstack-app`. This live path has not been exercised.
 

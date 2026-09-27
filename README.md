@@ -2,6 +2,8 @@
 
 Flux-managed k3s homelab platform.
 
+The current host already has k3s and Flux installed. For routine changes, validate locally, commit and push; Flux then reconciles Git. See [current state](docs/operations/current-state.md) before changing live resources.
+
 The active repo layout is:
 
 - `clusters/home`: Flux entrypoint and reconciliation chain
@@ -10,7 +12,7 @@ The active repo layout is:
 - `tenants/app-envs`: tenant landing zones
 - `tenants/apps/example`: sample app deployed by its own Flux Kustomization
 
-## Quick Start
+## Fresh Install Quick Start
 
 1. Configure non-secrets in `config.env` and `clusters/home/flux-system/sources/configmap-platform-settings.yaml`.
 2. Configure platform runtime Secrets (Git-managed SOPS target manifests):
@@ -53,6 +55,8 @@ make runtime-inputs-refresh-otel
 make host-dns
 ```
 
+Validate repository changes locally with `make validate-repo` after installing the [pinned validation prerequisites](docs/INFRASTRUCTURE.md#repository-validation). This is the same check CI runs on pushes to `main` and pull requests. Existing installations normally deploy committed changes through Flux; see the [runbook](docs/runbook.md).
+
 ## Docs
 
 - [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md)
@@ -61,3 +65,4 @@ make host-dns
 - [`docs/runbook.md`](docs/runbook.md)
 - [`docs/orchestration-api.md`](docs/orchestration-api.md)
 - [`docs/architecture.md`](docs/architecture.md)
+- [`docs/operations/current-state.md`](docs/operations/current-state.md)

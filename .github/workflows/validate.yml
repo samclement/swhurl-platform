@@ -6,67 +6,44 @@ on:
     branches: [main]
 
 jobs:
-  bash-syntax:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate shell syntax
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+          cache: false
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.34.4'
+
+      - name: Install validation dependencies
         run: |
           set -Eeuo pipefail
-          mapfile -t files < <(git ls-files '*.sh')
-          if [[ "${#files[@]}" -eq 0 ]]; then
-            echo "No shell files found"
-            exit 0
-          fi
-          bash -n "${files[@]}"
+          python3 -m pip install -r requirements-validation.txt
+          go install github.com/fluxcd/flux-schema/cmd/flux-schema@v0.9.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-  dry-runs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Validate active manifests and scripts
+        run: make validate-repo
 
-      - name: Run dry-run commands
+      - name: Run operator dry runs
         run: |
           set -Eeuo pipefail
-          chmod +x host/dynamic-dns.sh
           ./host/dynamic-dns.sh --dry-run
           make install DRY_RUN=true
           make teardown DRY_RUN=true
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true
           make help
-
-  kustomize-structure:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-
-      - name: Validate kustomize render paths
-        run: |
-          set -Eeuo pipefail
-          kubectl kustomize clusters/home/flux-system >/dev/null
-          kubectl kustomize clusters/home/flux-system/sources >/dev/null
-          kubectl kustomize clusters/home >/dev/null
-          kubectl kustomize infrastructure/overlays/home >/dev/null
-          kubectl kustomize infrastructure/namespaces >/dev/null
-          kubectl kustomize infrastructure/cert-manager/base >/dev/null
-          kubectl kustomize infrastructure/cert-manager/issuers >/dev/null
-          kubectl kustomize infrastructure/ingress-traefik/base >/dev/null
-          kubectl kustomize infrastructure/storage/minio/base >/dev/null
-          kubectl kustomize platform-services/overlays/home >/dev/null
-          kubectl kustomize platform-services/runtime-inputs >/dev/null
-          kubectl kustomize platform-services/oauth2-proxy/base >/dev/null
-          kubectl kustomize platform-services/clickstack/base >/dev/null
-          kubectl kustomize platform-services/otel/base >/dev/null
-          kubectl kustomize tenants/app-envs >/dev/null
-          kubectl kustomize tenants/apps/example >/dev/null
-          kubectl kustomize tenants/apps/example/base >/dev/null
-          kubectl kustomize tenants/apps/example/overlays/staging >/dev/null
-          kubectl kustomize tenants/apps/example/overlays/prod >/dev/null

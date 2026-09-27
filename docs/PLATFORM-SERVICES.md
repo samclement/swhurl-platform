@@ -66,7 +66,7 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Path: [`platform-services/oauth2-proxy/base`](../platform-services/oauth2-proxy/base)
 - Namespace: `ingress`
 - Release: `oauth2-proxy-shared`
-- Runtime inputs: `SHARED_OIDC_CLIENT_ID`, `SHARED_OIDC_CLIENT_SECRET`, `OAUTH_COOKIE_SECRET`, `OAUTH_HOST`
+- Runtime inputs: `client-id`, `client-secret`, and `cookie-secret` in the service-local SOPS Secret; `OAUTH_HOST` in `platform-settings`
 - Shared middleware: `ingress/oauth-auth-shared`
 
 ### ClickStack
@@ -84,26 +84,31 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Releases:
   - `otel-k8s-daemonset`
   - `otel-k8s-cluster`
-- Runtime input: `CLICKSTACK_INGESTION_KEY` via `logging/hyperdx-secret`
+- Runtime input: `HYPERDX_API_KEY` via `logging/hyperdx-secret`
 
 ### Runtime secret targets
 
-- Path: [`platform-services/runtime-inputs`](../platform-services/runtime-inputs)
-- Source secret: `flux-system/platform-runtime-inputs`
-- Purpose: bridge Git-managed SOPS inputs into runtime Kubernetes secrets used by shared services
+Each Git-managed SOPS manifest is the final Kubernetes Secret applied by `homelab-platform`:
+
+- [`oauth2-proxy-shared-secret`](../platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml) in `ingress`
+- [`clickstack-runtime-inputs`](../platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml) in `observability`
+- [`hyperdx-secret`](../platform-services/otel/base/secret-hyperdx.sops.yaml) in `logging`
+
+`CLICKSTACK_API_KEY` is the ClickStack chart bootstrap/app key. The live team ingestion key is held in ClickStack MongoDB after first-login setup; the standalone OTel collectors use `HYPERDX_API_KEY`, which must match that live ingestion key. These keys may match on a fresh install but are separate in steady state.
 
 ## Getting Started
 
 ### Update service secrets
 
-Edit the SOPS source secret, commit, push, then reconcile:
+Edit the affected SOPS target Secret, commit, push, then reconcile:
 
 ```bash
-sops clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
-git add clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml
+SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
+git add platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
 git commit -m "runtime-inputs: update platform secrets"
 git push
 make runtime-inputs-sync
+kubectl -n ingress rollout restart deployment/oauth2-proxy-shared
 ```
 
 If ClickStack ingestion credentials changed, use:
@@ -111,6 +116,8 @@ If ClickStack ingestion credentials changed, use:
 ```bash
 make runtime-inputs-refresh-otel
 ```
+
+`make runtime-inputs-sync` applies the changed Secret but does not restart existing OTel or oauth2-proxy pods. For an ingestion-key change, use `make runtime-inputs-refresh-otel` after pushing the encrypted manifest.
 
 ### Change platform certificate mode
 
@@ -136,6 +143,8 @@ make flux-reconcile
 ```bash
 make verify-platform
 ```
+
+The current verifier can print both key values when the ingestion-key comparison fails. Until its output is made safe, do not run it in shared logs; `make install` invokes it by default.
 
 ## Caveats
 

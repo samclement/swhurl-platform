@@ -1,6 +1,6 @@
 # Orchestration API
 
-Last updated: 2026-03-06
+Last updated: 2026-09-27
 
 This document defines the current command and environment contract for orchestration entrypoints.
 
@@ -19,6 +19,7 @@ Runtime cluster secrets are Git-managed as final SOPS Secret manifests next to t
 ## Cluster Orchestration (Makefile-first)
 
 Preferred entrypoints:
+- `make validate-repo`
 - `make install [DRY_RUN=true]`
 - `make teardown [DRY_RUN=true]`
 - `make reinstall`
@@ -33,6 +34,10 @@ Default apply flow (`make install`):
 
 Default delete flow (`make teardown`):
 1. Delete `homelab-flux-stack` and `homelab-flux-sources` kustomizations
+
+Current PVs use `Delete` reclaim policy. This target is not a harmless reset; review Flux inventories and restore readiness before a live deletion. `make reinstall` runs it first.
+
+`make validate-repo` calls `scripts/validate-repo.py`. It discovers render entrypoints from the active Flux `spec.path` definitions, adds the two bootstrap paths, checks each shell file separately, verifies SOPS Secret structure and required substitutions, and validates rendered resources with Flux Schema. It never contacts the cluster. See [validation prerequisites](INFRASTRUCTURE.md#repository-validation).
 
 State contracts:
 - Flux CLI/controller installation is manual and documented in `README.md`.
@@ -81,6 +86,8 @@ Key runtime-intent targets:
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
+- `make validate-repo`
+  - Runs the same local manifest and shell validation as CI.
 - `make charts-generate`
   - Renders C4 architecture charts from `docs/charts/c4/*.d2` to `docs/charts/c4/rendered/*.svg`.
 - `make host-dns [DRY_RUN=true]`
@@ -91,3 +98,5 @@ Key runtime-intent targets:
 Design boundary:
 - Runtime-input secrets are Git-managed directly as SOPS Secret manifests co-located with their consuming platform service.
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.
+
+Until the ingestion-key verifier is fixed, `make verify-platform` and a normal `make install` may print key material when a comparison fails. Avoid shared command logs for these checks.

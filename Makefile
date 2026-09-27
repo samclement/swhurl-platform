@@ -39,6 +39,7 @@ help:
 	@echo "  verify-config       Run config input contract checks"
 	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
+	@echo "  validate-repo       Validate active manifests and shell scripts locally"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
 	@echo ""
@@ -120,9 +121,9 @@ runtime-inputs-refresh-otel:
 	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
 
-# Use this after rotating the ingestion key in both SOPS files:
-#   secret-clickstack-runtime-inputs.sops.yaml (CLICKSTACK_API_KEY)
-#   secret-hyperdx.sops.yaml (HYPERDX_API_KEY — must equal CLICKSTACK_API_KEY)
+# Use this after separately updating the live ClickStack ingestion key
+# in secret-hyperdx.sops.yaml. CLICKSTACK_API_KEY is a bootstrap/app key,
+# not the steady-state ingestion key.
 .PHONY: runtime-inputs-refresh-clickstack-otel
 runtime-inputs-refresh-clickstack-otel:
 	$(MAKE) runtime-inputs-sync
@@ -194,3 +195,7 @@ verify-platform:
 
 .PHONY: verify
 verify: verify-config verify-platform
+
+.PHONY: validate-repo
+validate-repo:
+	python3 scripts/validate-repo.py

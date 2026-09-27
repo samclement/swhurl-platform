@@ -17,8 +17,11 @@ kubectl -n kube-system get deploy traefik metrics-server
 ## Standard Operations
 
 Preferred day-to-day entrypoints:
-- `make install`
-- `make teardown`
+- `make validate-repo` for local repository validation
+- `make flux-reconcile` after committing and pushing Git changes
+- `make verify-config` for local config contracts
+
+The installed host's observed baseline and remaining live checks are in [current state](operations/current-state.md). `make teardown` removes parent Flux Kustomizations and may prune resources; the current persistent volumes all have `Delete` reclaim policy. Do not use it as a routine reset without an independently tested restore and an ownership review.
 
 ### Bootstrap
 
@@ -61,6 +64,8 @@ Flow:
 1. `make verify-config` (when `FEAT_VERIFY=true`)
 2. `make flux-reconcile`
 3. `make verify-platform` (when `FEAT_VERIFY=true`)
+
+The current verifier can print both ingestion key values on mismatch. Until PR 02 fixes it, avoid running `make verify-platform` or a normal `make install` in shared logs.
 
 ### Full delete (`make teardown`)
 
@@ -200,6 +205,7 @@ test -n "$dst" && echo "OK: ingestion key is present in logging/hyperdx-secret"
 ## Verification
 
 Core checks:
+- `make validate-repo` (cluster-free shell, Secret format, active render path, substitution and schema checks; see [Infrastructure](INFRASTRUCTURE.md#repository-validation) for pinned prerequisites)
 - `make verify-config` (config inputs)
 - `make verify-platform` (Flux kustomization health + OTel ingestion Secret presence)
 - `make verify` (both)

@@ -55,7 +55,7 @@ make runtime-inputs-refresh-otel
 make host-dns
 ```
 
-Validate repository changes locally with `make validate-repo` after installing the [pinned validation prerequisites](docs/INFRASTRUCTURE.md#repository-validation). This is the same check CI runs on pushes to `main` and pull requests. Existing installations normally deploy committed changes through Flux; see the [runbook](docs/runbook.md).
+Validate repository changes locally with `make validate-repo` after installing the [pinned validation prerequisites](docs/INFRASTRUCTURE.md#repository-validation). This is the same check CI runs on pushes to `main` and pull requests. Existing installations normally deploy committed changes through Flux; see the [runbook](docs/runbook.md). Back up and restore-test ClickStack configuration with `make backup-clickstack-mongodb` and `make restore-test-clickstack-mongodb` ([recovery](docs/runbook.md#recovery)).
 
 ## Docs
 

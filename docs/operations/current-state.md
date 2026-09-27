@@ -33,9 +33,20 @@ These were the findings at observation time. The P0 repairs below are fixed in G
 - Shared oauth2-proxy currently permits `email-domain: "*"` and sets its cookie domain to `.homelab.swhurl.com`. **Fixed in Git (P0d):** sign-in is restricted to an authenticated-emails list (`sam@swhurl.com`) and the chart default `email_domains = ["*"]` is overridden; deployed on 27 September 2026. The approved account signs in (proxy `AuthSuccess`); the operator reported a non-approved account was refused. The proxy logs recorded no callback for that attempt, so the refusal may have come from Google (for example, OAuth consent-screen test-user limits) rather than the email list. The proxy-side list is enforced by rendered chart arguments and `make test-safety`. A separate domain for public or untrusted apps is still required before expanding exposure.
 - A read-only byte comparison found `logging/hyperdx-secret.HYPERDX_API_KEY` is 48 bytes after one Kubernetes `.data` decode. Decoding those bytes again yields 36 bytes matching ClickStack's live team ingestion key. Recent logs from both OTel collector workloads contain repeated HTTP 401 token/scheme failures. This confirms a live ingestion mismatch. **Fixed in Git (P0c):** the SOPS source now holds exactly one base64 layer and the verifier decodes once without printing values; verified live on 27 September 2026: after `make runtime-inputs-refresh-otel`, collector logs show no 401 errors, ClickHouse receives fresh logs and metrics, and `make verify-platform` passes. No key values were printed or saved in this document.
 
+## Recovery (PR08a)
+
+Checked 27 September 2026:
+
+- No host backup jobs exist (only the dynamic DNS and keyring timers). k3s runs without `/etc/rancher/k3s/config.yaml`; its datastore was not inspected (needs root).
+- All four PVs are `local-path` on the root disk (`/var/lib/rancher/k3s/storage`) with `Delete` reclaim.
+- Classification: ClickStack MongoDB `hyperdx` is irreplaceable configuration (1 team holding the ingestion key, 1 user, 1 connection, 4 sources; other collections empty). ClickHouse is expendable telemetry. MinIO holds no buckets, so it is currently expendable.
+- `make backup-clickstack-mongodb` produced an age-encrypted archive, and `make restore-test-clickstack-mongodb` restored it into a disposable namespace: checksum, collection counts, and the restored team ingestion key matched the restored Git Secret. Negative checks (altered counts, corrupted archive) failed as expected. Live workloads were unchanged.
+- Not yet done: an off-host destination (backups are local only by decision), a backup schedule, restore on a separate machine, and running HyperDX against restored data.
+- ClickHouse system log tables have no TTL and hold about 18 GiB since March 2026 (`trace_log` 6.3 GiB, `metric_log` and `query_log` 3.4 GiB each). local-path does not enforce the 20 Gi claim, so this consumes root-disk space (168 GiB free).
+
 ## Still to verify before live changes
 
-- k3s server configuration and datastore type, host backup jobs, off-host backup destination, and a tested restore of state and decryption material.
+- k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.
 - Flux resource inventories, Helm ownership details, and the deletion effects of current pruning and namespace ownership.
 - Router forwarding, public DNS, and external reachability.
 - Workloads outside Git, image publication workflows, and the Mac model service/network path.

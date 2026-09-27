@@ -40,6 +40,8 @@ help:
 	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
 	@echo "  validate-repo       Validate active manifests and shell scripts locally"
+	@echo "  backup-clickstack-mongodb      Dump ClickStack MongoDB to an age-encrypted local archive"
+	@echo "  restore-test-clickstack-mongodb Restore the latest backup into a disposable namespace and check it"
 	@echo "  test-safety         Test lifecycle guards, secret-safe verification and sign-in policy offline"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
@@ -191,6 +193,14 @@ verify-platform:
 
 .PHONY: verify
 verify: verify-config verify-platform
+
+.PHONY: backup-clickstack-mongodb
+backup-clickstack-mongodb:
+	DRY_RUN=$(DRY_RUN) ./scripts/backup-clickstack-mongodb.sh
+
+.PHONY: restore-test-clickstack-mongodb
+restore-test-clickstack-mongodb:
+	DRY_RUN=$(DRY_RUN) ./scripts/restore-test-clickstack-mongodb.sh
 
 .PHONY: validate-repo
 validate-repo:

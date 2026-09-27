@@ -6,6 +6,8 @@ metadata:
 spec:
   dependsOn:
     - name: homelab-tenants
+    # Uses the shared sign-in middleware; does not wait for observability or MinIO.
+    - name: homelab-auth
   interval: 10m
   sourceRef:
     kind: GitRepository

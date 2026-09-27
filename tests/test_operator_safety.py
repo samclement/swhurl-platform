@@ -30,7 +30,7 @@ with open(os.environ['CALLS'], 'a') as f:
     f.write(Path(sys.argv[0]).name + '\\n')
 scenario = os.environ.get('SCENARIO', 'match')
 if Path(sys.argv[0]).name == 'flux':
-    print('homelab-platform main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
+    print('homelab-clickstack main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
 elif 'clickhouse-client' in sys.argv:
     print('9\\t9' if 'toIntervalDay(30)' in sys.argv[-1] else '0')
 elif 'pvc' in sys.argv:
@@ -100,7 +100,35 @@ elif 'secret' in sys.argv:
             with self.subTest(unit=name):
                 expected = 'MirrorPrune' if name.startswith('homelab-app-') else 'Orphan'
                 self.assertEqual(policy, expected)
-        self.assertIn('homelab-platform', units)
+        for name in ('homelab-cert-manager', 'homelab-issuers', 'homelab-clickstack', 'homelab-otel'):
+            self.assertIn(name, units)
+
+    def test_flux_units_decouple_apps_and_order_issuers(self):
+        deps, specs = {}, {}
+        for path in sorted((ROOT / 'clusters/home').glob('*.yaml')):
+            for doc in yaml.safe_load_all(path.read_text()):
+                if doc and doc.get('kind') == 'Kustomization' and 'spec' in doc:
+                    name = doc['metadata']['name']
+                    deps[name] = {d['name'] for d in doc['spec'].get('dependsOn', [])}
+                    specs[name] = doc['spec']
+        for name, required in deps.items():
+            self.assertLessEqual(required, set(deps), f'{name} depends on an unknown unit')
+
+        def closure(name, seen=()):
+            self.assertNotIn(name, seen, f'dependency cycle through {name}')
+            result = set()
+            for dep in deps.get(name, ()):
+                result |= {dep} | closure(dep, (*seen, name))
+            return result
+        self.assertIn('homelab-cert-manager', closure('homelab-issuers'))
+        for app in (n for n in deps if n.startswith('homelab-app-')):
+            self.assertFalse(closure(app) & {'homelab-clickstack', 'homelab-otel', 'homelab-minio'},
+                             f'{app} must not wait for observability or MinIO')
+        for name, spec in specs.items():
+            encrypted = any((ROOT / spec['path']).rglob('*.sops.yaml'))
+            with self.subTest(unit=name):
+                self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
+        self.assertIn('postBuild', specs['homelab-otel'], 'OTel needs substitution to unescape $${env:...}')
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',

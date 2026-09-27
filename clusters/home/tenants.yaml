@@ -4,8 +4,6 @@ metadata:
   name: homelab-tenants
   namespace: flux-system
 spec:
-  dependsOn:
-    - name: homelab-platform
   interval: 10m
   sourceRef:
     kind: GitRepository

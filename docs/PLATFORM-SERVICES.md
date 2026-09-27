@@ -97,7 +97,7 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 
 ### Runtime secret targets
 
-Each Git-managed SOPS manifest is the final Kubernetes Secret applied by `homelab-platform`:
+Each Git-managed SOPS manifest is the final Kubernetes Secret applied by its service unit (`homelab-auth`, `homelab-clickstack` or `homelab-otel`):
 
 - [`oauth2-proxy-shared-secret`](../platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml) in `ingress`
 - [`clickstack-runtime-inputs`](../platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml) in `observability`

@@ -26,28 +26,14 @@ There is no `run.sh` orchestration flow in the current repo. Cluster creation an
 
 ## Flux Architecture
 
-The current reconciliation chain is:
+`make flux-bootstrap` applies the two roots, `homelab-flux-sources` and `homelab-flux-stack` ([`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml)). The stack creates one unit per capability:
 
-1. `homelab-flux-sources`
-2. `homelab-flux-stack`
-3. `homelab-infrastructure`
-4. `homelab-platform`
-5. `homelab-tenants`
-6. `homelab-app-example`
+- [`clusters/home/infrastructure.yaml`](../clusters/home/infrastructure.yaml): `homelab-cluster-base`, `homelab-cert-manager`, `homelab-issuers`, `homelab-traefik`, `homelab-minio`
+- [`clusters/home/platform.yaml`](../clusters/home/platform.yaml): `homelab-auth`, `homelab-clickstack`, `homelab-otel`
+- [`clusters/home/tenants.yaml`](../clusters/home/tenants.yaml): `homelab-tenants`
+- [`clusters/home/app-example.yaml`](../clusters/home/app-example.yaml): `homelab-app-example`
 
-Key files:
-
-- [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml): bootstraps `homelab-flux-sources` and `homelab-flux-stack`
-- [`clusters/home/infrastructure.yaml`](../clusters/home/infrastructure.yaml): points to `./infrastructure/overlays/home`
-- [`clusters/home/platform.yaml`](../clusters/home/platform.yaml): points to `./platform-services/overlays/home`
-- [`clusters/home/tenants.yaml`](../clusters/home/tenants.yaml): points to `./tenants/app-envs`
-- [`clusters/home/app-example.yaml`](../clusters/home/app-example.yaml): points to `./tenants/apps/example`
-
-Flux substitutions are split intentionally:
-
-- `homelab-infrastructure` substitutes from `flux-system/platform-settings`
-- `homelab-platform` substitutes from `flux-system/platform-settings` and decrypts its service-local SOPS Secret manifests with `flux-system/sops-age`
-- `homelab-flux-sources` contains plain ConfigMaps and repository sources; it does not decrypt SOPS
+Dependencies, substitution and decryption per unit are in the [ownership map](architecture.md#current-reconciliation-ownership). `homelab-flux-sources` contains plain ConfigMaps and repository sources; it does not decrypt SOPS.
 
 ## Prerequisites
 

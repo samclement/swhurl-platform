@@ -1,0 +1,6 @@
+# Cluster primitives every other unit relies on: shared namespaces and storage classes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../namespaces
+  - ../storage/local-path-retain

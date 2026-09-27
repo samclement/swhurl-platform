@@ -71,7 +71,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | PR08a | Independent backup and tested restore of one stateful workload | Partial: data classified; encrypted ClickStack MongoDB backup and disposable restore proven 27 Sep 2026; off-host destination, schedule and app-level restore pending |
 | PR02a | Retention defaults: telemetry 30d, ClickHouse system logs 7d, backup pruning 7 daily + 4 weekly, MongoDB PV Retain + PVC keep, `local-path-retain` class | Complete 27 Sep 2026; backups stay manual until an off-host destination is chosen |
 | PR02b | Lifecycle commands (suspend/resume/destroy-data), `Orphan` shared units, prune protection | Complete 27 Sep 2026; proven by `make lifecycle-test` |
-| PR03 | Capability split and cert-manager/issuer ordering | PR02 and PR08a for ownership transfer |
+| PR03 | Capability split and cert-manager/issuer ordering | Complete 27 Sep 2026: 10 units, 22 resources handed over with no recreation |
 | PR07a | Narrow Secret rollout controller pilot | After P0c; before relying on automatic rotation |
 | PR04 | App-template contract, generator, rendered policy | Local work after PR01; rollout after PR03 |
 | PR05 | Split and migrate example staging/production; operator commands | PR03, PR04, recovery for stateful paths |
@@ -103,6 +103,9 @@ Give new app instances dedicated namespaces. Protect retained namespaces and PVC
 Acceptance: suspend leaves workloads/data; a disposable uninstall affects only its instance and retains declared data; destroy requires an explicit named target; removed roots can be bootstrapped again. Git revert does not restore volume data.
 
 ## 7. PR03 — independent reconciliation
+
+Complete. The units, dependencies and handover evidence are in `docs/architecture.md` and `docs/operations/current-state.md`. Fresh-bootstrap ordering is by construction (issuers wait for cert-manager) and was not exercised on a new cluster.
+
 
 Split `clusters/home/` infrastructure, platform, and tenants into capability units: sources, namespaces, cert-manager controller, issuers, Traefik configuration, shared sign-in, ClickStack, OTel, MinIO, and each app instance. Install cert-manager CRDs before issuers. Apps depend only on services they need. Each unit declares substitutions and SOPS decryption explicitly.
 

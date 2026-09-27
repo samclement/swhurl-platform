@@ -1,16 +1,93 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-infrastructure
+  name: homelab-cluster-base
   namespace: flux-system
 spec:
-  dependsOn:
-    - name: homelab-flux-sources
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/overlays/home
+  path: ./infrastructure/cluster-base
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-cert-manager
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: homelab-cluster-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./infrastructure/cert-manager/base
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
+# Waits for the cert-manager release (and its CRDs) so ClusterIssuers never race it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-issuers
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: homelab-cert-manager
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./infrastructure/cert-manager/issuers
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-traefik
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./infrastructure/ingress-traefik/base
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: homelab-minio
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: homelab-cluster-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./infrastructure/storage/minio/base
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -21,4 +98,4 @@ spec:
   deletionPolicy: Orphan
   prune: true
   wait: true
-  timeout: 20m
+  timeout: 10m

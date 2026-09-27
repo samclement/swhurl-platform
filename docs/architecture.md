@@ -18,7 +18,7 @@ Rendered output path:
 
 ## Concepts and boundaries
 
-A layer groups responsibilities. A Flux Kustomization is a reconciliation and deletion boundary. Sharing a layer does not mean every resource should wait for every other resource in that layer. The current chain below is broader than the intended capability boundaries; the PR03 proposal is not deployed yet.
+A layer groups responsibilities. A Flux Kustomization is a reconciliation and deletion boundary. Sharing a layer does not mean every resource should wait for every other resource in that layer. Since PR03, each shared capability is its own unit, so a failure blocks only what actually depends on it.
 
 | Concept | Owns | Configuration source |
 | --- | --- | --- |
@@ -40,43 +40,42 @@ Arrows in this diagram mean **must reconcile successfully before**. The root sta
 
 ```mermaid
 flowchart LR
-  source[homelab-flux-sources] --> stack[homelab-flux-stack]
-  source --> infra[homelab-infrastructure]
-  infra --> platform[homelab-platform]
-  platform --> tenants[homelab-tenants]
-  tenants --> example[homelab-app-example]
+  sources[homelab-flux-sources] --> stack[homelab-flux-stack]
+  stack -. creates .-> units[all units below]
+  base[homelab-cluster-base] --> cm[homelab-cert-manager] --> issuers[homelab-issuers]
+  base --> minio[homelab-minio]
+  base --> auth[homelab-auth]
+  base --> clickstack[homelab-clickstack]
+  base --> otel[homelab-otel]
+  traefik[homelab-traefik]
+  tenants[homelab-tenants] --> example[homelab-app-example]
+  auth --> example
 ```
 
-| Current Flux owner | Owns / source path | Requires | Provides | Suspension / removal |
-| --- | --- | --- | --- | --- |
-| `homelab-flux-sources` | Git/Helm sources and settings in `clusters/home/flux-system/sources` | Installed Flux and initial GitRepository | Source artifacts and `platform-settings` | `Orphan`: deleting the unit keeps the GitRepository and settings. Suspension stops source-definition updates |
-| `homelab-flux-stack` | Child Flux definitions under `clusters/home` | Sources | Active cluster composition | `Orphan`: deleting it keeps the child units. Suspending it does not suspend existing children |
-| `homelab-infrastructure` | Shared namespaces, cert-manager, issuers, Traefik override and MinIO via `infrastructure/overlays/home` | Sources/settings, packaged k3s | Namespaces, ingress, issuers, object storage | `Orphan`: deleting it keeps namespaces and releases. `observability` is never pruned. Suspension does not stop existing Helm controllers |
-| `homelab-platform` | oauth2-proxy, ClickStack, OTel and final SOPS Secrets via `platform-services/overlays/home` | Infrastructure, settings, `sops-age` | Sign-in middleware and telemetry services | `Orphan`: deleting it keeps releases and Secrets. Removing a HelmRelease from Git still uninstalls it, but ClickStack PVCs are kept (`keepPVC`) and the MongoDB PV is `Retain`. Suspension stops manifest updates, not child Helm reconciliation |
-| `homelab-tenants` | `apps-staging` and `apps-prod` via `tenants/app-envs` | Entire platform today | Environment landing zones | `Orphan`: deleting it keeps the namespaces. Removing a namespace from Git still deletes its contents, including resources owned by other units |
-| `homelab-app-example` | Both example overlays via `tenants/apps/example` | Tenant namespaces | Staging and production routes/workloads | `MirrorPrune` (app unit): deleting it uninstalls both instances; prune-protected namespaces/claims survive. Both instances share one boundary until PR05 |
+| Flux unit | Owns (path) | Requires | Provides |
+| --- | --- | --- | --- |
+| `homelab-flux-sources` | Git/Helm sources and `platform-settings` (`clusters/home/flux-system/sources`) | Installed Flux; applied by `make flux-bootstrap` | Source artifacts and settings |
+| `homelab-flux-stack` | The unit definitions below (`clusters/home`) | Sources; applied by `make flux-bootstrap` | Active cluster composition |
+| `homelab-cluster-base` | Shared namespaces and `local-path-retain` (`infrastructure/cluster-base`) | — | Namespaces, storage classes |
+| `homelab-cert-manager` | cert-manager HelmRelease (`infrastructure/cert-manager/base`) | cluster-base | Ready controller and CRDs |
+| `homelab-issuers` | ClusterIssuers (`infrastructure/cert-manager/issuers`) | cert-manager | `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod` |
+| `homelab-traefik` | k3s Traefik `HelmChartConfig` (`infrastructure/ingress-traefik/base`) | Packaged k3s Traefik | NodePorts 31514/30313 |
+| `homelab-minio` | MinIO (`infrastructure/storage/minio/base`); substitutes settings | cluster-base | Object storage for explicit consumers |
+| `homelab-auth` | oauth2-proxy, its SOPS Secret and middleware (`platform-services/oauth2-proxy/base`); substitutes, decrypts | cluster-base | `ingress-oauth-auth-shared@kubernetescrd` |
+| `homelab-clickstack` | ClickStack and its SOPS Secret (`platform-services/clickstack/base`); substitutes, decrypts | cluster-base | Telemetry ingestion and UI |
+| `homelab-otel` | OTel collectors and ingestion Secret (`platform-services/otel/base`); substitutes, decrypts | cluster-base | Node/cluster telemetry export |
+| `homelab-tenants` | `apps-staging`, `apps-prod` (`tenants/app-envs`) | — | Environment namespaces |
+| `homelab-app-example` | Both example overlays (`tenants/apps/example`) | tenants, auth | Staging and production routes/workloads |
 
-All six units prune resources removed from Git. Deleting a unit object differs: shared units use `deletionPolicy: Orphan`, so a deleted root or platform unit leaves everything running, unmanaged, until it is re-applied (`make flux-bootstrap` for the roots). App units keep the default `MirrorPrune`, so deleting one uninstalls it. Data protection is layered: namespace/claim `kustomize.toolkit.fluxcd.io/prune: disabled`, Helm `keepPVC`, `Retain` PVs, and backups. `make teardown` and `make reinstall` stay disabled; see [lifecycle operations](runbook.md#lifecycle-operations). The first-time cert-manager/issuer race and optional-service health coupling remain until PR03.
+Rules that follow from this:
 
-## PR03 ownership proposal — not yet deployed
+- **Failures stay local.** An app waits only for its namespace and the capabilities it uses. `homelab-app-example` does not wait for ClickStack, OTel or MinIO, so an observability outage cannot block app deploys. OTel does not wait for ClickStack either; collectors retry exports.
+- **Issuers never race cert-manager.** `homelab-issuers` waits for the cert-manager release to be Ready, so a fresh bootstrap no longer fails on missing `ClusterIssuer` CRDs.
+- **Each unit declares its own inputs.** Units whose manifests use `${...}` substitute from `platform-settings`; `homelab-otel` also needs substitution to turn `$${env:...}` into the collector's `${env:...}`. Units whose path contains `*.sops.yaml` decrypt with `sops-age`. `make test-safety` checks decryption, the issuer ordering and that apps never depend on observability or MinIO.
+- **Deletion.** Every unit prunes resources removed from Git. Deleting a unit object differs: all shared units use `deletionPolicy: Orphan`, so a deleted unit leaves its resources running, unmanaged, until re-applied (`make flux-bootstrap` for the two roots). App units keep `MirrorPrune`, so deleting one uninstalls it; prune-protected namespaces and claims survive. Data protection is layered: `kustomize.toolkit.fluxcd.io/prune: disabled` on `observability`, Helm `keepPVC`, a `Retain` MongoDB PV, and backups. See [lifecycle operations](runbook.md#lifecycle-operations).
+- **Suspension** stops a unit applying Git changes; HelmReleases it created keep reconciling unless suspended too.
 
-Use capability units for shared namespaces, cert-manager controller, issuers, Traefik configuration, identity, ClickStack, OTel and MinIO. Each declares its own settings and decryption. An app instance waits only for its namespace and the capabilities it actually needs. A worker does not require web identity; an app that does not consume MinIO does not wait for it. App reconciliation never waits for observability health.
-
-| Proposed unit | Required interface | Provided interface |
-| --- | --- | --- |
-| Namespaces | Sources | Explicit shared namespaces; retention policy documented before migration |
-| Certificate controller | Its namespace | Ready cert-manager controller and CRDs |
-| Issuers | Certificate controller | Named ClusterIssuers |
-| Traefik configuration | Packaged k3s Traefik | Ingress class and preserved NodePorts 31514/30313 |
-| Identity | Namespace, ingress and issuer as needed, SOPS key/settings | Approved-user sign-in and `ingress-oauth-auth-shared@kubernetescrd` |
-| ClickStack | Namespace, storage, SOPS key/settings | Telemetry ingestion and UI |
-| OTel | Namespace, ingestion credentials and destination | Node/cluster telemetry export; never an app readiness prerequisite |
-| MinIO | Namespace, storage, credentials | Object-storage endpoint for explicit consumers |
-| App instance (PR05) | Own namespace; selected ingress/identity/storage interfaces | One instance's workload, route and data contract |
-
-For each live handover: record inventory and Helm ownership; prove independent stateful recovery; test the transition on a disposable resource; suspend affected owners and prevent old-owner pruning; reconcile and verify the new owner; retire old ownership; restore intended reconciliation/pruning. Preserve names, releases, routes and claims. Do not move directories or alter storage at the same time. A blind Git revert cannot recover deleted data.
-
-PR03 is complete when a fresh bootstrap orders controller before issuers, unrelated apps deploy during an observability/MinIO outage, and ownership changes cause no namespace deletion, Helm uninstall or PV recreation. Existing C4 views below describe the active deployment, not this proposed split.
+Moving a resource between units: record both inventories, make sure the old unit is `Orphan` (or suspended) so it cannot prune, add the resource to the new unit with the same name and namespace, reconcile, confirm the new inventory holds it, then remove it from the old unit. PR03 moved 22 resources this way with no namespace, release or volume recreated (see [current state](operations/current-state.md#pr03-capability-split)). Both example instances still share one unit until PR05.
 
 ## Level 1: System Context
 

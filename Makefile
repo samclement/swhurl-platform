@@ -94,7 +94,10 @@ flux-bootstrap:
 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync:
-	flux reconcile kustomization homelab-platform -n flux-system --with-source --timeout=20m
+	flux reconcile source git swhurl-platform -n flux-system --timeout=5m
+	flux reconcile kustomization homelab-auth -n flux-system --timeout=10m
+	flux reconcile kustomization homelab-clickstack -n flux-system --timeout=20m
+	flux reconcile kustomization homelab-otel -n flux-system --timeout=10m
 
 .PHONY: charts-generate
 charts-generate:

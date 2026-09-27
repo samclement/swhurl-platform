@@ -37,12 +37,7 @@ make flux-bootstrap
 Behavior:
 - Flux installation is manual (outside repo scripts).
 - `make flux-bootstrap` applies `clusters/home/flux-system` bootstrap manifests only.
-- If `homelab-infrastructure` fails with `no matches for kind "ClusterIssuer" in version "cert-manager.io/v1"`, install cert-manager CRDs once and rerun reconcile:
-
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.3/cert-manager.crds.yaml
-make flux-reconcile
-```
+- Units reconcile in dependency order; `homelab-issuers` waits for `homelab-cert-manager`, so no manual CRD install is needed.
 
 ### Reconcile
 
@@ -51,7 +46,7 @@ make flux-reconcile
 ```
 
 Behavior:
-- Reconciles the repository source, bootstrap sources layer, and stack layer from Git; platform runtime SOPS Secrets are applied by `homelab-platform` inside the stack.
+- Reconciles the repository source, bootstrap sources layer, and stack layer from Git; platform runtime SOPS Secrets are applied by the `homelab-auth`, `homelab-clickstack` and `homelab-otel` units inside the stack.
 - Reconciles `swhurl-platform` source, `homelab-flux-sources`, then `homelab-flux-stack`.
 
 ### Full apply (`make install`)
@@ -146,14 +141,13 @@ Direct script usage:
 Parent level:
 - `homelab-flux-sources -> homelab-flux-stack`
 
-Cluster level (`clusters/home/*.yaml`):
-- `homelab-infrastructure -> homelab-platform -> homelab-tenants -> homelab-app-example`
+Cluster level (`clusters/home/*.yaml`), one unit per capability:
+- `homelab-cluster-base -> homelab-cert-manager -> homelab-issuers`
+- `homelab-cluster-base -> homelab-minio | homelab-auth | homelab-clickstack | homelab-otel`
+- `homelab-traefik` (independent)
+- `homelab-tenants + homelab-auth -> homelab-app-example`
 
-Layer composition:
-- `homelab-infrastructure` points to `infrastructure/overlays/home`.
-- `homelab-platform` points to `platform-services/overlays/home`.
-- `homelab-tenants` points to `tenants/app-envs` (tenant env namespaces only).
-- `homelab-app-example` points to `tenants/apps/example` (sample app staging+prod overlays).
+To see why something is not deploying: `flux get kustomizations`; a unit waiting on a dependency reports `DependencyNotReady`. Paths and inputs per unit are in the [ownership map](architecture.md#current-reconciliation-ownership).
 - Platform cert issuer intent is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
 
 ## Runtime Inputs

@@ -74,13 +74,13 @@ Key runtime-intent targets:
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make runtime-inputs-sync`
-  - Reconciles `homelab-platform` so pushed Git-managed runtime input Secret updates are applied.
+  - Fetches Git, then reconciles `homelab-auth`, `homelab-clickstack` and `homelab-otel` so pushed runtime-input Secret updates are applied.
 - `make flux-reconcile`
   - Reconciles Flux source + stack.
 - `make otel-collectors-restart`
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
-  - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
+  - Reconciles runtime inputs, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
 - `make suspend|resume TARGET=kustomization/<name>|helmrelease/<ns>/<name> [DRY_RUN=true]`
   - Wraps `flux suspend|resume`; workloads and data are untouched.
 - `make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET> [DRY_RUN=true]`

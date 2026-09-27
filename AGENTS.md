@@ -87,14 +87,14 @@ Important contract:
 
 - Runtime inputs and substitution
   - Runtime-input targets are final SOPS-encrypted Kubernetes Secret manifests co-located with the platform service that consumes them (not infrastructure).
-  - `homelab-infrastructure` substitutes from `platform-settings` only.
-  - `homelab-platform` substitutes non-secret values from `platform-settings` and decrypts platform-service `*.sops.yaml` manifests directly with `spec.decryption.secretRef.name=sops-age`.
+  - Units substitute from `platform-settings` only when their manifests use it (`homelab-minio`, `homelab-auth`, `homelab-clickstack`, `homelab-otel`); units whose path holds `*.sops.yaml` set `spec.decryption.secretRef.name=sops-age` (`homelab-auth`, `homelab-clickstack`, `homelab-otel`). `make test-safety` enforces the decryption match.
+  - `homelab-otel` must keep substitution even though it has no `${VAR}`: without it `$${env:HYPERDX_API_KEY}` is not unescaped and collector auth breaks.
   - `homelab-flux-sources` no longer decrypts SOPS; its sources path contains plain ConfigMaps/repositories only.
   - The central runtime source secret (`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` -> `flux-system/platform-runtime-inputs`) was removed; do not reintroduce it for platform-service secrets.
   - Local SOPS edits require an age private key in a default SOPS location (`~/.config/sops/age/keys.txt`) or `SOPS_AGE_KEY_FILE`; in this repo, `SOPS_AGE_KEY_FILE=./age.agekey` enables local decrypt/edit flows.
   - Keep app-specific secrets with each app (`tenants/apps/<app>/.../secret-*.sops.yaml`); when app paths include encrypted manifests, set `spec.decryption` on that app-level Flux Kustomization (for example `clusters/home/app-*.yaml`) to use `sops-age`.
   - `.sops.yaml` creation rules currently cover `platform-services/.*/base` and `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
-  - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` now reconciles `homelab-platform` from pushed Git state.
+  - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` reconciles `homelab-auth`, `homelab-clickstack` and `homelab-otel` from pushed Git state.
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
   - oauth2-proxy client secret/config secret updates do not trigger automatic rollout restart; after runtime input credential changes, restart `ingress/oauth2-proxy-shared` (or automate via checksum strategy) to load new client credentials.
@@ -111,7 +111,7 @@ Important contract:
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
   - Issuer local chart (`charts/platform-issuers`) is retired.
   - Platform ingress/cert selection is driven by `${CERT_ISSUER}` substitution.
-  - First-time bootstrap can race on cert-manager CRDs (`ClusterIssuer` dry-run failure) because issuers are currently in the same infrastructure layer as the cert-manager HelmRelease.
+  - `homelab-issuers` depends on `homelab-cert-manager` (wait: true), which removed the first-bootstrap `ClusterIssuer` CRD race.
   - Apps keep issuer selection in app overlays/manifests; current example app staging/prod overlays both use `letsencrypt-prod`.
 
 - DNS and host layer
@@ -146,7 +146,7 @@ Important contract:
   - If `otel-k8s-*` collector logs show `HTTP Status Code 401` with `scheme or token does not match` for `clickstack-otel-collector.observability.svc.cluster.local:4318`, exporters are dropping telemetry; update `HYPERDX_API_KEY` in `platform-services/otel/base/secret-hyperdx.sops.yaml` and run `make runtime-inputs-refresh-otel`.
   - `logging/hyperdx-secret` updates do not hot-reload into existing `otel-k8s-*` pods (`secretKeyRef` env values are read at container start); after ingestion key rotation, restart collector workloads to pick up the new token.
   - Use `make runtime-inputs-refresh-otel` after ClickStack key updates so runtime inputs are synced/reconciled and collector pods are restarted in one flow.
-  - `make runtime-inputs-refresh-otel` reconciles `homelab-platform`, waits for `logging/hyperdx-secret.HYPERDX_API_KEY` to be present, then restarts collectors.
+  - `make runtime-inputs-refresh-otel` reconciles the runtime-input units, waits for `logging/hyperdx-secret.HYPERDX_API_KEY` to be present, then restarts collectors.
 
 - kubectl / kubeconfig behavior
   - On hosts where `/usr/local/bin/kubectl` is the `k3s` wrapper, non-interactive shells can default to `/etc/rancher/k3s/k3s.yaml`; export `KUBECONFIG=$HOME/.kube/config` explicitly for scripted checks.
@@ -166,6 +166,10 @@ Important contract:
   - Backups are manual by decision (no timer) until an off-host destination exists; each run prunes to 7 daily + 4 weekly via `scripts/prune-backups.py`.
   - Retention defaults: telemetry 30 days (collector-image TTL, verified not configured), ClickHouse system logs 7 days (`platform-services/clickstack/base/configmap-clickhouse-system-log-ttl.yaml` mounted by a HelmRelease `postRenderers` patch because the chart's `config.xml` is fixed), `global.keepPVC: true`, MongoDB PV patched to `Retain` (not in Git; `make verify-platform` checks it).
   - ClickHouse reads `config.d` only at startup and renames a system log table to `<name>_N` when its definition changes; drop the renamed tables after checking.
+
+- Flux units (PR03)
+  - One unit per capability: `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-minio` (`clusters/home/infrastructure.yaml`), `homelab-auth`, `-clickstack`, `-otel` (`clusters/home/platform.yaml`), `homelab-tenants`, `homelab-app-*`. Apps depend only on what they use; never on ClickStack, OTel or MinIO.
+  - To move a resource between units: keep the old owner `Orphan`/suspended, add it to the new unit unchanged, reconcile, confirm inventory, then remove it from the old one. Never change the old path in the same commit as the cutover.
 
 - Lifecycle
   - `make suspend|resume TARGET=...` wrap `flux suspend|resume`; `make destroy-data TARGET=... CONFIRM=<TARGET>` is the only data-deleting command and refuses while the claim is mounted, Helm-installed, or Flux-managed.

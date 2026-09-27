@@ -1,6 +1,6 @@
 # Current state
 
-Observed on 27 September 2026 from the local host and a read-only Kubernetes query. Repository revision: `91e889353f656577b48efc6f85d9f1b4427852f7`. Recheck this inventory before changing ownership, storage or routing. This is an observation, not a backup or restore record.
+Observed on 27 September 2026 from the local host and read-only Kubernetes queries. The original cluster inventory was taken at repository revision `91e889353f656577b48efc6f85d9f1b4427852f7`; PR01 was subsequently committed to main as `2bae8d0` and its CI passed. Recheck the applied revision before changing ownership, storage or routing. This is an observation, not a backup or restore record.
 
 ## Host and cluster
 
@@ -22,19 +22,28 @@ Observed on 27 September 2026 from the local host and a read-only Kubernetes que
 
 - Active render entrypoints, individual tracked shell syntax checks, `make verify-config`, and install/teardown dry-runs passed during the PR 01 review.
 - The prior CI workflow referenced deleted `platform-services/runtime-inputs`. PR 01 replaces its path list with discovery from active Flux `spec.path` values plus the two bootstrap paths.
-- `scripts/verify-platform.sh` can print plaintext key values after a mismatch. This is scheduled for PR 02. Avoid shared logs from that command or a normal `make install` until it is fixed.
+- `scripts/verify-platform.sh` can print plaintext key values after a mismatch and currently decodes the OTel ingestion key twice. Avoid shared logs from that command or a normal `make install` until it is fixed.
+
+## Immediate follow-up findings
+
+These were the findings at observation time. The P0 repairs below are fixed in Git; live confirmation is noted per item.
+
+
+- `make teardown` deletes `homelab-flux-stack` and `homelab-flux-sources`; both roots and their children use pruning. This can cascade through namespaces and Helm releases. The four current PVs have reclaim policy `Delete`, Removing the GitRepository also left the reinstall sequence unable to reconcile its first source without bootstrap. **Fixed (P0a):** both targets are now disabled and fail before any cluster command.
+- Shared oauth2-proxy currently permits `email-domain: "*"` and sets its cookie domain to `.homelab.swhurl.com`. **Fixed in Git (P0d):** sign-in is restricted to an authenticated-emails list (`sam@swhurl.com`) and the chart default `email_domains = ["*"]` is overridden; accepted/rejected sign-in remains to be tested live. A separate domain for public or untrusted apps is still required before expanding exposure.
+- A read-only byte comparison found `logging/hyperdx-secret.HYPERDX_API_KEY` is 48 bytes after one Kubernetes `.data` decode. Decoding those bytes again yields 36 bytes matching ClickStack's live team ingestion key. Recent logs from both OTel collector workloads contain repeated HTTP 401 token/scheme failures. This confirms a live ingestion mismatch. **Fixed in Git (P0c):** the SOPS source now holds exactly one base64 layer and the verifier decodes once without printing values; collector restart (`make runtime-inputs-refresh-otel`) and fresh telemetry remain to be confirmed. No key values were printed or saved in this document.
 
 ## Still to verify before live changes
 
 - k3s server configuration and datastore type, host backup jobs, off-host backup destination, and a tested restore of state and decryption material.
 - Flux resource inventories, Helm ownership details, and the deletion effects of current pruning and namespace ownership.
-- Router forwarding, public DNS, approved identity restrictions, and external reachability.
+- Router forwarding, public DNS, the approved identity list and session impact for an authentication change, and external reachability.
 - Workloads outside Git, image publication workflows, and the Mac model service/network path.
 
 ## Finding classification
 
-- Confirmed repository defects: the former CI path list included a deleted directory; the former shell check passed multiple files to one `bash -n` call; infrastructure and platform-services docs named a deleted central runtime Secret; the live verifier can print key material on failure; the Makefile comment conflated the ClickStack bootstrap and ingestion keys.
-- Runtime questions: backup destination and restore evidence, datastore configuration, Flux inventories and deletion ownership, public router/DNS, identity restrictions, and external workloads or services remain unverified.
+- Confirmed repository defects: the former CI path list included a deleted directory; the former shell check passed multiple files to one `bash -n` call; infrastructure and platform-services docs named a deleted central runtime Secret; the live verifier can print key material on failure and masks the double encoding; the Makefile comment conflated the ClickStack bootstrap and ingestion keys. PR01 repaired the CI path, shell check, stale documentation, and Makefile comment. The verifier and live Secret remain to be fixed.
+- Runtime questions: backup destination and restore evidence, datastore configuration, Flux inventories and deletion ownership, public router/DNS, the approved identity list and existing-session behavior, and external workloads or services remain unverified.
 - Desired improvements: shared offline validation is included in PR 01. Safe lifecycle operations, independent reconciliation, automatic secret rollout, and app scaffolding remain later implementation work.
 
 On this host, export `KUBECONFIG=$HOME/.kube/config` for scripted `kubectl` and Flux checks. The `/usr/local/bin/kubectl` k3s wrapper can otherwise select the root-owned kubeconfig in non-interactive shells. Do not export Secrets, kubeconfig contents or private keys into this document.

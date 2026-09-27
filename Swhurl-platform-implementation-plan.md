@@ -1,346 +1,185 @@
 # Swhurl Platform — implementation plan
 
-27 September 2026 · Proposed implementation; current platform already deployed
+27 September 2026 · Home cluster implementation plan
 
-Based on repository commit `91e889353f656577b48efc6f85d9f1b4427852f7` and read-only checks of the current host and Kubernetes cluster on 27 September 2026\. The router, external backup destinations, Mac model server and application repositories remain uninspected\. Recheck the baseline after later commits\. This review changed only this plan; it did not change cluster resources\.
+PR01 is complete at `2bae8d0`. This plan is based on repository review and read-only checks of the live, single-node k3s host. Router settings, external backups, the Mac model service, and app repositories remain uninspected. Recheck live state before migrations.
 
-## 1\. Outcome and scope
+## 1. Goal and scope
 
-Swhurl Platform supplies the shared infrastructure and deployment mechanisms that turn an application definition into a running, reachable and operable homelab service\. Application authors specify requirements; the platform supplies consistent deployment, ingress, identity integration, secret delivery, storage integration and operational visibility\.
+Make an app instance a small, reviewable definition: image digest, resources, probes, exposure, configuration, secrets, and persistence. A generator supplies the namespace, Flux Kustomization, HelmRelease, and optional encrypted Secret. Git review and Flux remain the deployment path.
 
-The primary outcome is a short application workflow: create an instance definition, provide secrets, open a pull request, merge, and observe deployment\. A routine app should not require hand\-authoring Deployment, Service, Ingress, Certificate and environment patch files\.
-
-Keep K3s, Flux, Traefik, cert\-manager, the existing secret\-encryption approach and shared sign\-in\. Introduce a small application chart, a scaffolding command and a clear image\-publication workflow\. Decouple unrelated capabilities and establish recovery before migrating stateful applications\.
-
-Non\-goals for this iteration: replacing Kubernetes, building a developer portal, deploying a self\-hosted container registry, adopting a service mesh, replacing storage with a distributed storage system, or automatically provisioning the router\. These would need separate requirements\.
+Keep k3s, Flux, packaged Traefik, cert-manager, and SOPS/age. Fix current safety, identity, and telemetry faults first; then separate reconciliation, prove recovery, and build the app workflow. Work on `clusters/home/` only. Preserve clean capability boundaries for a possible future `clusters/aws/`, but do not build the EC2 cluster or move host automation now. Hermes and Mac model access are a separate follow-on project.
 
 ### Completion criteria
 
-- A simple stateless app requires one HelmRelease instance definition, an optional encrypted Secret, and generated reconciliation wiring\. No hand\-written ingress or certificate patches\.
-- A second app is onboarded in under 15 minutes after its image exists, excluding domain propagation and certificate issuance\. This is an acceptance target, not a measured current figure\.
-- Publishing an app image creates a reviewable deployment update identifying its immutable digest\.
-- An observability or optional object\-storage failure does not stop unrelated app reconciliation\.
-- Changing a referenced runtime Secret triggers the required workload restart without a service\-specific operator command\.
-- Operators can identify an app’s desired revision, running image, readiness, address and failure reason with one command\.
-- Suspend, uninstall and data destruction have distinct documented semantics\.
-- At least one stateful workload and the platform decryption material have been restored from an independent backup\.
-- Hermes can run with persistent state and constrained access to a model server on the Mac without cluster\-administration credentials\.
-
-## 2\. Decisions and live facts to establish
-
-The existing platform is live on this host\. Use `KUBECONFIG=$HOME/.kube/config` for scripted `kubectl` and Flux checks here; the `/usr/local/bin/kubectl` k3s wrapper may otherwise select the root-owned k3s kubeconfig\. Proceed with the defaults below for design work\. Resolve the gated questions before the relevant live change; they do not block documentation, validation fixes or local chart development\.
-
-### Observed baseline — 27 September 2026
-
-|Area|Observed state|Execution consequence|
-|---|---|---|
-|Host and k3s|Arch Linux x86-64; `k3s` service active and enabled; one Ready control-plane node (`arch`, `192.168.1.200`) running `v1.34.4+k3s1` with containerd; Flux CLI/controllers `v2.8.1`|This is an in-place change to an existing single-node installation, not a new k3s bootstrap\. Record the installed server configuration and datastore type before recovery work\.|
-|Capacity|31 GiB RAM, about 23 GiB available at inspection; root filesystem 239 GiB with about 169 GiB free|Measure workload, disk and backup growth before adding stateful services\.|
-|Flux and releases|All six active Flux Kustomizations Ready at `main@sha1:91e88935`; cert-manager, oauth2-proxy, ClickStack, both OTel releases and MinIO Ready|Capture Flux inventories and Helm ownership before changing paths, pruning or release names\.|
-|Ingress and TLS|Packaged Traefik and metrics-server Ready; Traefik Service uses HTTP NodePort `31514` and HTTPS `30313`; all three ClusterIssuers and six current Certificates Ready|Preserve these ports and routes during any handover; external router and public DNS still need separate verification\.|
-|Persistent data|Four Bound `local-path` claims: ClickHouse data/logs, MongoDB and MinIO; default StorageClass and all four PVs use reclaim policy `Delete`|Treat namespace deletion, claim deletion, Helm uninstall and Flux pruning as data-loss risks until retention and independent restore are proven\.|
-|Secrets and policy|`flux-system/sops-age` exists; local `age.agekey` exists; no Kubernetes backup CronJobs were found; NetworkPolicies are present only in `flux-system`|Key presence is not proof of an off-host backup; planned private workloads need a tested network-policy enforcement mechanism\.|
-|Local checks|Active Kustomize entrypoints, `make verify-config`, tracked shell syntax, and install/teardown dry-runs pass; CI's `platform-services/runtime-inputs` render path fails because it does not exist|PR 01 can start locally\. CI must be repaired before its checks can be trusted\.|
-
-These checks establish availability and configuration shape, not data recoverability, external reachability, authentication policy or telemetry correctness\. Do not run `make verify-platform` or a normal `make install` as a baseline check until PR 02 removes the verifier's plaintext credential output: `make install` invokes that verifier when `FEAT_VERIFY=true`\. Do not run `make teardown` or `make reinstall` against this live stack while its deletion effects and backups are unproven\.
-
-### Execution readiness
-
-PR 01 is ready to execute as a repository-only change\. The current installation is healthy enough to inventory without reinstalling k3s or Flux\. The whole plan is not ready for an uninterrupted live rollout: an independent restore has not been demonstrated, the deletion/ownership graph has not been recorded, the router and external dependencies have not been checked, and the verifier can print credentials on failure\. Complete the backup/restore gate and the specific live checks above before the dependent changes\. Do not treat a successful dry-run as evidence that deletion preserves data\.
-
-|Decision           |Proposed default                                                             |Confirm before               |
-|-------------------|-----------------------------------------------------------------------------|-----------------------------|
-|Cluster topology   |Confirmed one Ready node today; plan for single-host failure                 |Storage and isolation changes|
-|Application mix    |Support ordinary single-container apps and upstream Helm charts              |Finalising chart scope       |
-|Environments       |Preserve existing staging and production; new utilities may have one instance|Migrating app reconciliation |
-|Registry visibility|Private by default; public only by explicit choice                           |First image publication      |
-|Exposure           |Private by default; authenticated browser access opt-in; public explicit     |First new ingress            |
-|Permitted users    |Explicit identities rather than every Google account                         |Authentication change        |
-|Persistent data    |Preserve during app uninstall; erase separately; current PVs use `Delete`    |Any deletion/migration       |
-|Backup destination |Outside the homelab host and its disks                                       |Stateful migration           |
-|Recovery objectives|Record acceptable data loss and restore time per app                         |Backup scheduling            |
-|Model server       |Native service on Mac, private endpoint and token                            |Hermes deployment            |
-|Agent execution    |Treat generated commands and installed tools as untrusted                    |Selecting Hermes isolation   |
-
-Remaining inventory: k3s server configuration/datastore and host backups; Flux inventories; router mappings and public DNS; live authentication restrictions; workloads not in Git; image publication workflows; external backup destination and restore evidence; Mac model endpoint and network path\.
-
-Keep the sanitised inventory in this plan for the review; move it to `docs/operations/current-state.md` in PR 01 and update it as unknowns are verified\. Do not commit exported Secrets, kubeconfig credentials or private keys\. Record sensitive backup material only in the chosen secure recovery location\.
-
-## 3\. Ownership and configuration contracts
-
-Avoid a directory\-wide rename during functional migration\. Introduce interfaces in the existing structure, then rename only if it improves navigation\.
-
-|Concern              |Authoritative configuration                                                         |Owner and interface                                                                      |
-|---------------------|------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-|Host/network         |Existing `host/`, dedicated non-secret host configuration and network inventory     |Host operator supplies addresses, disks, remote access and ingress port mappings         |
-|Cluster foundation   |Versioned K3s bootstrap/configuration documentation, later host automation if needed|Supplies networking, scheduling and named storage classes                                |
-|Deployment control   |`clusters/home/flux-system` and child Flux definitions                              |Reads Git, decrypts authorised manifests and reconciles independently                    |
-|Shared capabilities  |Existing `infrastructure/` and `platform-services/`                                 |Publishes named ingress class, issuer, authentication middleware and telemetry interfaces|
-|Shared non-secrets   |`clusters/home/flux-system/sources/configmap-platform-settings.yaml`                |Shared domain and capability defaults; no credentials                                    |
-|Application instances|`tenants/apps/<app>/<instance>/`                                                    |Image, resources, ports, health, exposure, configuration, storage and Secret references  |
-|Application templates|New `charts/swhurl-app/`                                                            |Converts supported app requirements into standard Kubernetes resources                   |
-|Secrets              |Encrypted manifests beside consuming service/instance                               |SOPS (Secrets OPerationS) encryption; recovery key held separately                       |
-|Image builds         |Each application repository                                                         |Tested image, supported architectures, source revision and digest                        |
-|External services    |Non-secret endpoint catalogue plus application-owned credentials                    |Address, protocol, authentication, availability and network policy                       |
-|Recovery             |New `docs/operations/recovery.md` and scheduled backup definitions                  |Retention, restore sequence and evidence                                                 |
-
-Separate host settings from Kubernetes settings\. Restrict `config.env` to local/host operation inputs or rename it accordingly\. Make `BASE_DOMAIN` genuinely authoritative for shared hosts, or remove the misleading setting\. Do not retain two settings with implied ownership of the same value\.
-
-Application contracts must distinguish browser authentication from machine authentication\. Shared sign\-in establishes user identity; the application owns its internal permissions\. An inference application programming interface &#40;API&#41; uses token authentication, not browser redirects\.
-
-## 4\. Delivery sequence
-
-Implement as small pull requests &#40;PRs&#41;, with documentation updated in each behaviour\-changing PR as required by `AGENTS.md`\. The numbered table groups work; the safe live rollout order is PR 01, the independent backup and restore gate in PR 08, then live deletion/ownership changes in PR 02 and PR 03\. PR 02's verifier and documentation fixes can be prepared earlier\. Chart and generator work in PR 04 can proceed locally in parallel with the recovery gate\.
-
-|PR|Deliverable                                                   |Depends on                   |Indicative hands-on effort  |
-|--|--------------------------------------------------------------|-----------------------------|----------------------------|
-|01|Inventory, corrected validation and reliable documentation    |None                         |0.5–1 day                   |
-|02|Safe lifecycle, credential handling and explicit access policy|01; live deletion after 08    |1–2 days                    |
-|03|Independent reconciliation and controller/issuer ordering     |02, 08 for live handover      |1–2 days                    |
-|04|Application contract, shared chart and scaffolding            |01; rollout after 03         |2–3 days                    |
-|05|Example migration and app operator commands                   |03, 04                       |1–2 days                    |
-|06|Registry publishing and deployment-update workflow            |04, app repository access    |1–2 days                    |
-|07|Secret rollout automation and configuration consolidation     |03–05                        |0.5–1.5 days                |
-|08|Backup and restore implementation                             |01; before live deletion/ownership changes or stateful migration|1–2 days plus restore window|
-|09|Hermes deployment and Mac inference integration               |03–08 as applicable          |1–2 days                    |
-|10|Acceptance exercise and final documentation cleanup           |Previous deliverables        |0.5–1 day                   |
+- Onboard a second app from an existing image in under 15 minutes, excluding DNS and certificate delays, without hand-written Deployment, Service, or Ingress.
+- Each app instance has its own namespace and Flux unit; staging and production reconcile independently.
+- Image and chart updates are reviewable and pinned. Promote and roll back the same image digest.
+- ClickStack or MinIO failure does not block an unrelated app update.
+- Exposure modes enforce their route and cookie boundaries; only approved identities can sign in.
+- Secret rotation restarts only the referencing workload without printing the value.
+- Suspend, uninstall, and data destruction have distinct effects. Restore one stateful workload and the age key from an independent backup.
+- One documented command shows desired revision, running image, readiness, address, and failure reason.
 
-Estimate: roughly 10–18 hands\-on engineering days, with uncertainty around existing storage, provider authentication and undocumented live configuration\. It is not a delivery commitment\. For evening work, schedule by completed PR rather than calendar deadline\.
-
-## 5\. PR 01 — establish a trustworthy baseline
-
-### Changes
-
-1. Record live inventory and classify findings as confirmed repository defects, runtime questions or desired improvements\.
-2. Fix `.github/workflows/validate.yml`: remove the missing `platform-services/runtime-inputs` render path; invoke `bash -n` separately for every tracked shell script\.
-3. Introduce one maintained list or discovery mechanism for active render entrypoints, reused by local validation and continuous integration &#40;CI&#41;\. Never silently skip a missing configured path\.
-4. Add schema validation for rendered Kubernetes resources and known Flux resource types\. Account for Flux substitution and encrypted Secrets rather than applying ciphertext to a disposable cluster\.
-5. Add a check for unresolved shared substitutions and a check that every Git\-managed Secret uses the intended encryption format\. Exempt documented bootstrap/recovery procedures, not arbitrary Secret files\.
-6. Correct `docs/INFRASTRUCTURE.md`, `docs/PLATFORM-SERVICES.md`, `docs/runbook.md`, the contradictory ClickStack/OTel key comment in `Makefile`, and relevant agent guidance: remove deleted central\-secret paths and inconsistent ingestion\-key instructions\.
-7. Keep the README short: setup prerequisites, routine application workflow, status and recovery links\.
+## 2. Observed baseline and urgent faults
 
-### Acceptance
+Use KUBECONFIG=$HOME/.kube/config for scripted kubectl/Flux checks here; the k3s wrapper may otherwise select the root-owned kubeconfig.
 
-- Local validation and CI use the same entrypoints and succeed on the active configuration\.
-- A deliberately invalid second shell script is rejected, proving the workflow checks more than one file\.
-- A broken manifest path or unresolved required substitution is rejected\.
-- All current service secret\-edit paths exist; PR 01 validation does not decrypt or print credentials\. The existing live verifier's plaintext output remains a PR 02 fix\.
+| Area | Observed on 27 September 2026 | Consequence |
+| --- | --- | --- |
+| Host | Arch Linux x86-64; one Ready node at 192.168.1.200; k3s v1.34.4+k3s1; 31 GiB RAM | This is an in-place change. Inventory datastore, server config, and disk layout before recovery work. |
+| Flux | Six Kustomizations and current releases were Ready at the previously inspected revision 91e88935; PR01 is now on main at 2bae8d0 and CI passed | Recheck applied revision and inventories before moving ownership. |
+| Edge | Packaged Traefik NodePorts 31514/30313; current issuers and certificates Ready | Preserve routes; verify router/DNS during cutover. |
+| Storage | Four Bound local-path claims/PVs for ClickHouse data/logs, MongoDB, and MinIO; reclaim policy Delete | Namespace or claim deletion and pruning can destroy data. |
+| Identity | oauth2-proxy permits email-domain: "*" and uses cookie domain .homelab.swhurl.com | Restrict sign-in. All sibling hosts under this domain receive the shared cookie. |
+| Lifecycle | make teardown deletes the two root Flux Kustomizations; they and children prune. make reinstall invokes teardown, then install | Deletion can cascade through namespaces/PVs and removes the GitRepository needed by the next reconcile. |
+| Telemetry | The live logging/hyperdx-secret ingestion key is 48 bytes after Kubernetes data decoding; decoding again yields 36 bytes matching ClickStack's team ingestion key. Recent collector logs contain repeated HTTP 401 token/scheme errors | The collectors receive encoded text and drop telemetry. Fix the source Secret and verifier, restart both collectors, and verify fresh telemetry. |
+| Validation | PR01 removed the stale CI render path and fixed the shell check; CI passed | Extend CI to rendered Helm chart resources in PR04. |
 
-### Rollback
+The key comparison and log check were read-only and did not print values. They prove a live mismatch; successful telemetry after repair remains to be checked. The current verifier double-decodes and may print secrets on mismatch, so avoid normal make verify-platform or make install until corrected. Do not run live teardown/reinstall under current semantics. The dated baseline in `docs/operations/current-state.md` is observation, not restore evidence.
 
-Revert validation/documentation changes if necessary\. No live resource changes in this PR\.
+Other live checks: router/DNS, approved user list, Flux/Helm owners, backup destination, datastore, private GHCR access, and Mac model endpoint.
 
-## 6\. PR 02 — lifecycle and access correctness
+## 3. Design decisions
 
-### Changes
+| Concern | Home decision | Future extension |
+| --- | --- | --- |
+| Cluster | Keep `clusters/home/` the sole entrypoint; choose independent capability units. | A later `clusters/aws/` may select shared bases and use separate settings and age key. |
+| Host | Keep host/, dynamic DNS, NodePorts, and router mapping home-specific. | Design EC2 bootstrap and Route53 ownership when that move is committed. |
+| App chart | Use pinned bjw-s app-template, initially version 5.2.1 after rendering fixtures. Share an HTTP HelmRepository; pin version per HelmRelease. | Write a custom chart only if the values and policy model prove inadequate. |
+| App isolation | One namespace and one Flux unit per instance, with SOPS decryption on that unit when needed. | Reuse the generator/policy for another cluster later. |
+| Browser exposure | private has no Ingress; authenticated-web is for trusted apps under the shared-cookie domain; public uses a domain outside that scope. | Private browser routes need a proven tailnet or internal entrypoint. A public IP allowlist is not the default private boundary. |
+| TLS | Keep working HTTP-01 for public home routes. | Consider Route53 DNS-01 for private-host certificates. Wildcard TLS is optional and has a larger key blast radius. |
+| Updates | Pilot Renovate for chart and digest PRs; retain manual digest PRs. | Avoid custom cross-repository PR machinery unless needed. |
+| Data | Retain irreplaceable state on uninstall; explicit separate destruction. | Prove a Retain StorageClass and restore before stateful migration. |
 
-1. Replace the ambiguous operational meaning of `teardown` with explicit operations: suspend reconciliation; resume; uninstall a named application; intentionally destroy a named scope\. Do not make destructive commands part of normal deployment\.
-2. Trace actual Flux inventories and Helm ownership before changing deletion policies\. Parent and child Kustomizations currently use `prune: true`; deleting a parent can cascade\.
-3. Define retention for namespaces, persistent volume claims, volumes and Helm\-managed data\. `deletionPolicy: Orphan` alone does not protect against deleting resources from Git or deleting their namespace\. Combine documented ownership, appropriate prune exclusions/retention and storage reclaim policy where required\.
-4. Avoid implicit lifecycle cycles: after deliberately removing reconciliation parents, recovery must explicitly bootstrap them; reconciling a deleted object is not a reinstall strategy\.
-5. Remove plaintext credential output from `scripts/verify-platform.sh`\. Determine the true ingestion\-key encoding and compare exactly the bytes received by collectors\. A Kubernetes `.data` read normally requires one base64 decode; do not assume the encrypted contents are correct without authorised inspection\.
-6. Replace the broad Google email\-domain allowance with explicit approved identities, using the provider\-supported configuration\. Confirm external provider restrictions rather than relying on them implicitly\.
-7. Document which existing ingress endpoints rely on shared sign\-in and which rely on application authentication\. Resolve intended visibility for MinIO, its console and ClickStack without assuming they are currently unauthenticated\.
+A public app on public.homelab.swhurl.com is still in the .homelab.swhurl.com cookie scope. Use a sibling domain such as public.swhurl.com or a separate host-only proxy. HttpOnly does not stop the destination server receiving the cookie. Browser sign-in establishes identity; each app owns authorization. Machine APIs use token auth, not browser redirects.
 
-### Acceptance
+BASE_DOMAIN currently has only a non-empty check while hostnames are hardcoded. In the settings phase, make it authoritative where it owns hosts or remove the misleading setting. Keep config.env for host/local inputs and the Git-tracked platform-settings ConfigMap for cluster non-secrets.
 
-- In a disposable test scope, suspend changes no workload/data; uninstall removes only the selected application resources and preserves retained data\.
-- A named data\-destruction procedure is separate and explains the affected storage\.
-- Verification failures display resource names and safe diagnostics, never secret values\.
-- An approved account succeeds and an unapproved account is rejected\. Existing valid sessions are considered during the change\.
-- Bootstrap/recovery instructions actually recreate missing reconciliation objects\.
+## 4. Delivery order and gates
 
-### Rollback
+PR01 is complete and green. Prepare full recovery in parallel with the immediate repairs. Prove restore before deletion, ownership handover, or stateful migration.
 
-Use a pre\-change backup and retained workload manifests\. Revert policy changes before unfreezing reconciliation if the ownership graph differs from expectations\. A Git revert cannot recover deleted volume data\.
+| Order | Deliverable | Live gate |
+| --- | --- | --- |
+| PR01 | Inventory, validator, CI, documentation | Complete at 2bae8d0 |
+| P0a | Guard destructive teardown/reinstall and correct operator docs | Complete in Git |
+| P0b | Back up age key off-host and test recovery | Complete: encrypted USB copy decrypted all three Secrets |
+| P0c | Fix verifier and double-encoded ingestion Secret; restart and verify collectors | Git fix complete; pending live collector restart and 401-free logs |
+| P0d | Restrict sign-in to approved identities; test accepted/rejected accounts | Git fix complete (`sam@swhurl.com` only); pending accepted/rejected sign-in test |
+| PR08a | Independent backup and tested restore of one stateful workload | Before deletion/ownership or stateful change |
+| PR02 | Lifecycle and retention semantics | P0 and PR08a for live deletion |
+| PR03 | Capability split and cert-manager/issuer ordering | PR02 and PR08a for ownership transfer |
+| PR07a | Narrow Secret rollout controller pilot | After P0c; before relying on automatic rotation |
+| PR04 | App-template contract, generator, rendered policy | Local work after PR01; rollout after PR03 |
+| PR05 | Split and migrate example staging/production; operator commands | PR03, PR04, recovery for stateful paths |
+| PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |
+| PR07b | App Secret conventions and shared settings | As required by PR04/05 |
+| Final | Operator exercise and documentation | All core deliverables |
 
-## 7\. PR 03 — independent reconciliation
+Planning range: roughly 8–14 hands-on days for the core home workflow, plus immediate fixes, discovery, and restore time. Hermes is excluded.
 
-### Target reconciliation units
+### Immediate repair acceptance
 
-|Unit                   |Installation dependency                            |Notes                                                                        |
-|-----------------------|---------------------------------------------------|-----------------------------------------------------------------------------|
-|Sources                |Flux controllers and repository access             |Sources/shared non-secret settings                                           |
-|Namespaces             |Sources                                            |Baseline policies; no observability dependency                               |
-|cert-manager controller|Namespaces                                         |Wait for Helm release/controller readiness                                   |
-|Certificate issuers    |cert-manager controller                            |Apply only after resource definitions exist                                  |
-|Traefik configuration  |Packaged K3s Traefik                               |Preserve current NodePorts/router mapping                                    |
-|Shared sign-in         |Namespace, ingress and issuer readiness as required|Independent of telemetry/object storage                                      |
-|ClickStack             |Namespace and its storage requirements             |Optional capability; independent app lifecycle                               |
-|Telemetry collectors   |Namespaces; collector destination configuration    |May depend on ClickStack for initial install; apps never depend on collectors|
-|MinIO                  |Namespace and storage                              |Only explicit consumers depend on it                                         |
-|App instance           |Namespace plus interfaces it actually requires     |Workers do not depend on web ingress/sign-in                                 |
+1. teardown/reinstall cannot silently prune a live stack. Disabling them until PR02 gives explicit semantics is preferable. A confirmation must describe namespace/PV loss and the broken reinstall path. Update `docs/INFRASTRUCTURE.md`, `docs/runbook.md`, and `docs/orchestration-api.md` alongside any command change. Dry-run remains available.
+2. An age private-key copy exists outside the host and passes a controlled recovery check. Keep its location and access process in a private recovery record, never Git.
+3. The verifier decodes Kubernetes data once, compares bytes without printing values, and fails safely. Correct the encrypted source Secret so the Kubernetes Secret contains the actual ingestion token. Reconcile, restart both OTel collectors, verify 401 errors stop and new telemetry arrives. Keep the ClickStack bootstrap key concept separate.
+4. Replace email-domain: "*" with provider-supported approved identities. Verify approved and unapproved accounts. Document existing-session impact and review current protected routes.
 
-### Changes
+## 5. PR01 — complete
 
-- Split `clusters/home/infrastructure.yaml`, `platform.yaml` and `tenants.yaml` into capability\-specific reconciliation definitions\.
-- Give each unit the required substitutions/decryption settings explicitly\. Do not assume parent settings propagate to child Flux Kustomizations\.
-- Use targeted readiness and realistic timeouts\. A parent registry of child Kustomizations should not aggregate every optional capability into an application prerequisite\.
-- Preserve existing resource names, namespaces, Helm release names and storage claims during the split\.
-- Move a resource between Flux owners using a staged, documented handover: suspend affected owners, prevent old\-owner pruning, change inventories/paths, reconcile and verify the new owner, then retire obsolete ownership and restore normal pruning\. Validate the procedure on a disposable resource first; do not allow concurrent conflicting ownership\.
+PR01 at 2bae8d0 inventories the home cluster, discovers active Flux render paths for local and CI checks, checks each tracked shell script, validates Kustomize/Flux manifests, and removes stale runtime-input references. CI passed. It does not render future Helm chart internals. Live verifier, teardown, sign-in, and ingestion faults remain.
 
-### Acceptance
+## 6. PR02 — lifecycle and retention
 
-- Fresh bootstrap creates cert\-manager then issuers without a manual resource\-definition installation step\.
-- A controlled ClickStack failure does not prevent an unrelated app update\.
-- MinIO can be unavailable without blocking namespace creation or unrelated releases\.
-- No duplicate ownership, unexpected Helm uninstall, ingress interruption or persistent\-volume recreation occurs\.
+Replace teardown/reinstall as a normal deploy path with explicit suspend, resume, uninstall-one-instance, and destroy-named-data operations. Recreate removed Flux parents/sources through bootstrap; reconciling an absent object is not reinstall. Capture current Flux inventory and Helm owners; test deletion effects in a disposable scope. Parent/child prune: true can cascade.
 
-### Rollback
+Give new app instances dedicated namespaces. Protect retained namespaces and PVCs from ordinary Flux pruning and use a named local-path-retain StorageClass with reclaimPolicy Retain for new irreplaceable data after verifying local-path behavior. A PVC prune-disabled annotation alone cannot protect against namespace deletion. Inventory the four existing Delete PVs and handle any reclaim/ownership change as a backed-up migration. Do not recreate existing data for the new default.
 
-Suspend affected reconciliation first; use recorded inventories to restore ownership and previous definitions\. Avoid a blind revert while pruning is active\.
+Acceptance: suspend leaves workloads/data; a disposable uninstall affects only its instance and retains declared data; destroy requires an explicit named target; removed roots can be bootstrapped again. Git revert does not restore volume data.
 
-## 8\. PR 04 — application contract and shared chart
+## 7. PR03 — independent reconciliation
 
-### New files
+Split `clusters/home/` infrastructure, platform, and tenants into capability units: sources, namespaces, cert-manager controller, issuers, Traefik configuration, shared sign-in, ClickStack, OTel, MinIO, and each app instance. Install cert-manager CRDs before issuers. Apps depend only on services they need. Each unit declares substitutions and SOPS decryption explicitly.
 
-- `charts/swhurl-app/Chart.yaml`, `values.yaml`, `values.schema.json` and templates\.
-- `docs/application-contract.md` describing supported inputs and defaults\.
-- `scripts/app-new.py` or equivalent small generator; choose one implementation language already available in CI\.
-- Representative rendering fixtures for a worker, authenticated web app and persistent app\.
+Preserve resource/HelmRelease names, claims, and routes. For an ownership transfer, record inventories, suspend owners, prevent old-owner pruning, reconcile and verify the new owner, then retire old ownership. Test on a disposable resource; avoid a blind revert with pruning active. Keep capability bases reusable for a future cluster, but do not add `clusters/aws/` or move host/ now.
 
-### Contract
+Acceptance: fresh bootstrap installs issuers without CRD race; ClickStack/MinIO failures do not block unrelated app updates; no duplicate ownership, Helm uninstall, route break, or PV recreation.
 
-|Input                       |Behaviour                                                                               |
-|----------------------------|----------------------------------------------------------------------------------------|
-|Image repository and digest |Required immutable identity for promoted releases                                       |
-|Command/arguments           |Optional override for upstream images                                                   |
-|Workload mode               |Ordinary Deployment initially; specialised apps may use upstream charts/manifests       |
-|Port                        |Optional; no Service created for a worker without a port                                |
-|Health checks               |Explicit application paths/commands and startup allowance; do not invent `/health`      |
-|Resources                   |Requests/limits supplied or inherited from a documented small-app profile               |
-|Exposure                    |`private`, `authenticated-web`, or `public`; precise network reachability documented    |
-|Host                        |Required for web exposure; supplied once and reused in ingress/certificate configuration|
-|Config and Secret references|Non-secret values separate from credentials                                             |
-|Persistence                 |Existing claim or explicitly provisioned claim; mount, size, storage class and retention|
-|Service account             |No mounted cluster token by default                                                     |
-|Security                    |Non-privileged defaults; writable locations and exceptions explicit                     |
-|External dependencies       |References to endpoints and associated network/credential requirements                  |
+## 8. PR07a — Secret rollout pilot
 
-Use one HelmRelease as the primary app\-instance configuration, avoiding an additional custom application language and compiler\. The generator creates this, Kustomize composition, Flux registration and optional encrypted\-secret stub\. Generated wiring remains committed and reviewable\. It must not commit plaintext credentials or overwrite an existing app\.
+Install a pinned, opt-in Reloader release after telemetry repair. Pilot Secret-specific annotations on oauth2-proxy and OTel collectors, with scoped watch/RBAC. Rotate a test Secret; verify intended workloads restart and unrelated ones do not. Keep manual runtime-inputs-refresh-otel until rotation and telemetry pass, then update/retire it and docs together. Do not enable global restart-all.
 
-Use ingress annotations for certificate creation where appropriate\. Make browser authentication conditional; public endpoints and machine APIs must not inherit browser redirects accidentally\.
+## 9. PR04 — app contract and generator
 
-Initially source the chart from this Git repository through Flux\. Do not add a separate chart registry solely for the first release\. Note that an in\-repository shared chart change can affect multiple apps: validate all consumers and use a staged rollout\. Introduce immutable chart distribution later if independent chart\-version promotion becomes necessary\.
+Use bjw-s app-template rather than maintaining charts/swhurl-app. Add one HTTP HelmRepository source at https://bjw-s-labs.github.io/helm-charts/ and pin exact app-template version in each HelmRelease. A shared OCIRepository pinned to one tag prevents independent per-app chart promotion. For a chart from GitRepository, Flux defaults to ChartVersion: source edits do not deploy until Chart.yaml's version changes, unless Revision is selected. The released chart avoids this local-chart lifecycle.
 
-### Acceptance
+The contract has three layers:
 
-- A new app needs no edits inside chart templates\.
-- Schema validation rejects missing image/host requirements and incompatible values\.
-- Render fixtures confirm selectors, names, auth annotations, Secrets, persistence and token\-mount defaults\.
-- Requests to an authenticated app redirect unauthenticated browsers; machine endpoints retain the intended authentication contract\.
-- A private app has no public route; network policy controls pod access separately\.
-- The chart remains small; special workloads have a documented upstream\-chart/raw\-manifest route\.
+| Layer | Responsibility |
+| --- | --- |
+| Generator (scripts/app-new.py) | Creates instance namespace, Flux Kustomization, HelmRelease, Kustomize wiring, optional encrypted Secret stub; refuses overwrite/plaintext credentials. |
+| Explicit instance values | Non-root where supported, no service-account token, dropped capabilities, small resources, app-specific probes, opt-in Secret reload. Defaults change by reviewable instance diff. |
+| CI on rendered resources | Enforces production digest, security/resources or reviewed exceptions, ingress/cookie boundaries, named storage class, and no hostNetwork/hostPath/token mount by default. |
 
-## 9\. PR 05 — migrate the example and improve operation
+The HelmRelease is the main app definition; no second custom language. Add a .sops.yaml creation rule for app paths before creating encrypted app Secrets. Each app Flux unit containing them needs spec.decryption.secretRef.name: sops-age. Test without logging values.
 
-1. Generate an example instance in a temporary namespace and compare its rendered resources with the current example\.
-2. Validate routing, certificate issuance, sign\-in and readiness before migration\.
-3. Migrate staging first\. If preserving names while transferring from raw manifests to Helm, validate explicit Helm adoption and old Flux ownership removal\. Otherwise use new resource names and a controlled route cutover\. Do not assume Helm will adopt existing resources automatically\.
-4. Migrate production separately; keep its Flux unit independent from staging\.
-5. Delete old base/overlay resources only after confirming the new owner and pruning behaviour\.
-6. Add `make app-check NAME=... INSTANCE=...`, `app-status`, `app-reconcile` and `app-logs`\. Status should show desired Git revision, applied revision, desired image digest, running image identity, ready replicas, address and actionable failure messages\.
-7. Keep `make install` for bootstrap/full\-platform operations\. Explain normal Git\-driven deployment and optional targeted reconciliation\.
+| Input | Rule |
+| --- | --- |
+| Image | Immutable digest for promoted production releases; chart version pinned separately. |
+| Workload | Deployment by default; worker may omit Service/Ingress; special cases may use upstream chart/raw manifests. |
+| Health | App-specific readiness/startup probes, no invented /health. |
+| Exposure | private: no Ingress. authenticated-web: trusted cookie domain with Traefik auth middleware. public: separate cookie-excluded domain. Machine APIs use own auth. |
+| Persistence | Explicit claim/mount/size/storage class/retention; none by default. |
+| Secrets | Encrypted instance-local Secret and chart references; automatic rollout after pilot. |
 
-Acceptance: onboard a second disposable app from an existing image within the 15\-minute target; change only one instance’s digest; identify and recover from an invalid image and a failing health check\. The other instance remains healthy and independently reconciled\.
+Add worker, authenticated-web, and persistent fixtures. Render the actual pinned chart with Helm in CI and run policy on those Kubernetes resources, as well as PR01 Flux/Kustomize checks. Verify illustrative values with helm template; they are not a tested manifest. The upstream values surface is broad, so supported use is defined by generator defaults and policy.
 
-Rollback: preserve the previous route/workload until cutover is validated\. Revert the app digest for normal release rollback\. Handle ownership rollback explicitly for this one\-time migration\.
+Acceptance: generator output renders; worker has no public route; authenticated web has middleware; public cannot use .homelab.swhurl.com; missing production digest and unreviewed privileges fail policy; SOPS secrets decrypt in their app Flux unit.
 
-## 10\. PR 06 — registry and release delivery
+## 10. PR05 — example migration and operation
 
-### Registry choice
+Current homelab-app-example reconciles both staging and production. Split it into two Flux units and dedicated instance namespaces. Both current overlays use letsencrypt-prod and shared sign-in, so staging presently isolates a namespace only; document that unless deliberately changed.
 
-Use GitHub Container Registry &#40;GHCR&#41; for first\-party images\. Keep third\-party upstream images unless a custom build or availability requirement justifies mirroring\. An in\-cluster registry adds storage, authentication, backup and bootstrap dependencies without solving the immediate usability problem\.
+Current nginx:1.25-alpine runs as root on port 80. Use an unprivileged image on 8080 with compatible writable paths or approve a narrow exception. Render and compare generated resources. Test route, TLS, sign-in, readiness; switch staging first, then production. Prefer fresh resources and controlled route cutover to untested Helm adoption of raw resources. Preserve old workloads/routes until verified and prevent old Flux pruning of new ownership.
 
-### Workflow
+Add app-check, app-status, app-reconcile, and app-logs commands. Status shows desired/applied revision, desired/running digest, replicas, route, failure reason. Keep make install for bootstrap/full-platform use. Verify a bad image or probe in one instance does not block the other.
 
-1. App repository workflow tests and builds an image\.
-2. Publish `ghcr.io/samclement/<app>` with a source\-revision tag and optional release tag; capture its immutable digest\.
-3. Use the workflow’s built\-in `GITHUB_TOKEN` with package\-write permissions for publication\.
-4. Open a deployment PR against this platform repository updating only the intended instance’s digest\. Cross\-repository writes require an explicitly scoped credential, preferably a GitHub App; an app repository’s default token is not automatically authorised here\.
-5. Platform validation renders the affected app and checks contracts\. Merge triggers Flux deployment\.
-6. Promote the same digest from staging to production\. Never rebuild an image merely to promote it\.
-7. Keep deployed digests and a documented rollback window during registry cleanup\.
+## 11. PR06 — registry and reviewable updates
 
-For private packages, provision read\-only registry credentials as encrypted Kubernetes image\-pull Secrets in each consuming namespace\. Do not place a package\-write credential in application pods\. Document rotation and package\-access permissions\.
+Use GHCR for first-party images. Each app repo tests, builds, publishes a source-revision-tagged image, and captures its digest. Use package-write credentials only in publishing. Private packages need read-only pull credentials in consuming namespaces; test an uncached pull. Promote one digest between staging and production.
 
-Build the architecture used by the homelab; publish both x86\-64 and ARM64 only if actual consumers require them\. Hosting inference natively on the Mac does not itself require ARM64 versions of every application image\.
+Pilot Renovate for app-template versions and GHCR image digests. Configure Flux manager file patterns for this repo's clusters/ and tenants/ paths; the default does not cover them. Verify source resolution and that each digest PR touches the intended instance; keep chart bumps separate. Configure private registry auth if needed. Hosted Renovate still needs its own GitHub integration/token, but avoids custom cross-repo app-to-platform PR code. Manual digest PRs remain supported. CI renders updates; merge triggers Flux.
 
-Acceptance: build, publish, open PR, deploy, verify actual image identity, promote and roll back one real app\. Test pulling private images on a node without a cached copy\. Confirm CI has no direct cluster\-admin credentials\.
+Build x86-64 for home; add ARM64 when a consumer needs it. Revisit before any Graviton move. Retain deployed digests for rollback.
 
-## 11\. PR 07 — secrets and shared settings
+## 12. PR07b — settings and app Secret conventions
 
-- Extend `.sops.yaml` rules to application instance paths before generating app Secrets\.
-- Use `stringData` for human\-authored encrypted runtime Secrets where compatible with the chosen apply workflow; otherwise document exactly one required base64 layer for `data`\. Validate decrypted structure without logging values\.
-- Select one restart mechanism for externally managed Secrets: a narrowly configured Secret\-watching rollout controller is a practical option\. A Helm template checksum alone does not detect arbitrary changes to an external Secret\.
-- If using a rollout controller, define its namespace permissions, annotate only intended workloads and test rotation without broad cluster access\.
-- Consolidate shared domains/hosts and remove stale local settings\. Keep application hosts overridable and environment\-specific\.
-- Keep ClickStack bootstrap keys and ingestion keys as separate concepts unless verified implementation behaviour requires otherwise\.
+Finish app-path SOPS rules and Secret authoring docs. Prefer encrypted stringData for human-authored values only after verifying SOPS/Flux apply behavior; otherwise encode once into Kubernetes data and compare decoded bytes without printing. Keep ClickStack bootstrap and OTel ingestion keys distinct. Remove stale duplicated host settings. Test disposable rotation before retiring manual restarts.
 
-Acceptance: rotate a disposable Secret and observe the intended rollout; unrelated apps do not restart; collectors authenticate after rotation; configuration edits have one documented authoritative path\.
+## 13. PR08a — independent recovery gate
 
-## 12\. PR 08 — persistence and recovery
+Classify data as reconstructible, expendable telemetry, or irreplaceable. Inspect datastore, local-path placement, reclaim, and existing host backups. Choose off-host destination and application-consistent method for each irreplaceable service. In-cluster MinIO on the same disk is not the only backup. Record recovery point/time targets, retention, capacity, and required credentials.
 
-1. Classify data: reconstructible from Git, reconstructible from registry, expendable telemetry, and irreplaceable application state\.
-2. Verify actual `local-path` placement and reclaim behaviour\. Local persistent storage is not replication or backup\.
-3. Choose a backup destination outside the host failure domain and protect its credentials\. In\-cluster MinIO on the same disk is not sufficient as the only backup\.
-4. Choose application\-consistent backup methods: database\-native backups for databases; stop/quiesce or snapshot\-aware procedures for filesystem state\. Avoid assuming a copy of a live database file is recoverable\.
-5. Record per\-workload recovery point objective &#40;acceptable lost data&#41; and recovery time objective &#40;acceptable downtime&#41;, retention and capacity\.
-6. Back up decryption keys and required host/bootstrap credentials separately\. Decide whether cluster\-database backup is required alongside declarative rebuild; use the mechanism matching the actual K3s datastore\.
-7. Rebuild a clean test scope, restore an encrypted Secret and one persistent workload, and verify application behaviour—not merely that files exist\.
+P0b backs up the age key immediately. Integrate it into a full recovery sequence here. Rebuild a clean test scope, restore an encrypted Secret and one persistent workload, and verify app behavior. Record dated evidence before current-state deletion, Flux ownership handover, or stateful migration.
 
-Acceptance: dated restore evidence, documented dependencies and measured restore time\. Stateful application migration waits for this gate; stateless chart work need not\.
+## 14. Final operator exercise
 
-## 13\. PR 09 — Hermes and Mac model serving
+Using only current docs: onboard web and worker; publish/deploy, promote, and roll back a digest; diagnose bad image and probe; rotate a Secret without exposing it; deploy during ClickStack failure; suspend/resume; uninstall a disposable persistent app with retained state; restore workload and age key. Update relevant docs alongside every behavior change under AGENTS.md; keep README short.
 
-### Deployment
+After the core exercise, consider tailnet private browser access, DNS-01, wildcard certs, a second cluster, or directory renaming. Hermes remains a separate project requiring model-network design and stronger command-execution isolation than a namespace alone.
 
-- Use a dedicated Hermes namespace with persistent state at the image’s documented data path and a separate workspace\.
-- Pin the official image\. Validate its startup/user requirements against the intended pod security settings rather than assuming the image runs under an arbitrary non\-root user\.
-- Begin with one replica and a non\-overlapping update strategy if state is single\-writer\. Do not autoscale a shared agent home\.
-- Disable service\-account token automount; provide no cluster\-admin credentials, host mounts, host networking or container\-runtime socket\.
-- Select its execution backend explicitly\. Running commands locally inside the Hermes container shares its state and credentials; a separate execution sandbox is a stronger boundary\. The Docker backend is not automatically available inside a Kubernetes pod\.
-- If adversarial\-code isolation is required, choose a separately isolated worker/virtual machine or validated sandbox runtime before rollout\. A namespace and network policy do not provide a separate kernel\.
+## 15. Evidence
 
-### Model interface
+- Repository: `docs/operations/current-state.md`, Makefile, `clusters/home/`, .github/workflows/validate.yml, scripts/validate-repo.py, scripts/verify-platform.sh; PR01 commit 2bae8d0.
+- [Flux pruning and deletion](https://fluxcd.io/flux/components/kustomize/kustomizations/)
+- [Flux HelmChart reconcile strategies](https://fluxcd.io/flux/components/source/helmcharts/)
+- [bjw-s app-template values reference](https://bjw-s-labs.github.io/helm-charts/docs/app-template/reference/)
+- [Renovate Flux manager](https://docs.renovatebot.com/modules/manager/flux/)
+- [Stakater Reloader](https://github.com/stakater/Reloader/blob/master/README.md)
+- [oauth2-proxy provider configuration](https://oauth2-proxy.github.io/oauth2-proxy/7.6.x/configuration/providers/)
+- [Cookie Domain scope, RFC 6265](https://www.rfc-editor.org/rfc/rfc6265)
+- [cert-manager Route53 DNS-01](https://cert-manager.io/docs/configuration/acme/dns01/route53/)
 
-- Mac runs the native model server with a stable private address, authenticated endpoint, known model identifier and restart/startup behaviour\.
-- Store the endpoint as non\-secret app configuration and the token as an app Secret\.
-- Restrict egress to the model port, name resolution and required services\. Enforce policy with the cluster’s actual network\-policy implementation and host/network controls; verify the source address observed by the Mac\.
-- Keep Mac administration separate from model access\. Agent access to the model does not imply Secure Shell &#40;SSH&#41; access to the Mac\.
-- Keep inference off public router forwards; use private network administration\.
-
-Acceptance: tool\-use round trip through the chosen model; persistence after pod replacement; clear bounded timeout/retry when Mac is offline; recovery after it returns; inability to reach selected blocked cluster/host services; no access to cluster credentials\. Test backups/restores of Hermes state before relying on long\-term memory\.
-
-Rollback: suspend Hermes, preserve its data, restore the previous image/configuration if compatible\. Do not silently downgrade state after an incompatible migration\.
-
-## 14\. Final acceptance and operating documentation
-
-Conduct one operator exercise using only documentation:
-
-1. Onboard a web app and a background worker\.
-2. Publish and deploy a new image; promote an existing digest\.
-3. Diagnose a bad image and failing readiness check, then roll back\.
-4. Rotate a Secret without printing it or remembering a service\-specific restart command\.
-5. Demonstrate an unrelated app deploy during an observability outage\.
-6. Suspend and resume reconciliation without deleting workloads\.
-7. Uninstall a disposable persistent app and confirm declared data retention\.
-8. Restore the selected stateful workload from independent backup\.
-9. Demonstrate Hermes operation and graceful model\-server unavailability\.
-
-Publish concise runbooks: bootstrap; add app; release/promote/rollback; inspect failures; rotate secrets; backup/restore; suspend/uninstall; administer external services\. Remove obsolete instructions and keep one canonical page per procedure\.
-
-Only then consider directory renaming, a dashboard, Flux image\-update controllers, distributed storage or a local registry\. Each should solve a demonstrated remaining problem\.
-
-## 15\. Evidence and references
-
-- Repository baseline: https://github\.com/samclement/swhurl\-platform/tree/91e889353f656577b48efc6f85d9f1b4427852f7
-- Existing lifecycle commands: `Makefile`; ownership: `clusters/home/flux-system/kustomizations.yaml` and `clusters/home/*.yaml`\.
-- Existing app: `tenants/apps/example`; validation: `.github/workflows/validate.yml`; credential verification: `scripts/verify-platform.sh`\.
-- Flux dependency, deletion and pruning semantics: https://fluxcd\.io/flux/components/kustomize/kustomizations/
-- GitHub registry credentials and digest\-based pulls: https://docs\.github\.com/en/packages/working\-with\-a\-github\-packages\-registry/working\-with\-the\-container\-registry
-- Certificate generation from ingress: https://cert\-manager\.io/docs/usage/ingress/
-- Hermes container/state interface: https://hermes\-agent\.nousresearch\.com/docs/user\-guide/docker
-- Model server network/authentication settings: https://lmstudio\.ai/docs/developer/core/server/settings
-
-The original review checked shell syntax individually, local Kustomize path references, configuration validation and lifecycle dry\-runs\. It did not validate live state or fully render all resources\. The acceptance work above is proposed implementation verification, not work already completed\.
+The live findings do not prove recovery, external reachability, or post-repair telemetry. Acceptance items are future work unless marked complete.

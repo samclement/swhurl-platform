@@ -23,9 +23,9 @@ endef
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  install             Clean install path (cluster defaults)"
-	@echo "  teardown            Stack-only teardown (delete Flux stack kustomizations)"
-	@echo "  reinstall           Teardown then install (cluster defaults)"
+	@echo "  install             Reconcile a bootstrapped stack and verify it"
+	@echo "  teardown            Disabled: cascading deletion can destroy persistent data"
+	@echo "  reinstall           Disabled: use Git updates and flux-reconcile"
 	@echo "  platform-certs-staging | platform-certs-prod"
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Reconcile Git-managed platform runtime SOPS secrets"
@@ -40,6 +40,7 @@ help:
 	@echo "  verify-platform     Run in-cluster platform state checks"
 	@echo "  verify              Run verification scripts against current context"
 	@echo "  validate-repo       Validate active manifests and shell scripts locally"
+	@echo "  test-safety         Test lifecycle guards, secret-safe verification and sign-in policy offline"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
 	@echo ""
@@ -69,21 +70,16 @@ install:
 	  $(MAKE) verify-platform; \
 	fi
 
-.PHONY: teardown
-teardown:
+.PHONY: teardown reinstall
+teardown reinstall:
 	@set -Eeuo pipefail; \
 	if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "Plan (teardown):"; \
-	  echo "  - delete homelab-flux-stack and homelab-flux-sources kustomizations"; \
+	  echo "Plan ($@): disabled; no cluster commands will run."; \
 	  exit 0; \
 	fi; \
-	kubectl -n flux-system delete kustomization homelab-flux-stack --ignore-not-found; \
-	kubectl -n flux-system delete kustomization homelab-flux-sources --ignore-not-found
-
-.PHONY: reinstall
-reinstall:
-	$(MAKE) teardown
-	$(MAKE) install
+	echo "[ERROR] $@ is disabled: Flux pruning can delete namespaces, Helm releases and persistent data." >&2; \
+	echo "Use Git updates and make flux-reconcile for deployment. See docs/runbook.md for lifecycle boundaries." >&2; \
+	exit 2
 
 .PHONY: flux-bootstrap
 flux-bootstrap:
@@ -199,3 +195,7 @@ verify: verify-config verify-platform
 .PHONY: validate-repo
 validate-repo:
 	python3 scripts/validate-repo.py
+
+.PHONY: test-safety
+test-safety:
+	python3 -m unittest discover -s tests -v

@@ -68,6 +68,9 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Release: `oauth2-proxy-shared`
 - Runtime inputs: `client-id`, `client-secret`, and `cookie-secret` in the service-local SOPS Secret; `OAUTH_HOST` in `platform-settings`
 - Shared middleware: `ingress/oauth-auth-shared`
+- Approved sign-in: `sam@swhurl.com`, declared in `values.authenticatedEmailsFile.restricted_access`. The chart mounts this ConfigMap as its authenticated-email file. Both the command-line wildcard and the chart default `email_domains = ["*"]` are removed; `config.configFile` explicitly sets `email_domains = []`.
+- The chart checksums config and approved-email changes to trigger rollout. Existing sessions for disallowed emails are rejected by oauth2-proxy session validation after rollout; the cookie key is unchanged. A real approved/denied Google login remains an operator acceptance check.
+- Shared cookies cover `.homelab.swhurl.com`. Public or untrusted apps must use a domain outside that scope or an isolated proxy with a host-only cookie. MinIO and ClickStack retain their application authentication; this change restricts routes using the shared middleware.
 
 ### ClickStack
 
@@ -94,7 +97,7 @@ Each Git-managed SOPS manifest is the final Kubernetes Secret applied by `homela
 - [`clickstack-runtime-inputs`](../platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml) in `observability`
 - [`hyperdx-secret`](../platform-services/otel/base/secret-hyperdx.sops.yaml) in `logging`
 
-`CLICKSTACK_API_KEY` is the ClickStack chart bootstrap/app key. The live team ingestion key is held in ClickStack MongoDB after first-login setup; the standalone OTel collectors use `HYPERDX_API_KEY`, which must match that live ingestion key. These keys may match on a fresh install but are separate in steady state.
+`CLICKSTACK_API_KEY` is the ClickStack chart bootstrap/app key. The live team ingestion key is held in ClickStack MongoDB after first-login setup; the standalone OTel collectors use `HYPERDX_API_KEY`, which must match that live ingestion key. These keys may match on a fresh install but are separate in steady state. Kubernetes `data.HYPERDX_API_KEY` must have exactly one base64 layer around the actual ingestion token. The verifier checks decoded bytes and never prints keys; extra encoding is an error. It requires exactly one distinct nonempty ClickStack team key. After a change, restart collectors and check logs plus newly received telemetry.
 
 ## Getting Started
 

@@ -21,7 +21,7 @@ Preferred day-to-day entrypoints:
 - `make flux-reconcile` after committing and pushing Git changes
 - `make verify-config` for local config contracts
 
-The installed host's observed baseline and remaining live checks are in [current state](operations/current-state.md). `make teardown` removes parent Flux Kustomizations and may prune resources; the current persistent volumes all have `Delete` reclaim policy. Do not use it as a routine reset without an independently tested restore and an ownership review.
+The installed host's observed baseline and remaining live checks are in [current state](operations/current-state.md). `make teardown` and `make reinstall` are disabled. The current persistent volumes have `Delete` reclaim policy; the former root deletion could cascade into volume loss.
 
 ### Bootstrap
 
@@ -65,22 +65,15 @@ Flow:
 2. `make flux-reconcile`
 3. `make verify-platform` (when `FEAT_VERIFY=true`)
 
-The current verifier can print both ingestion key values on mismatch. Until PR 02 fixes it, avoid running `make verify-platform` or a normal `make install` in shared logs.
+The verifier decodes Kubernetes Secret data once, checks against the unique ClickStack team ingestion key, and never prints the values. A byte match does not prove collector delivery: check fresh telemetry after restarting collectors. It fails if MongoDB is unavailable or there is no unique team key.
 
-### Full delete (`make teardown`)
+### Lifecycle guard
 
-```bash
-make teardown
-```
+`make teardown` and `make reinstall` exit nonzero before any cluster command. Their `DRY_RUN=true` variants report that they are disabled and exit successfully. There is no force bypass.
 
-Delete behavior is stack-only:
-1. Delete Flux stack kustomizations (`homelab-flux-stack`, `homelab-flux-sources`).
-2. Let Flux prune stack-managed resources.
+Routine updates use commit, push, and `make flux-reconcile`. The former teardown deleted root Flux Kustomizations, which could cascade through namespaces, Helm releases and PVs with `Delete` reclaim policy. It also removed the GitRepository required by install. Do not reproduce those deletions manually as a reset.
 
-Not part of default teardown:
-- Flux controller uninstall
-- cert-manager/CRD cleanup
-- cluster-wide namespace/secret sweeping
+Suspend/resume, per-instance uninstall and explicit data destruction remain PR02 work. They require the ownership map in [architecture](architecture.md#current-reconciliation-ownership), a tested stateful restore and disposable-scope deletion checks before live handover.
 
 ## Host Dynamic DNS (Optional)
 

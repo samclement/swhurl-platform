@@ -79,11 +79,11 @@ Important contract:
   - `scripts/bootstrap/install-flux.sh` was removed; Flux CLI/controller installation is now manual and documented in `README.md`. Keep `make flux-bootstrap` as manifest apply only.
   - `clusters/home/modes/`, `tenants/overlays/app-*-le-*`, and app-test Makefile mode targets were removed; `clusters/home/app-example.yaml` is fixed to `./tenants/apps/example`.
   - `run.sh` was removed; cluster orchestration is `make`-first via `make install` / `make teardown` (use `DRY_RUN=true`, `FEAT_VERIFY=...` env overrides).
-  - `make teardown` is now stack-only by default: it deletes `homelab-flux-stack` and `homelab-flux-sources` and leaves Flux controllers/cert-manager/CRDs installed.
+  - `make teardown` and `make reinstall` are disabled: they fail without cluster commands; `DRY_RUN=true` reports the guard. Root deletion can cascade through namespaces, Helm releases and Delete-policy PVs. Lifecycle replacement requires ownership and restore checks.
   - Keep `.github/workflows/validate.yml` aligned with active make targets and existing kustomize paths; remove deleted path checks (`run.sh`, `infrastructure/cilium/base`, and retired app-test overlays).
   - Runtime service feature flags were removed from active config (`FEAT_OAUTH2_PROXY`, `FEAT_CLICKSTACK`, `FEAT_OTEL_K8S`, `FEAT_MINIO`); keep `FEAT_VERIFY` only and treat oauth2-proxy/clickstack/otel/minio inputs as always required by active composition.
   - Dead orchestration scripts were removed (`scripts/15_verify_cluster_access.sh`, `scripts/20_reconcile_platform_namespaces.sh`); `make install` now delegates sync+reconcile through `make flux-reconcile`.
-  - Legacy hard-delete scripts were removed (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/98_verify_teardown_clean.sh`, `scripts/99_execute_teardown.sh`); default teardown remains stack-only via `make teardown` (inlined kubectl delete).
+  - Legacy hard-delete scripts were removed (`scripts/30_manage_cert_manager_cleanup.sh`, `scripts/98_verify_teardown_clean.sh`, `scripts/99_execute_teardown.sh`); teardown/reinstall are disabled pending safe lifecycle implementation.
 
 - Runtime inputs and substitution
   - Runtime-input targets are final SOPS-encrypted Kubernetes Secret manifests co-located with the platform service that consumes them (not infrastructure).
@@ -173,7 +173,8 @@ Important contract:
 When changing orchestration/layout:
 - Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
 - Run:
-  - `bash -n scripts/*.sh host/*.sh`
+  - `make test-safety`
+- `for file in scripts/*.sh host/*.sh; do bash -n "$file"; done`
   - `kubectl kustomize clusters/home >/dev/null`
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`
   - `kubectl kustomize platform-services/overlays/home >/dev/null`

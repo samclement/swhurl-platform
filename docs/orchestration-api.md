@@ -12,9 +12,7 @@ Runtime cluster secrets are Git-managed as final SOPS Secret manifests next to t
 
 ## Delete Contract
 
-1. Remove Flux stack kustomizations.
-2. Let Flux prune stack-managed resources.
-3. Keep Flux controllers and cluster-level services installed by default.
+`make teardown` and `make reinstall` are disabled and exit nonzero without invoking cluster tools. `DRY_RUN=true` reports the guard and exits successfully. No force override is provided. The former root deletions could prune namespaces, releases, and persistent data and remove the GitRepository required by install. Explicit lifecycle operations await PR02 retention and restore validation.
 
 ## Cluster Orchestration (Makefile-first)
 
@@ -32,10 +30,7 @@ Default apply flow (`make install`):
 2. `make flux-reconcile`
 3. `make verify-platform` (when `FEAT_VERIFY=true`)
 
-Default delete flow (`make teardown`):
-1. Delete `homelab-flux-stack` and `homelab-flux-sources` kustomizations
-
-Current PVs use `Delete` reclaim policy. This target is not a harmless reset; review Flux inventories and restore readiness before a live deletion. `make reinstall` runs it first.
+Routine deployment is commit, push, and reconciliation. Deletion is not part of this flow.
 
 `make validate-repo` calls `scripts/validate-repo.py`. It discovers render entrypoints from the active Flux `spec.path` definitions, adds the two bootstrap paths, checks each shell file separately, verifies SOPS Secret structure and required substitutions, and validates rendered resources with Flux Schema. It never contacts the cluster. See [validation prerequisites](INFRASTRUCTURE.md#repository-validation).
 
@@ -73,9 +68,9 @@ Key runtime-intent targets:
 - `make install [DRY_RUN=true]`
   - Runs optional verification (`FEAT_VERIFY`) and Flux reconcile.
 - `make teardown [DRY_RUN=true]`
-  - Runs stack-only teardown by deleting `homelab-flux-stack` and `homelab-flux-sources`.
+  - Disabled: exits nonzero without cluster operations; dry-run reports the guard.
 - `make reinstall`
-  - Runs `make teardown` then `make install`.
+  - Disabled with the same guard as teardown; dry-run is supported.
 - `make platform-certs-staging|platform-certs-prod [DRY_RUN=true]`
   - Updates `CERT_ISSUER` in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (local edit only).
 - `make runtime-inputs-sync`
@@ -99,4 +94,4 @@ Design boundary:
 - Runtime-input secrets are Git-managed directly as SOPS Secret manifests co-located with their consuming platform service.
 - Platform cert issuer mode is configmap-driven (`CERT_ISSUER`); app issuer/host intent is manifest-defined in app overlays.
 
-Until the ingestion-key verifier is fixed, `make verify-platform` and a normal `make install` may print key material when a comparison fails. Avoid shared command logs for these checks.
+`make verify-platform` checks Flux health and compares the once-decoded ingestion Secret with the unique ClickStack team key without printing credentials. It fails closed on lookup/decode errors, ambiguous team keys, or mismatches. Collector logs and fresh telemetry provide the separate delivery check. `make test-safety` tests the lifecycle guards and verifier offline with fake cluster commands, and checks that shared sign-in stays restricted to the approved email list.

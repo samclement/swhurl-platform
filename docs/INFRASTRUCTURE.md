@@ -16,8 +16,8 @@ There is no `run.sh` orchestration flow in the current repo. Cluster creation an
 
 - [`clusters/home`](../clusters/home): Flux entrypoint for the cluster stack
 - [`clusters/home/flux-system`](../clusters/home/flux-system): Flux bootstrap manifests, source definitions, and shared substitutions
-- [`infrastructure/overlays/home`](../infrastructure/overlays/home): shared infrastructure composition
-- [`platform-services/overlays/home`](../platform-services/overlays/home): shared platform services composition
+- [`infrastructure/`](../infrastructure): cluster-base (namespaces, storage classes), cert-manager, issuers, Traefik config, MinIO: one Flux unit each
+- [`platform-services/`](../platform-services): oauth2-proxy, ClickStack, OTel: one Flux unit each
 - [`tenants/app-envs`](../tenants/app-envs): tenant landing zones
 - [`tenants/apps/example`](../tenants/apps/example): sample application reconciled as its own Flux Kustomization
 - [`host`](../host): optional host-level dynamic DNS automation

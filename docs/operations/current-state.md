@@ -51,6 +51,14 @@ Applied 27 September 2026 at `d3658b4`. The five shared Flux units report `delet
 
 `make lifecycle-test` passed on the disposable fixture: suspend kept the workload running and resume reconciled; deleting the app unit pruned the workload but kept the prune-protected namespace, claim and data; `destroy-data` refused without `CONFIRM`, then removed the claim and PV, and the local-path provisioner logged deletion of the host directory; deleting an `Orphan` unit left its workload running. A first run caught `destroy-data` correctly refusing while the uninstalled pod was still terminating; the test now waits for it. A dry-run `destroy-data` against `observability/clickstack-mongodb` refuses because the claim is mounted. Deleting a real shared unit was not exercised.
 
+## PR03 capability split
+
+Cut over 27 September 2026 at `2f50de1`. `homelab-infrastructure` and `homelab-platform` (both `Orphan`, suspended first) were replaced by `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-minio`, `-auth`, `-clickstack` and `-otel`. Before the cutover, the new unit paths rendered exactly the old units' 22 inventory entries with no resource in two units.
+
+Before/after comparison: the six Helm release revisions, 13 platform/app pod UIDs, 4 PVs and 13 namespaces were identical (nothing upgraded, uninstalled, restarted or recreated); the only inventory change was the unit objects themselves. Resources now carry their new owner (for example `observability/clickstack` → `homelab-clickstack`, `observability` namespace → `homelab-cluster-base`). All 12 units were Ready; `make verify-platform` passed; `hello` still redirected to sign-in, ClickStack served, and telemetry kept arriving. The unused `infrastructure/overlays/home` and `platform-services/overlays/home` were deleted in a follow-up commit.
+
+Not exercised live: a fresh bootstrap (issuer ordering is by construction and checked by `make test-safety`) and an app deploy during a real ClickStack/MinIO outage (the example app has no dependency path to them).
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

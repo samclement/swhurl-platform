@@ -7,10 +7,7 @@ The platform is composed from shared infrastructure plus shared application serv
 - infrastructure: cert-manager, ClusterIssuers, Traefik configuration, MinIO, and shared namespaces
 - platform services: shared oauth2-proxy, ClickStack, and OpenTelemetry collectors
 
-These layers are reconciled through:
-
-- [`infrastructure/overlays/home`](../infrastructure/overlays/home)
-- [`platform-services/overlays/home`](../platform-services/overlays/home)
+Each service is its own Flux unit, defined in [`clusters/home/infrastructure.yaml`](../clusters/home/infrastructure.yaml) and [`clusters/home/platform.yaml`](../clusters/home/platform.yaml); see the [ownership map](architecture.md#current-reconciliation-ownership).
 
 ## Service Architecture
 

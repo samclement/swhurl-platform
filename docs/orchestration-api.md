@@ -39,7 +39,7 @@ State contracts:
 - Bootstrap manifests must be applied first (`make flux-bootstrap`) before reconcile/apply flows.
 - Runtime input target secrets are SOPS-encrypted final Secret manifests in service bases under `platform-services/*/base`.
 - Flux decryption key secret must exist in-cluster as `flux-system/sops-age`.
-- Shared infrastructure/platform composition is fixed to `infrastructure/overlays/home` and `platform-services/overlays/home`.
+- Shared infrastructure/platform composition is the unit list in `clusters/home/infrastructure.yaml` and `clusters/home/platform.yaml`.
 - k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - Shared oauth callback host intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`OAUTH_HOST`).

@@ -11,8 +11,8 @@ Use the docs in `docs/` as the detailed source of truth:
 - `docs/TENANTS.md`: tenant landing zones, app overlays, onboarding patterns, and current limitations.
 - `docs/runbook.md` and `docs/architecture.md`: operational workflows and design views.
 - Single cluster entrypoint: `clusters/home/`.
-- Shared infrastructure layer: `infrastructure/overlays/home`.
-- Shared platform-services layer: `platform-services/overlays/home`.
+- Shared infrastructure units: `clusters/home/infrastructure.yaml` (one Flux unit per `infrastructure/*` capability path).
+- Shared platform-service units: `clusters/home/platform.yaml` (one Flux unit per `platform-services/*/base`).
 - Tenant environment layer: `tenants/app-envs`.
 - App deployment layer: `tenants/apps/example` (staging + prod overlays) reconciled by app-level Flux Kustomizations in `clusters/home/`.
 - Runtime secret targets (Git-managed SOPS final Secrets): co-located under `platform-services/*/base/*.sops.yaml`.
@@ -105,7 +105,7 @@ Important contract:
 - Repo structure
   - `tenants/kustomization.yaml` was removed; cluster Kustomizations point directly to `tenants/app-envs` and `tenants/apps/example`.
   - `legacy/` and top-level `bootstrap/` directories were removed from the active repo to reduce stale migration scaffolding.
-  - Active Flux composition and NodePort ownership remain in `infrastructure/overlays/home -> ../../ingress-traefik/base` and `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (`31514`/`30313`).
+  - The `infrastructure/overlays/home` and `platform-services/overlays/home` aggregators were removed in PR03; composition is the unit list in `clusters/home/*.yaml`. NodePorts stay in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (`31514`/`30313`), owned by `homelab-traefik`.
 
 - Issuers and certificates
   - ClusterIssuers are plain manifests in `infrastructure/cert-manager/issuers`.
@@ -124,7 +124,7 @@ Important contract:
 - k3s defaults
   - k3s is a manual prerequisite documented in `README.md`; host automation no longer installs k3s.
   - Active default stack uses k3s defaults: flannel CNI + packaged `traefik` + packaged `metrics-server`.
-  - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; `infrastructure/overlays/home` includes `../../ingress-traefik/base` so Flux reconciles the override (`80 -> 31514`, `443 -> 30313`).
+  - Traefik NodePorts are pinned declaratively via k3s `HelmChartConfig` at `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml`; the `homelab-traefik` unit reconciles the override (`80 -> 31514`, `443 -> 30313`).
   - `scripts/verify-platform.sh` validates Flux kustomization health via `flux get kustomizations` and checks that `logging/hyperdx-secret.HYPERDX_API_KEY` is present.
   - Cilium lifecycle scripts were removed (`scripts/16_verify_cilium_bootstrap.sh`, `scripts/26_manage_cilium_lifecycle.sh`, `scripts/bootstrap/patch-hubble-relay-hostnetwork.sh`).
   - Cilium/Hubble manifests were removed from active composition (`infrastructure/cilium/base`, `platform-services/oauth2-proxy-hubble/base`, and old bootstrap Cilium HelmChart manifests).
@@ -195,8 +195,7 @@ When changing orchestration/layout:
   - `make backup-clickstack-mongodb DRY_RUN=true`, `make restore-test-clickstack-mongodb DRY_RUN=true` and `make lifecycle-test DRY_RUN=true`
   - `for file in scripts/*.sh host/*.sh; do bash -n "$file"; done`
   - `kubectl kustomize clusters/home >/dev/null`
-  - `kubectl kustomize infrastructure/overlays/home >/dev/null`
-  - `kubectl kustomize platform-services/overlays/home >/dev/null`
+  - `make validate-repo` (renders every active unit path from `clusters/home`)
   - `kubectl kustomize tenants/app-envs >/dev/null`
   - `kubectl kustomize tenants/apps/example >/dev/null`
   - `make install DRY_RUN=true`

@@ -7,8 +7,8 @@ The current host already has k3s and Flux installed. For routine changes, valida
 The active repo layout is:
 
 - `clusters/home`: Flux entrypoint and reconciliation chain
-- `infrastructure/overlays/home`: shared cluster infrastructure
-- `platform-services/overlays/home`: shared platform services
+- `infrastructure/*`: shared cluster infrastructure (namespaces, cert-manager, issuers, Traefik config, MinIO)
+- `platform-services/*/base`: shared platform services (sign-in, ClickStack, OTel)
 - `tenants/app-envs`: tenant landing zones
 - `tenants/apps/example`: sample app deployed by its own Flux Kustomization
 

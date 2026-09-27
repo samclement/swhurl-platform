@@ -261,7 +261,7 @@ Architecture chart generation:
 - Sample app path is fixed via `clusters/home/app-example.yaml`:
   - `./tenants/apps/example`
 - Example app staging/prod overlays both use `letsencrypt-prod`.
-- Provider selection is controlled by composition entries in `infrastructure/overlays/home/kustomization.yaml`.
+- Provider selection is the unit list in `clusters/home/infrastructure.yaml`.
 
 ## Native k3s Defaults
 
@@ -273,4 +273,4 @@ Active `home` composition assumes:
   - HTTP `80 -> 31514`
   - HTTPS `443 -> 30313`
 
-Legacy provider manifests were removed from this repo; `infrastructure/overlays/home` now targets only active paths.
+Legacy provider manifests were removed from this repo; only active paths have units.

@@ -6,7 +6,7 @@ Shared platform services deployed once per cluster.
 - `clickstack`
 - `otel`
 
-Composition entrypoint: `platform-services/overlays/home/kustomization.yaml`.
+Each `*/base` is reconciled by its own Flux unit, listed in `clusters/home/platform.yaml`.
 
 Runtime Secrets are SOPS-encrypted final Kubernetes Secret manifests co-located with the service that consumes them:
 - `oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml`

@@ -45,6 +45,12 @@ Checked 27 September 2026:
 - ClickHouse system log tables had no TTL and held about 18 GiB since March 2026 (`trace_log` 6.3 GiB, `metric_log` and `query_log` 3.4 GiB each); local-path does not enforce the 20 Gi claim.
 - PR02a applied 27 September 2026 at `28723fe`: after the ClickHouse restart all ten system log tables carry a 7-day TTL; the renamed `*_0` tables (about 18 GiB) were dropped, and root-disk use fell from 58 GiB to 40 GiB. The MongoDB PV (`pvc-cf0665d9-…`) was patched to `Retain`; all three ClickStack PVCs carry `helm.sh/resource-policy: keep`; `local-path-retain` exists. `make verify-platform` passes, including the new retention checks, and telemetry kept flowing with no collector export errors.
 
+## Lifecycle (PR02b)
+
+Applied 27 September 2026 at `d3658b4`. The five shared Flux units report `deletionPolicy: Orphan` (the two roots were re-applied with `kubectl apply -f clusters/home/flux-system/kustomizations.yaml`); `homelab-app-example` keeps `MirrorPrune`; `observability` carries `kustomize.toolkit.fluxcd.io/prune: disabled`. All units returned to Ready.
+
+`make lifecycle-test` passed on the disposable fixture: suspend kept the workload running and resume reconciled; deleting the app unit pruned the workload but kept the prune-protected namespace, claim and data; `destroy-data` refused without `CONFIRM`, then removed the claim and PV, and the local-path provisioner logged deletion of the host directory; deleting an `Orphan` unit left its workload running. A first run caught `destroy-data` correctly refusing while the uninstalled pod was still terminating; the test now waits for it. A dry-run `destroy-data` against `observability/clickstack-mongodb` refuses because the claim is mounted. Deleting a real shared unit was not exercised.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

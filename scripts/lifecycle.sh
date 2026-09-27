@@ -54,7 +54,9 @@ suspend_resume() {
 check_claim_released() {
   local ns="$1" pvc="$2" json release owner
   json="$(kubectl -n "$ns" get pvc "$pvc" -o json)" || die "PVC $ns/$pvc not found"
-  if kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{range .spec.volumes[*]}{.persistentVolumeClaim.claimName}{"\n"}{end}{end}' | grep -qxF "$pvc"; then
+  # Running, pending or terminating pods still hold the volume; finished ones do not.
+  if kubectl -n "$ns" get pods -o json | jq -e --arg pvc "$pvc" \
+    '[.items[] | select(.status.phase != "Succeeded" and .status.phase != "Failed") | .spec.volumes[]?.persistentVolumeClaim.claimName] | index($pvc)' >/dev/null; then
     die "PVC $ns/$pvc is mounted by a pod; stop or uninstall the workload first"
   fi
   release="$(jq -r '.metadata.annotations["meta.helm.sh/release-name"] // empty' <<< "$json")"

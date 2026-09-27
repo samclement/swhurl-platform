@@ -41,8 +41,9 @@ Checked 27 September 2026:
 - All four PVs are `local-path` on the root disk (`/var/lib/rancher/k3s/storage`) with `Delete` reclaim.
 - Classification: ClickStack MongoDB `hyperdx` is irreplaceable configuration (1 team holding the ingestion key, 1 user, 1 connection, 4 sources; other collections empty). ClickHouse is expendable telemetry. MinIO holds no buckets, so it is currently expendable.
 - `make backup-clickstack-mongodb` produced an age-encrypted archive, and `make restore-test-clickstack-mongodb` restored it into a disposable namespace: checksum, collection counts, and the restored team ingestion key matched the restored Git Secret. Negative checks (altered counts, corrupted archive) failed as expected. Live workloads were unchanged.
-- Not yet done: an off-host destination (backups are local only by decision), a backup schedule, restore on a separate machine, and running HyperDX against restored data.
-- ClickHouse system log tables have no TTL and hold about 18 GiB since March 2026 (`trace_log` 6.3 GiB, `metric_log` and `query_log` 3.4 GiB each). local-path does not enforce the 20 Gi claim, so this consumes root-disk space (168 GiB free).
+- Not yet done: an off-host destination (backups are manual and local only by decision; each run prunes to 7 daily + 4 weekly), a backup schedule, restore on a separate machine, and running HyperDX against restored data.
+- ClickHouse system log tables had no TTL and held about 18 GiB since March 2026 (`trace_log` 6.3 GiB, `metric_log` and `query_log` 3.4 GiB each); local-path does not enforce the 20 Gi claim.
+- PR02a applied 27 September 2026 at `28723fe`: after the ClickHouse restart all ten system log tables carry a 7-day TTL; the renamed `*_0` tables (about 18 GiB) were dropped, and root-disk use fell from 58 GiB to 40 GiB. The MongoDB PV (`pvc-cf0665d9-…`) was patched to `Retain`; all three ClickStack PVCs carry `helm.sh/resource-policy: keep`; `local-path-retain` exists. `make verify-platform` passes, including the new retention checks, and telemetry kept flowing with no collector export errors.
 
 ## Still to verify before live changes
 

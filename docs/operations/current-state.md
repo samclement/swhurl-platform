@@ -30,14 +30,14 @@ These were the findings at observation time. The P0 repairs below are fixed in G
 
 
 - `make teardown` deletes `homelab-flux-stack` and `homelab-flux-sources`; both roots and their children use pruning. This can cascade through namespaces and Helm releases. The four current PVs have reclaim policy `Delete`, Removing the GitRepository also left the reinstall sequence unable to reconcile its first source without bootstrap. **Fixed (P0a):** both targets are now disabled and fail before any cluster command.
-- Shared oauth2-proxy currently permits `email-domain: "*"` and sets its cookie domain to `.homelab.swhurl.com`. **Fixed in Git (P0d):** sign-in is restricted to an authenticated-emails list (`sam@swhurl.com`) and the chart default `email_domains = ["*"]` is overridden; deployed and verified live for the approved account on 27 September 2026; a rejected-account test remains. A separate domain for public or untrusted apps is still required before expanding exposure.
+- Shared oauth2-proxy currently permits `email-domain: "*"` and sets its cookie domain to `.homelab.swhurl.com`. **Fixed in Git (P0d):** sign-in is restricted to an authenticated-emails list (`sam@swhurl.com`) and the chart default `email_domains = ["*"]` is overridden; deployed on 27 September 2026. The approved account signs in (proxy `AuthSuccess`); the operator reported a non-approved account was refused. The proxy logs recorded no callback for that attempt, so the refusal may have come from Google (for example, OAuth consent-screen test-user limits) rather than the email list. The proxy-side list is enforced by rendered chart arguments and `make test-safety`. A separate domain for public or untrusted apps is still required before expanding exposure.
 - A read-only byte comparison found `logging/hyperdx-secret.HYPERDX_API_KEY` is 48 bytes after one Kubernetes `.data` decode. Decoding those bytes again yields 36 bytes matching ClickStack's live team ingestion key. Recent logs from both OTel collector workloads contain repeated HTTP 401 token/scheme failures. This confirms a live ingestion mismatch. **Fixed in Git (P0c):** the SOPS source now holds exactly one base64 layer and the verifier decodes once without printing values; verified live on 27 September 2026: after `make runtime-inputs-refresh-otel`, collector logs show no 401 errors, ClickHouse receives fresh logs and metrics, and `make verify-platform` passes. No key values were printed or saved in this document.
 
 ## Still to verify before live changes
 
 - k3s server configuration and datastore type, host backup jobs, off-host backup destination, and a tested restore of state and decryption material.
 - Flux resource inventories, Helm ownership details, and the deletion effects of current pruning and namespace ownership.
-- Router forwarding, public DNS, rejection of non-approved identities, and external reachability.
+- Router forwarding, public DNS, and external reachability.
 - Workloads outside Git, image publication workflows, and the Mac model service/network path.
 
 ## Finding classification

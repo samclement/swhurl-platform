@@ -67,7 +67,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | P0a | Guard destructive teardown/reinstall and correct operator docs | Complete in Git |
 | P0b | Back up age key off-host and test recovery | Complete: encrypted USB copy decrypted all three Secrets |
 | P0c | Fix verifier and double-encoded ingestion Secret; restart and verify collectors | Complete: live on 27 Sep 2026 after collector restart; no 401s, fresh logs/metrics in ClickHouse, verifier passes |
-| P0d | Restrict sign-in to approved identities; test accepted/rejected accounts | Live (`sam@swhurl.com` only); approved sign-in verified 27 Sep 2026; rejected-account test pending |
+| P0d | Restrict sign-in to approved identities; test accepted/rejected accounts | Complete: live (`sam@swhurl.com` only); approved sign-in verified and non-approved account refused by operator test, 27 Sep 2026 |
 | PR08a | Independent backup and tested restore of one stateful workload | Before deletion/ownership or stateful change |
 | PR02 | Lifecycle and retention semantics | P0 and PR08a for live deletion |
 | PR03 | Capability split and cert-manager/issuer ordering | PR02 and PR08a for ownership transfer |

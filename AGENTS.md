@@ -160,6 +160,10 @@ Important contract:
   - `flux reconcile kustomization ... --with-source` does not preempt an already running `wait: true` reconciliation. If a prior revision is in `Running health checks ... timeout 20m`, new `requestedAt` values queue but the old in-flight revision continues until timeout/failure.
   - During this window, `flux get kustomizations` can show stale `lastAttemptedRevision` (older sha) even when `homelab-flux-sources` already applied a newer source revision.
 
+- Recovery
+  - `make backup-clickstack-mongodb` / `make restore-test-clickstack-mongodb` are the PR08a backup and disposable restore check; backups are local-only (`~/.local/state/swhurl-platform/backups`) until an off-host destination is chosen.
+  - The restore test owns only namespaces labelled `platform.swhurl.com/recovery-test=true`; keep it out of Flux paths.
+
 - Secrets hygiene
   - Keep shared platform runtime secrets co-located with their consuming service in `platform-services/*/base/*.sops.yaml` (SOPS-encrypted), not `config.env`.
   - Keep app-only secrets in app directories (`tenants/apps/<app>/.../secret-*.sops.yaml`) and decrypt via the app Flux Kustomization.
@@ -174,7 +178,8 @@ When changing orchestration/layout:
 - Update `README.md`, `docs/runbook.md`, and `docs/orchestration-api.md` together.
 - Run:
   - `make test-safety`
-- `for file in scripts/*.sh host/*.sh; do bash -n "$file"; done`
+  - `make backup-clickstack-mongodb DRY_RUN=true` and `make restore-test-clickstack-mongodb DRY_RUN=true`
+  - `for file in scripts/*.sh host/*.sh; do bash -n "$file"; done`
   - `kubectl kustomize clusters/home >/dev/null`
   - `kubectl kustomize infrastructure/overlays/home >/dev/null`
   - `kubectl kustomize platform-services/overlays/home >/dev/null`

@@ -48,6 +48,8 @@ jobs:
           make install DRY_RUN=true
           make teardown DRY_RUN=true
           make reinstall DRY_RUN=true
+          make backup-clickstack-mongodb DRY_RUN=true
+          make restore-test-clickstack-mongodb DRY_RUN=true
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true
           make help

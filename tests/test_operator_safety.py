@@ -57,6 +57,17 @@ elif 'secret' in sys.argv:
                     self.assertIn('disabled', result.stdout + result.stderr)
                     self.assertFalse(self.calls.exists(), 'A disabled target called a cluster tool')
 
+    def test_recovery_dry_runs_never_call_cluster_tools(self):
+        for target in ('backup-clickstack-mongodb', 'restore-test-clickstack-mongodb'):
+            with self.subTest(target=target):
+                result = subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT,
+                                        env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')),
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('Plan (', result.stdout)
+                self.assertFalse(self.calls.exists(), 'A recovery dry run called a cluster tool')
+                self.assertFalse((self.bin / 'backups').exists(), 'A recovery dry run wrote files')
+
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
                          'newline', 'mongo-failure', 'unready'):

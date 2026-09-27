@@ -73,7 +73,37 @@ The verifier decodes Kubernetes Secret data once, checks against the unique Clic
 
 Routine updates use commit, push, and `make flux-reconcile`. The former teardown deleted root Flux Kustomizations, which could cascade through namespaces, Helm releases and PVs with `Delete` reclaim policy. It also removed the GitRepository required by install. Do not reproduce those deletions manually as a reset.
 
-Suspend/resume, per-instance uninstall and explicit data destruction remain PR02 work. They require the ownership map in [architecture](architecture.md#current-reconciliation-ownership), a tested stateful restore and disposable-scope deletion checks before live handover.
+Suspend/resume, per-instance uninstall and explicit data destruction remain PR02 work. They require the ownership map in [architecture](architecture.md#current-reconciliation-ownership), disposable-scope deletion checks and the stateful restore in [Recovery](#recovery) before live handover.
+
+## Recovery
+
+What must survive a host loss, and where it is:
+
+| Data | Class | Recovery source |
+| --- | --- | --- |
+| Manifests and SOPS Secrets | Irreplaceable | GitHub (`origin`) |
+| age private key (`age.agekey`) | Irreplaceable | Encrypted off-host copy (P0b); location kept outside Git |
+| ClickStack MongoDB `hyperdx` (team, ingestion key, user, sources, connection) | Irreplaceable config | `make backup-clickstack-mongodb` archives |
+| ClickHouse telemetry | Expendable | Not backed up |
+| MinIO (`storage/minio`) | Expendable today (no buckets) | Reclassify before storing data in it |
+
+Back up ClickStack MongoDB:
+
+```bash
+make backup-clickstack-mongodb
+```
+
+This streams `mongodump --db hyperdx --archive --gzip` through `age` to the recipient in `.sops.yaml`, so the dump is never written in plaintext. It writes `clickstack-mongodb-<UTC>.archive.gz.age` and a `.json` metadata file (checksum, MongoDB version, collection counts) to `~/.local/state/swhurl-platform/backups` (override with `BACKUP_DIR`). **Backups are local only**: copy both files off-host yourself. There is no schedule yet.
+
+Prove a backup restores:
+
+```bash
+make restore-test-clickstack-mongodb
+```
+
+This creates the disposable namespace `recovery-test` (labelled `platform.swhurl.com/recovery-test=true`), starts a throwaway MongoDB of the backed-up version, decrypts and restores the latest archive with `age.agekey` (override with `AGE_KEY_FILE`, `BACKUP_FILE`), and restores `hyperdx-secret` from Git with the same key. It passes only if the archive checksum, restored collection counts and the restored team ingestion key all match. It deletes the namespace afterwards (`KEEP=true` keeps it), never touches live workloads and prints no key material. It refuses to reuse an existing `recovery-test` namespace.
+
+To restore into the live service after data loss, restore with `mongorestore --archive --gzip --drop` into `observability/clickstack-mongodb` using the same decrypt pipe, then restart `observability/clickstack-app`. This live path has not been exercised.
 
 ## Host Dynamic DNS (Optional)
 

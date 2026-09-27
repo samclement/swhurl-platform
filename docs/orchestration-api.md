@@ -81,6 +81,10 @@ Key runtime-intent targets:
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
   - Reconciles runtime inputs and `homelab-platform`, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
+- `make backup-clickstack-mongodb [DRY_RUN=true]`
+  - Streams a `hyperdx` MongoDB dump through `age` into `~/.local/state/swhurl-platform/backups` (read-only on the cluster).
+- `make restore-test-clickstack-mongodb [DRY_RUN=true]`
+  - Restores the latest backup and the Git-managed `hyperdx-secret` into a disposable `recovery-test` namespace, checks them, then deletes the namespace. See [runbook recovery](runbook.md#recovery).
 - `make validate-repo`
   - Runs the same local manifest and shell validation as CI.
 - `make charts-generate`

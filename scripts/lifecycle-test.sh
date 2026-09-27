@@ -96,6 +96,7 @@ kubectl -n flux-system wait --for=condition=Ready "kustomization/$UNIT" --timeou
 step "Uninstall (delete app unit)"
 kubectl -n flux-system delete kustomization "$UNIT" --wait=true >/dev/null
 kubectl -n "$NS" wait --for=delete deploy/writer --timeout=2m >/dev/null 2>&1 && ok "workload pruned" || bad "workload not pruned"
+kubectl -n "$NS" wait --for=delete pod -l app=writer --timeout=2m >/dev/null 2>&1 || true
 kubectl get namespace "$NS" >/dev/null 2>&1 && ok "prune-protected namespace kept" || bad "namespace deleted"
 [[ "$(kubectl -n "$NS" get pvc data -o jsonpath='{.status.phase}' 2>/dev/null)" == "Bound" ]] && ok "prune-protected claim kept" || bad "claim deleted"
 [[ "$(marker)" == "$original" ]] && ok "data intact after uninstall" || bad "data changed or missing after uninstall"

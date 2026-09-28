@@ -50,7 +50,7 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 
 - Path: [`infrastructure/ingress-traefik/base`](../infrastructure/ingress-traefik/base)
 - Provider: packaged k3s Traefik with HelmChartConfig overrides
-- Notes: NodePorts are pinned to `31514` for HTTP and `30313` for HTTPS
+- Notes: NodePorts are pinned to `31514` for HTTP and `30313` for HTTPS. HTTP permanently redirects to HTTPS (`ports.web.redirections.entryPoint`); sign-in needs HTTPS because oauth2-proxy cookies are `Secure`
 
 ### MinIO
 

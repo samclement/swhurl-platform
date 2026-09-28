@@ -8,7 +8,14 @@ spec:
     ports:
       web:
         nodePort: 31514
-        redirectTo:
-          port: websecure
+        # Chart 38 (Traefik 3) syntax; the older `redirectTo` key is silently ignored.
+        # Without this redirect, plain-HTTP requests reach oauth2-proxy without its
+        # Secure cookies and sign-in fails with 403. ACME HTTP-01 still works:
+        # Let's Encrypt follows the redirect to HTTPS.
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+            permanent: true
       websecure:
         nodePort: 30313

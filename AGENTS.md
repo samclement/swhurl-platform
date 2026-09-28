@@ -128,6 +128,7 @@ Important contract:
   - `clusters/home/flux-system/sources/helmrepositories.yaml` no longer includes the `cilium` HelmRepository.
   - `config.env` no longer carries `FEAT_CILIUM`, `HUBBLE_HOST`, or `HUBBLE_OIDC_*`.
   - Shared oauth2-proxy edge-auth middleware lives in `platform-services/oauth2-proxy/base` (`oauth-auth-shared` in namespace `ingress`) and app ingresses reference `ingress-oauth-auth-shared@kubernetescrd`.
+  - HTTP→HTTPS redirect is `ports.web.redirections.entryPoint` (to `websecure`, `https`, permanent) in `helmchartconfig-traefik.yaml`. k3s ships Traefik chart 38 / Traefik 3, which silently ignores the old `ports.web.redirectTo`; without the redirect, plain-HTTP sign-in fails with 403 because oauth2-proxy cookies are `Secure`. `make verify-platform` and `make test-safety` check it.
   - For Traefik edge-auth redirect behavior, set oauth2-proxy to `upstream=static://202` + `skip-provider-button=true`, and point Traefik `ForwardAuth` to `http://oauth2-proxy-shared.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated requests return browser-followable `302` redirects.
   - During edge cutover, if router/NAT still targets legacy ingress-nginx NodePorts (`31514`/`30313`), move those NodePorts to Traefik before removing ingress-nginx or external hosts will fail.
 

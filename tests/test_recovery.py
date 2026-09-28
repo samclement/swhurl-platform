@@ -1,4 +1,4 @@
-"""backup-mongodb and restore-test-mongodb: every branch offline, with FakeRunner."""
+"""backup-mongodb and live-test-restore-mongodb: every branch offline, with FakeRunner."""
 import base64
 import datetime as dt
 import hashlib
@@ -95,7 +95,7 @@ class BackupTests(unittest.TestCase):
         runner = FakeRunner(dry_run=True)
         self.settings.prune = True
         _, lines = self.backup(runner)
-        self.assertEqual(lines[0], 'Plan (backup-clickstack-mongodb):')
+        self.assertEqual(lines[0], 'Plan (backup-mongodb):')
         self.assertIn('  - encrypt to age recipient age1fixture', lines)
         self.assertTrue(lines[-1].startswith(f'  - prune {self.dir} to the newest backup'))
         self.assertEqual(runner.calls, [])
@@ -265,7 +265,7 @@ class RestoreTestTests(unittest.TestCase):
         runner = FakeRunner(dry_run=True)
         code, text = self.run_test(runner)
         self.assertEqual(code, 0)
-        self.assertEqual(text.splitlines()[0], 'Plan (restore-test-clickstack-mongodb):')
+        self.assertEqual(text.splitlines()[0], 'Plan (live-test-restore-mongodb):')
         self.assertIn(str(self.archive), text)
         self.assertEqual(runner.calls, [])
 

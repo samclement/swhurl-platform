@@ -1,4 +1,4 @@
-"""secrets-check helpers, offline."""
+"""check-secrets helpers, offline."""
 import base64
 import unittest
 

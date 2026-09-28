@@ -14,7 +14,7 @@ Active Flux-owned ClickStack release definition.
 - Telemetry tables (`otel_*`, `hyperdx_sessions`) expire after 30 days. That TTL comes from the ClickStack collector image when it creates the tables, not from chart values; `make verify-platform` fails if it changes.
 - ClickHouse's own diagnostic logs (`system.query_log`, `trace_log`, `metric_log`, ...) expire after 7 days via `configmap-clickhouse-system-log-ttl.yaml`, mounted into `config.d` by the HelmRelease `postRenderers` patch because the chart's `config.xml` is not configurable. ClickHouse reads it only at startup: restart `deploy/clickstack-clickhouse` after editing. When a table definition changes, ClickHouse renames the old table to `<name>_N` (without TTL); drop those once checked.
 - `global.keepPVC: true` puts `helm.sh/resource-policy: keep` on all three PVCs, so a Helm uninstall leaves them.
-- MongoDB is backed up with `make backup-clickstack-mongodb`; see [backups and recovery](../../../docs/operations.md#backups-and-recovery).
+- MongoDB is backed up with `make backup-mongodb`; see [backups and recovery](../../../docs/operations.md#backups-and-recovery).
 
 ## When MongoDB data is lost (full reinstall)
 

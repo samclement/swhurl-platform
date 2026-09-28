@@ -9,7 +9,7 @@ worker, to put a public app inside the shared sign-in cookie domain, and to
 deploy production without an image digest. Secret stubs are SOPS-encrypted
 before this script returns, so plaintext never reaches Git.
 
-The output is ordinary YAML: edit it by hand afterwards. `make app-policy`
+The output is ordinary YAML: edit it by hand afterwards. `make check-apps`
 checks the rendered result.
 """
 from __future__ import annotations
@@ -311,16 +311,16 @@ def main(argv=None) -> int:
         print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
     if args.policy_check:
         return check_generated(args.root.resolve() / 'tenants/apps' / args.name / args.env)
-    print('[INFO] Next: make app-policy, then commit, push and make flux-reconcile')
+    print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')
     return 0
 
 
 def check_generated(instance: Path, runner: Runner | None = None) -> int:
-    """Render what was just generated against the same contract app-policy enforces."""
+    """Render what was just generated against the same contract check-apps enforces."""
     try:
         problems = policy.evaluate(instance, runner)
     except CommandError as error:
-        print(f'[WARN] could not run the app policy ({error}); run make app-policy before committing')
+        print(f'[WARN] could not run the app policy ({error}); run make check-apps before committing')
         return 0
     if problems:
         print('[BAD] the generated instance violates the app contract (generator and policy disagree):')

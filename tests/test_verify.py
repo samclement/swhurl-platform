@@ -1,4 +1,4 @@
-"""verify-platform and verify-config: every branch, offline, with FakeRunner."""
+"""verify-platform and check-config: every branch, offline, with FakeRunner."""
 import base64
 import io
 import json

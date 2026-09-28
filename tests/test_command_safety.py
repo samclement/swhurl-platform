@@ -80,7 +80,7 @@ elif 'secret' in argv:
                     self.assertFalse(self.calls.exists(), 'A disabled target called a cluster tool')
 
     def test_recovery_dry_runs_never_call_cluster_tools(self):
-        for target in ('backup-clickstack-mongodb', 'restore-test-clickstack-mongodb'):
+        for target in ('backup-mongodb', 'live-test-restore-mongodb', 'backup-clickstack-mongodb'):
             with self.subTest(target=target):
                 result = subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT,
                                         env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')),
@@ -101,13 +101,13 @@ elif 'secret' in argv:
                 self.assertFalse(self.calls.exists(), 'A refused destroy-data called a cluster tool')
 
     def test_lifecycle_test_dry_run_never_calls_cluster_tools(self):
-        result = subprocess.run(['make', 'lifecycle-test', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+        result = subprocess.run(['make', 'live-test-lifecycle', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.calls.exists())
 
     def test_reloader_test_dry_run_never_calls_cluster_tools(self):
-        result = subprocess.run(['make', 'reloader-test', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+        result = subprocess.run(['make', 'live-test-reloader', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.calls.exists())
@@ -120,7 +120,7 @@ elif 'secret' in argv:
         self.assertEqual(calls, ['flux'], 'verify-platform must not run after a failed reconcile')
 
     def test_install_plan_respects_skip_verify(self):
-        for extra, steps in (([], ['verify-config', 'flux-reconcile', 'verify-platform']),
+        for extra, steps in (([], ['check-config', 'flux-reconcile', 'verify-platform']),
                              (['SKIP_VERIFY=1'], ['flux-reconcile'])):
             with self.subTest(args=extra):
                 result = subprocess.run(['make', '--no-print-directory', 'install', 'DRY_RUN=true', *extra], cwd=ROOT,

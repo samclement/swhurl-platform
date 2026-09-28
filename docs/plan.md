@@ -4,16 +4,16 @@
 
 ## 0. Where this paused and what is left
 
-Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/operations/current-state.md`. Before resuming: pull `main`, run `make validate-repo`, `make test-safety`, `make verify-platform` and `flux get kustomizations` (12 units, all Ready), and re-read that file's "Not exercised" notes.
+Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (12 units, all Ready), and re-read that file's "Not exercised" notes.
 
 **Remaining plan work**
 
 1. **PR06 — GHCR publishing and Renovate** (section 4). Needs decisions only you can make: which app repository goes first; hosted Renovate (GitHub App) or self-hosted; public or private GHCR images (private needs pull credentials per namespace). A smaller first step needs no app repo: point Renovate at this repo's pinned charts (app-template, reloader, cert-manager, ClickStack, OTel, oauth2-proxy) and the `hello` image digest, with Flux manager file patterns for `clusters/` and `tenants/`.
-2. **PR08a remainder** (section 5): choose an off-host backup destination, then schedule `make backup-clickstack-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
+2. **PR08a remainder** (section 5): choose an off-host backup destination, then schedule `make backup-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
 3. **Final operator exercise** (section 6), using only the docs.
-4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](.claude/skills/document-repo/SKILL.md).
+4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
 
-5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](docs/contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
+5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
 
 6. **Cleanup** (steps 1 and 2 done; step 3 partly done): the repository review below, recorded 28 September 2026. Item numbers follow the review.
 
@@ -25,11 +25,11 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 *Step 1: tooling only* — **done** 28 September 2026 (commits `6f406b6`, `ebfa7a6` and the env-drift commit; `db8b68d` alone left `main` broken for one CI run):
 
-- #2 one contract module, [`tools/swhurl/apps/contract.py`](tools/swhurl/apps/contract.py); `app-new` checks its own output against the policy.
-- #3 [`tools/swhurl/platform.py`](tools/swhurl/platform.py) holds shared paths, names and queries; `verify-config` derives required Secrets from each unit's `decryption`.
-- #6 `validate-repo` and the app policy take an injected runner; `validate-repo` reports every failure before exiting.
+- #2 one contract module, [`tools/swhurl/apps/contract.py`](../tools/swhurl/apps/contract.py); `app-new` checks its own output against the policy.
+- #3 [`tools/swhurl/platform.py`](../tools/swhurl/platform.py) holds shared paths, names and queries; `check-config` derives required Secrets from each unit's `decryption`.
+- #6 `check-repo` and the app policy take an injected runner; `check-repo` reports every failure before exiting.
 - #8 fake-executable tests cover only the `make` interface.
-- #9 `make app-policy` fails when an app's environments differ beyond namespace, hosts, image tag/digest, replicas, resources and issuer (`env-drift`; exceptions need a reason).
+- #9 `make check-apps` fails when an app's environments differ beyond namespace, hosts, image tag/digest, replicas, resources and issuer (`env-drift`; exceptions need a reason).
 - #13 `help` generated from `## ` comments; `SKIP_VERIFY=1`; defaults in Python; `DYNAMIC_DNS_RECORDS` in `host/dns.env`; `config.env` deleted.
 - #19 `swhurl/apps/{contract,new,ops,policy}.py`, `retention.py`; tests split by subject; no `sys.path` edits in tests.
 - #4 (checks by service) deliberately skipped: `verify.py` is one readable file at the current size. Revisit if it passes about 400 lines or a second cluster needs different checks.
@@ -37,35 +37,31 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 *Step 2: stale records* — **done** 28 September 2026:
 
 - #11 the local `todo.md` was reviewed: its open items are done, superseded (Go by the Python tooling; "all options in one configuration" by #1) or moved below (certificate reuse when rebuilding); the file was then deleted. The `document-repo` skill is committed.
-- `docs/operations/current-state.md` now starts with the current cluster facts, folds the first inventory into the P0 evidence, and drops the obsolete finding classification; the PR05 section records the signed-in check over HTTPS.
+- `docs/current-state.md` now starts with the current cluster facts, folds the first inventory into the P0 evidence, and drops the obsolete finding classification; the PR05 section records the signed-in check over HTTPS.
 - This plan keeps only live material: section 0, goal, design decisions, the delivery summary, and the open PR06, PR08a and final-exercise sections. Completed PR sections, the 27 September baseline and the tooling sub-plan are in Git history at `97faeeb`.
 
 *Step 3: decisions that change what runs* — **done** 28 September 2026:
 
-- #1 **done** 28 September 2026 (option A): `BASE_DOMAIN` in `platform-settings` is the one source of platform hostnames, the cookie domain and the redirect allowlist; `OAUTH_HOST` is gone and `swhurl` reads the same value for the app policy. `make test-safety` fails on a literal platform hostname. The ACME account email and approved sign-in addresses stay literal on purpose. What `CERT_ISSUER` switches is in `docs/services.md#settings`.
+- #1 **done** 28 September 2026 (option A): `BASE_DOMAIN` in `platform-settings` is the one source of platform hostnames, the cookie domain and the redirect allowlist; `OAUTH_HOST` is gone and `swhurl` reads the same value for the app policy. `make test` fails on a literal platform hostname. The ACME account email and approved sign-in addresses stay literal on purpose. What `CERT_ISSUER` switches is in `docs/services.md#settings`.
 - #12 **done** 28 September 2026: MinIO is removed (it held no buckets). Commit `62f0e7c` emptied its unit so Flux uninstalled the release and deleted its volume; the next commit removed the unit, the `minio` HelmRepository, the `storage` namespace and the remaining references.
 - #5 **done** with #12: `docs/architecture.md` defines foundation as cluster primitives with no user-facing endpoint and shared services as services apps use or people visit. Nothing needed to move.
 
-*Step 4: names and layout (high risk: Flux unit and path changes are migrations; batch them into one planned change using the PR03 procedure)*
+*Step 4: names and layout* — decided 28 September 2026; in progress. Stages, each validated, pushed and verified live:
 
-| # | Item | Proposal |
-| --- | --- | --- |
-| 14 | One system has several names: `swhurl` (repo, source, package), `homelab-*` (units), `home` (cluster), `platform.swhurl.com` (labels) | Pick one prefix; at least document the mapping |
-| 15 | Directories are named after products, namespaces after functions, units a mix (`oauth2-proxy` / `ingress` / `homelab-auth`) | Name units after their directories (`homelab-oauth2-proxy`) so one name leads to the others |
-| 16 | Leftover levels: `platform-services/<svc>/base` and `ingress-traefik/base` have no overlays; `infrastructure/` mixes depths; `tenants/` holds only `apps/`; `docs/operations.md` sits beside `docs/operations/` | Flatten to `<area>/<component>/`; keep a subdirectory only where it is its own unit (`cert-manager/issuers`) |
-| 17 | Two file-name styles: `helmrelease-oauth2-proxy-shared.yaml` vs generated `helmrelease.yaml` | Pick one (the shorter generated style reads fine inside a named directory) |
-| 18 | Overlapping verbs: `verify-*`, `validate-repo`, `app-check`, `app-policy`, `secrets-check`; `test-safety` runs all unit tests; `*-test` are live tests; Python names drift from make targets (`backup-mongodb` vs `backup-clickstack-mongodb`) | `check-*` offline, `verify-*` live, `test` for unit tests, `live-test-*` for cluster tests; keep aliases for current names |
-| 20 | The root plan file is capitalised and outside `docs/`; `requirements-validation.txt` duplicates dependency information | `docs/plans/implementation.md`; dependencies in `pyproject.toml` |
+1. **Done:** #18 verbs: `check-*` offline (`check` runs everything CI runs), `test` for unit tests, `verify-*` live, `live-test-*` throwaway cluster tests, `backup-mongodb`; old names stay as aliases ([commands](commands.md#old-names)); Python command names match. #20: this plan is `docs/plan.md`, the evidence file `docs/current-state.md`, and the PyYAML pin is the `check` dependency group in `pyproject.toml`.
+2. Canary: `homelab-reloader` becomes `platform-reloader` at `platform/reloader`.
+3. The other non-root units, with #16 (one directory per unit under `infra/`, `platform/`, `apps/`; no `base/` levels) and #17 (`<kind>.yaml`, `-<name>` only to tell two of a kind apart): `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `app-<app>-<env>`.
+4. The roots under `flux-system` (`cluster-sources`, `cluster-stack`), after a separate confirmation.
 
-*Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test-safety`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
+#14, #15: a unit is named `<area>-<component>` after its directory; namespaces, HelmReleases, Secrets and hostnames keep their names, so no workload changes. Each rename is a handover: suspend the old unit, then replace it (all units are `Orphan`), after proving offline that the new unit renders byte-identical objects, and live that Helm revisions and pod and volume UIDs are unchanged.
 
-Decisions still needed for step 4: the naming option (#14, #15: document only, units after directories, or one prefix everywhere), whether to flatten directories (#16), and the command verbs (#18).
+*Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
 
 **Known issues, deliberately not fixed yet**
 
-- `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make secrets-check` warns until then.
+- `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make check-secrets` warns until then.
 - The MongoDB PV's `Retain` policy is a live patch, not in Git (dynamic PV). `make verify-platform` fails if a recreated claim loses it.
-- Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). `make app-policy` now fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
+- Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). `make check-apps` now fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie. Public or untrusted apps must use another parent domain; none exist yet.
 
 **Not yet exercised live** (each is correct by construction or test, but unproven on the cluster)
@@ -116,7 +112,7 @@ How far hostnames and the cookie domain should be configurable is cleanup item #
 
 ## 3. Delivery order and gates
 
-Prove restore before deletion, ownership handover, or stateful migration. Evidence for each completed row is in `docs/operations/current-state.md`.
+Prove restore before deletion, ownership handover, or stateful migration. Evidence for each completed row is in `docs/current-state.md`.
 
 | Order | Deliverable | Live gate |
 | --- | --- | --- |
@@ -127,13 +123,13 @@ Prove restore before deletion, ownership handover, or stateful migration. Eviden
 | P0d | Restrict sign-in to approved identities; test accepted/rejected accounts | Complete: live (`sam@swhurl.com` only); approved sign-in verified and non-approved account refused by operator test, 27 Sep 2026 |
 | PR08a | Independent backup and tested restore of one stateful workload | Partial: data classified; encrypted ClickStack MongoDB backup and disposable restore proven 27 Sep 2026; off-host destination, schedule and app-level restore pending |
 | PR02a | Retention defaults: telemetry 30d, ClickHouse system logs 7d, backup pruning 7 daily + 4 weekly, MongoDB PV Retain + PVC keep, `local-path-retain` class | Complete 27 Sep 2026; backups stay manual until an off-host destination is chosen |
-| PR02b | Lifecycle commands (suspend/resume/destroy-data), `Orphan` shared units, prune protection | Complete 27 Sep 2026; proven by `make lifecycle-test` |
+| PR02b | Lifecycle commands (suspend/resume/destroy-data), `Orphan` shared units, prune protection | Complete 27 Sep 2026; proven by `make live-test-lifecycle` |
 | PR03 | Capability split and cert-manager/issuer ordering | Complete 27 Sep 2026: 10 units, 22 resources handed over with no recreation |
 | PR07a | Narrow Secret rollout controller pilot | Complete 28 Sep 2026: scoped opt-in Reloader for oauth2-proxy and OTel; manual refresh kept as fallback |
-| PR04 | App-template contract, generator, rendered policy | Complete 28 Sep 2026: generator, `make app-policy`, fixtures proven live by `make app-template-test` |
+| PR04 | App-template contract, generator, rendered policy | Complete 28 Sep 2026: generator, `make check-apps`, fixtures proven live by `make live-test-app-template` |
 | PR05 | Split and migrate example staging/production; operator commands | Complete 28 Sep 2026: `hello-staging`/`hello-prod` on app-template; routes cut over with seconds of default-cert gap |
 | PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |
-| PR07b | App Secret conventions and shared settings | Complete 28 Sep 2026: conventions documented, `make secrets-check`, `BASE_DOMAIN` removed, duplicate refresh target retired |
+| PR07b | App Secret conventions and shared settings | Complete 28 Sep 2026: conventions documented, `make check-secrets`, `BASE_DOMAIN` removed, duplicate refresh target retired |
 | Final | Operator exercise and documentation | All core deliverables |
 
 ## 4. PR06 — registry and reviewable updates

@@ -15,6 +15,4 @@ Note:
 
 Each directory is reconciled by its own Flux unit, listed in `clusters/home/infrastructure.yaml`; `cluster-base` groups namespaces and storage classes.
 
-Certificate issuer for infrastructure ingresses is substituted via Flux post-build from:
-- `flux-system/configmap-platform-settings`
-- key: `CERT_ISSUER` (`letsencrypt-staging|letsencrypt-prod`)
+Certificate issuer for infrastructure ingresses comes from `CERT_ISSUER` in the `flux-system/platform-settings` ConfigMap ([`configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml)), substituted by Flux. Overview: [services](../docs/services.md).

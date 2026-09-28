@@ -1,47 +1,35 @@
-# Architecture (C4)
+# Architecture
 
-This document captures C4-style architecture views for the active platform layout.
+One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the documented operator commands.
 
-Chart sources:
-- `docs/charts/c4/context.d2`
-- `docs/charts/c4/container.d2`
-- `docs/charts/c4/component-app-example.d2`
+## Principles
 
-Generate rendered charts:
+- **Git is the deployment path.** Commit, push, reconcile. Scripts check and operate; manifests define state.
+- **One owner per resource.** Flux owns each manifest and HelmRelease; helm-controller owns what a release renders; k3s owns packaged Traefik (this repo owns only its override).
+- **Failures stay local.** A Flux unit is a reconciliation and deletion boundary, so each capability and each app instance gets its own and depends only on what it uses.
+- **Secrets live beside their consumer**, SOPS-encrypted; non-secret cluster settings live in `platform-settings`.
+- **Destruction is explicit.** Nothing deletes data implicitly; [lifecycle](operations.md#lifecycle) explains the guards.
 
-```bash
-make charts-generate
-```
+## Concepts
 
-Rendered output path:
-- `docs/charts/c4/rendered/*.svg`
-
-## Concepts and boundaries
-
-A layer groups responsibilities. A Flux Kustomization is a reconciliation and deletion boundary. Sharing a layer does not mean every resource should wait for every other resource in that layer. Since PR03, each shared capability is its own unit, so a failure blocks only what actually depends on it.
-
-| Concept | Owns | Configuration source |
+| Concept | Means here | Lives in |
 | --- | --- | --- |
-| Host | OS, disks, manual k3s installation, dynamic DNS and router assumptions | `host/`, local host inputs in `config.env`, bootstrap documentation |
-| Cluster composition | Selected capabilities, Flux dependencies, sources and cluster non-secret settings | `clusters/home/` |
-| Foundation | Cluster primitives: Traefik configuration, certificate controller/issuers and storage classes | `infrastructure/`; packaged k3s components remain k3s-owned |
-| Shared capability | A shared service with an independent health/lifecycle boundary: identity, telemetry or object storage | `platform-services/`; MinIO is currently physically under `infrastructure/storage/minio` |
-| Application | A reusable service definition, such as the example app | `tenants/apps/<app>/base` today |
-| Application instance | One app deployed in an environment; owns workload, route, configuration and app data references | Current example overlays; dedicated namespace and Flux unit per instance are planned for PR05 |
-| Environment | Deployment settings and promotion policy such as staging/production | Current instance overlays; it does not inherently require a shared namespace or global readiness gate |
+| Host | The machine: disks, manual k3s install, dynamic DNS, router forwards | `host/`, `config.env`, [bootstrap](bootstrap.md) |
+| Cluster composition | Which units run, their dependencies, sources and settings | `clusters/home/` |
+| Foundation | Cluster primitives: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infrastructure/` |
+| Shared service | A service with its own lifecycle that apps or operators use: sign-in, observability, Reloader, object storage | `platform-services/` (MinIO sits under `infrastructure/storage`) |
+| App instance | One app in one environment, with its namespace, release, route, Secret and data | `tenants/apps/<app>/<env>/` |
+| Environment | Deployment settings and promotion policy (`staging`, `prod`); not a namespace or trust boundary by itself | Instance values |
 
-A tenant is an administrative or trust boundary, not a synonym for staging or production. The existing `tenants/` directory provides environment namespaces; it does not yet enforce isolation between independent tenants. Directory names are preserved during functional changes.
+`tenants/` is a directory name, not a tenancy model: there is no isolation between tenants beyond namespaces.
 
-Each resource has one declarative owner. Flux owns a HelmRelease; helm-controller owns the resources rendered by that release. k3s owns packaged Traefik; this repo owns only its HelmChartConfig override. Host scripts do not own cluster credentials. Cluster non-secrets belong in `platform-settings`; service and app secrets stay SOPS-encrypted beside their consumers. A domain setting must actually drive manifests or be removed; current app hosts are still hardcoded.
+## Flux units
 
-## Current reconciliation ownership
-
-Arrows in this diagram mean **must reconcile successfully before**. The root stack creates child Flux definitions; its inventory ownership is separate from the children's `dependsOn` edges.
+Arrows mean **must be Ready before**. The stack unit creates all the others; that ownership is separate from their dependencies.
 
 ```mermaid
 flowchart LR
   sources[homelab-flux-sources] --> stack[homelab-flux-stack]
-  stack -. creates .-> units[all units below]
   base[homelab-cluster-base] --> cm[homelab-cert-manager] --> issuers[homelab-issuers]
   base --> minio[homelab-minio]
   base --> auth[homelab-auth]
@@ -49,46 +37,45 @@ flowchart LR
   base --> otel[homelab-otel]
   base --> reloader[homelab-reloader]
   traefik[homelab-traefik]
-  base --> hs[homelab-app-hello-staging]
-  auth --> hs
-  base --> hp[homelab-app-hello-prod]
-  auth --> hp
+  base --> app["homelab-app-APP-ENV (one per app instance)"]
+  auth -. if signed-in .-> app
 ```
 
-| Flux unit | Owns (path) | Requires | Provides |
+| Unit | Owns (path) | Waits for | Inputs |
 | --- | --- | --- | --- |
-| `homelab-flux-sources` | Git/Helm sources and `platform-settings` (`clusters/home/flux-system/sources`) | Installed Flux; applied by `make flux-bootstrap` | Source artifacts and settings |
-| `homelab-flux-stack` | The unit definitions below (`clusters/home`) | Sources; applied by `make flux-bootstrap` | Active cluster composition |
-| `homelab-cluster-base` | Shared namespaces and `local-path-retain` (`infrastructure/cluster-base`) | — | Namespaces, storage classes |
-| `homelab-cert-manager` | cert-manager HelmRelease (`infrastructure/cert-manager/base`) | cluster-base | Ready controller and CRDs |
-| `homelab-issuers` | ClusterIssuers (`infrastructure/cert-manager/issuers`) | cert-manager | `selfsigned`, `letsencrypt-staging`, `letsencrypt-prod` |
-| `homelab-traefik` | k3s Traefik `HelmChartConfig` (`infrastructure/ingress-traefik/base`) | Packaged k3s Traefik | NodePorts 31514/30313 |
-| `homelab-minio` | MinIO (`infrastructure/storage/minio/base`); substitutes settings | cluster-base | Object storage for explicit consumers |
-| `homelab-auth` | oauth2-proxy, its SOPS Secret and middleware (`platform-services/oauth2-proxy/base`); substitutes, decrypts | cluster-base | `ingress-oauth-auth-shared@kubernetescrd` |
-| `homelab-clickstack` | ClickStack and its SOPS Secret (`platform-services/clickstack/base`); substitutes, decrypts | cluster-base | Telemetry ingestion and UI |
-| `homelab-otel` | OTel collectors and ingestion Secret (`platform-services/otel/base`); substitutes, decrypts | cluster-base | Node/cluster telemetry export |
-| `homelab-reloader` | Reloader (`platform-services/reloader/base`) | cluster-base | Opt-in restarts on Secret change in `ingress`, `logging` |
-| `homelab-app-hello-staging`, `homelab-app-hello-prod` | The `hello` example instances (`tenants/apps/hello/<env>`) | cluster-base, auth | `staging-hello` and `hello` routes |
-| `homelab-app-<app>-<env>` | One generated instance (`tenants/apps/<app>/<env>`): its namespace, app-template HelmRelease, optional Secret | cluster-base; auth if `authenticated-web` | One instance's workload, route and data; see [adding an app](TENANTS.md#add-a-new-app) |
+| `homelab-flux-sources` | Git and Helm sources, `platform-settings` (`clusters/home/flux-system/sources`) | — | Applied by `make flux-bootstrap` |
+| `homelab-flux-stack` | All unit definitions (`clusters/home`) | sources | Applied by `make flux-bootstrap` |
+| `homelab-cluster-base` | Shared namespaces, `local-path-retain` | — | |
+| `homelab-cert-manager` | cert-manager release and CRDs | cluster-base | |
+| `homelab-issuers` | ClusterIssuers | cert-manager | |
+| `homelab-traefik` | k3s Traefik `HelmChartConfig` | — | |
+| `homelab-minio` | MinIO | cluster-base | settings |
+| `homelab-auth` | oauth2-proxy, its Secret, the sign-in middleware | cluster-base | settings, SOPS |
+| `homelab-clickstack` | ClickStack, its Secret, ClickHouse log TTL | cluster-base | settings, SOPS |
+| `homelab-otel` | Both collectors, the ingestion Secret | cluster-base | settings, SOPS |
+| `homelab-reloader` | Reloader | cluster-base | |
+| `homelab-app-<app>-<env>` | One app instance (`tenants/apps/<app>/<env>`) | cluster-base; auth if signed-in | SOPS if it has a Secret |
 
-Rules that follow from this:
+Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test-safety` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack, OTel or MinIO, and decryption is set exactly where a path holds encrypted Secrets.
 
-- **Failures stay local.** An app waits only for its namespace and the capabilities it uses. The `hello` instances do not wait for ClickStack, OTel or MinIO, so an observability outage cannot block app deploys. OTel does not wait for ClickStack either; collectors retry exports.
-- **Issuers never race cert-manager.** `homelab-issuers` waits for the cert-manager release to be Ready, so a fresh bootstrap no longer fails on missing `ClusterIssuer` CRDs.
-- **Each unit declares its own inputs.** Units whose manifests use `${...}` substitute from `platform-settings`; `homelab-otel` also needs substitution to turn `$${env:...}` into the collector's `${env:...}`. Units whose path contains `*.sops.yaml` decrypt with `sops-age`. `make test-safety` checks decryption, the issuer ordering and that apps never depend on observability or MinIO.
-- **Deletion.** Every unit prunes resources removed from Git. Deleting a unit object differs: all shared units use `deletionPolicy: Orphan`, so a deleted unit leaves its resources running, unmanaged, until re-applied (`make flux-bootstrap` for the two roots). App units keep `MirrorPrune`, so deleting one uninstalls it; prune-protected namespaces and claims survive. Data protection is layered: `kustomize.toolkit.fluxcd.io/prune: disabled` on `observability`, Helm `keepPVC`, a `Retain` MongoDB PV, and backups. See [lifecycle operations](runbook.md#lifecycle-operations).
-- **Suspension** stops a unit applying Git changes; HelmReleases it created keep reconciling unless suspended too.
+**Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), Helm `keepPVC`/`retain`, `Retain` volumes and backups.
 
-Moving a resource between units: record both inventories, make sure the old unit is `Orphan` (or suspended) so it cannot prune, add the resource to the new unit with the same name and namespace, reconcile, confirm the new inventory holds it, then remove it from the old unit. PR03 moved 22 resources this way with no namespace, release or volume recreated (see [current state](operations/current-state.md#pr03-capability-split)). PR05 migrated the example the same way: new instances beside the old ones on temporary hosts, then one commit per environment removing the old resources and moving the host.
+**Suspension** stops a unit applying Git changes. The HelmReleases it created keep reconciling unless they are suspended too.
 
-## Level 1: System Context
+**Moving a resource between units** without recreating it: make sure the old unit cannot prune (it is `Orphan`, or suspend it), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](operations/current-state.md#pr03-capability-split)).
+
+## C4 views
+
+Sources are `docs/charts/c4/*.d2`; `make charts-generate` renders them ([conventions](contributing.md#diagrams)).
+
+### Context
 
 ![C4 Context](charts/c4/rendered/context.svg)
 
-## Level 2: Container
+### Containers
 
 ![C4 Container](charts/c4/rendered/container.svg)
 
-## Level 3: Component (Example App Request Path)
+### Request path to an app
 
 ![C4 Component Example App](charts/c4/rendered/component-app-example.svg)

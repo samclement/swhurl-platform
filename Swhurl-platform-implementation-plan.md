@@ -11,7 +11,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 1. **PR06 — GHCR publishing and Renovate** (section 11). Needs decisions only you can make: which app repository goes first; hosted Renovate (GitHub App) or self-hosted; public or private GHCR images (private needs pull credentials per namespace). A smaller first step needs no app repo: point Renovate at this repo's pinned charts (app-template, reloader, cert-manager, ClickStack, OTel, oauth2-proxy, MinIO) and the `hello` image digest, with Flux manager file patterns for `clusters/` and `tenants/`.
 2. **PR08a remainder** (section 13): choose an off-host backup destination, then schedule `make backup-clickstack-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
 3. **Final operator exercise** (section 14), using only the docs.
-4. **Documentation restructure**, deferred until the refactor was done: task-based pages (bootstrap, operations, commands, services, apps, contributing), one canonical page per topic, `AGENTS.md` trimmed to rules and a doc map. Use the `document-repo` skill, now at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it with the restructure.
+4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it.
 
 **Known issues, deliberately not fixed yet**
 
@@ -195,7 +195,7 @@ Build x86-64 for home; add ARM64 when a consumer needs it. Revisit before any Gr
 
 ## 12. PR07b — settings and app Secret conventions
 
-Complete. App-path SOPS rules landed with PR04. `stringData` was verified live (PR04 fixture) and is the convention for new values; conventions are in `docs/PLATFORM-SERVICES.md#secret-conventions`. `make secrets-check` decrypts locally and flags placeholders and probable double encoding without printing values; it found `CLICKSTACK_API_KEY` double-encoded (recorded as a known issue, not changed live). `BASE_DOMAIN` (unused) was removed; `runtime-inputs-refresh-clickstack-otel` was retired after the Reloader rotation tests, leaving `runtime-inputs-refresh-otel` as the fallback.
+Complete. App-path SOPS rules landed with PR04. `stringData` was verified live (PR04 fixture) and is the convention for new values; conventions are in `docs/operations.md#secrets`. `make secrets-check` decrypts locally and flags placeholders and probable double encoding without printing values; it found `CLICKSTACK_API_KEY` double-encoded (recorded as a known issue, not changed live). `BASE_DOMAIN` (unused) was removed; `runtime-inputs-refresh-clickstack-otel` was retired after the Reloader rotation tests, leaving `runtime-inputs-refresh-otel` as the fallback.
 
 
 Finish app-path SOPS rules and Secret authoring docs. Prefer encrypted stringData for human-authored values only after verifying SOPS/Flux apply behavior; otherwise encode once into Kubernetes data and compare decoded bytes without printing. Keep ClickStack bootstrap and OTel ingestion keys distinct. Remove stale duplicated host settings. Test disposable rotation before retiring manual restarts.

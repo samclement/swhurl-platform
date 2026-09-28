@@ -1,12 +1,6 @@
-# Ingress Provider: Traefik
+# Traefik settings
 
-Optional Flux-managed Traefik provider overlay.
+k3s installs and owns Traefik (chart 38, Traefik 3.6). This directory holds only the `HelmChartConfig` override, reconciled by `homelab-traefik`:
 
-Native k3s Traefik is the default ingress path in this repo; this folder is reserved for
-targeted Flux ownership where needed.
-
-Current usage:
-- `helmchartconfig-traefik.yaml` declaratively configures the k3s-packaged Traefik chart.
-- NodePorts are pinned to preserve edge-router compatibility:
-  - HTTP `80 -> 31514`
-  - HTTPS `443 -> 30313`
+- NodePorts pinned for the router: HTTP `80 → 31514`, HTTPS `443 → 30313`.
+- Permanent HTTP→HTTPS redirect via `ports.web.redirections.entryPoint`. Chart 38 silently ignores the older `redirectTo` key; `make verify-platform` checks the rendered redirect.

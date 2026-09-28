@@ -79,7 +79,7 @@ mongo_pv="$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.s
 if [[ -n "$mongo_pv" && "$(kubectl get pv "$mongo_pv" -o jsonpath='{.spec.persistentVolumeReclaimPolicy}' 2>/dev/null)" == "Retain" ]]; then
   ok "ClickStack MongoDB PV reclaim policy is Retain"
 else
-  bad "ClickStack MongoDB PV is not Retain; see docs/runbook.md#recovery"
+  bad "ClickStack MongoDB PV is not Retain; see docs/operations.md#backups-and-recovery"
 fi
 if [[ "$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.metadata.annotations.helm\.sh/resource-policy}' 2>/dev/null)" == "keep" ]]; then
   ok "ClickStack MongoDB PVC survives Helm uninstall"

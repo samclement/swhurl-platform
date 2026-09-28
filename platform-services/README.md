@@ -1,18 +1,3 @@
-# Platform Services Layer
+# Platform Services
 
-Shared platform services deployed once per cluster.
-
-- `oauth2-proxy`
-- `clickstack`
-- `otel`
-
-Each `*/base` is reconciled by its own Flux unit, listed in `clusters/home/platform.yaml`.
-
-Runtime Secrets are SOPS-encrypted final Kubernetes Secret manifests co-located with the service that consumes them:
-- `oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml`
-- `clickstack/base/secret-clickstack-runtime-inputs.sops.yaml`
-- `otel/base/secret-hyperdx.sops.yaml`
-
-Certificate issuer for platform-service ingresses is substituted via Flux post-build from:
-- `flux-system/configmap-platform-settings`
-- key: `CERT_ISSUER` (`letsencrypt-staging|letsencrypt-prod`)
+Shared services, one Flux unit each (listed in `clusters/home/platform.yaml`): `oauth2-proxy` (sign-in), `clickstack`, `otel`, `reloader`. Each keeps its encrypted Secret beside it in `*/base/*.sops.yaml`. What they do and how they are configured: [services](../docs/services.md).

@@ -1,38 +1,14 @@
-# Base Component: OTel Collectors
+# OTel collectors
 
-Active Flux-owned standalone OTel collector releases.
+Two standalone collector releases in `logging` (a per-node DaemonSet and a cluster Deployment) that send telemetry to ClickStack. Overview and key relationships: [services](../../../docs/services.md#clickstack-and-otel).
 
-- Runtime ingestion key lives in `secret-hyperdx.sops.yaml` as `HYPERDX_API_KEY`.
-- The rendered Secret is `logging/hyperdx-secret`; pods consume it via `secretKeyRef`.
-- **`HYPERDX_API_KEY` must match the live MongoDB ingestion key** — `hyperdx.teams.apiKey` in the ClickStack MongoDB instance. This is NOT the same as `CLICKSTACK_API_KEY` (the Helm bootstrap key); see `platform-services/clickstack/base/README.md`.
-- Secret environment variables do not hot-reload, but both collectors opt in to Reloader (`secret.reloader.stakater.com/reload: hyperdx-secret`), so they restart when the Secret changes.
+- `secret-hyperdx.sops.yaml` → `logging/hyperdx-secret.HYPERDX_API_KEY`, read at container start. It must equal the ClickStack team ingestion key held in MongoDB, **not** `CLICKSTACK_API_KEY`.
+- Both collectors opt in to Reloader, so they restart when the Secret changes.
+- The HelmReleases reference the key as `$${env:HYPERDX_API_KEY}`; the `homelab-otel` unit's Flux substitution turns that into `${env:...}`.
 
-## Verifying sync
+## Rotate the ingestion key
 
-```
-make verify-platform
-```
-
-Compares `logging/hyperdx-secret.HYPERDX_API_KEY` against the live MongoDB `hyperdx.teams.apiKey`. A mismatch means telemetry is being silently dropped.
-
-## Rotating the ingestion key
-
-1. Get the current ingestion key from ClickStack (MongoDB is the source of truth):
-   ```
-   kubectl -n observability exec deploy/clickstack-mongodb -- \
-     mongosh hyperdx --quiet --eval "db.teams.findOne({}, {apiKey:1, _id:0})"
-   ```
-
-2. Edit the SOPS secret and set `HYPERDX_API_KEY` to that value:
-   ```
-   SOPS_AGE_KEY_FILE=./age.agekey sops platform-services/otel/base/secret-hyperdx.sops.yaml
-   ```
-
-3. Commit and push.
-
-4. Apply to the cluster and verify:
-   ```
-   make runtime-inputs-refresh-otel
-   make verify-platform
-   ```
-
+1. Copy the team's ingestion key from the ClickStack UI (do not print it from MongoDB into logs).
+2. `sops platform-services/otel/base/secret-hyperdx.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded **once** (`printf %s '<key>' | base64 -w0`).
+3. `make secrets-check`, commit, push, `make runtime-inputs-sync`.
+4. `make verify-platform` compares the live Secret with the team key by bytes; then check the collector logs have no HTTP 401 errors.

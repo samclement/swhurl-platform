@@ -93,6 +93,8 @@ metadata:
   name: homelab-reloader
   namespace: flux-system
 spec:
+  # Suspended for the handover to platform-reloader (plan step 4); removed next.
+  suspend: true
   dependsOn:
     - name: homelab-cluster-base
   interval: 10m

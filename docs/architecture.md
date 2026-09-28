@@ -16,8 +16,8 @@ One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and 
 | --- | --- | --- |
 | Host | The machine: disks, manual k3s install, dynamic DNS, router forwards | `host/` (including `host/dns.env`), [bootstrap](bootstrap.md) |
 | Cluster composition | Which units run, their dependencies, sources and settings | `clusters/home/` |
-| Foundation | Cluster primitives: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infrastructure/` |
-| Shared service | A service with its own lifecycle that apps or operators use: sign-in, observability, Reloader, object storage | `platform-services/` (MinIO sits under `infrastructure/storage`) |
+| Foundation | Cluster primitives with no user-facing endpoint: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infrastructure/` |
+| Shared service | A service with its own lifecycle that apps use or people visit: sign-in, observability, Reloader | `platform-services/` |
 | App instance | One app in one environment, with its namespace, release, route, Secret and data | `tenants/apps/<app>/<env>/` |
 | Environment | Deployment settings and promotion policy (`staging`, `prod`); not a namespace or trust boundary by itself | Instance values |
 
@@ -31,7 +31,6 @@ Arrows mean **must be Ready before**. The stack unit creates all the others; tha
 flowchart LR
   sources[homelab-flux-sources] --> stack[homelab-flux-stack]
   base[homelab-cluster-base] --> cm[homelab-cert-manager] --> issuers[homelab-issuers]
-  base --> minio[homelab-minio]
   base --> auth[homelab-auth]
   base --> clickstack[homelab-clickstack]
   base --> otel[homelab-otel]
@@ -49,14 +48,13 @@ flowchart LR
 | `homelab-cert-manager` | cert-manager release and CRDs | cluster-base | |
 | `homelab-issuers` | ClusterIssuers | cert-manager | |
 | `homelab-traefik` | k3s Traefik `HelmChartConfig` | — | |
-| `homelab-minio` | MinIO | cluster-base | settings |
 | `homelab-auth` | oauth2-proxy, its Secret, the sign-in middleware | cluster-base | settings, SOPS |
 | `homelab-clickstack` | ClickStack, its Secret, ClickHouse log TTL | cluster-base | settings, SOPS |
 | `homelab-otel` | Both collectors, the ingestion Secret | cluster-base | settings, SOPS |
 | `homelab-reloader` | Reloader | cluster-base | |
 | `homelab-app-<app>-<env>` | One app instance (`tenants/apps/<app>/<env>`) | cluster-base; auth if signed-in | SOPS if it has a Secret |
 
-Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test-safety` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack, OTel or MinIO, and decryption is set exactly where a path holds encrypted Secrets.
+Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test-safety` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
 **Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), Helm `keepPVC`/`retain`, `Retain` volumes and backups.
 

@@ -4,11 +4,11 @@
 
 ## 0. Where this paused and what is left
 
-Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/operations/current-state.md`. Before resuming: pull `main`, run `make validate-repo`, `make test-safety`, `make verify-platform` and `flux get kustomizations` (13 units, all Ready at pause), and re-read that file's "Not exercised" notes.
+Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/operations/current-state.md`. Before resuming: pull `main`, run `make validate-repo`, `make test-safety`, `make verify-platform` and `flux get kustomizations` (12 units, all Ready), and re-read that file's "Not exercised" notes.
 
 **Remaining plan work**
 
-1. **PR06 — GHCR publishing and Renovate** (section 4). Needs decisions only you can make: which app repository goes first; hosted Renovate (GitHub App) or self-hosted; public or private GHCR images (private needs pull credentials per namespace). A smaller first step needs no app repo: point Renovate at this repo's pinned charts (app-template, reloader, cert-manager, ClickStack, OTel, oauth2-proxy, MinIO) and the `hello` image digest, with Flux manager file patterns for `clusters/` and `tenants/`.
+1. **PR06 — GHCR publishing and Renovate** (section 4). Needs decisions only you can make: which app repository goes first; hosted Renovate (GitHub App) or self-hosted; public or private GHCR images (private needs pull credentials per namespace). A smaller first step needs no app repo: point Renovate at this repo's pinned charts (app-template, reloader, cert-manager, ClickStack, OTel, oauth2-proxy) and the `hello` image digest, with Flux manager file patterns for `clusters/` and `tenants/`.
 2. **PR08a remainder** (section 5): choose an off-host backup destination, then schedule `make backup-clickstack-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
 3. **Final operator exercise** (section 6), using only the docs.
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](.claude/skills/document-repo/SKILL.md).
@@ -40,11 +40,11 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 - `docs/operations/current-state.md` now starts with the current cluster facts, folds the first inventory into the P0 evidence, and drops the obsolete finding classification; the PR05 section records the signed-in check over HTTPS.
 - This plan keeps only live material: section 0, goal, design decisions, the delivery summary, and the open PR06, PR08a and final-exercise sections. Completed PR sections, the 27 September baseline and the tooling sub-plan are in Git history at `97faeeb`.
 
-*Step 3: decisions that change what runs* — #1 done; #12 and #5 decided, removal on hold:
+*Step 3: decisions that change what runs* — **done** 28 September 2026:
 
 - #1 **done** 28 September 2026 (option A): `BASE_DOMAIN` in `platform-settings` is the one source of platform hostnames, the cookie domain and the redirect allowlist; `OAUTH_HOST` is gone and `swhurl` reads the same value for the app policy. `make test-safety` fails on a literal platform hostname. The ACME account email and approved sign-in addresses stay literal on purpose. What `CERT_ISSUER` switches is in `docs/services.md#settings`.
-- #12 **decided: remove MinIO** (no buckets; its volume holds only `.minio.sys`, 152 KiB). On hold at your request before anything was deleted. Procedure when resumed: push 1 empties `infrastructure/storage/minio/base` so Flux uninstalls the release (deleting its `Delete`-reclaim volume, hosts and certificates); push 2 removes the unit, the `minio` HelmRepository, the `storage` namespace, and the MinIO references in tests, docs, ADR 0002 and the C4 container chart. Confirm again before push 1.
-- #5 follows #12: once MinIO is gone, add to `docs/architecture.md` "infrastructure = cluster primitives with no user-facing endpoint; platform-services = shared services that apps use or people visit". Nothing else would need to move.
+- #12 **done** 28 September 2026: MinIO is removed (it held no buckets). Commit `62f0e7c` emptied its unit so Flux uninstalled the release and deleted its volume; the next commit removed the unit, the `minio` HelmRepository, the `storage` namespace and the remaining references.
+- #5 **done** with #12: `docs/architecture.md` defines foundation as cluster primitives with no user-facing endpoint and shared services as services apps use or people visit. Nothing needed to move.
 
 *Step 4: names and layout (high risk: Flux unit and path changes are migrations; batch them into one planned change using the PR03 procedure)*
 
@@ -59,7 +59,7 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 *Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test-safety`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
 
-Decisions still needed: the go-ahead for the MinIO removal (#12), and for step 4 the naming option (#14, #15: document only, units after directories, or one prefix everywhere), whether to flatten directories (#16), and the command verbs (#18).
+Decisions still needed for step 4: the naming option (#14, #15: document only, units after directories, or one prefix everywhere), whether to flatten directories (#16), and the command verbs (#18).
 
 **Known issues, deliberately not fixed yet**
 
@@ -91,7 +91,7 @@ Keep k3s, Flux, packaged Traefik, cert-manager, and SOPS/age. Fix current safety
 - Onboard a second app from an existing image in under 15 minutes, excluding DNS and certificate delays, without hand-written Deployment, Service, or Ingress.
 - Each app instance has its own namespace and Flux unit; staging and production reconcile independently.
 - Image and chart updates are reviewable and pinned. Promote and roll back the same image digest.
-- ClickStack or MinIO failure does not block an unrelated app update.
+- A ClickStack failure does not block an unrelated app update.
 - Exposure modes enforce their route and cookie boundaries; only approved identities can sign in.
 - Secret rotation restarts only the referencing workload without printing the value.
 - Suspend, uninstall, and data destruction have distinct effects. Restore one stateful workload and the age key from an independent backup.
@@ -146,7 +146,7 @@ Build x86-64 for home; add ARM64 when a consumer needs it. Revisit before any Gr
 
 ## 5. PR08a — independent recovery gate
 
-Classify data as reconstructible, expendable telemetry, or irreplaceable. Inspect datastore, local-path placement, reclaim, and existing host backups. Choose off-host destination and application-consistent method for each irreplaceable service. In-cluster MinIO on the same disk is not the only backup. Record recovery point/time targets, retention, capacity, and required credentials.
+Classify data as reconstructible, expendable telemetry, or irreplaceable. Inspect datastore, local-path placement, reclaim, and existing host backups. Choose off-host destination and application-consistent method for each irreplaceable service. Record recovery point/time targets, retention, capacity, and required credentials.
 
 The age key is backed up (P0b); integrate it into the full recovery sequence. Rebuild a clean test scope, restore an encrypted Secret and one persistent workload, and verify app behavior. Record dated evidence before stateful migration.
 

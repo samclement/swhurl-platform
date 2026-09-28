@@ -35,7 +35,7 @@ Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel coll
 
 ## Certificate mode
 
-`CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack, MinIO). Apps choose their own issuer.
+`CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.
 
 ```bash
 make platform-certs-staging       # or platform-certs-prod; edits the file only
@@ -67,7 +67,6 @@ Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
 | ClickStack MongoDB (team, ingestion key, users, sources) | Irreplaceable | `make backup-clickstack-mongodb`; volume `Retain`, claim kept on Helm uninstall |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
-| MinIO | Expendable today (no buckets) | Reclassify before storing data |
 
 ```bash
 make backup-clickstack-mongodb         # encrypted dump to ~/.local/state/swhurl-platform/backups

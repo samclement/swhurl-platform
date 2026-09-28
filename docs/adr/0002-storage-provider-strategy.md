@@ -1,6 +1,6 @@
 # ADR 0002: Object Storage Provider Strategy
 
-- Status: accepted
+- Status: superseded 2026-09-28: MinIO was removed (it held no buckets) and no object storage runs. Choose a provider afresh when a service needs one.
 - Date: 2026-02-26
 
 ## Context

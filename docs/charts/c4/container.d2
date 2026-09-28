@@ -44,9 +44,7 @@ layout_rows: "" {
       horizontal-gap: 32
 
       control: "Control plane" {
-        grid-rows: 2
         flux: "Flux controllers\n(flux-system)"
-        minio: "MinIO\n(storage)"
       }
 
       telemetry: "Telemetry pipeline" {
@@ -87,5 +85,4 @@ layout_rows.cluster.platform.control.flux -> layout_rows.cluster.inbound.cert_ma
 layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.clickstack
 layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.clickstack_otel
 layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.telemetry.otel_daemonset
-layout_rows.cluster.platform.control.flux -> layout_rows.cluster.platform.control.minio
 layout_rows.cluster.platform.control.flux -> layout_rows.cluster.apps.app

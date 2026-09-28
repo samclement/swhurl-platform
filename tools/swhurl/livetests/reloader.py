@@ -11,9 +11,10 @@ import json
 import os
 
 from swhurl.livetests import LiveTest, Preflight, run_live_test
+from swhurl.platform import label
 
 UNWATCHED_NS = 'reloader-test'
-LABEL = 'platform.swhurl.com/reloader-test'
+LABEL = label('reloader-test')
 RELOAD = 'secret.reloader.stakater.com/reload'
 
 

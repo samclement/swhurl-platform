@@ -6,7 +6,6 @@ import io
 import json
 import shutil
 import stat
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -14,12 +13,9 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import recovery  # noqa: E402
-from swhurl.report import Report  # noqa: E402
-from swhurl.run import CommandError, FakeRunner, Result  # noqa: E402
+from swhurl import recovery
+from swhurl.report import Report
+from swhurl.run import CommandError, FakeRunner, Result
 
 DUMP = 'PLAINTEXT-MONGODUMP-fixture-contents'
 TEAM_KEY = 'fixture-team-key-0000'

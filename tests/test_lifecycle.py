@@ -1,17 +1,12 @@
 """suspend / resume / destroy-data: every refusal and the destructive order, offline."""
 import io
 import json
-import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import lifecycle  # noqa: E402
-from swhurl.run import FakeRunner, Result  # noqa: E402
+from swhurl import lifecycle
+from swhurl.run import FakeRunner, Result
 
 PVC = 'pvc/apps/data'
 

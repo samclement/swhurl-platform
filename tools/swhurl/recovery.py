@@ -28,17 +28,15 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, backups
+from swhurl import ROOT, platform, retention
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
-COUNTS_SCRIPT = ('const c = {}; db.getCollectionNames().sort().forEach(n => { c[n] = db[n].countDocuments(); });'
-                 ' print(JSON.stringify(c));')
-TEAM_KEY_SCRIPT = ('const k = db.teams.distinct("apiKey").filter(v => typeof v === "string" && v.length > 0);'
-                   ' if (k.length !== 1) quit(2); print(k[0]);')
-INGESTION_SECRET = Path('platform-services/otel/base/secret-hyperdx.sops.yaml')
-RECOVERY_LABEL = 'platform.swhurl.com/recovery-test'
+COUNTS_SCRIPT = platform.COLLECTION_COUNTS_SCRIPT
+TEAM_KEY_SCRIPT = platform.TEAM_KEY_SCRIPT
+INGESTION_SECRET = platform.INGESTION_SECRET
+RECOVERY_LABEL = platform.label('recovery-test')
 
 
 class RecoveryError(Exception):
@@ -141,7 +139,7 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
     out(f'[OK] Encrypted backup: {archive}')
     out(f'[OK] Metadata: {metadata}')
     if settings.prune:
-        backups.main([str(settings.backup_dir), '--daily', str(settings.keep_daily),
+        retention.main([str(settings.backup_dir), '--daily', str(settings.keep_daily),
                       '--weekly', str(settings.keep_weekly)])
     out('[INFO] Copy both files off-host; restore needs the age private key '
         '(see docs/operations.md#backups-and-recovery).')
@@ -173,7 +171,7 @@ class RestoreSettings:
     def from_env(cls, env: Mapping[str, str]) -> RestoreSettings:
         return cls(
             backup_dir=Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR),
-            age_key=Path(env.get('AGE_KEY_FILE') or env.get('SOPS_AGE_KEY_FILE') or ROOT / 'age.agekey'),
+            age_key=Path(env.get('AGE_KEY_FILE') or env.get('SOPS_AGE_KEY_FILE') or ROOT / platform.AGE_KEY),
             backup_file=Path(env['BACKUP_FILE']) if env.get('BACKUP_FILE') else None,
             namespace=env.get('RECOVERY_NAMESPACE') or 'recovery-test',
             keep=env.get('KEEP', 'false') == 'true',

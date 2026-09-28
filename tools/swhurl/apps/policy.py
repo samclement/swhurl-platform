@@ -30,55 +30,63 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, platform
+from swhurl.apps.contract import (
+    AUTH_MIDDLEWARE,
+    COOKIE_DOMAIN,
+    ENVIRONMENT,
+    EXCEPTIONS,
+    EXPOSURE,
+    INSTANCE_ROOTS,
+    STORAGE_CLASSES,
+    in_cookie_domain,
+)
 from swhurl.run import Runner
 
-RUNNER = Runner()
-COOKIE_DOMAIN = 'homelab.swhurl.com'
-AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
-STORAGE_CLASSES = {'local-path', 'local-path-retain'}
-EXCEPTIONS_KEY = 'platform.swhurl.com/policy-exceptions'
+EXCEPTIONS_KEY = EXCEPTIONS
 CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'swhurl-platform/charts'
 WORKLOAD_KINDS = {'Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'}
 
 
 def instances() -> list[Path]:
     found = []
-    for base in (ROOT / 'tenants/apps', ROOT / 'tests/fixtures/apps/tenants/apps'):
+    for base in (ROOT / r for r in INSTANCE_ROOTS):
         for helmrelease in sorted(base.glob('*/*/helmrelease.yaml')):
             found.append(helmrelease.parent)
     return found
 
 
 def helm_repositories() -> dict[str, str]:
-    path = ROOT / 'clusters/home/flux-system/sources/helmrepositories.yaml'
+    path = ROOT / platform.HELM_REPOSITORIES
     return {d['metadata']['name']: d['spec']['url'] for d in yaml.safe_load_all(path.read_text())
             if d and d.get('kind') == 'HelmRepository'}
 
 
-def chart_dir(name: str, version: str, repo: str) -> Path:
+def chart_dir(name: str, version: str, repo: str, runner: Runner) -> Path:
     target = CACHE / f'{name}-{version}'
     if not (target / 'Chart.yaml').exists():
         CACHE.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
-            RUNNER.run(['helm', 'pull', name, '--repo', repo, '--version', version, '--untar', '--untardir', tmp])
+            runner.run(['helm', 'pull', name, '--repo', repo, '--version', version, '--untar', '--untardir', tmp])
             (Path(tmp) / name).rename(target)
     return target
 
 
-def render(instance: Path) -> list[dict]:
-    docs = [d for d in yaml.safe_load_all(RUNNER.output(['kubectl', 'kustomize', str(instance)])) if d]
+def render(instance: Path, runner: Runner | None = None) -> list[dict]:
+    """Kustomize the instance, then render any app-template HelmRelease with Helm."""
+    runner = runner or Runner()
+    docs = [d for d in yaml.safe_load_all(runner.output(['kubectl', 'kustomize', str(instance)])) if d]
     repos = helm_repositories()
     rendered = []
     for doc in docs:
         if doc['kind'] != 'HelmRelease':
             continue
         spec = doc['spec']['chart']['spec']
-        chart = chart_dir(spec['chart'], spec['version'], repos[spec['sourceRef']['name']])
+        chart = chart_dir(spec['chart'], spec['version'], repos[spec['sourceRef']['name']], runner)
         with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:
             yaml.safe_dump(doc['spec'].get('values', {}), values)
             values.flush()
-            out = RUNNER.output(['helm', 'template', doc['spec'].get('releaseName', doc['metadata']['name']),
+            out = runner.output(['helm', 'template', doc['spec'].get('releaseName', doc['metadata']['name']),
                                  str(chart), '-n', doc['metadata']['namespace'], '-f', values.name])
         for item in yaml.safe_load_all(out):
             if item:
@@ -110,17 +118,13 @@ def pod_spec(doc: dict) -> dict | None:
     return None
 
 
-def in_cookie_domain(host: str) -> bool:
-    return host == COOKIE_DOMAIN or host.endswith('.' + COOKIE_DOMAIN)
-
-
 def check(docs: list[dict]) -> list[tuple[str, str]]:
     """Return (rule, message) violations for one rendered instance."""
     violations: list[tuple[str, str]] = []
     namespaces = [d for d in docs if d['kind'] == 'Namespace']
     labels = (namespaces[0]['metadata'].get('labels') or {}) if namespaces else {}
-    env = labels.get('platform.swhurl.com/environment')
-    exposure = labels.get('platform.swhurl.com/exposure')
+    env = labels.get(ENVIRONMENT)
+    exposure = labels.get(EXPOSURE)
     if not env or not exposure:
         violations.append(('exposure', 'instance Namespace needs platform.swhurl.com/environment and /exposure labels'))
 
@@ -179,18 +183,18 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
     return violations
 
 
-def evaluate(instance: Path) -> list[str]:
-    docs = render(instance)
+def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
+    docs = render(instance, runner)
     allowed, problems = exceptions(docs)
     return problems + [f'{rule}: {message}' for rule, message in check(docs) if rule not in allowed]
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
     for instance in paths:
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
-        problems = evaluate(instance)
+        problems = evaluate(instance, runner)
         if problems:
             failed += 1
             print(f'[BAD] {label}')

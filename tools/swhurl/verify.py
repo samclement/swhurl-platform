@@ -9,34 +9,38 @@ from __future__ import annotations
 
 import base64
 import binascii
-import re
 import sys
+from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
+from swhurl.settings import SettingsError, load_settings
 
-REQUIRED_SECRETS = {
-    'platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml': 'oauth2-proxy runtime SOPS secret missing',
-    'platform-services/otel/base/secret-hyperdx.sops.yaml': 'otel runtime SOPS secret missing',
-    'platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml': 'clickstack runtime SOPS secret missing',
-}
-PLATFORM_SETTINGS = 'clusters/home/flux-system/sources/configmap-platform-settings.yaml'
-TEAM_KEY_SCRIPT = ('const keys = db.teams.distinct("apiKey").filter(k => typeof k === "string" && k.length > 0);'
-                   ' if (keys.length !== 1) quit(2); print(keys[0]);')
 SYSTEM_LOGS = ('query_log', 'metric_log', 'asynchronous_metric_log', 'crash_log', 'processors_profile_log',
                'part_log', 'trace_log', 'query_thread_log', 'query_views_log', 'opentelemetry_span_log')
 
 
-def verify_config(argv: list[str] | None = None) -> int:
-    """Local checks that need no cluster: required Secret files and settings exist."""
-    for path, message in REQUIRED_SECRETS.items():
-        if not (ROOT / path).is_file():
-            print(message)
+def verify_config(argv: list[str] | None = None, root: Path = ROOT) -> int:
+    """Local checks that need no cluster.
+
+    Every Flux unit that decrypts SOPS has at least one encrypted Secret in its
+    path (derived from the unit definitions, not a hand-kept list), and the
+    settings the platform substitutes exist.
+    """
+    for unit, files in platform.decrypted_secret_files(root).items():
+        if not files:
+            print(f'{unit} decrypts SOPS but its path has no *.sops.yaml Secret')
             return 1
-    if not re.search(r'^\s*OAUTH_HOST:', (ROOT / PLATFORM_SETTINGS).read_text(), re.M):
-        print('OAUTH_HOST missing from platform-settings')
+    try:
+        values = load_settings((root / platform.SETTINGS).read_text())
+    except (OSError, SettingsError) as error:
+        print(f'platform-settings unreadable: {error}')
         return 1
+    for key in ('OAUTH_HOST', 'CERT_ISSUER'):
+        if not values.get(key):
+            print(f'{key} missing from platform-settings')
+            return 1
     return 0
 
 
@@ -92,7 +96,7 @@ def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
     report.section('Ingestion Key Sync')
     try:
         team_key = runner.output(['kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-mongodb', '--',
-                                  'mongosh', 'hyperdx', '--quiet', '--eval', TEAM_KEY_SCRIPT],
+                                  'mongosh', 'hyperdx', '--quiet', '--eval', platform.TEAM_KEY_SCRIPT],
                                  secret_output=True).rstrip('\n')
     except CommandError:
         team_key = ''

@@ -12,7 +12,9 @@ import os
 import sys
 from dataclasses import dataclass
 
-from swhurl import ROOT, app_policy
+from swhurl import ROOT
+from swhurl.apps import policy
+from swhurl.apps.contract import INSTANCE_ROOTS
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 
@@ -146,7 +148,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         return 2
     action, instance = argv[0], Instance(argv[1], argv[2])
     if action == 'check':
-        return app_policy.main([str(ROOT / 'tenants/apps' / instance.app / instance.env)])
+        return policy.main([str(ROOT / INSTANCE_ROOTS[0] / instance.app / instance.env)])
     runner = runner or Runner.from_environment()
     try:
         if action == 'status':

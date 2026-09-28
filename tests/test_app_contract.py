@@ -1,19 +1,19 @@
 """App contract: generator guards, fixture drift, and rendered-resource policy."""
 import copy
+import io
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import app_new, app_policy  # noqa: E402
+from swhurl import ROOT
+from swhurl.apps import new as app_new
+from swhurl.apps import policy as app_policy
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
 WEB = ['--env', 'staging', '--exposure', 'authenticated-web', '--host', 'x.homelab.swhurl.com',
@@ -28,7 +28,7 @@ class GeneratorTests(unittest.TestCase):
         (self.tmp / 'clusters/home/kustomization.yaml').write_text('resources:\n  - tenants.yaml\n')
 
     def gen(self, *args):
-        return app_new.main(['--root', str(self.tmp), *args])
+        return app_new.main(['--root', str(self.tmp), '--no-policy-check', *args])
 
     def test_refuses_unsafe_or_ambiguous_instances(self):
         cases = {
@@ -189,6 +189,24 @@ class PolicyTests(unittest.TestCase):
                 docs = self.docs(key)
                 mutate(docs)
                 self.assertIn(rule, self.rules(docs))
+
+    def test_generator_checks_its_own_output(self):
+        instance = FIXTURES / 'tenants/apps/smoke-web/staging'
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(app_new.check_generated(instance), 0)
+        self.assertIn('[OK] generated instance passes the app policy', out.getvalue())
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        broken = tmp / 'instance'
+        shutil.copytree(instance, broken)
+        release = broken / 'helmrelease.yaml'
+        release.write_text(release.read_text().replace(
+            "traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd", ''))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(app_new.check_generated(broken), 1)
+        self.assertIn('generator and policy disagree', out.getvalue())
 
     def test_exceptions_need_a_reason(self):
         docs = self.docs('smoke-worker/staging')

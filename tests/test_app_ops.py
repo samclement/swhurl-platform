@@ -1,17 +1,13 @@
 """app status/logs/reconcile/check: output and commands, offline, with FakeRunner."""
 import io
 import json
-import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import app_ops  # noqa: E402
-from swhurl.run import FakeRunner, Result  # noqa: E402
+from swhurl import ROOT
+from swhurl.apps import ops as app_ops
+from swhurl.run import FakeRunner, Result
 
 REV = 'main@sha1:abc123'
 DIGEST = 'sha256:' + 'a' * 64
@@ -130,7 +126,7 @@ class UsageTests(unittest.TestCase):
                 self.assertEqual(runner.calls, [])
 
     def test_check_runs_the_policy_for_that_instance(self):
-        with mock.patch.object(app_ops.app_policy, 'main', return_value=0) as policy:
+        with mock.patch.object(app_ops.policy, 'main', return_value=0) as policy:
             self.assertEqual(run(FakeRunner(), 'check', 'hello', 'prod')[0], 0)
         policy.assert_called_once_with([str(ROOT / 'tenants/apps/hello/prod')])
 

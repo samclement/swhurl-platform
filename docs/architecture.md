@@ -62,7 +62,7 @@ Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/
 
 **Suspension** stops a unit applying Git changes. The HelmReleases it created keep reconciling unless they are suspended too.
 
-**Moving a resource between units** without recreating it: make sure the old unit cannot prune (it is `Orphan`, or suspend it), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](current-state.md#pr03-capability-split)).
+**Moving a resource between units** without recreating it: make sure the old unit cannot prune (make it `Orphan` in its own commit first; app units are not `Orphan` by default), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](current-state.md#pr03-capability-split)). To rename a unit, replace it in one commit once the old one is `Orphan` and the new path renders byte-identically ([evidence](current-state.md#names-and-layout-cleanup-step-4)). Don't suspend a unit through Git for this: the suspend lands as a new revision, and a unit suspended before it is Ready holds `cluster-stack` in its health check until the 20-minute timeout.
 
 ## C4 views
 

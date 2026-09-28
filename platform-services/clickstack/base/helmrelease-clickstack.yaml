@@ -66,11 +66,11 @@ spec:
         enabled: true
         dataSize: 10Gi
     hyperdx:
-      frontendUrl: https://clickstack.homelab.swhurl.com
+      frontendUrl: https://clickstack.${BASE_DOMAIN}
       ingress:
         enabled: true
         ingressClassName: traefik
-        host: clickstack.homelab.swhurl.com
+        host: clickstack.${BASE_DOMAIN}
         path: /
         pathType: Prefix
         annotations:

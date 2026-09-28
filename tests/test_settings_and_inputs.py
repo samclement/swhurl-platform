@@ -19,7 +19,7 @@ metadata:
   namespace: flux-system
 data:
   CERT_ISSUER: letsencrypt-prod   # trailing note is replaced with the value line
-  OAUTH_HOST: oauth.homelab.swhurl.com
+  BASE_DOMAIN: homelab.swhurl.com
 """
 
 
@@ -71,7 +71,7 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(self.path.read_text(), text)
 
     def test_set_value_refuses_collateral_changes(self):
-        tricky = SETTINGS_TEXT.replace('OAUTH_HOST: oauth.homelab.swhurl.com', 'OAUTH_HOST: |\n    CERT_ISSUER: nested')
+        tricky = SETTINGS_TEXT.replace('BASE_DOMAIN: homelab.swhurl.com', 'BASE_DOMAIN: |\n    CERT_ISSUER: nested')
         with self.assertRaises(settings.SettingsError):
             settings.set_value(tricky, 'CERT_ISSUER', 'letsencrypt-staging')
 

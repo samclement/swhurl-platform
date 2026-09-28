@@ -38,13 +38,13 @@ spec:
     extraArgs:
       provider: oidc
       oidc-issuer-url: https://accounts.google.com
-      redirect-url: https://${OAUTH_HOST}/oauth2/callback
+      redirect-url: https://oauth.${BASE_DOMAIN}/oauth2/callback
       upstream: static://202
       reverse-proxy: true
       skip-provider-button: true
       cookie-name: _oauth2_proxy_shared
-      cookie-domain: .homelab.swhurl.com
-      whitelist-domain: .homelab.swhurl.com
+      cookie-domain: .${BASE_DOMAIN}
+      whitelist-domain: .${BASE_DOMAIN}
       cookie-secure: "true"
       standard-logging: true
       request-logging: true
@@ -58,8 +58,8 @@ spec:
       path: /oauth2
       pathType: Prefix
       hosts:
-        - ${OAUTH_HOST}
+        - oauth.${BASE_DOMAIN}
       tls:
         - secretName: oauth2-proxy-shared-tls
           hosts:
-            - ${OAUTH_HOST}
+            - oauth.${BASE_DOMAIN}

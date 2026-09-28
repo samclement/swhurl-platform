@@ -37,7 +37,7 @@ def verify_config(argv: list[str] | None = None, root: Path = ROOT) -> int:
     except (OSError, SettingsError) as error:
         print(f'platform-settings unreadable: {error}')
         return 1
-    for key in ('OAUTH_HOST', 'CERT_ISSUER'):
+    for key in ('BASE_DOMAIN', 'CERT_ISSUER'):
         if not values.get(key):
             print(f'{key} missing from platform-settings')
             return 1

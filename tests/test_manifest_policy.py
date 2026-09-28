@@ -1,9 +1,10 @@
 """Rules about what is in Git: sign-in, Flux unit deletion and dependencies, Reloader scope, Traefik."""
+import re
 import unittest
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, platform
 
 
 class ManifestPolicyTests(unittest.TestCase):
@@ -46,6 +47,26 @@ class ManifestPolicyTests(unittest.TestCase):
             with self.subTest(unit=name):
                 self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
         self.assertIn('postBuild', specs['homelab-otel'], 'OTel needs substitution to unescape $${env:...}')
+
+    def test_platform_hosts_come_from_base_domain(self):
+        """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""
+        domain = platform.base_domain()
+        settings = set(yaml.safe_load((ROOT / platform.SETTINGS).read_text())['data'])
+        host = re.compile(rf'(?<![@\w.-])(?:[\w-]+\.)*{re.escape(domain)}\b')  # a mailbox (ops@domain) is not a host
+        for _, unit in platform.flux_unit_documents():
+            spec = unit['spec']
+            if spec['path'].startswith(('./tenants/', './clusters/')):
+                continue  # apps write hosts literally (the app policy checks them); roots hold only units and sources
+            used = set()
+            for path in sorted((ROOT / spec['path']).rglob('*.yaml')):
+                text = path.read_text()
+                with self.subTest(file=str(path.relative_to(ROOT))):
+                    self.assertFalse(host.search(text), f'use ${{BASE_DOMAIN}} instead of the literal {domain}')
+                used |= set(re.findall(r'(?<!\$)\$\{(\w+)\}', text))
+            with self.subTest(unit=unit['metadata']['name']):
+                self.assertLessEqual(used, settings, 'unknown setting')
+                substitutes = [s['name'] for s in (spec.get('postBuild') or {}).get('substituteFrom', [])]
+                self.assertEqual('platform-settings' in substitutes, bool(used) or unit['metadata']['name'] == 'homelab-otel')
 
     def test_reloader_is_scoped_and_opt_in(self):
         release = yaml.safe_load((ROOT / 'platform-services/reloader/base/helmrelease-reloader.yaml').read_text())

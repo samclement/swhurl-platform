@@ -107,7 +107,19 @@ Each Git-managed SOPS manifest is the final Kubernetes Secret applied by its ser
 - [`clickstack-runtime-inputs`](../platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml) in `observability`
 - [`hyperdx-secret`](../platform-services/otel/base/secret-hyperdx.sops.yaml) in `logging`
 
-`CLICKSTACK_API_KEY` is the ClickStack chart bootstrap/app key. The live team ingestion key is held in ClickStack MongoDB after first-login setup; the standalone OTel collectors use `HYPERDX_API_KEY`, which must match that live ingestion key. These keys may match on a fresh install but are separate in steady state. Kubernetes `data.HYPERDX_API_KEY` must have exactly one base64 layer around the actual ingestion token. The verifier checks decoded bytes and never prints keys; extra encoding is an error. It requires exactly one distinct nonempty ClickStack team key. After a change, restart collectors and check logs plus newly received telemetry.
+`CLICKSTACK_API_KEY` is the ClickStack chart bootstrap/app key. The live team ingestion key is held in ClickStack MongoDB after first-login setup; the standalone OTel collectors use `HYPERDX_API_KEY`, which must match that live ingestion key. These keys may match on a fresh install but are separate in steady state. Kubernetes `data.HYPERDX_API_KEY` must have exactly one base64 layer around the actual ingestion token. The verifier checks decoded bytes and never prints keys; extra encoding is an error. It requires exactly one distinct nonempty ClickStack team key. After a change, Reloader restarts the collectors; check their logs and newly received telemetry.
+
+**Known issue:** `CLICKSTACK_API_KEY` is stored with two base64 layers. The chart passes the once-decoded (48-character base64) text to the ClickStack app and its bundled collector, so that string is the effective bootstrap key. It is not the team ingestion key and nothing depends on it matching, so it works, but fixing the encoding changes the app's `HYPERDX_API_KEY` and restarts ClickStack. Do that as a planned change, not in passing. `make secrets-check` reports it as a warning.
+
+### Secret conventions
+
+These apply to platform (`platform-services/*/base/*.sops.yaml`) and app (`tenants/apps/<app>/<env>/secret.sops.yaml`) Secrets:
+
+- **One final Secret per consumer, beside it in Git**, encrypted with SOPS (`.sops.yaml` encrypts only `data`/`stringData`). Its Flux unit sets `spec.decryption`.
+- **Author new values as `stringData`** (plain text inside the encrypted file). Flux decrypts and applies `stringData` correctly; this was checked live with the PR04 fixtures. The generator's stubs use it.
+- **If you must use `data`, base64-encode exactly once.** The P0c outage was a value encoded twice. Existing platform Secrets use `data` (encoded once, except the known issue above); do not convert them in passing, since a changed value restarts consumers.
+- **Check without printing:** `make secrets-check` decrypts every tracked Secret in memory (needs the age key) and fails on empty or `REPLACE_ME` values outside test fixtures; it warns on probable double encoding and on `CLICKSTACK_API_KEY` = `HYPERDX_API_KEY`. `make verify-platform` compares the live ingestion key by bytes.
+- **Rotate:** `sops <file>`, commit, push, `make flux-reconcile`. Reloader restarts opted-in consumers (oauth2-proxy, OTel collectors, generated apps with Secrets). A new consumer needs the `secret.reloader.stakater.com/reload` annotation and its namespace in Reloader's list, or a manual restart. `make runtime-inputs-refresh-otel` remains as a fallback for the collectors.
 
 ## Getting Started
 

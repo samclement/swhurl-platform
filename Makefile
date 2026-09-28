@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 include config.env
-export BASE_DOMAIN FEAT_VERIFY TIMEOUT_SECS DYNAMIC_DNS_RECORDS
+export FEAT_VERIFY TIMEOUT_SECS DYNAMIC_DNS_RECORDS
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 DRY_RUN ?= false
 
@@ -30,8 +30,8 @@ help:
 	@echo "  flux-bootstrap      Apply Flux bootstrap manifests (requires manual Flux install)"
 	@echo "  runtime-inputs-sync Reconcile Git-managed platform runtime SOPS secrets"
 	@echo "  otel-collectors-restart Restart otel-k8s collectors (reload hyperdx-secret)"
-	@echo "  runtime-inputs-refresh-otel Reconcile runtime inputs, then restart otel-k8s collectors"
-	@echo "  runtime-inputs-refresh-clickstack-otel Reconcile ClickStack + OTel (use after rotating ingestion key)"
+	@echo "  runtime-inputs-refresh-otel Fallback: reconcile runtime inputs, restart OTel collectors, verify (Reloader normally restarts them)"
+	@echo "  secrets-check       Decrypt Git SOPS Secrets locally and flag placeholders/double encoding (never prints values)"
 	@echo "  charts-generate     Render C4 architecture charts from D2 sources"
 	@echo "  flux-reconcile      Reconcile Git source and Flux stack"
 	@echo "  host-dns            Configure host dynamic DNS systemd updater"
@@ -130,16 +130,11 @@ runtime-inputs-refresh-otel:
 	$(MAKE) runtime-inputs-sync
 	$(MAKE) wait-runtime-inputs-otel
 	$(MAKE) otel-collectors-restart
-
-# Use this after separately updating the live ClickStack ingestion key
-# in secret-hyperdx.sops.yaml. CLICKSTACK_API_KEY is a bootstrap/app key,
-# not the steady-state ingestion key.
-.PHONY: runtime-inputs-refresh-clickstack-otel
-runtime-inputs-refresh-clickstack-otel:
-	$(MAKE) runtime-inputs-sync
-	$(MAKE) wait-runtime-inputs-otel
-	$(MAKE) otel-collectors-restart
 	$(MAKE) verify-platform
+
+.PHONY: secrets-check
+secrets-check:
+	python3 scripts/secrets_check.py
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel:
@@ -193,7 +188,6 @@ platform-certs-prod:
 
 .PHONY: verify-config
 verify-config:
-	@[[ -n "$${BASE_DOMAIN:-}" ]] || { echo "BASE_DOMAIN not set in config.env"; exit 1; }
 	@[[ -f platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml ]] || { echo "oauth2-proxy runtime SOPS secret missing"; exit 1; }
 	@[[ -f platform-services/otel/base/secret-hyperdx.sops.yaml ]] || { echo "otel runtime SOPS secret missing"; exit 1; }
 	@[[ -f platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml ]] || { echo "clickstack runtime SOPS secret missing"; exit 1; }

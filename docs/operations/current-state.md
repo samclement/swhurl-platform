@@ -92,6 +92,10 @@ Not exercised: a real signed-in browser session on the new instances after cutov
 
 Found 28 September 2026: plain-HTTP requests were never redirected (signing in over `http://` returned 403 because oauth2-proxy's cookies are `Secure`). k3s runs Traefik 3.6.7 / chart 38.0.2, which ignores the `ports.web.redirectTo` key added in May. Fixed at `094d21a` with `ports.web.redirections.entryPoint`; Traefik now renders `--entryPoints.web.http.redirections.entryPoint.{to=:443,scheme=https,permanent=true}`. `http://hello`, `http://staging-hello` and `http://clickstack` return 301 to the same HTTPS URL with path and query kept. A throwaway `letsencrypt-staging` Certificate for `acme-check.homelab.swhurl.com` was issued through the redirect (HTTP-01 still works). `make verify-platform` now checks the redirect.
 
+## Secret conventions (PR07b)
+
+28 September 2026: `make secrets-check` decrypted all four tracked SOPS Secrets locally with no errors and one warning: `observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY` is double base64-encoded. In-memory comparison (no values printed) showed the live `clickstack-app-secrets.api-key` equals the once-decoded 48-byte text and that the MongoDB team key equals neither form, so the bootstrap key is independent of ingestion and nothing is currently broken. Left unchanged pending a planned ClickStack restart. The other Secrets are single-encoded (`HYPERDX_API_KEY` 36 bytes; oauth2-proxy keys) or `stringData` (fixture).
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

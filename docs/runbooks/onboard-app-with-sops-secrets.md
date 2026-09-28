@@ -49,6 +49,8 @@ If a secret is not shared by multiple services, keep it with the app.
 
 Later value changes: edit with `sops`, commit, push, `make flux-reconcile`; Reloader restarts the workload.
 
+Conventions for authoring and checking values: [Secret conventions](../PLATFORM-SERVICES.md#secret-conventions).
+
 ## When To Use Platform Runtime Inputs
 
 Use `platform-services/<service>/base/*.sops.yaml` only for Secrets consumed by shared platform components (for example oauth2-proxy credentials, ClickStack chart API keys, or OTel ingestion keys), not app-only credentials.

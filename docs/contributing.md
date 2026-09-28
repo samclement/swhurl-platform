@@ -26,7 +26,7 @@ CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based test
 All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Choose the language by what the code does:
 
 - **Python** for anything that parses JSON or YAML or edits structured files, makes a safety decision or refusal, handles or compares Secret values, polls or cleans up after failure, or produces a pass/fail verdict.
-- **Bash** for short linear glue, a streaming pipe nothing inspects, code that runs where Python dependencies are not guaranteed (host scripts and systemd units), and command lists that double as documentation (`tests/fixtures/apps.sh`). Kept bash uses `set -Eeuo pipefail`, has a dry-run path where it changes anything, and passes `make shellcheck`; when it grows real logic, the logic moves to `swhurl` and the script calls it.
+- **Bash** for short linear glue, a streaming pipe nothing inspects, code that runs where Python dependencies are not guaranteed (host scripts and systemd units), and command lists that double as documentation (`tests/fixtures/apps.sh`). Kept bash uses `set -Eeuo pipefail`, has a dry-run path where it changes anything, and passes `make check-lint`; when it grows real logic, the logic moves to `swhurl` and the script calls it.
 
 - Call external tools only through `swhurl.run.Runner`. It handles `DRY_RUN` (pass `mutating=True` for changes), redacts registered Secret values from every message, and can hide a command's output from errors (`secret_output=True`). Stream sensitive data with `Runner.pipe(producer, consumer)`: the processes share an OS pipe Python never reads, and either side failing raises (like `pipefail`).
 - Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).
@@ -42,6 +42,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 - **Secrets:** beside the consumer, following the [Secret rules](operations.md#secrets); add a `.sops.yaml` rule for any new path.
 - **Checks:** extend [`tools/swhurl/verify.py`](../tools/swhurl/verify.py) for live invariants (one function per check, unit-tested in `tests/test_verify.py`) and `tests/` for anything checkable offline. Prefer declarative wiring over new feature switches (`SKIP_VERIFY` is the only one).
 - **Live proof:** for behaviour that only shows on the cluster, add or run a throwaway test like `make live-test-lifecycle`, then record what you saw, with the date and commit, in [current state](current-state.md).
+- **Charts:** pin `version:` in the HelmRelease and keep the file and its HelmRepository under `apps/`, `clusters/`, `infra/` or `platform/`, where [Renovate](operations.md#chart-updates) finds them.
 - **Root units** in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux; run `make flux-bootstrap` after changing them.
 - **Generator changes:** regenerate the fixtures (`rm -rf tests/fixtures/apps && tests/fixtures/apps.sh`); `test` fails if they drift.
 

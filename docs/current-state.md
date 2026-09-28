@@ -16,7 +16,7 @@ Checked read-only on 28 September 2026 at `97faeeb`:
 
 The first inventory, on 27 September 2026 at revision `91e88935` (PR01 then landed as `2bae8d0`), found six Flux Kustomizations, all four volumes with `Delete` reclaim, no host backup jobs, NetworkPolicies only in `flux-system`, and four faults. Each is fixed:
 
-- **P0a teardown:** `make teardown` deleted both root Flux units, whose pruning could cascade through namespaces, Helm releases and `Delete` volumes, and removed the GitRepository the reinstall needed. Both `teardown` and `reinstall` now refuse before any cluster command.
+- **P0a teardown:** `make teardown` deleted both root Flux units, whose pruning could cascade through namespaces, Helm releases and `Delete` volumes, and removed the GitRepository the reinstall needed. Both were then made to refuse before any cluster command, and later removed (`c27bc8e`).
 - **P0b age key:** the key existed only on the host. An encrypted copy is on USB, and a controlled recovery from it decrypted all three Secrets tracked at the time.
 - **P0c ingestion key:** `logging/hyperdx-secret.HYPERDX_API_KEY` was 48 bytes after one decode; decoding again gave the 36-byte team key, and both collectors logged repeated HTTP 401 errors. The verifier decoded twice and could print keys on mismatch. The SOPS source now holds one base64 layer and the verifier compares bytes once without printing. Verified live on 27 September 2026: after `make runtime-inputs-refresh-otel`, no 401 errors, fresh logs and metrics in ClickHouse, and `make verify-platform` passed.
 - **P0d sign-in:** oauth2-proxy admitted any Google account (`email-domain: "*"`) with the cookie on `.homelab.swhurl.com`. It now admits only an authenticated-emails list (`sam@swhurl.com`) and overrides the chart default `email_domains = ["*"]`; deployed 27 September 2026. The approved account signs in (proxy `AuthSuccess`). A non-approved account was refused, but the proxy logged no callback for it, so the refusal probably came from Google (for example, consent-screen test-user limits) rather than the list. The list is enforced by the rendered chart arguments and `make test-safety`.
@@ -45,7 +45,7 @@ Cut over 27 September 2026 at `2f50de1`. `homelab-infrastructure` and `homelab-p
 
 Before/after comparison: the six Helm release revisions, 13 platform/app pod UIDs, 4 PVs and 13 namespaces were identical (nothing upgraded, uninstalled, restarted or recreated); the only inventory change was the unit objects themselves. Resources now carry their new owner (for example `observability/clickstack` → `homelab-clickstack`, `observability` namespace → `homelab-cluster-base`). All 12 units were Ready; `make verify-platform` passed; `hello` still redirected to sign-in, ClickStack served, and telemetry kept arriving. The unused `infrastructure/overlays/home` and `platform-services/overlays/home` were deleted in a follow-up commit.
 
-Not exercised live: a fresh bootstrap (issuer ordering is by construction and checked by `make test-safety`) and an app deploy during a real ClickStack/MinIO outage (the example app has no dependency path to them).
+Not exercised live: a fresh bootstrap (issuer ordering is by construction and checked by `make test`) and an app deploy during a real ClickStack/MinIO outage (the example app has no dependency path to them).
 
 ## Reloader (PR07a)
 
@@ -53,7 +53,7 @@ Deployed 28 September 2026 at `9c719fe` as `platform-system/reloader` (chart 2.2
 
 - `make reloader-test` passed: an opted-in workload in `logging` restarted after its Secret changed; an identical unannotated workload and an opted-in workload in an unwatched namespace did not.
 - Real Secret check without changing credentials: adding and then removing a dummy key on `logging/hyperdx-secret` made Reloader restart both OTel collectors (logged for each change); `oauth2-proxy-shared` was not restarted. Afterwards the Secret held only `HYPERDX_API_KEY`, collectors showed no 401/export errors, ClickHouse received fresh logs, `homelab-otel` reconciled cleanly and `make verify-platform` passed.
-- Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. `make runtime-inputs-refresh-otel` remains as a fallback.
+- Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. The make targets that were the fallback have since been removed ([Simplification](#simplification)).
 
 ## App contract (PR04)
 

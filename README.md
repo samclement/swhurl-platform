@@ -23,6 +23,7 @@ make verify-platform             # expect "Validation passed."
 | --- | --- |
 | Deploy an app or change one | [Apps](docs/apps.md) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |
+| Review a Renovate chart update PR | [Chart updates](docs/operations.md#chart-updates) |
 | Look up a `make` target | [Commands](docs/commands.md) |
 | Understand a shared service, its settings or Secrets | [Services](docs/services.md) |
 | See how the pieces depend on and own each other | [Architecture](docs/architecture.md) |

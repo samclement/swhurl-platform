@@ -1,6 +1,6 @@
 # Sub-plan: operator tooling in the right language
 
-28 September 2026 · revised the same day to decide per piece what stays bash · sub-plan of the [implementation plan](Swhurl-platform-implementation-plan.md) · **phase 0 done; phases 1–6 open**
+28 September 2026 · revised the same day to decide per piece what stays bash · sub-plan of the [implementation plan](Swhurl-platform-implementation-plan.md) · **phases 0–1 done; phases 2–6 open**
 
 Decisions taken: package `tools/swhurl/` run as `python3 -m swhurl`; `ruff` 0.16.9 in CI, `mypy` not adopted, `shellcheck` in phase 6; backup moves to Python in phase 3; `make` stays the interface.
 
@@ -101,7 +101,7 @@ Each phase is one commit to `main` (or a few), converts whole targets end to end
 | Phase | Converts | Why this order | Live check |
 | --- | --- | --- | --- |
 | 0. Foundation (**done**) | Package skeleton, `Runner`/`FakeRunner`, `report`, `__main__`; move `prune-backups`, `secrets_check`, `validate-repo`, `app_policy`, `app-new` into the package, with every caller updated in the same change (no shims needed) | No behaviour change; gives every later phase its test harness | `make validate-repo`, `make secrets-check` |
-| 1. Read-only | `verify-platform.sh` (absorbing `verify-config`), `app.sh` (status, logs, reconcile, check) | Cannot harm the cluster; `verify-platform` has the most branches and the secrecy rule | `make verify-platform`, `make app-status` |
+| 1. Read-only (**done**) | `verify-platform.sh` (absorbing `verify-config`), `app.sh` (status, logs, reconcile, check) | Cannot harm the cluster; `verify-platform` has the most branches and the secrecy rule | `make verify-platform`, `make app-status` |
 | 2. Makefile logic | `platform-certs-*` (a parsed YAML edit instead of `sed`) and `wait-runtime-inputs-otel` (polling). Sequencing recipes stay in the Makefile and shrink to one or two lines | Removes the only untested logic in the Makefile | `make platform-certs-staging DRY_RUN=true`, `make runtime-inputs-refresh-otel` |
 | 3. Backup and restore | `backup-clickstack-mongodb.sh`, `restore-test-clickstack-mongodb.sh` | Streaming Secrets: tests must show no plaintext reaches disk or output | `make backup-clickstack-mongodb`, `make restore-test-clickstack-mongodb` |
 | 4. Lifecycle | `lifecycle.sh` (`suspend`, `resume`, `destroy-data`) | The only data-deleting command; gains the most from exhaustive refusal tests | `make lifecycle-test` |

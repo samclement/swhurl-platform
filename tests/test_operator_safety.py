@@ -26,34 +26,43 @@ class OperatorSafetyTests(unittest.TestCase):
         for name in ('kubectl', 'flux'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
-import base64, os, sys
+import base64, json, os, sys
 from pathlib import Path
 with open(os.environ['CALLS'], 'a') as f:
     f.write(Path(sys.argv[0]).name + '\\n')
 scenario = os.environ.get('SCENARIO', 'match')
+argv = sys.argv[1:]
+def emit(obj):
+    print(json.dumps(obj))
 if Path(sys.argv[0]).name == 'flux':
-    print('homelab-clickstack main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
-elif 'traefik' in sys.argv:
-    print('["--entryPoints.web.http.redirections.entryPoint.to=:443", "--entryPoints.web.http.redirections.entryPoint.scheme=https"]')
-elif 'clickhouse-client' in sys.argv:
-    print('9\\t9' if 'toIntervalDay(30)' in sys.argv[-1] else '0')
-elif 'pvc' in sys.argv:
-    print('keep' if 'resource-policy' in sys.argv[-1] else 'pv-mongodb')
-elif 'pv' in sys.argv:
-    print('Retain')
-elif 'exec' in sys.argv:
+    pass
+elif any(a.startswith('kustomizations') for a in argv):
+    ready = 'False' if scenario == 'unready' else 'True'
+    emit({'items': [{'metadata': {'name': 'homelab-clickstack'},
+                     'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
+elif 'traefik' in argv:
+    emit({'spec': {'template': {'spec': {'containers': [{'args': [
+        '--entryPoints.web.http.redirections.entryPoint.to=:443',
+        '--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}})
+elif 'clickhouse-client' in argv:
+    print('9\\t9' if 'toIntervalDay(30)' in argv[-1] else '0')
+elif 'pvc' in argv:
+    emit({'metadata': {'annotations': {'helm.sh/resource-policy': 'keep'}}, 'spec': {'volumeName': 'pv-mongodb'}})
+elif 'pv' in argv:
+    emit({'spec': {'persistentVolumeReclaimPolicy': 'Retain'}})
+elif 'exec' in argv:
     print(os.environ['KEY'])
     if scenario == 'mongo-failure':
+        print('failed near ' + os.environ['KEY'], file=sys.stderr)
         sys.exit(1)
-elif 'secret' in sys.argv:
+elif 'secret' in argv:
     value = os.environ['KEY'].encode()
     if scenario == 'mismatch': value = os.environ['OTHER_KEY'].encode()
     if scenario == 'newline': value += b'\\n'
     if scenario == 'double': value = base64.b64encode(value)
     encoded = base64.b64encode(value).decode()
-    if scenario == 'missing': encoded = ''
     if scenario == 'invalid': encoded += '!'
-    print(encoded)
+    emit({'data': {} if scenario == 'missing' else {'HYPERDX_API_KEY': encoded}})
 ''')
             path.chmod(0o700)
 
@@ -172,11 +181,13 @@ elif 'secret' in sys.argv:
         self.assertNotIn('.sops.yaml', [p.name for p in module.secret_files()])
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
+        """End to end through real subprocesses and the fake kubectl (contract test)."""
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
                          'newline', 'mongo-failure', 'unready'):
             with self.subTest(scenario=scenario):
-                result = subprocess.run(['bash', '-x', 'scripts/verify-platform.sh'], cwd=ROOT,
-                                        env=dict(self.env, SCENARIO=scenario), capture_output=True, text=True)
+                result = subprocess.run([sys.executable, '-m', 'swhurl', 'verify-platform'], cwd=ROOT,
+                                        env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
+                                        capture_output=True, text=True)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, scenario == 'match', output)
                 for value in (KEY, OTHER_KEY):

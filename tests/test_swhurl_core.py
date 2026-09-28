@@ -103,6 +103,17 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(out.getvalue(), '\n== Flux ==\n[OK] unit Ready\n[WARN] slow\n[BAD] unit failed\n')
 
 
+class ReportRedactionTests(unittest.TestCase):
+    def test_report_redacts_through_the_runner(self):
+        runner = Runner()
+        runner.add_secret(SECRET)
+        out = io.StringIO()
+        report = Report(out, redact=runner.redact)
+        report.bad(f'mismatch against {SECRET}')
+        self.assertNotIn(SECRET, out.getvalue())
+        self.assertEqual(report.lines, [f'[BAD] mismatch against {REDACTED}'])
+
+
 class CliTests(unittest.TestCase):
     def run_cli(self, *args):
         return subprocess.run([sys.executable, '-m', 'swhurl', *args], cwd=ROOT, capture_output=True, text=True,
@@ -120,9 +131,9 @@ class CliTests(unittest.TestCase):
 
     def test_every_command_module_imports_and_has_main(self):
         import importlib
-        for name, (module, _) in cli.COMMANDS.items():
+        for name, (module, function, _) in cli.COMMANDS.items():
             with self.subTest(command=name):
-                self.assertTrue(callable(importlib.import_module(module).main))
+                self.assertTrue(callable(getattr(importlib.import_module(module), function)))
 
 
 if __name__ == '__main__':

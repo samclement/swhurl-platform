@@ -1,6 +1,6 @@
 """``python3 -m swhurl <command> [args]``: one entry point for operator commands.
 
-Each command lives in its own module with a ``main(argv) -> int``. Modules are
+Each command is a function ``(argv) -> int`` in a module. Modules are
 imported only when their command runs, so one broken command cannot stop the
 others. The Makefile calls these; operators normally use ``make``.
 """
@@ -10,18 +10,22 @@ import importlib
 import sys
 
 COMMANDS = {
-    'validate-repo': ('swhurl.validate', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
-    'secrets-check': ('swhurl.secrets_check', 'Decrypt tracked Secrets in memory and flag problems'),
-    'app-new': ('swhurl.app_new', 'Generate an app instance'),
-    'app-policy': ('swhurl.app_policy', 'Render app instances and check the app contract'),
-    'prune-backups': ('swhurl.backups', 'Prune ClickStack MongoDB backups to the retention set'),
+    # command: (module, function, summary)
+    'validate-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
+    'verify-config': ('swhurl.verify', 'verify_config', 'Check required Secret files and settings exist (no cluster)'),
+    'verify-platform': ('swhurl.verify', 'main', 'Check live platform state: Flux, keys, redirect, retention'),
+    'secrets-check': ('swhurl.secrets_check', 'main', 'Decrypt tracked Secrets in memory and flag problems'),
+    'app': ('swhurl.app_ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
+    'app-new': ('swhurl.app_new', 'main', 'Generate an app instance'),
+    'app-policy': ('swhurl.app_policy', 'main', 'Render app instances and check the app contract'),
+    'prune-backups': ('swhurl.backups', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 
 
 def usage() -> str:
     width = max(map(len, COMMANDS))
     lines = ['usage: python3 -m swhurl <command> [args]', '', 'commands:']
-    lines += [f'  {name:<{width}}  {summary}' for name, (_, summary) in COMMANDS.items()]
+    lines += [f'  {name:<{width}}  {summary}' for name, (_, _, summary) in COMMANDS.items()]
     return '\n'.join(lines)
 
 
@@ -34,8 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     if command not in COMMANDS:
         print(f'unknown command: {command}\n\n{usage()}', file=sys.stderr)
         return 2
-    module = importlib.import_module(COMMANDS[command][0])
-    return module.main(rest)
+    module_name, function, _ = COMMANDS[command]
+    return getattr(importlib.import_module(module_name), function)(rest)
 
 
 if __name__ == '__main__':

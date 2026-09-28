@@ -53,7 +53,7 @@ Deployed 28 September 2026 at `9c719fe` as `platform-system/reloader` (chart 2.2
 
 - `make reloader-test` passed: an opted-in workload in `logging` restarted after its Secret changed; an identical unannotated workload and an opted-in workload in an unwatched namespace did not.
 - Real Secret check without changing credentials: adding and then removing a dummy key on `logging/hyperdx-secret` made Reloader restart both OTel collectors (logged for each change); `oauth2-proxy-shared` was not restarted. Afterwards the Secret held only `HYPERDX_API_KEY`, collectors showed no 401/export errors, ClickHouse received fresh logs, `homelab-otel` reconciled cleanly and `make verify-platform` passed.
-- Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. The make targets that were the fallback have since been removed ([Simplification](#simplification)).
+- Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. The manual fallback is now a `kubectl rollout restart` ([operations](operations.md#secrets)).
 
 ## App contract (PR04)
 

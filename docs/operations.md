@@ -38,7 +38,7 @@ Rotate the OTel ingestion key (it must equal the ClickStack team key, not `CLICK
 1. Copy the team's ingestion key from the ClickStack UI; don't print it from MongoDB into logs.
 2. `sops platform/otel/secret.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded once (`printf %s '<key>' | base64 -w0`).
 3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-otel`.
-4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401.
+4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401. If the collector pods did not restart, restart them with the `kubectl` command above.
 
 ## Certificate mode
 

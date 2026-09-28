@@ -64,12 +64,11 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
 | `live-test-restore-mongodb` † | Restore the latest backup into a throwaway namespace and check it (`BACKUP_FILE`, `AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
 
-## Host and docs
+## Host
 
 | Target | Does | Touches |
 | --- | --- | --- |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS systemd timer (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
-| `charts-generate` | Render `docs/charts/c4/*.d2` to SVG (needs `d2`) | Git |
 
 Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, `TIMEOUT_SECS`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).
 

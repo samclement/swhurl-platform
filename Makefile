@@ -133,7 +133,7 @@ live-test-app-template: ## Deploy the generated app fixtures through Flux, check
 live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway namespace and check it
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-mongodb
 
-# Host and docs ------------------------------------------------------------------
+# Host ---------------------------------------------------------------------------
 
 .PHONY: host-dns
 host-dns: ## Install or update the Route53 dynamic DNS timer (records in host/dns.env)
@@ -143,9 +143,6 @@ host-dns: ## Install or update the Route53 dynamic DNS timer (records in host/dn
 host-dns-delete: ## Remove the dynamic DNS timer
 	@./host/dynamic-dns.sh --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
 
-.PHONY: charts-generate
-charts-generate: ## Render docs/charts/c4/*.d2 to SVG (needs d2)
-	./scripts/generate-charts.sh
 
 # Old names, kept as aliases (docs/commands.md#old-names) ------------------------
 

@@ -62,9 +62,9 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
   | Dated live evidence | [current state](current-state.md) |
   | Remaining planned work | [plan](plan.md) section 0 |
 
-- Describe what is, not what was: git history records removals. ADRs in `docs/adr/` are historical decisions.
+- Describe what is, not what was: git history records removals.
 - Put a caveat next to the step it affects. Mark anything not verified on the cluster.
 
 ## Diagrams
 
-C4 views are D2 sources in `docs/charts/c4/`; render with `make charts-generate` and commit the SVGs. With D2's default layouts only root-level `direction` applies, so place containers with `grid-rows`/`grid-columns` wrappers: an external row on top, the cluster below, request flow top-down and lanes left-to-right (edge, platform services, apps). Split sections with more than three or four nodes, add edges after placement, keep edge labels on representative edges only, and title charts with `diagram_title` at `near: top-left`. Show `Let's Encrypt (ACME)` wherever cert-manager appears, and the telemetry path (app → OTel collector → ClickStack) in the container view.
+Diagrams are Mermaid blocks in the page they explain; GitHub renders them, so there is nothing to generate or commit besides the text. Keep external systems outside the cluster subgraph, label only the edges that carry meaning, and show `Let's Encrypt (ACME)` wherever cert-manager appears and the telemetry path (app → OTel collector → ClickStack) in the container view. To check a diagram locally: `npx -y @mermaid-js/mermaid-cli -i diagram.mmd -o diagram.svg`.

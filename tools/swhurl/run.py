@@ -17,6 +17,7 @@ import json
 import os
 import shlex
 import subprocess
+import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,8 +110,61 @@ class Runner:
             return 0
         return self._attach(argv)
 
+    def pipe(self, producer: Sequence[str | Path], consumer: Sequence[str | Path], *,
+             mutating: bool = False, env: Mapping[str, str] | None = None) -> Result:
+        """Run ``producer | consumer`` and return the consumer's result.
+
+        The two processes are joined by an OS pipe, so the stream (for example a
+        database dump before encryption) never passes through Python, is never
+        written to disk by this code and never appears in an error message.
+        Like ``set -o pipefail``: a failure on either side raises
+        :class:`CommandError` with both sides' (redacted) stderr.
+        """
+        left = tuple(str(a) for a in producer)
+        right = tuple(str(a) for a in consumer)
+        if mutating and self.dry_run:
+            self.echo(f'  would run: {self.describe(left)} | {self.describe(right)}')
+            if hasattr(self, 'planned'):
+                self.planned.append(left + ('|',) + right)
+            return Result(right)
+        left_result, right_result = self._pipe(left, right, env={**self.env, **(env or {})})
+        failed = [r for r in (left_result, right_result) if r.returncode]
+        if failed:
+            details = '; '.join(self.redact(r.stderr.strip()) for r in failed if r.stderr.strip())
+            message = f'{self.describe(left)} | {self.describe(right)} exited ' + \
+                ', '.join(str(r.returncode) for r in (left_result, right_result))
+            raise CommandError(right, message + (f': {details}' if details else ''), failed[0].returncode)
+        return right_result
+
     def _plan(self, argv: tuple[str, ...]) -> None:
         self.echo(f'  would run: {self.describe(argv)}')
+
+    def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
+              env: Mapping[str, str]) -> tuple[Result, Result]:
+        full_env = {**os.environ, **env} if env else None
+        try:
+            producer = subprocess.Popen(left, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.cwd,
+                                        env=full_env)
+        except FileNotFoundError:
+            raise CommandError(left, f'missing required command: {left[0]}') from None
+        errors: list[bytes] = []
+        drain = threading.Thread(target=lambda: errors.append(producer.stderr.read()), daemon=True)
+        drain.start()
+        try:
+            consumer = subprocess.Popen(right, stdin=producer.stdout, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, cwd=self.cwd, env=full_env)
+        except FileNotFoundError:
+            producer.kill()
+            producer.wait()
+            raise CommandError(right, f'missing required command: {right[0]}') from None
+        finally:
+            producer.stdout.close()  # the consumer holds the only read end now
+        out, err = consumer.communicate()
+        producer.wait()
+        drain.join()
+        decode = lambda b: b.decode(errors='replace')  # noqa: E731
+        return (Result(left, producer.returncode, '', decode(errors[0] if errors else b'')),
+                Result(right, consumer.returncode, decode(out), decode(err)))
 
     def _attach(self, argv: tuple[str, ...]) -> int:
         try:
@@ -161,6 +215,12 @@ class FakeRunner(Runner):
 
     def _attach(self, argv: tuple[str, ...]) -> int:
         return self._execute(argv, input=None, env={}, cwd=None).returncode
+
+    def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
+              env: Mapping[str, str]) -> tuple[Result, Result]:
+        produced = self._execute(left, input=None, env=env, cwd=None)
+        consumed = self._execute(right, input=produced.stdout, env=env, cwd=None)
+        return Result(left, produced.returncode, '', produced.stderr), consumed
 
     def _execute(self, argv: tuple[str, ...], *, input: str | None,
                  env: Mapping[str, str], cwd: Path | None) -> Result:

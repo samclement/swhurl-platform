@@ -13,7 +13,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 3. **Final operator exercise** (section 14), using only the docs.
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it.
 
-5. **Operator tooling in the right language** (phases 0–2 of 6 done): move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. Sub-plan: [Swhurl-platform-tooling-plan.md](Swhurl-platform-tooling-plan.md).
+5. **Operator tooling in the right language** (phases 0–3 of 6 done): move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. Sub-plan: [Swhurl-platform-tooling-plan.md](Swhurl-platform-tooling-plan.md).
 
 **Known issues, deliberately not fixed yet**
 

@@ -14,7 +14,7 @@ export KUBECONFIG=$HOME/.kube/config
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `jq`, Python 3 with PyYAML. `d2` only for diagrams.
+Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML. `aws` for the DNS updater; `d2` only for diagrams.
 
 Point your router at the node: external `80 → 31514` and `443 → 30313` (Traefik NodePorts pinned in [`helmchartconfig-traefik.yaml`](../infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml)).
 

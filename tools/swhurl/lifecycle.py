@@ -65,13 +65,15 @@ def parse_target(action: str, text: str) -> Target:
     return Target(kind, parts[0], parts[1], text)
 
 
-def suspend_resume(runner: Runner, action: str, target: Target, out=print) -> int:
+def suspend_resume(runner: Runner, action: str, target: Target, out=print, *, quiet: bool = False) -> int:
+    """``quiet`` captures flux's progress output instead of streaming it (used by live tests)."""
     found = runner.run(['kubectl', '-n', target.namespace, 'get', target.kind, target.name], check=False)
     if found.returncode:
         raise LifecycleError(f'{target.kind} {target.namespace}/{target.name} not found')
     if runner.dry_run:
         out(f'Plan ({action} {target.text}):')
-    code = runner.attached(['flux', action, target.kind, target.name, '-n', target.namespace], mutating=True)
+    flux = ['flux', action, target.kind, target.name, '-n', target.namespace]
+    code = runner.run(flux, mutating=True).returncode if quiet else runner.attached(flux, mutating=True)
     if code:
         return code
     if action == 'suspend':

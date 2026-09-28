@@ -48,6 +48,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 
 | Target | Does | Touches |
 | --- | --- | --- |
+| `shellcheck` | Lint the remaining bash scripts (needs `uv`; CI runs it) | Local |
 | `validate-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links (CI runs this) | Local |
 | `test-safety` | Offline unit tests: lifecycle guards, verifier, policies, generator, fixtures (CI runs this) | Local |
 | `lifecycle-test` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |

@@ -96,7 +96,7 @@ Found 28 September 2026: plain-HTTP requests were never redirected (signing in o
 
 28 September 2026: `make secrets-check` decrypted all four tracked SOPS Secrets locally with no errors and one warning: `observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY` is double base64-encoded. In-memory comparison (no values printed) showed the live `clickstack-app-secrets.api-key` equals the once-decoded 48-byte text and that the MongoDB team key equals neither form, so the bootstrap key is independent of ingestion and nothing is currently broken. Left unchanged pending a planned ClickStack restart. The other Secrets are single-encoded (`HYPERDX_API_KEY` 36 bytes; oauth2-proxy keys) or `stringData` (fixture).
 
-## Operator tooling in Python (phases 0–4)
+## Operator tooling in Python (phases 0–6)
 
 28 September 2026: `make verify-platform`, `make verify-config` and `make app-status|app-logs|app-reconcile|app-check` now run from the `tools/swhurl` package; the bash scripts were deleted. On the live cluster the Python output was byte-identical to the bash output for `verify-platform`, `app-status` (both `hello` instances) and `app-logs`, with exit codes matching. Failure paths are covered offline: 18 verifier failure cases and the app commands via `FakeRunner`, plus the end-to-end secrecy contract test through fake `kubectl`; deliberately broken versions of the verifier (accepting a doubly encoded key, ignoring not-Ready units, printing the key) each failed the tests.
 
@@ -105,6 +105,8 @@ Phase 2 (same day): `platform-certs-*` now edits `platform-settings` through `sw
 Phase 3 (same day): `make backup-clickstack-mongodb` and `make restore-test-clickstack-mongodb` run from `swhurl.recovery`; `mongodump | age` and `age -d | mongorestore` stream through `Runner.pipe`. On the live cluster their output matched the bash scripts (timestamps and prune counts aside), files stayed `600` in a `700` directory, no `.partial` remained, the metadata checksum matched, and the restore test passed on both a new Python-made backup and an older bash-made one. It refused a pre-existing unlabelled `recovery-test` namespace without touching it. Offline tests cover failure cleanup, private permissions, that the dump never reaches disk or output, and restore mismatches; removing permissions, partial cleanup or namespace cleanup from the code each failed them.
 
 Phase 4 (same day): `make suspend|resume|destroy-data` run from `swhurl.lifecycle` (no more `jq`). Against the live cluster its output and exit codes matched the bash script for dry-run suspend/resume, the mounted-claim refusal and every malformed target; two differences are deliberate (kubectl's raw `NotFound` line is no longer echoed, and a missing PV is a clean exit-2 refusal). `make lifecycle-test`, pointed at the new implementation, passed including a confirmed `destroy-data`. Removing the mounted-pod check, the `CONFIRM` check or the reclaim-policy step each failed the unit tests.
+
+Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-template-test` run from `swhurl/livetests` with cleanup guaranteed by an exit stack and namespace deletion guarded by labels (the app-template cleanup now requires the fixture's `platform.swhurl.com/app` label; the bash version deleted unconditionally). All three passed live with the same check lines as before, and afterwards no test namespaces, units, PVs or labelled objects remained and every Flux unit was Ready. The remaining bash is `shellcheck`-clean (0.11.0) and linted in CI.
 
 ## Still to verify before live changes
 

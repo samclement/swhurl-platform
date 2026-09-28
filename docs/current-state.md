@@ -120,6 +120,8 @@ Suspension and the stack health check, 17:37: `make suspend TARGET=kustomization
 
 28 September 2026, commits `9a233ff` (docs only) and `c27bc8e`. `make reconcile UNIT=platform-otel` applied `c27bc8e` on the live cluster, `make verify-platform` passed and all 12 units stayed Ready. The removed OTel refresh targets were a fallback for Reloader, which restarted the collectors in the dummy-key test; a real credential rotation through Reloader is still unexercised.
 
+Live tests after the renames and simplification, 28 September 2026 at `550b2b3`: `make live-test-app-template` (three generated fixtures deployed through `app-*` units, Secret decrypted by the app's own unit, sign-in redirect, digest-pinned prod, `local-path-retain` claim written), `make live-test-lifecycle` (suspend/resume, uninstall keeping protected data, `destroy-data` refusal then deletion, `Orphan` deletion), `make live-test-reloader` and `make live-test-restore-mongodb` (backup `20260928T172127Z`: counts and ingestion key match) all passed; `make verify-platform` passed, all 12 units Ready, no test namespaces, units or volumes left behind.
+
 ## Still to verify before live changes
 
 - The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

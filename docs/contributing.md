@@ -27,11 +27,14 @@ CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based test
 
 ## Operator tooling
 
-All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Short glue, host/systemd scripts and command lists stay bash; the split and the migration phases are in the [tooling sub-plan](../Swhurl-platform-tooling-plan.md).
+All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Choose the language by what the code does:
+
+- **Python** for anything that parses JSON or YAML or edits structured files, makes a safety decision or refusal, handles or compares Secret values, polls or cleans up after failure, or produces a pass/fail verdict.
+- **Bash** for short linear glue, a streaming pipe nothing inspects, code that runs where Python dependencies are not guaranteed (host scripts and systemd units), and command lists that double as documentation (`tests/fixtures/apps.sh`). Kept bash uses `set -Eeuo pipefail`, has a dry-run path where it changes anything, and passes `make shellcheck`; when it grows real logic, the logic moves to `swhurl` and the script calls it.
 
 - Call external tools only through `swhurl.run.Runner`. It handles `DRY_RUN` (pass `mutating=True` for changes), redacts registered Secret values from every message, and can hide a command's output from errors (`secret_output=True`). Stream sensitive data with `Runner.pipe(producer, consumer)`: the processes share an OS pipe Python never reads, and either side failing raises (like `pipefail`).
 - Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).
-- Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command. Tests add `tools/` to `sys.path` and import `swhurl`.
+- Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command.
 - A new command is a function `(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
 - Layout: `run.py` and `report.py` (foundation); `platform.py` (repository paths, label names, shared ClickStack queries, Flux unit discovery; one copy, not a constant per module); `apps/` (`contract.py` rules shared by `new.py` and `policy.py`, plus `ops.py`); `verify.py`, `validate.py`, `settings.py`, `runtime_inputs.py`, `secrets_check.py`, `lifecycle.py`, `recovery.py` (backup and restore test), `retention.py` (pruning); `livetests/`.
 - Tests import `swhurl` directly (`from swhurl import ROOT`); `make test-safety` puts `tools/` on `PYTHONPATH`. To run one file: `PYTHONPATH=tools python3 -m unittest tests.test_verify`. `test_command_safety.py` is the only place that uses fake executables, for what only a real process shows; everything else uses `FakeRunner`.
@@ -48,6 +51,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 
 ## Documentation
 
+- Claude Code sessions can apply the repository's documentation approach with the [`document-repo` skill](../.claude/skills/document-repo/SKILL.md) (`/document-repo`), including syncing docs to a change.
 - Update the docs in the same commit as the behaviour. Each topic has one page; link rather than repeat:
 
   | Topic | Page |

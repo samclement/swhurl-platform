@@ -18,7 +18,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | --- | --- |
 | Everyday loop and task index | `README.md` |
 | Bare host to running platform | `docs/bootstrap.md` |
-| Health, Secrets, certificate mode, lifecycle, backups, troubleshooting | `docs/operations.md` |
+| Health, Secrets, certificate mode, lifecycle, chart updates, backups, troubleshooting | `docs/operations.md` |
 | Every `make` target | `docs/commands.md` |
 | Shared services, settings, keys, known issues | `docs/services.md` |
 | App instances, generator, app policy | `docs/apps.md` |

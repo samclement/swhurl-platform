@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "flux"
+  ],
+  "flux": {
+    "managerFilePatterns": [
+      "/^(apps|clusters|infra|platform)/.+\\.ya?ml$/"
+    ]
+  },
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "charts",
+  "packageRules": [
+    {
+      "description": "Charts only for now; image tag and digest updates come with GHCR publishing (docs/plan.md section 4).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "enabled": false
+    }
+  ]
+}

@@ -130,6 +130,29 @@ elif 'secret' in sys.argv:
                 self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
         self.assertIn('postBuild', specs['homelab-otel'], 'OTel needs substitution to unescape $${env:...}')
 
+    def test_reloader_is_scoped_and_opt_in(self):
+        release = yaml.safe_load((ROOT / 'platform-services/reloader/base/helmrelease-reloader.yaml').read_text())
+        values = release['spec']['values']['reloader']
+        self.assertIs(values['watchGlobally'], False, 'Reloader must not get cluster-wide Secret access')
+        self.assertFalse(values.get('autoReloadAll', False), 'Reloader must stay opt-in')
+        watched = set(values['namespaces'])
+        opt_ins = {
+            'platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml': 'deploymentAnnotations',
+            'platform-services/otel/base/helmrelease-otel-k8s-cluster.yaml': 'annotations',
+            'platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml': 'annotations',
+        }
+        for path, key in opt_ins.items():
+            with self.subTest(path=path):
+                hr = yaml.safe_load((ROOT / path).read_text())
+                self.assertIn('secret.reloader.stakater.com/reload', hr['spec']['values'][key])
+                self.assertIn(hr['metadata']['namespace'], watched, 'opt-in outside a watched namespace never reloads')
+
+    def test_reloader_test_dry_run_never_calls_cluster_tools(self):
+        result = subprocess.run(['make', 'reloader-test', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.calls.exists())
+
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
                          'newline', 'mongo-failure', 'unready'):

@@ -5,7 +5,7 @@
 The platform is composed from shared infrastructure plus shared application services:
 
 - infrastructure: cert-manager, ClusterIssuers, Traefik configuration, MinIO, and shared namespaces
-- platform services: shared oauth2-proxy, ClickStack, and OpenTelemetry collectors
+- platform services: shared oauth2-proxy, ClickStack, OpenTelemetry collectors, and Reloader
 
 Each service is its own Flux unit, defined in [`clusters/home/infrastructure.yaml`](../clusters/home/infrastructure.yaml) and [`clusters/home/platform.yaml`](../clusters/home/platform.yaml); see the [ownership map](architecture.md#current-reconciliation-ownership).
 
@@ -83,6 +83,13 @@ Current shared namespaces come from [`infrastructure/namespaces/namespaces.yaml`
 - Host: `clickstack.homelab.swhurl.com`
 - Retention: telemetry 30 days (collector image default, checked by `make verify-platform`); ClickHouse system logs 7 days (Git-managed `config.d` override); PVCs kept on Helm uninstall. Details in the [component README](../platform-services/clickstack/base/README.md#retention).
 
+### Reloader
+
+- Path: [`platform-services/reloader/base`](../platform-services/reloader/base)
+- Namespace: `platform-system`; Flux unit `homelab-reloader`
+- Restarts a workload when a Secret it names changes. Opt-in per workload (`secret.reloader.stakater.com/reload: "<secret>"`), scoped to `ingress` and `logging` with namespaced Roles only; ConfigMaps ignored.
+- Opted in: `oauth2-proxy-shared` → `oauth2-proxy-shared-secret`; both OTel collectors → `hyperdx-secret`. Details in the [component README](../platform-services/reloader/base/README.md).
+
 ### OpenTelemetry collectors
 
 - Path: [`platform-services/otel/base`](../platform-services/otel/base)
@@ -114,8 +121,9 @@ git add platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
 git commit -m "runtime-inputs: update platform secrets"
 git push
 make runtime-inputs-sync
-kubectl -n ingress rollout restart deployment/oauth2-proxy-shared
 ```
+
+Reloader restarts `oauth2-proxy-shared` once the changed Secret is applied.
 
 If ClickStack ingestion credentials changed, use:
 
@@ -123,7 +131,7 @@ If ClickStack ingestion credentials changed, use:
 make runtime-inputs-refresh-otel
 ```
 
-`make runtime-inputs-sync` applies the changed Secret but does not restart existing OTel or oauth2-proxy pods. For an ingestion-key change, use `make runtime-inputs-refresh-otel` after pushing the encrypted manifest.
+`make runtime-inputs-sync` applies the changed Secret, and Reloader then restarts the workloads that consume it (oauth2-proxy, both OTel collectors). `make runtime-inputs-refresh-otel` still exists as an explicit fallback: it also waits for the Secret and restarts the collectors itself.
 
 ### Change platform certificate mode
 
@@ -156,8 +164,7 @@ The current verifier can print both key values when the ingestion-key comparison
 
 - `config.env` is not a full service configuration source. Several hosts remain hardcoded in manifests, including ClickStack, MinIO, and the sample app domains.
 - `OAUTH_HOST` is runtime-configurable, but the shared oauth2-proxy `cookie-domain` and `whitelist-domain` are still hardcoded to `.homelab.swhurl.com` in [`platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml`](../platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml).
-- oauth2-proxy credential changes do not currently trigger an automatic rollout restart. After updating shared oauth credentials, restart `deployment/oauth2-proxy-shared` in `ingress`.
-- OTel collectors do not hot-reload the `HYPERDX_API_KEY` secret. Use `make runtime-inputs-refresh-otel` after ingestion key changes.
+- Secret changes restart only workloads opted in to Reloader in a watched namespace. A new consumer of a rotated Secret needs the annotation (and its namespace in `reloader.namespaces`), otherwise restart it manually.
 - ClickStack requires first-time setup in the UI after deployment.
 - The platform assumes packaged k3s Traefik and `local-path` storage remain available.
 - Only services that use Flux substitutions react to `CERT_ISSUER`. Hostnames and several service manifests still need manual edits if the domain model changes.

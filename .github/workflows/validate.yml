@@ -51,6 +51,7 @@ jobs:
           make backup-clickstack-mongodb DRY_RUN=true
           make restore-test-clickstack-mongodb DRY_RUN=true
           make lifecycle-test DRY_RUN=true
+          make reloader-test DRY_RUN=true
           kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true

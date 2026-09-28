@@ -72,7 +72,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | PR02a | Retention defaults: telemetry 30d, ClickHouse system logs 7d, backup pruning 7 daily + 4 weekly, MongoDB PV Retain + PVC keep, `local-path-retain` class | Complete 27 Sep 2026; backups stay manual until an off-host destination is chosen |
 | PR02b | Lifecycle commands (suspend/resume/destroy-data), `Orphan` shared units, prune protection | Complete 27 Sep 2026; proven by `make lifecycle-test` |
 | PR03 | Capability split and cert-manager/issuer ordering | Complete 27 Sep 2026: 10 units, 22 resources handed over with no recreation |
-| PR07a | Narrow Secret rollout controller pilot | After P0c; before relying on automatic rotation |
+| PR07a | Narrow Secret rollout controller pilot | Complete 28 Sep 2026: scoped opt-in Reloader for oauth2-proxy and OTel; manual refresh kept as fallback |
 | PR04 | App-template contract, generator, rendered policy | Local work after PR01; rollout after PR03 |
 | PR05 | Split and migrate example staging/production; operator commands | PR03, PR04, recovery for stateful paths |
 | PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |

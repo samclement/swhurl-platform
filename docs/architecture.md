@@ -47,6 +47,7 @@ flowchart LR
   base --> auth[homelab-auth]
   base --> clickstack[homelab-clickstack]
   base --> otel[homelab-otel]
+  base --> reloader[homelab-reloader]
   traefik[homelab-traefik]
   tenants[homelab-tenants] --> example[homelab-app-example]
   auth --> example
@@ -64,6 +65,7 @@ flowchart LR
 | `homelab-auth` | oauth2-proxy, its SOPS Secret and middleware (`platform-services/oauth2-proxy/base`); substitutes, decrypts | cluster-base | `ingress-oauth-auth-shared@kubernetescrd` |
 | `homelab-clickstack` | ClickStack and its SOPS Secret (`platform-services/clickstack/base`); substitutes, decrypts | cluster-base | Telemetry ingestion and UI |
 | `homelab-otel` | OTel collectors and ingestion Secret (`platform-services/otel/base`); substitutes, decrypts | cluster-base | Node/cluster telemetry export |
+| `homelab-reloader` | Reloader (`platform-services/reloader/base`) | cluster-base | Opt-in restarts on Secret change in `ingress`, `logging` |
 | `homelab-tenants` | `apps-staging`, `apps-prod` (`tenants/app-envs`) | — | Environment namespaces |
 | `homelab-app-example` | Both example overlays (`tenants/apps/example`) | tenants, auth | Staging and production routes/workloads |
 

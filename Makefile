@@ -43,6 +43,7 @@ help:
 	@echo "  suspend TARGET=kustomization/<name>|helmrelease/<ns>/<name>  Stop applying Git changes; workloads keep running"
 	@echo "  resume TARGET=...   Resume a suspended Kustomization or HelmRelease"
 	@echo "  destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>  Permanently delete a released claim/PV and its data"
+	@echo "  reloader-test       Prove Reloader restarts only opted-in workloads in watched namespaces"
 	@echo "  lifecycle-test      Prove suspend/uninstall/destroy-data/Orphan on a disposable app"
 	@echo "  backup-clickstack-mongodb      Dump ClickStack MongoDB to an age-encrypted local archive"
 	@echo "  restore-test-clickstack-mongodb Restore the latest backup into a disposable namespace and check it"
@@ -204,6 +205,10 @@ verify: verify-config verify-platform
 .PHONY: suspend resume destroy-data
 suspend resume destroy-data:
 	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" ./scripts/lifecycle.sh $@ "$(TARGET)"
+
+.PHONY: reloader-test
+reloader-test:
+	DRY_RUN=$(DRY_RUN) ./scripts/reloader-test.sh
 
 .PHONY: lifecycle-test
 lifecycle-test:

@@ -50,6 +50,14 @@ else
 fi
 unset mongo_key hyperdx_plain hyperdx_key
 
+say "Ingress"
+if kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null \
+    | grep -q 'entryPoints.web.http.redirections.entryPoint.to=:websecure'; then
+  ok "Traefik redirects HTTP to HTTPS"
+else
+  bad "Traefik does not redirect HTTP to HTTPS (plain-HTTP sign-in fails with 403); check helmchartconfig-traefik.yaml"
+fi
+
 say "Retention"
 clickhouse() { kubectl -n observability exec deploy/clickstack-clickhouse -- clickhouse-client -q "$1" 2>/dev/null; }
 if ! telemetry="$(clickhouse "SELECT countIf(position(engine_full, 'toIntervalDay(30)') > 0), count() FROM system.tables WHERE database = 'default' AND engine LIKE '%MergeTree' FORMAT TSV")"; then

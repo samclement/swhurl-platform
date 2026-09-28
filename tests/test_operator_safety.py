@@ -31,6 +31,8 @@ with open(os.environ['CALLS'], 'a') as f:
 scenario = os.environ.get('SCENARIO', 'match')
 if Path(sys.argv[0]).name == 'flux':
     print('homelab-clickstack main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
+elif 'traefik' in sys.argv:
+    print('["--entryPoints.web.http.redirections.entryPoint.to=:websecure"]')
 elif 'clickhouse-client' in sys.argv:
     print('9\\t9' if 'toIntervalDay(30)' in sys.argv[-1] else '0')
 elif 'pvc' in sys.argv:
@@ -152,6 +154,12 @@ elif 'secret' in sys.argv:
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.calls.exists())
+
+    def test_traefik_redirects_http_to_https(self):
+        config = yaml.safe_load((ROOT / 'infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml').read_text())
+        web = yaml.safe_load(config['spec']['valuesContent'])['ports']['web']
+        self.assertNotIn('redirectTo', web, 'redirectTo is ignored by Traefik chart 38; use redirections.entryPoint')
+        self.assertEqual(web['redirections']['entryPoint'], {'to': 'websecure', 'scheme': 'https', 'permanent': True})
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',

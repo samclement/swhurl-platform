@@ -48,12 +48,14 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 *Step 4: names and layout* — **done** 28 September 2026. Stages, each validated, pushed and verified live:
 
-1. **Done:** #18 verbs: `check-*` offline (`check` runs everything CI runs), `test` for unit tests, `verify-*` live, `live-test-*` throwaway cluster tests, `backup-mongodb`; old names stay as aliases ([commands](commands.md#old-names)); Python command names match. #20: this plan is `docs/plan.md`, the evidence file `docs/current-state.md`, and the PyYAML pin is the `check` dependency group in `pyproject.toml`.
+1. **Done:** #18 verbs: `check-*` offline (`check` runs everything CI runs), `test` for unit tests, `verify-*` live, `live-test-*` throwaway cluster tests, `backup-mongodb`; Python command names match. #20: this plan is `docs/plan.md`, the evidence file `docs/current-state.md`, and the PyYAML pin is the `check` dependency group in `pyproject.toml`.
 2. **Done:** canary `homelab-reloader` became `platform-reloader` at `platform/reloader` (`9d9c7bb` suspend, `81b6ccf` cutover). Suspending it through Git blocked `homelab-flux-stack` for its 20-minute health-check timeout: the suspend commit is a new revision, the unit was suspended while still waiting on a dependency for it, and its status froze as not Ready. The next stage made the old units `Orphan` instead.
 3. **Done:** the other non-root units (`44ddd85` made the two app units `Orphan`; the cutover commit followed), with #16 (one directory per unit under `infra/`, `platform/`, `apps/`; no `base/` levels) and #17 (`<kind>.yaml`, `-<name>` only to tell two of a kind apart): `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `app-<app>-<env>`.
 4. **Done:** the roots `homelab-flux-sources` and `homelab-flux-stack` became `cluster-sources` and `cluster-stack` (new units applied with `make flux-bootstrap`, then the old `Orphan` roots deleted).
 
 #14, #15: a unit is named `<area>-<component>` after its directory; namespaces, HelmReleases, Secrets and hostnames keep their names, so no workload changes. Each rename is a handover: suspend the old unit, then replace it (all units are `Orphan`), after proving offline that the new unit renders byte-identical objects, and live that Helm revisions and pod and volume UIDs are unchanged.
+
+*Follow-up simplification* — **done** 28 September 2026: Mermaid diagrams replaced D2 (no render step), the component READMEs were folded into `docs/services.md` and `docs/operations.md`, the ADRs retired; `make reconcile UNIT=<name>` replaced the four OTel refresh targets, and the old-name aliases, `verify`, `teardown` and `reinstall` were removed.
 
 *Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
 

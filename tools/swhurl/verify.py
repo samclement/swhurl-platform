@@ -88,7 +88,7 @@ def check_runtime_secret(stored: str, report: Report) -> None:
     if stored:
         report.ok('logging/hyperdx-secret.HYPERDX_API_KEY present')
     else:
-        report.bad('logging/hyperdx-secret.HYPERDX_API_KEY is empty (run: make runtime-inputs-refresh-otel)')
+        report.bad('logging/hyperdx-secret.HYPERDX_API_KEY is empty (run: make reconcile UNIT=platform-otel)')
 
 
 def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
@@ -116,7 +116,7 @@ def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
     else:
         report.bad('HYPERDX_API_KEY does not match the ClickStack ingestion key')
         report.detail('Fix: update HYPERDX_API_KEY in platform/otel/secret.sops.yaml')
-        report.detail('     using exactly one base64 layer in data; commit+push, then run: make runtime-inputs-refresh-otel')
+        report.detail('     using exactly one base64 layer in data; commit+push, then run: make reconcile UNIT=platform-otel')
 
 
 def check_ingress(runner: Runner, report: Report) -> None:

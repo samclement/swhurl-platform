@@ -64,7 +64,7 @@ Units come up in dependency order ([architecture](architecture.md#flux-units)). 
 1. Open `https://clickstack.homelab.swhurl.com` and create the first team and user.
 2. Copy the team's ingestion API key from the ClickStack UI.
 3. Store it as `HYPERDX_API_KEY` in [`platform/otel/secret.sops.yaml`](../platform/otel/secret.sops.yaml). The file uses `data`, so encode it exactly once (`printf %s '<key>' | base64 -w0`); encoding twice silently breaks telemetry.
-4. Commit, push, `make runtime-inputs-sync`. Reloader restarts the collectors.
+4. Commit, push, `make reconcile UNIT=platform-otel`. Reloader restarts the collectors.
 
 ## 6. Protect data, then verify
 

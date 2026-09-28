@@ -9,7 +9,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, wait | Cluster |
 | `install` † | `check-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
 | `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), retention settings | Cluster (read) |
-| `verify` | Same as `verify-platform` | Cluster (read) |
+| `reconcile UNIT=<name>` | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
 
 ## Apps
@@ -22,14 +22,10 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
 
-## Secrets and settings
+## Settings
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `runtime-inputs-sync` | Fetch Git and reconcile `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel` | Cluster |
-| `wait-runtime-inputs-otel` | Wait until `logging/hyperdx-secret` has its key (`TIMEOUT_SECS`, default 300); never prints it | Cluster (read) |
-| `runtime-inputs-refresh-otel` | `runtime-inputs-sync`, wait for `logging/hyperdx-secret` (`TIMEOUT_SECS`, default 300), restart collectors, `verify-platform`. Fallback: Reloader normally restarts them | Cluster |
-| `otel-collectors-restart` | Restart both OTel collectors | Cluster |
 | `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings`: only issuers defined in Git, one line changed, comments kept | Git |
 
 ## Lifecycle, backup and recovery
@@ -39,7 +35,6 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), then prune to 7 daily + 4 weekly (`PRUNE=false` skips) | Cluster (read), local |
-| `teardown`, `reinstall` † | Refuse to run: no whole-platform reset exists | — |
 
 ## Offline checks
 
@@ -70,8 +65,4 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | --- | --- | --- |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS systemd timer (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
 
-Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, `TIMEOUT_SECS`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).
-
-## Old names
-
-These still work and run the new target: `validate-repo` (`check-repo`), `test-safety` (`test`), `app-policy` (`check-apps`), `shellcheck` (`check-lint`), `verify-config` (`check-config`), `secrets-check` (`check-secrets`), `lifecycle-test`, `reloader-test`, `app-template-test` (`live-test-*`), `restore-test-clickstack-mongodb` (`live-test-restore-mongodb`) and `backup-clickstack-mongodb` (`backup-mongodb`).
+Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).

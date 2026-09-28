@@ -69,18 +69,8 @@ elif 'secret' in argv:
 ''')
             path.chmod(0o700)
 
-    def test_destructive_targets_never_call_cluster_tools(self):
-        for target in ('teardown', 'reinstall'):
-            for dry in ('false', 'true'):
-                with self.subTest(target=target, dry=dry):
-                    result = subprocess.run(['make', target, f'DRY_RUN={dry}'], cwd=ROOT,
-                                            env=self.env, capture_output=True, text=True)
-                    self.assertEqual(result.returncode == 0, dry == 'true', result.stdout + result.stderr)
-                    self.assertIn('disabled', result.stdout + result.stderr)
-                    self.assertFalse(self.calls.exists(), 'A disabled target called a cluster tool')
-
     def test_recovery_dry_runs_never_call_cluster_tools(self):
-        for target in ('backup-mongodb', 'live-test-restore-mongodb', 'backup-clickstack-mongodb'):
+        for target in ('backup-mongodb', 'live-test-restore-mongodb'):
             with self.subTest(target=target):
                 result = subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT,
                                         env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')),

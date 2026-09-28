@@ -1,15 +1,12 @@
-"""platform-certs (Git settings edit) and wait-secret-key (polling), offline."""
-import base64
+"""platform-certs (Git settings edit), offline."""
 import io
-import json
 import shutil
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 from pathlib import Path
 
-from swhurl import ROOT, runtime_inputs, settings
-from swhurl.run import FakeRunner, Result
+from swhurl import ROOT, settings
 
 SETTINGS_TEXT = """# Cluster settings (fixture comment must survive)
 apiVersion: v1
@@ -81,69 +78,6 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.platform_certs([]), 2)
             self.assertEqual(settings.platform_certs(['selfsigned']), 1)
         self.assertIn('unknown issuer', err.getvalue())
-
-
-def secret_runner(values):
-    """A FakeRunner whose Secret reads return successive values (None = not found)."""
-    values = list(values)
-
-    def handler(args, _input):
-        value = values.pop(0) if len(values) > 1 else values[0]
-        if value is None:
-            return Result(args, 1, '', 'NotFound')
-        return Result(args, 0, json.dumps({'data': {'KEY': value} if value else {}}))
-
-    return FakeRunner().on('kubectl', '-n', 'ns', 'get', 'secret', 'app', handler=handler)
-
-
-class Clock:
-    def __init__(self):
-        self.now = 0.0
-        self.sleeps = []
-
-    def __call__(self):
-        return self.now
-
-    def sleep(self, seconds):
-        self.sleeps.append(seconds)
-        self.now += seconds
-
-
-class WaitSecretKeyTests(unittest.TestCase):
-    def wait(self, runner, clock, *extra):
-        out, err = io.StringIO(), io.StringIO()
-        with redirect_stdout(out), redirect_stderr(err):
-            code = runtime_inputs.wait_secret_key(['ns', 'app', 'KEY', *extra], runner, clock=clock, sleep=clock.sleep)
-        return code, out.getvalue() + err.getvalue()
-
-    def test_present_immediately(self):
-        clock = Clock()
-        code, text = self.wait(secret_runner([base64.b64encode(b'v').decode()]), clock)
-        self.assertEqual(code, 0)
-        self.assertEqual(clock.sleeps, [])
-        self.assertIn('[INFO] ns/app is present', text)
-
-    def test_appears_after_polling(self):
-        clock = Clock()
-        value = base64.b64encode(b'fixture-value').decode()
-        code, text = self.wait(secret_runner([None, '', value]), clock, '--interval', '5')
-        self.assertEqual(code, 0)
-        self.assertEqual(clock.sleeps, [5, 5])
-        self.assertNotIn(value, text)
-        self.assertNotIn('fixture-value', text)
-
-    def test_times_out(self):
-        clock = Clock()
-        code, text = self.wait(secret_runner([None]), clock, '--timeout', '12', '--interval', '5')
-        self.assertEqual(code, 1)
-        self.assertEqual(clock.sleeps, [5, 5, 5])
-        self.assertIn('[ERROR] Timed out waiting for app propagation (12s)', text)
-
-    def test_zero_timeout_still_checks_once(self):
-        clock = Clock()
-        runner = secret_runner([base64.b64encode(b'v').decode()])
-        self.assertEqual(self.wait(runner, clock, '--timeout', '0')[0], 0)
-        self.assertEqual(len(runner.calls), 1)
 
 
 if __name__ == '__main__':

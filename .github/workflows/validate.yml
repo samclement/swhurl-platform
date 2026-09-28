@@ -63,8 +63,6 @@ jobs:
           set -Eeuo pipefail
           ./host/dynamic-dns.sh --dry-run
           make install DRY_RUN=true
-          make teardown DRY_RUN=true
-          make reinstall DRY_RUN=true
           make backup-mongodb DRY_RUN=true
           make live-test-restore-mongodb DRY_RUN=true
           make live-test-lifecycle DRY_RUN=true

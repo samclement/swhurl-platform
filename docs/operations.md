@@ -28,16 +28,16 @@ Rotate a value:
 sops platform/oauth2-proxy/secret.sops.yaml
 make check-secrets
 git commit -am "secrets: rotate oauth2-proxy client secret" && git push
-make runtime-inputs-sync          # or make flux-reconcile / make app-reconcile
+make reconcile UNIT=platform-oauth2-proxy   # the unit that holds the Secret; apps: make app-reconcile
 ```
 
-Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`. For the collectors, `make runtime-inputs-refresh-otel` does the restart itself and then verifies. Which Secret belongs to which service: [services](services.md).
+Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`; if Reloader ever misses the collectors: `kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent`, then `make verify-platform`. Which Secret belongs to which service: [services](services.md).
 
 Rotate the OTel ingestion key (it must equal the ClickStack team key, not `CLICKSTACK_API_KEY`):
 
 1. Copy the team's ingestion key from the ClickStack UI; don't print it from MongoDB into logs.
 2. `sops platform/otel/secret.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded once (`printf %s '<key>' | base64 -w0`).
-3. `make check-secrets`, commit, push, `make runtime-inputs-sync`.
+3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-otel`.
 4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401.
 
 ## Certificate mode
@@ -64,7 +64,7 @@ Deploy, update and uninstall through Git. Removing an app instance's unit from `
 
 `destroy-data` refuses while a pod mounts the claim or a Helm release or Flux unit still manages it, because they would recreate it. `DRY_RUN=true` runs only the checks.
 
-Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset; `make teardown` and `make reinstall` refuse to run.
+Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset.
 
 ## Backups and recovery
 

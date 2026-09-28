@@ -69,7 +69,6 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 - A fresh bootstrap on a new cluster (issuer ordering, `make flux-bootstrap` from nothing).
 - A real credential rotation through Reloader (only dummy-key and disposable rotations were tested), and Reloader restarting a generated app.
 - A `public` app instance on a domain outside `homelab.swhurl.com`.
-- Deleting a real shared Flux unit (only a disposable `Orphan` unit was deleted).
 - A rejected sign-in reaching oauth2-proxy's email list (the test account was refused by Google first).
 
 **Open question from the old todo list:** how to avoid Let's Encrypt rate limits when rebuilding the cluster (for example backing up and restoring certificate Secrets, or using `letsencrypt-staging` while iterating). Relevant to the fresh-bootstrap test above.

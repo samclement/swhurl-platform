@@ -124,7 +124,7 @@ verify: verify-config verify-platform
 
 .PHONY: suspend resume destroy-data
 suspend resume destroy-data:
-	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" ./scripts/lifecycle.sh $@ "$(TARGET)"
+	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) lifecycle $@ "$(TARGET)"
 
 .PHONY: app-new
 app-new:

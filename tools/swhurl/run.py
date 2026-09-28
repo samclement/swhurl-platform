@@ -123,9 +123,7 @@ class Runner:
         left = tuple(str(a) for a in producer)
         right = tuple(str(a) for a in consumer)
         if mutating and self.dry_run:
-            self.echo(f'  would run: {self.describe(left)} | {self.describe(right)}')
-            if hasattr(self, 'planned'):
-                self.planned.append(left + ('|',) + right)
+            self._plan(left + ('|',) + right, display=f'{self.describe(left)} | {self.describe(right)}')
             return Result(right)
         left_result, right_result = self._pipe(left, right, env={**self.env, **(env or {})})
         failed = [r for r in (left_result, right_result) if r.returncode]
@@ -136,8 +134,9 @@ class Runner:
             raise CommandError(right, message + (f': {details}' if details else ''), failed[0].returncode)
         return right_result
 
-    def _plan(self, argv: tuple[str, ...]) -> None:
-        self.echo(f'  would run: {self.describe(argv)}')
+    def _plan(self, argv: tuple[str, ...], display: str | None = None) -> None:
+        """Report a mutating command that DRY_RUN skipped."""
+        self.echo(f'  would run: {display or self.describe(argv)}')
 
     def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
               env: Mapping[str, str]) -> tuple[Result, Result]:
@@ -209,9 +208,9 @@ class FakeRunner(Runner):
         self._rules.append((prefix, handler or Result((), returncode, stdout, stderr)))
         return self
 
-    def _plan(self, argv: tuple[str, ...]) -> None:
+    def _plan(self, argv: tuple[str, ...], display: str | None = None) -> None:
         self.planned.append(argv)
-        super()._plan(argv)
+        super()._plan(argv, display)
 
     def _attach(self, argv: tuple[str, ...]) -> int:
         return self._execute(argv, input=None, env={}, cwd=None).returncode

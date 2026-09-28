@@ -54,7 +54,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
   | --- | --- |
   | Everyday loop, task index | [README](../README.md) |
   | Bare host to running platform | [bootstrap](bootstrap.md) |
-  | Health, Secrets, certificates, lifecycle, backups, troubleshooting | [operations](operations.md) |
+  | Health, Secrets, certificates, lifecycle, chart updates, backups, troubleshooting | [operations](operations.md) |
   | Every `make` target | [commands](commands.md) |
   | Shared services, settings, keys | [services](services.md) |
   | App instances, generator, policy | [apps](apps.md) |

@@ -66,6 +66,12 @@ Deploy, update and uninstall through Git. Removing an app instance's unit from `
 
 Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy: Orphan`, so their resources keep running unmanaged. Re-create a deleted root unit with `make flux-bootstrap`. There is no whole-platform reset.
 
+## Chart updates
+
+[Renovate](https://docs.renovatebot.com/modules/manager/flux/) opens a pull request when a pinned Helm chart has a newer release: cert-manager, ClickStack, both OTel collectors, oauth2-proxy, Reloader and each app's app-template. Its config is [`renovate.json`](../renovate.json): Flux files under `apps/`, `clusters/`, `infra/` and `platform/`, charts only (image tags and digests are still edited by hand, see [apps](apps.md)), one PR per chart and a separate PR for a major version. A chart shared by several releases (OTel, app-template) is bumped in all of them in one PR. Open PRs and pending updates are listed on the repository's Dependency Dashboard issue.
+
+For each PR: read the chart's release notes, let CI render it, merge, then `make flux-reconcile` and `make verify-platform` (and `make app-status` for app-template). To roll back, revert the merge commit. Renovate needs the Renovate GitHub App installed on the repository; without it nothing is opened and updates stay manual edits of `version:`.
+
 ## Backups and recovery
 
 | Data | Class | Where it survives |

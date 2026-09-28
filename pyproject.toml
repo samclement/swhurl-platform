@@ -10,3 +10,7 @@ ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["swhurl"]
+
+# Python packages the offline checks need (CI: pip install --group check).
+[dependency-groups]
+check = ["PyYAML==6.0.3"]

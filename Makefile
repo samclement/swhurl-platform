@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 # tools/swhurl (see docs/contributing.md). `## text` after a target is its help line.
 SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
 DRY_RUN ?= false
-INSTALL_STEPS = $(if $(SKIP_VERIFY),flux-reconcile,verify-config flux-reconcile verify-platform)
+INSTALL_STEPS = $(if $(SKIP_VERIFY),flux-reconcile,check-config flux-reconcile verify-platform)
 TEARDOWN_REFUSAL = is disabled: Flux pruning can delete namespaces, Helm releases and persistent data.\nUse Git updates and make flux-reconcile for deployment. See docs/operations.md\#lifecycle.
 OTEL_COLLECTORS = deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent
 
@@ -20,19 +20,12 @@ flux-reconcile: ## Fetch Git and reconcile the source layer and the stack
 	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m
 
 .PHONY: install
-install: ## verify-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)
+install: ## check-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)
 	@$(if $(filter true,$(DRY_RUN)),printf 'Plan (install):\n'; printf '  - make %s\n' $(INSTALL_STEPS),$(foreach step,$(INSTALL_STEPS),$(MAKE) $(step) &&) true)
 
-.PHONY: verify-config
-verify-config: ## Offline: decrypting units have Secrets, platform-settings has its keys
-	@$(SWHURL) verify-config
-
-.PHONY: verify-platform
-verify-platform: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
+.PHONY: verify-platform verify
+verify-platform verify: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
 	@$(SWHURL) verify-platform
-
-.PHONY: verify
-verify: verify-config verify-platform ## verify-config and verify-platform
 
 .PHONY: flux-bootstrap
 flux-bootstrap: ## Apply the root units and sources (Flux must already be installed)
@@ -55,15 +48,8 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
 	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
-.PHONY: app-policy
-app-policy: ## Render every app instance and check the app contract
-	$(SWHURL) app-policy
 
 # Secrets and settings -----------------------------------------------------------
-
-.PHONY: secrets-check
-secrets-check: ## Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)
-	$(SWHURL) secrets-check
 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync: ## Fetch Git and reconcile the units that hold runtime Secrets
@@ -95,39 +81,57 @@ platform-certs-staging platform-certs-prod: ## Set CERT_ISSUER in platform-setti
 suspend resume destroy-data: ## TARGET=... [CONFIRM=...] Suspend/resume a unit or release; destroy released data
 	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) lifecycle $@ "$(TARGET)"
 
-.PHONY: backup-clickstack-mongodb
-backup-clickstack-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
+.PHONY: backup-mongodb
+backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb
 
-.PHONY: restore-test-clickstack-mongodb
-restore-test-clickstack-mongodb: ## Restore the latest backup into a throwaway namespace and check it
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) restore-test-mongodb
+# Offline checks (CI runs `make check`) -------------------------------------------
 
-# Tests --------------------------------------------------------------------------
+.PHONY: check
+check: check-repo test check-apps check-lint ## All offline checks: the same as CI
 
-.PHONY: test-safety
-test-safety: ## Offline unit tests (CI runs this)
+.PHONY: check-repo
+check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, doc links
+	$(SWHURL) check-repo
+
+.PHONY: test
+test: ## Unit tests for the tooling, manifests and command safety
 	PYTHONPATH=$(CURDIR)/tools python3 -m unittest discover -s tests -v
 
-.PHONY: validate-repo
-validate-repo: ## Offline: render active Flux paths, schemas, SOPS structure, shell syntax, doc links
-	$(SWHURL) validate-repo
+.PHONY: check-apps
+check-apps: ## Render every app instance and check the app contract
+	$(SWHURL) check-apps
 
-.PHONY: shellcheck
-shellcheck: ## Lint the bash that stays (needs uv)
+.PHONY: check-lint
+check-lint: ## Lint the Python tooling and the bash that stays (needs uv)
+	uvx ruff@0.16.9 check tools tests
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files '*.sh')
 
-.PHONY: lifecycle-test
-lifecycle-test: ## Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) lifecycle-test
+.PHONY: check-config
+check-config: ## Decrypting units have Secrets, platform-settings has its keys
+	@$(SWHURL) check-config
 
-.PHONY: reloader-test
-reloader-test: ## Live: prove Reloader restarts only opted-in workloads in watched namespaces
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) reloader-test
+.PHONY: check-secrets
+check-secrets: ## Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)
+	$(SWHURL) check-secrets
 
-.PHONY: app-template-test
-app-template-test: ## Live: deploy the generated app fixtures through Flux, check, remove
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) app-template-test
+# Live tests (throwaway resources, cleaned up) -----------------------------------
+
+.PHONY: live-test-lifecycle
+live-test-lifecycle: ## Prove suspend/uninstall/destroy-data/Orphan on a throwaway app
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-lifecycle
+
+.PHONY: live-test-reloader
+live-test-reloader: ## Prove Reloader restarts only opted-in workloads in watched namespaces
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-reloader
+
+.PHONY: live-test-app-template
+live-test-app-template: ## Deploy the generated app fixtures through Flux, check, remove
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-app-template
+
+.PHONY: live-test-restore-mongodb
+live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway namespace and check it
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-mongodb
 
 # Host and docs ------------------------------------------------------------------
 
@@ -142,3 +146,19 @@ host-dns-delete: ## Remove the dynamic DNS timer
 .PHONY: charts-generate
 charts-generate: ## Render docs/charts/c4/*.d2 to SVG (needs d2)
 	./scripts/generate-charts.sh
+
+# Old names, kept as aliases (docs/commands.md#old-names) ------------------------
+
+.PHONY: validate-repo test-safety app-policy shellcheck verify-config secrets-check
+.PHONY: lifecycle-test reloader-test app-template-test restore-test-clickstack-mongodb backup-clickstack-mongodb
+validate-repo: check-repo ## Old name for check-repo
+test-safety: test ## Old name for test
+app-policy: check-apps ## Old name for check-apps
+shellcheck: check-lint ## Old name for check-lint
+verify-config: check-config ## Old name for check-config
+secrets-check: check-secrets ## Old name for check-secrets
+lifecycle-test: live-test-lifecycle ## Old name for live-test-lifecycle
+reloader-test: live-test-reloader ## Old name for live-test-reloader
+app-template-test: live-test-app-template ## Old name for live-test-app-template
+restore-test-clickstack-mongodb: live-test-restore-mongodb ## Old name for live-test-restore-mongodb
+backup-clickstack-mongodb: backup-mongodb ## Old name for backup-mongodb

@@ -1,7 +1,7 @@
 """Back up ClickStack MongoDB and prove a backup restores.
 
-    backup-mongodb          dump the hyperdx database, encrypted with age, to BACKUP_DIR
-    restore-test-mongodb    restore the latest backup into a throwaway namespace and check it
+    backup-mongodb             dump the hyperdx database, encrypted with age, to BACKUP_DIR
+    live-test-restore-mongodb  restore the latest backup into a throwaway namespace and check it
 
 Plaintext never touches disk: the dump streams from ``mongodump`` straight into
 ``age`` (and on restore from ``age -d`` into ``mongorestore``) through an OS
@@ -106,7 +106,7 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
     exec_mongo = ['kubectl', '-n', settings.namespace, 'exec', settings.workload, '--']
 
     if runner.dry_run:
-        out('Plan (backup-clickstack-mongodb):')
+        out('Plan (backup-mongodb):')
         out(f'  - mongodump --db {settings.database} from {settings.namespace}/{settings.workload}')
         out(f'  - encrypt to age recipient {settings.recipient}')
         out(f'  - write {archive} and a metadata file; no cluster changes')
@@ -203,7 +203,7 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
     archive = settings.archive()
     ns = settings.namespace
     if runner.dry_run:
-        report.line('Plan (restore-test-clickstack-mongodb):')
+        report.line('Plan (live-test-restore-mongodb):')
         report.line(f'  - create disposable namespace {ns} (label {RECOVERY_LABEL}=true) with a throwaway MongoDB pod')
         report.line(f'  - decrypt {archive or f"<latest backup in {settings.backup_dir}>"} with {settings.age_key} '
                     'and mongorestore into it')

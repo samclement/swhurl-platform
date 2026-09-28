@@ -1,4 +1,4 @@
-"""validate-repo reports every problem in one run, offline, with FakeRunner."""
+"""check-repo reports every problem in one run, offline, with FakeRunner."""
 import io
 import shutil
 import tempfile

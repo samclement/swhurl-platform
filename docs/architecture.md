@@ -54,13 +54,13 @@ flowchart LR
 | `homelab-reloader` | Reloader | cluster-base | |
 | `homelab-app-<app>-<env>` | One app instance (`tenants/apps/<app>/<env>`) | cluster-base; auth if signed-in | SOPS if it has a Secret |
 
-Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test-safety` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
+Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
 **Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), Helm `keepPVC`/`retain`, `Retain` volumes and backups.
 
 **Suspension** stops a unit applying Git changes. The HelmReleases it created keep reconciling unless they are suspended too.
 
-**Moving a resource between units** without recreating it: make sure the old unit cannot prune (it is `Orphan`, or suspend it), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](operations/current-state.md#pr03-capability-split)).
+**Moving a resource between units** without recreating it: make sure the old unit cannot prune (it is `Orphan`, or suspend it), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](current-state.md#pr03-capability-split)).
 
 ## C4 views
 

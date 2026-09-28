@@ -5,11 +5,11 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 ## Rules
 
 - Update documentation in the same change as behaviour. Each topic has one canonical page (map below); link, don't copy. Describe what is, not what was.
-- Validate before every commit: `make validate-repo test-safety app-policy shellcheck` and `uvx ruff@0.16.9 check tools tests`. For script, Makefile or layout changes also run `for f in scripts/*.sh host/*.sh tests/fixtures/*.sh; do bash -n "$f"; done` and the `DRY_RUN=true` variants CI runs (see `.github/workflows/validate.yml`).
-- Commit to `main` after validation, push, `make flux-reconcile`, verify on the cluster (`make verify-platform`, `make app-status`), then record dated evidence in `docs/operations/current-state.md`.
+- Validate before every commit: `make check`. For script, Makefile or layout changes also run `for f in scripts/*.sh host/*.sh tests/fixtures/*.sh; do bash -n "$f"; done` and the `DRY_RUN=true` variants CI runs (see `.github/workflows/validate.yml`).
+- Commit to `main` after validation, push, `make flux-reconcile`, verify on the cluster (`make verify-platform`, `make app-status`), then record dated evidence in `docs/current-state.md`.
 - Confirm with the user before hard-to-reverse live actions: deleting data (`make destroy-data`, namespaces, PVs), rotating real credentials, changing where backups go, or anything under `flux-system`.
 - New operator logic goes in the `tools/swhurl` package, calling external tools only through `Runner` and tested with `FakeRunner` ([contributing](docs/contributing.md#operator-tooling)); keep short glue and host scripts as bash.
-- Never print Secret values. Compare by bytes or hashes (`make secrets-check`, `make verify-platform`). `age.agekey` stays out of Git.
+- Never print Secret values. Compare by bytes or hashes (`make check-secrets`, `make verify-platform`). `age.agekey` stays out of Git.
 - Scripted `kubectl` needs `export KUBECONFIG=$HOME/.kube/config`; the k3s wrapper otherwise reads `/etc/rancher/k3s/k3s.yaml`.
 
 ## Where things are documented
@@ -24,12 +24,12 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | App instances, generator, app policy | `docs/apps.md` |
 | Flux units, dependencies, ownership, deletion | `docs/architecture.md` |
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |
-| Dated live evidence and unexercised paths | `docs/operations/current-state.md` |
-| Remaining planned work | `Swhurl-platform-implementation-plan.md` section 0 |
+| Dated live evidence and unexercised paths | `docs/current-state.md` |
+| Remaining planned work | `docs/plan.md` section 0 |
 
 ## Commands
 
-- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make secrets-check`, and the throwaway live tests (`lifecycle-test`, `reloader-test`, `app-template-test`, `restore-test-clickstack-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
+- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
 - Don't: `make teardown`/`make reinstall` (they refuse), delete Flux units or namespaces as a reset, or `kubectl apply` resources that Flux owns.
 - `platform-certs-*` and `app-new` only edit files: commit and push before reconciling.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.

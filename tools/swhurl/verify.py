@@ -1,4 +1,4 @@
-"""Verify the platform: local config (``verify-config``) and live state (``verify-platform``).
+"""Verify the platform: local config (``check-config``) and live state (``verify-platform``).
 
 ``verify-platform`` is read-only. Each check reports ``[OK]``/``[BAD]`` under a
 section heading; any ``[BAD]`` makes the exit code 1. Key values are

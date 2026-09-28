@@ -20,13 +20,13 @@ Rules:
 
 - **Write new values as `stringData`** (plain text inside the encrypted file). Flux applies it correctly; generated app stubs use it.
 - **In `data`, base64-encode exactly once.** A doubly encoded ingestion key silently dropped all telemetry once. The existing platform Secrets use `data`; do not convert them in passing, because a changed value restarts consumers.
-- **Never print values.** Check with `make secrets-check` (decrypts in memory; fails on empty or `REPLACE_ME` values, warns on probable double encoding) and `make verify-platform` (compares the ingestion key by bytes).
+- **Never print values.** Check with `make check-secrets` (decrypts in memory; fails on empty or `REPLACE_ME` values, warns on probable double encoding) and `make verify-platform` (compares the ingestion key by bytes).
 
 Rotate a value:
 
 ```bash
 sops platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
-make secrets-check
+make check-secrets
 git commit -am "secrets: rotate oauth2-proxy client secret" && git push
 make runtime-inputs-sync          # or make flux-reconcile / make app-reconcile
 ```
@@ -65,12 +65,12 @@ Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy
 | --- | --- | --- |
 | Manifests and encrypted Secrets | Irreplaceable | GitHub |
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
-| ClickStack MongoDB (team, ingestion key, users, sources) | Irreplaceable | `make backup-clickstack-mongodb`; volume `Retain`, claim kept on Helm uninstall |
+| ClickStack MongoDB (team, ingestion key, users, sources) | Irreplaceable | `make backup-mongodb`; volume `Retain`, claim kept on Helm uninstall |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
 
 ```bash
-make backup-clickstack-mongodb         # encrypted dump to ~/.local/state/swhurl-platform/backups
-make restore-test-clickstack-mongodb   # restores the latest into a throwaway namespace and checks it
+make backup-mongodb         # encrypted dump to ~/.local/state/swhurl-platform/backups
+make live-test-restore-mongodb   # restores the latest into a throwaway namespace and checks it
 ```
 
 The backup streams `mongodump` through `age`, so no plaintext touches disk, and writes an archive plus metadata (checksum, version, counts). Each run keeps the newest backup for each of the last 7 days that have one and each of the last 4 weeks (`KEEP_DAILY`, `KEEP_WEEKLY`, `PRUNE=false`). **Backups are manual and stay on this host** until an off-host destination is chosen: copy the directory to the USB drive regularly.
@@ -87,10 +87,10 @@ Each of these creates throwaway resources, checks them and removes them:
 
 | Command | Proves |
 | --- | --- |
-| `make lifecycle-test` | Suspend/resume, uninstall keeping protected data, `destroy-data`, `Orphan` deletion |
-| `make reloader-test` | Reloader restarts only opted-in workloads in watched namespaces |
-| `make app-template-test` | Generated apps deploy: worker without route, signed-in web app with a decrypted Secret, persistent prod app |
-| `make restore-test-clickstack-mongodb` | The latest backup restores |
+| `make live-test-lifecycle` | Suspend/resume, uninstall keeping protected data, `destroy-data`, `Orphan` deletion |
+| `make live-test-reloader` | Reloader restarts only opted-in workloads in watched namespaces |
+| `make live-test-app-template` | Generated apps deploy: worker without route, signed-in web app with a decrypted Secret, persistent prod app |
+| `make live-test-restore-mongodb` | The latest backup restores |
 
 Fixtures come from the pushed Git revision: push changes to `tests/fixtures/` first.
 

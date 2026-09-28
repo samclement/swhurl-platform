@@ -18,7 +18,7 @@ make app-new NAME=weather-api ARGS="--env staging --image ghcr.io/me/weather-api
   --exposure authenticated-web --host weather.homelab.swhurl.com --health-path /ready \
   --secret-keys API_TOKEN,DB_URL"
 sops tenants/apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
-make app-policy secrets-check
+make check-apps check-secrets
 git add tenants/apps/weather-api clusters/home platform-services/reloader
 git commit -m "apps: add weather-api staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging
@@ -39,7 +39,7 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## The app policy
 
-`make app-policy` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, and a named storage class. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources and issuer (encrypted Secrets are skipped). CI runs it on every push.
+`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, and a named storage class. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources and issuer (encrypted Secrets are skipped). CI runs it on every push.
 
 A reviewed exception goes on the HelmRelease, with a reason:
 
@@ -68,5 +68,5 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Promoting a digest is a manual edit; automated update PRs are planned work ([plan](../Swhurl-platform-implementation-plan.md) section 0, PR06).
+- Promoting a digest is a manual edit; automated update PRs are planned work ([plan](plan.md) section 0, PR06).
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

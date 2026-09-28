@@ -36,7 +36,8 @@ jobs:
       - name: Install validation dependencies
         run: |
           set -Eeuo pipefail
-          python3 -m pip install -r requirements-validation.txt
+          python3 -m pip install --upgrade 'pip>=25.1'
+          python3 -m pip install --group check
           go install github.com/fluxcd/flux-schema/cmd/flux-schema@v0.9.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
@@ -47,15 +48,15 @@ jobs:
         run: pipx run --spec shellcheck-py==0.11.0.1 shellcheck -x $(git ls-files '*.sh')
 
       - name: Validate active manifests and scripts
-        run: make validate-repo
+        run: make check-repo
 
       - name: Test operator safety and app contract
         env:
           REQUIRE_HELM: '1'
-        run: make test-safety
+        run: make test
 
       - name: Check app instances against policy
-        run: make app-policy
+        run: make check-apps
 
       - name: Run operator dry runs
         run: |
@@ -64,11 +65,11 @@ jobs:
           make install DRY_RUN=true
           make teardown DRY_RUN=true
           make reinstall DRY_RUN=true
-          make backup-clickstack-mongodb DRY_RUN=true
-          make restore-test-clickstack-mongodb DRY_RUN=true
-          make lifecycle-test DRY_RUN=true
-          make reloader-test DRY_RUN=true
-          make app-template-test DRY_RUN=true
+          make backup-mongodb DRY_RUN=true
+          make live-test-restore-mongodb DRY_RUN=true
+          make live-test-lifecycle DRY_RUN=true
+          make live-test-reloader DRY_RUN=true
+          make live-test-app-template DRY_RUN=true
           kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true

@@ -74,7 +74,7 @@ Set the ClickStack MongoDB volume to survive claim deletion ([recovery](operatio
 pv="$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.spec.volumeName}')"
 kubectl patch pv "$pv" -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
 make verify-platform
-make backup-clickstack-mongodb
+make backup-mongodb
 ```
 
 `make verify-platform` checks every Flux unit, the HTTP→HTTPS redirect, the ingestion key (by bytes, never printed) and retention settings.

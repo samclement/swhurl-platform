@@ -10,5 +10,5 @@ Two standalone collector releases in `logging` (a per-node DaemonSet and a clust
 
 1. Copy the team's ingestion key from the ClickStack UI (do not print it from MongoDB into logs).
 2. `sops platform-services/otel/base/secret-hyperdx.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded **once** (`printf %s '<key>' | base64 -w0`).
-3. `make secrets-check`, commit, push, `make runtime-inputs-sync`.
+3. `make check-secrets`, commit, push, `make runtime-inputs-sync`.
 4. `make verify-platform` compares the live Secret with the team key by bytes; then check the collector logs have no HTTP 401 errors.

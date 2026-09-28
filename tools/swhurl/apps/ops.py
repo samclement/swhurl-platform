@@ -1,5 +1,5 @@
 """Operate one generated app instance (namespace ``<app>-<env>``, Flux unit
-``homelab-app-<app>-<env>``, HelmRelease ``<app>``).
+``app-<app>-<env>``, HelmRelease ``<app>``).
 
     app status    APP ENV   desired vs applied revision and image, replicas, route, failure reason
     app logs      APP ENV   recent logs from the instance's workload (FOLLOW=true to stream, TAIL=N)
@@ -33,7 +33,7 @@ class Instance:
 
     @property
     def unit(self) -> str:
-        return f'homelab-app-{self.app}-{self.env}'
+        return f'app-{self.app}-{self.env}'
 
 
 def condition_line(obj: dict | None) -> str:

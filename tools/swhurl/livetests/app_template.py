@@ -6,7 +6,7 @@ revision) through real Flux units, check them, and remove them:
                         unit and injected, route redirects to sign-in
   smoke-data-prod       persistent, digest-pinned: claim on local-path-retain,
                         data written
-Touches only the homelab-app-smoke-* units, their namespaces and PVs.
+Touches only the app-smoke-* units, their namespaces and PVs.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def signed_in_redirect(t: LiveTest) -> str:
 
 def cleanup(t: LiveTest) -> None:
     for instance in INSTANCES:
-        t.quietly('-n', 'flux-system', 'delete', 'kustomization', f'homelab-app-{instance}', '--ignore-not-found',
+        t.quietly('-n', 'flux-system', 'delete', 'kustomization', f'app-{instance}', '--ignore-not-found',
                   '--wait=true')
         t.delete_namespace_if_labelled(instance, APP_LABEL, instance.rsplit('-', 1)[0], wait=True)
         t.destroy_volumes_of(instance)
@@ -48,16 +48,16 @@ def cleanup(t: LiveTest) -> None:
 def body(t: LiveTest) -> None:
     for instance in INSTANCES:
         if t.get('get', 'namespace', instance) or t.get('-n', 'flux-system', 'get', 'kustomization',
-                                                        f'homelab-app-{instance}'):
+                                                        f'app-{instance}'):
             raise Preflight(f'{instance} already exists; clean up first')
     t.cleanup.callback(cleanup, t)
 
     for instance in INSTANCES:
         t.apply(fixture_unit(instance))
     for instance in INSTANCES:
-        ready = t.succeeds('-n', 'flux-system', 'wait', '--for=condition=Ready', f'kustomization/homelab-app-{instance}',
+        ready = t.succeeds('-n', 'flux-system', 'wait', '--for=condition=Ready', f'kustomization/app-{instance}',
                            '--timeout=10m')
-        conditions = ((t.get('-n', 'flux-system', 'get', 'kustomization', f'homelab-app-{instance}') or {})
+        conditions = ((t.get('-n', 'flux-system', 'get', 'kustomization', f'app-{instance}') or {})
                       .get('status') or {}).get('conditions') or [{}]
         t.check(ready, f'{instance} unit Ready (HelmRelease installed, workload healthy)',
                 f"{instance} unit not Ready: {conditions[0].get('message', '')}")

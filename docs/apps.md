@@ -1,6 +1,6 @@
 # Apps
 
-An **app instance** is one app in one environment: namespace `<app>-<env>`, a HelmRelease of the pinned [bjw-s app-template](https://bjw-s-labs.github.io/helm-charts/docs/app-template/) chart (5.2.1), an optional encrypted Secret, and its own Flux unit `homelab-app-<app>-<env>`. Instances wait only for `homelab-cluster-base` and, when signed-in, `homelab-auth`; a broken instance never blocks another, and an observability outage never blocks an app.
+An **app instance** is one app in one environment: namespace `<app>-<env>`, a HelmRelease of the pinned [bjw-s app-template](https://bjw-s-labs.github.io/helm-charts/docs/app-template/) chart (5.2.1), an optional encrypted Secret, and its own Flux unit `app-<app>-<env>`. Instances wait only for `infra-base` and, when signed-in, `platform-oauth2-proxy`; a broken instance never blocks another, and an observability outage never blocks an app.
 
 ## Current instances
 
@@ -17,14 +17,14 @@ Both require sign-in and serve the stock nginx page as UID 101 on port 8080. Sta
 make app-new NAME=weather-api ARGS="--env staging --image ghcr.io/me/weather-api:1.4.0 \
   --exposure authenticated-web --host weather.homelab.swhurl.com --health-path /ready \
   --secret-keys API_TOKEN,DB_URL"
-sops tenants/apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
+sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
 make check-apps check-secrets
-git add tenants/apps/weather-api clusters/home platform-services/reloader
+git add apps/weather-api clusters/home platform/reloader
 git commit -m "apps: add weather-api staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging
 ```
 
-The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `tenants/apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `tenants/apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
+The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
 
 | Option | Rules |
 | --- | --- |

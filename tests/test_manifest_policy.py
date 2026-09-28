@@ -16,10 +16,9 @@ class ManifestPolicyTests(unittest.TestCase):
                     units[doc['metadata']['name']] = doc['spec'].get('deletionPolicy', 'MirrorPrune')
         for name, policy in units.items():
             with self.subTest(unit=name):
-                # homelab-app-hello-* are Orphan only while they are renamed (plan step 4).
-                expected = 'MirrorPrune' if name.startswith('homelab-app-') and 'hello' not in name else 'Orphan'
+                expected = 'MirrorPrune' if name.startswith('app-') else 'Orphan'
                 self.assertEqual(policy, expected)
-        for name in ('homelab-cert-manager', 'homelab-issuers', 'homelab-clickstack', 'homelab-otel'):
+        for name in ('infra-cert-manager', 'infra-issuers', 'platform-clickstack', 'platform-otel'):
             self.assertIn(name, units)
 
     def test_flux_units_decouple_apps_and_order_issuers(self):
@@ -39,15 +38,15 @@ class ManifestPolicyTests(unittest.TestCase):
             for dep in deps.get(name, ()):
                 result |= {dep} | closure(dep, (*seen, name))
             return result
-        self.assertIn('homelab-cert-manager', closure('homelab-issuers'))
-        for app in (n for n in deps if n.startswith('homelab-app-')):
-            self.assertFalse(closure(app) & {'homelab-clickstack', 'homelab-otel'},
+        self.assertIn('infra-cert-manager', closure('infra-issuers'))
+        for app in (n for n in deps if n.startswith('app-')):
+            self.assertFalse(closure(app) & {'platform-clickstack', 'platform-otel'},
                              f'{app} must not wait for observability')
         for name, spec in specs.items():
             encrypted = any((ROOT / spec['path']).rglob('*.sops.yaml'))
             with self.subTest(unit=name):
                 self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
-        self.assertIn('postBuild', specs['homelab-otel'], 'OTel needs substitution to unescape $${env:...}')
+        self.assertIn('postBuild', specs['platform-otel'], 'OTel needs substitution to unescape $${env:...}')
 
     def test_platform_hosts_come_from_base_domain(self):
         """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""
@@ -56,7 +55,7 @@ class ManifestPolicyTests(unittest.TestCase):
         host = re.compile(rf'(?<![@\w.-])(?:[\w-]+\.)*{re.escape(domain)}\b')  # a mailbox (ops@domain) is not a host
         for _, unit in platform.flux_unit_documents():
             spec = unit['spec']
-            if spec['path'].startswith(('./tenants/', './clusters/')):
+            if spec['path'].startswith(('./apps/', './clusters/')):
                 continue  # apps write hosts literally (the app policy checks them); roots hold only units and sources
             used = set()
             for path in sorted((ROOT / spec['path']).rglob('*.yaml')):
@@ -67,7 +66,7 @@ class ManifestPolicyTests(unittest.TestCase):
             with self.subTest(unit=unit['metadata']['name']):
                 self.assertLessEqual(used, settings, 'unknown setting')
                 substitutes = [s['name'] for s in (spec.get('postBuild') or {}).get('substituteFrom', [])]
-                self.assertEqual('platform-settings' in substitutes, bool(used) or unit['metadata']['name'] == 'homelab-otel')
+                self.assertEqual('platform-settings' in substitutes, bool(used) or unit['metadata']['name'] == 'platform-otel')
 
     def test_reloader_is_scoped_and_opt_in(self):
         release = yaml.safe_load((ROOT / 'platform/reloader/helmrelease.yaml').read_text())
@@ -76,9 +75,9 @@ class ManifestPolicyTests(unittest.TestCase):
         self.assertFalse(values.get('autoReloadAll', False), 'Reloader must stay opt-in')
         watched = set(values['namespaces'])
         opt_ins = {
-            'platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml': 'deploymentAnnotations',
-            'platform-services/otel/base/helmrelease-otel-k8s-cluster.yaml': 'annotations',
-            'platform-services/otel/base/helmrelease-otel-k8s-daemonset.yaml': 'annotations',
+            'platform/oauth2-proxy/helmrelease.yaml': 'deploymentAnnotations',
+            'platform/otel/helmrelease-cluster.yaml': 'annotations',
+            'platform/otel/helmrelease-daemonset.yaml': 'annotations',
         }
         for path, key in opt_ins.items():
             with self.subTest(path=path):
@@ -87,13 +86,13 @@ class ManifestPolicyTests(unittest.TestCase):
                 self.assertIn(hr['metadata']['namespace'], watched, 'opt-in outside a watched namespace never reloads')
 
     def test_traefik_redirects_http_to_https(self):
-        config = yaml.safe_load((ROOT / 'infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml').read_text())
+        config = yaml.safe_load((ROOT / 'infra/traefik/helmchartconfig.yaml').read_text())
         web = yaml.safe_load(config['spec']['valuesContent'])['ports']['web']
         self.assertNotIn('redirectTo', web, 'redirectTo is ignored by Traefik chart 38; use redirections.entryPoint')
         self.assertEqual(web['redirections']['entryPoint'], {'to': 'websecure', 'scheme': 'https', 'permanent': True})
 
     def test_shared_sign_in_is_restricted_to_approved_emails(self):
-        path = ROOT / 'platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml'
+        path = ROOT / 'platform/oauth2-proxy/helmrelease.yaml'
         values = yaml.safe_load(path.read_text())['spec']['values']
         self.assertNotIn('email-domain', values.get('extraArgs', {}))
         self.assertEqual(values['config'].get('configFile', '').strip(), 'email_domains = []',

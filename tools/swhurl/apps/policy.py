@@ -25,7 +25,7 @@ A reviewed exception goes on the HelmRelease as
 Exceptions without a reason are rejected.
 
     python3 -m swhurl check-apps [INSTANCE_DIR ...]   (default: every instance under
-                                                tenants/apps and tests/fixtures/apps)
+                                                apps and tests/fixtures/apps)
 """
 from __future__ import annotations
 

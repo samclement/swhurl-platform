@@ -1,17 +1,17 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-app-smoke-web-staging
+  name: app-smoke-web-staging
   namespace: flux-system
 spec:
   dependsOn:
-  - name: homelab-cluster-base
-  - name: homelab-auth
+  - name: infra-base
+  - name: platform-oauth2-proxy
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./tenants/apps/smoke-web/staging
+  path: ./apps/smoke-web/staging
   decryption:
     provider: sops
     secretRef:

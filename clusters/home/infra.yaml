@@ -1,14 +1,14 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-cluster-base
+  name: infra-base
   namespace: flux-system
 spec:
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/cluster-base
+  path: ./infra/base
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan
@@ -19,16 +19,16 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-cert-manager
+  name: infra-cert-manager
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-cluster-base
+    - name: infra-base
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/cert-manager/base
+  path: ./infra/cert-manager
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan
@@ -40,16 +40,16 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-issuers
+  name: infra-issuers
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-cert-manager
+    - name: infra-cert-manager
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/cert-manager/issuers
+  path: ./infra/issuers
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan
@@ -60,14 +60,14 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-traefik
+  name: infra-traefik
   namespace: flux-system
 spec:
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./infrastructure/ingress-traefik/base
+  path: ./infra/traefik
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan

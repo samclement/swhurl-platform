@@ -38,7 +38,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 
 ## Checklist for a change
 
-- **Where it goes:** a shared capability gets its own directory and Flux unit in `clusters/home/infrastructure.yaml` or `platform.yaml`, with explicit `dependsOn`, `deletionPolicy: Orphan`, substitution only if its manifests use `${...}`, and decryption only if its path holds `*.sops.yaml`. Apps use `make app-new`.
+- **Where it goes:** a shared capability gets its own directory and Flux unit in `clusters/home/infra.yaml` or `platform.yaml`, with explicit `dependsOn`, `deletionPolicy: Orphan`, substitution only if its manifests use `${...}`, and decryption only if its path holds `*.sops.yaml`. Apps use `make app-new`.
 - **Secrets:** beside the consumer, following the [Secret rules](operations.md#secrets); add a `.sops.yaml` rule for any new path.
 - **Checks:** extend [`tools/swhurl/verify.py`](../tools/swhurl/verify.py) for live invariants (one function per check, unit-tested in `tests/test_verify.py`) and `tests/` for anything checkable offline. Prefer declarative wiring over new feature switches (`SKIP_VERIFY` is the only one).
 - **Live proof:** for behaviour that only shows on the cluster, add or run a throwaway test like `make live-test-lifecycle`, then record what you saw, with the date and commit, in [current state](current-state.md).

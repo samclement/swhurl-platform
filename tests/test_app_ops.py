@@ -86,7 +86,7 @@ class StatusTests(unittest.TestCase):
     def test_missing_unit_fails(self):
         code, _, err = run(cluster(kustomization=None), 'status', 'web', 'prod')
         self.assertEqual(code, 1)
-        self.assertIn('Flux unit homelab-app-web-prod not found', err)
+        self.assertIn('Flux unit app-web-prod not found', err)
 
 
 class LogsAndReconcileTests(unittest.TestCase):
@@ -103,7 +103,7 @@ class LogsAndReconcileTests(unittest.TestCase):
         runner = cluster()
         self.assertEqual(run(runner, 'reconcile', 'web', 'prod')[0], 0)
         self.assertEqual([c[:4] for c in runner.calls], [('flux', 'reconcile', 'source', 'git'),
-                                                        ('flux', 'reconcile', 'kustomization', 'homelab-app-web-prod')])
+                                                        ('flux', 'reconcile', 'kustomization', 'app-web-prod')])
 
     def test_reconcile_dry_run_changes_nothing(self):
         runner = FakeRunner(dry_run=True)
@@ -128,7 +128,7 @@ class UsageTests(unittest.TestCase):
     def test_check_runs_the_policy_for_that_instance(self):
         with mock.patch.object(app_ops.policy, 'main', return_value=0) as policy:
             self.assertEqual(run(FakeRunner(), 'check', 'hello', 'prod')[0], 0)
-        policy.assert_called_once_with([str(ROOT / 'tenants/apps/hello/prod')])
+        policy.assert_called_once_with([str(ROOT / 'apps/hello/prod')])
 
 
 if __name__ == '__main__':

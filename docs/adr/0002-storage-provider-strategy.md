@@ -12,7 +12,7 @@ platform or tenant layering.
 ## Decision
 
 Use composition-driven provider selection in:
-- `clusters/home/infrastructure.yaml` (one Flux unit per provider path; the `infrastructure/overlays/home` aggregator was removed in PR03)
+- `clusters/home/infra.yaml` (one Flux unit per provider path; the `infrastructure/overlays/home` aggregator was removed in PR03)
 
 Current default is MinIO (`homelab-minio` → `infrastructure/storage/minio/base`).
 Legacy Ceph composition manifests are no longer retained in this repo.

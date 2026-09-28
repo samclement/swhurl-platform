@@ -11,7 +11,7 @@ Native k3s `traefik` is the default provider.
 ## Decision
 
 Use composition-driven provider selection in:
-- `clusters/home/infrastructure.yaml` (one Flux unit per provider path; the `infrastructure/overlays/home` aggregator was removed in PR03)
+- `clusters/home/infra.yaml` (one Flux unit per provider path; the `infrastructure/overlays/home` aggregator was removed in PR03)
 
 Current default relies on k3s-packaged `traefik` (no Flux ingress controller release in `home`).
 Legacy `ingress-nginx` provider manifests are no longer retained in this repo.
@@ -26,4 +26,4 @@ Verification checks traefik directly (hardcoded); there is no config-level provi
 
 ## Follow-ups
 
-1. If Flux-managed Traefik ownership is introduced, add explicit manifests under `infrastructure/ingress-traefik/base` and update this ADR.
+1. If Flux-managed Traefik ownership is introduced, add explicit manifests under `infra/traefik` and update this ADR.

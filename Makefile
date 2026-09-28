@@ -54,9 +54,9 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 .PHONY: runtime-inputs-sync
 runtime-inputs-sync: ## Fetch Git and reconcile the units that hold runtime Secrets
 	flux reconcile source git swhurl-platform -n flux-system --timeout=5m
-	flux reconcile kustomization homelab-auth -n flux-system --timeout=10m
-	flux reconcile kustomization homelab-clickstack -n flux-system --timeout=20m
-	flux reconcile kustomization homelab-otel -n flux-system --timeout=10m
+	flux reconcile kustomization platform-oauth2-proxy -n flux-system --timeout=10m
+	flux reconcile kustomization platform-clickstack -n flux-system --timeout=20m
+	flux reconcile kustomization platform-otel -n flux-system --timeout=10m
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel: ## Wait for logging/hyperdx-secret (TIMEOUT_SECS, default 300)

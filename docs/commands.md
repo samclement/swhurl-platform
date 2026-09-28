@@ -26,7 +26,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `runtime-inputs-sync` | Fetch Git and reconcile `homelab-auth`, `homelab-clickstack`, `homelab-otel` | Cluster |
+| `runtime-inputs-sync` | Fetch Git and reconcile `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel` | Cluster |
 | `wait-runtime-inputs-otel` | Wait until `logging/hyperdx-secret` has its key (`TIMEOUT_SECS`, default 300); never prints it | Cluster (read) |
 | `runtime-inputs-refresh-otel` | `runtime-inputs-sync`, wait for `logging/hyperdx-secret` (`TIMEOUT_SECS`, default 300), restart collectors, `verify-platform`. Fallback: Reloader normally restarts them | Cluster |
 | `otel-collectors-restart` | Restart both OTel collectors | Cluster |

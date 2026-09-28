@@ -19,8 +19,8 @@ SOURCES = CLUSTER / 'flux-system/sources'
 SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
 HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 BOOTSTRAP_PATHS = (CLUSTER / 'flux-system', SOURCES)
-ISSUERS = Path('infrastructure/cert-manager/issuers')
-INGESTION_SECRET = Path('platform-services/otel/base/secret-hyperdx.sops.yaml')
+ISSUERS = Path('infra/issuers')
+INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
 AGE_KEY = Path('age.agekey')
 
 # Labels and annotations under the platform's domain.

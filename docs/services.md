@@ -4,13 +4,13 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 
 | Service | Flux unit · path | Namespace | Host | Chart |
 | --- | --- | --- | --- | --- |
-| Namespaces, storage classes | `homelab-cluster-base` · [`infrastructure/cluster-base`](../infrastructure/cluster-base) | — | — | — |
-| cert-manager | `homelab-cert-manager` · [`infrastructure/cert-manager/base`](../infrastructure/cert-manager/base) | `cert-manager` | — | cert-manager v1.19.3 |
-| ClusterIssuers | `homelab-issuers` · [`infrastructure/cert-manager/issuers`](../infrastructure/cert-manager/issuers) | — | — | plain manifests |
-| Traefik settings | `homelab-traefik` · [`infrastructure/ingress-traefik/base`](../infrastructure/ingress-traefik/base) | `kube-system` | — | k3s packaged (chart 38, Traefik 3.6) |
-| Sign-in (oauth2-proxy) | `homelab-auth` · [`platform-services/oauth2-proxy/base`](../platform-services/oauth2-proxy/base) | `ingress` | `oauth.` | oauth2-proxy 10.1.3 |
-| ClickStack | `homelab-clickstack` · [`platform-services/clickstack/base`](../platform-services/clickstack/base) | `observability` | `clickstack.` | clickstack 1.1.1 |
-| OTel collectors | `homelab-otel` · [`platform-services/otel/base`](../platform-services/otel/base) | `logging` | — | opentelemetry-collector 0.145.0 |
+| Namespaces, storage classes | `infra-base` · [`infra/base`](../infra/base) | — | — | — |
+| cert-manager | `infra-cert-manager` · [`infra/cert-manager`](../infra/cert-manager) | `cert-manager` | — | cert-manager v1.19.3 |
+| ClusterIssuers | `infra-issuers` · [`infra/issuers`](../infra/issuers) | — | — | plain manifests |
+| Traefik settings | `infra-traefik` · [`infra/traefik`](../infra/traefik) | `kube-system` | — | k3s packaged (chart 38, Traefik 3.6) |
+| Sign-in (oauth2-proxy) | `platform-oauth2-proxy` · [`platform/oauth2-proxy`](../platform/oauth2-proxy) | `ingress` | `oauth.` | oauth2-proxy 10.1.3 |
+| ClickStack | `platform-clickstack` · [`platform/clickstack`](../platform/clickstack) | `observability` | `clickstack.` | clickstack 1.1.1 |
+| OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector 0.145.0 |
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader 2.2.17 |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`).
@@ -31,7 +31,7 @@ Changing `BASE_DOMAIN` moves every platform host and the cookie: it needs DNS re
 
 oauth2-proxy signs users in with Google (OIDC) and serves the Traefik middleware `ingress-oauth-auth-shared@kubernetescrd`. Any Ingress that references it requires sign-in; apps get it with `--exposure authenticated-web`.
 
-- **Who may sign in:** only the addresses in `authenticatedEmailsFile.restricted_access` in [`helmrelease-oauth2-proxy-shared.yaml`](../platform-services/oauth2-proxy/base/helmrelease-oauth2-proxy-shared.yaml) (currently `sam@swhurl.com`). The chart's default "any domain" is overridden with `email_domains = []`; `make test` fails if either returns. Add an address there and push.
+- **Who may sign in:** only the addresses in `authenticatedEmailsFile.restricted_access` in [`helmrelease-oauth2-proxy-shared.yaml`](../platform/oauth2-proxy/helmrelease.yaml) (currently `sam@swhurl.com`). The chart's default "any domain" is overridden with `email_domains = []`; `make test` fails if either returns. Add an address there and push.
 - **Cookie scope:** the session cookie covers `.homelab.swhurl.com`, so every host under it receives it. Put public or untrusted apps on a different parent domain.
 - **HTTPS only:** cookies are `Secure`, so sign-in fails with 403 over plain HTTP. Traefik redirects all HTTP to HTTPS.
 - **Secret** `ingress/oauth2-proxy-shared-secret`: `client-id`, `client-secret` (from the Google OAuth client, which must allow `https://oauth.<BASE_DOMAIN>/oauth2/callback`) and `cookie-secret` (random, for example `openssl rand -base64 32`). Reloader restarts oauth2-proxy when it changes.
@@ -45,12 +45,12 @@ Two keys, not to be confused:
 
 | Key | Secret | Purpose |
 | --- | --- | --- |
-| `HYPERDX_API_KEY` | `logging/hyperdx-secret` ([file](../platform-services/otel/base/secret-hyperdx.sops.yaml)) | Ingestion key the collectors send. Must equal the ClickStack team key held in MongoDB; `make verify-platform` compares them by bytes. |
-| `CLICKSTACK_API_KEY` | `observability/clickstack-runtime-inputs` ([file](../platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml)) | Chart bootstrap key passed to `hyperdx.apiKey`. Not the ingestion key; may equal it only on a fresh install. |
+| `HYPERDX_API_KEY` | `logging/hyperdx-secret` ([file](../platform/otel/secret.sops.yaml)) | Ingestion key the collectors send. Must equal the ClickStack team key held in MongoDB; `make verify-platform` compares them by bytes. |
+| `CLICKSTACK_API_KEY` | `observability/clickstack-runtime-inputs` ([file](../platform/clickstack/secret.sops.yaml)) | Chart bootstrap key passed to `hyperdx.apiKey`. Not the ingestion key; may equal it only on a fresh install. |
 
 **Known issue:** `CLICKSTACK_API_KEY` is stored base64-encoded twice, so the ClickStack app runs with the 48-character once-decoded text. It works because nothing needs it to match the team key. Fixing the encoding restarts ClickStack with a different key: plan it rather than fixing it in passing. `make check-secrets` warns about it.
 
-Retention: telemetry expires after 30 days (the collector image sets the table TTL; `make verify-platform` checks it). ClickHouse's own logs expire after 7 days through a `config.d` file mounted by a HelmRelease post-renderer, because the chart's `config.xml` is fixed; ClickHouse reads it only at startup. All three ClickStack claims are kept on Helm uninstall. Details: [ClickStack README](../platform-services/clickstack/base/README.md).
+Retention: telemetry expires after 30 days (the collector image sets the table TTL; `make verify-platform` checks it). ClickHouse's own logs expire after 7 days through a `config.d` file mounted by a HelmRelease post-renderer, because the chart's `config.xml` is fixed; ClickHouse reads it only at startup. All three ClickStack claims are kept on Helm uninstall. Details: [ClickStack README](../platform/clickstack/README.md).
 
 The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:HYPERDX_API_KEY}` into the collector's `${env:...}` reference.
 
@@ -60,6 +60,6 @@ Restarts a workload when a Secret it names changes, so rotations need no manual 
 
 ## Certificates, ingress and storage
 
-- **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik). `homelab-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.
+- **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik). `infra-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.
 - **Traefik:** k3s owns the Traefik install; this repo owns only its `HelmChartConfig`: NodePorts `31514` (HTTP) and `30313` (HTTPS), and a permanent HTTP→HTTPS redirect. Let's Encrypt follows the redirect, so HTTP-01 still works.
 - **Storage classes:** `local-path` (k3s default, `Delete`: deleting a claim deletes its data) and `local-path-retain` (`Retain`: the volume and its directory under `/var/lib/rancher/k3s/storage` survive). Use `local-path-retain` for anything irreplaceable; the app generator does.

@@ -14,7 +14,7 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 
 ## Secrets
 
-Each Secret is a SOPS-encrypted Kubernetes Secret beside its consumer: platform Secrets in `platform-services/<service>/base/*.sops.yaml`, app Secrets in `tenants/apps/<app>/<env>/secret.sops.yaml`. SOPS encrypts only `data`/`stringData`, and the consuming Flux unit decrypts in-cluster with `flux-system/sops-age`. There is no password; you need the age private key (`SOPS_AGE_KEY_FILE=./age.agekey`).
+Each Secret is a SOPS-encrypted Kubernetes Secret beside its consumer: platform Secrets in `platform/<service>/secret.sops.yaml`, app Secrets in `apps/<app>/<env>/secret.sops.yaml`. SOPS encrypts only `data`/`stringData`, and the consuming Flux unit decrypts in-cluster with `flux-system/sops-age`. There is no password; you need the age private key (`SOPS_AGE_KEY_FILE=./age.agekey`).
 
 Rules:
 
@@ -25,7 +25,7 @@ Rules:
 Rotate a value:
 
 ```bash
-sops platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml
+sops platform/oauth2-proxy/secret.sops.yaml
 make check-secrets
 git commit -am "secrets: rotate oauth2-proxy client secret" && git push
 make runtime-inputs-sync          # or make flux-reconcile / make app-reconcile

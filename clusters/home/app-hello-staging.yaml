@@ -1,19 +1,17 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-app-hello-staging
+  name: app-hello-staging
   namespace: flux-system
 spec:
   dependsOn:
-  - name: homelab-cluster-base
-  - name: homelab-auth
+  - name: infra-base
+  - name: platform-oauth2-proxy
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
-  path: ./tenants/apps/hello/staging
-  # Temporary: keeps the app's objects when this unit is replaced by app-hello-staging (plan step 4).
-  deletionPolicy: Orphan
+  path: ./apps/hello/staging
   prune: true
   wait: true
   timeout: 10m

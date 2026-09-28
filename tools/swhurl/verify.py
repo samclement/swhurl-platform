@@ -115,7 +115,7 @@ def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
         report.ok('ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart')
     else:
         report.bad('HYPERDX_API_KEY does not match the ClickStack ingestion key')
-        report.detail('Fix: update HYPERDX_API_KEY in platform-services/otel/base/secret-hyperdx.sops.yaml')
+        report.detail('Fix: update HYPERDX_API_KEY in platform/otel/secret.sops.yaml')
         report.detail('     using exactly one base64 layer in data; commit+push, then run: make runtime-inputs-refresh-otel')
 
 

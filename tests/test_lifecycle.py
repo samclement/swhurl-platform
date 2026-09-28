@@ -23,7 +23,7 @@ def cluster(*, pvc=None, pods=(), helm_secret='', owner_exists=False, pv_phase='
             handler=lambda a, _i: Result(a, 0, json.dumps(pvc)) if pvc else Result(a, 1, '', 'NotFound'))
     fake.on('kubectl', '-n', 'apps', 'get', 'pods', stdout=json.dumps({'items': list(pods)}))
     fake.on('kubectl', '-n', 'apps', 'get', 'secret', stdout=helm_secret)
-    fake.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'homelab-app-x', returncode=0 if owner_exists else 1)
+    fake.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'app-x', returncode=0 if owner_exists else 1)
     fake.on('kubectl', 'get', 'pv', handler=lambda a, _i: Result(a, 1, '', 'NotFound') if pv_missing
             else Result(a, 0, json.dumps({'status': {'phase': pv_phase}})))
     fake.on('kubectl', '-n', 'apps', 'delete', 'pvc', returncode=delete_rc, stderr='delete failed')
@@ -81,7 +81,7 @@ class DestroyDataTests(unittest.TestCase):
 
     def test_refusals_never_mutate(self):
         managed = {'metadata': {'annotations': {'meta.helm.sh/release-name': 'app'}}, 'spec': {'volumeName': 'pv-1'}}
-        flux_owned = {'metadata': {'labels': {'kustomize.toolkit.fluxcd.io/name': 'homelab-app-x'}},
+        flux_owned = {'metadata': {'labels': {'kustomize.toolkit.fluxcd.io/name': 'app-x'}},
                       'spec': {'volumeName': 'pv-1'}}
         cases = {
             'claim missing': (dict(pvc={}), 'PVC apps/data not found'),
@@ -89,7 +89,7 @@ class DestroyDataTests(unittest.TestCase):
             'mounted by a pending pod': (dict(pods=[pod('data', 'Pending')]), 'mounted by a pod'),
             'helm release installed': (dict(pvc=managed, helm_secret='secret/sh.helm.release.v1.app.v1'),
                                        'Helm release apps/app still exists'),
-            'flux unit manages it': (dict(pvc=flux_owned, owner_exists=True), 'Flux Kustomization homelab-app-x'),
+            'flux unit manages it': (dict(pvc=flux_owned, owner_exists=True), 'Flux Kustomization app-x'),
         }
         for label, (kwargs, message) in cases.items():
             with self.subTest(label):
@@ -100,7 +100,7 @@ class DestroyDataTests(unittest.TestCase):
                 self.assertEqual(mutations(runner), [])
 
     def test_finished_pods_and_retired_owners_do_not_block(self):
-        flux_owned = {'metadata': {'labels': {'kustomize.toolkit.fluxcd.io/name': 'homelab-app-x'},
+        flux_owned = {'metadata': {'labels': {'kustomize.toolkit.fluxcd.io/name': 'app-x'},
                                    'annotations': {'meta.helm.sh/release-name': 'app'}},
                       'spec': {'volumeName': 'pv-1'}}
         runner = cluster(pvc=flux_owned, pods=[pod('data', 'Succeeded'), pod('other')], owner_exists=False)

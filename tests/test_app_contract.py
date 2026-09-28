@@ -47,16 +47,16 @@ class GeneratorTests(unittest.TestCase):
         for label, args in cases.items():
             with self.subTest(label):
                 self.assertEqual(self.gen(*args), 2)
-        self.assertFalse((self.tmp / 'tenants').exists(), 'a refused instance wrote files')
+        self.assertFalse((self.tmp / 'apps').exists(), 'a refused instance wrote files')
 
     def test_writes_registers_and_refuses_overwrite(self):
         self.assertEqual(self.gen('x', *WEB), 0)
-        instance = self.tmp / 'tenants/apps/x/staging'
+        instance = self.tmp / 'apps/x/staging'
         self.assertEqual(sorted(p.name for p in instance.iterdir()),
                          ['helmrelease.yaml', 'kustomization.yaml', 'namespace.yaml'])
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-x-staging.yaml').read_text())
-        self.assertEqual(unit['metadata']['name'], 'homelab-app-x-staging')
-        self.assertEqual({d['name'] for d in unit['spec']['dependsOn']}, {'homelab-cluster-base', 'homelab-auth'})
+        self.assertEqual(unit['metadata']['name'], 'app-x-staging')
+        self.assertEqual({d['name'] for d in unit['spec']['dependsOn']}, {'infra-base', 'platform-oauth2-proxy'})
         self.assertNotIn('deletionPolicy', unit['spec'], 'app units must keep MirrorPrune')
         self.assertIn('- app-x-staging.yaml', (self.tmp / 'clusters/home/kustomization.yaml').read_text())
         self.assertEqual(self.gen('x', *WEB), 2, 'overwrite must be refused')
@@ -75,7 +75,7 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
         finally:
             os.environ['PATH'] = old_path
-        secret = (self.tmp / 'tenants/apps/s/staging/secret.sops.yaml').read_text()
+        secret = (self.tmp / 'apps/s/staging/secret.sops.yaml').read_text()
         self.assertIn('sops:', secret)
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-s-staging.yaml').read_text())
         self.assertEqual(unit['spec']['decryption']['secretRef']['name'], 'sops-age')
@@ -89,7 +89,7 @@ class GeneratorTests(unittest.TestCase):
         finally:
             os.environ['PATH'] = old_path
         self.assertFalse(list(self.tmp.rglob('*.sops.yaml')), 'plaintext Secret stub left behind')
-        self.assertFalse((self.tmp / 'tenants/apps/n').exists() and any((self.tmp / 'tenants/apps/n').rglob('*.yaml')))
+        self.assertFalse((self.tmp / 'apps/n').exists() and any((self.tmp / 'apps/n').rglob('*.yaml')))
 
     def test_committed_fixtures_match_generator(self):
         with tempfile.TemporaryDirectory(dir=FIXTURES.parent) as tmp:
@@ -191,7 +191,7 @@ class PolicyTests(unittest.TestCase):
                 self.assertIn(rule, self.rules(docs))
 
     def test_generator_checks_its_own_output(self):
-        instance = FIXTURES / 'tenants/apps/smoke-web/staging'
+        instance = FIXTURES / 'apps/smoke-web/staging'
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(app_new.check_generated(instance), 0)
@@ -228,7 +228,7 @@ class DriftTests(unittest.TestCase):
     def setUp(self):
         self.app = Path(tempfile.mkdtemp()) / 'hello'
         self.addCleanup(shutil.rmtree, self.app.parent)
-        shutil.copytree(ROOT / 'tenants/apps/hello', self.app)
+        shutil.copytree(ROOT / 'apps/hello', self.app)
 
     def edit(self, change):
         path = self.app / 'staging/helmrelease.yaml'
@@ -263,7 +263,7 @@ class DriftTests(unittest.TestCase):
         for label, (change, where) in cases.items():
             with self.subTest(label):
                 shutil.rmtree(self.app)
-                shutil.copytree(ROOT / 'tenants/apps/hello', self.app)
+                shutil.copytree(ROOT / 'apps/hello', self.app)
                 self.edit(change)
                 problems = self.drift()
                 self.assertEqual(len(problems), 1, problems)

@@ -3,7 +3,7 @@
     make app-new NAME=<app> ARGS="--env staging|prod --image IMAGE [options]"
     python3 -m swhurl app-new NAME --env staging|prod --image IMAGE [options]
 
-Writes tenants/apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
+Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
 worker, to put a public app inside the shared sign-in cookie domain, and to
 deploy production without an image digest. Secret stubs are SOPS-encrypted
@@ -155,8 +155,8 @@ def dump(docs) -> str:
 def generate(args, root: Path) -> list[Path]:
     validate(args)
     namespace = f'{args.name}-{args.env}'
-    unit = f'homelab-app-{args.name}-{args.env}'
-    instance = root / 'tenants/apps' / args.name / args.env
+    unit = f'app-{args.name}-{args.env}'
+    instance = root / 'apps' / args.name / args.env
     unit_file = root / 'clusters/home' / f'app-{args.name}-{args.env}.yaml'
     for path in (instance, unit_file):
         if path.exists():
@@ -196,7 +196,7 @@ def generate(args, root: Path) -> list[Path]:
                                                'kind': 'Kustomization', 'resources': resources}]),
     }
 
-    depends = ['homelab-cluster-base'] + (['homelab-auth'] if args.exposure == 'authenticated-web' else [])
+    depends = ['infra-base'] + (['platform-oauth2-proxy'] if args.exposure == 'authenticated-web' else [])
     spec = {
         'dependsOn': [{'name': d} for d in depends],
         'interval': '10m',
@@ -310,7 +310,7 @@ def main(argv=None) -> int:
     if args.secret_keys:
         print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
     if args.policy_check:
-        return check_generated(args.root.resolve() / 'tenants/apps' / args.name / args.env)
+        return check_generated(args.root.resolve() / 'apps' / args.name / args.env)
     print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')
     return 0
 

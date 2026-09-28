@@ -23,8 +23,8 @@ class ValidateTests(unittest.TestCase):
         (self.root / platform.ROOT_UNITS).write_text('apiVersion: v1\nkind: ConfigMap\nmetadata: {name: placeholder}\n')
         (self.root / platform.SETTINGS).write_text(SETTINGS)
         (self.root / 'README.md').write_text('[ok](README.md) [gone](missing.md)\n')
-        (self.root / 'infrastructure').mkdir()
-        (self.root / 'infrastructure/secret.yaml').write_text(
+        (self.root / 'infra').mkdir()
+        (self.root / 'infra/secret.yaml').write_text(
             'apiVersion: v1\nkind: Secret\nmetadata: {name: s}\nstringData: {a: plain}\n')
 
     def runner(self):
@@ -51,7 +51,7 @@ class ValidateTests(unittest.TestCase):
 
     def test_clean_repo_passes(self):
         (self.root / 'README.md').write_text('[ok](README.md)\n')
-        (self.root / 'infrastructure/secret.yaml').unlink()
+        (self.root / 'infra/secret.yaml').unlink()
         out = io.StringIO()
         self.assertEqual(validate.validate(self.runner(), Report(out), self.root), 0, out.getvalue())
         self.assertIn('Validation passed for 2 active render entrypoints.', out.getvalue())

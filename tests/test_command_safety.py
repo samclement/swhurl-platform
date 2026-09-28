@@ -41,7 +41,7 @@ if Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
 elif any(a.startswith('kustomizations') for a in argv):
     ready = 'False' if scenario == 'unready' else 'True'
-    emit({'items': [{'metadata': {'name': 'homelab-clickstack'},
+    emit({'items': [{'metadata': {'name': 'platform-clickstack'},
                      'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
 elif 'traefik' in argv:
     emit({'spec': {'template': {'spec': {'containers': [{'args': [

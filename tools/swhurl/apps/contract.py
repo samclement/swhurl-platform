@@ -27,7 +27,7 @@ ENVIRONMENT = label('environment')
 EXPOSURE = label('exposure')
 EXCEPTIONS = label('policy-exceptions')
 
-INSTANCE_ROOTS = (Path('tenants/apps'), Path('tests/fixtures/apps/tenants/apps'))
+INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))
 """Where instances live: the real ones and the generated test fixtures."""
 
 

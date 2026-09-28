@@ -16,12 +16,14 @@ One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and 
 | --- | --- | --- |
 | Host | The machine: disks, manual k3s install, dynamic DNS, router forwards | `host/` (including `host/dns.env`), [bootstrap](bootstrap.md) |
 | Cluster composition | Which units run, their dependencies, sources and settings | `clusters/home/` |
-| Foundation | Cluster primitives with no user-facing endpoint: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infrastructure/` |
-| Shared service | A service with its own lifecycle that apps use or people visit: sign-in, observability, Reloader | `platform-services/` |
-| App instance | One app in one environment, with its namespace, release, route, Secret and data | `tenants/apps/<app>/<env>/` |
+| Foundation | Cluster primitives with no user-facing endpoint: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infra/` |
+| Shared service | A service with its own lifecycle that apps use or people visit: sign-in, observability, Reloader | `platform/` |
+| App instance | One app in one environment, with its namespace, release, route, Secret and data | `apps/<app>/<env>/` |
 | Environment | Deployment settings and promotion policy (`staging`, `prod`); not a namespace or trust boundary by itself | Instance values |
 
-`tenants/` is a directory name, not a tenancy model: there is no isolation between tenants beyond namespaces.
+There is no tenancy model: app instances are separated only by namespace.
+
+**Names.** A Flux unit is named `<area>-<component>` after its directory (`platform/oauth2-proxy` is `platform-oauth2-proxy`; an app instance `apps/<app>/<env>` is `app-<app>-<env>`), with one directory per unit. Namespaces are named by function (`ingress`, `observability`, `logging`, `platform-system`, `<app>-<env>`) and HelmReleases by product. `swhurl` names the project: the repository, its `GitRepository` source (`swhurl-platform`), the `tools/swhurl` package and the `platform.swhurl.com/*` label domain. `home` is the cluster (`clusters/home`), and `homelab.swhurl.com` is the parent DNS domain.
 
 ## Flux units
 
@@ -30,13 +32,13 @@ Arrows mean **must be Ready before**. The stack unit creates all the others; tha
 ```mermaid
 flowchart LR
   sources[homelab-flux-sources] --> stack[homelab-flux-stack]
-  base[homelab-cluster-base] --> cm[homelab-cert-manager] --> issuers[homelab-issuers]
-  base --> auth[homelab-auth]
-  base --> clickstack[homelab-clickstack]
-  base --> otel[homelab-otel]
+  base[infra-base] --> cm[infra-cert-manager] --> issuers[infra-issuers]
+  base --> auth[platform-oauth2-proxy]
+  base --> clickstack[platform-clickstack]
+  base --> otel[platform-otel]
   base --> reloader[platform-reloader]
-  traefik[homelab-traefik]
-  base --> app["homelab-app-APP-ENV (one per app instance)"]
+  traefik[infra-traefik]
+  base --> app["app-APP-ENV (one per app instance)"]
   auth -. if signed-in .-> app
 ```
 
@@ -44,17 +46,17 @@ flowchart LR
 | --- | --- | --- | --- |
 | `homelab-flux-sources` | Git and Helm sources, `platform-settings` (`clusters/home/flux-system/sources`) | — | Applied by `make flux-bootstrap` |
 | `homelab-flux-stack` | All unit definitions (`clusters/home`) | sources | Applied by `make flux-bootstrap` |
-| `homelab-cluster-base` | Shared namespaces, `local-path-retain` | — | |
-| `homelab-cert-manager` | cert-manager release and CRDs | cluster-base | |
-| `homelab-issuers` | ClusterIssuers | cert-manager | |
-| `homelab-traefik` | k3s Traefik `HelmChartConfig` | — | |
-| `homelab-auth` | oauth2-proxy, its Secret, the sign-in middleware | cluster-base | settings, SOPS |
-| `homelab-clickstack` | ClickStack, its Secret, ClickHouse log TTL | cluster-base | settings, SOPS |
-| `homelab-otel` | Both collectors, the ingestion Secret | cluster-base | settings, SOPS |
-| `platform-reloader` | Reloader (`platform/reloader`) | cluster-base | |
-| `homelab-app-<app>-<env>` | One app instance (`tenants/apps/<app>/<env>`) | cluster-base; auth if signed-in | SOPS if it has a Secret |
+| `infra-base` | Shared namespaces, `local-path-retain` | — | |
+| `infra-cert-manager` | cert-manager release and CRDs | infra-base | |
+| `infra-issuers` | ClusterIssuers | cert-manager | |
+| `infra-traefik` | k3s Traefik `HelmChartConfig` | — | |
+| `platform-oauth2-proxy` | oauth2-proxy, its Secret, the sign-in middleware | infra-base | settings, SOPS |
+| `platform-clickstack` | ClickStack, its Secret, ClickHouse log TTL | infra-base | settings, SOPS |
+| `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
+| `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
+| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 
-Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
+Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
 **Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), Helm `keepPVC`/`retain`, `Retain` volumes and backups.
 

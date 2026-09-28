@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: smoke-worker-staging
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: smoke-worker
+    platform.swhurl.com/environment: staging
+    platform.swhurl.com/exposure: private

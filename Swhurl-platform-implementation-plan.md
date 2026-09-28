@@ -73,7 +73,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | PR02b | Lifecycle commands (suspend/resume/destroy-data), `Orphan` shared units, prune protection | Complete 27 Sep 2026; proven by `make lifecycle-test` |
 | PR03 | Capability split and cert-manager/issuer ordering | Complete 27 Sep 2026: 10 units, 22 resources handed over with no recreation |
 | PR07a | Narrow Secret rollout controller pilot | Complete 28 Sep 2026: scoped opt-in Reloader for oauth2-proxy and OTel; manual refresh kept as fallback |
-| PR04 | App-template contract, generator, rendered policy | Local work after PR01; rollout after PR03 |
+| PR04 | App-template contract, generator, rendered policy | Complete 28 Sep 2026: generator, `make app-policy`, fixtures proven live by `make app-template-test` |
 | PR05 | Split and migrate example staging/production; operator commands | PR03, PR04, recovery for stateful paths |
 | PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |
 | PR07b | App Secret conventions and shared settings | As required by PR04/05 |

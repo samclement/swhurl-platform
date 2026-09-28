@@ -85,6 +85,12 @@ Key runtime-intent targets:
   - Wraps `flux suspend|resume`; workloads and data are untouched.
 - `make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET> [DRY_RUN=true]`
   - Deletes an unused, unmanaged claim or `Released` PV and its host data. Refuses without an exact `CONFIRM`.
+- `make app-new NAME=<app> ARGS="..."`
+  - Generates one app instance (namespace, app-template HelmRelease, Flux unit, optional encrypted Secret). Local files only. See [adding an app](TENANTS.md#add-a-new-app).
+- `make app-policy`
+  - Renders every app instance with Helm and checks it against the app contract. CI runs it.
+- `make app-template-test [DRY_RUN=true]`
+  - Deploys the generated fixtures through Flux from the pushed revision, checks them, and removes them.
 - `make reloader-test [DRY_RUN=true]`
   - Creates disposable workloads and Secrets to prove Reloader restarts only opted-in workloads in watched namespaces, then removes them.
 - `make lifecycle-test [DRY_RUN=true]`

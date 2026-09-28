@@ -28,6 +28,11 @@ jobs:
         with:
           version: 'v1.34.4'
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.19.0'
+
       - name: Install validation dependencies
         run: |
           set -Eeuo pipefail
@@ -38,8 +43,13 @@ jobs:
       - name: Validate active manifests and scripts
         run: make validate-repo
 
-      - name: Test operator safety
+      - name: Test operator safety and app contract
+        env:
+          REQUIRE_HELM: '1'
         run: make test-safety
+
+      - name: Check app instances against policy
+        run: make app-policy
 
       - name: Run operator dry runs
         run: |
@@ -52,6 +62,7 @@ jobs:
           make restore-test-clickstack-mongodb DRY_RUN=true
           make lifecycle-test DRY_RUN=true
           make reloader-test DRY_RUN=true
+          make app-template-test DRY_RUN=true
           kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true

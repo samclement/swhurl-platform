@@ -5,3 +5,9 @@ creation_rules:
   - path_regex: clusters/home/flux-system/sources/.*\.sops\.ya?ml$
     encrypted_regex: '^(data|stringData)$'
     age: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+  - path_regex: tenants/apps/.*\.sops\.ya?ml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+  - path_regex: tests/fixtures/apps/.*\.sops\.ya?ml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h

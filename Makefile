@@ -43,6 +43,9 @@ help:
 	@echo "  suspend TARGET=kustomization/<name>|helmrelease/<ns>/<name>  Stop applying Git changes; workloads keep running"
 	@echo "  resume TARGET=...   Resume a suspended Kustomization or HelmRelease"
 	@echo "  destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>  Permanently delete a released claim/PV and its data"
+	@echo "  app-new NAME=<app> ARGS='--env staging --image repo:tag ...'  Generate an app instance (see scripts/app-new.py --help)"
+	@echo "  app-policy          Render every app instance and check it against the app contract"
+	@echo "  app-template-test   Deploy the generated app fixtures through Flux, check them, remove them"
 	@echo "  reloader-test       Prove Reloader restarts only opted-in workloads in watched namespaces"
 	@echo "  lifecycle-test      Prove suspend/uninstall/destroy-data/Orphan on a disposable app"
 	@echo "  backup-clickstack-mongodb      Dump ClickStack MongoDB to an age-encrypted local archive"
@@ -205,6 +208,19 @@ verify: verify-config verify-platform
 .PHONY: suspend resume destroy-data
 suspend resume destroy-data:
 	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" ./scripts/lifecycle.sh $@ "$(TARGET)"
+
+.PHONY: app-new
+app-new:
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
+	python3 scripts/app-new.py $(NAME) $(ARGS)
+
+.PHONY: app-policy
+app-policy:
+	python3 scripts/app_policy.py
+
+.PHONY: app-template-test
+app-template-test:
+	DRY_RUN=$(DRY_RUN) ./scripts/app-template-test.sh
 
 .PHONY: reloader-test
 reloader-test:

@@ -68,6 +68,7 @@ flowchart LR
 | `homelab-reloader` | Reloader (`platform-services/reloader/base`) | cluster-base | Opt-in restarts on Secret change in `ingress`, `logging` |
 | `homelab-tenants` | `apps-staging`, `apps-prod` (`tenants/app-envs`) | — | Environment namespaces |
 | `homelab-app-example` | Both example overlays (`tenants/apps/example`) | tenants, auth | Staging and production routes/workloads |
+| `homelab-app-<app>-<env>` | One generated instance (`tenants/apps/<app>/<env>`): its namespace, app-template HelmRelease, optional Secret | cluster-base; auth if `authenticated-web` | One instance's workload, route and data; see [adding an app](TENANTS.md#add-a-new-app) |
 
 Rules that follow from this:
 

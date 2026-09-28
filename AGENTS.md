@@ -93,7 +93,7 @@ Important contract:
   - The central runtime source secret (`clusters/home/flux-system/sources/secret-platform-runtime-inputs.sops.yaml` -> `flux-system/platform-runtime-inputs`) was removed; do not reintroduce it for platform-service secrets.
   - Local SOPS edits require an age private key in a default SOPS location (`~/.config/sops/age/keys.txt`) or `SOPS_AGE_KEY_FILE`; in this repo, `SOPS_AGE_KEY_FILE=./age.agekey` enables local decrypt/edit flows.
   - Keep app-specific secrets with each app (`tenants/apps/<app>/.../secret-*.sops.yaml`); when app paths include encrypted manifests, set `spec.decryption` on that app-level Flux Kustomization (for example `clusters/home/app-*.yaml`) to use `sops-age`.
-  - `.sops.yaml` creation rules currently cover `platform-services/.*/base` and `clusters/home/flux-system/sources`; add an app-path creation rule before onboarding app-local `*.sops.yaml` files so `sops --encrypt --in-place` uses the expected recipient automatically.
+  - `.sops.yaml` creation rules cover `platform-services/.*/base`, `clusters/home/flux-system/sources`, `tenants/apps/` and `tests/fixtures/apps/`.
   - `scripts/bootstrap/sync-runtime-inputs.sh` was removed; `make runtime-inputs-sync` reconciles `homelab-auth`, `homelab-clickstack` and `homelab-otel` from pushed Git state.
   - Flux postBuild substitution will consume unescaped `${...}` tokens in HelmRelease values. For OTel collector env interpolation, use escaped literals (`"$${env:HYPERDX_API_KEY}"`) so rendered collector config does not become `authorization: null`.
   - App deployment path is fixed (`clusters/home/app-example.yaml -> ./tenants/apps/example`) and does not use runtime-input substitution.
@@ -169,6 +169,13 @@ Important contract:
 - Flux units (PR03)
   - One unit per capability: `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-minio` (`clusters/home/infrastructure.yaml`), `homelab-auth`, `-clickstack`, `-otel` (`clusters/home/platform.yaml`), `homelab-tenants`, `homelab-app-*`. Apps depend only on what they use; never on ClickStack, OTel or MinIO.
   - To move a resource between units: keep the old owner `Orphan`/suspended, add it to the new unit unchanged, reconcile, confirm inventory, then remove it from the old one. Never change the old path in the same commit as the cutover.
+
+- App contract (PR04)
+  - New app instances come from `make app-new` (`scripts/app-new.py`): `tenants/apps/<app>/<env>/` + `clusters/home/app-<app>-<env>.yaml`, bjw-s `app-template` `5.2.1` (HelmRepository `bjw-s`), namespace `<app>-<env>`, unit `homelab-app-<app>-<env>` (MirrorPrune).
+  - `make app-policy` (`scripts/app_policy.py`) renders instances with Helm and enforces the contract; exceptions need `platform.swhurl.com/policy-exceptions: "rule=reason"`. Charts cache in `~/.cache/swhurl-platform/charts`.
+  - `tests/fixtures/apps` is generator output from `tests/fixtures/apps.sh`; `make test-safety` fails if they drift. Regenerate (delete the dir, run the script) after changing the generator.
+  - `.sops.yaml` has rules for `tenants/apps/` and `tests/fixtures/apps/`; the generator encrypts Secret stubs before returning and removes them if `sops` fails.
+  - Policy tests need `helm`; CI sets `REQUIRE_HELM=1` so they cannot silently skip.
 
 - Lifecycle
   - `make suspend|resume TARGET=...` wrap `flux suspend|resume`; `make destroy-data TARGET=... CONFIRM=<TARGET>` is the only data-deleting command and refuses while the claim is mounted, Helm-installed, or Flux-managed.

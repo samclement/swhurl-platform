@@ -35,6 +35,7 @@ oauth2-proxy signs users in with Google (OIDC) and serves the Traefik middleware
 - **Cookie scope:** the session cookie covers `.homelab.swhurl.com`, so every host under it receives it. Put public or untrusted apps on a different parent domain.
 - **HTTPS only:** cookies are `Secure`, so sign-in fails with 403 over plain HTTP. Traefik redirects all HTTP to HTTPS.
 - **Secret** `ingress/oauth2-proxy-shared-secret`: `client-id`, `client-secret` (from the Google OAuth client, which must allow `https://oauth.<BASE_DOMAIN>/oauth2/callback`) and `cookie-secret` (random, for example `openssl rand -base64 32`). Reloader restarts oauth2-proxy when it changes.
+- **How ForwardAuth works:** oauth2-proxy runs with `upstream=static://202`, and the middleware ([`middleware.yaml`](../platform/oauth2-proxy/middleware.yaml)) calls its root `/` rather than `/oauth2/auth`, so an unauthenticated browser gets a redirect it can follow. The callback is `https://oauth.<BASE_DOMAIN>/oauth2/callback`.
 - ClickStack uses its own login, not this middleware.
 
 ## ClickStack and OTel
@@ -46,20 +47,20 @@ Two keys, not to be confused:
 | Key | Secret | Purpose |
 | --- | --- | --- |
 | `HYPERDX_API_KEY` | `logging/hyperdx-secret` ([file](../platform/otel/secret.sops.yaml)) | Ingestion key the collectors send. Must equal the ClickStack team key held in MongoDB; `make verify-platform` compares them by bytes. |
-| `CLICKSTACK_API_KEY` | `observability/clickstack-runtime-inputs` ([file](../platform/clickstack/secret.sops.yaml)) | Chart bootstrap key passed to `hyperdx.apiKey`. Not the ingestion key; may equal it only on a fresh install. |
+| `CLICKSTACK_API_KEY` | `observability/clickstack-runtime-inputs` ([file](../platform/clickstack/secret.sops.yaml)) | Chart bootstrap key passed to `hyperdx.apiKey` (the chart also renders it into `observability/clickstack-app-secrets`). On a fresh install it seeds the team key in MongoDB; after first sign-in MongoDB owns the ingestion key, which survives redeploys as long as MongoDB data does. |
 
 **Known issue:** `CLICKSTACK_API_KEY` is stored base64-encoded twice, so the ClickStack app runs with the 48-character once-decoded text. It works because nothing needs it to match the team key. Fixing the encoding restarts ClickStack with a different key: plan it rather than fixing it in passing. `make check-secrets` warns about it.
 
-Retention: telemetry expires after 30 days (the collector image sets the table TTL; `make verify-platform` checks it). ClickHouse's own logs expire after 7 days through a `config.d` file mounted by a HelmRelease post-renderer, because the chart's `config.xml` is fixed; ClickHouse reads it only at startup. All three ClickStack claims are kept on Helm uninstall. Details: [ClickStack README](../platform/clickstack/README.md).
+Retention: telemetry expires after 30 days (the collector image sets the table TTL; `make verify-platform` checks it). ClickHouse's own logs (`system.query_log`, `trace_log`, ...) expire after 7 days through [`configmap-clickhouse-log-ttl.yaml`](../platform/clickstack/configmap-clickhouse-log-ttl.yaml), mounted into `config.d` by a HelmRelease post-renderer because the chart's `config.xml` is fixed. ClickHouse reads it only at startup, so restart `deploy/clickstack-clickhouse` after editing it; when a table definition changes, ClickHouse keeps the old table as `<name>_N` (without TTL), which you can drop once checked. `global.keepPVC: true` keeps all three ClickStack claims on Helm uninstall.
 
 The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:HYPERDX_API_KEY}` into the collector's `${env:...}` reference.
 
 ## Reloader
 
-Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace. ConfigMaps are ignored.
+Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`) and both OTel collectors (`hyperdx-secret`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
 
 ## Certificates, ingress and storage
 
-- **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik). `infra-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.
-- **Traefik:** k3s owns the Traefik install; this repo owns only its `HelmChartConfig`: NodePorts `31514` (HTTP) and `30313` (HTTPS), and a permanent HTTP→HTTPS redirect. Let's Encrypt follows the redirect, so HTTP-01 still works.
+- **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik), plain manifests with no settings substituted. `infra-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.
+- **Traefik:** k3s owns the Traefik install; this repo owns only its `HelmChartConfig`: NodePorts `31514` (HTTP) and `30313` (HTTPS), and a permanent HTTP→HTTPS redirect set with `ports.web.redirections.entryPoint` (chart 38 silently ignores the older `redirectTo`; `make verify-platform` checks the redirect). Let's Encrypt follows the redirect, so HTTP-01 still works.
 - **Storage classes:** `local-path` (k3s default, `Delete`: deleting a claim deletes its data) and `local-path-retain` (`Retain`: the volume and its directory under `/var/lib/rancher/k3s/storage` survive). Use `local-path-retain` for anything irreplaceable; the app generator does.

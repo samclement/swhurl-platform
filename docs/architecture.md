@@ -66,16 +66,78 @@ Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/
 
 ## C4 views
 
-Sources are `docs/charts/c4/*.d2`; `make charts-generate` renders them ([conventions](contributing.md#diagrams)).
+Mermaid diagrams, rendered by GitHub; edit them here ([conventions](contributing.md#diagrams)).
 
 ### Context
 
-![C4 Context](charts/c4/rendered/context.svg)
+```mermaid
+flowchart TB
+  operator([Platform operator])
+  user([App user])
+  github[GitHub repository<br/>swhurl-platform]
+  route53[Route53 DNS]
+  google[Google OIDC]
+  le["Let's Encrypt (ACME)"]
+  platform[[Swhurl platform<br/>k3s + Flux + shared services]]
+
+  operator -- commit manifests --> github
+  operator -- make targets --> platform
+  github -- Flux pulls --> platform
+  user -- resolve host --> route53
+  route53 -- node address --> platform
+  user -- HTTPS --> platform
+  platform -- sign-in --> google
+  platform -- certificates --> le
+```
 
 ### Containers
 
-![C4 Container](charts/c4/rendered/container.svg)
+```mermaid
+flowchart TB
+  user([Browser])
+  git[GitRepository swhurl-platform]
+  google[Google OIDC]
+  le["Let's Encrypt (ACME)"]
 
-### Request path to an app
+  subgraph cluster[k3s cluster]
+    subgraph edge[Edge]
+      traefik[Traefik<br/>kube-system]
+      oauth[oauth2-proxy-shared<br/>ingress]
+      cm[cert-manager<br/>cert-manager]
+    end
+    subgraph telemetry[Telemetry]
+      otelds[OTel DaemonSet + cluster collector<br/>logging]
+      kubelet[kubelet<br/>node]
+      csotel[ClickStack collector<br/>observability]
+      cs[ClickStack UI, ClickHouse, MongoDB<br/>observability]
+    end
+    flux[Flux controllers<br/>flux-system, applies everything here]
+    reloader[Reloader<br/>platform-system]
+    app[hello, app-template<br/>hello-staging, hello-prod]
+  end
 
-![C4 Component Example App](charts/c4/rendered/component-app-example.svg)
+  user -- HTTPS --> traefik
+  traefik -- ForwardAuth --> oauth
+  oauth -- OIDC --> google
+  traefik -- route --> app
+  cm -- ACME HTTP-01 --> le
+  cm -- TLS Secrets --> traefik
+  app -- logs --> otelds
+  otelds -- stats --> kubelet
+  otelds -- OTLP --> csotel --> cs
+  flux -- pulls manifests --> git
+  reloader -. restart on Secret change .-> oauth & otelds
+```
+
+### Request path to a signed-in app
+
+```mermaid
+flowchart LR
+  browser([Browser]) -- HTTPS --> router[Traefik router]
+  router --> mw[oauth-auth-shared middleware]
+  mw -- ForwardAuth --> proxy[oauth2-proxy-shared]
+  proxy -- OIDC login --> google[Google]
+  router -- host --> ingress[hello Ingress] --> svc[hello Service] --> pod[hello Deployment<br/>non-root, :8080]
+  cm[cert-manager] -- ACME --> le["Let's Encrypt"]
+  cm -- hello-tls --> ingress
+```

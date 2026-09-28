@@ -33,6 +33,13 @@ make runtime-inputs-sync          # or make flux-reconcile / make app-reconcile
 
 Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`. For the collectors, `make runtime-inputs-refresh-otel` does the restart itself and then verifies. Which Secret belongs to which service: [services](services.md).
 
+Rotate the OTel ingestion key (it must equal the ClickStack team key, not `CLICKSTACK_API_KEY`):
+
+1. Copy the team's ingestion key from the ClickStack UI; don't print it from MongoDB into logs.
+2. `sops platform/otel/secret.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded once (`printf %s '<key>' | base64 -w0`).
+3. `make check-secrets`, commit, push, `make runtime-inputs-sync`.
+4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401.
+
 ## Certificate mode
 
 `CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.
@@ -78,6 +85,8 @@ The backup streams `mongodump` through `age`, so no plaintext touches disk, and 
 The restore test passes only if the checksum, collection counts and restored ingestion key (against the Git Secret) all match; it never touches live workloads.
 
 The MongoDB volume's `Retain` policy is a live patch; a re-created claim loses it and `make verify-platform` then fails. Re-apply with the two commands in [bootstrap step 6](bootstrap.md#6-protect-data-then-verify).
+
+If MongoDB is lost and there is no backup, a fresh ClickStack install seeds a new team key from `CLICKSTACK_API_KEY`; after the first sign-in, rotate the OTel ingestion key to it (see [Secrets](#secrets)).
 
 Restore into the live service (not yet exercised): stop `observability/clickstack-app`, pipe `age -d -i age.agekey <archive>` into `kubectl -n observability exec -i deploy/clickstack-mongodb -- mongorestore --archive --gzip --drop`, then start the app and run `make verify-platform`.
 

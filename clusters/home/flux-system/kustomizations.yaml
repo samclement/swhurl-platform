@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-flux-sources
+  name: cluster-sources
   namespace: flux-system
 spec:
   interval: 10m
@@ -19,11 +19,11 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: homelab-flux-stack
+  name: cluster-stack
   namespace: flux-system
 spec:
   dependsOn:
-    - name: homelab-flux-sources
+    - name: cluster-sources
   interval: 10m
   sourceRef:
     kind: GitRepository

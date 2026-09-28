@@ -2,7 +2,7 @@
 
 Active Flux-owned ClickStack release definition.
 
-- Runtime bootstrap key lives in `secret-clickstack-runtime-inputs.sops.yaml` as `CLICKSTACK_API_KEY`.
+- Runtime bootstrap key lives in `secret.sops.yaml` as `CLICKSTACK_API_KEY`.
 - The HelmRelease passes it to `hyperdx.apiKey`; the chart seeds MongoDB with this value as the team API key on a fresh install.
 - The chart also renders it into `observability/clickstack-app-secrets.api-key` on every deploy.
 - **`CLICKSTACK_API_KEY` is not the live ingestion key.** After first-login setup, MongoDB owns the ingestion key (`hyperdx.teams.apiKey`). It persists across redeployments as long as MongoDB data survives.
@@ -12,7 +12,7 @@ Active Flux-owned ClickStack release definition.
 ## Retention
 
 - Telemetry tables (`otel_*`, `hyperdx_sessions`) expire after 30 days. That TTL comes from the ClickStack collector image when it creates the tables, not from chart values; `make verify-platform` fails if it changes.
-- ClickHouse's own diagnostic logs (`system.query_log`, `trace_log`, `metric_log`, ...) expire after 7 days via `configmap-clickhouse-system-log-ttl.yaml`, mounted into `config.d` by the HelmRelease `postRenderers` patch because the chart's `config.xml` is not configurable. ClickHouse reads it only at startup: restart `deploy/clickstack-clickhouse` after editing. When a table definition changes, ClickHouse renames the old table to `<name>_N` (without TTL); drop those once checked.
+- ClickHouse's own diagnostic logs (`system.query_log`, `trace_log`, `metric_log`, ...) expire after 7 days via `configmap-clickhouse-log-ttl.yaml`, mounted into `config.d` by the HelmRelease `postRenderers` patch because the chart's `config.xml` is not configurable. ClickHouse reads it only at startup: restart `deploy/clickstack-clickhouse` after editing. When a table definition changes, ClickHouse renames the old table to `<name>_N` (without TTL); drop those once checked.
 - `global.keepPVC: true` puts `helm.sh/resource-policy: keep` on all three PVCs, so a Helm uninstall leaves them.
 - MongoDB is backed up with `make backup-mongodb`; see [backups and recovery](../../docs/operations.md#backups-and-recovery).
 

@@ -16,8 +16,8 @@ help: ## List targets (generated from the ## comments in this Makefile)
 .PHONY: flux-reconcile
 flux-reconcile: ## Fetch Git and reconcile the source layer and the stack
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
-	flux reconcile kustomization homelab-flux-sources -n flux-system --with-source --timeout=20m
-	flux reconcile kustomization homelab-flux-stack -n flux-system --with-source --timeout=20m
+	flux reconcile kustomization cluster-sources -n flux-system --with-source --timeout=20m
+	flux reconcile kustomization cluster-stack -n flux-system --with-source --timeout=20m
 
 .PHONY: install
 install: ## check-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)

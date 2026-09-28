@@ -1,8 +1,5 @@
-# Tenants Layer
+# Tenants
 
-App-environment scope resources (landing zones only).
+App instances live in `apps/<app>/<env>/`, one per app and environment, each with its own namespace (`<app>-<env>`) and Flux unit (`clusters/home/app-<app>-<env>.yaml`). Create them with `make app-new`; see [docs/TENANTS.md](../docs/TENANTS.md).
 
-- `app-envs/staging` and `app-envs/prod` namespace landing zones
-- sample app manifests live under `apps/example`, reconciled by app-level Flux Kustomizations
-
-Flux tenants entrypoint path: `tenants/app-envs`.
+Current instances: `apps/hello/staging` (`staging-hello.homelab.swhurl.com`) and `apps/hello/prod` (`hello.homelab.swhurl.com`).

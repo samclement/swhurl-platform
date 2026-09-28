@@ -78,5 +78,5 @@ Expected:
 
 ## Notes
 
-- Example app overlays are fixed at `clusters/home/app-example.yaml -> ./tenants/apps/example`.
+- App instances pick their own issuer (`--issuer` on `make app-new`, default `letsencrypt-prod`); `CERT_ISSUER` affects platform services only.
 - Both example app overlays (`staging` and `prod`) use `letsencrypt-prod`.

@@ -18,8 +18,7 @@ There is no `run.sh` orchestration flow in the current repo. Cluster creation an
 - [`clusters/home/flux-system`](../clusters/home/flux-system): Flux bootstrap manifests, source definitions, and shared substitutions
 - [`infrastructure/`](../infrastructure): cluster-base (namespaces, storage classes), cert-manager, issuers, Traefik config, MinIO: one Flux unit each
 - [`platform-services/`](../platform-services): oauth2-proxy, ClickStack, OTel: one Flux unit each
-- [`tenants/app-envs`](../tenants/app-envs): tenant landing zones
-- [`tenants/apps/example`](../tenants/apps/example): sample application reconciled as its own Flux Kustomization
+- [`tenants/apps`](../tenants/apps): generated app instances, one namespace and Flux unit each
 - [`host`](../host): optional host-level dynamic DNS automation
 - [`scripts`](../scripts): Flux reconcile, verification, and chart generation helpers
 - [`docs/operations/current-state.md`](operations/current-state.md): observed host and cluster baseline
@@ -30,8 +29,7 @@ There is no `run.sh` orchestration flow in the current repo. Cluster creation an
 
 - [`clusters/home/infrastructure.yaml`](../clusters/home/infrastructure.yaml): `homelab-cluster-base`, `homelab-cert-manager`, `homelab-issuers`, `homelab-traefik`, `homelab-minio`
 - [`clusters/home/platform.yaml`](../clusters/home/platform.yaml): `homelab-auth`, `homelab-clickstack`, `homelab-otel`
-- [`clusters/home/tenants.yaml`](../clusters/home/tenants.yaml): `homelab-tenants`
-- [`clusters/home/app-example.yaml`](../clusters/home/app-example.yaml): `homelab-app-example`
+- `clusters/home/app-<app>-<env>.yaml`: one `homelab-app-<app>-<env>` unit per app instance (currently `hello` staging and prod)
 
 Dependencies, substitution and decryption per unit are in the [ownership map](architecture.md#current-reconciliation-ownership). `homelab-flux-sources` contains plain ConfigMaps and repository sources; it does not decrypt SOPS.
 

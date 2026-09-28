@@ -2,52 +2,29 @@
 
 ## Overview
 
-The tenant model is split into two layers:
+An **app instance** is one app in one environment. Each instance owns its namespace (`<app>-<env>`), an app-template HelmRelease, optional encrypted Secret, and its own Flux unit `homelab-app-<app>-<env>` (`clusters/home/app-<app>-<env>.yaml` → `tenants/apps/<app>/<env>`). Instances depend only on `homelab-cluster-base` and, when signed-in, `homelab-auth`, so one instance's failure never blocks another. Concepts and ownership: [architecture](architecture.md#concepts-and-boundaries).
 
-- [`tenants/app-envs`](../tenants/app-envs): shared landing zones for tenant environments
-- [`tenants/apps`](../tenants/apps): application manifests and overlays
+## Current instances
 
-The concepts and ownership contracts are defined in [architecture](architecture.md#concepts-and-boundaries). An application instance means one app in one environment; the current example still combines both instances in one Flux unit.
+| Instance | Host | Namespace | Image |
+| --- | --- | --- | --- |
+| `hello/staging` | `staging-hello.homelab.swhurl.com` | `hello-staging` | `nginxinc/nginx-unprivileged:1.27-alpine` pinned by digest |
+| `hello/prod` | `hello.homelab.swhurl.com` | `hello-prod` | same digest |
 
-The active example app is reconciled separately through [`clusters/home/app-example.yaml`](../clusters/home/app-example.yaml), which points to [`tenants/apps/example`](../tenants/apps/example).
+Both are `authenticated-web` (shared sign-in) and serve the stock nginx page as UID 101 on port 8080. Staging and production currently differ only in namespace and host: same image digest, same issuer (`letsencrypt-prod`) and same sign-in. `staging` is a separate failure and rollout boundary, not a separate trust boundary.
 
-## Current Architecture
+## Operate an instance
 
-### Landing zones
+```bash
+make app-status APP=hello ENV=prod     # desired vs applied revision and digest, replicas, route, TLS, failing containers
+make app-logs APP=hello ENV=prod       # FOLLOW=true to stream, TAIL=N lines
+make app-reconcile APP=hello ENV=prod  # fetch Git and reconcile only this instance
+make app-check APP=hello ENV=prod      # policy check for this instance, offline
+```
 
-Current tenant namespaces are:
-
-- `apps-staging`
-- `apps-prod`
-
-They are defined in:
-
-- [`tenants/app-envs/staging`](../tenants/app-envs/staging)
-- [`tenants/app-envs/prod`](../tenants/app-envs/prod)
-
-### Example application
-
-The example app uses:
-
-- base manifests in [`tenants/apps/example/base`](../tenants/apps/example/base)
-- environment overlays in [`tenants/apps/example/overlays/staging`](../tenants/apps/example/overlays/staging) and [`tenants/apps/example/overlays/prod`](../tenants/apps/example/overlays/prod)
-
-Current hosts:
-
-- staging: `staging-hello.homelab.swhurl.com`
-- prod: `hello.homelab.swhurl.com`
-
-Shared auth is applied at the ingress layer through the Traefik middleware reference:
-
-- `ingress-oauth-auth-shared@kubernetescrd`
+`make install` stays the whole-platform bootstrap/verify path.
 
 ## Getting Started
-
-### Add a new landing zone
-
-1. Add a namespace manifest under `tenants/app-envs/<env>`.
-2. Add that path to the relevant tenant Kustomization if needed.
-3. Reconcile with `make flux-reconcile`.
 
 ### Add a new app
 
@@ -90,14 +67,12 @@ The example app overlays are the current reference implementation.
 
 ## Current Constraints
 
-- The tenants landing-zone layer only creates namespaces. App deployment is handled by separate Flux Kustomizations.
-- The example app predates the generator: it is raw manifests in the shared `apps-staging`/`apps-prod` namespaces, both in one Flux unit. PR05 migrates it; `make app-policy` covers generated instances only.
-- There is no generic tenant contract document for quotas, network policies, or RBAC defaults.
-- App hostnames are currently hardcoded in the example overlays, not derived from `config.env`.
+- There are no per-instance quotas, NetworkPolicies or RBAC defaults yet; namespaces separate failures and ownership, not trust.
+- Hostnames are literal in each instance's HelmRelease, not derived from `config.env`.
+- Staging and production share the image digest by convention; promoting a new digest is a manual edit until PR06 (Renovate).
 
 ## Caveats
 
-- The example app base defaults to staging-oriented values, but both staging and prod overlays currently override the certificate issuer to `letsencrypt-prod`.
-- Shared auth depends on the `ingress` namespace middleware created by the shared oauth2-proxy service. If that middleware is absent, tenant ingresses that reference it will fail.
-- The current tenant model assumes one cluster with shared platform services and environment-specific namespaces rather than hard isolation between tenants.
-- Additional tenant apps require explicit Flux wiring in `clusters/home`; adding manifests under `tenants/apps` alone does not deploy them.
+- `authenticated-web` depends on the `ingress/oauth-auth-shared` middleware from `homelab-auth`; its app units wait for that unit.
+- Moving a host between instances causes a few seconds of Traefik's default certificate while cert-manager issues the new one.
+- Adding files under `tenants/apps` alone deploys nothing: the instance's unit must be listed in `clusters/home/kustomization.yaml` (`make app-new` does this).

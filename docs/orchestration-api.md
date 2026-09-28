@@ -43,8 +43,7 @@ State contracts:
 - k3s-packaged Traefik config is managed in `infrastructure/ingress-traefik/base/helmchartconfig-traefik.yaml` (NodePorts `31514`/`30313`).
 - Platform cert issuer intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`CERT_ISSUER`).
 - Shared oauth callback host intent is Git-managed in `clusters/home/flux-system/sources/configmap-platform-settings.yaml` (`OAUTH_HOST`).
-- Tenant environments are fixed in `clusters/home/tenants.yaml` (`./tenants/app-envs`).
-- Example app deployment intent is fixed in `clusters/home/app-example.yaml` (`./tenants/apps/example`, staging+prod overlays).
+- App instances are generated Flux units `clusters/home/app-<app>-<env>.yaml` (`./tenants/apps/<app>/<env>`); operate one with `make app-status|app-logs|app-reconcile|app-check APP= ENV=`.
 
 ## Host Dynamic DNS (`host/dynamic-dns.sh`)
 
@@ -87,6 +86,8 @@ Key runtime-intent targets:
   - Deletes an unused, unmanaged claim or `Released` PV and its host data. Refuses without an exact `CONFIRM`.
 - `make app-new NAME=<app> ARGS="..."`
   - Generates one app instance (namespace, app-template HelmRelease, Flux unit, optional encrypted Secret). Local files only. See [adding an app](TENANTS.md#add-a-new-app).
+- `make app-status|app-logs|app-reconcile|app-check APP=<app> ENV=<env>`
+  - Status: desired vs applied Git revision and image digest, replicas, route, certificate and failing-container reasons. Logs: recent workload logs (`FOLLOW=true`, `TAIL=`). Reconcile: fetch Git and reconcile only that instance. Check: app policy for that instance, offline.
 - `make app-policy`
   - Renders every app instance with Helm and checks it against the app contract. CI runs it.
 - `make app-template-test [DRY_RUN=true]`

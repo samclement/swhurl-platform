@@ -28,8 +28,7 @@ Separate these axes and do not collapse them:
   - cluster-shared services (`oauth2-proxy`, `clickstack`, `otel`)
   - runtime-input target secrets co-located with service bases
 - `tenants/`
-  - app environment namespaces (`apps-staging`, `apps-prod`)
-  - sample app manifests and overlays (`tenants/apps/example`)
+  - generated app instances (`tenants/apps/<app>/<env>`), one namespace and Flux unit each
 
 ## Runtime Inputs Principle
 

@@ -41,6 +41,9 @@ spec:
       redirect-url: https://oauth.${BASE_DOMAIN}/oauth2/callback
       upstream: static://202
       reverse-proxy: true
+      # Only Traefik (a pod, k3s default pod CIDR) may set X-Forwarded-*. Not --trusted-ip, which skips sign-in.
+      trusted-proxy-ip: 10.42.0.0/16
+      code-challenge-method: S256
       skip-provider-button: true
       cookie-name: _oauth2_proxy_shared
       cookie-domain: .${BASE_DOMAIN}

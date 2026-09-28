@@ -154,11 +154,11 @@ lifecycle-test:
 
 .PHONY: backup-clickstack-mongodb
 backup-clickstack-mongodb:
-	DRY_RUN=$(DRY_RUN) ./scripts/backup-clickstack-mongodb.sh
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb
 
 .PHONY: restore-test-clickstack-mongodb
 restore-test-clickstack-mongodb:
-	DRY_RUN=$(DRY_RUN) ./scripts/restore-test-clickstack-mongodb.sh
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) restore-test-mongodb
 
 .PHONY: validate-repo
 validate-repo:

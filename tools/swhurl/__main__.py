@@ -20,6 +20,8 @@ COMMANDS = {
     'app': ('swhurl.app_ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
     'app-new': ('swhurl.app_new', 'main', 'Generate an app instance'),
     'app-policy': ('swhurl.app_policy', 'main', 'Render app instances and check the app contract'),
+    'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
+    'restore-test-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'prune-backups': ('swhurl.backups', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 

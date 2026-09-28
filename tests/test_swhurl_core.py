@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 
 from swhurl import __main__ as cli  # noqa: E402
 from swhurl.report import Report  # noqa: E402
-from swhurl.run import REDACTED, CommandError, FakeRunner, Runner  # noqa: E402
+from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner  # noqa: E402
 
 SECRET = 'fixture-secret-token-value'
 
@@ -64,6 +64,46 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse(Runner.from_environment().dry_run)
         finally:
             os.environ.pop('DRY_RUN', None) if old is None else os.environ.__setitem__('DRY_RUN', old)
+
+
+class PipeTests(unittest.TestCase):
+    def test_streams_between_processes(self):
+        self.assertEqual(Runner().pipe(['printf', 'plaintext-stream'], ['wc', '-c']).stdout.strip(), '16')
+
+    def test_either_side_failing_raises_like_pipefail(self):
+        with self.assertRaisesRegex(CommandError, 'exited 3, 0: producer broke'):
+            Runner().pipe(['sh', '-c', 'echo producer broke >&2; exit 3'], ['cat'])
+        with self.assertRaisesRegex(CommandError, 'exited 0, 4: consumer broke'):
+            Runner().pipe(['printf', 'x'], ['sh', '-c', 'cat >/dev/null; echo consumer broke >&2; exit 4'])
+
+    def test_stream_contents_never_reach_errors(self):
+        with self.assertRaises(CommandError) as ctx:
+            Runner().pipe(['sh', '-c', 'printf "$STREAM"'], ['sh', '-c', 'cat >/dev/null; exit 1'],
+                          env={'STREAM': SECRET})
+        self.assertNotIn(SECRET, str(ctx.exception))
+
+    def test_large_stream_and_noisy_stderr_do_not_deadlock(self):
+        out = Runner().pipe(['sh', '-c', 'head -c 3000000 /dev/zero; head -c 200000 /dev/zero | tr "\\0" x >&2'],
+                            ['wc', '-c']).stdout
+        self.assertEqual(out.strip(), '3000000')
+
+    def test_missing_command_on_either_side(self):
+        with self.assertRaisesRegex(CommandError, 'missing required command: no-such-producer'):
+            Runner().pipe(['no-such-producer'], ['cat'])
+        with self.assertRaisesRegex(CommandError, 'missing required command: no-such-consumer'):
+            Runner().pipe(['printf', 'x'], ['no-such-consumer'])
+
+    def test_dry_run_plans_the_pipe(self):
+        fake = FakeRunner(dry_run=True)
+        fake.pipe(['age', '-d'], ['kubectl', 'exec'], mutating=True)
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(fake.echoed, ['  would run: age -d | kubectl exec'])
+
+    def test_fake_pipe_feeds_producer_output_to_consumer(self):
+        fake = FakeRunner().on('producer', stdout='dump').on(
+            'consumer', handler=lambda args, stdin: Result(args, 0, f'got {stdin}'))
+        self.assertEqual(fake.pipe(['producer'], ['consumer']).stdout, 'got dump')
+        self.assertEqual(fake.calls, [('producer',), ('consumer',)])
 
 
 class FakeRunnerTests(unittest.TestCase):

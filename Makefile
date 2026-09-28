@@ -44,6 +44,7 @@ help:
 	@echo "  resume TARGET=...   Resume a suspended Kustomization or HelmRelease"
 	@echo "  destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>  Permanently delete a released claim/PV and its data"
 	@echo "  app-new NAME=<app> ARGS='--env staging --image repo:tag ...'  Generate an app instance (see scripts/app-new.py --help)"
+	@echo "  app-status|app-logs|app-reconcile|app-check APP=<app> ENV=<env>  Operate one app instance"
 	@echo "  app-policy          Render every app instance and check it against the app contract"
 	@echo "  app-template-test   Deploy the generated app fixtures through Flux, check them, remove them"
 	@echo "  reloader-test       Prove Reloader restarts only opted-in workloads in watched namespaces"
@@ -213,6 +214,11 @@ suspend resume destroy-data:
 app-new:
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
 	python3 scripts/app-new.py $(NAME) $(ARGS)
+
+.PHONY: app-status app-logs app-reconcile app-check
+app-status app-logs app-reconcile app-check:
+	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
+	@./scripts/app.sh $(@:app-%=%) $(APP) $(ENV)
 
 .PHONY: app-policy
 app-policy:

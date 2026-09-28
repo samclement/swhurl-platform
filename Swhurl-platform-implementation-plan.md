@@ -13,6 +13,8 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 3. **Final operator exercise** (section 14), using only the docs.
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it.
 
+5. **Bash to Python** (optional, not started): convert operator scripts and the Makefile's inline shell to a tested Python package without changing the `make` interface. Sub-plan: [Swhurl-platform-bash-to-python-plan.md](Swhurl-platform-bash-to-python-plan.md).
+
 **Known issues, deliberately not fixed yet**
 
 - `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make secrets-check` warns until then.

@@ -108,6 +108,10 @@ Phase 4 (same day): `make suspend|resume|destroy-data` run from `swhurl.lifecycl
 
 Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-template-test` run from `swhurl/livetests` with cleanup guaranteed by an exit stack and namespace deletion guarded by labels (the app-template cleanup now requires the fixture's `platform.swhurl.com/app` label; the bash version deleted unconditionally). All three passed live with the same check lines as before, and afterwards no test namespaces, units, PVs or labelled objects remained and every Flux unit was Ready. The remaining bash is `shellcheck`-clean (0.11.0) and linted in CI.
 
+## Cleanup step 1
+
+28 September 2026: tooling-only cleanup (plan section 0, step 1). No deployed manifest changed. Offline: 124 unit tests pass, `validate-repo` passes (links and 14 render paths), `app-policy` passes for all five instances including the new `env-drift` comparison of `hello` staging/prod, ruff and shellcheck are clean. The drift tests show that allowed differences (replicas, image tag/digest, resources, issuer) pass and that removing sign-in, changing the image repository, adding an ingress path, enabling the service-account token or adding a file each fail. Live: `make verify-platform`, `app-status`/`app-check` for both `hello` instances, `make app-template-test` and `make lifecycle-test` passed with no leftovers; `make install` and `make wait-runtime-inputs-otel` passed through the rewritten Makefile, and `TIMEOUT_SECS=2` on a missing Secret exited 1 after 2 s. Commit `db8b68d` contained only the `config.env` deletion, so `main` failed CI for one run until `ebfa7a6`.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

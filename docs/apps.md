@@ -39,7 +39,7 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## The app policy
 
-`make app-policy` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, and a named storage class. CI runs it on every push.
+`make app-policy` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, and a named storage class. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources and issuer (encrypted Secrets are skipped). CI runs it on every push.
 
 A reviewed exception goes on the HelmRelease, with a reason:
 

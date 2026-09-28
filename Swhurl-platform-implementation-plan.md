@@ -23,19 +23,16 @@ A review of boundaries, technology choices, bloat and responsibilities, made dur
 
 Done since the review: #7 (the runner no longer checks for a test-only attribute) and #10 (the phase 3 bash scripts are deleted).
 
-*Step 1: tooling only (low risk: covered by tests, no deployed change)*
+*Step 1: tooling only* — **done** 28 September 2026 (commits `6f406b6`, `ebfa7a6` and the env-drift commit; `db8b68d` alone left `main` broken for one CI run):
 
-| # | Item | Fix |
-| --- | --- | --- |
-| 2 | `COOKIE_DOMAIN`, `AUTH_MIDDLEWARE` and the cookie-domain check are defined in both `app_new.py` and `app_policy.py` | One contract module (for example `swhurl/apps/contract.py`); `app-new` runs the policy on what it generated before exiting |
-| 3 | Platform knowledge duplicated: the `platform-settings` path in three modules; `verify_config` finds `OAUTH_HOST` by regex; the team-key MongoDB script differs between `verify.py` and `recovery.py`; `REQUIRED_SECRETS` listed by hand | A small `swhurl/platform.py` for paths, names and shared queries; derive required Secrets from each unit's `decryption` |
-| 6 | `validate.py` and `app_policy.py` create a `Runner` at import, so tests cannot inject `FakeRunner`; `validate.py` stops at its first error | Pass the runner in, report through `Report`, collect every failure before exiting |
-| 8 | The fake-`kubectl` scenarios in `test_operator_safety.py` duplicate branches `test_verify.py` covers | Keep fake executables only for the `make` interface (exit codes, arguments, dry runs making no cluster calls) |
-| 13 | Makefile: the nested `INSTALL_STEPS` expression; `help` repeats `docs/commands.md`; `TIMEOUT_SECS` default in the Makefile | `SKIP_VERIFY=1` in place of `FEAT_VERIFY`; defaults in Python; generate `help` from `## ` comments on targets. Moving `DYNAMIC_DNS_RECORDS` to host config is part of the same change |
-| 19 | Modules and tests grouped by accident: `backups.py` only prunes while `recovery.py` backs up and restores; `app_new`/`app_ops`/`app_policy`; `test_operator_safety.py` mixes manifest policy with command safety; `test_swhurl_core.py` | `swhurl/recovery/` (or rename `backups.py` to `retention.py`); `swhurl/apps/{new,ops,policy}.py`; split tests into `test_manifest_policy.py` and `test_command_safety.py`; `test_runner.py` |
-| + | Every test file repeats `sys.path.insert(0, ROOT / 'tools')` | One shared test helper, or `PYTHONPATH` from the Makefile only |
-| 4 | Service-specific checks (ClickStack keys, ClickHouse TTLs, Traefik args, MongoDB PV) all live in `verify.py` | Group checks by service (`swhurl/checks/<service>.py`); `verify.py` runs them in order. Optional at the current size |
-| 9 | App environments are full copies with nothing checking they stay equivalent | A policy check that two environments of one app differ only in namespace, host, image tag/digest, replicas and resources |
+- #2 one contract module, [`tools/swhurl/apps/contract.py`](tools/swhurl/apps/contract.py); `app-new` checks its own output against the policy.
+- #3 [`tools/swhurl/platform.py`](tools/swhurl/platform.py) holds shared paths, names and queries; `verify-config` derives required Secrets from each unit's `decryption`.
+- #6 `validate-repo` and the app policy take an injected runner; `validate-repo` reports every failure before exiting.
+- #8 fake-executable tests cover only the `make` interface.
+- #9 `make app-policy` fails when an app's environments differ beyond namespace, hosts, image tag/digest, replicas, resources and issuer (`env-drift`; exceptions need a reason).
+- #13 `help` generated from `## ` comments; `SKIP_VERIFY=1`; defaults in Python; `DYNAMIC_DNS_RECORDS` in `host/dns.env`; `config.env` deleted.
+- #19 `swhurl/apps/{contract,new,ops,policy}.py`, `retention.py`; tests split by subject; no `sys.path` edits in tests.
+- #4 (checks by service) deliberately skipped: `verify.py` is one readable file at the current size. Revisit if it passes about 400 lines or a second cluster needs different checks.
 
 *Step 2: stale records (no risk)*
 
@@ -73,7 +70,7 @@ Decisions only you can make before steps 3 and 4: the domain approach (#1), whet
 
 - `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make secrets-check` warns until then.
 - The MongoDB PV's `Retain` policy is a live patch, not in Git (dynamic PV). `make verify-platform` fails if a recreated claim loses it.
-- Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). No per-instance quotas, NetworkPolicies or RBAC.
+- Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). `make app-policy` now fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie. Public or untrusted apps must use another parent domain; none exist yet.
 
 **Not yet exercised live** (each is correct by construction or test, but unproven on the cluster)

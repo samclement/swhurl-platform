@@ -15,6 +15,11 @@ with Helm) and checks the resulting Kubernetes objects:
   ingress-tls         every Ingress host is covered by TLS
   storage-class       claims name local-path or local-path-retain
 
+and, across the environments of one app (source manifests, not rendered):
+
+  env-drift           environments differ only in namespace, hosts, image tag/digest,
+                      replicas, resources and issuer; encrypted Secrets are skipped
+
 A reviewed exception goes on the HelmRelease as
   platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
 Exceptions without a reason are rejected.
@@ -183,6 +188,58 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
     return violations
 
 
+VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT}
+VARIES_LISTS = {'hosts'}  # lists of host names (TLS); lists of rules are compared
+
+
+def flatten(node, path: str = '') -> dict[str, object]:
+    """Leaf values by dotted path, with the settings environments may vary removed."""
+    if isinstance(node, dict):
+        leaves = {}
+        for key, value in node.items():
+            if key in VARIES or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
+                continue
+            leaves.update(flatten(value, f'{path}.{key}' if path else str(key)))
+        return leaves
+    if isinstance(node, list):
+        leaves = {}
+        for index, value in enumerate(node):
+            leaves.update(flatten(value, f'{path}[{index}]'))
+        return leaves
+    return {path: node}
+
+
+def source(instance: Path) -> dict[str, object]:
+    leaves = {}
+    for path in sorted(instance.glob('*.yaml')):
+        if path.name.endswith('.sops.yaml'):
+            continue
+        for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
+            if doc.get('kind') == 'Namespace':
+                doc['metadata'].pop('name', None)
+            leaves.update(flatten(doc, f'{path.name}#{index}'))
+    return leaves
+
+
+def drift(environments: list[Path]) -> list[str]:
+    """Differences between an app's environments beyond the allowed settings."""
+    if len(environments) < 2:
+        return []
+    base, *others = environments
+    reference = source(base)
+    problems = []
+    for other in others:
+        allowed, _ = exceptions([d for d in yaml.safe_load_all((other / 'helmrelease.yaml').read_text()) if d])
+        if 'env-drift' in allowed:
+            continue
+        leaves = source(other)
+        changed = sorted(k for k in reference.keys() | leaves.keys() if reference.get(k, '<absent>') != leaves.get(k, '<absent>'))
+        if changed:
+            shown = ', '.join(changed[:5]) + (f' (+{len(changed) - 5} more)' if len(changed) > 5 else '')
+            problems.append(f'env-drift: {other.name} differs from {base.name} at {shown}')
+    return problems
+
+
 def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     docs = render(instance, runner)
     allowed, problems = exceptions(docs)
@@ -202,8 +259,18 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 print(f'       {problem}')
         else:
             print(f'[OK] {label}')
+    apps: dict[Path, list[Path]] = {}
+    for instance in paths:
+        apps.setdefault(instance.parent, []).append(instance)
+    for app, environments in apps.items():
+        problems = drift(sorted(environments, key=lambda e: e.name != 'prod'))
+        if problems:
+            failed += 1
+            print(f'[BAD] {app.relative_to(ROOT) if app.is_relative_to(ROOT) else app}')
+            for problem in problems:
+                print(f'       {problem}')
     if failed:
-        print(f'\n{failed} instance(s) violate the app contract.')
+        print(f'\n{failed} instance(s) or app(s) violate the app contract.')
         return 1
     print(f'\nApp policy passed for {len(paths)} instance(s).')
     return 0

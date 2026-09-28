@@ -221,5 +221,68 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(problems)
 
 
+
+class DriftTests(unittest.TestCase):
+    """Environments of one app may differ only in the settings policy.VARIES names."""
+
+    def setUp(self):
+        self.app = Path(tempfile.mkdtemp()) / 'hello'
+        self.addCleanup(shutil.rmtree, self.app.parent)
+        shutil.copytree(ROOT / 'tenants/apps/hello', self.app)
+
+    def edit(self, change):
+        path = self.app / 'staging/helmrelease.yaml'
+        release = yaml.safe_load(path.read_text())
+        change(release['spec']['values'])
+        path.write_text(yaml.safe_dump(release, sort_keys=False))
+
+    def drift(self):
+        return app_policy.drift([self.app / 'prod', self.app / 'staging'])
+
+    def test_allowed_differences_pass(self):
+        def allowed(values):
+            main = values['controllers']['main']
+            main['replicas'] = 3
+            main['containers']['main']['image'].update(tag='1.28-alpine', digest='sha256:' + '0' * 64)
+            main['containers']['main']['resources']['limits']['memory'] = '1Gi'
+            values['ingress']['main']['annotations']['cert-manager.io/cluster-issuer'] = 'letsencrypt-staging'
+        self.edit(allowed)
+        self.assertEqual(self.drift(), [])
+
+    def test_other_differences_fail(self):
+        cases = {
+            'sign-in removed': (lambda v: v['ingress']['main']['annotations'].pop(
+                'traefik.ingress.kubernetes.io/router.middlewares'), 'router.middlewares'),
+            'different image': (lambda v: v['controllers']['main']['containers']['main']['image'].update(
+                repository='docker.io/library/nginx'), 'image.repository'),
+            'extra path': (lambda v: v['ingress']['main']['hosts'][0]['paths'].append(
+                {'path': '/admin', 'service': {'identifier': 'main', 'port': 'http'}}), 'paths[1]'),
+            'weaker security': (lambda v: v['defaultPodOptions'].update(automountServiceAccountToken=True),
+                                'automountServiceAccountToken'),
+        }
+        for label, (change, where) in cases.items():
+            with self.subTest(label):
+                shutil.rmtree(self.app)
+                shutil.copytree(ROOT / 'tenants/apps/hello', self.app)
+                self.edit(change)
+                problems = self.drift()
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn('env-drift: staging differs from prod', problems[0])
+                self.assertIn(where, problems[0])
+
+    def test_missing_file_and_exception(self):
+        (self.app / 'staging/extra.yaml').write_text('apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\n')
+        self.assertIn('extra.yaml#0', self.drift()[0])
+        self.edit(lambda v: None)
+        path = self.app / 'staging/helmrelease.yaml'
+        release = yaml.safe_load(path.read_text())
+        release['metadata']['annotations'] = {app_policy.EXCEPTIONS_KEY: 'env-drift=trial of a sidecar'}
+        path.write_text(yaml.safe_dump(release, sort_keys=False))
+        self.assertEqual(self.drift(), [])
+
+    def test_single_environment_has_no_drift(self):
+        self.assertEqual(app_policy.drift([self.app / 'prod']), [])
+
+
 if __name__ == '__main__':
     unittest.main()

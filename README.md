@@ -15,7 +15,7 @@ make flux-reconcile              # apply now and wait, instead of waiting for Fl
 make verify-platform             # expect "Validation passed."
 ```
 
-`make check` needs a few pinned tools; see [contributing](docs/contributing.md#validation). There is no whole-platform teardown: `make teardown` and `make reinstall` refuse to run, and `make destroy-data` is the only command that deletes data ([lifecycle](docs/operations.md#lifecycle)).
+`make check` needs a few pinned tools; see [contributing](docs/contributing.md#validation). There is no whole-platform teardown or reinstall: `make destroy-data` is the only command that deletes data ([lifecycle](docs/operations.md#lifecycle)).
 
 ## Where to go next
 

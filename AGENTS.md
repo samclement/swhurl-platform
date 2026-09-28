@@ -30,7 +30,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 ## Commands
 
 - Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
-- Don't: `make teardown`/`make reinstall` (they refuse), delete Flux units or namespaces as a reset, or `kubectl apply` resources that Flux owns.
+- Don't: delete Flux units or namespaces as a reset (there is no teardown), or `kubectl apply` resources that Flux owns.
 - `platform-certs-*` and `app-new` only edit files: commit and push before reconciling.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.
 

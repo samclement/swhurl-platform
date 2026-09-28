@@ -83,7 +83,7 @@ spec:
           cert-manager.io/cluster-issuer: letsencrypt-prod
           traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
         hosts:
-        - host: staging-hello-next.homelab.swhurl.com
+        - host: staging-hello.homelab.swhurl.com
           paths:
           - path: /
             service:
@@ -91,5 +91,5 @@ spec:
               port: http
         tls:
         - hosts:
-          - staging-hello-next.homelab.swhurl.com
+          - staging-hello.homelab.swhurl.com
           secretName: hello-tls

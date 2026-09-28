@@ -11,7 +11,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | Sign-in (oauth2-proxy) | `homelab-auth` · [`platform-services/oauth2-proxy/base`](../platform-services/oauth2-proxy/base) | `ingress` | `oauth.` | oauth2-proxy 10.1.3 |
 | ClickStack | `homelab-clickstack` · [`platform-services/clickstack/base`](../platform-services/clickstack/base) | `observability` | `clickstack.` | clickstack 1.1.1 |
 | OTel collectors | `homelab-otel` · [`platform-services/otel/base`](../platform-services/otel/base) | `logging` | — | opentelemetry-collector 0.145.0 |
-| Reloader | `homelab-reloader` · [`platform-services/reloader/base`](../platform-services/reloader/base) | `platform-system` | — | reloader 2.2.17 |
+| Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader 2.2.17 |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`).
 
@@ -56,7 +56,7 @@ The OTel collectors need their Flux unit's substitution even though they use no 
 
 ## Reloader
 
-Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`helmrelease-reloader.yaml`](../platform-services/reloader/base/helmrelease-reloader.yaml) (`ingress`, `logging`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace. ConfigMaps are ignored.
+Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace. ConfigMaps are ignored.
 
 ## Certificates, ingress and storage
 

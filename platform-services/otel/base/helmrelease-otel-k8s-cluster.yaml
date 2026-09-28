@@ -25,7 +25,7 @@ spec:
     remediation:
       retries: 3
   values:
-    # Restart when the ingestion key Secret changes (homelab-reloader).
+    # Restart when the ingestion key Secret changes (platform-reloader).
     annotations:
       secret.reloader.stakater.com/reload: hyperdx-secret
     mode: deployment

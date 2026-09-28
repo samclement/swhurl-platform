@@ -69,7 +69,7 @@ class ManifestPolicyTests(unittest.TestCase):
                 self.assertEqual('platform-settings' in substitutes, bool(used) or unit['metadata']['name'] == 'homelab-otel')
 
     def test_reloader_is_scoped_and_opt_in(self):
-        release = yaml.safe_load((ROOT / 'platform-services/reloader/base/helmrelease-reloader.yaml').read_text())
+        release = yaml.safe_load((ROOT / 'platform/reloader/helmrelease.yaml').read_text())
         values = release['spec']['values']['reloader']
         self.assertIs(values['watchGlobally'], False, 'Reloader must not get cluster-wide Secret access')
         self.assertFalse(values.get('autoReloadAll', False), 'Reloader must stay opt-in')

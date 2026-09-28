@@ -16,128 +16,38 @@ Use for credentials owned by one app (API keys, DB URLs, webhook secrets).
 
 If a secret is not shared by multiple services, keep it with the app.
 
-## Example: Onboard `weather-api` With App-Local Secret
+## Example: onboard `weather-api` with an app-local Secret
 
-This example creates a per-app secret consumed by one deployment.
+1. Generate the instance with a Secret stub. The generator writes it already encrypted (`.sops.yaml` covers `tenants/apps/`), sets `spec.decryption` on the app's Flux unit, injects it with `envFrom`, and opts the workload into Reloader:
 
-## 1) Add app secret manifest in app path
+   ```bash
+   make app-new NAME=weather-api ARGS="--env staging --image ghcr.io/me/weather-api:1.4.0 \
+     --health-path /ready --secret-keys API_TOKEN,DB_URL"
+   ```
 
-Create `tenants/apps/weather-api/base/secret-weather-api.sops.yaml`:
+2. Replace the `REPLACE_ME` values in your editor (needs the age key, for example `SOPS_AGE_KEY_FILE=./age.agekey`):
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: weather-api-runtime
-  namespace: apps-staging
-  labels:
-    platform.swhurl.com/managed: "true"
-type: Opaque
-stringData:
-  WEATHER_API_KEY: "<set-me>"
-  DATABASE_URL: "<set-me>"
-```
+   ```bash
+   SOPS_AGE_KEY_FILE=./age.agekey sops tenants/apps/weather-api/staging/secret.sops.yaml
+   ```
 
-## 2) Ensure `.sops.yaml` covers app secret paths
+3. Check, commit, push and reconcile:
 
-Add a creation rule in `.sops.yaml` so app-local `*.sops.yaml` files encrypt automatically:
+   ```bash
+   make app-policy
+   git add tenants/apps/weather-api clusters/home platform-services/reloader
+   git commit -m "apps: add weather-api staging" && git push
+   make flux-reconcile
+   ```
 
-```yaml
-creation_rules:
-  - path_regex: platform-services/.*/base/.*\.sops\.ya?ml$
-    encrypted_regex: '^(data|stringData)$'
-    age: <your-age-recipient>
-  - path_regex: tenants/apps/.*/.*\.sops\.ya?ml$
-    encrypted_regex: '^(data|stringData)$'
-    age: <your-age-recipient>
-```
+4. Verify without printing values:
 
-## 3) Encrypt the app secret file
+   ```bash
+   flux get kustomization homelab-app-weather-api-staging
+   kubectl -n weather-api-staging get secret weather-api-secret -o json | jq '.data | keys'
+   ```
 
-```bash
-sops --encrypt --in-place tenants/apps/weather-api/base/secret-weather-api.sops.yaml
-```
-
-## 4) Wire the secret into the app deployment
-
-In `tenants/apps/weather-api/base/deployment-weather-api.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: weather-api
-  namespace: apps-staging
-spec:
-  template:
-    spec:
-      containers:
-        - name: app
-          image: ghcr.io/example/weather-api:1.0.0
-          envFrom:
-            - secretRef:
-                name: weather-api-runtime
-```
-
-Add the secret to app base kustomization:
-
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - deployment-weather-api.yaml
-  - service-weather-api.yaml
-  - ingress-weather-api.yaml
-  - secret-weather-api.sops.yaml
-```
-
-## 5) Enable SOPS decryption for the app Flux Kustomization
-
-If the app path contains encrypted manifests, the app-level Flux Kustomization must include decryption.
-
-Example `clusters/home/app-weather-api.yaml`:
-
-```yaml
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: homelab-app-weather-api
-  namespace: flux-system
-spec:
-  dependsOn:
-    - name: homelab-tenants
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: swhurl-platform
-  path: ./tenants/apps/weather-api
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
-  prune: true
-  wait: true
-  timeout: 20m
-```
-
-Add it to `clusters/home/kustomization.yaml` resources.
-
-## 6) Commit, push, and reconcile
-
-```bash
-git add .sops.yaml tenants/apps/weather-api clusters/home/app-weather-api.yaml clusters/home/kustomization.yaml
-git commit -m "apps(weather-api): onboard with app-local sops secret"
-git push
-make flux-reconcile
-```
-
-## 7) Verify
-
-```bash
-flux get kustomizations -A
-kubectl -n apps-staging get secret weather-api-runtime
-kubectl -n apps-staging get deploy weather-api
-```
+Later value changes: edit with `sops`, commit, push, `make flux-reconcile`; Reloader restarts the workload.
 
 ## When To Use Platform Runtime Inputs
 

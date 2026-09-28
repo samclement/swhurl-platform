@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: smoke-web-staging
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: smoke-web
+    platform.swhurl.com/environment: staging
+    platform.swhurl.com/exposure: authenticated-web

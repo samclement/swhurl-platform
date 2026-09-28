@@ -116,6 +116,10 @@ Roots (`82ff1fb`): `make flux-bootstrap` created `cluster-sources` and `cluster-
 
 Suspension and the stack health check, 17:37: `make suspend TARGET=kustomization/platform-reloader` on the Ready unit raised its generation to 3 and the controller still recorded `observedGeneration` 3; a forced `cluster-stack` reconcile then passed its health check in 42 ms, and the stack's apply left `suspend: true` in place. So a unit suspended while Ready does not block the stack; the canary stall came from suspending a unit that was not Ready. `make resume` restored it; all 12 units Ready afterwards. Not tested: suspending a unit that is failing.
 
+## Simplification
+
+28 September 2026, commits `9a233ff` (docs only) and `c27bc8e`. `make reconcile UNIT=platform-otel` applied `c27bc8e` on the live cluster, `make verify-platform` passed and all 12 units stayed Ready. The removed OTel refresh targets were a fallback for Reloader, which restarted the collectors in the dummy-key test; a real credential rotation through Reloader is still unexercised.
+
 ## Still to verify before live changes
 
 - The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

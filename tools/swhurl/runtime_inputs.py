@@ -2,12 +2,15 @@
 
     wait-secret-key NAMESPACE SECRET KEY [--timeout SECONDS] [--interval SECONDS]
 
+--timeout defaults to TIMEOUT_SECS from the environment, else 300.
+
 Waits until a Secret key has a non-empty value (for example after Flux applied a
 changed SOPS Secret). Reads the Secret without ever printing its value.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -45,7 +48,7 @@ def wait_secret_key(argv: list[str] | None = None, runner: Runner | None = None,
     parser.add_argument('namespace')
     parser.add_argument('secret')
     parser.add_argument('key')
-    parser.add_argument('--timeout', type=float, default=300)
+    parser.add_argument('--timeout', type=float, default=float(os.environ.get('TIMEOUT_SECS') or 300))
     parser.add_argument('--interval', type=float, default=5)
     args = parser.parse_args(argv)
     runner = runner or Runner()

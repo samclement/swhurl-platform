@@ -119,11 +119,11 @@ elif 'secret' in argv:
         calls = self.calls.read_text().split() if self.calls.exists() else []
         self.assertEqual(calls, ['flux'], 'verify-platform must not run after a failed reconcile')
 
-    def test_install_plan_respects_feat_verify(self):
-        for feat, steps in (('true', ['verify-config', 'flux-reconcile', 'verify-platform']),
-                            ('false', ['flux-reconcile'])):
-            with self.subTest(FEAT_VERIFY=feat):
-                result = subprocess.run(['make', '--no-print-directory', 'install', 'DRY_RUN=true', f'FEAT_VERIFY={feat}'], cwd=ROOT,
+    def test_install_plan_respects_skip_verify(self):
+        for extra, steps in (([], ['verify-config', 'flux-reconcile', 'verify-platform']),
+                             (['SKIP_VERIFY=1'], ['flux-reconcile'])):
+            with self.subTest(args=extra):
+                result = subprocess.run(['make', '--no-print-directory', 'install', 'DRY_RUN=true', *extra], cwd=ROOT,
                                         env=self.env, capture_output=True, text=True)
                 self.assertEqual(result.stdout.splitlines(), ['Plan (install):', *[f'  - make {s}' for s in steps]])
                 self.assertFalse(self.calls.exists())

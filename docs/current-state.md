@@ -7,7 +7,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 Checked read-only on 28 September 2026 at `97faeeb`:
 
 - Host: Arch Linux x86-64; one Ready node, `arch` at `192.168.1.200`, k3s `v1.34.4+k3s1`, containerd `2.1.5-k3s1`; 31 GiB RAM (22 GiB available); root filesystem 239 GiB, 42 GiB used.
-- Flux `v2.8.1`; all 12 Kustomizations Ready: the two roots (`homelab-flux-sources`, `homelab-flux-stack`), `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `platform-reloader`, `app-hello-staging` and `app-hello-prod`.
+- Flux `v2.8.1`; all 12 Kustomizations Ready: the two roots (`cluster-sources`, `cluster-stack`), `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `platform-reloader`, `app-hello-staging` and `app-hello-prod`.
 - Eight HelmReleases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, Reloader `2.2.17`, and both `hello` instances on app-template `5.2.1`.
 - Four Certificates Ready: `hello` (staging and prod), oauth2-proxy and ClickStack.
 - Three `local-path` volumes: ClickHouse data (20 GiB) and ClickHouse logs (5 GiB) with `Delete`; MongoDB (10 GiB) with `Retain`, set by a live patch rather than Git.
@@ -111,6 +111,8 @@ Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-templat
 ## Names and layout (cleanup step 4)
 
 28 September 2026. Verbs and file moves (`129b980`) changed no manifest. Canary: `homelab-reloader` was suspended through Git (`9d9c7bb`), which held `homelab-flux-stack` in its health check until the 20-minute timeout because a suspended unit never reports its new generation; `81b6ccf` then replaced it with `platform-reloader` at `platform/reloader`, which adopted the HelmRelease. Main cutover: `44ddd85` made the two `hello` units `Orphan` (app units otherwise uninstall when deleted), then `73f9a39` replaced the other nine non-root units with `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `app-hello-staging` and `app-hello-prod`, and moved their paths under `infra/`, `platform/` and `apps/`. Before pushing, each new path rendered byte-identically to its old path, and a MongoDB backup was taken. Live afterwards: all 12 units Ready at `73f9a39`; the 10 non-root units hold the same 25 objects as before, none in two units; Helm revisions, all pod UIDs and all volume UIDs unchanged, so nothing was recreated or restarted; namespaces carry the new unit labels; `make verify-platform` passed, both `hello` instances Ready with valid TLS, `https://hello` returned 302 to sign-in and `https://clickstack` 200.
+
+Roots (`82ff1fb`): `make flux-bootstrap` created `cluster-sources` and `cluster-stack` beside the old roots; once Ready their inventories matched the old ones exactly (8 and 10 objects). The old `homelab-flux-sources` and `homelab-flux-stack` (confirmed `Orphan` live) were then deleted with `kubectl delete`. Afterwards the 10 child units kept their UIDs and carry the `cluster-stack` label, the Git and Helm sources the `cluster-sources` label; Helm revisions and pod and volume UIDs unchanged; `make flux-reconcile` and `make verify-platform` passed; both `hello` hosts returned 302 to sign-in and ClickStack 200. This also exercised deleting real shared Flux units.
 
 ## Still to verify before live changes
 

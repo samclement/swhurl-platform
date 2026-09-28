@@ -88,6 +88,10 @@ Isolation check: a throwaway instance with a non-existent image tag stayed faili
 
 Not exercised: a real signed-in browser session on the new instances after cutover (the redirect to sign-in was checked, not the page behind it).
 
+## HTTP to HTTPS redirect
+
+Found 28 September 2026: plain-HTTP requests were never redirected (signing in over `http://` returned 403 because oauth2-proxy's cookies are `Secure`). k3s runs Traefik 3.6.7 / chart 38.0.2, which ignores the `ports.web.redirectTo` key added in May. Fixed at `094d21a` with `ports.web.redirections.entryPoint`; Traefik now renders `--entryPoints.web.http.redirections.entryPoint.{to=:443,scheme=https,permanent=true}`. `http://hello`, `http://staging-hello` and `http://clickstack` return 301 to the same HTTPS URL with path and query kept. A throwaway `letsencrypt-staging` Certificate for `acme-check.homelab.swhurl.com` was issued through the redirect (HTTP-01 still works). `make verify-platform` now checks the redirect.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

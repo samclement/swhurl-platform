@@ -16,7 +16,7 @@ from swhurl import ROOT, platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
-MANIFEST_ROOTS = ('clusters', 'infrastructure', 'platform-services', 'tenants')
+MANIFEST_ROOTS = ('clusters', 'infrastructure', 'platform', 'platform-services', 'tenants')
 TOKEN = re.compile(r'(?<!\$)\$\{([^}]+)\}')
 YAML_SUFFIXES = {'.yaml', '.yml'}
 LINK = re.compile(r'\[[^\]]*\]\(([^)\s]+)\)')

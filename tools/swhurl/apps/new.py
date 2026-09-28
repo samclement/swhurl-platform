@@ -255,7 +255,7 @@ def register(root: Path, filename: str) -> None:
 
 def watch_namespace(root: Path, namespace: str) -> None:
     """Add the namespace to Reloader's scoped list so Secret changes restart the app."""
-    path = root / 'platform-services/reloader/base/helmrelease-reloader.yaml'
+    path = root / 'platform/reloader/helmrelease.yaml'
     if not path.exists():
         return
     text = path.read_text()

@@ -66,7 +66,7 @@ class GeneratorTests(unittest.TestCase):
         fake.mkdir()
         (fake / 'sops').write_text('#!/bin/sh\nfor f; do :; done\nprintf "sops:\\n  fake: true\\n" >> "$f"\n')
         (fake / 'sops').chmod(0o755)
-        reloader = self.tmp / 'platform-services/reloader/base/helmrelease-reloader.yaml'
+        reloader = self.tmp / 'platform/reloader/helmrelease.yaml'
         reloader.parent.mkdir(parents=True)
         reloader.write_text('    reloader:\n      namespaces: [ingress, logging]\n')
         old_path = os.environ['PATH']

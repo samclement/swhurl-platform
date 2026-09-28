@@ -34,7 +34,7 @@ flowchart LR
   base --> auth[homelab-auth]
   base --> clickstack[homelab-clickstack]
   base --> otel[homelab-otel]
-  base --> reloader[homelab-reloader]
+  base --> reloader[platform-reloader]
   traefik[homelab-traefik]
   base --> app["homelab-app-APP-ENV (one per app instance)"]
   auth -. if signed-in .-> app
@@ -51,7 +51,7 @@ flowchart LR
 | `homelab-auth` | oauth2-proxy, its Secret, the sign-in middleware | cluster-base | settings, SOPS |
 | `homelab-clickstack` | ClickStack, its Secret, ClickHouse log TTL | cluster-base | settings, SOPS |
 | `homelab-otel` | Both collectors, the ingestion Secret | cluster-base | settings, SOPS |
-| `homelab-reloader` | Reloader | cluster-base | |
+| `platform-reloader` | Reloader (`platform/reloader`) | cluster-base | |
 | `homelab-app-<app>-<env>` | One app instance (`tenants/apps/<app>/<env>`) | cluster-base; auth if signed-in | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infrastructure.yaml`](../clusters/home/infrastructure.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.

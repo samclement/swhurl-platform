@@ -22,7 +22,7 @@ spec:
     remediation:
       retries: 3
   values:
-    # Restart when the client/cookie Secret changes (homelab-reloader).
+    # Restart when the client/cookie Secret changes (platform-reloader).
     deploymentAnnotations:
       secret.reloader.stakater.com/reload: oauth2-proxy-shared-secret
     authenticatedEmailsFile:

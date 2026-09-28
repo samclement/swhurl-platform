@@ -1,9 +1,10 @@
 """Check the backup retention set: newest per backup day and per ISO week."""
 import datetime as dt
-from pathlib import Path
+import os
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,8 +18,9 @@ class BackupRetentionTests(unittest.TestCase):
                 (directory / f'{name}.archive.gz.age').write_text('x')
                 (directory / f'{name}.json').write_text('{}')
             (directory / 'unrelated.txt').write_text('keep me')
-            result = subprocess.run(['python3', 'scripts/prune-backups.py', str(directory), *args],
-                                    cwd=ROOT, capture_output=True, text=True, check=True)
+            result = subprocess.run(['python3', '-m', 'swhurl', 'prune-backups', str(directory), *args],
+                                    cwd=ROOT, capture_output=True, text=True, check=True,
+                                    env={**os.environ, 'PYTHONPATH': str(ROOT / 'tools')})
             self.assertTrue((directory / 'unrelated.txt').exists())
             archives = sorted(p.name for p in directory.glob('*.age'))
             metadata = sorted(p.name for p in directory.glob('*.json'))

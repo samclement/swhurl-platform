@@ -1,30 +1,23 @@
 """App contract: generator guards, fixture drift, and rendered-resource policy."""
 import copy
-import importlib.util
 import os
-from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+
+from swhurl import app_new, app_policy  # noqa: E402
+
 FIXTURES = ROOT / 'tests/fixtures/apps'
 WEB = ['--env', 'staging', '--exposure', 'authenticated-web', '--host', 'x.homelab.swhurl.com',
        '--image', 'repo/app:1.0', '--health-path', '/healthz']
-
-
-def load(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-app_new = load('app_new', ROOT / 'scripts/app-new.py')
-app_policy = load('app_policy', ROOT / 'scripts/app_policy.py')
 
 
 class GeneratorTests(unittest.TestCase):

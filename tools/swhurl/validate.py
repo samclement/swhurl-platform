@@ -1,17 +1,17 @@
-#!/usr/bin/env python3
 """Validate active Git-managed entrypoints without contacting the cluster."""
 
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
+from swhurl import ROOT
+from swhurl.run import CommandError, Runner
 
-ROOT = Path(__file__).resolve().parents[1]
+RUNNER = Runner(cwd=ROOT)
 MANIFEST_ROOTS = ("clusters", "infrastructure", "platform-services", "tenants")
 BOOTSTRAP_PATHS = ("clusters/home/flux-system", "clusters/home/flux-system/sources")
 TOKEN = re.compile(r"(?<!\$)\$\{([^}]+)\}")
@@ -34,15 +34,9 @@ def documents(path: Path) -> list[dict]:
 
 def run(args: list[str], *, input_text: str | None = None) -> str:
     try:
-        result = subprocess.run(
-            args, cwd=ROOT, input=input_text, text=True, capture_output=True, check=False
-        )
-    except FileNotFoundError:
-        fail(f"missing required command: {args[0]}")
-    if result.returncode:
-        details = (result.stderr or result.stdout).strip()
-        fail(f"{' '.join(args)} failed: {details}")
-    return result.stdout
+        return RUNNER.output(args, input=input_text)
+    except CommandError as exc:
+        fail(str(exc))
 
 
 def active_paths() -> dict[Path, dict]:
@@ -201,7 +195,7 @@ def check_doc_links() -> None:
     print(f"[OK] {checked} relative documentation links resolve")
 
 
-def main() -> None:
+def validate() -> None:
     check_doc_links()
     check_shell_syntax()
     check_secrets()
@@ -212,9 +206,10 @@ def main() -> None:
     print(f"Validation passed for {len(paths)} active render entrypoints.")
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
     try:
-        main()
+        validate()
     except ValueError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
-        sys.exit(1)
+        return 1
+    return 0

@@ -2,6 +2,8 @@ SHELL := /usr/bin/env bash
 include config.env
 export FEAT_VERIFY TIMEOUT_SECS DYNAMIC_DNS_RECORDS
 PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
+# Operator tooling package (tools/swhurl); see docs/contributing.md.
+SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
 DRY_RUN ?= false
 
 define update_cert_issuer
@@ -43,7 +45,7 @@ help:
 	@echo "  suspend TARGET=kustomization/<name>|helmrelease/<ns>/<name>  Stop applying Git changes; workloads keep running"
 	@echo "  resume TARGET=...   Resume a suspended Kustomization or HelmRelease"
 	@echo "  destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET>  Permanently delete a released claim/PV and its data"
-	@echo "  app-new NAME=<app> ARGS='--env staging --image repo:tag ...'  Generate an app instance (see scripts/app-new.py --help)"
+	@echo "  app-new NAME=<app> ARGS='--env staging --image repo:tag ...'  Generate an app instance (make app-new NAME=x ARGS=--help)"
 	@echo "  app-status|app-logs|app-reconcile|app-check APP=<app> ENV=<env>  Operate one app instance"
 	@echo "  app-policy          Render every app instance and check it against the app contract"
 	@echo "  app-template-test   Deploy the generated app fixtures through Flux, check them, remove them"
@@ -134,7 +136,7 @@ runtime-inputs-refresh-otel:
 
 .PHONY: secrets-check
 secrets-check:
-	python3 scripts/secrets_check.py
+	$(SWHURL) secrets-check
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel:
@@ -207,7 +209,7 @@ suspend resume destroy-data:
 .PHONY: app-new
 app-new:
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
-	python3 scripts/app-new.py $(NAME) $(ARGS)
+	$(SWHURL) app-new $(NAME) $(ARGS)
 
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check:
@@ -216,7 +218,7 @@ app-status app-logs app-reconcile app-check:
 
 .PHONY: app-policy
 app-policy:
-	python3 scripts/app_policy.py
+	$(SWHURL) app-policy
 
 .PHONY: app-template-test
 app-template-test:
@@ -240,8 +242,8 @@ restore-test-clickstack-mongodb:
 
 .PHONY: validate-repo
 validate-repo:
-	python3 scripts/validate-repo.py
+	$(SWHURL) validate-repo
 
 .PHONY: test-safety
 test-safety:
-	python3 -m unittest discover -s tests -v
+	PYTHONPATH=$(CURDIR)/tools python3 -m unittest discover -s tests -v

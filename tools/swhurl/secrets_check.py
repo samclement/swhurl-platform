@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Check Git-managed SOPS Secrets without printing any value.
 
 Needs the age private key (SOPS_AGE_KEY_FILE, default ./age.agekey), so it runs
@@ -20,18 +19,17 @@ import base64
 import binascii
 import hashlib
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+from swhurl import ROOT
+from swhurl.run import CommandError, Runner
 
 
-def secret_files() -> list[Path]:
-    out = subprocess.run(['git', 'ls-files', '*.sops.yaml', '*.sops.yml'], cwd=ROOT,
-                         check=True, capture_output=True, text=True).stdout.split()
+def secret_files(runner: Runner | None = None) -> list[Path]:
+    out = (runner or Runner(cwd=ROOT)).output(['git', 'ls-files', '*.sops.yaml', '*.sops.yml']).split()
     return [ROOT / f for f in out if Path(f).name not in ('.sops.yaml', '.sops.yml')]
 
 
@@ -45,21 +43,20 @@ def looks_double_encoded(raw: bytes) -> bool:
     return len(inner) > 0 and all(32 <= c < 127 for c in inner)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / 'age.agekey')
     if not Path(key_file).is_file():
         print(f'[ERROR] age key not found at {key_file}; set SOPS_AGE_KEY_FILE', file=sys.stderr)
         return 2
-    env = dict(os.environ, SOPS_AGE_KEY_FILE=key_file)
+    runner = runner or Runner(cwd=ROOT, env={'SOPS_AGE_KEY_FILE': key_file})
     errors = warnings = 0
     fingerprints: dict[str, str] = {}
-    for path in secret_files():
+    for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
         try:
-            doc = yaml.safe_load(subprocess.run(['sops', 'decrypt', str(path)], env=env, check=True,
-                                                capture_output=True, text=True).stdout)
-        except subprocess.CalledProcessError:
+            doc = yaml.safe_load(runner.output(['sops', 'decrypt', str(path)], secret_output=True))
+        except CommandError:
             print(f'[ERROR] {rel}: cannot decrypt')
             errors += 1
             continue
@@ -86,7 +83,3 @@ def main() -> int:
         warnings += 1
     print(f'\n{errors} error(s), {warnings} warning(s).')
     return 1 if errors else 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

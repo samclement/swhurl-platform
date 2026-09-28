@@ -24,7 +24,7 @@ git commit -m "apps: add weather-api staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging
 ```
 
-The generator ([`scripts/app-new.py`](../scripts/app-new.py), `--help` for all options) writes `tenants/apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `tenants/apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
+The generator ([`tools/swhurl/app_new.py`](../tools/swhurl/app_new.py); `make app-new NAME=x ARGS=--help` lists all options) writes `tenants/apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `tenants/apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
 
 | Option | Rules |
 | --- | --- |

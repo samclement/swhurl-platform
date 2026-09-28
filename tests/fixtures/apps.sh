@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Regenerate the app-template fixtures from scripts/app-new.py. The test suite
+# Regenerate the app-template fixtures with the app generator (swhurl app-new). The test suite
 # checks the committed fixtures match this output (Secret ciphertext excepted).
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 root="${FIXTURE_ROOT:-tests/fixtures/apps}"
-gen() { python3 scripts/app-new.py --root "$root" --no-register "$@"; }
+gen() { PYTHONPATH=tools python3 -m swhurl app-new --root "$root" --no-register "$@"; }
 gen smoke-worker --env staging --kind worker --image docker.io/library/busybox:1.37 --command 'sleep 3600000'
 gen smoke-web --env staging --exposure authenticated-web --host smoke-web.homelab.swhurl.com \
   --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine --uid 101 --health-path / \

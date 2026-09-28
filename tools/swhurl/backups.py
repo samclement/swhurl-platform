@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Prune ClickStack MongoDB backups to a daily + weekly retention set.
 
 Keeps the newest backup for each of the last N days that have backups and for
@@ -11,7 +10,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import re
-import sys
 from pathlib import Path
 
 PATTERN = re.compile(r'^clickstack-mongodb-(\d{8}T\d{6}Z)\.archive\.gz\.age$')
@@ -40,13 +38,13 @@ def keep_set(items: list[tuple[dt.datetime, Path]], daily: int, weekly: int) -> 
     return keep
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     parser.add_argument('--daily', type=int, default=7)
     parser.add_argument('--weekly', type=int, default=4)
     parser.add_argument('--dry-run', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     items = backups(args.directory)
     keep = keep_set(items, args.daily, args.weekly)
@@ -63,7 +61,3 @@ def main() -> int:
     print(f'[OK] Retention: kept {len(keep)} backup(s), pruned {removed} '
           f'(newest per day for {args.daily} days, per ISO week for {args.weekly} weeks)')
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

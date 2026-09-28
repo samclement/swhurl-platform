@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Check rendered app instances against the platform's app contract.
 
 Renders each instance directory (kustomize, then any app-template HelmRelease
@@ -20,20 +19,21 @@ A reviewed exception goes on the HelmRelease as
   platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
 Exceptions without a reason are rejected.
 
-    scripts/app_policy.py [INSTANCE_DIR ...]   (default: every instance under
+    python3 -m swhurl app-policy [INSTANCE_DIR ...]   (default: every instance under
                                                 tenants/apps and tests/fixtures/apps)
 """
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+from swhurl import ROOT
+from swhurl.run import Runner
+
+RUNNER = Runner()
 COOKIE_DOMAIN = 'homelab.swhurl.com'
 AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
 STORAGE_CLASSES = {'local-path', 'local-path-retain'}
@@ -61,15 +61,13 @@ def chart_dir(name: str, version: str, repo: str) -> Path:
     if not (target / 'Chart.yaml').exists():
         CACHE.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
-            subprocess.run(['helm', 'pull', name, '--repo', repo, '--version', version, '--untar',
-                            '--untardir', tmp], check=True, capture_output=True, text=True)
+            RUNNER.run(['helm', 'pull', name, '--repo', repo, '--version', version, '--untar', '--untardir', tmp])
             (Path(tmp) / name).rename(target)
     return target
 
 
 def render(instance: Path) -> list[dict]:
-    docs = [d for d in yaml.safe_load_all(subprocess.run(
-        ['kubectl', 'kustomize', str(instance)], check=True, capture_output=True, text=True).stdout) if d]
+    docs = [d for d in yaml.safe_load_all(RUNNER.output(['kubectl', 'kustomize', str(instance)])) if d]
     repos = helm_repositories()
     rendered = []
     for doc in docs:
@@ -80,9 +78,8 @@ def render(instance: Path) -> list[dict]:
         with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:
             yaml.safe_dump(doc['spec'].get('values', {}), values)
             values.flush()
-            out = subprocess.run(['helm', 'template', doc['spec'].get('releaseName', doc['metadata']['name']),
-                                  str(chart), '-n', doc['metadata']['namespace'], '-f', values.name],
-                                 check=True, capture_output=True, text=True).stdout
+            out = RUNNER.output(['helm', 'template', doc['spec'].get('releaseName', doc['metadata']['name']),
+                                 str(chart), '-n', doc['metadata']['namespace'], '-f', values.name])
         for item in yaml.safe_load_all(out):
             if item:
                 item['metadata'].setdefault('namespace', doc['metadata']['namespace'])
@@ -148,7 +145,7 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
                 violations.append(('image-pinned', f'{name} image {image} has no version tag or digest'))
             if env == 'prod' and not digest:
                 violations.append(('prod-digest', f'{name} image {image} must pin a digest in prod'))
-            if not (ctx.get('runAsNonRoot', pod_ctx.get('runAsNonRoot')) is True):
+            if ctx.get('runAsNonRoot', pod_ctx.get('runAsNonRoot')) is not True:
                 violations.append(('non-root', f'{name} does not set runAsNonRoot'))
             caps = (ctx.get('capabilities') or {}).get('drop') or []
             if ctx.get('privileged') or ctx.get('allowPrivilegeEscalation') is not False or 'ALL' not in caps \
@@ -188,8 +185,8 @@ def evaluate(instance: Path) -> list[str]:
     return problems + [f'{rule}: {message}' for rule, message in check(docs) if rule not in allowed]
 
 
-def main(argv: list[str]) -> int:
-    paths = [Path(a).resolve() for a in argv] or instances()
+def main(argv: list[str] | None = None) -> int:
+    paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
     for instance in paths:
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
@@ -206,7 +203,3 @@ def main(argv: list[str]) -> int:
         return 1
     print(f'\nApp policy passed for {len(paths)} instance(s).')
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))

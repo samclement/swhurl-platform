@@ -1,0 +1,12 @@
+# Lint settings for the operator tooling and tests (run: uvx ruff@0.16.9 check tools tests).
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["swhurl"]

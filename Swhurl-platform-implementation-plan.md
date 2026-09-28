@@ -13,7 +13,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 3. **Final operator exercise** (section 14), using only the docs.
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it.
 
-5. **Operator tooling in the right language** (optional, not started): move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. Sub-plan: [Swhurl-platform-tooling-plan.md](Swhurl-platform-tooling-plan.md).
+5. **Operator tooling in the right language** (phase 0 of 6 done): move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. Sub-plan: [Swhurl-platform-tooling-plan.md](Swhurl-platform-tooling-plan.md).
 
 **Known issues, deliberately not fixed yet**
 
@@ -157,7 +157,7 @@ The contract has three layers:
 
 | Layer | Responsibility |
 | --- | --- |
-| Generator (scripts/app-new.py) | Creates instance namespace, Flux Kustomization, HelmRelease, Kustomize wiring, optional encrypted Secret stub; refuses overwrite/plaintext credentials. |
+| Generator (`tools/swhurl/app_new.py`, `make app-new`) | Creates instance namespace, Flux Kustomization, HelmRelease, Kustomize wiring, optional encrypted Secret stub; refuses overwrite/plaintext credentials. |
 | Explicit instance values | Non-root where supported, no service-account token, dropped capabilities, small resources, app-specific probes, opt-in Secret reload. Defaults change by reviewable instance diff. |
 | CI on rendered resources | Enforces production digest, security/resources or reviewed exceptions, ingress/cookie boundaries, named storage class, and no hostNetwork/hostPath/token mount by default. |
 

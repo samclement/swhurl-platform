@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
 """Generate one app instance: namespace, app-template HelmRelease, Flux unit.
 
-    scripts/app-new.py NAME --env staging|prod --image IMAGE [options]
+    make app-new NAME=<app> ARGS="--env staging|prod --image IMAGE [options]"
+    python3 -m swhurl app-new NAME --env staging|prod --image IMAGE [options]
 
 Writes tenants/apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
@@ -17,11 +17,13 @@ from __future__ import annotations
 import argparse
 import re
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
 import yaml
+
+from swhurl import ROOT
+from swhurl.run import CommandError, Runner
 
 CHART_VERSION = '5.2.1'
 COOKIE_DOMAIN = 'homelab.swhurl.com'
@@ -225,11 +227,10 @@ def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list
               'type': 'Opaque', 'stringData': {k: 'REPLACE_ME' for k in keys}}
     path.write_text(dump([secret]))
     try:
-        subprocess.run(['sops', '--encrypt', '--in-place', str(path)], check=True, capture_output=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as error:
+        Runner().run(['sops', '--encrypt', '--in-place', str(path)])
+    except CommandError as error:
         path.unlink(missing_ok=True)
-        detail = getattr(error, 'stderr', '') or error
-        raise GenerationError(f'could not SOPS-encrypt {path} (is there a .sops.yaml rule?): {detail}') from error
+        raise GenerationError(f'could not SOPS-encrypt {path} (is there a .sops.yaml rule?): {error}') from error
     if 'sops:' not in path.read_text():
         path.unlink()
         raise GenerationError(f'{path} was not encrypted; removed it')
@@ -259,13 +260,14 @@ def watch_namespace(root: Path, namespace: str) -> None:
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
     p.add_argument('--env', required=True, choices=['staging', 'prod'])
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
     p.add_argument('--exposure', choices=['private', 'authenticated-web', 'public'], default='private',
-                   help='private: no route; authenticated-web: shared sign-in on %s; public: no sign-in, host outside %s' % (COOKIE_DOMAIN, COOKIE_DOMAIN))
+                   help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
+                        f'public: no sign-in, host outside {COOKIE_DOMAIN}')
     p.add_argument('--host')
     p.add_argument('--port', type=int, default=8080)
     p.add_argument('--health-path', help='HTTP readiness/liveness path (required for web)')
@@ -279,7 +281,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
-    p.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
+    p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-register', dest='register', action='store_false',
                    help='do not add the unit to clusters/home/kustomization.yaml')
     return p
@@ -298,7 +300,3 @@ def main(argv=None) -> int:
         print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
     print('[INFO] Next: make app-policy, then commit, push and make flux-reconcile')
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

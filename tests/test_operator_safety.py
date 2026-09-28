@@ -1,14 +1,16 @@
 """Exercise destructive-command guards, verifier credential boundaries and sign-in policy offline."""
 import base64
 import os
-from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
 
@@ -162,10 +164,7 @@ elif 'secret' in sys.argv:
         self.assertEqual(web['redirections']['entryPoint'], {'to': 'websecure', 'scheme': 'https', 'permanent': True})
 
     def test_secrets_check_flags_double_encoding(self):
-        import base64, importlib.util
-        spec = importlib.util.spec_from_file_location('secrets_check', ROOT / 'scripts/secrets_check.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        from swhurl import secrets_check as module
         uuid = b'0f8fad5b-d9cb-469f-a165-70867728950e'
         self.assertFalse(module.looks_double_encoded(uuid), 'a plain token is not double-encoded')
         self.assertTrue(module.looks_double_encoded(base64.b64encode(uuid)), 'base64 of a token is')

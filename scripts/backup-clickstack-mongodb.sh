@@ -58,6 +58,6 @@ echo "[OK] Encrypted backup: $archive"
 echo "[OK] Metadata: ${archive%.archive.gz.age}.json"
 
 if [[ "$PRUNE" == "true" ]]; then
-  python3 "$ROOT/scripts/prune-backups.py" "$BACKUP_DIR" --daily "$KEEP_DAILY" --weekly "$KEEP_WEEKLY"
+  PYTHONPATH="$ROOT/tools" python3 -m swhurl prune-backups "$BACKUP_DIR" --daily "$KEEP_DAILY" --weekly "$KEEP_WEEKLY"
 fi
 echo "[INFO] Copy both files off-host; restore needs the age private key (see docs/operations.md#backups-and-recovery)."

@@ -40,6 +40,9 @@ jobs:
           go install github.com/fluxcd/flux-schema/cmd/flux-schema@v0.9.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Lint Python tooling
+        run: pipx run ruff==0.16.9 check tools tests
+
       - name: Validate active manifests and scripts
         run: make validate-repo
 

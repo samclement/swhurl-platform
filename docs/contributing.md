@@ -8,6 +8,7 @@ Run before every push:
 
 ```bash
 make validate-repo test-safety app-policy
+uvx ruff@0.16.9 check tools tests     # lint the Python tooling (CI runs the same version)
 ```
 
 - `validate-repo` renders every active Flux path, validates Kubernetes and Flux schemas, checks SOPS structure, shell syntax and required substitutions, and checks that relative links in Markdown resolve. It never contacts the cluster.
@@ -22,6 +23,15 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 ```
 
 CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based tests cannot silently skip. `make secrets-check` needs the age key, so it runs locally only.
+
+## Operator tooling
+
+Logic lives in the Python package [`tools/swhurl/`](../tools/swhurl), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Short glue, host/systemd scripts and command lists stay bash; the split and the migration phases are in the [tooling sub-plan](../Swhurl-platform-tooling-plan.md).
+
+- Call external tools only through `swhurl.run.Runner`. It handles `DRY_RUN` (pass `mutating=True` for changes), redacts registered Secret values from every message, and can hide a command's output from errors (`secret_output=True`).
+- Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).
+- Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command. Tests add `tools/` to `sys.path` and import `swhurl`.
+- A new command is a module with `main(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
 
 ## Checklist for a change
 

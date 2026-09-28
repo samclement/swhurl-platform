@@ -17,7 +17,7 @@ fi
 ns="$app-$env"; unit="homelab-app-$app-$env"
 
 if [[ "$action" == "check" ]]; then
-  exec python3 "$ROOT/scripts/app_policy.py" "$ROOT/tenants/apps/$app/$env"
+  exec env PYTHONPATH="$ROOT/tools" python3 -m swhurl app-policy "$ROOT/tenants/apps/$app/$env"
 fi
 for cmd in kubectl flux jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "[ERROR] Missing required command: $cmd" >&2; exit 1; }

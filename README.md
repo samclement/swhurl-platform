@@ -37,4 +37,4 @@ make verify-platform             # expect "Validation passed."
 | `infrastructure/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings, MinIO |
 | `platform-services/` | oauth2-proxy (sign-in), ClickStack, OTel collectors, Reloader, with their encrypted Secrets |
 | `tenants/apps/<app>/<env>/` | Generated app instances |
-| `scripts/`, `host/`, `tests/` | Operator scripts, host DNS updater, offline tests and fixtures |
+| `tools/swhurl/`, `scripts/`, `host/`, `tests/` | Python operator tooling, remaining bash scripts, host DNS updater, offline tests and fixtures |

@@ -1,6 +1,6 @@
 # Bootstrap
 
-Build the platform on a bare Linux host. The live host is already bootstrapped; use this page for a rebuild or a new host. The full sequence has not been run end to end since the Flux units were split (PR03); expect to adjust.
+Build the platform on a bare Linux host. The live host is already bootstrapped; use this page for a rebuild or a new host. Steps 1, 4 and 6 were rehearsed end to end on a throwaway k3d cluster on 28 September 2026 ([evidence](current-state.md#bootstrap-rehearsal)) with self-signed certificates; DNS, router forwarding and Let's Encrypt on a new host are unrehearsed.
 
 ## 1. Host and tools
 
@@ -14,7 +14,7 @@ export KUBECONFIG=$HOME/.kube/config
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML. `aws` for the DNS updater; `d2` only for diagrams.
+Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML. `aws` for the DNS updater.
 
 Point your router at the node: external `80 → 31514` and `443 → 30313` (Traefik NodePorts pinned in [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml)).
 
@@ -60,6 +60,8 @@ make install          # reconciles, then runs make verify-platform
 Units come up in dependency order ([architecture](architecture.md#flux-units)). First image pulls can take several minutes; watch with `flux get kustomizations`. `make verify-platform` fails at this point on the ingestion key and on the MongoDB volume's reclaim policy; both are fixed below.
 
 ## 5. ClickStack first login and ingestion key
+
+With a MongoDB backup, restore it instead ([backups and recovery](operations.md#backups-and-recovery)) and skip to step 6: the restored team key already matches `HYPERDX_API_KEY` in Git. Otherwise:
 
 1. Open `https://clickstack.homelab.swhurl.com` and create the first team and user.
 2. Copy the team's ingestion API key from the ClickStack UI.

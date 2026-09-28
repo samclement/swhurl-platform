@@ -68,7 +68,7 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 **Not yet exercised live** (each is correct by construction or test, but unproven on the cluster)
 
-- A fresh bootstrap on a new cluster (issuer ordering, `make flux-bootstrap` from nothing).
+- A fresh bootstrap on a real new host: DNS, router forwarding and Let's Encrypt (the in-cluster sequence was rehearsed on k3d; see `docs/current-state.md`).
 - A real credential rotation through Reloader (only dummy-key and disposable rotations were tested), and Reloader restarting a generated app.
 - A `public` app instance on a domain outside `homelab.swhurl.com`.
 - A rejected sign-in reaching oauth2-proxy's email list (the test account was refused by Google first).

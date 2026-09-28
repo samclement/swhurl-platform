@@ -100,6 +100,10 @@ Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-templat
 
 28 September 2026: tooling-only cleanup (plan section 0, step 1). No deployed manifest changed. Offline: 124 unit tests pass, `validate-repo` passes (links and 14 render paths), `app-policy` passes for all five instances including the new `env-drift` comparison of `hello` staging/prod, ruff and shellcheck are clean. The drift tests show that allowed differences (replicas, image tag/digest, resources, issuer) pass and that removing sign-in, changing the image repository, adding an ingress path, enabling the service-account token or adding a file each fail. Live: `make verify-platform`, `app-status`/`app-check` for both `hello` instances, `make app-template-test` and `make lifecycle-test` passed with no leftovers; `make install` and `make wait-runtime-inputs-otel` passed through the rewritten Makefile, and `TIMEOUT_SECS=2` on a missing Secret exited 1 after 2 s. Commit `db8b68d` contained only the `config.env` deletion, so `main` failed CI for one run until `ebfa7a6`.
 
+## Base domain setting (cleanup #1)
+
+28 September 2026, commits `add1da4` (settings only, reconciled first so no unit could substitute an empty value) and `9949eb2`. Platform manifests now take every hostname, the cookie domain and the redirect allowlist from `BASE_DOMAIN`; `OAUTH_HOST` was removed. Before pushing, every unit's rendered output with emulated Flux substitution was byte-identical to the previous revision. Live after reconciling `homelab-auth`, `-clickstack` and `-minio` at `9949eb2`: Helm revisions unchanged (oauth2-proxy-shared 4, clickstack 3, minio 1) and the same oauth2-proxy pod, so nothing upgraded or restarted; oauth2-proxy still runs with `--cookie-domain=.homelab.swhurl.com`, `--whitelist-domain=.homelab.swhurl.com` and the same redirect URL; `https://hello` returned 302 to sign-in and `https://clickstack` 200; `make verify-platform` passed. A test mutation writing a ClickStack host literally failed `make test-safety`.
+
 ## Still to verify before live changes
 
 - The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

@@ -15,7 +15,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 
 5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](docs/contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
 
-6. **Cleanup** (steps 1 and 2 done): the repository review below, recorded 28 September 2026. Item numbers follow the review.
+6. **Cleanup** (steps 1 and 2 done; step 3 partly done): the repository review below, recorded 28 September 2026. Item numbers follow the review.
 
 **Cleanup plan**
 
@@ -40,13 +40,11 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 - `docs/operations/current-state.md` now starts with the current cluster facts, folds the first inventory into the P0 evidence, and drops the obsolete finding classification; the PR05 section records the signed-in check over HTTPS.
 - This plan keeps only live material: section 0, goal, design decisions, the delivery summary, and the open PR06, PR08a and final-exercise sections. Completed PR sections, the 27 September baseline and the tooling sub-plan are in Git history at `97faeeb`.
 
-*Step 3: decisions that change what runs (medium risk: live resources change)*
+*Step 3: decisions that change what runs* — #1 done; #12 and #5 decided, removal on hold:
 
-| # | Item | Decision needed |
-| --- | --- | --- |
-| 1 | The domain is only partly configurable: `OAUTH_HOST` is substituted, but the cookie and whitelist domains, ClickStack and MinIO hosts, issuer emails and `COOKIE_DOMAIN` are literal; `CERT_ISSUER` switches only platform hosts | Either one `BASE_DOMAIN` read by both Flux and `swhurl`, or accept a single domain and drop the `OAUTH_HOST` substitution. Either way, state exactly what the certificate switch affects |
-| 12 | MinIO has a unit, chart upgrades, two public hosts and certificates, but no buckets and no users | Remove it until something needs it, or record why it stays |
-| 5 | No written rule separates `infrastructure/` from `platform-services/` (MinIO has an ingress yet lives in `infrastructure/storage`; namespaces are central) | One sentence in `docs/architecture.md` (for example "infrastructure = cluster primitives with no user-facing endpoint"), then move MinIO to match or remove it |
+- #1 **done** 28 September 2026 (option A): `BASE_DOMAIN` in `platform-settings` is the one source of platform hostnames, the cookie domain and the redirect allowlist; `OAUTH_HOST` is gone and `swhurl` reads the same value for the app policy. `make test-safety` fails on a literal platform hostname. The ACME account email and approved sign-in addresses stay literal on purpose. What `CERT_ISSUER` switches is in `docs/services.md#settings`.
+- #12 **decided: remove MinIO** (no buckets; its volume holds only `.minio.sys`, 152 KiB). On hold at your request before anything was deleted. Procedure when resumed: push 1 empties `infrastructure/storage/minio/base` so Flux uninstalls the release (deleting its `Delete`-reclaim volume, hosts and certificates); push 2 removes the unit, the `minio` HelmRepository, the `storage` namespace, and the MinIO references in tests, docs, ADR 0002 and the C4 container chart. Confirm again before push 1.
+- #5 follows #12: once MinIO is gone, add to `docs/architecture.md` "infrastructure = cluster primitives with no user-facing endpoint; platform-services = shared services that apps use or people visit". Nothing else would need to move.
 
 *Step 4: names and layout (high risk: Flux unit and path changes are migrations; batch them into one planned change using the PR03 procedure)*
 
@@ -61,7 +59,7 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 *Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test-safety`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
 
-Decisions only you can make before steps 3 and 4: the domain approach (#1), whether MinIO stays (#12), and the naming convention (#14, #15, #18).
+Decisions still needed: the go-ahead for the MinIO removal (#12), and for step 4 the naming option (#14, #15: document only, units after directories, or one prefix everywhere), whether to flatten directories (#16), and the command verbs (#18).
 
 **Known issues, deliberately not fixed yet**
 

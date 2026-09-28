@@ -104,6 +104,10 @@ Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-templat
 
 28 September 2026, commits `add1da4` (settings only, reconciled first so no unit could substitute an empty value) and `9949eb2`. Platform manifests now take every hostname, the cookie domain and the redirect allowlist from `BASE_DOMAIN`; `OAUTH_HOST` was removed. Before pushing, every unit's rendered output with emulated Flux substitution was byte-identical to the previous revision. Live after reconciling `homelab-auth`, `-clickstack` and `-minio` at `9949eb2`: Helm revisions unchanged (oauth2-proxy-shared 4, clickstack 3, minio 1) and the same oauth2-proxy pod, so nothing upgraded or restarted; oauth2-proxy still runs with `--cookie-domain=.homelab.swhurl.com`, `--whitelist-domain=.homelab.swhurl.com` and the same redirect URL; `https://hello` returned 302 to sign-in and `https://clickstack` 200; `make verify-platform` passed. A test mutation writing a ClickStack host literally failed `make test-safety`.
 
+## MinIO removal (cleanup #12)
+
+28 September 2026, commits `62f0e7c` and `9c2c018`. Before push 1 the MinIO volume held only `.minio.sys` (120 KiB). After `62f0e7c` (unit emptied) Flux uninstalled the release: its pods, claim, 20 GiB `Delete` volume, both ingresses and Certificates were gone, leaving only the two TLS Secrets. After `9c2c018` the `storage` namespace (with those Secrets), the `homelab-minio` unit and the `minio` HelmRepository were gone; 12 Kustomizations, 8 HelmReleases and 4 Certificates Ready, 3 volumes. `make verify-platform` passed, both `hello` instances Ready with valid TLS, and `https://minio.homelab.swhurl.com` now gets Traefik's default certificate and 404.
+
 ## Still to verify before live changes
 
 - The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

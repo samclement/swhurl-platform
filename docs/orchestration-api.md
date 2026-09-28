@@ -79,11 +79,13 @@ Key runtime-intent targets:
 - `make otel-collectors-restart`
   - Restarts `logging/otel-k8s-cluster-opentelemetry-collector` and `logging/otel-k8s-daemonset-opentelemetry-collector-agent`.
 - `make runtime-inputs-refresh-otel`
-  - Reconciles runtime inputs, waits for `logging/hyperdx-secret` propagation, then restarts collectors so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
+  - Fallback (Reloader normally does this): reconciles runtime inputs, waits for `logging/hyperdx-secret` propagation, restarts collectors, then runs `make verify-platform` so rotated ClickStack UI ingestion keys are loaded by running OTel pods.
 - `make suspend|resume TARGET=kustomization/<name>|helmrelease/<ns>/<name> [DRY_RUN=true]`
   - Wraps `flux suspend|resume`; workloads and data are untouched.
 - `make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET> [DRY_RUN=true]`
   - Deletes an unused, unmanaged claim or `Released` PV and its host data. Refuses without an exact `CONFIRM`.
+- `make secrets-check`
+  - Decrypts every tracked SOPS Secret in memory with the local age key; fails on empty/placeholder values, warns on probable double base64 encoding. Never prints values; not run in CI (no key there).
 - `make app-new NAME=<app> ARGS="..."`
   - Generates one app instance (namespace, app-template HelmRelease, Flux unit, optional encrypted Secret). Local files only. See [adding an app](TENANTS.md#add-a-new-app).
 - `make app-status|app-logs|app-reconcile|app-check APP=<app> ENV=<env>`

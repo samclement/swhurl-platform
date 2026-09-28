@@ -188,6 +188,10 @@ Important contract:
   - `make lifecycle-test` uses `tests/fixtures/lifecycle-app` from the pushed Git revision; push fixture changes before running it.
 
 - Secrets hygiene
+  - Conventions live in `docs/PLATFORM-SERVICES.md#secret-conventions`: new values as `stringData`; `data` only if base64-encoded exactly once; `make secrets-check` (local, needs age key) flags placeholders and probable double encoding without printing values.
+  - Known issue, deliberately not fixed yet: `CLICKSTACK_API_KEY` is double-encoded; the ClickStack app runs with the 48-char once-decoded text. Fixing it restarts ClickStack with a different `HYPERDX_API_KEY`; plan it.
+  - `BASE_DOMAIN` was removed from `config.env` (nothing consumed it). Hostnames are literal in manifests; `OAUTH_HOST` in `platform-settings` is the only substituted host.
+  - `runtime-inputs-refresh-clickstack-otel` was retired; `runtime-inputs-refresh-otel` (now also runs `verify-platform`) is the collector-restart fallback.
   - Keep shared platform runtime secrets co-located with their consuming service in `platform-services/*/base/*.sops.yaml` (SOPS-encrypted), not `config.env`.
   - Keep app-only secrets in app directories (`tenants/apps/<app>/.../secret-*.sops.yaml`) and decrypt via the app Flux Kustomization.
   - Ensure Flux decryption key secret exists in-cluster as `flux-system/sops-age` (`age.agekey`).

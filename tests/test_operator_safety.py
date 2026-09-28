@@ -161,6 +161,17 @@ elif 'secret' in sys.argv:
         self.assertNotIn('redirectTo', web, 'redirectTo is ignored by Traefik chart 38; use redirections.entryPoint')
         self.assertEqual(web['redirections']['entryPoint'], {'to': 'websecure', 'scheme': 'https', 'permanent': True})
 
+    def test_secrets_check_flags_double_encoding(self):
+        import base64, importlib.util
+        spec = importlib.util.spec_from_file_location('secrets_check', ROOT / 'scripts/secrets_check.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        uuid = b'0f8fad5b-d9cb-469f-a165-70867728950e'
+        self.assertFalse(module.looks_double_encoded(uuid), 'a plain token is not double-encoded')
+        self.assertTrue(module.looks_double_encoded(base64.b64encode(uuid)), 'base64 of a token is')
+        self.assertFalse(module.looks_double_encoded(bytes(range(40))), 'binary bytes are not base64 text')
+        self.assertNotIn('.sops.yaml', [p.name for p in module.secret_files()])
+
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
                          'newline', 'mongo-failure', 'unready'):

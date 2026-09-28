@@ -1,6 +1,36 @@
 # Swhurl Platform — implementation plan
 
-27 September 2026 · Home cluster implementation plan
+27 September 2026 · Home cluster implementation plan · **paused 28 September 2026**
+
+## 0. Where this paused and what is left
+
+Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 4) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/operations/current-state.md`. Before resuming: pull `main`, run `make validate-repo`, `make test-safety`, `make verify-platform` and `flux get kustomizations` (13 units, all Ready at pause), and re-read that file's "Not exercised" notes.
+
+**Remaining plan work**
+
+1. **PR06 — GHCR publishing and Renovate** (section 11). Needs decisions only you can make: which app repository goes first; hosted Renovate (GitHub App) or self-hosted; public or private GHCR images (private needs pull credentials per namespace). A smaller first step needs no app repo: point Renovate at this repo's pinned charts (app-template, reloader, cert-manager, ClickStack, OTel, oauth2-proxy, MinIO) and the `hello` image digest, with Flux manager file patterns for `clusters/` and `tenants/`.
+2. **PR08a remainder** (section 13): choose an off-host backup destination, then schedule `make backup-clickstack-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
+3. **Final operator exercise** (section 14), using only the docs.
+4. **Documentation restructure**, deferred until the refactor was done: task-based pages (bootstrap, operations, commands, services, apps, contributing), one canonical page per topic, `AGENTS.md` trimmed to rules and a doc map. Use the `document-repo` skill, now at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it with the restructure.
+
+**Known issues, deliberately not fixed yet**
+
+- `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make secrets-check` warns until then.
+- The MongoDB PV's `Retain` policy is a live patch, not in Git (dynamic PV). `make verify-platform` fails if a recreated claim loses it.
+- Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). No per-instance quotas, NetworkPolicies or RBAC.
+- Everything under `homelab.swhurl.com` shares the sign-in cookie. Public or untrusted apps must use another parent domain; none exist yet.
+
+**Not yet exercised live** (each is correct by construction or test, but unproven on the cluster)
+
+- A fresh bootstrap on a new cluster (issuer ordering, `make flux-bootstrap` from nothing).
+- A real credential rotation through Reloader (only dummy-key and disposable rotations were tested), and Reloader restarting a generated app.
+- A `public` app instance on a domain outside `homelab.swhurl.com`.
+- Deleting a real shared Flux unit (only a disposable `Orphan` unit was deleted).
+- A rejected sign-in reaching oauth2-proxy's email list (the test account was refused by Google first).
+
+**Extension points kept out of scope:** a second cluster (EC2), tailnet-only private routes, DNS-01 and wildcard certificates, directory renaming, and Hermes.
+
+---
 
 PR01 is complete at `2bae8d0`. This plan is based on repository review and read-only checks of the live, single-node k3s host. Router settings, external backups, the Mac model service, and app repositories remain uninspected. Recheck live state before migrations.
 
@@ -76,7 +106,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | PR04 | App-template contract, generator, rendered policy | Complete 28 Sep 2026: generator, `make app-policy`, fixtures proven live by `make app-template-test` |
 | PR05 | Split and migrate example staging/production; operator commands | Complete 28 Sep 2026: `hello-staging`/`hello-prod` on app-template; routes cut over with seconds of default-cert gap |
 | PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |
-| PR07b | App Secret conventions and shared settings | As required by PR04/05 |
+| PR07b | App Secret conventions and shared settings | Complete 28 Sep 2026: conventions documented, `make secrets-check`, `BASE_DOMAIN` removed, duplicate refresh target retired |
 | Final | Operator exercise and documentation | All core deliverables |
 
 Planning range: roughly 8–14 hands-on days for the core home workflow, plus immediate fixes, discovery, and restore time. Hermes is excluded.
@@ -164,6 +194,9 @@ Pilot Renovate for app-template versions and GHCR image digests. Configure Flux 
 Build x86-64 for home; add ARM64 when a consumer needs it. Revisit before any Graviton move. Retain deployed digests for rollback.
 
 ## 12. PR07b — settings and app Secret conventions
+
+Complete. App-path SOPS rules landed with PR04. `stringData` was verified live (PR04 fixture) and is the convention for new values; conventions are in `docs/PLATFORM-SERVICES.md#secret-conventions`. `make secrets-check` decrypts locally and flags placeholders and probable double encoding without printing values; it found `CLICKSTACK_API_KEY` double-encoded (recorded as a known issue, not changed live). `BASE_DOMAIN` (unused) was removed; `runtime-inputs-refresh-clickstack-otel` was retired after the Reloader rotation tests, leaving `runtime-inputs-refresh-otel` as the fallback.
+
 
 Finish app-path SOPS rules and Secret authoring docs. Prefer encrypted stringData for human-authored values only after verifying SOPS/Flux apply behavior; otherwise encode once into Kubernetes data and compare decoded bytes without printing. Keep ClickStack bootstrap and OTel ingestion keys distinct. Remove stale duplicated host settings. Test disposable rotation before retiring manual restarts.
 

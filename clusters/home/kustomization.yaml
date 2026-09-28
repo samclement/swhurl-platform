@@ -3,7 +3,5 @@ kind: Kustomization
 resources:
   - infrastructure.yaml
   - platform.yaml
-  - tenants.yaml
-  - app-example.yaml
   - app-hello-staging.yaml
   - app-hello-prod.yaml

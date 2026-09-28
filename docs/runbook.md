@@ -64,7 +64,7 @@ The verifier decodes Kubernetes Secret data once, checks against the unique Clic
 
 ### Lifecycle operations
 
-Deploy, update and uninstall through Git: commit, push, `make flux-reconcile`. Uninstalling an app means removing its unit (for example `clusters/home/app-example.yaml`) from `clusters/home/kustomization.yaml`; its workloads are pruned, while namespaces and claims annotated `kustomize.toolkit.fluxcd.io/prune: disabled` stay. The commands below cover what Git cannot express safely:
+Deploy, update and uninstall through Git: commit, push, `make flux-reconcile`. Uninstalling an app means removing its unit (for example `clusters/home/app-hello-staging.yaml`) from `clusters/home/kustomization.yaml`; its workloads are pruned, while namespaces and claims annotated `kustomize.toolkit.fluxcd.io/prune: disabled` stay. The commands below cover what Git cannot express safely:
 
 | Command | Effect | Data |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ Cluster level (`clusters/home/*.yaml`), one unit per capability:
 - `homelab-cluster-base -> homelab-cert-manager -> homelab-issuers`
 - `homelab-cluster-base -> homelab-minio | homelab-auth | homelab-clickstack | homelab-otel`
 - `homelab-traefik` (independent)
-- `homelab-tenants + homelab-auth -> homelab-app-example`
+- `homelab-cluster-base + homelab-auth -> homelab-app-<app>-<env>` (one unit per app instance)
 
 To see why something is not deploying: `flux get kustomizations`; a unit waiting on a dependency reports `DependencyNotReady`. Paths and inputs per unit are in the [ownership map](architecture.md#current-reconciliation-ownership).
 - Platform cert issuer intent is post-build substitution from `flux-system/platform-settings` (`CERT_ISSUER`).
@@ -258,9 +258,8 @@ Architecture chart generation:
 - Infrastructure/platform cert issuer mode is Git-managed in:
   - `clusters/home/flux-system/sources/configmap-platform-settings.yaml`
   - `CERT_ISSUER=letsencrypt-staging|letsencrypt-prod`
-- Sample app path is fixed via `clusters/home/app-example.yaml`:
-  - `./tenants/apps/example`
-- Example app staging/prod overlays both use `letsencrypt-prod`.
+- App instances are generated units `clusters/home/app-<app>-<env>.yaml` → `./tenants/apps/<app>/<env>`.
+- The `hello` instances both use `letsencrypt-prod` (generator default).
 - Provider selection is the unit list in `clusters/home/infrastructure.yaml`.
 
 ## Native k3s Defaults

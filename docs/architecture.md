@@ -49,8 +49,10 @@ flowchart LR
   base --> otel[homelab-otel]
   base --> reloader[homelab-reloader]
   traefik[homelab-traefik]
-  tenants[homelab-tenants] --> example[homelab-app-example]
-  auth --> example
+  base --> hs[homelab-app-hello-staging]
+  auth --> hs
+  base --> hp[homelab-app-hello-prod]
+  auth --> hp
 ```
 
 | Flux unit | Owns (path) | Requires | Provides |
@@ -66,19 +68,18 @@ flowchart LR
 | `homelab-clickstack` | ClickStack and its SOPS Secret (`platform-services/clickstack/base`); substitutes, decrypts | cluster-base | Telemetry ingestion and UI |
 | `homelab-otel` | OTel collectors and ingestion Secret (`platform-services/otel/base`); substitutes, decrypts | cluster-base | Node/cluster telemetry export |
 | `homelab-reloader` | Reloader (`platform-services/reloader/base`) | cluster-base | Opt-in restarts on Secret change in `ingress`, `logging` |
-| `homelab-tenants` | `apps-staging`, `apps-prod` (`tenants/app-envs`) | — | Environment namespaces |
-| `homelab-app-example` | Both example overlays (`tenants/apps/example`) | tenants, auth | Staging and production routes/workloads |
+| `homelab-app-hello-staging`, `homelab-app-hello-prod` | The `hello` example instances (`tenants/apps/hello/<env>`) | cluster-base, auth | `staging-hello` and `hello` routes |
 | `homelab-app-<app>-<env>` | One generated instance (`tenants/apps/<app>/<env>`): its namespace, app-template HelmRelease, optional Secret | cluster-base; auth if `authenticated-web` | One instance's workload, route and data; see [adding an app](TENANTS.md#add-a-new-app) |
 
 Rules that follow from this:
 
-- **Failures stay local.** An app waits only for its namespace and the capabilities it uses. `homelab-app-example` does not wait for ClickStack, OTel or MinIO, so an observability outage cannot block app deploys. OTel does not wait for ClickStack either; collectors retry exports.
+- **Failures stay local.** An app waits only for its namespace and the capabilities it uses. The `hello` instances do not wait for ClickStack, OTel or MinIO, so an observability outage cannot block app deploys. OTel does not wait for ClickStack either; collectors retry exports.
 - **Issuers never race cert-manager.** `homelab-issuers` waits for the cert-manager release to be Ready, so a fresh bootstrap no longer fails on missing `ClusterIssuer` CRDs.
 - **Each unit declares its own inputs.** Units whose manifests use `${...}` substitute from `platform-settings`; `homelab-otel` also needs substitution to turn `$${env:...}` into the collector's `${env:...}`. Units whose path contains `*.sops.yaml` decrypt with `sops-age`. `make test-safety` checks decryption, the issuer ordering and that apps never depend on observability or MinIO.
 - **Deletion.** Every unit prunes resources removed from Git. Deleting a unit object differs: all shared units use `deletionPolicy: Orphan`, so a deleted unit leaves its resources running, unmanaged, until re-applied (`make flux-bootstrap` for the two roots). App units keep `MirrorPrune`, so deleting one uninstalls it; prune-protected namespaces and claims survive. Data protection is layered: `kustomize.toolkit.fluxcd.io/prune: disabled` on `observability`, Helm `keepPVC`, a `Retain` MongoDB PV, and backups. See [lifecycle operations](runbook.md#lifecycle-operations).
 - **Suspension** stops a unit applying Git changes; HelmReleases it created keep reconciling unless suspended too.
 
-Moving a resource between units: record both inventories, make sure the old unit is `Orphan` (or suspended) so it cannot prune, add the resource to the new unit with the same name and namespace, reconcile, confirm the new inventory holds it, then remove it from the old unit. PR03 moved 22 resources this way with no namespace, release or volume recreated (see [current state](operations/current-state.md#pr03-capability-split)). Both example instances still share one unit until PR05.
+Moving a resource between units: record both inventories, make sure the old unit is `Orphan` (or suspended) so it cannot prune, add the resource to the new unit with the same name and namespace, reconcile, confirm the new inventory holds it, then remove it from the old unit. PR03 moved 22 resources this way with no namespace, release or volume recreated (see [current state](operations/current-state.md#pr03-capability-split)). PR05 migrated the example the same way: new instances beside the old ones on temporary hosts, then one commit per environment removing the old resources and moving the host.
 
 ## Level 1: System Context
 

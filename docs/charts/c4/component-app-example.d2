@@ -1,6 +1,6 @@
 direction: down
 
-diagram_title: "C4 Component\nExample App" {
+diagram_title: "C4 Component\nExample App (hello-prod)" {
   near: top-left
   style: {
     fill: transparent
@@ -36,17 +36,17 @@ layout_rows: "" {
       oauth_proxy: "oauth2-proxy-shared service"
     }
 
-    app_stack: "hello-web app stack" {
+    app_stack: "hello HelmRelease\n(app-template)" {
       grid-rows: 3
-      ingress: "hello-web ingress"
-      service: "hello-web service"
-      deployment: "hello-web deployment"
+      ingress: "hello ingress"
+      service: "hello service"
+      deployment: "hello deployment\n(non-root, :8080)"
     }
 
     certs: "TLS automation" {
       grid-rows: 2
       cert_manager: "cert-manager"
-      cert: "hello-web certificate"
+      cert: "hello-tls certificate\n(ingress annotation)"
     }
   }
 }

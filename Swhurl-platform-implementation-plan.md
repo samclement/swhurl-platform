@@ -74,7 +74,7 @@ PR01 is complete and green. Prepare full recovery in parallel with the immediate
 | PR03 | Capability split and cert-manager/issuer ordering | Complete 27 Sep 2026: 10 units, 22 resources handed over with no recreation |
 | PR07a | Narrow Secret rollout controller pilot | Complete 28 Sep 2026: scoped opt-in Reloader for oauth2-proxy and OTel; manual refresh kept as fallback |
 | PR04 | App-template contract, generator, rendered policy | Complete 28 Sep 2026: generator, `make app-policy`, fixtures proven live by `make app-template-test` |
-| PR05 | Split and migrate example staging/production; operator commands | PR03, PR04, recovery for stateful paths |
+| PR05 | Split and migrate example staging/production; operator commands | Complete 28 Sep 2026: `hello-staging`/`hello-prod` on app-template; routes cut over with seconds of default-cert gap |
 | PR06 | GHCR publishing and Renovate pilot | PR04, app repository access |
 | PR07b | App Secret conventions and shared settings | As required by PR04/05 |
 | Final | Operator exercise and documentation | All core deliverables |
@@ -145,6 +145,9 @@ Add worker, authenticated-web, and persistent fixtures. Render the actual pinned
 Acceptance: generator output renders; worker has no public route; authenticated web has middleware; public cannot use .homelab.swhurl.com; missing production digest and unreviewed privileges fail policy; SOPS secrets decrypt in their app Flux unit.
 
 ## 10. PR05 — example migration and operation
+
+Complete. Evidence in `docs/operations/current-state.md`.
+
 
 Current homelab-app-example reconciles both staging and production. Split it into two Flux units and dedicated instance namespaces. Both current overlays use letsencrypt-prod and shared sign-in, so staging presently isolates a namespace only; document that unless deliberately changed.
 

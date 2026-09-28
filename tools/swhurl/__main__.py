@@ -11,6 +11,7 @@ import sys
 
 COMMANDS = {
     # command: (module, function, summary)
+    'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),
     'validate-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
     'verify-config': ('swhurl.verify', 'verify_config', 'Check required Secret files and settings exist (no cluster)'),
     'verify-platform': ('swhurl.verify', 'main', 'Check live platform state: Flux, keys, redirect, retention'),

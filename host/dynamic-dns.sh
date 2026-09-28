@@ -43,10 +43,10 @@ load_config() {
   local zone_set="${AWS_ZONE_ID+x}" zone_value="${AWS_ZONE_ID:-}"
   local profile_set="${AWS_PROFILE+x}" profile_value="${AWS_PROFILE:-}"
 
-  if [[ -f "$ROOT_DIR/config.env" ]]; then
+  if [[ -f "$ROOT_DIR/host/dns.env" ]]; then
     set -a
-    # shellcheck source=config.env
-    source "$ROOT_DIR/config.env"
+    # shellcheck source=host/dns.env
+    source "$ROOT_DIR/host/dns.env"
     set +a
   fi
 

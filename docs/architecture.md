@@ -14,7 +14,7 @@ One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and 
 
 | Concept | Means here | Lives in |
 | --- | --- | --- |
-| Host | The machine: disks, manual k3s install, dynamic DNS, router forwards | `host/`, `config.env`, [bootstrap](bootstrap.md) |
+| Host | The machine: disks, manual k3s install, dynamic DNS, router forwards | `host/` (including `host/dns.env`), [bootstrap](bootstrap.md) |
 | Cluster composition | Which units run, their dependencies, sources and settings | `clusters/home/` |
 | Foundation | Cluster primitives: namespaces, storage classes, cert-manager, issuers, Traefik settings | `infrastructure/` |
 | Shared service | A service with its own lifecycle that apps or operators use: sign-in, observability, Reloader, object storage | `platform-services/` (MinIO sits under `infrastructure/storage`) |

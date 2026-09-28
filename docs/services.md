@@ -22,7 +22,7 @@ Hosts are under `homelab.swhurl.com`.
 | --- | --- | --- |
 | `CERT_ISSUER` | [`platform-settings`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml) | Platform ingresses (sign-in, ClickStack, MinIO) via Flux substitution; change with `make platform-certs-*` |
 | `OAUTH_HOST` | same | Sign-in callback URL and host |
-| `DYNAMIC_DNS_RECORDS`, `FEAT_VERIFY`, `TIMEOUT_SECS` | [`config.env`](../config.env) | Host DNS updater and `make` targets only, never the cluster |
+| `DYNAMIC_DNS_RECORDS` | [`host/dns.env`](../host/dns.env) | Host DNS updater only, never the cluster |
 
 Other hostnames, including the cookie domain, are literal in manifests. Only units whose manifests contain `${...}` substitute settings.
 

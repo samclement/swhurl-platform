@@ -1,13 +1,13 @@
 # Commands
 
-Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit. `make help` prints a short list. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
+Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
 
 ## Deploy and verify
 
 | Target | Does | Touches |
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, wait | Cluster |
-| `install` † | `verify-config`, `flux-reconcile`, `verify-platform` (skip verification with `FEAT_VERIFY=false`) | Cluster |
+| `install` † | `verify-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
 | `verify-config` | Check the required Secret files and `OAUTH_HOST` exist | Local |
 | `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), retention settings | Cluster (read) |
 | `verify` | `verify-config` and `verify-platform` | Cluster (read) |
@@ -30,6 +30,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `secrets-check` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key | Local |
 | `runtime-inputs-sync` | Fetch Git and reconcile `homelab-auth`, `homelab-clickstack`, `homelab-otel` | Cluster |
+| `wait-runtime-inputs-otel` | Wait until `logging/hyperdx-secret` has its key (`TIMEOUT_SECS`, default 300); never prints it | Cluster (read) |
 | `runtime-inputs-refresh-otel` | `runtime-inputs-sync`, wait for `logging/hyperdx-secret` (`TIMEOUT_SECS`, default 300), restart collectors, `verify-platform`. Fallback: Reloader normally restarts them | Cluster |
 | `otel-collectors-restart` | Restart both OTel collectors | Cluster |
 | `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings`: only issuers defined in Git, one line changed, comments kept | Git |
@@ -62,4 +63,4 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS systemd timer (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
 | `charts-generate` | Render `docs/charts/c4/*.d2` to SVG (needs `d2`) | Git |
 
-Settings read by the Makefile come from [`config.env`](../config.env): `DYNAMIC_DNS_RECORDS`, `FEAT_VERIFY`, `TIMEOUT_SECS` (runtime-input wait). Cluster settings live in Git, not here ([services](services.md#settings)).
+Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, `TIMEOUT_SECS`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).

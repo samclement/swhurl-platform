@@ -97,8 +97,27 @@ class Runner:
         text = self.output(args, **kwargs)
         return json.loads(text) if text.strip() else None
 
+    def attached(self, args: Sequence[str | Path], *, mutating: bool = False) -> int:
+        """Run with the terminal attached (output streams live) and return the exit code.
+
+        For long or interactive commands such as ``kubectl logs --follow`` and
+        ``flux reconcile``. Never use it for commands that print Secret values.
+        """
+        argv = tuple(str(a) for a in args)
+        if mutating and self.dry_run:
+            self._plan(argv)
+            return 0
+        return self._attach(argv)
+
     def _plan(self, argv: tuple[str, ...]) -> None:
         self.echo(f'  would run: {self.describe(argv)}')
+
+    def _attach(self, argv: tuple[str, ...]) -> int:
+        try:
+            return subprocess.run(argv, cwd=self.cwd, env={**os.environ, **self.env} if self.env else None,
+                                  check=False).returncode
+        except FileNotFoundError:
+            raise CommandError(argv, f'missing required command: {argv[0]}') from None
 
     def _execute(self, argv: tuple[str, ...], *, input: str | None,
                  env: Mapping[str, str], cwd: Path | None) -> Result:
@@ -139,6 +158,9 @@ class FakeRunner(Runner):
     def _plan(self, argv: tuple[str, ...]) -> None:
         self.planned.append(argv)
         super()._plan(argv)
+
+    def _attach(self, argv: tuple[str, ...]) -> int:
+        return self._execute(argv, input=None, env={}, cwd=None).returncode
 
     def _execute(self, argv: tuple[str, ...], *, input: str | None,
                  env: Mapping[str, str], cwd: Path | None) -> Result:

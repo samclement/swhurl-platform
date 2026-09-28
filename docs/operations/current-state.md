@@ -96,6 +96,10 @@ Found 28 September 2026: plain-HTTP requests were never redirected (signing in o
 
 28 September 2026: `make secrets-check` decrypted all four tracked SOPS Secrets locally with no errors and one warning: `observability/clickstack-runtime-inputs.CLICKSTACK_API_KEY` is double base64-encoded. In-memory comparison (no values printed) showed the live `clickstack-app-secrets.api-key` equals the once-decoded 48-byte text and that the MongoDB team key equals neither form, so the bootstrap key is independent of ingestion and nothing is currently broken. Left unchanged pending a planned ClickStack restart. The other Secrets are single-encoded (`HYPERDX_API_KEY` 36 bytes; oauth2-proxy keys) or `stringData` (fixture).
 
+## Operator tooling in Python (phases 0–1)
+
+28 September 2026: `make verify-platform`, `make verify-config` and `make app-status|app-logs|app-reconcile|app-check` now run from the `tools/swhurl` package; the bash scripts were deleted. On the live cluster the Python output was byte-identical to the bash output for `verify-platform`, `app-status` (both `hello` instances) and `app-logs`, with exit codes matching. Failure paths are covered offline: 18 verifier failure cases and the app commands via `FakeRunner`, plus the end-to-end secrecy contract test through fake `kubectl`; deliberately broken versions of the verifier (accepting a doubly encoded key, ignoring not-Ready units, printing the key) each failed the tests.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

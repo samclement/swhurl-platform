@@ -190,14 +190,11 @@ platform-certs-prod:
 
 .PHONY: verify-config
 verify-config:
-	@[[ -f platform-services/oauth2-proxy/base/secret-oauth2-proxy-shared.sops.yaml ]] || { echo "oauth2-proxy runtime SOPS secret missing"; exit 1; }
-	@[[ -f platform-services/otel/base/secret-hyperdx.sops.yaml ]] || { echo "otel runtime SOPS secret missing"; exit 1; }
-	@[[ -f platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yaml ]] || { echo "clickstack runtime SOPS secret missing"; exit 1; }
-	@grep -q '^\s*OAUTH_HOST:' clusters/home/flux-system/sources/configmap-platform-settings.yaml || { echo "OAUTH_HOST missing from platform-settings"; exit 1; }
+	@$(SWHURL) verify-config
 
 .PHONY: verify-platform
 verify-platform:
-	./scripts/verify-platform.sh
+	@$(SWHURL) verify-platform
 
 .PHONY: verify
 verify: verify-config verify-platform
@@ -214,7 +211,7 @@ app-new:
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check:
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
-	@./scripts/app.sh $(@:app-%=%) $(APP) $(ENV)
+	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
 .PHONY: app-policy
 app-policy:

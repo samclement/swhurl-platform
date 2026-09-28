@@ -1,6 +1,6 @@
 # Swhurl Platform — implementation plan
 
-27 September 2026 · Home cluster implementation plan · **paused 28 September 2026**
+27 September 2026 · Home cluster implementation plan · **paused 28 September 2026; cleanup planned**
 
 ## 0. Where this paused and what is left
 
@@ -14,6 +14,60 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is at `.claude/skills/document-repo/SKILL.md` (untracked): decide whether to commit it.
 
 5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. Sub-plan: [Swhurl-platform-tooling-plan.md](Swhurl-platform-tooling-plan.md).
+
+6. **Cleanup** (not started): the repository review below, recorded 28 September 2026. Item numbers follow the review.
+
+**Cleanup plan**
+
+A review of boundaries, technology choices, bloat and responsibilities, made during tooling phase 3 and checked against the code after the tooling sub-plan finished. Work top to bottom: tooling-only items first, because tests cover them and nothing deployed changes; then the decisions that change what runs; then all renames and moves together in one planned Flux migration.
+
+Done since the review: #7 (the runner no longer checks for a test-only attribute) and #10 (the phase 3 bash scripts are deleted).
+
+*Step 1: tooling only (low risk: covered by tests, no deployed change)*
+
+| # | Item | Fix |
+| --- | --- | --- |
+| 2 | `COOKIE_DOMAIN`, `AUTH_MIDDLEWARE` and the cookie-domain check are defined in both `app_new.py` and `app_policy.py` | One contract module (for example `swhurl/apps/contract.py`); `app-new` runs the policy on what it generated before exiting |
+| 3 | Platform knowledge duplicated: the `platform-settings` path in three modules; `verify_config` finds `OAUTH_HOST` by regex; the team-key MongoDB script differs between `verify.py` and `recovery.py`; `REQUIRED_SECRETS` listed by hand | A small `swhurl/platform.py` for paths, names and shared queries; derive required Secrets from each unit's `decryption` |
+| 6 | `validate.py` and `app_policy.py` create a `Runner` at import, so tests cannot inject `FakeRunner`; `validate.py` stops at its first error | Pass the runner in, report through `Report`, collect every failure before exiting |
+| 8 | The fake-`kubectl` scenarios in `test_operator_safety.py` duplicate branches `test_verify.py` covers | Keep fake executables only for the `make` interface (exit codes, arguments, dry runs making no cluster calls) |
+| 13 | Makefile: the nested `INSTALL_STEPS` expression; `help` repeats `docs/commands.md`; `TIMEOUT_SECS` default in the Makefile | `SKIP_VERIFY=1` in place of `FEAT_VERIFY`; defaults in Python; generate `help` from `## ` comments on targets. Moving `DYNAMIC_DNS_RECORDS` to host config is part of the same change |
+| 19 | Modules and tests grouped by accident: `backups.py` only prunes while `recovery.py` backs up and restores; `app_new`/`app_ops`/`app_policy`; `test_operator_safety.py` mixes manifest policy with command safety; `test_swhurl_core.py` | `swhurl/recovery/` (or rename `backups.py` to `retention.py`); `swhurl/apps/{new,ops,policy}.py`; split tests into `test_manifest_policy.py` and `test_command_safety.py`; `test_runner.py` |
+| + | Every test file repeats `sys.path.insert(0, ROOT / 'tools')` | One shared test helper, or `PYTHONPATH` from the Makefile only |
+| 4 | Service-specific checks (ClickStack keys, ClickHouse TTLs, Traefik args, MongoDB PV) all live in `verify.py` | Group checks by service (`swhurl/checks/<service>.py`); `verify.py` runs them in order. Optional at the current size |
+| 9 | App environments are full copies with nothing checking they stay equivalent | A policy check that two environments of one app differ only in namespace, host, image tag/digest, replicas and resources |
+
+*Step 2: stale records (no risk)*
+
+| # | Item | Fix |
+| --- | --- | --- |
+| 11 | Local `todo.md` (git-ignored) proposes helmfile, Go and Cilium-era work that contradicts current decisions | Delete it, or move any live item into this plan |
+| + | `docs/operations/current-state.md`: the PR01 "Finding classification" section lists finished work as future; the PR05 section says a signed-in session was not tried (it has been, over HTTPS) | Correct both; consider trimming the file to current facts plus dated evidence |
+| + | This plan's PR sections below section 0 are mostly history | Trim or archive once section 0 is the only live part |
+| + | `.claude/skills/document-repo/` is untracked | Decide whether to commit it |
+
+*Step 3: decisions that change what runs (medium risk: live resources change)*
+
+| # | Item | Decision needed |
+| --- | --- | --- |
+| 1 | The domain is only partly configurable: `OAUTH_HOST` is substituted, but the cookie and whitelist domains, ClickStack and MinIO hosts, issuer emails and `COOKIE_DOMAIN` are literal; `CERT_ISSUER` switches only platform hosts | Either one `BASE_DOMAIN` read by both Flux and `swhurl`, or accept a single domain and drop the `OAUTH_HOST` substitution. Either way, state exactly what the certificate switch affects |
+| 12 | MinIO has a unit, chart upgrades, two public hosts and certificates, but no buckets and no users | Remove it until something needs it, or record why it stays |
+| 5 | No written rule separates `infrastructure/` from `platform-services/` (MinIO has an ingress yet lives in `infrastructure/storage`; namespaces are central) | One sentence in `docs/architecture.md` (for example "infrastructure = cluster primitives with no user-facing endpoint"), then move MinIO to match or remove it |
+
+*Step 4: names and layout (high risk: Flux unit and path changes are migrations; batch them into one planned change using the PR03 procedure)*
+
+| # | Item | Proposal |
+| --- | --- | --- |
+| 14 | One system has several names: `swhurl` (repo, source, package), `homelab-*` (units), `home` (cluster), `platform.swhurl.com` (labels) | Pick one prefix; at least document the mapping |
+| 15 | Directories are named after products, namespaces after functions, units a mix (`oauth2-proxy` / `ingress` / `homelab-auth`) | Name units after their directories (`homelab-oauth2-proxy`) so one name leads to the others |
+| 16 | Leftover levels: `platform-services/<svc>/base` and `ingress-traefik/base` have no overlays; `infrastructure/` mixes depths; `tenants/` holds only `apps/`; `docs/operations.md` sits beside `docs/operations/` | Flatten to `<area>/<component>/`; keep a subdirectory only where it is its own unit (`cert-manager/issuers`) |
+| 17 | Two file-name styles: `helmrelease-oauth2-proxy-shared.yaml` vs generated `helmrelease.yaml` | Pick one (the shorter generated style reads fine inside a named directory) |
+| 18 | Overlapping verbs: `verify-*`, `validate-repo`, `app-check`, `app-policy`, `secrets-check`; `test-safety` runs all unit tests; `*-test` are live tests; Python names drift from make targets (`backup-mongodb` vs `backup-clickstack-mongodb`) | `check-*` offline, `verify-*` live, `test` for unit tests, `live-test-*` for cluster tests; keep aliases for current names |
+| 20 | Root plan files are capitalised and outside `docs/`; `requirements-validation.txt` duplicates dependency information | `docs/plans/implementation.md` and `docs/plans/tooling.md`; dependencies in `pyproject.toml` |
+
+*Leave alone* (judged sound by the review): `Runner` and `Report`; the `Orphan`/`MirrorPrune` deletion split and its tests; the explicit repetition in Flux unit definitions (guarded by `make test-safety`); keeping the host scripts as bash; explicit per-environment app copies, once #9 exists.
+
+Decisions only you can make before steps 3 and 4: the domain approach (#1), whether MinIO stays (#12), and the naming convention (#14, #15, #18).
 
 **Known issues, deliberately not fixed yet**
 

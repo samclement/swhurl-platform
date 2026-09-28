@@ -1,37 +1,25 @@
 # Current state
 
-Observed on 27 September 2026 from the local host and read-only Kubernetes queries. The original cluster inventory was taken at repository revision `91e889353f656577b48efc6f85d9f1b4427852f7`; PR01 was subsequently committed to main as `2bae8d0` and its CI passed. Recheck the applied revision before changing ownership, storage or routing. This is an observation, not a backup or restore record.
+What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## Host and cluster
+## Cluster now
 
-- Arch Linux x86-64; `k3s` systemd service active and enabled.
-- One Ready control-plane node, `arch` at `192.168.1.200`, running k3s `v1.34.4+k3s1` and containerd `2.1.5-k3s1`.
-- Host has 31 GiB RAM, about 23 GiB available at inspection. The root filesystem is 239 GiB, about 169 GiB free.
-- Flux CLI and controller label report `v2.8.1`. All six Flux Kustomizations were Ready at `main@sha1:91e88935`.
-- Helm releases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, and MinIO `5.4.0`.
+Checked read-only on 28 September 2026 at `97faeeb`:
 
-## Ingress, identity and storage
+- Host: Arch Linux x86-64; one Ready node, `arch` at `192.168.1.200`, k3s `v1.34.4+k3s1`, containerd `2.1.5-k3s1`; 31 GiB RAM (22 GiB available); root filesystem 239 GiB, 42 GiB used.
+- Flux `v2.8.1`; all 13 Kustomizations Ready: the two roots (`homelab-flux-sources`, `homelab-flux-stack`), `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-minio`, `-auth`, `-clickstack`, `-otel`, `-reloader`, `homelab-app-hello-staging` and `homelab-app-hello-prod`.
+- Nine HelmReleases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, Reloader `2.2.17`, MinIO `5.4.0`, and both `hello` instances on app-template `5.2.1`.
+- Six Certificates Ready: `hello` (staging and prod), oauth2-proxy, ClickStack, MinIO and its console.
+- Four `local-path` volumes: ClickHouse data (20 GiB), ClickHouse logs (5 GiB) and MinIO (20 GiB) with `Delete`; MongoDB (10 GiB) with `Retain`, set by a live patch rather than Git.
 
-- Packaged k3s Traefik and metrics-server Deployments were Ready. Traefik exposed HTTP NodePort `31514` and HTTPS NodePort `30313`.
-- Three ClusterIssuers and six existing Certificates were Ready. Ingresses exist for staging and production hello-web, shared oauth2-proxy, ClickStack, MinIO, and its console.
-- Default StorageClass is `local-path` with reclaim policy `Delete`. Four bound claims/PVs use it: ClickHouse data (20 GiB), ClickHouse logs (5 GiB), MongoDB (10 GiB), and MinIO (20 GiB). Their PV reclaim policies are also `Delete`.
-- `flux-system/sops-age` exists, and a local `age.agekey` file exists. Their presence does not establish that either key is backed up.
-- No Kubernetes CronJobs were found. NetworkPolicies were present only in `flux-system`. Neither result proves the absence of host-managed backups or network enforcement outside Kubernetes.
+## Baseline and immediate repairs (P0)
 
-## Repository checks
+The first inventory, on 27 September 2026 at revision `91e88935` (PR01 then landed as `2bae8d0`), found six Flux Kustomizations, all four volumes with `Delete` reclaim, no host backup jobs, NetworkPolicies only in `flux-system`, and four faults. Each is fixed:
 
-- Active render entrypoints, individual tracked shell syntax checks, `make verify-config`, and install/teardown dry-runs passed during the PR 01 review.
-- The prior CI workflow referenced deleted `platform-services/runtime-inputs`. PR 01 replaces its path list with discovery from active Flux `spec.path` values plus the two bootstrap paths.
-- `scripts/verify-platform.sh` can print plaintext key values after a mismatch and currently decodes the OTel ingestion key twice. Avoid shared logs from that command or a normal `make install` until it is fixed.
-
-## Immediate follow-up findings
-
-These were the findings at observation time. The P0 repairs below are fixed in Git; live confirmation is noted per item.
-
-
-- `make teardown` deletes `homelab-flux-stack` and `homelab-flux-sources`; both roots and their children use pruning. This can cascade through namespaces and Helm releases. The four current PVs have reclaim policy `Delete`, Removing the GitRepository also left the reinstall sequence unable to reconcile its first source without bootstrap. **Fixed (P0a):** both targets are now disabled and fail before any cluster command.
-- Shared oauth2-proxy currently permits `email-domain: "*"` and sets its cookie domain to `.homelab.swhurl.com`. **Fixed in Git (P0d):** sign-in is restricted to an authenticated-emails list (`sam@swhurl.com`) and the chart default `email_domains = ["*"]` is overridden; deployed on 27 September 2026. The approved account signs in (proxy `AuthSuccess`); the operator reported a non-approved account was refused. The proxy logs recorded no callback for that attempt, so the refusal may have come from Google (for example, OAuth consent-screen test-user limits) rather than the email list. The proxy-side list is enforced by rendered chart arguments and `make test-safety`. A separate domain for public or untrusted apps is still required before expanding exposure.
-- A read-only byte comparison found `logging/hyperdx-secret.HYPERDX_API_KEY` is 48 bytes after one Kubernetes `.data` decode. Decoding those bytes again yields 36 bytes matching ClickStack's live team ingestion key. Recent logs from both OTel collector workloads contain repeated HTTP 401 token/scheme failures. This confirms a live ingestion mismatch. **Fixed in Git (P0c):** the SOPS source now holds exactly one base64 layer and the verifier decodes once without printing values; verified live on 27 September 2026: after `make runtime-inputs-refresh-otel`, collector logs show no 401 errors, ClickHouse receives fresh logs and metrics, and `make verify-platform` passes. No key values were printed or saved in this document.
+- **P0a teardown:** `make teardown` deleted both root Flux units, whose pruning could cascade through namespaces, Helm releases and `Delete` volumes, and removed the GitRepository the reinstall needed. Both `teardown` and `reinstall` now refuse before any cluster command.
+- **P0b age key:** the key existed only on the host. An encrypted copy is on USB, and a controlled recovery from it decrypted all three Secrets tracked at the time.
+- **P0c ingestion key:** `logging/hyperdx-secret.HYPERDX_API_KEY` was 48 bytes after one decode; decoding again gave the 36-byte team key, and both collectors logged repeated HTTP 401 errors. The verifier decoded twice and could print keys on mismatch. The SOPS source now holds one base64 layer and the verifier compares bytes once without printing. Verified live on 27 September 2026: after `make runtime-inputs-refresh-otel`, no 401 errors, fresh logs and metrics in ClickHouse, and `make verify-platform` passed.
+- **P0d sign-in:** oauth2-proxy admitted any Google account (`email-domain: "*"`) with the cookie on `.homelab.swhurl.com`. It now admits only an authenticated-emails list (`sam@swhurl.com`) and overrides the chart default `email_domains = ["*"]`; deployed 27 September 2026. The approved account signs in (proxy `AuthSuccess`). A non-approved account was refused, but the proxy logged no callback for it, so the refusal probably came from Google (for example, consent-screen test-user limits) rather than the list. The list is enforced by the rendered chart arguments and `make test-safety`.
 
 ## Recovery (PR08a)
 
@@ -73,7 +61,7 @@ Shipped 28 September 2026 at `21d4e50`: HelmRepository `bjw-s` (Ready), `make ap
 
 `make app-template-test` passed on the cluster: all three fixture units reached Ready through Flux; the worker had no Service or Ingress; the web app's SOPS Secret was decrypted by its own app unit and injected into the container; the web pod ran non-root without a service-account token; `https://smoke-web.homelab.swhurl.com` redirected to Google sign-in; the prod fixture's claim bound on `local-path-retain`, data was written, and its image was digest-pinned. Cleanup removed all fixture units, namespaces and PVs.
 
-Not yet exercised: a public-exposure instance on a domain outside `homelab.swhurl.com`, and Reloader restarting a generated app (fixtures skip the Reloader watch-list edit; Reloader itself is covered by `make reloader-test`). The example app is still raw manifests until PR05.
+Not yet exercised: a public-exposure instance on a domain outside `homelab.swhurl.com`, and Reloader restarting a generated app (fixtures skip the Reloader watch-list edit; Reloader itself is covered by `make reloader-test`).
 
 ## Example app migration (PR05)
 
@@ -86,7 +74,7 @@ Not yet exercised: a public-exposure instance on a domain outside `homelab.swhur
 
 Isolation check: a throwaway instance with a non-existent image tag stayed failing (`make app-status` reported `ImagePullBackOff … not found`) while both `hello` units reconciled the latest revision, stayed 1/1 ready and kept serving. Deleting that broken instance waited for its in-flight Helm install to hit the 5-minute timeout before the HelmRelease finalizer released the namespace.
 
-Not exercised: a real signed-in browser session on the new instances after cutover (the redirect to sign-in was checked, not the page behind it).
+A signed-in browser session on both instances was checked later the same day by the operator over HTTPS; over plain HTTP it failed until the redirect fix below.
 
 ## HTTP to HTTPS redirect
 
@@ -114,15 +102,6 @@ Phases 5–6 (same day): `make lifecycle-test`, `reloader-test` and `app-templat
 
 ## Still to verify before live changes
 
-- k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.
-- Flux resource inventories, Helm ownership details, and the deletion effects of current pruning and namespace ownership.
-- Router forwarding, public DNS, and external reachability.
-- Workloads outside Git, image publication workflows, and the Mac model service/network path.
-
-## Finding classification
-
-- Confirmed repository defects: the former CI path list included a deleted directory; the former shell check passed multiple files to one `bash -n` call; infrastructure and platform-services docs named a deleted central runtime Secret; the live verifier can print key material on failure and masks the double encoding; the Makefile comment conflated the ClickStack bootstrap and ingestion keys. PR01 repaired the CI path, shell check, stale documentation, and Makefile comment. The verifier and live Secret remain to be fixed.
-- Runtime questions: backup destination and restore evidence, datastore configuration, Flux inventories and deletion ownership, public router/DNS, the approved identity list and existing-session behavior, and external workloads or services remain unverified.
-- Desired improvements: shared offline validation is included in PR 01. Safe lifecycle operations, independent reconciliation, automatic secret rollout, and app scaffolding remain later implementation work.
-
-On this host, export `KUBECONFIG=$HOME/.kube/config` for scripted `kubectl` and Flux checks. The `/usr/local/bin/kubectl` k3s wrapper can otherwise select the root-owned kubeconfig in non-interactive shells. Do not export Secrets, kubeconfig contents or private keys into this document.
+- The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.
+- Router forwarding and public DNS records (not inspected; external reachability is shown only by the operator's own browser use).
+- Workloads outside Git, image publication workflows, and the Mac model service and its network path.

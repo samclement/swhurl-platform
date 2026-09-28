@@ -88,11 +88,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./infrastructure/storage/minio/base
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: platform-settings
-        optional: false
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan

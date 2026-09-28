@@ -130,7 +130,7 @@ def check_ingress(runner: Runner, report: Report) -> None:
         report.ok('Traefik redirects HTTP to HTTPS')
     else:
         report.bad('Traefik does not redirect HTTP to HTTPS (plain-HTTP sign-in fails with 403); '
-                   'check helmchartconfig-traefik.yaml')
+                   'check infra/traefik/helmchartconfig.yaml')
 
 
 def clickhouse(runner: Runner, query: str) -> str:

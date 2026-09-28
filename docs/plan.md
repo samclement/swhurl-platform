@@ -15,7 +15,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 
 5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
 
-6. **Cleanup** (steps 1 and 2 done; step 3 partly done): the repository review below, recorded 28 September 2026. Item numbers follow the review.
+6. ~~Cleanup~~ done 28 September 2026 (steps 1 to 4): the repository review below, recorded 28 September 2026. Item numbers follow the review.
 
 **Cleanup plan**
 
@@ -46,12 +46,12 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 - #12 **done** 28 September 2026: MinIO is removed (it held no buckets). Commit `62f0e7c` emptied its unit so Flux uninstalled the release and deleted its volume; the next commit removed the unit, the `minio` HelmRepository, the `storage` namespace and the remaining references.
 - #5 **done** with #12: `docs/architecture.md` defines foundation as cluster primitives with no user-facing endpoint and shared services as services apps use or people visit. Nothing needed to move.
 
-*Step 4: names and layout* — decided 28 September 2026; in progress. Stages, each validated, pushed and verified live:
+*Step 4: names and layout* — **done** 28 September 2026. Stages, each validated, pushed and verified live:
 
 1. **Done:** #18 verbs: `check-*` offline (`check` runs everything CI runs), `test` for unit tests, `verify-*` live, `live-test-*` throwaway cluster tests, `backup-mongodb`; old names stay as aliases ([commands](commands.md#old-names)); Python command names match. #20: this plan is `docs/plan.md`, the evidence file `docs/current-state.md`, and the PyYAML pin is the `check` dependency group in `pyproject.toml`.
 2. **Done:** canary `homelab-reloader` became `platform-reloader` at `platform/reloader` (`9d9c7bb` suspend, `81b6ccf` cutover). Suspending through Git blocks `homelab-flux-stack` for its 20-minute health-check timeout (a suspended unit never reports its new generation), so the next stage makes the old units `Orphan` instead of suspending them.
 3. **Done:** the other non-root units (`44ddd85` made the two app units `Orphan`; the cutover commit followed), with #16 (one directory per unit under `infra/`, `platform/`, `apps/`; no `base/` levels) and #17 (`<kind>.yaml`, `-<name>` only to tell two of a kind apart): `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `app-<app>-<env>`.
-4. The roots under `flux-system` (`cluster-sources`, `cluster-stack`), after a separate confirmation.
+4. **Done:** the roots `homelab-flux-sources` and `homelab-flux-stack` became `cluster-sources` and `cluster-stack` (new units applied with `make flux-bootstrap`, then the old `Orphan` roots deleted).
 
 #14, #15: a unit is named `<area>-<component>` after its directory; namespaces, HelmReleases, Secrets and hostnames keep their names, so no workload changes. Each rename is a handover: suspend the old unit, then replace it (all units are `Orphan`), after proving offline that the new unit renders byte-identical objects, and live that Helm revisions and pod and volume UIDs are unchanged.
 

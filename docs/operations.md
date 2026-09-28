@@ -98,7 +98,7 @@ Fixtures come from the pushed Git revision: push changes to `tests/fixtures/` fi
 
 | Symptom | Cause and fix |
 | --- | --- |
-| 403 after signing in, only on `http://` | No HTTP→HTTPS redirect, so the `Secure` sign-in cookie is not sent. Check `make verify-platform`'s Ingress line; the redirect is `ports.web.redirections` in `helmchartconfig-traefik.yaml` (the old `redirectTo` key is ignored by Traefik 3). |
+| 403 after signing in, only on `http://` | No HTTP→HTTPS redirect, so the `Secure` sign-in cookie is not sent. Check `make verify-platform`'s Ingress line; the redirect is `ports.web.redirections` in `infra/traefik/helmchartconfig.yaml` (the old `redirectTo` key is ignored by Traefik 3). |
 | `redirect_uri_mismatch` from Google | The OAuth client's allowed redirect URI differs from `https://oauth.<BASE_DOMAIN>/oauth2/callback`. |
 | Collector logs show HTTP 401 `scheme or token does not match` | `HYPERDX_API_KEY` differs from the ClickStack team key or is encoded twice. `make verify-platform` says which; fix the Secret ([Secrets](#secrets)). |
 | A signed-in route shows Traefik's default certificate for a few seconds | Normal while cert-manager issues a certificate for a host that just moved. |

@@ -2,7 +2,7 @@
 
 Two standalone collector releases in `logging` (a per-node DaemonSet and a cluster Deployment) that send telemetry to ClickStack. Overview and key relationships: [services](../../docs/services.md#clickstack-and-otel).
 
-- `secret-hyperdx.sops.yaml` → `logging/hyperdx-secret.HYPERDX_API_KEY`, read at container start. It must equal the ClickStack team ingestion key held in MongoDB, **not** `CLICKSTACK_API_KEY`.
+- `secret.sops.yaml` → `logging/hyperdx-secret.HYPERDX_API_KEY`, read at container start. It must equal the ClickStack team ingestion key held in MongoDB, **not** `CLICKSTACK_API_KEY`.
 - Both collectors opt in to Reloader, so they restart when the Secret changes.
 - The HelmReleases reference the key as `$${env:HYPERDX_API_KEY}`; the `platform-otel` unit's Flux substitution turns that into `${env:...}`.
 

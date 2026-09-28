@@ -31,7 +31,7 @@ Arrows mean **must be Ready before**. The stack unit creates all the others; tha
 
 ```mermaid
 flowchart LR
-  sources[homelab-flux-sources] --> stack[homelab-flux-stack]
+  sources[cluster-sources] --> stack[cluster-stack]
   base[infra-base] --> cm[infra-cert-manager] --> issuers[infra-issuers]
   base --> auth[platform-oauth2-proxy]
   base --> clickstack[platform-clickstack]
@@ -44,8 +44,8 @@ flowchart LR
 
 | Unit | Owns (path) | Waits for | Inputs |
 | --- | --- | --- | --- |
-| `homelab-flux-sources` | Git and Helm sources, `platform-settings` (`clusters/home/flux-system/sources`) | — | Applied by `make flux-bootstrap` |
-| `homelab-flux-stack` | All unit definitions (`clusters/home`) | sources | Applied by `make flux-bootstrap` |
+| `cluster-sources` | Git and Helm sources, `platform-settings` (`clusters/home/flux-system/sources`) | — | Applied by `make flux-bootstrap` |
+| `cluster-stack` | All unit definitions (`clusters/home`) | sources | Applied by `make flux-bootstrap` |
 | `infra-base` | Shared namespaces, `local-path-retain` | — | |
 | `infra-cert-manager` | cert-manager release and CRDs | infra-base | |
 | `infra-issuers` | ClusterIssuers | cert-manager | |

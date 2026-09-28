@@ -32,7 +32,7 @@ scenario = os.environ.get('SCENARIO', 'match')
 if Path(sys.argv[0]).name == 'flux':
     print('homelab-clickstack main@sha1:test False ' + ('False' if scenario == 'unready' else 'True') + ' reconciled')
 elif 'traefik' in sys.argv:
-    print('["--entryPoints.web.http.redirections.entryPoint.to=:websecure"]')
+    print('["--entryPoints.web.http.redirections.entryPoint.to=:443", "--entryPoints.web.http.redirections.entryPoint.scheme=https"]')
 elif 'clickhouse-client' in sys.argv:
     print('9\\t9' if 'toIntervalDay(30)' in sys.argv[-1] else '0')
 elif 'pvc' in sys.argv:

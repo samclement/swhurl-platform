@@ -40,6 +40,7 @@ help:
 	@echo "  lifecycle-test      Prove suspend/uninstall/destroy-data/Orphan on a disposable app"
 	@echo "  backup-clickstack-mongodb      Dump ClickStack MongoDB to an age-encrypted local archive"
 	@echo "  restore-test-clickstack-mongodb Restore the latest backup into a disposable namespace and check it"
+	@echo "  shellcheck          Lint the bash that stays (host DNS, chart rendering, fixture script)"
 	@echo "  test-safety         Test lifecycle guards, secret-safe verification and sign-in policy offline"
 	@echo ""
 	@echo "platform-certs-* targets edit Git-tracked files only. Commit + push before flux-reconcile."
@@ -142,15 +143,15 @@ app-policy:
 
 .PHONY: app-template-test
 app-template-test:
-	DRY_RUN=$(DRY_RUN) ./scripts/app-template-test.sh
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) app-template-test
 
 .PHONY: reloader-test
 reloader-test:
-	DRY_RUN=$(DRY_RUN) ./scripts/reloader-test.sh
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) reloader-test
 
 .PHONY: lifecycle-test
 lifecycle-test:
-	DRY_RUN=$(DRY_RUN) ./scripts/lifecycle-test.sh
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) lifecycle-test
 
 .PHONY: backup-clickstack-mongodb
 backup-clickstack-mongodb:
@@ -159,6 +160,10 @@ backup-clickstack-mongodb:
 .PHONY: restore-test-clickstack-mongodb
 restore-test-clickstack-mongodb:
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) restore-test-mongodb
+
+.PHONY: shellcheck
+shellcheck:
+	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files '*.sh')
 
 .PHONY: validate-repo
 validate-repo:

@@ -1,6 +1,6 @@
 # Sub-plan: operator tooling in the right language
 
-28 September 2026 · revised the same day to decide per piece what stays bash · sub-plan of the [implementation plan](Swhurl-platform-implementation-plan.md) · **phases 0–4 done; phases 5–6 open**
+28 September 2026 · revised the same day to decide per piece what stays bash · sub-plan of the [implementation plan](Swhurl-platform-implementation-plan.md) · **complete (phases 0–6 done, 28 September 2026)**
 
 Decisions taken: package `tools/swhurl/` run as `python3 -m swhurl`; `ruff` 0.16.9 in CI, `mypy` not adopted, `shellcheck` in phase 6; backup moves to Python in phase 3; `make` stays the interface.
 
@@ -105,8 +105,8 @@ Each phase is one commit to `main` (or a few), converts whole targets end to end
 | 2. Makefile logic (**done**) | `platform-certs-*` (a parsed YAML edit instead of `sed`) and `wait-runtime-inputs-otel` (polling). Sequencing recipes stay in the Makefile and shrink to one or two lines | Removes the only untested logic in the Makefile | `make platform-certs-staging DRY_RUN=true`, `make runtime-inputs-refresh-otel` |
 | 3. Backup and restore (**done**) | `backup-clickstack-mongodb.sh`, `restore-test-clickstack-mongodb.sh` | Streaming Secrets: tests must show no plaintext reaches disk or output | `make backup-clickstack-mongodb`, `make restore-test-clickstack-mongodb` |
 | 4. Lifecycle (**done**) | `lifecycle.sh` (`suspend`, `resume`, `destroy-data`) | The only data-deleting command; gains the most from exhaustive refusal tests | `make lifecycle-test` |
-| 5. Live tests | `lifecycle-test.sh`, `reloader-test.sh`, `app-template-test.sh` | Converted after the code they test, so each is proven against the new implementation | All four live tests |
-| 6. Bash that stays | Add `shellcheck` to CI for `host/*.sh`, `scripts/generate-charts.sh`, `tests/fixtures/apps.sh` and fix findings; confirm each meets the bar above | Keeps the remaining shell honest without rewriting it | `make host-dns DRY_RUN=true`, `make charts-generate` |
+| 5. Live tests (**done**) | `lifecycle-test.sh`, `reloader-test.sh`, `app-template-test.sh` | Converted after the code they test, so each is proven against the new implementation | All four live tests |
+| 6. Bash that stays (**done**) | Add `shellcheck` to CI for `host/*.sh`, `scripts/generate-charts.sh`, `tests/fixtures/apps.sh` and fix findings; confirm each meets the bar above | Keeps the remaining shell honest without rewriting it | `make host-dns DRY_RUN=true`, `make charts-generate` |
 
 Rough effort: phase 0 about a day; phases 1–5 half a day to a day each; phase 6 an hour or two. About 4–6 days in total, all of it local or throwaway on the cluster. Roughly 700 lines of bash and Makefile shell move to Python; about 450 lines stay bash.
 
@@ -134,6 +134,10 @@ Rough effort: phase 0 about a day; phases 1–5 half a day to a day each; phase 
 2. **Developer tooling:** stdlib `unittest` only (as now), or add `ruff` (lint and format) and `mypy` through `uvx` in CI. Recommended: `ruff` yes, `mypy` optional, and `shellcheck` for the bash that stays (preinstalled on GitHub runners; locally `uvx --from shellcheck-py shellcheck`).
 3. **The borderline case:** move `backup-clickstack-mongodb` to Python (recommended, for the metadata and its Python restore check) or keep it as bash that calls Python for metadata and pruning.
 4. **`make` as the interface:** keep it (recommended; docs and muscle memory depend on it), or also document `python3 -m swhurl` directly.
+
+## Outcome
+
+All six phases are done. `scripts/` holds only `generate-charts.sh`; the other bash is `host/dynamic-dns.sh`, `host/aws-dns-updater.sh` and `tests/fixtures/apps.sh`, all `shellcheck`-clean in CI. Accepted exception to the bar: `generate-charts.sh` has no dry-run path in CI, because it needs `d2`; it is a docs tool run by hand. `jq` is no longer required anywhere. Evidence per phase is in `docs/operations/current-state.md`.
 
 ## Done when
 

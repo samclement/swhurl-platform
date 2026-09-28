@@ -45,6 +45,7 @@ load_config() {
 
   if [[ -f "$ROOT_DIR/config.env" ]]; then
     set -a
+    # shellcheck source=config.env
     source "$ROOT_DIR/config.env"
     set +a
   fi

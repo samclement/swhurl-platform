@@ -7,13 +7,14 @@ How to change this repo without breaking the cluster or the docs. Commits go str
 Run before every push:
 
 ```bash
-make validate-repo test-safety app-policy
+make validate-repo test-safety app-policy shellcheck
 uvx ruff@0.16.9 check tools tests     # lint the Python tooling (CI runs the same version)
 ```
 
 - `validate-repo` renders every active Flux path, validates Kubernetes and Flux schemas, checks SOPS structure, shell syntax and required substitutions, and checks that relative links in Markdown resolve. It never contacts the cluster.
 - `test-safety` runs the offline unit tests in `tests/`: lifecycle guards, verifier secrecy, sign-in and Reloader policy, Flux unit rules, the app generator and policy.
 - `app-policy` renders app instances with Helm and checks the app contract.
+- `shellcheck` lints the bash that stays (`host/*.sh`, `scripts/generate-charts.sh`, `tests/fixtures/apps.sh`); CI pins the same version.
 
 Prerequisites (CI pins the same): `kubectl`, `helm`, Python 3 with PyYAML (`requirements-validation.txt`), and `flux-schema`:
 
@@ -26,7 +27,7 @@ CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based test
 
 ## Operator tooling
 
-Logic lives in the Python package [`tools/swhurl/`](../tools/swhurl), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Short glue, host/systemd scripts and command lists stay bash; the split and the migration phases are in the [tooling sub-plan](../Swhurl-platform-tooling-plan.md).
+All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Short glue, host/systemd scripts and command lists stay bash; the split and the migration phases are in the [tooling sub-plan](../Swhurl-platform-tooling-plan.md).
 
 - Call external tools only through `swhurl.run.Runner`. It handles `DRY_RUN` (pass `mutating=True` for changes), redacts registered Secret values from every message, and can hide a command's output from errors (`secret_output=True`). Stream sensitive data with `Runner.pipe(producer, consumer)`: the processes share an OS pipe Python never reads, and either side failing raises (like `pipefail`).
 - Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).

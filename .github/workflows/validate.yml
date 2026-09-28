@@ -43,6 +43,9 @@ jobs:
       - name: Lint Python tooling
         run: pipx run ruff==0.16.9 check tools tests
 
+      - name: Lint remaining bash
+        run: pipx run --spec shellcheck-py==0.11.0.1 shellcheck -x $(git ls-files '*.sh')
+
       - name: Validate active manifests and scripts
         run: make validate-repo
 

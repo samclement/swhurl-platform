@@ -12,6 +12,8 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./tenants/apps/hello/prod
+  # Temporary: keeps the app's objects when this unit is replaced by app-hello-prod (plan step 4).
+  deletionPolicy: Orphan
   prune: true
   wait: true
   timeout: 10m

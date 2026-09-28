@@ -16,7 +16,8 @@ class ManifestPolicyTests(unittest.TestCase):
                     units[doc['metadata']['name']] = doc['spec'].get('deletionPolicy', 'MirrorPrune')
         for name, policy in units.items():
             with self.subTest(unit=name):
-                expected = 'MirrorPrune' if name.startswith('homelab-app-') else 'Orphan'
+                # homelab-app-hello-* are Orphan only while they are renamed (plan step 4).
+                expected = 'MirrorPrune' if name.startswith('homelab-app-') and 'hello' not in name else 'Orphan'
                 self.assertEqual(policy, expected)
         for name in ('homelab-cert-manager', 'homelab-issuers', 'homelab-clickstack', 'homelab-otel'):
             self.assertIn(name, units)

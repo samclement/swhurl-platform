@@ -7,10 +7,10 @@ What has been verified on the live cluster, and when: current facts first, then 
 Checked read-only on 28 September 2026 at `97faeeb`:
 
 - Host: Arch Linux x86-64; one Ready node, `arch` at `192.168.1.200`, k3s `v1.34.4+k3s1`, containerd `2.1.5-k3s1`; 31 GiB RAM (22 GiB available); root filesystem 239 GiB, 42 GiB used.
-- Flux `v2.8.1`; all 13 Kustomizations Ready: the two roots (`homelab-flux-sources`, `homelab-flux-stack`), `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-minio`, `-auth`, `-clickstack`, `-otel`, `-reloader`, `homelab-app-hello-staging` and `homelab-app-hello-prod`.
-- Nine HelmReleases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, Reloader `2.2.17`, MinIO `5.4.0`, and both `hello` instances on app-template `5.2.1`.
-- Six Certificates Ready: `hello` (staging and prod), oauth2-proxy, ClickStack, MinIO and its console.
-- Four `local-path` volumes: ClickHouse data (20 GiB), ClickHouse logs (5 GiB) and MinIO (20 GiB) with `Delete`; MongoDB (10 GiB) with `Retain`, set by a live patch rather than Git.
+- Flux `v2.8.1`; all 12 Kustomizations Ready: the two roots (`homelab-flux-sources`, `homelab-flux-stack`), `homelab-cluster-base`, `-cert-manager`, `-issuers`, `-traefik`, `-auth`, `-clickstack`, `-otel`, `-reloader`, `homelab-app-hello-staging` and `homelab-app-hello-prod`.
+- Eight HelmReleases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, Reloader `2.2.17`, and both `hello` instances on app-template `5.2.1`.
+- Four Certificates Ready: `hello` (staging and prod), oauth2-proxy and ClickStack.
+- Three `local-path` volumes: ClickHouse data (20 GiB) and ClickHouse logs (5 GiB) with `Delete`; MongoDB (10 GiB) with `Retain`, set by a live patch rather than Git.
 
 ## Baseline and immediate repairs (P0)
 

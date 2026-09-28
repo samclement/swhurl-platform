@@ -8,7 +8,6 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | cert-manager | `homelab-cert-manager` · [`infrastructure/cert-manager/base`](../infrastructure/cert-manager/base) | `cert-manager` | — | cert-manager v1.19.3 |
 | ClusterIssuers | `homelab-issuers` · [`infrastructure/cert-manager/issuers`](../infrastructure/cert-manager/issuers) | — | — | plain manifests |
 | Traefik settings | `homelab-traefik` · [`infrastructure/ingress-traefik/base`](../infrastructure/ingress-traefik/base) | `kube-system` | — | k3s packaged (chart 38, Traefik 3.6) |
-| MinIO | `homelab-minio` · [`infrastructure/storage/minio/base`](../infrastructure/storage/minio/base) | `storage` | `minio.`, `minio-console.` | minio 5.4.0 |
 | Sign-in (oauth2-proxy) | `homelab-auth` · [`platform-services/oauth2-proxy/base`](../platform-services/oauth2-proxy/base) | `ingress` | `oauth.` | oauth2-proxy 10.1.3 |
 | ClickStack | `homelab-clickstack` · [`platform-services/clickstack/base`](../platform-services/clickstack/base) | `observability` | `clickstack.` | clickstack 1.1.1 |
 | OTel collectors | `homelab-otel` · [`platform-services/otel/base`](../platform-services/otel/base) | `logging` | — | opentelemetry-collector 0.145.0 |
@@ -20,11 +19,11 @@ Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`).
 
 | Setting | Where | Used by |
 | --- | --- | --- |
-| `CERT_ISSUER` | [`platform-settings`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml) | Platform ingresses (sign-in, ClickStack, MinIO) via Flux substitution; change with `make platform-certs-*` |
-| `BASE_DOMAIN` | same | Parent of every platform host (`oauth.`, `clickstack.`, `minio.`, `minio-console.`) and of the sign-in cookie and redirect allowlist; `swhurl` reads it for the app policy's cookie-domain rule. `make test-safety` fails if a platform manifest writes the domain literally |
+| `CERT_ISSUER` | [`platform-settings`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml) | Platform ingresses (sign-in, ClickStack) via Flux substitution; change with `make platform-certs-*` |
+| `BASE_DOMAIN` | same | Parent of every platform host (`oauth.`, `clickstack.`) and of the sign-in cookie and redirect allowlist; `swhurl` reads it for the app policy's cookie-domain rule. `make test-safety` fails if a platform manifest writes the domain literally |
 | `DYNAMIC_DNS_RECORDS` | [`host/dns.env`](../host/dns.env) | Host DNS updater only, never the cluster |
 
-`CERT_ISSUER` switches only the platform's own certificates (sign-in, ClickStack, MinIO); each app names its issuer in its own HelmRelease. App hosts are written literally by `make app-new`. Two things stay literal on purpose: the Let's Encrypt account email (`ops@homelab.swhurl.com`, a mailbox rather than a host) and the approved sign-in addresses. A unit substitutes settings only if its manifests use them (the OTel unit also substitutes, to unescape `$${...}`); `make test-safety` checks both directions.
+`CERT_ISSUER` switches only the platform's own certificates (sign-in, ClickStack); each app names its issuer in its own HelmRelease. App hosts are written literally by `make app-new`. Two things stay literal on purpose: the Let's Encrypt account email (`ops@homelab.swhurl.com`, a mailbox rather than a host) and the approved sign-in addresses. A unit substitutes settings only if its manifests use them (the OTel unit also substitutes, to unescape `$${...}`); `make test-safety` checks both directions.
 
 Changing `BASE_DOMAIN` moves every platform host and the cookie: it needs DNS records, new certificates, a new Google redirect URI, re-generated app hosts, and everyone signs in again.
 
@@ -36,7 +35,7 @@ oauth2-proxy signs users in with Google (OIDC) and serves the Traefik middleware
 - **Cookie scope:** the session cookie covers `.homelab.swhurl.com`, so every host under it receives it. Put public or untrusted apps on a different parent domain.
 - **HTTPS only:** cookies are `Secure`, so sign-in fails with 403 over plain HTTP. Traefik redirects all HTTP to HTTPS.
 - **Secret** `ingress/oauth2-proxy-shared-secret`: `client-id`, `client-secret` (from the Google OAuth client, which must allow `https://oauth.<BASE_DOMAIN>/oauth2/callback`) and `cookie-secret` (random, for example `openssl rand -base64 32`). Reloader restarts oauth2-proxy when it changes.
-- ClickStack and MinIO use their own logins, not this middleware.
+- ClickStack uses its own login, not this middleware.
 
 ## ClickStack and OTel
 
@@ -64,4 +63,3 @@ Restarts a workload when a Secret it names changes, so rotations need no manual 
 - **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik). `homelab-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.
 - **Traefik:** k3s owns the Traefik install; this repo owns only its `HelmChartConfig`: NodePorts `31514` (HTTP) and `30313` (HTTPS), and a permanent HTTP→HTTPS redirect. Let's Encrypt follows the redirect, so HTTP-01 still works.
 - **Storage classes:** `local-path` (k3s default, `Delete`: deleting a claim deletes its data) and `local-path-retain` (`Retain`: the volume and its directory under `/var/lib/rancher/k3s/storage` survive). Use `local-path-retain` for anything irreplaceable; the app generator does.
-- **MinIO:** in-cluster object storage with chart-generated root credentials (`storage/minio`). No buckets exist yet; it is not a backup target, since it shares the host's disk.

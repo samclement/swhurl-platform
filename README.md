@@ -34,7 +34,7 @@ make verify-platform             # expect "Validation passed."
 | Path | Contents |
 | --- | --- |
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
-| `infrastructure/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings, MinIO |
+| `infrastructure/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
 | `platform-services/` | oauth2-proxy (sign-in), ClickStack, OTel collectors, Reloader, with their encrypted Secrets |
 | `tenants/apps/<app>/<env>/` | Generated app instances |
 | `tools/swhurl/`, `scripts/`, `host/`, `tests/` | Python operator tooling, remaining bash scripts, host DNS updater, offline tests and fixtures |

@@ -40,8 +40,8 @@ class ManifestPolicyTests(unittest.TestCase):
             return result
         self.assertIn('homelab-cert-manager', closure('homelab-issuers'))
         for app in (n for n in deps if n.startswith('homelab-app-')):
-            self.assertFalse(closure(app) & {'homelab-clickstack', 'homelab-otel', 'homelab-minio'},
-                             f'{app} must not wait for observability or MinIO')
+            self.assertFalse(closure(app) & {'homelab-clickstack', 'homelab-otel'},
+                             f'{app} must not wait for observability')
         for name, spec in specs.items():
             encrypted = any((ROOT / spec['path']).rglob('*.sops.yaml'))
             with self.subTest(unit=name):

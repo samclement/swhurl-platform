@@ -30,9 +30,9 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `secrets-check` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key | Local |
 | `runtime-inputs-sync` | Fetch Git and reconcile `homelab-auth`, `homelab-clickstack`, `homelab-otel` | Cluster |
-| `runtime-inputs-refresh-otel` | `runtime-inputs-sync`, wait for `logging/hyperdx-secret`, restart collectors, `verify-platform`. Fallback: Reloader normally restarts them | Cluster |
+| `runtime-inputs-refresh-otel` | `runtime-inputs-sync`, wait for `logging/hyperdx-secret` (`TIMEOUT_SECS`, default 300), restart collectors, `verify-platform`. Fallback: Reloader normally restarts them | Cluster |
 | `otel-collectors-restart` | Restart both OTel collectors | Cluster |
-| `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings` | Git |
+| `platform-certs-staging`, `platform-certs-prod` † | Set `CERT_ISSUER` in `platform-settings`: only issuers defined in Git, one line changed, comments kept | Git |
 
 ## Lifecycle, backup and recovery
 

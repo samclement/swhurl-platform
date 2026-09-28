@@ -67,6 +67,14 @@ Deployed 28 September 2026 at `9c719fe` as `platform-system/reloader` (chart 2.2
 - Real Secret check without changing credentials: adding and then removing a dummy key on `logging/hyperdx-secret` made Reloader restart both OTel collectors (logged for each change); `oauth2-proxy-shared` was not restarted. Afterwards the Secret held only `HYPERDX_API_KEY`, collectors showed no 401/export errors, ClickHouse received fresh logs, `homelab-otel` reconciled cleanly and `make verify-platform` passed.
 - Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. `make runtime-inputs-refresh-otel` remains as a fallback.
 
+## App contract (PR04)
+
+Shipped 28 September 2026 at `21d4e50`: HelmRepository `bjw-s` (Ready), `make app-new`, `make app-policy` and three generated fixtures. CI ran all 22 tests with Helm (none skipped) and `make app-policy` passed for the 3 fixtures.
+
+`make app-template-test` passed on the cluster: all three fixture units reached Ready through Flux; the worker had no Service or Ingress; the web app's SOPS Secret was decrypted by its own app unit and injected into the container; the web pod ran non-root without a service-account token; `https://smoke-web.homelab.swhurl.com` redirected to Google sign-in; the prod fixture's claim bound on `local-path-retain`, data was written, and its image was digest-pinned. Cleanup removed all fixture units, namespaces and PVs.
+
+Not yet exercised: a public-exposure instance on a domain outside `homelab.swhurl.com`, and Reloader restarting a generated app (fixtures skip the Reloader watch-list edit; Reloader itself is covered by `make reloader-test`). The example app is still raw manifests until PR05.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

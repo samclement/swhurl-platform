@@ -31,7 +31,8 @@ Logic lives in the Python package [`tools/swhurl/`](../tools/swhurl), run as `py
 - Call external tools only through `swhurl.run.Runner`. It handles `DRY_RUN` (pass `mutating=True` for changes), redacts registered Secret values from every message, and can hide a command's output from errors (`secret_output=True`).
 - Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).
 - Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command. Tests add `tools/` to `sys.path` and import `swhurl`.
-- A new command is a module with `main(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
+- A new command is a function `(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
+- Makefile recipes stay aliases and sequencing: no shell `if`/loops, `sed`, `grep` or `jq`. Use `make` functions (`$(if)`, `$(foreach)`) for plain sequencing and move anything else into `swhurl`.
 
 ## Checklist for a change
 

@@ -1,26 +1,13 @@
 SHELL := /usr/bin/env bash
 include config.env
 export FEAT_VERIFY TIMEOUT_SECS DYNAMIC_DNS_RECORDS
-PLATFORM_SETTINGS_FILE := clusters/home/flux-system/sources/configmap-platform-settings.yaml
 # Operator tooling package (tools/swhurl); see docs/contributing.md.
 SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
 DRY_RUN ?= false
-
-define update_cert_issuer
-	@set -eu; \
-	file="$(PLATFORM_SETTINGS_FILE)"; issuer="$(1)"; \
-	[[ -f "$$file" ]] || { echo "Missing settings file: $$file" >&2; exit 1; }; \
-	grep -q '^\s*CERT_ISSUER:' "$$file" || { echo "Missing key 'CERT_ISSUER' in $$file" >&2; exit 1; }; \
-	if grep -q "CERT_ISSUER: $$issuer$$" "$$file"; then \
-	  echo "[INFO] CERT_ISSUER already set to $$issuer"; \
-	elif [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "[INFO] CERT_ISSUER would update to $$issuer in $$file"; \
-	else \
-	  sed -i "s/^\(\s*CERT_ISSUER:\).*/\1 $$issuer/" "$$file"; \
-	  echo "[INFO] CERT_ISSUER updated to $$issuer in $$file"; \
-	fi; \
-	echo "[INFO] Local Git edits only. Commit + push, then run: make flux-reconcile"
-endef
+# make install runs verification unless FEAT_VERIFY is set to something other than true.
+INSTALL_STEPS = $(if $(filter-out true,$(or $(FEAT_VERIFY),true)),,verify-config) flux-reconcile $(if $(filter-out true,$(or $(FEAT_VERIFY),true)),,verify-platform)
+TEARDOWN_REFUSAL = is disabled: Flux pruning can delete namespaces, Helm releases and persistent data.\nUse Git updates and make flux-reconcile for deployment. See docs/operations.md\#lifecycle.
+OTEL_COLLECTORS = deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent
 
 .PHONY: help
 help:
@@ -63,36 +50,11 @@ help:
 
 .PHONY: install
 install:
-	@set -Eeuo pipefail; \
-	if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "Plan (install):"; \
-	  if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
-	    echo "  - make verify-config"; \
-	  fi; \
-	  echo "  - make flux-reconcile"; \
-	  if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
-	    echo "  - make verify-platform"; \
-	  fi; \
-	  exit 0; \
-	fi; \
-	if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
-	  $(MAKE) verify-config; \
-	fi; \
-	$(MAKE) flux-reconcile; \
-	if [[ "$${FEAT_VERIFY:-true}" == "true" ]]; then \
-	  $(MAKE) verify-platform; \
-	fi
+	@$(if $(filter true,$(DRY_RUN)),printf 'Plan (install):\n'; printf '  - make %s\n' $(INSTALL_STEPS),$(foreach step,$(INSTALL_STEPS),$(MAKE) $(step) &&) true)
 
 .PHONY: teardown reinstall
 teardown reinstall:
-	@set -Eeuo pipefail; \
-	if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  echo "Plan ($@): disabled; no cluster commands will run."; \
-	  exit 0; \
-	fi; \
-	echo "[ERROR] $@ is disabled: Flux pruning can delete namespaces, Helm releases and persistent data." >&2; \
-	echo "Use Git updates and make flux-reconcile for deployment. See docs/operations.md#lifecycle." >&2; \
-	exit 2
+	@$(if $(filter true,$(DRY_RUN)),echo "Plan ($@): disabled; no cluster commands will run.",printf '%b\n' "[ERROR] $@ $(TEARDOWN_REFUSAL)" >&2; exit 2)
 
 .PHONY: flux-bootstrap
 flux-bootstrap:
@@ -112,20 +74,9 @@ charts-generate:
 
 .PHONY: otel-collectors-restart
 otel-collectors-restart:
-	@set -Eeuo pipefail; \
-	echo "[INFO] Restarting otel-k8s collectors to reload logging/hyperdx-secret"; \
-	if kubectl -n logging get deploy otel-k8s-cluster-opentelemetry-collector >/dev/null 2>&1; then \
-	  kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector; \
-	  kubectl -n logging rollout status deploy/otel-k8s-cluster-opentelemetry-collector --timeout=5m; \
-	else \
-	  echo "[WARN] logging/otel-k8s-cluster-opentelemetry-collector not found; skipping"; \
-	fi; \
-	if kubectl -n logging get ds otel-k8s-daemonset-opentelemetry-collector-agent >/dev/null 2>&1; then \
-	  kubectl -n logging rollout restart ds/otel-k8s-daemonset-opentelemetry-collector-agent; \
-	  kubectl -n logging rollout status ds/otel-k8s-daemonset-opentelemetry-collector-agent --timeout=5m; \
-	else \
-	  echo "[WARN] logging/otel-k8s-daemonset-opentelemetry-collector-agent not found; skipping"; \
-	fi
+	@echo "[INFO] Restarting otel-k8s collectors to reload logging/hyperdx-secret"
+	kubectl -n logging rollout restart $(OTEL_COLLECTORS)
+	$(foreach w,$(OTEL_COLLECTORS),kubectl -n logging rollout status $(w) --timeout=5m &&) true
 
 .PHONY: runtime-inputs-refresh-otel
 runtime-inputs-refresh-otel:
@@ -140,23 +91,7 @@ secrets-check:
 
 .PHONY: wait-runtime-inputs-otel
 wait-runtime-inputs-otel:
-	@set -Eeuo pipefail; \
-	echo "[INFO] Waiting for logging/hyperdx-secret.HYPERDX_API_KEY to be present"; \
-	timeout_secs=$${TIMEOUT_SECS:-300}; \
-	start_time=$$(date +%s); \
-	while true; do \
-	  dst="$$(kubectl -n logging get secret hyperdx-secret -o jsonpath='{.data.HYPERDX_API_KEY}' 2>/dev/null || true)"; \
-	  if [[ -n "$$dst" ]]; then \
-	    echo "[INFO] logging/hyperdx-secret is present"; \
-	    break; \
-	  fi; \
-	  now=$$(date +%s); \
-	  if (( now - start_time >= timeout_secs )); then \
-	    echo "[ERROR] Timed out waiting for hyperdx-secret propagation ($${timeout_secs}s)" >&2; \
-	    exit 1; \
-	  fi; \
-	  sleep 5; \
-	done
+	@$(SWHURL) wait-secret-key logging hyperdx-secret HYPERDX_API_KEY --timeout $${TIMEOUT_SECS:-300}
 
 .PHONY: flux-reconcile
 flux-reconcile:
@@ -166,27 +101,15 @@ flux-reconcile:
 
 .PHONY: host-dns
 host-dns:
-	@if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  ./host/dynamic-dns.sh --dry-run; \
-	else \
-	  ./host/dynamic-dns.sh; \
-	fi
+	@./host/dynamic-dns.sh $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 .PHONY: host-dns-delete
 host-dns-delete:
-	@if [[ "$(DRY_RUN)" == "true" ]]; then \
-	  ./host/dynamic-dns.sh --delete --dry-run; \
-	else \
-	  ./host/dynamic-dns.sh --delete; \
-	fi
+	@./host/dynamic-dns.sh --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
 
-.PHONY: platform-certs-staging
-platform-certs-staging:
-	$(call update_cert_issuer,letsencrypt-staging)
-
-.PHONY: platform-certs-prod
-platform-certs-prod:
-	$(call update_cert_issuer,letsencrypt-prod)
+.PHONY: platform-certs-staging platform-certs-prod
+platform-certs-staging platform-certs-prod:
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) platform-certs $(@:platform-certs-%=letsencrypt-%)
 
 .PHONY: verify-config
 verify-config:

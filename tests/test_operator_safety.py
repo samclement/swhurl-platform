@@ -35,7 +35,7 @@ argv = sys.argv[1:]
 def emit(obj):
     print(json.dumps(obj))
 if Path(sys.argv[0]).name == 'flux':
-    pass
+    sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
 elif any(a.startswith('kustomizations') for a in argv):
     ready = 'False' if scenario == 'unready' else 'True'
     emit({'items': [{'metadata': {'name': 'homelab-clickstack'},
@@ -179,6 +179,22 @@ elif 'secret' in argv:
         self.assertTrue(module.looks_double_encoded(base64.b64encode(uuid)), 'base64 of a token is')
         self.assertFalse(module.looks_double_encoded(bytes(range(40))), 'binary bytes are not base64 text')
         self.assertNotIn('.sops.yaml', [p.name for p in module.secret_files()])
+
+    def test_install_stops_at_the_first_failing_step(self):
+        result = subprocess.run(['make', 'install'], cwd=ROOT, env=dict(self.env, FLUX_FAIL='1'),
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls.read_text().split() if self.calls.exists() else []
+        self.assertEqual(calls, ['flux'], 'verify-platform must not run after a failed reconcile')
+
+    def test_install_plan_respects_feat_verify(self):
+        for feat, steps in (('true', ['verify-config', 'flux-reconcile', 'verify-platform']),
+                            ('false', ['flux-reconcile'])):
+            with self.subTest(FEAT_VERIFY=feat):
+                result = subprocess.run(['make', '--no-print-directory', 'install', 'DRY_RUN=true', f'FEAT_VERIFY={feat}'], cwd=ROOT,
+                                        env=self.env, capture_output=True, text=True)
+                self.assertEqual(result.stdout.splitlines(), ['Plan (install):', *[f'  - make {s}' for s in steps]])
+                self.assertFalse(self.calls.exists())
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         """End to end through real subprocesses and the fake kubectl (contract test)."""

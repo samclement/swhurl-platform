@@ -94,7 +94,11 @@ class ManifestPolicyTests(unittest.TestCase):
     def test_shared_sign_in_is_restricted_to_approved_emails(self):
         path = ROOT / 'platform/oauth2-proxy/helmrelease.yaml'
         values = yaml.safe_load(path.read_text())['spec']['values']
-        self.assertNotIn('email-domain', values.get('extraArgs', {}))
+        args = values.get('extraArgs', {})
+        self.assertNotIn('email-domain', args)
+        self.assertNotIn('trusted-ip', args, '--trusted-ip lets those IPs skip sign-in')
+        self.assertEqual(args.get('trusted-proxy-ip'), '10.42.0.0/16', 'only pods (Traefik) may set X-Forwarded-*')
+        self.assertEqual(args.get('code-challenge-method'), 'S256')
         self.assertEqual(values['config'].get('configFile', '').strip(), 'email_domains = []',
                          'Chart default email_domains = ["*"] must stay overridden')
         emails = values.get('authenticatedEmailsFile', {})

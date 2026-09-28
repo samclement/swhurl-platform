@@ -176,6 +176,7 @@ Important contract:
 
 - Example app (PR05)
   - `hello` runs `nginxinc/nginx-unprivileged:1.27-alpine` pinned by digest as UID 101 on 8080. It listens on IPv4 only (the image's IPv6 script cannot edit its read-only config); use `127.0.0.1`, not `localhost`, for in-pod checks.
+  - Deleting an app whose HelmRelease is mid-install (for example a bad image) waits for the Helm action timeout (5m default) before the finalizer releases the namespace.
   - Host cutover pattern: deploy the new instance on a temporary host, verify, then in one commit remove the old route and move the host. Expect a few seconds of Traefik's default certificate while cert-manager issues the new one.
 
 - Lifecycle

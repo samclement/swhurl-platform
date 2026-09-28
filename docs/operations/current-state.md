@@ -75,6 +75,19 @@ Shipped 28 September 2026 at `21d4e50`: HelmRepository `bjw-s` (Ready), `make ap
 
 Not yet exercised: a public-exposure instance on a domain outside `homelab.swhurl.com`, and Reloader restarting a generated app (fixtures skip the Reloader watch-list edit; Reloader itself is covered by `make reloader-test`). The example app is still raw manifests until PR05.
 
+## Example app migration (PR05)
+
+28 September 2026, commits `0c219bf` → `2f6eb31`:
+
+1. `hello-staging` and `hello-prod` were generated (unprivileged nginx 1.27 pinned by digest, UID 101, port 8080, no service-account token, read-only root) and deployed beside the old example on `staging-hello-next` / `hello-next`. Both redirected to sign-in and served a page byte-identical (SHA-256) to the old `nginx:1.25` page.
+2. Staging cutover (`1b8ae28`): one commit pruned the old staging resources and moved `staging-hello` to the new instance. A 2-second probe loop saw one failed request (Traefik default certificate) at 07:35:39 between the old and new Let's Encrypt certificates; all other requests got the sign-in redirect.
+3. Production cutover (`9b47d28`): the same for `hello`; two failed probes (about 4 s) at 07:40:13.
+4. Retirement (`2f6eb31`): `homelab-app-example` and `homelab-tenants` removed; the orphaned `apps-staging`/`apps-prod` namespaces, which held only the old certificate Secrets, were deleted by hand.
+
+Isolation check: a throwaway instance with a non-existent image tag stayed failing (`make app-status` reported `ImagePullBackOff … not found`) while both `hello` units reconciled the latest revision, stayed 1/1 ready and kept serving. Deleting that broken instance waited for its in-flight Helm install to hit the 5-minute timeout before the HelmRelease finalizer released the namespace.
+
+Not exercised: a real signed-in browser session on the new instances after cutover (the redirect to sign-in was checked, not the page behind it).
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

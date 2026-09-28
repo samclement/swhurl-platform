@@ -88,7 +88,16 @@ The MongoDB volume's `Retain` policy is a live patch; a re-created claim loses i
 
 If MongoDB is lost and there is no backup, a fresh ClickStack install seeds a new team key from `CLICKSTACK_API_KEY`; after the first sign-in, rotate the OTel ingestion key to it (see [Secrets](#secrets)).
 
-Restore into the live service (not yet exercised): stop `observability/clickstack-app`, pipe `age -d -i age.agekey <archive>` into `kubectl -n observability exec -i deploy/clickstack-mongodb -- mongorestore --archive --gzip --drop`, then start the app and run `make verify-platform`.
+Restore into the running service (rehearsed on a throwaway cluster, not yet on the live one):
+
+```bash
+kubectl -n observability scale deploy/clickstack-app --replicas=0
+age -d -i age.agekey <archive> | kubectl -n observability exec -i deploy/clickstack-mongodb -- mongorestore --archive --gzip --drop
+kubectl -n observability scale deploy/clickstack-app --replicas=1
+make verify-platform
+```
+
+Compare `mongorestore`'s document count with the backup's `.json` metadata. The collectors may log one HTTP 401 until the app is back up.
 
 ## Prove behaviour on the cluster
 

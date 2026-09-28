@@ -3,17 +3,13 @@ import base64
 import io
 import json
 import shutil
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import runtime_inputs, settings  # noqa: E402
-from swhurl.run import FakeRunner, Result  # noqa: E402
+from swhurl import ROOT, runtime_inputs, settings
+from swhurl.run import FakeRunner, Result
 
 SETTINGS_TEXT = """# Cluster settings (fixture comment must survive)
 apiVersion: v1

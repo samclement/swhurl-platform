@@ -211,7 +211,7 @@ The contract has three layers:
 
 | Layer | Responsibility |
 | --- | --- |
-| Generator (`tools/swhurl/app_new.py`, `make app-new`) | Creates instance namespace, Flux Kustomization, HelmRelease, Kustomize wiring, optional encrypted Secret stub; refuses overwrite/plaintext credentials. |
+| Generator (`tools/swhurl/apps/new.py`, `make app-new`) | Creates instance namespace, Flux Kustomization, HelmRelease, Kustomize wiring, optional encrypted Secret stub; refuses overwrite/plaintext credentials. |
 | Explicit instance values | Non-root where supported, no service-account token, dropped capabilities, small resources, app-specific probes, opt-in Secret reload. Defaults change by reviewable instance diff. |
 | CI on rendered resources | Enforces production digest, security/resources or reviewed exceptions, ingress/cookie boundaries, named storage class, and no hostNetwork/hostPath/token mount by default. |
 

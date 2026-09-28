@@ -1,15 +1,10 @@
 """Live-test framework guarantees, offline: dry run, preflight, cleanup, label guards."""
 import io
 import json
-import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl.livetests import (  # noqa: E402  # noqa: E402
+from swhurl.livetests import (
     LiveTest,
     Preflight,
     app_template,
@@ -17,8 +12,8 @@ from swhurl.livetests import (  # noqa: E402  # noqa: E402
     reloader,
     run_live_test,
 )
-from swhurl.report import Report  # noqa: E402
-from swhurl.run import FakeRunner, Result  # noqa: E402
+from swhurl.report import Report
+from swhurl.run import FakeRunner, Result
 
 
 def kube(existing=None, fail_on=None):

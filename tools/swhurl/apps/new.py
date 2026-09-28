@@ -23,11 +23,24 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
+from swhurl.apps import policy
+from swhurl.apps.contract import (
+    APP,
+    AUTH_MIDDLEWARE,
+    CHART,
+    CHART_REPOSITORY,
+    CHART_VERSION,
+    COOKIE_DOMAIN,
+    ENVIRONMENT,
+    ENVIRONMENTS,
+    EXPOSURE,
+    EXPOSURES,
+    MANAGED,
+    RETAINED_STORAGE_CLASS,
+    in_cookie_domain,
+)
 from swhurl.run import CommandError, Runner
 
-CHART_VERSION = '5.2.1'
-COOKIE_DOMAIN = 'homelab.swhurl.com'
-AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
 NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
 
@@ -49,10 +62,6 @@ def parse_image(image: str) -> dict:
     return image
 
 
-def under_cookie_domain(host: str) -> bool:
-    return host == COOKIE_DOMAIN or host.endswith('.' + COOKIE_DOMAIN)
-
-
 def validate(args) -> None:
     if not NAME_RE.match(args.name):
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
@@ -61,9 +70,9 @@ def validate(args) -> None:
     if args.exposure in ('authenticated-web', 'public'):
         if not args.host:
             raise GenerationError(f'--host is required for {args.exposure}')
-        if args.exposure == 'authenticated-web' and not under_cookie_domain(args.host):
+        if args.exposure == 'authenticated-web' and not in_cookie_domain(args.host):
             raise GenerationError(f'authenticated-web hosts must be under {COOKIE_DOMAIN} (shared sign-in cookie)')
-        if args.exposure == 'public' and under_cookie_domain(args.host):
+        if args.exposure == 'public' and in_cookie_domain(args.host):
             raise GenerationError(f'public hosts must be outside {COOKIE_DOMAIN}: the shared sign-in cookie would reach them')
     elif args.host:
         raise GenerationError('--host only applies to authenticated-web or public exposure')
@@ -118,7 +127,7 @@ def build_values(args) -> dict:
     if args.persistence:
         values['persistence']['data'] = {
             'type': 'persistentVolumeClaim',
-            'storageClass': 'local-path-retain',
+            'storageClass': RETAINED_STORAGE_CLASS,
             'accessMode': 'ReadWriteOnce',
             'size': args.persistence,
             'retain': True,
@@ -154,10 +163,10 @@ def generate(args, root: Path) -> list[Path]:
             raise GenerationError(f'{path} already exists; refusing to overwrite')
 
     labels = {
-        'platform.swhurl.com/managed': 'true',
-        'platform.swhurl.com/app': args.name,
-        'platform.swhurl.com/environment': args.env,
-        'platform.swhurl.com/exposure': args.exposure,
+        MANAGED: 'true',
+        APP: args.name,
+        ENVIRONMENT: args.env,
+        EXPOSURE: args.exposure,
     }
     ns = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': namespace, 'labels': labels}}
     if args.persistence:
@@ -169,8 +178,8 @@ def generate(args, root: Path) -> list[Path]:
         'metadata': {'name': args.name, 'namespace': namespace},
         'spec': {
             'interval': '30m',
-            'chart': {'spec': {'chart': 'app-template', 'version': CHART_VERSION,
-                               'sourceRef': {'kind': 'HelmRepository', 'name': 'bjw-s', 'namespace': 'flux-system'},
+            'chart': {'spec': {'chart': CHART, 'version': CHART_VERSION,
+                               'sourceRef': {'kind': 'HelmRepository', 'name': CHART_REPOSITORY, 'namespace': 'flux-system'},
                                'interval': '30m'}},
             'install': {'remediation': {'retries': 3}},
             'upgrade': {'remediation': {'retries': 3}},
@@ -262,10 +271,10 @@ def watch_namespace(root: Path, namespace: str) -> None:
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
-    p.add_argument('--env', required=True, choices=['staging', 'prod'])
+    p.add_argument('--env', required=True, choices=ENVIRONMENTS)
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
-    p.add_argument('--exposure', choices=['private', 'authenticated-web', 'public'], default='private',
+    p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
                         f'public: no sign-in, host outside {COOKIE_DOMAIN}')
     p.add_argument('--host')
@@ -284,6 +293,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-register', dest='register', action='store_false',
                    help='do not add the unit to clusters/home/kustomization.yaml')
+    p.add_argument('--no-policy-check', dest='policy_check', action='store_false',
+                   help='skip rendering the new instance against the app policy (needs helm)')
     return p
 
 
@@ -298,5 +309,24 @@ def main(argv=None) -> int:
         print(f'[OK] wrote {path.relative_to(args.root.resolve())}')
     if args.secret_keys:
         print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
+    if args.policy_check:
+        return check_generated(args.root.resolve() / 'tenants/apps' / args.name / args.env)
     print('[INFO] Next: make app-policy, then commit, push and make flux-reconcile')
+    return 0
+
+
+def check_generated(instance: Path, runner: Runner | None = None) -> int:
+    """Render what was just generated against the same contract app-policy enforces."""
+    try:
+        problems = policy.evaluate(instance, runner)
+    except CommandError as error:
+        print(f'[WARN] could not run the app policy ({error}); run make app-policy before committing')
+        return 0
+    if problems:
+        print('[BAD] the generated instance violates the app contract (generator and policy disagree):')
+        for problem in problems:
+            print(f'       {problem}')
+        return 1
+    print('[OK] generated instance passes the app policy')
+    print('[INFO] Next: commit, push and make flux-reconcile')
     return 0

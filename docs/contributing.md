@@ -33,6 +33,8 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 - Report through `swhurl.report.Report` (`[OK]`/`[BAD]`/`[WARN]` and the exit code).
 - Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command. Tests add `tools/` to `sys.path` and import `swhurl`.
 - A new command is a function `(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
+- Layout: `run.py` and `report.py` (foundation); `platform.py` (repository paths, label names, shared ClickStack queries, Flux unit discovery; one copy, not a constant per module); `apps/` (`contract.py` rules shared by `new.py` and `policy.py`, plus `ops.py`); `verify.py`, `validate.py`, `settings.py`, `runtime_inputs.py`, `secrets_check.py`, `lifecycle.py`, `recovery.py` (backup and restore test), `retention.py` (pruning); `livetests/`.
+- Tests import `swhurl` directly (`from swhurl import ROOT`); `make test-safety` puts `tools/` on `PYTHONPATH`. To run one file: `PYTHONPATH=tools python3 -m unittest tests.test_verify`. `test_command_safety.py` is the only place that uses fake executables, for what only a real process shows; everything else uses `FakeRunner`.
 - Makefile recipes stay aliases and sequencing: no shell `if`/loops, `sed`, `grep` or `jq`. Use `make` functions (`$(if)`, `$(foreach)`) for plain sequencing and move anything else into `swhurl`.
 
 ## Checklist for a change

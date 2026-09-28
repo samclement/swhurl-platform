@@ -4,14 +4,11 @@ import os
 import subprocess
 import sys
 import unittest
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import __main__ as cli  # noqa: E402
-from swhurl.report import Report  # noqa: E402
-from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner  # noqa: E402
+from swhurl import ROOT
+from swhurl import __main__ as cli
+from swhurl.report import Report
+from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner
 
 SECRET = 'fixture-secret-token-value'
 

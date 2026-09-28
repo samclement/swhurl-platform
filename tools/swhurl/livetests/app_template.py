@@ -16,12 +16,13 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
+from swhurl.apps.contract import APP
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 FIXTURES = Path('tests/fixtures/apps')
 INSTANCES = ('smoke-worker-staging', 'smoke-web-staging', 'smoke-data-prod')
 HOST = 'smoke-web.homelab.swhurl.com'
-APP_LABEL = 'platform.swhurl.com/app'
+APP_LABEL = APP
 
 
 def fixture_unit(instance: str) -> dict:

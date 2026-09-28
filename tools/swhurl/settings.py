@@ -15,10 +15,10 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, platform
 
-SETTINGS = Path('clusters/home/flux-system/sources/configmap-platform-settings.yaml')
-ISSUERS = Path('infrastructure/cert-manager/issuers')
+SETTINGS = platform.SETTINGS
+ISSUERS = platform.ISSUERS
 
 
 class SettingsError(Exception):

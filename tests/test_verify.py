@@ -2,18 +2,16 @@
 import base64
 import io
 import json
-import sys
+import shutil
+import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools'))
-
-from swhurl import verify  # noqa: E402
-from swhurl.report import Report  # noqa: E402
-from swhurl.run import FakeRunner, Result  # noqa: E402
+from swhurl import platform, verify
+from swhurl.report import Report
+from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
 OTHER = 'fixture-other-ingestion-key-9999'
@@ -147,15 +145,42 @@ class VerifyPlatformTests(unittest.TestCase):
 
 
 class VerifyConfigTests(unittest.TestCase):
-    def test_passes_on_this_repo(self):
-        self.assertEqual(verify.verify_config([]), 0)
+    def make_root(self, *, secret=True, settings='  OAUTH_HOST: oauth.example\n  CERT_ISSUER: letsencrypt-prod\n'):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'clusters/home/flux-system/sources').mkdir(parents=True)
+        (root / 'clusters/home/flux-system/kustomizations.yaml').write_text('')
+        (root / 'clusters/home/platform.yaml').write_text(
+            'apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata: {name: homelab-svc}\n'
+            'spec: {path: ./svc, decryption: {provider: sops}}\n')
+        (root / 'svc').mkdir()
+        if secret:
+            (root / 'svc/secret.sops.yaml').write_text('kind: Secret\n')
+        (root / platform.SETTINGS).write_text(
+            'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: platform-settings}\ndata:\n' + settings)
+        return root
 
-    def test_fails_on_missing_secret_file(self):
-        with mock.patch.dict(verify.REQUIRED_SECRETS, {'no/such/secret.sops.yaml': 'fixture secret missing'}):
-            out = io.StringIO()
-            with mock.patch('sys.stdout', out):
-                self.assertEqual(verify.verify_config([]), 1)
-            self.assertIn('fixture secret missing', out.getvalue())
+    def run_config(self, root=None):
+        out = io.StringIO()
+        with mock.patch('sys.stdout', out):
+            code = verify.verify_config([], **({'root': root} if root else {}))
+        return code, out.getvalue()
+
+    def test_passes_on_this_repo(self):
+        self.assertEqual(self.run_config()[0], 0)
+
+    def test_passes_on_a_minimal_repo(self):
+        self.assertEqual(self.run_config(self.make_root())[0], 0)
+
+    def test_required_secrets_come_from_decrypting_units(self):
+        code, out = self.run_config(self.make_root(secret=False))
+        self.assertEqual(code, 1)
+        self.assertIn('homelab-svc decrypts SOPS but its path has no *.sops.yaml Secret', out)
+
+    def test_missing_settings_fail(self):
+        code, out = self.run_config(self.make_root(settings='  CERT_ISSUER: letsencrypt-prod\n'))
+        self.assertEqual(code, 1)
+        self.assertIn('OAUTH_HOST missing', out)
 
 
 if __name__ == '__main__':

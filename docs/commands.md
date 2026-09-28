@@ -17,7 +17,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `app-new NAME=<app> ARGS="..."` | Generate an app instance ([apps](apps.md)) | Git |
+| `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy ([apps](apps.md)) | Git |
 | `app-status APP= ENV=` | Desired vs applied Git revision and image digest, replicas, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |

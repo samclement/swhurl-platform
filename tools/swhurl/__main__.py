@@ -17,16 +17,16 @@ COMMANDS = {
     'platform-certs': ('swhurl.settings', 'platform_certs', 'Set CERT_ISSUER in platform-settings (Git edit only)'),
     'wait-secret-key': ('swhurl.runtime_inputs', 'wait_secret_key', 'Wait until a Secret key has a value (never printed)'),
     'secrets-check': ('swhurl.secrets_check', 'main', 'Decrypt tracked Secrets in memory and flag problems'),
-    'app': ('swhurl.app_ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
-    'app-new': ('swhurl.app_new', 'main', 'Generate an app instance'),
-    'app-policy': ('swhurl.app_policy', 'main', 'Render app instances and check the app contract'),
+    'app': ('swhurl.apps.ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
+    'app-new': ('swhurl.apps.new', 'main', 'Generate an app instance'),
+    'app-policy': ('swhurl.apps.policy', 'main', 'Render app instances and check the app contract'),
     'lifecycle': ('swhurl.lifecycle', 'main', 'suspend | resume | destroy-data a Flux unit, release or volume'),
     'lifecycle-test': ('swhurl.livetests.lifecycle', 'main', 'Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app'),
     'reloader-test': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),
     'app-template-test': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'restore-test-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
-    'prune-backups': ('swhurl.backups', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
+    'prune-backups': ('swhurl.retention', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 
 

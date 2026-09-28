@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, platform
 from swhurl.run import CommandError, Runner
 
 
@@ -44,7 +44,7 @@ def looks_double_encoded(raw: bytes) -> bool:
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
-    key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / 'age.agekey')
+    key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / platform.AGE_KEY)
     if not Path(key_file).is_file():
         print(f'[ERROR] age key not found at {key_file}; set SOPS_AGE_KEY_FILE', file=sys.stderr)
         return 2

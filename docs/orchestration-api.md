@@ -85,6 +85,8 @@ Key runtime-intent targets:
   - Wraps `flux suspend|resume`; workloads and data are untouched.
 - `make destroy-data TARGET=pvc/<ns>/<name>|pv/<name> CONFIRM=<TARGET> [DRY_RUN=true]`
   - Deletes an unused, unmanaged claim or `Released` PV and its host data. Refuses without an exact `CONFIRM`.
+- `make reloader-test [DRY_RUN=true]`
+  - Creates disposable workloads and Secrets to prove Reloader restarts only opted-in workloads in watched namespaces, then removes them.
 - `make lifecycle-test [DRY_RUN=true]`
   - Runs the disposable lifecycle proof described in the [runbook](runbook.md#lifecycle-operations).
 - `make backup-clickstack-mongodb [DRY_RUN=true]`

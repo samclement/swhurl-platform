@@ -1,0 +1,43 @@
+# Restarts opted-in workloads when a named Secret changes. Scoped mode: it
+# watches only the namespaces listed below and gets namespaced Roles there,
+# not cluster-wide Secret access. Workloads opt in per Secret with
+#   secret.reloader.stakater.com/reload: "<secret-name>"
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: reloader
+  namespace: platform-system
+spec:
+  interval: 30m
+  releaseName: reloader
+  chart:
+    spec:
+      chart: reloader
+      version: 2.2.17
+      sourceRef:
+        kind: HelmRepository
+        name: stakater
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    reloader:
+      watchGlobally: false
+      # Add a namespace here before annotating a workload in it.
+      namespaces: [ingress, logging]
+      ignoreConfigMaps: true
+      # Patch a pod-template annotation rather than injecting env vars.
+      reloadStrategy: annotations
+      readOnlyRootFileSystem: true
+      deployment:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi

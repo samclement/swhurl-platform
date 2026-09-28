@@ -191,8 +191,8 @@ make runtime-inputs-sync
 ```
 
 Note:
-- `logging/hyperdx-secret` value changes do not hot-reload into already-running `otel-k8s-*` collectors because `secretKeyRef` env vars are read at container start.
-- `make runtime-inputs-refresh-otel` now waits for `hyperdx-secret` propagation before collector restart to avoid stale-token rollouts.
+- Collectors read `logging/hyperdx-secret` at container start; Reloader restarts both when the Secret changes, so `make runtime-inputs-sync` is enough.
+- `make runtime-inputs-refresh-otel` remains as an explicit fallback: it waits for `hyperdx-secret` propagation, then restarts collectors itself.
 - For ClickStack key rotations, prefer:
 
 ```bash
@@ -238,7 +238,7 @@ test -n "$dst" && echo "OK: ingestion key is present in logging/hyperdx-secret"
 4. Dynamic DNS timer config: after changing `DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, or `AWS_PROFILE`, rerun `make host-dns` so `/etc/swhurl-platform/dynamic-dns.env` is regenerated for systemd.
 5. cert-manager issuance timing: first reconcile can fail until DNS propagates and ACME HTTP-01 checks can reach ingress.
 6. ClickStack ingestion timing: OTLP ingestion is not fully active until initial team setup completes in UI.
-7. OTel collector key reload: after key rotation, restart collectors (or use `make runtime-inputs-refresh-otel`) because `secretKeyRef` env values do not hot-reload in running pods.
+7. Secret reloads: Reloader restarts oauth2-proxy and the OTel collectors when their Secrets change. Other consumers need the opt-in annotation or a manual restart. `make reloader-test` proves the opt-in and namespace scope.
 
 ## Verification
 

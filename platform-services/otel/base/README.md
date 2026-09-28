@@ -5,7 +5,7 @@ Active Flux-owned standalone OTel collector releases.
 - Runtime ingestion key lives in `secret-hyperdx.sops.yaml` as `HYPERDX_API_KEY`.
 - The rendered Secret is `logging/hyperdx-secret`; pods consume it via `secretKeyRef`.
 - **`HYPERDX_API_KEY` must match the live MongoDB ingestion key** — `hyperdx.teams.apiKey` in the ClickStack MongoDB instance. This is NOT the same as `CLICKSTACK_API_KEY` (the Helm bootstrap key); see `platform-services/clickstack/base/README.md`.
-- Secret environment variables do not hot-reload; collector pods must restart after key rotation.
+- Secret environment variables do not hot-reload, but both collectors opt in to Reloader (`secret.reloader.stakater.com/reload: hyperdx-secret`), so they restart when the Secret changes.
 
 ## Verifying sync
 

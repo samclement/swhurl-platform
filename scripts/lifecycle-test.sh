@@ -17,7 +17,7 @@ NS=lifecycle-test
 UNIT=lifecycle-test
 ORPHAN_UNIT=lifecycle-test-orphan
 LABEL=platform.swhurl.com/lifecycle-test
-LIFECYCLE="$ROOT/scripts/lifecycle.sh"
+LIFECYCLE=(env PYTHONPATH="$ROOT/tools" python3 -m swhurl lifecycle)
 
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
   sed -n '2,12p' "$0"
@@ -87,10 +87,10 @@ pv="$(kubectl -n "$NS" get pvc data -o jsonpath='{.spec.volumeName}')"
 [[ -n "$original" ]] && ok "workload wrote data to $pv" || bad "no marker written"
 
 step "Suspend and resume"
-"$LIFECYCLE" suspend "kustomization/$UNIT" >/dev/null
+"${LIFECYCLE[@]}" suspend "kustomization/$UNIT" >/dev/null
 [[ "$(kubectl -n flux-system get kustomization "$UNIT" -o jsonpath='{.spec.suspend}')" == "true" ]] && ok "unit suspended" || bad "unit not suspended"
 [[ "$(kubectl -n "$NS" get deploy writer -o jsonpath='{.status.availableReplicas}')" == "1" ]] && ok "workload still running while suspended" || bad "workload stopped while suspended"
-"$LIFECYCLE" resume "kustomization/$UNIT" >/dev/null
+"${LIFECYCLE[@]}" resume "kustomization/$UNIT" >/dev/null
 kubectl -n flux-system wait --for=condition=Ready "kustomization/$UNIT" --timeout=3m >/dev/null && ok "unit resumed and Ready" || bad "unit not Ready after resume"
 
 step "Uninstall (delete app unit)"
@@ -102,9 +102,9 @@ kubectl get namespace "$NS" >/dev/null 2>&1 && ok "prune-protected namespace kep
 [[ "$(marker)" == "$original" ]] && ok "data intact after uninstall" || bad "data changed or missing after uninstall"
 
 step "Destroy data"
-if CONFIRM= "$LIFECYCLE" destroy-data "pvc/$NS/data" >/dev/null 2>&1; then bad "destroy-data ran without CONFIRM"; else ok "destroy-data refuses without CONFIRM"; fi
+if CONFIRM= "${LIFECYCLE[@]}" destroy-data "pvc/$NS/data" >/dev/null 2>&1; then bad "destroy-data ran without CONFIRM"; else ok "destroy-data refuses without CONFIRM"; fi
 [[ "$(kubectl -n "$NS" get pvc data -o jsonpath='{.metadata.name}' 2>/dev/null)" == "data" ]] && ok "claim untouched by refused destroy" || bad "claim removed by refused destroy"
-CONFIRM="pvc/$NS/data" "$LIFECYCLE" destroy-data "pvc/$NS/data" >/dev/null
+CONFIRM="pvc/$NS/data" "${LIFECYCLE[@]}" destroy-data "pvc/$NS/data" >/dev/null
 ! kubectl -n "$NS" get pvc data >/dev/null 2>&1 && ok "claim destroyed" || bad "claim still exists"
 ! kubectl get pv "$pv" >/dev/null 2>&1 && ok "PV $pv and its data destroyed" || bad "PV $pv still exists"
 

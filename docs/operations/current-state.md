@@ -59,6 +59,14 @@ Before/after comparison: the six Helm release revisions, 13 platform/app pod UID
 
 Not exercised live: a fresh bootstrap (issuer ordering is by construction and checked by `make test-safety`) and an app deploy during a real ClickStack/MinIO outage (the example app has no dependency path to them).
 
+## Reloader (PR07a)
+
+Deployed 28 September 2026 at `9c719fe` as `platform-system/reloader` (chart 2.2.17). It logs watching only `ingress`, `logging` and its own `platform-system`; no ClusterRole or ClusterRoleBinding exists. Adding the opt-in annotations upgraded the oauth2-proxy and OTel releases without restarting any pod.
+
+- `make reloader-test` passed: an opted-in workload in `logging` restarted after its Secret changed; an identical unannotated workload and an opted-in workload in an unwatched namespace did not.
+- Real Secret check without changing credentials: adding and then removing a dummy key on `logging/hyperdx-secret` made Reloader restart both OTel collectors (logged for each change); `oauth2-proxy-shared` was not restarted. Afterwards the Secret held only `HYPERDX_API_KEY`, collectors showed no 401/export errors, ClickHouse received fresh logs, `homelab-otel` reconciled cleanly and `make verify-platform` passed.
+- Not exercised: a real credential rotation of `oauth2-proxy-shared-secret` or the ingestion key. `make runtime-inputs-refresh-otel` remains as a fallback.
+
 ## Still to verify before live changes
 
 - k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.

@@ -89,12 +89,12 @@ teardown reinstall:
 	  exit 0; \
 	fi; \
 	echo "[ERROR] $@ is disabled: Flux pruning can delete namespaces, Helm releases and persistent data." >&2; \
-	echo "Use Git updates and make flux-reconcile for deployment. See docs/runbook.md for lifecycle boundaries." >&2; \
+	echo "Use Git updates and make flux-reconcile for deployment. See docs/operations.md#lifecycle." >&2; \
 	exit 2
 
 .PHONY: flux-bootstrap
 flux-bootstrap:
-	@echo "[INFO] Requires Flux controllers already installed (see README: Manual Flux installation)."
+	@echo "[INFO] Requires Flux controllers already installed (see docs/bootstrap.md)."
 	kubectl apply -k clusters/home/flux-system
 
 .PHONY: runtime-inputs-sync

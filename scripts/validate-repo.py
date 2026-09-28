@@ -162,7 +162,47 @@ def validate_render(path: Path, spec: dict, settings: dict[str, str]) -> None:
     print(f"[OK] rendered and schema-validated {label}")
 
 
+LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def anchors(markdown: Path) -> set[str]:
+    """GitHub-style heading anchors for a Markdown file."""
+    found = set()
+    for line in markdown.read_text().splitlines():
+        if line.startswith("#"):
+            text = line.lstrip("#").strip().lower()
+            text = re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+            found.add(text)
+    return found
+
+
+def check_doc_links() -> None:
+    """Fail on relative Markdown links whose file or heading anchor does not exist."""
+    tracked = run(["git", "ls-files", "*.md"]).split()
+    untracked = run(["git", "ls-files", "--others", "--exclude-standard", "*.md"]).split()
+    broken = []
+    checked = 0
+    for name in sorted(set(tracked + untracked)):
+        source = ROOT / name
+        if not source.exists() or name.startswith(".claude/"):
+            continue
+        for target in LINK.findall(source.read_text()):
+            if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+                continue
+            path_part, _, anchor = target.partition("#")
+            resolved = (source.parent / path_part).resolve() if path_part else source
+            checked += 1
+            if not resolved.exists():
+                broken.append(f"{name}: {target} (missing file)")
+            elif anchor and resolved.suffix == ".md" and anchor not in anchors(resolved):
+                broken.append(f"{name}: {target} (missing heading)")
+    if broken:
+        raise ValueError("broken documentation links:\n  " + "\n  ".join(broken))
+    print(f"[OK] {checked} relative documentation links resolve")
+
+
 def main() -> None:
+    check_doc_links()
     check_shell_syntax()
     check_secrets()
     settings = platform_settings()

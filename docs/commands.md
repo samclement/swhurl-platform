@@ -8,7 +8,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, wait | Cluster |
 | `install` † | `verify-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
-| `verify-config` | Check the required Secret files and `OAUTH_HOST` exist | Local |
+| `verify-config` | Check the required Secret files and the `BASE_DOMAIN` and `CERT_ISSUER` settings exist | Local |
 | `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), retention settings | Cluster (read) |
 | `verify` | `verify-config` and `verify-platform` | Cluster (read) |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |

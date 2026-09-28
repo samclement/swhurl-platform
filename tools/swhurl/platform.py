@@ -41,6 +41,12 @@ COLLECTION_COUNTS_SCRIPT = ('const c = {}; db.getCollectionNames().sort().forEac
 """Print ``{collection: document count}`` as JSON."""
 
 
+def base_domain(root: Path = ROOT) -> str:
+    """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
+    data = yaml.safe_load((root / SETTINGS).read_text()).get('data') or {}
+    return data['BASE_DOMAIN']
+
+
 def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:
     """Every Flux Kustomization defined in Git, with the file that defines it."""
     files = [root / ROOT_UNITS, *sorted(p for p in (root / CLUSTER).iterdir() if p.suffix in ('.yaml', '.yml'))]

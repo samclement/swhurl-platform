@@ -16,12 +16,12 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps.contract import APP
+from swhurl.apps.contract import APP, COOKIE_DOMAIN
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 FIXTURES = Path('tests/fixtures/apps')
 INSTANCES = ('smoke-worker-staging', 'smoke-web-staging', 'smoke-data-prod')
-HOST = 'smoke-web.homelab.swhurl.com'
+HOST = f'smoke-web.{COOKIE_DOMAIN}'
 APP_LABEL = APP
 
 

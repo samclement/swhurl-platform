@@ -8,4 +8,3 @@ data:
   # Parent domain of every platform host and the sign-in cookie. Apps write their hosts
   # literally; tools/swhurl reads this value for the app policy.
   BASE_DOMAIN: homelab.swhurl.com
-  OAUTH_HOST: oauth.homelab.swhurl.com

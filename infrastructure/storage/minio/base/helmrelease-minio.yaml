@@ -39,11 +39,11 @@ spec:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
       path: /
       hosts:
-        - minio.homelab.swhurl.com
+        - minio.${BASE_DOMAIN}
       tls:
         - secretName: minio-tls
           hosts:
-            - minio.homelab.swhurl.com
+            - minio.${BASE_DOMAIN}
     consoleIngress:
       enabled: true
       ingressClassName: traefik
@@ -51,8 +51,8 @@ spec:
         cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
       path: /
       hosts:
-        - minio-console.homelab.swhurl.com
+        - minio-console.${BASE_DOMAIN}
       tls:
         - secretName: minio-console-tls
           hosts:
-            - minio-console.homelab.swhurl.com
+            - minio-console.${BASE_DOMAIN}

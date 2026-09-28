@@ -145,7 +145,7 @@ class VerifyPlatformTests(unittest.TestCase):
 
 
 class VerifyConfigTests(unittest.TestCase):
-    def make_root(self, *, secret=True, settings='  OAUTH_HOST: oauth.example\n  CERT_ISSUER: letsencrypt-prod\n'):
+    def make_root(self, *, secret=True, settings='  BASE_DOMAIN: example.test\n  CERT_ISSUER: letsencrypt-prod\n'):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
         (root / 'clusters/home/flux-system/sources').mkdir(parents=True)
@@ -180,7 +180,7 @@ class VerifyConfigTests(unittest.TestCase):
     def test_missing_settings_fail(self):
         code, out = self.run_config(self.make_root(settings='  CERT_ISSUER: letsencrypt-prod\n'))
         self.assertEqual(code, 1)
-        self.assertIn('OAUTH_HOST missing', out)
+        self.assertIn('BASE_DOMAIN missing', out)
 
 
 if __name__ == '__main__':

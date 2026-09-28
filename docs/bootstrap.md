@@ -31,7 +31,7 @@ Records come from `DYNAMIC_DNS_RECORDS` in [`host/dns.env`](../host/dns.env); ov
 
 ## 3. Settings and Secrets
 
-Non-secret cluster settings are in [`configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml): `CERT_ISSUER` (`letsencrypt-prod` or `letsencrypt-staging`) and `OAUTH_HOST` (the sign-in callback host).
+Non-secret cluster settings are in [`configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml): `CERT_ISSUER` (`letsencrypt-prod` or `letsencrypt-staging`) and `BASE_DOMAIN` (parent domain of every platform host and the sign-in cookie; see [settings](services.md#settings)).
 
 Secrets are SOPS-encrypted files beside the service that uses them, encrypted to the age key in [`.sops.yaml`](../.sops.yaml). You need that private key (`age.agekey`, git-ignored; an encrypted backup exists off-host). To start with a new key instead, generate one with `age-keygen -o age.agekey`, put its public key (`age-keygen -y age.agekey`) in `.sops.yaml`, and re-create every Secret.
 
@@ -44,7 +44,7 @@ sops platform-services/clickstack/base/secret-clickstack-runtime-inputs.sops.yam
 git commit -am "secrets: set platform secrets" && git push
 ```
 
-The Google OAuth client must allow the redirect URI `https://<OAUTH_HOST>/oauth2/callback`. The OTel ingestion key is set later, in step 5.
+The Google OAuth client must allow the redirect URI `https://oauth.<BASE_DOMAIN>/oauth2/callback`. The OTel ingestion key is set later, in step 5.
 
 ## 4. Flux
 

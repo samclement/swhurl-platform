@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from swhurl.platform import label
+from swhurl.platform import base_domain, label
 
 CHART = 'app-template'
 CHART_VERSION = '5.2.1'
 CHART_REPOSITORY = 'bjw-s'
 
-COOKIE_DOMAIN = 'homelab.swhurl.com'
+COOKIE_DOMAIN = base_domain()
 """Every host under this domain receives the shared sign-in cookie."""
 AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
 

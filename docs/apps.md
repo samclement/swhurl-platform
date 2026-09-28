@@ -68,5 +68,5 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Promoting a digest is a manual edit; automated update PRs are planned work ([plan](plan.md) section 0, PR06).
+- Image tags and digests, and promotion between environments, are manual edits. Renovate opens PRs only for chart versions, including app-template ([chart updates](operations.md#chart-updates)); digest PRs are planned ([plan](plan.md) section 0, PR06).
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

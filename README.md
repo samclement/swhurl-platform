@@ -38,4 +38,5 @@ make verify-platform             # expect "Validation passed."
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
 | `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, with their encrypted Secrets |
 | `apps/<app>/<env>/` | Generated app instances |
+| `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/`, `host/`, `tests/` | Python operator tooling and the web console (in progress); host systemd timers for dynamic DNS and the daily MongoDB backup (bash); offline tests and fixtures |

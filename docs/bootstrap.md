@@ -40,11 +40,12 @@ Set the platform Secrets ([conventions](operations.md#secrets)):
 ```bash
 export SOPS_AGE_KEY_FILE=./age.agekey
 sops platform/oauth2-proxy/secret.sops.yaml     # Google OAuth client-id, client-secret; cookie-secret
-sops platform/clickstack/secret.sops.yaml # CLICKSTACK_API_KEY (bootstrap key)
+sops platform/clickstack/secret.sops.yaml      # ingestion key, admin login, internal passwords
+sops platform/otel/secret.sops.yaml            # the same CLICKSTACK_INGESTION_KEY
 git commit -am "secrets: set platform secrets" && git push
 ```
 
-The Google OAuth client must allow the redirect URI `https://oauth.<BASE_DOMAIN>/oauth2/callback`. The OTel ingestion key is set later, in step 5.
+The Google OAuth client must allow the redirect URI `https://oauth.<BASE_DOMAIN>/oauth2/callback`. Generate the ingestion key yourself (for example `uuidgen`) and put the same value in both ClickStack and OTel files; `make check-secrets` checks they match ([what each value is](services.md#clickstack-and-otel)).
 
 ## 4. Flux
 
@@ -57,26 +58,21 @@ make flux-bootstrap   # applies the two root units and the Git/Helm sources
 make install          # reconciles, then runs make verify-platform
 ```
 
-Units come up in dependency order ([architecture](architecture.md#flux-units)). First image pulls can take several minutes; watch with `flux get kustomizations`. `make verify-platform` fails at this point on the ingestion key and on the MongoDB volume's reclaim policy; both are fixed below.
+Units come up in dependency order ([architecture](architecture.md#flux-units)). First image pulls can take several minutes; watch with `flux get kustomizations`. `make verify-platform` fails at this point on the ingestion key and ClickStack sign-up until step 5.
 
-## 5. ClickStack first login and ingestion key
-
-With a MongoDB backup, restore it instead ([backups and recovery](operations.md#backups-and-recovery)) and skip to step 6: the restored team key already matches `HYPERDX_API_KEY` in Git. Otherwise:
-
-1. Open `https://clickstack.homelab.swhurl.com` and create the first team and user.
-2. Copy the team's ingestion API key from the ClickStack UI.
-3. Store it as `HYPERDX_API_KEY` in [`platform/otel/secret.sops.yaml`](../platform/otel/secret.sops.yaml). The file uses `data`, so encode it exactly once (`printf %s '<key>' | base64 -w0`); encoding twice silently breaks telemetry.
-4. Commit, push, `make reconcile UNIT=platform-otel`. Reloader restarts the collectors.
-
-## 6. Protect data, then verify
-
-Set the ClickStack MongoDB volume to survive claim deletion ([recovery](operations.md#backups-and-recovery)):
+## 5. ClickStack admin and ingestion key
 
 ```bash
-pv="$(kubectl -n observability get pvc clickstack-mongodb -o jsonpath='{.spec.volumeName}')"
-kubectl patch pv "$pv" -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+make clickstack-bootstrap
+```
+
+It waits for the HyperDX API, registers the admin account from SOPS (HyperDX then closes registration) and writes `CLICKSTACK_INGESTION_KEY` into the team, so the collectors' data is accepted within a minute. Until it runs, the ClickStack UI (behind Google sign-in) offers open registration. To keep an old team, users and dashboards, restore a MongoDB backup first ([backups and recovery](operations.md#backups-and-recovery)), then run it.
+
+## 6. Verify and back up
+
+```bash
 make verify-platform
 make backup-mongodb
 ```
 
-`make verify-platform` checks every Flux unit, the HTTP→HTTPS redirect, the ingestion key (by bytes, never printed) and retention settings.
+`make verify-platform` checks every Flux unit, the HTTP→HTTPS redirect, the ingestion key (by bytes, never printed), that ClickStack registration is closed, retention settings and the MongoDB volume's reclaim policy.

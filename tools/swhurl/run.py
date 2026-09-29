@@ -13,6 +13,7 @@ Every call to kubectl, flux, helm, sops, age or git goes through a
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shlex
@@ -111,8 +112,11 @@ class Runner:
         return self._attach(argv)
 
     def pipe(self, producer: Sequence[str | Path], consumer: Sequence[str | Path], *,
-             mutating: bool = False, env: Mapping[str, str] | None = None) -> Result:
+             mutating: bool = False, env: Mapping[str, str] | None = None, input: str | None = None) -> Result:
         """Run ``producer | consumer`` and return the consumer's result.
+
+        ``input`` is written to the producer's stdin (for example a config file
+        holding a credential, so it never appears in a command line).
 
         The two processes are joined by an OS pipe, so the stream (for example a
         database dump before encryption) never passes through Python, is never
@@ -125,7 +129,7 @@ class Runner:
         if mutating and self.dry_run:
             self._plan(left + ('|',) + right, display=f'{self.describe(left)} | {self.describe(right)}')
             return Result(right)
-        left_result, right_result = self._pipe(left, right, env={**self.env, **(env or {})})
+        left_result, right_result = self._pipe(left, right, env={**self.env, **(env or {})}, input=input)
         failed = [r for r in (left_result, right_result) if r.returncode]
         if failed:
             details = '; '.join(self.redact(r.stderr.strip()) for r in failed if r.stderr.strip())
@@ -139,10 +143,11 @@ class Runner:
         self.echo(f'  would run: {display or self.describe(argv)}')
 
     def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
-              env: Mapping[str, str]) -> tuple[Result, Result]:
+              env: Mapping[str, str], input: str | None = None) -> tuple[Result, Result]:
         full_env = {**os.environ, **env} if env else None
         try:
-            producer = subprocess.Popen(left, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.cwd,
+            producer = subprocess.Popen(left, stdin=subprocess.PIPE if input is not None else None,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.cwd,
                                         env=full_env)
         except FileNotFoundError:
             raise CommandError(left, f'missing required command: {left[0]}') from None
@@ -158,6 +163,10 @@ class Runner:
             raise CommandError(right, f'missing required command: {right[0]}') from None
         finally:
             producer.stdout.close()  # the consumer holds the only read end now
+        if input is not None:
+            with contextlib.suppress(BrokenPipeError):
+                producer.stdin.write(input.encode())
+            producer.stdin.close()
         out, err = consumer.communicate()
         producer.wait()
         drain.join()
@@ -216,8 +225,8 @@ class FakeRunner(Runner):
         return self._execute(argv, input=None, env={}, cwd=None).returncode
 
     def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
-              env: Mapping[str, str]) -> tuple[Result, Result]:
-        produced = self._execute(left, input=None, env=env, cwd=None)
+              env: Mapping[str, str], input: str | None = None) -> tuple[Result, Result]:
+        produced = self._execute(left, input=input, env=env, cwd=None)
         consumed = self._execute(right, input=produced.stdout, env=env, cwd=None)
         return Result(left, produced.returncode, '', produced.stderr), consumed
 

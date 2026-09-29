@@ -34,7 +34,8 @@ flowchart LR
   sources[cluster-sources] --> stack[cluster-stack]
   base[infra-base] --> cm[infra-cert-manager] --> issuers[infra-issuers]
   base --> auth[platform-oauth2-proxy]
-  base --> clickstack[platform-clickstack]
+  base --> ops[platform-clickstack-operators] --> clickstack[platform-clickstack]
+  auth --> clickstack
   base --> otel[platform-otel]
   base --> reloader[platform-reloader]
   traefik[infra-traefik]
@@ -51,14 +52,15 @@ flowchart LR
 | `infra-issuers` | ClusterIssuers | cert-manager | |
 | `infra-traefik` | k3s Traefik `HelmChartConfig` | — | |
 | `platform-oauth2-proxy` | oauth2-proxy, its Secret, the sign-in middleware | infra-base | settings, SOPS |
-| `platform-clickstack` | ClickStack, its Secret, ClickHouse log TTL | infra-base | settings, SOPS |
+| `platform-clickstack-operators` | MongoDB and ClickHouse operators and their CRDs (`platform/clickstack-operators`) | infra-base | |
+| `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
-**Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), Helm `keepPVC`/`retain`, `Retain` volumes and backups.
+**Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), operator-created claims that Helm uninstall leaves behind, `Retain` volumes and backups.
 
 **Suspension** stops a unit applying Git changes. The HelmReleases it created keep reconciling unless they are suspended too.
 

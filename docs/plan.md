@@ -4,11 +4,11 @@
 
 ## 0. Where this paused and what is left
 
-Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (12 units, all Ready), and re-read that file's "Not exercised" notes.
+Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (13 units, all Ready), and re-read that file's "Not exercised" notes.
 
 **Remaining plan work**
 
-1. **PR06 — GHCR publishing and Renovate** (section 4). Chart update PRs are live ([operations](operations.md#chart-updates)); the first, ClickStack 1.1.2, was merged and verified on 28 September 2026. Still needs decisions only you can make: which app repository goes first and public or private GHCR images (private needs pull credentials per namespace). Image digest updates stay disabled in `renovate.json` until then: Renovate reads the `hello` image's `tag` but not its separate `digest` field, and would bump both environments at once.
+1. **PR06 — GHCR publishing and Renovate** (section 4). Chart update PRs are live ([operations](operations.md#chart-updates)); the first, ClickStack 1.1.2, was merged and verified on 28 September 2026. ClickStack 3.x was installed fresh rather than upgraded on 29 September 2026 ([current state](current-state.md)). Still needs decisions only you can make: which app repository goes first and public or private GHCR images (private needs pull credentials per namespace). Image digest updates stay disabled in `renovate.json` until then: Renovate reads the `hello` image's `tag` but not its separate `digest` field, and would bump both environments at once.
 2. **PR08a remainder** (section 5): choose an off-host backup destination, then schedule `make backup-mongodb` (deliberately manual until then; copy `~/.local/state/swhurl-platform/backups` to the USB meanwhile). Also restore on a separate machine, and bring HyperDX up against restored data.
 3. **Final operator exercise** (section 6), using only the docs.
 4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
@@ -61,8 +61,6 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 **Known issues, deliberately not fixed yet**
 
-- `CLICKSTACK_API_KEY` is stored double base64-encoded; the ClickStack app runs with the 48-character once-decoded text. Harmless today (it is not the team ingestion key), but fixing it restarts ClickStack with a different `HYPERDX_API_KEY`. Plan and test it; `make check-secrets` warns until then.
-- The MongoDB PV's `Retain` policy is a live patch, not in Git (dynamic PV). `make verify-platform` fails if a recreated claim loses it.
 - Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). `make check-apps` now fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie. Public or untrusted apps must use another parent domain; none exist yet.
 

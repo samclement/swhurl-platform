@@ -4,13 +4,13 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## Cluster now
 
-Checked read-only on 28 September 2026 at `97faeeb`:
+Checked read-only on 29 September 2026 at `c8723e2`:
 
-- Host: Arch Linux x86-64; one Ready node, `arch` at `192.168.1.200`, k3s `v1.34.4+k3s1`, containerd `2.1.5-k3s1`; 31 GiB RAM (22 GiB available); root filesystem 239 GiB, 42 GiB used.
-- Flux `v2.8.1`; all 12 Kustomizations Ready: the two roots (`cluster-sources`, `cluster-stack`), `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack`, `platform-otel`, `platform-reloader`, `app-hello-staging` and `app-hello-prod`.
-- Eight HelmReleases Ready: cert-manager `v1.19.3`, oauth2-proxy-shared `10.1.3`, ClickStack `1.1.1`, both OTel collectors `0.145.0`, Reloader `2.2.17`, and both `hello` instances on app-template `5.2.1`.
-- Four Certificates Ready: `hello` (staging and prod), oauth2-proxy and ClickStack.
-- Three `local-path` volumes: ClickHouse data (20 GiB) and ClickHouse logs (5 GiB) with `Delete`; MongoDB (10 GiB) with `Retain`, set by a live patch rather than Git.
+- Host: Arch Linux x86-64; one Ready node, `arch` at `192.168.1.200`, k3s `v1.34.4+k3s1`, containerd `2.1.5-k3s1`; 31 GiB RAM (21 GiB available); root filesystem 239 GiB, 47 GiB used.
+- Flux `v2.8.1`; all 13 Kustomizations Ready: the two roots (`cluster-sources`, `cluster-stack`), `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack-operators`, `platform-clickstack`, `platform-otel`, `platform-reloader`, `app-hello-staging` and `app-hello-prod`.
+- Nine HelmReleases Ready: cert-manager `v1.21.2`, oauth2-proxy-shared `10.7.0`, clickstack-operators `1.1.0`, ClickStack `3.4.0` (HyperDX 2.39.1, MongoDB 5.0.32, ClickHouse 25.7), both OTel collectors `0.173.1`, Reloader `2.2.17`, and both `hello` instances on app-template `5.2.1`.
+- Four Certificates Ready: `hello` (staging and prod), oauth2-proxy and ClickStack. ClickStack redirects to Google sign-in.
+- Four volumes, all created by the ClickStack operators: MongoDB data (10 GiB, `local-path-retain`, `Retain`), MongoDB logs (2 GB), ClickHouse (20 GiB) and Keeper (5 GiB), the last three `local-path` with `Delete`.
 
 ## Baseline and immediate repairs (P0)
 
@@ -138,6 +138,18 @@ PR #5 (oauth2-proxy chart `10.1.3 → 10.7.0`, app v7.14.2 → v7.15.3) was open
 Both warnings were fixed the same day in `ede9ac8` (`trusted-proxy-ip: 10.42.0.0/16`, the k3s pod CIDR where Traefik runs, and `code-challenge-method: S256`; a policy test rejects `--trusted-ip`, which would skip sign-in). Before the change, `X-Forwarded-Uri` and `X-Forwarded-Host` sent from outside were already dropped by Traefik's entrypoints. After `make reconcile UNIT=platform-oauth2-proxy` the pod started with neither warning; unauthenticated requests still returned 302 with the original URL (path and query) in `state` and now carry `code_challenge_method=S256`; spoofed `X-Forwarded-Uri`/`-Host` from outside had no effect; a pod in `hello-staging` calling the proxy directly could still set `X-Forwarded-Host`, as expected for a pod-CIDR allowlist. `infra-issuers` briefly waited on `infra-cert-manager` while all units re-reconciled; then all were Ready and `make verify-platform` passed.
 
 PR #6 (opentelemetry-collector chart `0.145.0 → 0.173.1` for both releases, collector image `otel/opentelemetry-collector-k8s` 0.145.0 → 0.160.0) was merged as `6caec6a` on 28 September 2026. The new chart renames components (`otlphttp` → `otlp_http`, `k8sattributes` → `k8s_attributes`, `filelog` → `file_log`) and maps the old names in our values onto them; the merged configs kept our exporter endpoint, `authorization` header and kubelet endpoint. Both rendered configs passed `validate` on the 0.160.0 image as far as the in-cluster service-account step, where the running 0.145.0 configs also stop outside a pod. After `make flux-reconcile`: both releases on 0.173.1, both pods on 0.160.0 with no restarts, no errors or HTTP 401; every telemetry source seen before the upgrade kept arriving at the same rate (container logs from the same namespaces, Kubernetes events, kubelet, cluster and host metrics). One intended upstream change (collector 0.157.0): `system.cpu.time` is now summed across CPUs instead of one series per core, and `system.cpu.logical.count` is new. The collectors log deprecation warnings for the `kubeletstats`, `hostmetrics` and `k8sobjects` names and the chart's inline `service.telemetry.resource` format. `make verify-platform` passed; all units Ready.
+
+## ClickStack 3.4.0 fresh install
+
+29 September 2026, replacing chart 1.1.2 rather than upgrading it: upstream's 1.x to 2.x upgrade deletes the MongoDB and ClickHouse Deployments and does not reuse their volumes. The installation was unused, so it was removed and reinstalled.
+
+- **Uninstall** (`5b047ae`): after a final `make backup-mongodb` (`20260929T060452Z`, since pruned by the daily retention; `20260928T210656Z` of the old install remains), the HelmRelease and the ClickHouse log-TTL ConfigMap left Git and Flux uninstalled the release. `make destroy-data` then deleted `clickstack-mongodb`, `clickstack-clickhouse-data` and `clickstack-clickhouse-logs` and their volumes, each after a passing dry run.
+- **Secrets** (`6a90bed`): new random `stringData` values: `CLICKSTACK_INGESTION_KEY` in both `platform/clickstack` and `platform/otel` (now `logging/clickstack-ingestion-key`), the admin login, and the MongoDB and ClickHouse passwords that replace the chart's public defaults. `CLICKSTACK_API_KEY` and its double encoding are gone. `make check-secrets` passed with the two copies identical; the collectors restarted on the renamed Secret.
+- **Install** (`8a70fd3`): `platform-clickstack-operators` (chart 1.1.0) and ClickStack 3.4.0 installed at once; `MongoDBCommunity` Running, `ClickHouseCluster` and `KeeperCluster` Ready after about 10 minutes, ClickHouse and the ClickStack collector restarting a few times while they waited for each other. The Ingress took the Google sign-in middleware from the start.
+- **What went wrong:** the Ingress was live before the bootstrap command existed, so the operator could reach HyperDX (through Google sign-in) and registered `sam@swhurl.com` by hand. That team got a random ingestion key, and the collectors' Git key was rejected (48 `Unauthenticated` export errors in 5 minutes). At the operator's choice, the 8 documents that sign-up created (team, user, session, connection, 4 sources) were deleted so the account comes from SOPS.
+- **Bootstrap** (`c8723e2`): `make clickstack-bootstrap DRY_RUN=true` reported the planned key change; the real run registered `sam@swhurl.com`, HyperDX recreated the default connection and 4 sources, and the team key was set to `CLICKSTACK_INGESTION_KEY`. A second run changed nothing. Within 90 seconds both collectors logged no authentication errors and ClickHouse received container logs, Kubernetes events, HyperDX's own logs, and `container.*`, `k8s.*` and `system.*` metrics.
+- **Checks:** `make verify-platform` passed on the new layout (all 13 units Ready, ingestion key matches by bytes, registration closed, 10 telemetry tables at 30 days, system logs at 7 days, MongoDB data volume `Retain`). `make backup-mongodb` (`20260929T063928Z`, connection string passed to `mongodump` on stdin) and `make live-test-restore-mongodb` passed.
+- **Not exercised:** restoring into the operator-managed MongoDB (the procedure's login-file step was tested with an empty archive), and a key rotation through SOPS.
 
 ## Still to verify before live changes
 

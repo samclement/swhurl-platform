@@ -21,6 +21,7 @@ DUMP = 'PLAINTEXT-MONGODUMP-fixture-contents'
 TEAM_KEY = 'fixture-team-key-0000'
 COUNTS = {'sources': 4, 'teams': 1, 'users': 1}
 NOW = dt.datetime(2026, 9, 28, 12, 0, 0, tzinfo=dt.UTC)
+URI = 'mongodb://hyperdx:fixture-mongo-password@clickstack-mongodb-svc:27017/hyperdx'
 
 
 def age_encrypt(args, stdin):
@@ -38,16 +39,24 @@ class BackupTests(unittest.TestCase):
 
     def runner(self, **overrides):
         answers = {'dump': Result((), 0, DUMP), 'age': age_encrypt,
-                   'counts': Result((), 0, json.dumps(COUNTS)), 'version': Result((), 0, 'db version v5.0.32\n')}
+                   'counts': Result((), 0, 'RESULT ' + json.dumps(COUNTS)), 'version': Result((), 0, 'db version v5.0.32\n')}
         answers.update(overrides)
 
         def respond(key):
             value = answers[key]
             return value if callable(value) else (lambda args, _in: Result(args, value.returncode, value.stdout,
                                                                            value.stderr))
-        exec_mongo = ('kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-mongodb', '--')
+        exec_mongo = ('kubectl', '-n', 'observability', 'exec', '-i', 'clickstack-mongodb-0', '-c', 'mongod', '--')
+        self.dump_input = []
+
+        def dump(args, stdin):
+            self.dump_input.append(stdin)
+            return respond('dump')(args, stdin)
+        uri_secret = {'data': {'connectionString.standard': base64.b64encode(URI.encode()).decode()}}
         return (FakeRunner()
-                .on(*exec_mongo, 'mongodump', handler=respond('dump'))
+                .on('kubectl', '-n', 'observability', 'get', 'secret', 'clickstack-mongodb-hyperdx-hyperdx',
+                    stdout=json.dumps(uri_secret))
+                .on(*exec_mongo, 'mongodump', handler=dump)
                 .on('age', handler=respond('age'))
                 .on(*exec_mongo, 'mongosh', handler=respond('counts'))
                 .on(*exec_mongo, 'mongod', handler=respond('version')))
@@ -62,13 +71,20 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(archive.name, 'clickstack-mongodb-20260928T120000Z.archive.gz.age')
         metadata = json.loads(archive.with_name('clickstack-mongodb-20260928T120000Z.json').read_text())
         self.assertEqual(metadata, {
-            'created': '20260928T120000Z', 'source': 'observability/deploy/clickstack-mongodb', 'database': 'hyperdx',
+            'created': '20260928T120000Z', 'source': 'observability/clickstack-mongodb-0', 'database': 'hyperdx',
             'mongodb_version': '5.0.32', 'age_recipient': 'age1fixture',
             'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'collections': COUNTS})
         for path in (self.dir, archive, archive.with_name('clickstack-mongodb-20260928T120000Z.json')):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0, f'{path} is readable by others')
         self.assertEqual(lines[:2], [f'[OK] Encrypted backup: {archive}',
                                      f"[OK] Metadata: {archive.with_name(archive.name.replace('.archive.gz.age', '.json'))}"])
+
+    def test_login_reaches_mongodump_only_on_stdin(self):
+        runner = self.runner()
+        self.backup(runner)
+        self.assertEqual(self.dump_input, [f'uri: {json.dumps(URI)}\n'])
+        for call in runner.calls:
+            self.assertNotIn('fixture-mongo-password', ' '.join(call))
 
     def test_plaintext_never_reaches_disk_or_output(self):
         archive, lines = self.backup(self.runner())
@@ -135,14 +151,16 @@ class RestoreTestTests(unittest.TestCase):
         self.settings = recovery.RestoreSettings(backup_dir=self.dir, age_key=self.key)
 
     def runner(self, *, namespace=None, counts=COUNTS, team_key=TEAM_KEY, secret_key=TEAM_KEY, restore_rc=0):
-        secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'hyperdx-secret', 'namespace': 'logging'},
-                  'data': {'HYPERDX_API_KEY': base64.b64encode(secret_key.encode()).decode()}}
+        secret = {'apiVersion': 'v1', 'kind': 'Secret',
+                  'metadata': {'name': 'clickstack-ingestion-key', 'namespace': 'logging'},
+                  'stringData': {'CLICKSTACK_INGESTION_KEY': secret_key}}
         applied = {}
 
         def apply(args, stdin):
             doc = yaml.safe_load(stdin)
-            if doc['kind'] == 'Secret':
-                applied['secret'] = doc
+            if doc['kind'] == 'Secret':  # the API server stores stringData as data
+                data = {k: base64.b64encode(str(v).encode()).decode() for k, v in doc.pop('stringData', {}).items()}
+                applied['secret'] = {**doc, 'data': {**doc.get('data', {}), **data}}
             return Result(args, 0)
 
         def get_secret(args, _in):
@@ -196,7 +214,7 @@ class RestoreTestTests(unittest.TestCase):
         self.assertEqual(text.splitlines(), [
             '[OK] Disposable MongoDB (mongo:5.0.32-focal) ready in recovery-test',
             f'[OK] Restored {self.archive.name}',
-            '[OK] Restored hyperdx-secret from Git into recovery-test',
+            '[OK] Restored clickstack-ingestion-key from Git into recovery-test',
             '[OK] Restored collection counts match backup metadata',
             '[OK] Restored team ingestion key matches the restored Git Secret',
             'Restore test passed.',

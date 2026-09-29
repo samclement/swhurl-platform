@@ -5,6 +5,7 @@ import unittest
 
 from starlette.testclient import TestClient
 
+from swhurl.apps import new
 from swhurl.console import actions, changes, server
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -62,6 +63,18 @@ class FormTests(unittest.TestCase):
         found = changes.github_from_env(runner, {'GITHUB_TOKEN': TOKEN, 'CONSOLE_REPO': 'me/repo'})
         self.assertEqual(found, changes.GitHub('me/repo', TOKEN))
         self.assertEqual(runner.redact(TOKEN), '<redacted>')
+
+
+class DefaultsTests(unittest.TestCase):
+    def test_defaults_come_from_app_new(self):
+        parser = new.parser()
+        defaults = changes.new_app_defaults()
+        self.assertEqual(defaults['port'], '8080')
+        self.assertEqual(defaults['uid'], '65532')
+        for field, value in defaults.items():
+            self.assertEqual(value, str(parser.get_default(field)), field)
+        self.assertNotIn('image', defaults)
+        self.assertNotIn('host', defaults)
 
 
 class OpenPrTests(unittest.TestCase):
@@ -139,7 +152,13 @@ class NewAppRouteTests(unittest.TestCase):
     def test_form_opens_a_pr_as_a_job(self):
         runner = git_fake()
         c, jobs = self.client(runner)
-        self.assertIn('Open pull request', c.get('/new', headers=WHO).text)
+        form = c.get('/new', headers=WHO).text
+        self.assertIn('Open pull request', form)
+        self.assertIn('id="port" name="port" value="" placeholder="8080"', form)
+        self.assertIn('id="uid" name="uid" value="" placeholder="65532"', form)
+        self.assertIn('<option value="">web (default)</option>', form)
+        self.assertIn('<option value="">private (default)</option>', form)
+        self.assertIn('nginx-unprivileged is 101', form)
         response = c.post('/new', data=FORM, headers=WHO, follow_redirects=False)
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
         job = jobs.get(1)

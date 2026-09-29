@@ -17,7 +17,6 @@ skipped. Read-only.
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import sys
 import tempfile
@@ -33,7 +32,9 @@ from swhurl.run import CommandError, Runner
 
 SOURCE = 'swhurl-platform'
 INSTALL = 'clusters/home/flux-system/install'
-DOCKERFILE = 'images/console/Dockerfile'
+# The Flux release the cluster runs: make flux-install installs it and refuses any other flux CLI.
+# Renovate does not see it; to upgrade, see docs/operations.md (chart and tool updates).
+FLUX_VERSION = '2.8.1'
 KUSTOMIZATIONS = 'kustomizations.kustomize.toolkit.fluxcd.io'
 # Ready=False reasons that mean "not yet", not "failed at this revision".
 WAITING_REASONS = {'DependencyNotReady', 'Progressing', 'ProgressingWithRetry'}
@@ -113,11 +114,8 @@ class InstallError(Exception):
 
 
 def pinned_version(root: Path = ROOT) -> str:
-    """The Flux version the console image ships, which the cluster must run too."""
-    match = re.search(r'^ARG FLUX_VERSION=(\S+)$', (root / DOCKERFILE).read_text(), re.MULTILINE)
-    if not match:
-        raise InstallError(f'no ARG FLUX_VERSION in {DOCKERFILE}')
-    return match.group(1)
+    """The Flux version the cluster must run (``FLUX_VERSION``)."""
+    return FLUX_VERSION
 
 
 def required_args(root: Path = ROOT) -> dict[str, list[str]]:
@@ -136,8 +134,8 @@ def render(runner: Runner, root: Path = ROOT) -> str:
     version = pinned_version(root)
     client = runner.output(['flux', 'version', '--client'])
     if f'v{version}' not in client.split():
-        raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but {DOCKERFILE} pins {version}; '
-                           f'install flux {version} (or bump FLUX_VERSION and its SHA-256 to upgrade)')
+        raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but tools/swhurl/flux.py pins {version}; '
+                           f'install flux {version} (or bump FLUX_VERSION to upgrade)')
     components = runner.output(['flux', 'install', '--export', '--namespace', 'flux-system'])
     with tempfile.TemporaryDirectory() as tmp:
         shutil.copytree(root / INSTALL, tmp, dirs_exist_ok=True)

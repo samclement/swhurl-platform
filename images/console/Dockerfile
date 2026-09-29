@@ -1,7 +1,7 @@
 # The web console (docs/plan.md section 7). Build from the repository root:
 #   podman build -f images/console/Dockerfile -t swhurl-console .
-# Tool versions match CI (.github/workflows/validate.yml) and the cluster's Flux;
-# when Flux is upgraded, bump FLUX_VERSION here too (docs/operations.md).
+# kubectl and helm versions match CI (.github/workflows/validate.yml). No flux CLI:
+# the console patches Flux objects with kubectl (tools/swhurl/console/actions.py).
 # x86-64 only. Every download is checked against a pinned SHA-256.
 
 FROM ghcr.io/astral-sh/uv:0.10.9@sha256:10902f58a1606787602f303954cea099626a4adb02acbac4c69920fe9d278f82 AS uv
@@ -11,8 +11,6 @@ ARG KUBECTL_VERSION=v1.34.4
 ARG KUBECTL_SHA256=d50c359d95e0841eaad08ddc27c7be37cba8fdccfba5c8e2ded65e121ff112db
 ARG HELM_VERSION=v3.19.0
 ARG HELM_SHA256=a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496
-ARG FLUX_VERSION=2.8.1
-ARG FLUX_SHA256=15d96c2246e129903c7bdaeb9a5cd3074c774763523601526e1c31f7b1513f08
 ARG SOPS_VERSION=v3.12.1
 ARG SOPS_SHA256=cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100
 RUN set -eux; \
@@ -22,8 +20,6 @@ RUN set -eux; \
     echo "${KUBECTL_SHA256}  kubectl" | sha256sum -c -; install -m 0755 kubectl /out/kubectl; \
     curl -fsSLo helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
     echo "${HELM_SHA256}  helm.tgz" | sha256sum -c -; tar -xzf helm.tgz linux-amd64/helm; install -m 0755 linux-amd64/helm /out/helm; \
-    curl -fsSLo flux.tgz "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz"; \
-    echo "${FLUX_SHA256}  flux.tgz" | sha256sum -c -; tar -xzf flux.tgz flux; install -m 0755 flux /out/flux; \
     curl -fsSLo sops "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"; \
     echo "${SOPS_SHA256}  sops" | sha256sum -c -; install -m 0755 sops /out/sops
 

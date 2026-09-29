@@ -5,7 +5,7 @@ Day-to-day work on the live cluster. Every `make` target is listed in [commands]
 ## Check health
 
 ```bash
-make verify-platform              # every Flux unit Ready, HTTPS redirect, ingestion key, retention
+make verify-platform              # Flux units, HTTPS redirect, ingestion key, ClickStack sign-up closed, retention, backup age
 flux get kustomizations           # one line per Flux unit
 make app-status APP=hello ENV=prod
 ```
@@ -20,7 +20,7 @@ Rules:
 
 - **Write new values as `stringData`** (plain text inside the encrypted file). Flux applies it correctly; generated app stubs use it.
 - **In `data`, base64-encode exactly once.** A doubly encoded ingestion key silently dropped all telemetry once. The oauth2-proxy Secret still uses `data`; the ClickStack and OTel Secrets use `stringData`.
-- **Never print values.** Check with `make check-secrets` (decrypts in memory; fails on empty or `REPLACE_ME` values, warns on probable double encoding) and `make verify-platform` (compares the ingestion key by bytes).
+- **Never print values.** Check with `make check-secrets` (decrypts in memory; fails on empty or `REPLACE_ME` values and when the two `CLICKSTACK_INGESTION_KEY` copies differ, warns on probable double encoding) and `make verify-platform` (compares the ingestion key by bytes).
 
 Rotate a value:
 

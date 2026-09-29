@@ -36,6 +36,6 @@ make verify-platform             # expect "Validation passed."
 | --- | --- |
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
-| `platform/` | oauth2-proxy (sign-in), ClickStack, OTel collectors, Reloader, with their encrypted Secrets |
+| `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, with their encrypted Secrets |
 | `apps/<app>/<env>/` | Generated app instances |
-| `tools/swhurl/`, `host/`, `tests/` | Python operator tooling, host DNS updater (bash), offline tests and fixtures |
+| `tools/swhurl/`, `host/`, `tests/` | Python operator tooling; host systemd timers for dynamic DNS and the daily MongoDB backup (bash); offline tests and fixtures |

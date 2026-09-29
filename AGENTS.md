@@ -37,9 +37,10 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 ## Commands
 
-- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
+- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, `make clickstack-bootstrap` (idempotent), and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
 - Don't: delete Flux units or namespaces as a reset (there is no teardown), or `kubectl apply` resources that Flux owns.
 - `platform-certs-*` and `app-new` only edit files: commit and push before reconciling.
+- `host-dns` and `host-backup` install system units with `sudo`: the operator runs them in their own terminal.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.
 
 ## Lessons not obvious from the code
@@ -52,6 +53,8 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - **`flux reconcile` does not preempt** an in-flight `wait: true` reconciliation; new requests queue until its health checks finish or time out, and `lastAttemptedRevision` can look stale meanwhile.
 - **Deleting an app mid-install** waits for the Helm action timeout (5 minutes) before the finalizer releases the namespace.
 - **ClickStack:** cold image pulls can exceed Helm's default wait (the HelmRelease sets `spec.timeout`). HyperDX registration stays open until a team exists and the team's ingestion key is random: `make clickstack-bootstrap` sets both from SOPS; the UI can rotate the key away from Git. Chart 3.x ignores `hyperdx.frontendUrl` (use `hyperdx.config.FRONTEND_URL`). ClickHouse renames a system log table to `<name>_N` when its definition changes. On ClickHouse 25.7 `system.query_log` has no `query_parameters`: match `query_id` against `clickstack-app` logs; `BAD_QUERY_PARAMETER (457)` with `nan` shows there as `param_HYPERDX_PARAM_*=nan`.
+- **systemd unit templates** (`host/templates/systemd/`): `Exec*=` lines expand `$` and `%` themselves; write `$$` and `%%` for the shell. A `+` prefix runs that line as root despite `User=`.
+- **Route 53** returns a wildcard record's name as `\052.homelab.swhurl.com.`; compare after mapping `\052` to `*`.
 - **OTel node metrics** on k3s use host networking and the kubelet at `127.0.0.1:10250`.
 - **Reloader** only acts in namespaces listed in its HelmRelease; add the namespace before opting a workload in (`make app-new --secret-keys` does).
 - **`nginx-unprivileged`** listens on IPv4 only with a read-only root; use `127.0.0.1` inside the pod.

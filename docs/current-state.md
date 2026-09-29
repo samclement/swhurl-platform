@@ -10,6 +10,7 @@ Checked read-only on 29 September 2026 at `c8723e2`:
 - Flux `v2.8.1`; all 13 Kustomizations Ready: the two roots (`cluster-sources`, `cluster-stack`), `infra-base`, `infra-cert-manager`, `infra-issuers`, `infra-traefik`, `platform-oauth2-proxy`, `platform-clickstack-operators`, `platform-clickstack`, `platform-otel`, `platform-reloader`, `app-hello-staging` and `app-hello-prod`.
 - Nine HelmReleases Ready: cert-manager `v1.21.2`, oauth2-proxy-shared `10.7.0`, clickstack-operators `1.1.0`, ClickStack `3.4.0` (HyperDX 2.39.1, MongoDB 5.0.32, ClickHouse 25.7), both OTel collectors `0.173.1`, Reloader `2.2.17`, and both `hello` instances on app-template `5.2.1`.
 - Four Certificates Ready: `hello` (staging and prod), oauth2-proxy and ClickStack. ClickStack redirects to Google sign-in.
+- Host systemd timers, both running as `sam` with output in `/var/log/swhurl-platform/` and ClickStack: `aws-dns-updater` (every 10 minutes) and `swhurl-backup-mongodb` (daily 03:30, backups to S3).
 - Four volumes, all created by the ClickStack operators: MongoDB data (10 GiB, `local-path-retain`, `Retain`), MongoDB logs (2 GB), ClickHouse (20 GiB) and Keeper (5 GiB), the last three `local-path` with `Delete`.
 
 ## Baseline and immediate repairs (P0)

@@ -72,7 +72,7 @@ It waits for the HyperDX API, registers the admin account from SOPS (HyperDX the
 
 ```bash
 make backup-mongodb     # first backup, locally and to S3
-make host-backup         # daily timer; then once: sudo loginctl enable-linger $USER
+make host-backup         # daily timer (asks for sudo)
 make verify-platform
 ```
 

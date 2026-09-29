@@ -86,12 +86,12 @@ For each PR: read the chart's release notes and compare its `appVersion` (`helm 
 make backup-mongodb              # encrypted dump to ~/.local/state/swhurl-platform/backups, then S3
 make live-test-restore-mongodb   # restores the latest into a throwaway namespace and checks it
 make host-backup                 # install the daily timer (03:30, catches up after downtime)
-systemctl --user status swhurl-backup-mongodb    # last run; logs: journalctl --user -u swhurl-backup-mongodb
+systemctl status swhurl-backup-mongodb  # last run; logs: journalctl -u swhurl-backup-mongodb
 ```
 
 The backup streams `mongodump` through `age`, so no plaintext touches disk, and writes an archive plus metadata (checksum, version, counts). Encryption needs only the age public key, so the backup host never holds the private key. Each run keeps the newest local backup for each of the last 7 days that have one and each of the last 4 weeks (`KEEP_DAILY`, `KEEP_WEEKLY`, `PRUNE=false`), then uploads every local file missing from `s3://swhurl-platform-backups-110927251694/clickstack-mongodb/` (`BACKUP_S3_URI`). The bucket (`eu-west-2`) blocks public access, is versioned, and deletes backups after 90 days and replaced versions after 30. The upload and the timer use the AWS CLI's default profile (IAM user `sam`); a dedicated write-only user is a planned hardening step.
 
-The timer is a systemd **user** unit: it runs only while you are logged in unless lingering is on (`sudo loginctl enable-linger $USER`, once). `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
+Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that runs as the user who installed it, so it runs whether or not you are logged in and logs to the system journal. `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
 
 **Targets:** at most 24 hours of MongoDB changes lost (daily backups); about an hour from a bare host to working ClickStack.
 

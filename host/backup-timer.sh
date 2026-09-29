@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Install or remove the daily MongoDB backup as a systemd user timer. It runs
-# `make backup-mongodb` from this checkout as the current user, with that
-# user's kubeconfig and AWS credentials. Needs lingering to run while logged out.
+# Install or remove the daily MongoDB backup as a system timer, like the
+# dynamic DNS one. It runs `make backup-mongodb` from this checkout as the
+# invoking user, with that user's kubeconfig and AWS credentials.
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UNIT=swhurl-backup-mongodb
-UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-MARKER="Managed template for the ClickStack MongoDB backup"
+# shellcheck source=host/lib.sh
+source "$ROOT_DIR/host/lib.sh"
+
+readonly UNIT=swhurl-backup-mongodb
+readonly SERVICE_PATH="/etc/systemd/system/${UNIT}.service"
+readonly TIMER_PATH="/etc/systemd/system/${UNIT}.timer"
+readonly MARKER="Managed template for the ClickStack MongoDB backup"
 DRY_RUN=false
 DELETE=false
 
 usage() { echo "Usage: ./host/backup-timer.sh [--dry-run] [--delete]"; }
-info() { printf '[HOST][INFO] %s\n' "$*"; }
-die() { printf '[HOST][ERROR] %s\n' "$*" >&2; exit 1; }
-run() { if [[ "$DRY_RUN" == true ]]; then echo "  would run: $*"; else "$@"; fi; }
 
 for arg in "$@"; do
   case "$arg" in
@@ -25,34 +26,40 @@ for arg in "$@"; do
   esac
 done
 
-for kind in service timer; do
-  target="$UNIT_DIR/$UNIT.$kind"
-  if [[ -e "$target" ]] && ! grep -q "$MARKER" "$target"; then
-    die "$target exists and is not managed by this script; refusing to touch it"
+run_user="$(host_run_user)"
+run_home="$(host_user_home "$run_user")"
+printf 'Host backup timer plan:\n'
+printf '  - mode: %s\n' "$([[ "$DELETE" == true ]] && echo delete || echo apply)"
+printf '  - units: %s, %s\n' "$SERVICE_PATH" "$TIMER_PATH"
+printf '  - runs: make backup-mongodb in %s as %s, daily at 03:30\n' "$ROOT_DIR" "$run_user"
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Host backup timer dry run: exiting without executing."
+  exit 0
+fi
+host_has_systemd || exit 0
+
+for path in "$SERVICE_PATH" "$TIMER_PATH"; do
+  if [[ -e "$path" ]] && ! grep -q "$MARKER" "$path"; then
+    host_die "$path exists and is not managed by this script; refusing to touch it"
   fi
 done
 
 if [[ "$DELETE" == true ]]; then
-  run systemctl --user disable --now "$UNIT.timer"
-  run rm -f "$UNIT_DIR/$UNIT.service" "$UNIT_DIR/$UNIT.timer"
-  run systemctl --user daemon-reload
-  [[ "$DRY_RUN" == true ]] || info "Removed $UNIT.timer (backups already taken are kept)"
+  host_sudo systemctl disable --now "$UNIT.timer" >/dev/null 2>&1 || true
+  host_sudo rm -f "$SERVICE_PATH" "$TIMER_PATH"
+  host_sudo systemctl daemon-reload
+  host_log_info "Removed $UNIT.timer (backups already taken are kept)"
   exit 0
 fi
 
-run mkdir -p "$UNIT_DIR"
-for kind in service timer; do
-  rendered="$(sed "s|__REPO_DIR__|$ROOT_DIR|" "$ROOT_DIR/host/templates/systemd/backup-mongodb.$kind.tmpl")"
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "  would write $UNIT_DIR/$UNIT.$kind"
-  else
-    printf '%s\n' "$rendered" > "$UNIT_DIR/$UNIT.$kind"
-  fi
-done
-run systemctl --user daemon-reload
-run systemctl --user enable --now "$UNIT.timer"
-[[ "$DRY_RUN" == true ]] && exit 0
-info "Installed $UNIT.timer (daily at 03:30; run now: systemctl --user start $UNIT)"
-if [[ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != yes ]]; then
-  info "Lingering is off, so the timer runs only while you are logged in. Enable once: sudo loginctl enable-linger $USER"
+service="$(sed -e "s|__RUN_USER__|${run_user}|g" -e "s|__RUN_HOME__|${run_home}|g" -e "s|__REPO_DIR__|${ROOT_DIR}|g" \
+  "$ROOT_DIR/host/templates/systemd/backup-mongodb.service.tmpl")"
+timer="$(cat "$ROOT_DIR/host/templates/systemd/backup-mongodb.timer.tmpl")"
+changed=0
+host_write_if_changed "$SERVICE_PATH" "$service" && changed=1
+host_write_if_changed "$TIMER_PATH" "$timer" && changed=1
+if (( changed == 1 )); then
+  host_sudo systemctl daemon-reload
 fi
+host_sudo systemctl enable --now "$UNIT.timer" >/dev/null
+host_log_info "Installed $UNIT.timer; run now: sudo systemctl start $UNIT; logs: journalctl -u $UNIT"

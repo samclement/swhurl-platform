@@ -64,7 +64,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `host-backup`, `host-backup-delete` † | Install or remove the daily systemd **user** timer that runs `backup-mongodb` (and so the S3 upload) at 03:30 from this checkout; needs `sudo loginctl enable-linger $USER` once | Host |
-| `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS systemd timer (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
+| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb`, and so the S3 upload, at 03:30 from this checkout as you; asks for `sudo` | Host |
+| `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS system timer (`aws-dns-updater`, runs as you; asks for `sudo`) (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
 
 Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).

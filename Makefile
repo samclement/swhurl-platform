@@ -122,7 +122,7 @@ host-dns: ## Install or update the Route53 dynamic DNS timer (records in host/dn
 	@./host/dynamic-dns.sh $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 .PHONY: host-backup
-host-backup: ## Install or update the daily backup-mongodb systemd user timer (uploads to S3)
+host-backup: ## Install or update the daily backup-mongodb systemd timer (uploads to S3; needs sudo)
 	@./host/backup-timer.sh $(if $(filter true,$(DRY_RUN)),--dry-run)
 
 .PHONY: host-backup-delete

@@ -243,10 +243,12 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(mutations(runner), [('patch', f'{actions.KUSTOMIZATION}/infra-base', '--type=merge',
                                               '--patch', '{"spec": {"suspend": true}}')])
         self.assertEqual((jobs.get(1).state, jobs.sleeps), ('succeeded', []))
+        self.assertEqual(jobs.get(1).lines[0], '► suspending Kustomization infra-base')
         c.post('/units/infra-base/resume', headers=ORIGIN)
         self.assertEqual(mutations(runner)[1][-1], '{"spec": {"suspend": false}}')
         self.assertEqual(mutations(runner)[2][:3], ('annotate', '--overwrite', f'{actions.KUSTOMIZATION}/infra-base'))
         self.assertEqual(jobs.get(2).state, 'succeeded', jobs.get(2).lines)
+        self.assertEqual(jobs.get(2).lines[0], '► resuming Kustomization infra-base')
         self.assertEqual(jobs.sleeps, [actions.POLL, actions.POLL], 'polled until the request was handled')
 
     def test_failure_is_shown_and_audited_as_error(self):

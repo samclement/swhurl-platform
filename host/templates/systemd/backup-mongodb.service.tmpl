@@ -1,0 +1,10 @@
+# Managed template for the ClickStack MongoDB backup (make host-backup)
+[Unit]
+Description=Encrypted ClickStack MongoDB backup, copied to S3
+
+[Service]
+Type=oneshot
+WorkingDirectory=__REPO_DIR__
+Environment=KUBECONFIG=%h/.kube/config
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/make backup-mongodb

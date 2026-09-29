@@ -121,6 +121,14 @@ live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway
 host-dns: ## Install or update the Route53 dynamic DNS timer (records in host/dns.env)
 	@./host/dynamic-dns.sh $(if $(filter true,$(DRY_RUN)),--dry-run)
 
+.PHONY: host-backup
+host-backup: ## Install or update the daily backup-mongodb systemd user timer (uploads to S3)
+	@./host/backup-timer.sh $(if $(filter true,$(DRY_RUN)),--dry-run)
+
+.PHONY: host-backup-delete
+host-backup-delete: ## Remove the backup timer (backups are kept)
+	@./host/backup-timer.sh --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
+
 .PHONY: host-dns-delete
 host-dns-delete: ## Remove the dynamic DNS timer
 	@./host/dynamic-dns.sh --delete $(if $(filter true,$(DRY_RUN)),--dry-run)

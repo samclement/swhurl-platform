@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import datetime as dt
+import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
-from swhurl import ROOT, clickstack, platform
+from swhurl import ROOT, clickstack, platform, recovery
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -195,6 +198,33 @@ def check_registration(runner: Runner, report: Report) -> None:
     else:
         report.bad('no team yet: HyperDX registration is open (run: make clickstack-bootstrap)')
 
+def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
+                  now: dt.datetime | None = None) -> None:
+    """The newest MongoDB backup, locally and off-host, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
+    env = os.environ if env is None else env
+    report.section('Backups')
+    now = now or dt.datetime.now(dt.UTC)
+    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
+    backup_dir = Path(env.get('BACKUP_DIR') or recovery.DEFAULT_BACKUP_DIR)
+    places = [(str(backup_dir), lambda: [p.name for p in backup_dir.iterdir()] if backup_dir.is_dir() else [])]
+    uri = env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI)
+    if uri:
+        places.append((uri, lambda: recovery.remote_names(runner, uri)))
+    for where, names in places:
+        try:
+            taken = recovery.newest(names())
+        except (CommandError, recovery.RecoveryError, TypeError) as error:
+            report.bad(f'cannot list backups in {where}: {error}')
+            continue
+        if taken is None:
+            report.bad(f'no MongoDB backup in {where} (run: make backup-mongodb)')
+        elif now - taken > limit:
+            report.bad(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
+                       'check: systemctl --user status swhurl-backup-mongodb')
+        else:
+            report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
+
+
 def verify_platform(runner: Runner, report: Report) -> int:
     report.redact = runner.redact
     try:
@@ -212,6 +242,7 @@ def verify_platform(runner: Runner, report: Report) -> int:
     check_registration(runner, report)
     check_ingress(runner, report)
     check_retention(runner, report)
+    check_backups(runner, report)
     if report.passed:
         report.line('\nValidation passed.')
     return report.exit_code()

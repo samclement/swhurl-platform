@@ -9,7 +9,8 @@ pipe that Python never reads. MongoDB requires a login: the connection string
 the MongoDB operator writes (``clickstack-mongodb-hyperdx-hyperdx``) reaches
 ``mongodump`` as a config file on stdin, never in a command line. Settings come
 from the environment, as the Makefile passes them: BACKUP_DIR, DRY_RUN, PRUNE,
-KEEP_DAILY, KEEP_WEEKLY, AGE_RECIPIENT, MONGO_DATABASE (backup) and
+KEEP_DAILY, KEEP_WEEKLY, AGE_RECIPIENT, MONGO_DATABASE, BACKUP_S3_URI (backup; empty
+skips the upload, which uses the AWS CLI's default credentials or AWS_PROFILE) and
 BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE, KEEP, MONGO_IMAGE (restore test).
 """
 from __future__ import annotations
@@ -24,7 +25,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,6 +87,7 @@ class BackupSettings:
     prune: bool = True
     keep_daily: int = 7
     keep_weekly: int = 4
+    s3_uri: str = ''
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BackupSettings:
@@ -96,6 +98,7 @@ class BackupSettings:
             prune=env.get('PRUNE', 'true') == 'true',
             keep_daily=int(env.get('KEEP_DAILY', 7)),
             keep_weekly=int(env.get('KEEP_WEEKLY', 4)),
+            s3_uri=env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI),
         )
 
 
@@ -116,6 +119,8 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
         if settings.prune:
             out(f'  - prune {settings.backup_dir} to the newest backup of each of the last {settings.keep_daily} '
                 f'backup days and {settings.keep_weekly} ISO weeks')
+        if settings.s3_uri:
+            out(f'  - upload local backups not yet in {settings.s3_uri}')
         return archive
 
     uri = clickstack.read_secret(runner, clickstack.MONGO_URI_SECRET).get('connectionString.standard', '')
@@ -147,9 +152,50 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
     if settings.prune:
         retention.main([str(settings.backup_dir), '--daily', str(settings.keep_daily),
                       '--weekly', str(settings.keep_weekly)])
-    out('[INFO] Copy both files off-host; restore needs the age private key '
-        '(see docs/operations.md#backups-and-recovery).')
+    if settings.s3_uri:
+        upload(runner, settings.backup_dir, settings.s3_uri, out)
+    else:
+        out('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.')
     return archive
+
+
+def s3_location(uri: str) -> tuple[str, str]:
+    """``s3://bucket/prefix/`` as ``(bucket, 'prefix/')``."""
+    bucket, _, prefix = uri.removeprefix('s3://').partition('/')
+    if not uri.startswith('s3://') or not bucket or (prefix and not prefix.endswith('/')):
+        raise RecoveryError(f'BACKUP_S3_URI must look like s3://bucket/prefix/ (got {uri!r})')
+    return bucket, prefix
+
+
+def remote_names(runner: Runner, uri: str) -> list[str]:
+    """File names of the backups already under ``uri``."""
+    bucket, prefix = s3_location(uri)
+    keys = runner.json(['aws', 's3api', 'list-objects-v2', '--bucket', bucket, '--prefix', prefix,
+                        '--query', 'Contents[].Key', '--output', 'json']) or []
+    return [key.removeprefix(prefix) for key in keys]
+
+
+def upload(runner: Runner, backup_dir: Path, uri: str, out: Callable[[str], None] = print) -> list[Path]:
+    """Copy every local archive and metadata file missing from ``uri``; files are already age-encrypted."""
+    present = set(remote_names(runner, uri))
+    local = sorted(p for p in backup_dir.glob('clickstack-mongodb-*')
+                   if p.name.endswith(('.archive.gz.age', '.json')))
+    missing = [p for p in local if p.name not in present]
+    for path in missing:
+        runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)
+    out(f'[OK] Off-host: {len(missing)} file(s) uploaded to {uri}, {len(local) - len(missing)} already there')
+    return missing
+
+
+def backup_time(name: str) -> dt.datetime | None:
+    """When an archive named ``clickstack-mongodb-<UTC>.archive.gz.age`` was taken."""
+    match = retention.PATTERN.match(name)
+    return dt.datetime.strptime(match[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.UTC) if match else None
+
+
+def newest(names: Iterable[str]) -> dt.datetime | None:
+    times = [t for t in map(backup_time, names) if t]
+    return max(times) if times else None
 
 
 def backup_mongodb(argv: list[str] | None = None, runner: Runner | None = None) -> int:

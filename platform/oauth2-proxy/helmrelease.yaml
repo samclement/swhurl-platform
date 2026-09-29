@@ -40,6 +40,9 @@ spec:
       oidc-issuer-url: https://accounts.google.com
       redirect-url: https://oauth.${BASE_DOMAIN}/oauth2/callback
       upstream: static://202
+      # Return X-Auth-Request-User/-Email on the auth reply; the middleware copies them to
+      # the upstream request. The console (platform/console) reads the email from it.
+      set-xauthrequest: true
       reverse-proxy: true
       # Only Traefik (a pod, k3s default pod CIDR) may set X-Forwarded-*. Not --trusted-ip, which skips sign-in.
       trusted-proxy-ip: 10.42.0.0/16

@@ -90,6 +90,12 @@ class ManifestPolicyTests(unittest.TestCase):
                 self.assertIn('secret.reloader.stakater.com/reload', hr['spec']['values'][key])
                 self.assertIn(hr['metadata']['namespace'], watched, 'opt-in outside a watched namespace never reloads')
 
+    def test_sign_in_passes_the_email_the_console_reads(self):
+        args = yaml.safe_load((ROOT / 'platform/oauth2-proxy/helmrelease.yaml').read_text())['spec']['values']['extraArgs']
+        self.assertIs(args.get('set-xauthrequest'), True, 'without it oauth2-proxy sends no X-Auth-Request-Email')
+        middleware = yaml.safe_load((ROOT / 'platform/oauth2-proxy/middleware.yaml').read_text())
+        self.assertIn('X-Auth-Request-Email', middleware['spec']['forwardAuth']['authResponseHeaders'])
+
     def test_console_policy_admits_only_traefik_and_spares_acme_solvers(self):
         netpol = yaml.safe_load((ROOT / 'platform/console/networkpolicy.yaml').read_text())['spec']
         self.assertEqual(netpol['podSelector']['matchLabels'].get('app.kubernetes.io/name'), 'console',

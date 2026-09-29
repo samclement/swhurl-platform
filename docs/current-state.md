@@ -285,6 +285,14 @@ The published image went from 470 MB (`src-6ab0c453…`) to 308 MB (`src-084ffd0
 - **`platform-flux-webhook`** (`cfb5daf`): unit Ready; the `Receiver` initialised with its `resourceFilter` accepted; Let's Encrypt issued `flux-webhook-tls` over HTTP-01 through the new NetworkPolicy, which also shows port 80 reaches the cluster from the internet. Over the public address (`86.136.203.126`, port 443) the host serves that certificate; `/hook/<unknown>` returns the receiver's 404.
 - **GitHub hook** created with `gh api` (id `689037444`, push events, JSON, token fed on stdin and never printed); GitHub's ping was answered 200 in 0.49s and the notification-controller logged `handling GitHub event: ping`.
 
+- **Push to fetch:** a push to `main` at 21:41:01 was fetched at 21:41:03 (webhook delivered 200, receiver annotated the `GitRepository`). Pushing and deleting a throwaway branch (`webhook-filter-test`) produced two deliveries answered 200 and no fetch, so the `resourceFilter` holds back non-`main` pushes. The receiver's log lines are in ClickStack (`otel_logs`, `k8s.deployment.name = notification-controller`).
+
+## Console deploys itself (29 September 2026)
+
+- **`0503987`** changed `tools/` and the publish workflow, and exercised the chain with no manual step: pushed 21:45:12; fetched 21:45:13; Validate passed 21:45:49; the publish run pinned `src-68a511fc56439e7a` on the latest `main` and pushed `d51f232` as `github-actions[bot]` at 21:46:27; Flux fetched it at 21:46:30 (webhook); the new console pod started at 21:46:37. 85 seconds, where this took `make console-image`, a commit and a reconcile before.
+- **`make verify-platform`** passed with no warnings, including the new Push Webhook section (receiver Ready; GitHub's latest delivery 200) and `console image src-68a511fc56439e7a is built from the current tooling`.
+- Not exercised live: the skip when `main` has moved to other image inputs, and the rebase-and-retry after a rejected push (both unit-tested with `FakeRunner`).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

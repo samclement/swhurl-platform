@@ -95,7 +95,7 @@ spec:
               - file_log/host-timers
             processors:
               - memory_limiter
-              - k8sattributes
+              - k8s_attributes
               - batch
             exporters:
               - otlphttp
@@ -105,7 +105,7 @@ spec:
               - hostmetrics
             processors:
               - memory_limiter
-              - k8sattributes
+              - k8s_attributes
               - batch
             exporters:
               - otlphttp

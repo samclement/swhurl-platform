@@ -58,7 +58,7 @@ spec:
               - k8sobjects
             processors:
               - memory_limiter
-              - k8sattributes
+              - k8s_attributes
               - batch
             exporters:
               - otlphttp
@@ -67,7 +67,7 @@ spec:
               - k8s_cluster
             processors:
               - memory_limiter
-              - k8sattributes
+              - k8s_attributes
               - batch
             exporters:
               - otlphttp

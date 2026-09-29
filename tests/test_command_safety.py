@@ -32,6 +32,9 @@ class CommandSafetyTests(unittest.TestCase):
         stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
         (backups / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
         self.env.update(BACKUP_DIR=str(backups), BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        # The console image tag is this checkout's commit, so the real git diff finds no change.
+        self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
+                                                 text=True, check=True).stdout.strip()
         for name in ('kubectl', 'flux', 'aws'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
@@ -51,6 +54,9 @@ elif any(a.startswith('kustomizations') for a in argv):
     ready = 'False' if scenario == 'unready' else 'True'
     emit({'items': [{'metadata': {'name': 'platform-clickstack'},
                      'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
+elif 'helmrelease' in argv and 'console' in argv:
+    emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
+        'tag': os.environ['CONSOLE_TAG']}}}}}}}})
 elif 'traefik' in argv:
     emit({'spec': {'template': {'spec': {'containers': [{'args': [
         '--entryPoints.web.http.redirections.entryPoint.to=:443',

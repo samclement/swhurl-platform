@@ -226,6 +226,26 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
             report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 
 
+def check_console(runner: Runner, report: Report) -> None:
+    """The console image's tag is the commit it was built from; warn if its inputs changed since then."""
+    report.section('Console')
+    try:
+        release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
+        tag = release['spec']['values']['controllers']['main']['containers']['main']['image']['tag']
+    except (CommandError, KeyError, TypeError):
+        report.bad('cannot read the console HelmRelease image tag (console/console)')
+        return
+    changed = runner.run(['git', '-C', str(ROOT), 'diff', '--quiet', tag, 'HEAD', '--',
+                          *platform.CONSOLE_IMAGE_INPUTS], check=False).returncode
+    if changed == 0:
+        report.ok(f'console image {tag[:7]} is built from the current tooling')
+    elif changed == 1:
+        report.warn(f'tooling changed since console image {tag[:7]}; after the publish run, '
+                    'copy its tag and digest into platform/console/helmrelease.yaml')
+    else:
+        report.warn(f'cannot compare console image {tag[:7]} with this checkout (git fetch?)')
+
+
 def check_ingestion(runner: Runner, report: Report) -> None:
     stored = read_ingestion_secret(runner)
     check_runtime_secret(stored, report)
@@ -252,6 +272,7 @@ CHECKS = (
     Check('ingress', frozenset({'cluster'}), check_ingress),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
+    Check('console', frozenset({'cluster', 'host'}), check_console),
 )
 NEEDS = frozenset().union(*(check.needs for check in CHECKS))
 

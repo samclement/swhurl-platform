@@ -27,6 +27,8 @@ BACKUP_S3_URI = 's3://swhurl-platform-backups-110927251694/clickstack-mongodb/'
 INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 AGE_KEY = Path('age.agekey')
+# What the console image is built from (images/console/Dockerfile); publish-console.yml hashes the same paths.
+CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
 
 # Labels and annotations under the platform's domain.
 LABEL_DOMAIN = 'platform.swhurl.com'

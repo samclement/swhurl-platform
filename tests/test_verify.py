@@ -10,11 +10,12 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from swhurl import clickstack, platform, verify
+from swhurl import ROOT, clickstack, platform, verify
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
+CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
 OTHER = 'fixture-other-ingestion-key-9999'
 
 
@@ -46,6 +47,9 @@ def healthy(**overrides):
         'pvc': {'spec': {'volumeName': 'pv-1'}},
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
         'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
+        'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
+            'tag': CONSOLE_TAG}}}}}}}},
+        'git-diff': Result((), 0),
     }
     responses.update(overrides)
 
@@ -82,7 +86,9 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
             .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
             .on('kubectl', 'get', 'pv', handler=answer('pv'))
-            .on('aws', 's3api', 'list-objects-v2', handler=answer('remote')))
+            .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
+            .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
+            .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff')))
 
 
 def run(runner, **kwargs):
@@ -111,7 +117,8 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups =='])
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups ==',
+                          '\n== Console =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -143,6 +150,7 @@ class VerifyPlatformTests(unittest.TestCase):
             'system logs untimed': ({'untimed': Result((), 0, '3\n')}, '3 ClickHouse system log table(s) have no TTL'),
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
+            'console missing': ({'console': Result((), 1, '', 'NotFound')}, 'cannot read the console HelmRelease'),
         }
         for label, (overrides, expected) in cases.items():
             with self.subTest(label):
@@ -185,6 +193,27 @@ class VerifyPlatformTests(unittest.TestCase):
                 self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
 
 
+class ConsoleCheckTests(unittest.TestCase):
+    def test_current_image_passes_and_compares_only_image_inputs(self):
+        runner = healthy()
+        _, report, _ = run(runner)
+        self.assertIn('[OK] console image b63d2af is built from the current tooling', report.lines)
+        diff = next(c for c in runner.calls if c[0] == 'git')
+        self.assertEqual(diff[diff.index('--') + 1:], platform.CONSOLE_IMAGE_INPUTS)
+
+    def test_changed_or_unknown_tooling_warns_without_failing(self):
+        for code, expected in ((1, 'tooling changed since console image b63d2af'), (128, 'cannot compare')):
+            with self.subTest(code=code):
+                exit_code, report, text = run(healthy(**{'git-diff': Result((), code)}))
+                self.assertEqual(exit_code, 0, text)
+                self.assertTrue(any(line.startswith('[WARN]') and expected in line for line in report.lines), text)
+
+    def test_publish_workflow_hashes_the_same_inputs(self):
+        workflow = (ROOT / '.github/workflows/publish-console.yml').read_text()
+        listed = workflow.split('paths=(', 1)[1].split(')', 1)[0].split()
+        self.assertEqual(sorted(listed), sorted(platform.CONSOLE_IMAGE_INPUTS))
+
+
 class AllowedChecksTests(unittest.TestCase):
     def test_cluster_only_reads_no_secrets_execs_nothing_and_names_what_it_skipped(self):
         runner = healthy()
@@ -193,7 +222,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups',
+        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups, console',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

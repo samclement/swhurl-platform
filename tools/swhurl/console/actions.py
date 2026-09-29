@@ -62,7 +62,7 @@ class Flux:
             yield from self.request(ref['kind'], SOURCES[ref['kind']], ref['name'], ref.get('namespace', NAMESPACE))
         else:
             suspend = action == 'suspend'
-            yield f'► {action[:-1]}ing Kustomization {unit}'
+            yield f'► {"suspending" if suspend else "resuming"} Kustomization {unit}'
             self.runner.run(['kubectl', '-n', NAMESPACE, 'patch', f'{KUSTOMIZATION}/{unit}', '--type=merge',
                              '--patch', json.dumps({'spec': {'suspend': suspend}})], mutating=True)
             if suspend:

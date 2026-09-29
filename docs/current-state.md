@@ -272,6 +272,13 @@ Applied at `3a63d3b`: the operator restarted ClickHouse (20:27:31 UTC); `metric_
 - **Effect:** `make flux-reconcile` on `33fb42e` took 17s, down from 64s on `9bce4a7`; the dependency waves reached Ready at 0s, 2s and 7s, not 5s, 28s and 53s.
 - **`make verify-platform`** has a Flux Controllers section: `[OK] kustomize-controller v2.8.1 with the settings in Git`. Not exercised live: the warning after a plain `flux install` (unit-tested), and a Flux upgrade through `make flux-install`.
 
+## Console image without flux, git and curl (29 September 2026)
+
+The published image went from 470 MB (`src-6ab0c453…`) to 308 MB (`src-084ffd01…`, about 98 MB gzip-compressed), deployed at `f42e68d`. `ed223f5` replaced the `flux` CLI (73 MB) with the patches it makes (`spec.suspend`; `reconcile.fluxcd.io/requestedAt`, source first for reconcile, then a poll of `lastHandledReconcileAt` and Ready); the Flux pin moved from the Dockerfile to `FLUX_VERSION` in `tools/swhurl/flux.py`. `b5a6945` replaced `git` clone/push and `curl` (with Perl, 87 MB) with GitHub's API over `httpx`: tarball of `main`, the tree's own tooling, then blobs, tree, commit, ref and PR.
+
+- **Dry run in the built image against GitHub:** `main` at `ed223f5` downloaded; its `app-new` wrote `console-smoke/staging`, SOPS-encrypted the Secret stub and passed the Helm policy check; 7 files listed (5 `A`, 2 `M`); nothing written.
+- **Deployed console** (port-forward with the identity and `Origin` headers), on `app-hello-staging`: reconcile annotated the GitRepository then the unit and reported `applied revision main@sha1:f42e68d…`; suspend set `spec.suspend=true`; resume set it back and waited to Ready. A scale of `hello/staging` to 2 replicas opened [#17](https://github.com/samclement/swhurl-platform/pull/17): one file, `replicas: 1` → `2`, author `swhurl console`, branch `console/scale-hello-staging-f42e68d`; closed unmerged and its branch deleted.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

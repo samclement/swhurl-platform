@@ -29,7 +29,7 @@ spec:
     reloader:
       watchGlobally: false
       # Add a namespace here before annotating a workload in it.
-      namespaces: [ingress, logging]
+      namespaces: [ingress, logging, console]
       ignoreConfigMaps: true
       # Patch a pod-template annotation rather than injecting env vars.
       reloadStrategy: annotations

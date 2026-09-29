@@ -39,8 +39,8 @@ ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/samclement/swhurl-platform" \
       org.opencontainers.image.description="swhurl platform web console" \
       org.opencontainers.image.revision="${SOURCE_REVISION}"
-# git for the write path (phase 6): it clones main and runs the tooling there.
-RUN set -eux; apt-get update; apt-get install -y --no-install-recommends git ca-certificates; \
+# git clones main and pushes console/* branches; curl opens the PR (token on stdin).
+RUN set -eux; apt-get update; apt-get install -y --no-install-recommends git curl ca-certificates; \
     rm -rf /var/lib/apt/lists/*
 COPY --from=tools /out/ /usr/local/bin/
 COPY --from=deps /app/.venv /app/.venv

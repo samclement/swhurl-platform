@@ -35,7 +35,7 @@ class CommandSafetyTests(unittest.TestCase):
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
-        for name in ('kubectl', 'flux', 'aws'):
+        for name in ('kubectl', 'flux', 'aws', 'curl'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, json, os, sys
@@ -46,7 +46,10 @@ scenario = os.environ.get('SCENARIO', 'match')
 argv = sys.argv[1:]
 def emit(obj):
     print(json.dumps(obj))
-if Path(sys.argv[0]).name == 'aws':
+if Path(sys.argv[0]).name == 'curl':
+    sys.stdin.read()
+    print('HTTP/2 200')
+elif Path(sys.argv[0]).name == 'aws':
     emit(['clickstack-mongodb/clickstack-mongodb-' + os.environ['STAMP'] + '.archive.gz.age'])
 elif Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
@@ -54,6 +57,8 @@ elif any(a.startswith('kustomizations') for a in argv):
     ready = 'False' if scenario == 'unready' else 'True'
     emit({'items': [{'metadata': {'name': 'platform-clickstack'},
                      'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
+elif 'console-github' in argv:
+    emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
         'tag': os.environ['CONSOLE_TAG']}}}}}}}})

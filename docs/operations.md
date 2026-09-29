@@ -31,7 +31,7 @@ git commit -am "secrets: rotate oauth2-proxy client secret" && git push
 make reconcile UNIT=platform-oauth2-proxy   # the unit that holds the Secret; apps: make app-reconcile
 ```
 
-Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`; if Reloader ever misses the collectors: `kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent`, then `make verify-platform`. Which Secret belongs to which service: [services](services.md).
+Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, the console, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`; if Reloader ever misses the collectors: `kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent`, then `make verify-platform`. Which Secret belongs to which service: [services](services.md).
 
 Rotate the ClickStack ingestion key ([what it is](services.md#clickstack-and-otel)):
 
@@ -39,6 +39,12 @@ Rotate the ClickStack ingestion key ([what it is](services.md#clickstack-and-ote
 2. `make check-secrets` (fails if the copies differ), commit, push, `make reconcile UNIT=platform-clickstack` and `make reconcile UNIT=platform-otel`. Reloader restarts the collectors.
 3. `make clickstack-bootstrap` writes the new key into the team.
 4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401. If the collector pods did not restart, restart them with the `kubectl` command above.
+
+Replace the console's GitHub token (before it expires; `make verify-platform` warns 14 days ahead):
+
+1. On GitHub: Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only `samclement/swhurl-platform`; permissions: Contents and Pull requests, read and write; the longest expiry offered.
+2. In your own terminal: `sops platform/console/secret.sops.yaml` and replace the `GITHUB_TOKEN` value. Never paste the token anywhere else.
+3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
 ## Certificate mode
 

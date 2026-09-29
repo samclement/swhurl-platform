@@ -1,10 +1,10 @@
-"""The console's only cluster writes: reconcile, suspend and resume a Flux unit.
+"""Background jobs: the console's cluster writes (reconcile, suspend and resume
+a Flux unit) and its Git changes (opening a PR, ``changes.py``).
 
-Each action runs ``flux`` as a background job whose output the job page shows
-as it arrives. One job per unit at a time. Every start and finish is one
-``[AUDIT]`` line on stdout, which reaches ClickStack with the pod's logs.
-The root units are refused: they are applied by ``make flux-bootstrap``, not
-by Flux.
+A job's output is shown on its page as it arrives. One job per target (a unit,
+or an app instance) at a time. Every start and finish is one ``[AUDIT]`` line
+on stdout, which reaches ClickStack with the pod's logs. The root units are
+refused: they are applied by ``make flux-bootstrap``, not by Flux.
 """
 from __future__ import annotations
 
@@ -41,12 +41,13 @@ def command(action: str, unit: str) -> list[str]:
 class Job:
     id: int
     action: str
-    unit: str
+    unit: str  # the target: a Flux unit, or <app>/<env> for a PR
     identity: str
     started: dt.datetime
     lines: list[str] = field(default_factory=list)
     state: str = 'running'  # running, succeeded, failed
     finished: dt.datetime | None = None
+    link: str = ''  # for example the PR a job opened
 
 
 class Jobs:
@@ -70,35 +71,46 @@ class Jobs:
             return list(reversed(self._jobs.values()))
 
     def start(self, action: str, unit: str, identity: str) -> Job:
-        """Check the action, then run it in a thread."""
+        """Check a flux action on a unit, then run it in the background."""
         if action not in ACTIONS:
             raise ActionError(f'unknown action {action!r}')
         if unit in REFUSED:
             raise ActionError(f'{unit} is {REFUSED[unit]}')
         if unit not in {u.name for u in cluster.units(self.runner)}:
             raise ActionError(f'no Flux unit named {unit!r}')
+
+        def work(job: Job) -> None:
+            for line in self.runner.stream(command(action, unit), mutating=True):
+                job.lines.append(line)
+        return self.submit(action, unit, identity, work)
+
+    def submit(self, action: str, target: str, identity: str, work: Callable[[Job], None]) -> Job:
+        """Run ``work(job)`` in the background; it appends to ``job.lines`` and raises to fail."""
         with self._lock:
-            if any(j.unit == unit and j.state == 'running' for j in self._jobs.values()):
-                raise ActionError(f'a job for {unit} is already running')
-            job = Job(next(self._ids), action, unit, identity, self.now())
+            if any(j.unit == target and j.state == 'running' for j in self._jobs.values()):
+                raise ActionError(f'a job for {target} is already running')
+            job = Job(next(self._ids), action, target, identity, self.now())
             self._jobs[job.id] = job
             while len(self._jobs) > KEEP and next(iter(self._jobs.values())).state != 'running':
                 self._jobs.popitem(last=False)
-        self.audit(f'[AUDIT] {identity} {action} {unit}: started (job {job.id})')
+        self.audit(f'[AUDIT] {identity} {action} {target}: started (job {job.id})')
         if self.inline:
-            self._run(job)
+            self._run(job, work)
         else:
-            threading.Thread(target=self._run, args=(job,), daemon=True).start()
+            threading.Thread(target=self._run, args=(job, work), daemon=True).start()
         return job
 
-    def _run(self, job: Job) -> None:
+    def _run(self, job: Job, work: Callable[[Job], None]) -> None:
         try:
-            for line in self.runner.stream(command(job.action, job.unit), mutating=True):
-                job.lines.append(line)
+            work(job)
             job.state = 'succeeded'
-        except CommandError as error:
+        except (CommandError, ActionError) as error:
             job.lines.append(f'[ERROR] {error}')
+            job.state = 'failed'
+        except Exception as error:  # a bug must still finish the job and reach the audit log
+            job.lines.append(f'[ERROR] unexpected {type(error).__name__}: {self.runner.redact(str(error))}')
             job.state = 'failed'
         job.finished = self.now()
         level = 'AUDIT' if job.state == 'succeeded' else 'ERROR'
-        self.audit(f'[{level}] {job.identity} {job.action} {job.unit}: {job.state} (job {job.id})')
+        link = f' {job.link}' if job.link else ''
+        self.audit(f'[{level}] {job.identity} {job.action} {job.unit}: {job.state} (job {job.id}){link}')

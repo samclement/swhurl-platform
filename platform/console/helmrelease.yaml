@@ -40,12 +40,21 @@ spec:
         # The chart creates this ServiceAccount; rbac.yaml binds it.
         serviceAccount:
           name: console
+        # Restart when the GitHub token changes (namespace console is in platform-reloader's list).
+        annotations:
+          secret.reloader.stakater.com/reload: console-github
         containers:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-console
               tag: bf633442c9d7be21e7a4d06391b4c01806260c3b
               digest: sha256:6999792158174da33e8345edf210d66a7853b223eea665032a6ff967ec7b6634
+            env:
+              CONSOLE_REPO: samclement/swhurl-platform
+            # GITHUB_TOKEN: push console/* branches and open PRs (secret.sops.yaml).
+            envFrom:
+            - secretRef:
+                name: console-github
             resources:
               requests:
                 cpu: 10m

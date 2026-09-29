@@ -220,7 +220,7 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
             report.bad(f'no MongoDB backup in {where} (run: make backup-mongodb)')
         elif now - taken > limit:
             report.bad(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
-                       'check: systemctl --user status swhurl-backup-mongodb')
+                       'check: systemctl status swhurl-backup-mongodb')
         else:
             report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 

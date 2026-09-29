@@ -13,22 +13,8 @@ Options:
 USAGE
 }
 
-host_log_info() { printf "[HOST][INFO] %s\n" "$*"; }
-host_log_error() { printf "[HOST][ERROR] %s\n" "$*" >&2; }
-host_die() { host_log_error "$*"; exit 1; }
-
-host_need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || host_die "Missing required command: $1"
-}
-
-host_sudo() {
-  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-    "$@"
-  else
-    host_need_cmd sudo
-    sudo "$@"
-  fi
-}
+# shellcheck source=host/lib.sh
+source "$ROOT_DIR/host/lib.sh"
 
 readonly HOST_DDNS_SERVICE="aws-dns-updater.service"
 readonly HOST_DDNS_TIMER="aws-dns-updater.timer"
@@ -91,52 +77,13 @@ print_plan() {
   printf '  - aws_profile: %s\n' "${AWS_PROFILE:-default}"
 }
 
-host_dynamic_dns_is_supported_host() {
-  if [[ "$(uname -s || true)" != "Linux" ]]; then
-    host_log_info "Non-Linux host detected; skipping dynamic DNS task"
-    return 1
-  fi
-  if ! command -v systemctl >/dev/null 2>&1; then
-    host_log_info "systemd not available; skipping dynamic DNS task"
-    return 1
-  fi
-  return 0
-}
-
-host_dynamic_dns_user_home() {
-  local run_user="$1"
-  local home
-  home="$(getent passwd "$run_user" 2>/dev/null | cut -d: -f6 || true)"
-  if [[ -z "$home" ]]; then
-    home="$HOME"
-  fi
-  [[ -n "$home" ]] || host_die "Could not determine home directory for ${run_user}"
-  printf '%s' "$home"
-}
-
-host_dynamic_dns_write_unit_if_changed() {
-  local path="$1" content="$2"
-  if [[ -f "$path" ]] && cmp -s <(printf "%s" "$content") "$path"; then
-    host_log_info "$(basename "$path") already up-to-date"
-    return 1
-  fi
-
-  if [[ -f "$path" ]]; then
-    host_log_info "Updating $(basename "$path")"
-  else
-    host_log_info "Creating $(basename "$path")"
-  fi
-  printf "%s" "$content" | host_sudo tee "$path" >/dev/null
-  return 0
-}
-
 host_dynamic_dns_apply() {
-  host_dynamic_dns_is_supported_host || return 0
+  host_has_systemd || return 0
 
   local root run_user run_home helper_source helper_target service_template timer_template
   root="$ROOT_DIR"
-  run_user="${SUDO_USER:-$(id -un)}"
-  run_home="$(host_dynamic_dns_user_home "$run_user")"
+  run_user="$(host_run_user)"
+  run_home="$(host_user_home "$run_user")"
   helper_source="${root}/host/aws-dns-updater.sh"
   helper_target="${run_home}/.local/scripts/aws-dns-updater.sh"
   service_template="${root}/host/templates/systemd/dynamic-dns.service.tmpl"
@@ -168,13 +115,13 @@ host_dynamic_dns_apply() {
   host_sudo mkdir -p "$HOST_DDNS_ENV_DIR"
 
   local config_changed=0 unit_changed=0
-  if host_dynamic_dns_write_unit_if_changed "$HOST_DDNS_ENV_PATH" "$env_content"; then
+  if host_write_if_changed "$HOST_DDNS_ENV_PATH" "$env_content"; then
     config_changed=1
   fi
-  if host_dynamic_dns_write_unit_if_changed "$HOST_DDNS_SERVICE_PATH" "$service_content"; then
+  if host_write_if_changed "$HOST_DDNS_SERVICE_PATH" "$service_content"; then
     unit_changed=1
   fi
-  if host_dynamic_dns_write_unit_if_changed "$HOST_DDNS_TIMER_PATH" "$timer_content"; then
+  if host_write_if_changed "$HOST_DDNS_TIMER_PATH" "$timer_content"; then
     unit_changed=1
   fi
 
@@ -201,7 +148,7 @@ host_dynamic_dns_apply() {
 }
 
 host_dynamic_dns_delete() {
-  host_dynamic_dns_is_supported_host || return 0
+  host_has_systemd || return 0
 
   if [[ ! -f "$HOST_DDNS_SERVICE_PATH" ]] || ! grep -q "$HOST_DDNS_MANAGED_MARKER" "$HOST_DDNS_SERVICE_PATH"; then
     host_log_info "Dynamic DNS units not recognized as host-managed; nothing to delete"

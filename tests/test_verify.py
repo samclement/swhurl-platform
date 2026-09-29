@@ -60,14 +60,24 @@ def healthy(**overrides):
     def clickhouse(args, _input):
         return answer('ttl30' if 'toIntervalDay(30)' in args[-1] else 'untimed')(args, _input)
 
-    return (FakeRunner()
+    stdin = []  # every program sent into a pod (mongosh scripts, API requests)
+
+    def recorded(key):
+        def handler(args, program):
+            stdin.append((args, program))
+            return answer(key)(args, program)
+        return handler
+
+    runner = FakeRunner()
+    runner.stdin = stdin
+    return (runner
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
             .on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
             .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET, handler=answer('mongouri'))
-            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=answer('team'))
-            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=answer('installation'))
+            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=recorded('team'))
+            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=recorded('installation'))
             .on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
             .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
             .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
@@ -160,10 +170,19 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(runner.calls, [('kubectl', 'get', '--raw=/version')])
 
     def test_every_call_is_read_only(self):
+        """kubectl only gets or execs, and what an exec runs is allowlisted: exec itself can write."""
         runner = healthy()
         run(runner)
         verbs = {c[c.index('get') if 'get' in c else c.index('exec')] for c in runner.calls if c[0] == 'kubectl'}
         self.assertLessEqual(verbs, {'get', 'exec'})
+        read_only_scripts = (clickstack.TEAM_KEYS,)
+        self.assertTrue(runner.stdin, 'verify-platform sends nothing into pods? the allowlist would be untested')
+        for args, program in runner.stdin:
+            if clickstack.MONGO_POD in args:
+                self.assertTrue(program.rstrip('\n').endswith(read_only_scripts), f'unlisted mongosh script: {program}')
+            else:
+                request = json.loads(program.split(', ', 1)[1].split(');\n', 1)[0])
+                self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
 
 
 class BackupAgeTests(unittest.TestCase):

@@ -18,8 +18,8 @@ def b64(value):
 class Cluster:
     """Scripted ClickStack: answers kubectl get/exec like the real pods would."""
 
-    def __init__(self, *, team=False, team_key=OTHER, register_status=200, teams=None):
-        self.team, self.team_key, self.register_status = team, team_key, register_status
+    def __init__(self, *, team=False, team_key=OTHER, register_status=200, teams=None, api_up=True):
+        self.team, self.team_key, self.register_status, self.api_up = team, team_key, register_status, api_up
         self.teams = teams
         self.registered = None
 
@@ -34,6 +34,8 @@ class Cluster:
                 .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=self.mongo))
 
     def api(self, argv, program):
+        if not self.api_up:
+            return Result(argv, 1, '', 'error: no running pod')
         if '/ready' in program:
             answer = {'status': 200, 'body': {}}
         elif '/installation' in program:
@@ -121,11 +123,12 @@ class BootstrapTests(unittest.TestCase):
                 self.assert_no_secret_leaks(report, runner)
 
     def test_api_not_ready_times_out(self):
-        runner = Cluster().runner()
-        runner._rules.insert(0, (('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP), Result((), 1, '', 'no pod')))
-        report = Report(out=open('/dev/null', 'w'))
-        self.assertEqual(clickstack.bootstrap(runner, report, timeout=0), 1)
+        cluster = Cluster(api_up=False)
+        code, report, runner = run(cluster)
+        self.assertEqual(code, 1)
         self.assertTrue(report.lines[-1].startswith('[BAD] HyperDX API not ready'))
+        self.assertIsNone(cluster.registered)
+        self.assertFalse(any('mongosh' in c for c in runner.calls), 'nothing touches MongoDB before the API is up')
 
 
 if __name__ == '__main__':

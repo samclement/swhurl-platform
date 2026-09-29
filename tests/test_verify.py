@@ -29,7 +29,7 @@ def healthy(**overrides):
             {'metadata': {'name': 'homelab-b'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
             {'metadata': {'name': 'homelab-a'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         ]},
-        'secret': {'data': {'HYPERDX_API_KEY': b64(KEY)}},
+        'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY)}},
         'team': Result((), 0, KEY + '\n'),
         'traefik': {'spec': {'template': {'spec': {'containers': [
             {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}},
@@ -55,7 +55,7 @@ def healthy(**overrides):
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
-            .on('kubectl', '-n', 'logging', 'get', 'secret', 'hyperdx-secret', handler=answer('secret'))
+            .on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
             .on('kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-mongodb', handler=answer('team'))
             .on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
             .on('kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-clickhouse', handler=clickhouse)
@@ -95,13 +95,13 @@ class VerifyPlatformTests(unittest.TestCase):
                 'homelab-x is not Ready: dependency not ready'),
             'no units': ({'units': {'items': []}}, 'no Flux kustomizations found'),
             'units unreadable': ({'units': Result((), 1, '', 'forbidden')}, 'could not read Flux kustomizations'),
-            'secret missing': ({'secret': {'data': {}}}, 'HYPERDX_API_KEY is empty'),
-            'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'HYPERDX_API_KEY is empty'),
+            'secret missing': ({'secret': {'data': {}}}, 'CLICKSTACK_INGESTION_KEY is empty'),
+            'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'team key unreadable': ({'team': Result((), 2, '', 'quit(2)')}, 'cannot read a unique ClickStack team'),
-            'invalid base64': ({'secret': {'data': {'HYPERDX_API_KEY': b64(KEY) + '!'}}}, 'invalid base64'),
-            'different key': ({'secret': {'data': {'HYPERDX_API_KEY': b64(OTHER)}}}, 'does not match'),
-            'double encoded': ({'secret': {'data': {'HYPERDX_API_KEY': b64(b64(KEY))}}}, 'does not match'),
-            'trailing newline': ({'secret': {'data': {'HYPERDX_API_KEY': b64(KEY + '\n')}}}, 'does not match'),
+            'invalid base64': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY) + '!'}}}, 'invalid base64'),
+            'different key': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}}, 'does not match'),
+            'double encoded': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(b64(KEY))}}}, 'does not match'),
+            'trailing newline': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY + '\n')}}}, 'does not match'),
             'no redirect': ({'traefik': {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}},
                             'does not redirect HTTP to HTTPS'),
             'telemetry ttl drift': ({'ttl30': Result((), 0, '8\t9\n')}, '8 of 9 have it'),
@@ -121,8 +121,8 @@ class VerifyPlatformTests(unittest.TestCase):
                 self.assertNoKeys(text)
 
     def test_mismatch_prints_fix_hint(self):
-        _, report, _ = run(healthy(secret={'data': {'HYPERDX_API_KEY': b64(OTHER)}}))
-        self.assertTrue(any('exactly one base64 layer' in line for line in report.lines))
+        _, report, _ = run(healthy(secret={'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}))
+        self.assertTrue(any('make clickstack-bootstrap' in line for line in report.lines))
 
     def test_team_key_failure_output_never_leaks(self):
         runner = healthy(team=Result((), 1, KEY, f'error near {KEY}'))

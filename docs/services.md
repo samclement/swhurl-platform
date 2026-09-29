@@ -44,7 +44,7 @@ ClickStack (HyperDX UI, ClickHouse, MongoDB) stores logs, metrics and traces. Tw
 
 **In progress (29 September 2026):** the chart 1.x release was uninstalled and its volumes deleted; ClickStack is being reinstalled fresh on chart 3.4.0 with operator-managed MongoDB and ClickHouse. Until that lands, the collectors cannot deliver telemetry and `make verify-platform` fails its ClickStack checks.
 
-The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:HYPERDX_API_KEY}` into the collector's `${env:...}` reference.
+The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:CLICKSTACK_INGESTION_KEY}` into the collector's `${env:...}` reference.
 
 ## Reloader
 

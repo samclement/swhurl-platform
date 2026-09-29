@@ -85,7 +85,7 @@ def healthy(**overrides):
             .on('aws', 's3api', 'list-objects-v2', handler=answer('remote')))
 
 
-def run(runner):
+def run(runner, **kwargs):
     out, err = io.StringIO(), io.StringIO()
     report = Report(out)
     backups = Path(tempfile.mkdtemp())
@@ -93,7 +93,7 @@ def run(runner):
     env = {'BACKUP_DIR': str(backups), 'BACKUP_S3_URI': 's3://bucket/clickstack-mongodb/'}
     try:
         with redirect_stderr(err), mock.patch.dict('os.environ', env):
-            code = verify.verify_platform(runner, report)
+            code = verify.verify_platform(runner, report, **kwargs)
     finally:
         shutil.rmtree(backups)
     return code, report, out.getvalue() + err.getvalue()
@@ -183,6 +183,27 @@ class VerifyPlatformTests(unittest.TestCase):
             else:
                 request = json.loads(program.split(', ', 1)[1].split(');\n', 1)[0])
                 self.assertEqual(request['method'], 'GET', f'HyperDX API call is not a GET: {program}')
+
+
+class AllowedChecksTests(unittest.TestCase):
+    def test_cluster_only_reads_no_secrets_execs_nothing_and_names_what_it_skipped(self):
+        runner = healthy()
+        code, report, text = run(runner, allowed=frozenset({'cluster'}))
+        self.assertEqual(code, 0, text)
+        self.assertEqual([e.section for e in report.entries if e.level != 'info'],
+                         ['Flux Kustomizations'] * 2 + ['Ingress'])
+        self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
+        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups',
+                      report.lines)
+
+    def test_every_check_names_only_known_needs(self):
+        self.assertEqual(verify.NEEDS, {'cluster', 'secret', 'exec', 'host'})
+        self.assertEqual(len({check.name for check in verify.CHECKS}), len(verify.CHECKS))
+
+    def test_entries_carry_section_and_level(self):
+        _, report, _ = run(healthy(traefik={'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}))
+        bad = [e for e in report.entries if e.level == 'bad']
+        self.assertEqual([(e.section, e.message[:28]) for e in bad], [('Ingress', 'Traefik does not redirect HT')])
 
 
 class BackupAgeTests(unittest.TestCase):

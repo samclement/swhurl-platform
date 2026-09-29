@@ -89,6 +89,22 @@ class StatusTests(unittest.TestCase):
         self.assertIn('Flux unit app-web-prod not found', err)
 
 
+class GatherStatusTests(unittest.TestCase):
+    def test_structured_status_matches_what_is_printed(self):
+        found = app_ops.gather_status(cluster(), app_ops.Instance('web', 'prod'))
+        self.assertTrue(found.applied)
+        self.assertEqual(found.unit, ('True', f'Applied revision: {REV}'))
+        self.assertEqual(found.running_images, [f'docker.io/x/web@{DIGEST}'])
+        self.assertEqual(found.replicas, [app_ops.Replicas('Deployment/web', 1, 1)])
+        self.assertEqual((found.routes, found.certificates, found.problems),
+                         (['web.homelab.swhurl.com'], [('web-tls', 'True')], []))
+
+    def test_missing_unit_is_none_and_missing_release_is_none(self):
+        self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), app_ops.Instance('web', 'prod')))
+        found = app_ops.gather_status(cluster(helmrelease=None), app_ops.Instance('web', 'prod'))
+        self.assertIsNone(found.release)
+
+
 class LogsAndReconcileTests(unittest.TestCase):
     def test_logs_default_and_follow(self):
         runner = cluster()

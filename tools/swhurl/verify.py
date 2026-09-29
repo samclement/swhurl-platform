@@ -12,7 +12,8 @@ import binascii
 import datetime as dt
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, platform, recovery
@@ -225,7 +226,38 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
             report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 
 
-def verify_platform(runner: Runner, report: Report) -> int:
+def check_ingestion(runner: Runner, report: Report) -> None:
+    stored = read_ingestion_secret(runner)
+    check_runtime_secret(stored, report)
+    check_ingestion_key(runner, report, stored)
+
+
+@dataclass(frozen=True)
+class Check:
+    """One group of checks and what it needs beyond reading the cluster.
+
+    ``cluster``: read non-Secret objects; ``secret``: read Secrets; ``exec``: run
+    commands in pods; ``host``: this machine's files or AWS credentials. The
+    console runs only the checks its read-only account can (``{'cluster'}``).
+    """
+    name: str
+    needs: frozenset[str]
+    run: Callable[[Runner, Report], None]
+
+
+CHECKS = (
+    Check('flux', frozenset({'cluster'}), check_flux),
+    Check('ingestion-key', frozenset({'cluster', 'secret', 'exec'}), check_ingestion),
+    Check('registration', frozenset({'cluster', 'exec'}), check_registration),
+    Check('ingress', frozenset({'cluster'}), check_ingress),
+    Check('retention', frozenset({'cluster', 'exec'}), check_retention),
+    Check('backups', frozenset({'host'}), check_backups),
+)
+NEEDS = frozenset().union(*(check.needs for check in CHECKS))
+
+
+def verify_platform(runner: Runner, report: Report, *, allowed: frozenset[str] = NEEDS) -> int:
+    """Run every check whose needs are within ``allowed``; name the skipped ones."""
     report.redact = runner.redact
     try:
         runner.run(['kubectl', 'get', '--raw=/version'])
@@ -235,14 +267,13 @@ def verify_platform(runner: Runner, report: Report) -> int:
             detail = str(error)
         print(f'[ERROR] {detail}', file=sys.stderr)
         return 1
-    check_flux(runner, report)
-    stored = read_ingestion_secret(runner)
-    check_runtime_secret(stored, report)
-    check_ingestion_key(runner, report, stored)
-    check_registration(runner, report)
-    check_ingress(runner, report)
-    check_retention(runner, report)
-    check_backups(runner, report)
+    skipped = [check.name for check in CHECKS if not check.needs <= allowed]
+    for check in CHECKS:
+        if check.needs <= allowed:
+            check.run(runner, report)
+    if skipped:
+        report.line()
+        report.info(f"skipped (need more than {', '.join(sorted(allowed))}): {', '.join(skipped)}")
     if report.passed:
         report.line('\nValidation passed.')
     return report.exit_code()

@@ -62,6 +62,10 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
 	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
+.PHONY: console-image
+console-image: ## Pin platform/console to the image published for this commit (src-<hash> tag and digest; Git edit)
+	$(SWHURL) console-image
+
 .PHONY: console-dev
 console-dev: ## Read-only web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)
 	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl console --dev --port $(or $(PORT),8080)

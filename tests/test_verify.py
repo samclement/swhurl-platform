@@ -224,10 +224,20 @@ class ConsoleCheckTests(unittest.TestCase):
                 self.assertEqual(exit_code, 0, text)
                 self.assertTrue(any(line.startswith('[WARN]') and expected in line for line in report.lines), text)
 
-    def test_publish_workflow_hashes_the_same_inputs(self):
+    def test_publish_workflow_hashes_the_same_inputs_in_the_same_order(self):
         workflow = (ROOT / '.github/workflows/publish-console.yml').read_text()
         listed = workflow.split('paths=(', 1)[1].split(')', 1)[0].split()
-        self.assertEqual(sorted(listed), sorted(platform.CONSOLE_IMAGE_INPUTS))
+        self.assertEqual(tuple(listed), platform.CONSOLE_IMAGE_INPUTS, 'the order changes the hash')
+
+    def test_content_tag_is_compared_exactly(self):
+        for current, expected in (('src-abc', '[OK] console image src-abc is built from the current tooling'),
+                                  ('src-new', '[WARN] tooling changed since console image src-abc')):
+            with self.subTest(current=current):
+                runner = healthy(console={'spec': {'values': {'controllers': {'main': {'containers': {'main': {
+                    'image': {'tag': 'src-abc'}}}}}}}})
+                with mock.patch.object(verify.images, 'content_tag', return_value=current):
+                    _, report, _ = run(runner)
+                self.assertTrue(any(line.startswith(expected) for line in report.lines), report.lines)
 
 
 class ConsoleTokenTests(unittest.TestCase):

@@ -27,7 +27,7 @@ make host-dns DRY_RUN=true   # shows records, zone and profile
 make host-dns                # installs the updater (needs sudo and AWS credentials)
 ```
 
-Records come from `DYNAMIC_DNS_RECORDS` in [`host/dns.env`](../host/dns.env); override `AWS_ZONE_ID` or `AWS_PROFILE` in the environment. Re-run `make host-dns` after changing any of them. The wildcard covers single-label names only (`app.homelab.swhurl.com`, not `a.b.homelab.swhurl.com`).
+Records come from `DYNAMIC_DNS_RECORDS` in [`host/dns.env`](../host/dns.env), which the unit reads on every run, so edits apply within 10 minutes without reinstalling; `AWS_ZONE_ID` and `AWS_PROFILE` can be added there too. The wildcard covers single-label names only (`app.homelab.swhurl.com`, not `a.b.homelab.swhurl.com`).
 
 ## 3. Settings and Secrets
 

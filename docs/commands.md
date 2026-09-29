@@ -64,7 +64,9 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb`, and so the S3 upload, at 03:30 from this checkout as you; asks for `sudo` | Host |
-| `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS system timer (`aws-dns-updater`, runs as you; asks for `sudo`) (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
+| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb`, and so the S3 upload, at 03:30 | Host |
+| `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`) | Host |
+
+Both use [`host/install-timer.sh`](../host/install-timer.sh): a system unit that runs a script from this checkout as you, so edits to the script or `host/dns.env` apply at the next run; only unit template changes need a reinstall. Both ask for `sudo`, so run them in your own terminal. Output goes to `/var/log/swhurl-platform/<unit>.log` and ClickStack.
 
 Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).

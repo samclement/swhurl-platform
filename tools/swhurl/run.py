@@ -19,7 +19,7 @@ import os
 import shlex
 import subprocess
 import threading
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,6 +111,18 @@ class Runner:
             return 0
         return self._attach(argv)
 
+    def stream(self, args: Sequence[str | Path]) -> Iterator[str]:
+        """Yield the command's stdout line by line, redacted, as it is printed.
+
+        For read-only commands whose output a caller shows live, such as
+        ``kubectl logs --follow`` in the console. Closing the iterator early
+        stops the command. A non-zero exit raises :class:`CommandError` (with
+        redacted stderr) after the last line.
+        """
+        argv = tuple(str(a) for a in args)
+        for line in self._stream(argv):
+            yield self.redact(line)
+
     def pipe(self, producer: Sequence[str | Path], consumer: Sequence[str | Path], *,
              mutating: bool = False, env: Mapping[str, str] | None = None, input: str | None = None) -> Result:
         """Run ``producer | consumer`` and return the consumer's result.
@@ -174,6 +186,33 @@ class Runner:
         return (Result(left, producer.returncode, '', decode(errors[0] if errors else b'')),
                 Result(right, consumer.returncode, decode(out), decode(err)))
 
+    def _stream(self, argv: tuple[str, ...]) -> Iterator[str]:
+        try:
+            process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                       errors='replace', cwd=self.cwd,
+                                       env={**os.environ, **self.env} if self.env else None)
+        except FileNotFoundError:
+            raise CommandError(argv, f'missing required command: {argv[0]}') from None
+        errors: list[str] = []
+        drain = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
+        drain.start()
+        finished = False
+        try:
+            for line in process.stdout:
+                yield line.rstrip('\n')
+            finished = True
+        finally:
+            if not finished:
+                process.terminate()
+            process.stdout.close()
+            process.wait()
+            drain.join()
+            process.stderr.close()
+        if process.returncode:
+            detail = self.redact(''.join(errors).strip())
+            raise CommandError(argv, f'{self.describe(argv)} exited {process.returncode}'
+                               + (f': {detail}' if detail else ''), process.returncode)
+
     def _attach(self, argv: tuple[str, ...]) -> int:
         try:
             return subprocess.run(argv, cwd=self.cwd, env={**os.environ, **self.env} if self.env else None,
@@ -223,6 +262,12 @@ class FakeRunner(Runner):
 
     def _attach(self, argv: tuple[str, ...]) -> int:
         return self._execute(argv, input=None, env={}, cwd=None).returncode
+
+    def _stream(self, argv: tuple[str, ...]) -> Iterator[str]:
+        result = self._execute(argv, input=None, env={}, cwd=None)
+        yield from result.stdout.splitlines()
+        if result.returncode:
+            raise CommandError(argv, f'{self.describe(argv)} exited {result.returncode}', result.returncode)
 
     def _pipe(self, left: tuple[str, ...], right: tuple[str, ...], *,
               env: Mapping[str, str], input: str | None = None) -> tuple[Result, Result]:

@@ -3,6 +3,7 @@ import io
 import os
 import subprocess
 import sys
+import time
 import unittest
 
 from swhurl import ROOT
@@ -106,6 +107,42 @@ class PipeTests(unittest.TestCase):
         self.assertEqual(fake.calls, [('producer',), ('consumer',)])
 
 
+class StreamTests(unittest.TestCase):
+    def test_yields_lines_redacted(self):
+        runner = Runner()
+        runner.add_secret(SECRET)
+        lines = list(runner.stream(['sh', '-c', f'echo one; echo "two {SECRET}"']))
+        self.assertEqual(lines, ['one', f'two {REDACTED}'])
+
+    def test_failure_raises_after_the_last_line_with_redacted_stderr(self):
+        runner = Runner()
+        runner.add_secret(SECRET)
+        seen = []
+        with self.assertRaises(CommandError) as caught:
+            for line in runner.stream(['sh', '-c', f'echo partial; echo "bad {SECRET}" >&2; exit 3']):
+                seen.append(line)
+        self.assertEqual(seen, ['partial'])
+        self.assertEqual(caught.exception.returncode, 3)
+        self.assertNotIn(SECRET, str(caught.exception))
+
+    def test_closing_early_stops_the_command(self):
+        lines = Runner().stream(['sh', '-c', 'echo first; exec sleep 30'])
+        started = time.monotonic()
+        self.assertEqual(next(lines), 'first')
+        lines.close()
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_missing_command(self):
+        with self.assertRaisesRegex(CommandError, 'missing required command'):
+            list(Runner().stream(['swhurl-no-such-command']))
+
+    def test_fake_stream_answers_from_rules(self):
+        fake = FakeRunner().on('kubectl', 'logs', stdout='a\nb\n').on('flux', returncode=1)
+        self.assertEqual(list(fake.stream(['kubectl', 'logs', 'x'])), ['a', 'b'])
+        with self.assertRaises(CommandError):
+            list(fake.stream(['flux', 'logs']))
+
+
 class FakeRunnerTests(unittest.TestCase):
     def test_records_calls_and_answers_by_prefix(self):
         fake = FakeRunner().on('kubectl', 'get', stdout='{"kind": "List"}').on('flux', returncode=1, stderr='nope')
@@ -141,6 +178,19 @@ class ReportTests(unittest.TestCase):
         report.bad('unit failed')
         self.assertEqual((report.failures, report.warnings, report.exit_code()), (1, 1, 1))
         self.assertEqual(out.getvalue(), '\n== Flux ==\n[OK] unit Ready\n[WARN] slow\n[BAD] unit failed\n')
+
+
+class ReportEntryTests(unittest.TestCase):
+    def test_entries_record_section_level_and_redacted_message(self):
+        report = Report(io.StringIO(), redact=lambda text: text.replace(SECRET, REDACTED))
+        report.info('before any section')
+        report.section('Flux')
+        report.ok('unit Ready')
+        report.bad(f'mismatch {SECRET}')
+        report.detail('hint lines are not entries')
+        self.assertEqual([(e.section, e.level, e.message) for e in report.entries],
+                         [('', 'info', 'before any section'), ('Flux', 'ok', 'unit Ready'),
+                          ('Flux', 'bad', f'mismatch {REDACTED}')])
 
 
 class ReportRedactionTests(unittest.TestCase):

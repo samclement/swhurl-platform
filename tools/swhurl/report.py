@@ -7,7 +7,16 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TextIO
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One reported result, for callers that render it themselves (the console)."""
+    section: str
+    level: str  # ok, bad, warn, info
+    message: str
 
 
 class Report:
@@ -18,28 +27,35 @@ class Report:
         self.failures = 0
         self.warnings = 0
         self.lines: list[str] = []
+        self.entries: list[Entry] = []
+        self._section = ''
 
     def _emit(self, line: str) -> None:
         line = self.redact(line)
         self.lines.append(line)
         print(line, file=self.out)
 
+    def _result(self, level: str, message: str) -> None:
+        self.entries.append(Entry(self._section, level, self.redact(message)))
+        self._emit(f'[{level.upper()}] {message}')
+
     def section(self, title: str) -> None:
+        self._section = title
         self._emit(f'\n== {title} ==')
 
     def ok(self, message: str) -> None:
-        self._emit(f'[OK] {message}')
+        self._result('ok', message)
 
     def bad(self, message: str) -> None:
         self.failures += 1
-        self._emit(f'[BAD] {message}')
+        self._result('bad', message)
 
     def warn(self, message: str) -> None:
         self.warnings += 1
-        self._emit(f'[WARN] {message}')
+        self._result('warn', message)
 
     def info(self, message: str) -> None:
-        self._emit(f'[INFO] {message}')
+        self._result('info', message)
 
     def detail(self, message: str) -> None:
         """An indented follow-up line under the previous result (for example a fix hint)."""

@@ -36,13 +36,6 @@ class Instance:
         return f'app-{self.app}-{self.env}'
 
 
-def condition_line(obj: dict | None) -> str:
-    if not obj:
-        return 'Unknown: not found'
-    status, message = ready_condition(obj)
-    return f'{status}: {message}'
-
-
 def get(runner: Runner, *args: str) -> dict | None:
     """``kubectl get ... -o json``, or None if it does not exist."""
     try:
@@ -66,63 +59,119 @@ def running_images(pods: dict | None) -> list[str]:
     return sorted(ids)
 
 
-def replica_lines(workloads: dict | None) -> list[str]:
-    lines = []
+@dataclass(frozen=True)
+class Replicas:
+    workload: str  # <Kind>/<name>
+    ready: int
+    wanted: int | None
+
+
+@dataclass(frozen=True)
+class Problem:
+    pod: str
+    reason: str
+    message: str
+
+
+@dataclass(frozen=True)
+class InstanceStatus:
+    """What ``app status`` shows, gathered once so the CLI and the console read the same facts."""
+    instance: Instance
+    desired_revision: str
+    applied_revision: str
+    unit: tuple[str, str]          # Ready status and message
+    release: tuple[str, str] | None
+    desired_image: str
+    running_images: list[str]
+    replicas: list[Replicas]
+    routes: list[str]
+    certificates: list[tuple[str, str]]  # name, Ready status
+    problems: list[Problem]
+
+    @property
+    def applied(self) -> bool:
+        return self.desired_revision == self.applied_revision
+
+
+def replicas(workloads: dict | None) -> list[Replicas]:
+    found = []
     for item in (workloads or {}).get('items', []):
         status, spec = item.get('status') or {}, item.get('spec') or {}
-        ready = status.get('readyReplicas', status.get('numberReady', 0))
-        wanted = spec.get('replicas', status.get('desiredNumberScheduled'))
-        lines.append(f"Replicas   {item['kind']}/{item['metadata']['name']}: {ready}/{wanted} ready")
-    return lines
+        found.append(Replicas(f"{item['kind']}/{item['metadata']['name']}",
+                              status.get('readyReplicas', status.get('numberReady', 0)),
+                              spec.get('replicas', status.get('desiredNumberScheduled'))))
+    return found
 
 
-def problem_lines(pods: dict | None) -> list[str]:
-    lines = []
+def problems(pods: dict | None) -> list[Problem]:
+    found = []
     for pod in (pods or {}).get('items', []):
         for status in (pod.get('status') or {}).get('containerStatuses') or []:
             if status.get('ready'):
                 continue
             state = status.get('state') or {}
             waiting, terminated = state.get('waiting') or {}, state.get('terminated') or {}
-            reason = waiting.get('reason') or terminated.get('reason') or 'not ready'
-            message = (waiting.get('message') or '')[:160]
-            lines.append(f"  {pod['metadata']['name']}: {reason} {message}".rstrip())
+            found.append(Problem(pod['metadata']['name'], waiting.get('reason') or terminated.get('reason') or 'not ready',
+                                 (waiting.get('message') or '')[:160]))
+    return found
+
+
+def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
+    """Read the instance from the cluster; None if its Flux unit does not exist."""
+    ns = instance.namespace
+    unit = get(runner, '-n', 'flux-system', 'get', 'kustomization', instance.unit)
+    if unit is None:
+        return None
+    source = get(runner, '-n', 'flux-system', 'get', 'gitrepository', 'swhurl-platform') or {}
+    release = get(runner, '-n', ns, 'get', 'helmrelease', instance.app)
+    selector = f'app.kubernetes.io/instance={instance.app}'
+    pods = get(runner, '-n', ns, 'get', 'pods', '-l', selector)
+    workloads = get(runner, '-n', ns, 'get', WORKLOAD_KINDS, '-l', selector)
+    ingresses = (get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', [])
+    certificates = (get(runner, '-n', ns, 'get', 'certificate') or {}).get('items', [])
+    return InstanceStatus(
+        instance=instance,
+        desired_revision=((source.get('status') or {}).get('artifact') or {}).get('revision', ''),
+        applied_revision=(unit.get('status') or {}).get('lastAppliedRevision', ''),
+        unit=ready_condition(unit),
+        release=ready_condition(release) if release else None,
+        desired_image=desired_image(release),
+        running_images=running_images(pods),
+        replicas=replicas(workloads),
+        routes=[rule.get('host') for ingress in ingresses for rule in ingress['spec'].get('rules') or []],
+        certificates=[(cert['metadata']['name'], ready_condition(cert)[0]) for cert in certificates],
+        problems=problems(pods),
+    )
+
+
+def status_lines(found: InstanceStatus) -> list[str]:
+    instance = found.instance
+    note = '' if found.applied else '  <- not yet applied'
+    lines = [
+        f'Instance   {instance.app}/{instance.env} (namespace {instance.namespace})',
+        f"Git        desired {found.desired_revision.split(':')[-1]}, "
+        f"applied {found.applied_revision.split(':')[-1]}{note}",
+        f'Flux unit  {found.unit[0]}: {found.unit[1]}',
+        'Release    ' + (f'{found.release[0]}: {found.release[1]}' if found.release else 'Unknown: not found'),
+        f'Image      desired {found.desired_image}',
+        f"           running {', '.join(found.running_images) or 'none'}",
+    ]
+    lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
+    lines += [f'Route      https://{host}' for host in found.routes]
+    lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
+    if found.problems:
+        lines.append('Problems')
+        lines += [f'  {p.pod}: {p.reason} {p.message}'.rstrip() for p in found.problems]
     return lines
 
 
 def status(runner: Runner, instance: Instance) -> int:
-    ns = instance.namespace
-    unit = get(runner, '-n', 'flux-system', 'get', 'kustomization', instance.unit)
-    if unit is None:
+    found = gather_status(runner, instance)
+    if found is None:
         print(f'[ERROR] Flux unit {instance.unit} not found', file=sys.stderr)
         return 1
-    source = get(runner, '-n', 'flux-system', 'get', 'gitrepository', 'swhurl-platform') or {}
-    desired = ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
-    applied = (unit.get('status') or {}).get('lastAppliedRevision', '')
-    release = get(runner, '-n', ns, 'get', 'helmrelease', instance.app)
-    pods = get(runner, '-n', ns, 'get', 'pods', '-l', f'app.kubernetes.io/instance={instance.app}')
-
-    print(f'Instance   {instance.app}/{instance.env} (namespace {ns})')
-    note = '' if desired == applied else '  <- not yet applied'
-    print(f"Git        desired {desired.split(':')[-1]}, applied {applied.split(':')[-1]}{note}")
-    print(f'Flux unit  {condition_line(unit)}')
-    print(f'Release    {condition_line(release)}')
-    images = running_images(pods)
-    print(f'Image      desired {desired_image(release)}')
-    print(f"           running {', '.join(images) or 'none'}")
-    for line in replica_lines(get(runner, '-n', ns, 'get', WORKLOAD_KINDS,
-                                  '-l', f'app.kubernetes.io/instance={instance.app}')):
+    for line in status_lines(found):
         print(line)
-    for ingress in (get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', []):
-        for rule in ingress['spec'].get('rules') or []:
-            print(f"Route      https://{rule.get('host')}")
-    for cert in (get(runner, '-n', ns, 'get', 'certificate') or {}).get('items', []):
-        print(f"TLS        {cert['metadata']['name']}: {ready_condition(cert)[0]}")
-    problems = problem_lines(pods)
-    if problems:
-        print('Problems')
-        for line in problems:
-            print(line)
     return 0
 
 

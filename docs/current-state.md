@@ -209,6 +209,18 @@ Reconcile, suspend and resume (`bf63344`, image deployed in `89d8b4c`; `make ver
 - **Deployed actions** (through `kubectl port-forward` with the identity and `Origin` headers set by hand): on `app-hello-staging`, reconcile (job 1, applied `89d8b4c`), suspend (job 2; `flux get`: suspended True) and resume (job 3; suspended False, Ready True) all succeeded; suspending `cluster-stack` got 409. Pod logs held one `[AUDIT] sam@swhurl.com …: started` and one `…: succeeded` line per job, and all six were in ClickStack (`default.otel_logs`) within minutes.
 - **Not yet checked:** the buttons in a signed-in browser (operator), which is also the real test of the `Origin` check behind Traefik.
 
+## Console phase 6 (29 September 2026)
+
+New-app PRs (`9364c77`, image deployed in `f09b449`).
+
+- **Offline and dry run:** a local dry run cloned `main` from GitHub, ran the clone's `app-new` (SOPS-encrypted a Secret stub, passed the Helm policy check) and committed; push and PR were only planned. The tests caught a push error that would have echoed the token; `open_pr` now registers the token for redaction itself.
+- **Token:** the operator created a fine-grained token and set it with `sops`. Before committing: `make check-secrets` passed (not the placeholder), GitHub answered 200 for this repository and reported push access, and there is no expiry date. The token's own repository restriction could not be confirmed read-only (GitHub's `permissions` field also said push on another of the operator's repositories, which may describe the account rather than the token); the operator is to confirm "1 repository" on GitHub.
+- **Deployed:** `make verify-platform`: `[OK] GitHub accepts the console token (no expiry date)`, console image current; the pod reads the token through `envFrom`.
+- **PR from the deployed console** (through `kubectl port-forward` with the identity and `Origin` headers): job 1 cloned `main` at `f09b449`, the clone's `app-new` wrote `console-smoke/staging` and passed the app policy, and it pushed `console/new-console-smoke-staging-f09b449` and opened [#8](https://github.com/samclement/swhurl-platform/pull/8), `[console] apps: add console-smoke staging`, commit author `swhurl console`, `Requested-by: sam@swhurl.com`, body with the equivalent `make app-new` command. The audit line carried the PR URL. CI passed on the PR.
+- **Merged with the operator's approval** (`e7e257a`, branch deleted): `app-console-smoke-staging` Ready, Helm install succeeded, the pinned digest running 1/1, `console-smoke-tls` issued by Let's Encrypt; HTTP 301 to HTTPS and HTTPS signed out 302 to Google sign-in (one request right after issuance got no reply, then consistently 302). The console's Apps page listed the instance.
+- **Removed** through Git (`c1a4b6f`): the unit and namespace were deleted, no `console/*` branches remain, 14 units, `make verify-platform` passed with no warnings.
+- **Pushing:** the session's SSH agent became unavailable mid-phase (`Permission denied (publickey)`); pushes from then on used HTTPS with the operator's `gh` credentials. One push got a transient GitHub 500 and succeeded on retry.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

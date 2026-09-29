@@ -255,6 +255,11 @@ At `8ab5f2c` (after `a2f3e9a`, which renamed `otlphttp` and `filelog` with byte-
 - **Race found by CI:** with an empty chart cache, two processes pulled `app-template` at once and the second rename failed (`Directory not empty`); it passed locally only because the chart was already cached. `policy.chart_dir` now accepts a chart another process cached first (`a8106cf`, with a test); `make check` with an empty chart cache passed three times.
 - **`make flux-reconcile`** fetches Git once (no `--with-source` on the two Kustomization reconciles): 45s on `a8106cf`, almost all of it `cluster-stack` waiting for every child unit; all 14 Kustomizations Ready. The console image with the chart cache fix was deployed with `make console-image` (`640b2fc`, `src-fbc6aa87b619b848`); `make verify-platform` passed with no warnings.
 
+## cluster-stack without wait (29 September 2026)
+
+- **`cluster-stack` `wait: false`, timeout 5m** (`9bce4a7`), applied with `make flux-bootstrap`; `kubectl diff` beforehand showed only those two fields. A slow or failing unit no longer holds new or changed unit definitions behind the root's health check.
+- **`make flux-reconcile` waits with `swhurl flux-wait`**: on `9bce4a7` it took 64s and all 14 units reached Ready at the revision in three waves, 5s (`cluster-*`, `infra-base`, `infra-traefik`), 28s (units that depend on `infra-base`) and 53s (units that depend on a unit in the second wave). The gaps match kustomize-controller's 30s dependency requeue (`--requeue-dependency`, default), which is now the main cost of a reconcile. Not yet exercised live: a unit failing at the new revision (unit-tested with `FakeRunner`).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

@@ -37,6 +37,7 @@ if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 host_has_systemd || exit 0
+host_require_sudo
 
 for path in "$SERVICE_PATH" "$TIMER_PATH"; do
   if [[ -e "$path" ]] && ! grep -q "$MARKER" "$path"; then

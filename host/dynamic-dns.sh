@@ -188,6 +188,7 @@ if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
+host_require_sudo
 if [[ "$DELETE_MODE" == true ]]; then
   host_dynamic_dns_delete
 else

@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import platform
-from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES
 from swhurl.apps import new
+from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner

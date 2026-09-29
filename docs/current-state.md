@@ -188,6 +188,18 @@ Local only (`884f050`); nothing deployed. `make console-dev PORT=8765` against t
 
 `b63d2af` built locally with podman (469 MB) and ran as UID 65532 with a read-only root and only `/tmp` writable: `kubectl` 1.34.4, `helm` 3.19.0, `flux` 2.8.1, `sops` 3.12.1, `git`; `/healthz` 200, pages 401 without the identity header and 200 with it, reading the live cluster through a mounted kubeconfig. After Validate passed, publish run 36571595603 pushed `ghcr.io/samclement/swhurl-console:b63d2aff9dfd4cf9df0307e382038dcbd15e29ed`, index digest `sha256:22c069a6a2eeb12b6741429fb86c9f77e8c7b15db5192a14553ae9cc6fcc01f7` (amd64 image `sha256:91cf7546…` plus a build attestation). The package is public: an anonymous pull (empty auth file) succeeded, and the pulled image is labelled with revision `b63d2af`. Pin the index digest.
 
+## Console phase 4 (29 September 2026)
+
+Deployed read-only (`79c07f3`, fix `516c196`, image bump `eff3814`); 14 units Ready.
+
+- **Before deploying**, in a throwaway namespace (`platform.swhurl.com/console-test=true`, deleted): the published image pulled cold on the cluster, ran with the app hardening and became Ready with 0 restarts under a Traefik-only NetworkPolicy, so kubelet probes pass it; a curl pod could not connect (exit 7) with the policy and got 200 without it.
+- **First deploy:** `console-tls` stayed pending: the HTTP-01 challenge got a 502 because the namespace-wide policy (`podSelector: {}`) also blocked cert-manager's solver pod on port 8089. Fixed by selecting only the console's pods (`516c196`, with a test and an `AGENTS.md` lesson); the Let's Encrypt certificate was then issued (issuer YR1, expires 28 December 2026).
+- **From outside:** `http://console.homelab.swhurl.com/` 301 to HTTPS; `https://` signed out 302 to Google sign-in, also with a forged `X-Auth-Request-Email` header; `/healthz` is behind sign-in too.
+- **Inside the cluster:** the same forged header from a throwaway pod straight to `console.console.svc:8080` could not connect (exit 7). `kubectl auth can-i --as=system:serviceaccount:console:console`: yes to list Kustomizations and get pods and Certificates; no to get or list Secrets, `pods/exec`, patch Kustomizations or HelmReleases, delete pods, create Deployments.
+- **The pod's own account:** through `kubectl port-forward` with the header, `/`, `/units` (14 cards), `/platform` (passing, `platform-console` OK) and `/apps/hello/prod` answered 200; no forbidden or error lines in its logs.
+- **Update path:** `make verify-platform` passed with `[WARN] tooling changed since console image b63d2af` (this phase changed `verify.py`). The `79c07f3` publish run built `sha256:6938c2e8…` (matched by an anonymous registry lookup; the `516c196` run skipped, inputs unchanged); after pinning it, the rollout used that digest and the check reported `[OK] console image 79c07f3 is built from the current tooling`.
+- **Not yet checked:** a signed-in browser session (operator).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

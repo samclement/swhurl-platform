@@ -4,8 +4,10 @@ name: Publish console image
 # ghcr.io/samclement/swhurl-console, tagged with the commit SHA and with a hash of
 # everything the image is built from. If that content hash is already published,
 # nothing is built: commits that change only docs or manifests publish nothing.
-# Deploying is separate: copy the digest from the job summary into
-# platform/console/helmrelease.yaml (docs/plan.md section 7).
+# Then it deploys: on the latest main it pins platform/console/helmrelease.yaml to
+# that image and pushes the commit (swhurl console-image --expect --commit), unless
+# main has since moved to other image inputs, whose own run pins them. Pushes made
+# with GITHUB_TOKEN start no workflows, so the pin commit triggers neither run.
 
 on:
   workflow_run:
@@ -15,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # push the pin commit to main
   packages: write
 
 env:
@@ -30,6 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0   # the pin commit may need a rebase onto a newer main
 
       - name: Hash what the image is built from
         id: source
@@ -87,3 +90,23 @@ jobs:
             echo "- digest: \`${{ steps.build.outputs.digest }}\`"
             echo "- content: \`src-${{ steps.source.outputs.content }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pin the console on main (deploys it)
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --quiet --upgrade 'pip>=25.1'
+          python3 -m pip install --quiet --group check
+          git fetch --quiet origin main
+          git checkout --quiet --detach origin/main
+          PYTHONPATH=tools python3 -m swhurl console-image \
+            --expect "src-${{ steps.source.outputs.content }}" --commit | tee -a "$GITHUB_STEP_SUMMARY"

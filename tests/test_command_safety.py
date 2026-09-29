@@ -14,7 +14,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, flux
+from swhurl import ROOT, flux, platform
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -33,12 +33,13 @@ class CommandSafetyTests(unittest.TestCase):
         stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
         (backups / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
         self.env.update(BACKUP_DIR=str(backups), BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        self.env['WEBHOOK_HOST'] = f'flux-webhook.{platform.base_domain()}'
         self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
                         FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
-        for name in ('kubectl', 'flux', 'aws', 'curl'):
+        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, json, os, sys
@@ -54,6 +55,11 @@ if Path(sys.argv[0]).name == 'curl':
     print('HTTP/2 200')
 elif Path(sys.argv[0]).name == 'aws':
     emit(['clickstack-mongodb/clickstack-mongodb-' + os.environ['STAMP'] + '.archive.gz.age'])
+elif Path(sys.argv[0]).name == 'gh':
+    emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
+           'last_response': {'code': 200}}])
+elif any(a.startswith('receivers') for a in argv):
+    emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
 elif any(a.startswith('kustomizations') for a in argv):

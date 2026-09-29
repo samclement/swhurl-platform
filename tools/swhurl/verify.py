@@ -295,6 +295,40 @@ def check_console(runner: Runner, report: Report) -> None:
 TOKEN_WARN_DAYS = 14
 
 
+def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """Flux's GitHub Receiver is Ready and GitHub's latest delivery to it succeeded (docs/services.md#push-webhook)."""
+    report.section('Push Webhook')
+    try:
+        receiver = runner.json(['kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
+                                'github', '-o', 'json'])
+        status, message = ready_condition(receiver)
+    except (CommandError, TypeError):
+        status, message = 'Unknown', 'could not read it'
+    if status == 'True':
+        report.ok('Flux receiver flux-system/github is Ready')
+    else:
+        report.bad(f'Flux receiver flux-system/github is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
+    host = f'flux-webhook.{platform.base_domain(root)}'
+    repository = platform.github_repository(root)
+    try:
+        hooks = runner.json(['gh', 'api', f'repos/{repository}/hooks'])
+    except CommandError as error:
+        report.warn(f'could not list the GitHub webhooks of {repository} with gh: {error}')
+        return
+    hook = next((h for h in hooks or [] if host in (h.get('config') or {}).get('url', '')), None)
+    if not hook:
+        report.warn(f'no GitHub webhook on {repository} calls {host}; Flux falls back to polling every minute')
+        return
+    last = hook.get('last_response') or {}
+    if not hook.get('active'):
+        report.warn(f'the GitHub webhook to {host} is disabled; Flux falls back to polling every minute')
+    elif last.get('code') == 200:
+        report.ok(f'GitHub\'s latest delivery to {host} returned 200')
+    else:
+        report.warn(f'GitHub\'s latest delivery to {host} returned {last.get("code")} {last.get("message", "")}'.rstrip()
+                    + '; see Recent Deliveries on the webhook (Flux still polls every minute)')
+
+
 def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
     """GitHub accepts the console's token, and it is not about to expire (read from GitHub's reply)."""
     report.section('Console GitHub Token')
@@ -361,6 +395,7 @@ CHECKS = (
     Check('ingress', frozenset({'cluster'}), check_ingress),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
+    Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
 )

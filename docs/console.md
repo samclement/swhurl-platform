@@ -21,15 +21,17 @@ Each button starts a **job**: its page shows the output as it arrives and refres
 
 ## Deploy a new console
 
-The image is built from this repo ([`images/console/Dockerfile`](../images/console/Dockerfile)) and published to `ghcr.io/samclement/swhurl-console` (public) after CI passes on `main`, tagged `src-<hash of its inputs>`. `make verify-platform` warns when the running image is older than your checkout's tooling. To update it:
+The image is built from this repo ([`images/console/Dockerfile`](../images/console/Dockerfile)) and published to `ghcr.io/samclement/swhurl-console` (public) after CI passes on `main`, tagged `src-<hash of its inputs>`. The same "Publish console image" run then deploys it: on the latest `main` it runs `swhurl console-image --expect src-<hash> --commit`, which pins the tag and digest in `platform/console/helmrelease.yaml` and pushes a `deploy: console image src-<hash> (publish workflow)` commit as `github-actions[bot]`; the [push webhook](services.md#push-webhook) has Flux apply it at once. So a push that changes `tools/`, `images/console/`, `pyproject.toml` or `uv.lock` is running in the console about 3 minutes later, with nothing to do:
 
-```bash
-git push                                  # a change under tools/, images/console/, pyproject.toml or uv.lock
-# wait for the "Publish console image" run after Validate passes
-make console-image                        # pins that image's tag and digest in platform/console/helmrelease.yaml
-git commit -am "deploy: console image" && git push
-make reconcile UNIT=platform-console      # then make verify-platform: "console image … is built from the current tooling"
+```text
+push → Validate (≈25s) → build and push the image (≈1 min) → bot commits the pin → webhook → console rolls out
 ```
+
+- **Pull before your next push** (`git pull --rebase`): the bot's commit is on `main`.
+- **Skipped on purpose** when `main` has moved on to other image inputs by the time the run pins (that commit's own run pins its image), and when the pin is already current (docs-only commits). Each run's summary says which.
+- **The console restarts** when its pin changes; a job running at that moment stops, and the Jobs page is emptied as on any restart.
+- **Pushes made with the workflow's token start no workflows**, so the pin commit runs neither Validate nor another publish.
+- **By hand** (the run failed, or to pin an older image): `make console-image`, commit, push. `make verify-platform` warns while the running image is older than your checkout's tooling.
 
 A commit that changes none of the image's inputs has the same hash: nothing to deploy. How the image and workflow are built: [contributing](contributing.md#operator-tooling).
 

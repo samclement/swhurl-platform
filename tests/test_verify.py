@@ -56,6 +56,9 @@ def healthy(**overrides):
         'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
                                  'spec': {'template': {'spec': {'containers': [
                                      {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
+        'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
+        'hooks': [{'active': True, 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
+                   'last_response': {'code': 200, 'message': 'OK'}}],
         'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
     }
     responses.update(overrides)
@@ -105,6 +108,9 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
             .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
             .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
+            .on('kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
+                handler=answer('receiver'))
+            .on('gh', 'api', handler=answer('hooks'))
             .on('curl', handler=github))
 
 
@@ -135,7 +141,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups ==',
-                          '\n== Console ==', '\n== Console GitHub Token =='])
+                          '\n== Push Webhook ==', '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -276,6 +282,22 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertEqual(code, 1, text)
         self.assertIn('[BAD] could not read flux-system/kustomize-controller', report.lines)
 
+    def test_push_webhook_problems(self):
+        url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
+        cases = {
+            'receiver': ({'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no secret'}]}}},
+                         '[BAD] Flux receiver flux-system/github is not Ready: no secret'),
+            'no hook': ({'hooks': []}, '[WARN] no GitHub webhook on'),
+            'failing': ({'hooks': [{'active': True, 'config': url, 'last_response': {'code': 502, 'message': 'Bad Gateway'}}]},
+                        "[WARN] GitHub's latest delivery to flux-webhook."),
+            'disabled': ({'hooks': [{'active': False, 'config': url, 'last_response': {'code': 200}}]}, 'is disabled'),
+            'gh fails': ({'hooks': Result((), 1, '', 'gh: not logged in')}, '[WARN] could not list the GitHub webhooks'),
+        }
+        for name, (overrides, expected) in cases.items():
+            with self.subTest(name=name):
+                _, report, text = run(healthy(**overrides))
+                self.assertTrue(any(expected in line for line in report.lines), text)
+
     def test_no_expiry_passes(self):
         _, report, _ = run(healthy(github=Result((), 0, 'HTTP/2 200\r\n\r\n')))
         self.assertIn('[OK] GitHub accepts the console token (no expiry date)', report.lines)
@@ -289,7 +311,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, push-webhook, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

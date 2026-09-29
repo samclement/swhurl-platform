@@ -221,6 +221,13 @@ New-app PRs (`9364c77`, image deployed in `f09b449`).
 - **Removed** through Git (`c1a4b6f`): the unit and namespace were deleted, no `console/*` branches remain, 14 units, `make verify-platform` passed with no warnings.
 - **Pushing:** the session's SSH agent became unavailable mid-phase (`Permission denied (publickey)`); pushes from then on used HTTPS with the operator's `gh` credentials. One push got a transient GitHub 500 and succeeded on retry.
 
+## Console phase 7 (29 September 2026, in progress)
+
+Promote, scale and uninstall (`0acb567`, image deployed in `979692f`; `make verify-platform` passed).
+
+- **Commands, in this checkout then reverted:** `make app-scale APP=hello ENV=staging ARGS='--replicas 2 --memory-limit 192Mi'` changed three lines and passed the Helm app-policy check; `make app-promote APP=hello` refused (`hello/prod already runs 1.27-alpine@sha256:65e3e85d…`); `make app-remove APP=hello ENV=staging` removed the instance, its unit file and its registration. The offline tests pin the exact changed lines and the refusal of hand-edited HelmReleases.
+- **Deployed console:** `hello/staging` showed the scale form with the current values (1, 10m, 32Mi, 128Mi). Scale to 2 replicas opened [#11](https://github.com/samclement/swhurl-platform/pull/11) (one line, `replicas: 2`; CI passed). Promote ran the clone's `app-promote`, which refused as above; the job failed and nothing was pushed.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

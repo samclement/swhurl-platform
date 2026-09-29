@@ -1,0 +1,7 @@
+# Image builds (images/*/Dockerfile) see only what they copy; never keys or Secrets.
+*
+!pyproject.toml
+!uv.lock
+!tools/
+!clusters/home/flux-system/sources/configmap-platform-settings.yaml
+**/__pycache__

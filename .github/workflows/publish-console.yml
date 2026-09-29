@@ -1,0 +1,89 @@
+name: Publish console image
+
+# After Validate passes on main (or by hand), build images/console and push it to
+# ghcr.io/samclement/swhurl-console, tagged with the commit SHA and with a hash of
+# everything the image is built from. If that content hash is already published,
+# nothing is built: commits that change only docs or manifests publish nothing.
+# Deploying is separate: copy the digest from the job summary into
+# platform/console/helmrelease.yaml (docs/plan.md section 7).
+
+on:
+  workflow_run:
+    workflows: [Validate]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/samclement/swhurl-console
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Hash what the image is built from
+        id: source
+        run: |
+          set -Eeuo pipefail
+          paths=(images/console .dockerignore pyproject.toml uv.lock tools
+                 clusters/home/flux-system/sources/configmap-platform-settings.yaml)
+          content=$(for p in "${paths[@]}"; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16)
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "content=$content" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if this content is already published
+        id: existing
+        run: |
+          set -Eeuo pipefail
+          if docker buildx imagetools inspect "$IMAGE:src-${{ steps.source.outputs.content }}" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Image for content ${{ steps.source.outputs.content }} already published; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        if: steps.existing.outputs.published == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        if: steps.existing.outputs.published == 'false'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/console/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: SOURCE_REVISION=${{ steps.source.outputs.revision }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.source.outputs.revision }}
+            ${{ env.IMAGE }}:src-${{ steps.source.outputs.content }}
+
+      - name: Record the digest
+        if: steps.existing.outputs.published == 'false'
+        run: |
+          {
+            echo "### Published"
+            echo
+            echo "- image: \`$IMAGE:${{ steps.source.outputs.revision }}\`"
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- content: \`src-${{ steps.source.outputs.content }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

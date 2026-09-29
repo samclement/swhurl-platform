@@ -278,6 +278,7 @@ The published image went from 470 MB (`src-6ab0c453…`) to 308 MB (`src-084ffd0
 
 - **Dry run in the built image against GitHub:** `main` at `ed223f5` downloaded; its `app-new` wrote `console-smoke/staging`, SOPS-encrypted the Secret stub and passed the Helm policy check; 7 files listed (5 `A`, 2 `M`); nothing written.
 - **Deployed console** (port-forward with the identity and `Origin` headers), on `app-hello-staging`: reconcile annotated the GitRepository then the unit and reported `applied revision main@sha1:f42e68d…`; suspend set `spec.suspend=true`; resume set it back and waited to Ready. A scale of `hello/staging` to 2 replicas opened [#17](https://github.com/samclement/swhurl-platform/pull/17): one file, `replicas: 1` → `2`, author `swhurl console`, branch `console/scale-hello-staging-f42e68d`; closed unmerged and its branch deleted.
+- **Alpine runtime** (`5fe74d5`, deployed `src-55cae17d…`): `python:3.12-alpine` for the deps and runtime stages took the image to 229 MB (about 70 MB gzip). In the built image the static `kubectl`, `helm` and `sops` ran, PyYAML kept its C extension and the dry-run PR listed the same 7 files. Deployed: 0 restarts; `/`, `/units`, `/platform`, `/apps/hello/prod` and `/new` 200 with the identity header; reconcile of `app-hello-prod` succeeded; through Traefik, HTTP 301 to HTTPS and signed-out HTTPS 302 to Google; `make verify-platform` console checks pass.
 
 ## Still to verify before live changes
 

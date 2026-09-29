@@ -159,10 +159,12 @@ PR #6 (opentelemetry-collector chart `0.145.0 → 0.173.1` for both releases, co
 
 The same day both host timers became system units (`97644eb`, fixes `11ae589`, `a093e39`; the first CI run failed on a shellcheck directive the second fixed). The operator ran `make host-backup` and `make host-dns` in a terminal; `sudo` from Claude Code's `!` prefix cannot prompt, and the installers now stop early saying so instead of carrying on after a failed write (nothing had been installed). Checked afterwards: `swhurl-backup-mongodb.timer` and `aws-dns-updater.timer` enabled, both services `User=sam` with `Result=success`; a manual `systemctl start` of the backup logged backup, prune and an upload of 2 new files (4 present) in the system journal; the DNS unit now matches Git (it had predated `EnvironmentFile`); `make verify-platform` passed with both backups 0.0 h old. The DNS updater logs `*.homelab.swhurl.com from <none>` on every run, before and after the change: Route 53 returns the name as `\052.homelab.swhurl.com`, so the script does not match it and re-sends an identical record every 10 minutes. Both A records hold the current address.
 
-Not exercised: a scheduled (03:30) run, a restore from S3 on another machine, and the k3s datastore type (needs root).
+k3s datastore, checked by the operator with `sudo ls -la /var/lib/rancher/k3s/server/db` the same day: SQLite through kine (`state.db` 30 MB plus a 10 MB write-ahead log, written that minute); the `etcd` directory is unchanged since the March 2026 install. Classified reconstructible: a new cluster gets its state from Git through Flux, so the datastore is not backed up.
+
+Not exercised: a scheduled (03:30) run and a restore from S3 on another machine.
 
 ## Still to verify before live changes
 
-- The k3s datastore type and a restore on a separate machine.
+- A restore on a separate machine.
 - Router forwarding and public DNS records (not inspected; external reachability is shown only by the operator's own browser use).
 - Workloads outside Git, image publication workflows, and the Mac model service and its network path.

@@ -37,15 +37,6 @@ def label(name: str) -> str:
     return f'{LABEL_DOMAIN}/{name}'
 
 
-# ClickStack MongoDB queries (run with ``mongosh hyperdx --quiet --eval``).
-TEAM_KEY_SCRIPT = ('const keys = db.teams.distinct("apiKey").filter(k => typeof k === "string" && k.length > 0);'
-                   ' if (keys.length !== 1) quit(2); print(keys[0]);')
-"""Print the one team ingestion key; exit 2 unless exactly one exists."""
-COLLECTION_COUNTS_SCRIPT = ('const c = {}; db.getCollectionNames().sort().forEach(n => '
-                            '{ c[n] = db[n].countDocuments(); }); print(JSON.stringify(c));')
-"""Print ``{collection: document count}`` as JSON."""
-
-
 def base_domain(root: Path = ROOT) -> str:
     """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
     data = yaml.safe_load((root / SETTINGS).read_text()).get('data') or {}

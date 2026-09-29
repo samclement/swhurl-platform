@@ -99,10 +99,22 @@ spec:
               - batch
             exporters:
               - otlp_http
+          # Apps send OTLP to their node's collector (hostNetwork: <node IP>:4317/4318).
           metrics:
             receivers:
+              - otlp
               - kubeletstats
               - hostmetrics
+            processors:
+              - memory_limiter
+              - k8s_attributes
+              - batch
+            exporters:
+              - otlp_http
+          # Replaces the chart's default traces pipeline, which ends in the debug exporter.
+          traces:
+            receivers:
+              - otlp
             processors:
               - memory_limiter
               - k8s_attributes

@@ -1,6 +1,6 @@
 # Swhurl Platform — implementation plan
 
-27 September 2026 · Home cluster implementation plan · **paused 28 September 2026; cleanup in progress**
+27 September 2026 · Home cluster implementation plan · **paused 28 September 2026**
 
 ## 0. Where this paused and what is left
 

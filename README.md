@@ -1,6 +1,6 @@
 # Swhurl Platform
 
-GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello.homelab.swhurl.com`.
+GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello.homelab.swhurl.com`. A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
 
 The cluster is live. What has been verified on it, and when, is in [current state](docs/current-state.md). The [implementation plan](docs/plan.md) is paused; its section 0 lists what is left.
 
@@ -21,6 +21,7 @@ make verify-platform             # expect "Validation passed."
 
 | I want to… | Read |
 | --- | --- |
+| See apps and Flux units, or change them from a browser | [Console](docs/console.md) |
 | Deploy an app or change one | [Apps](docs/apps.md) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |
 | Review a Renovate chart update PR | [Chart updates](docs/operations.md#chart-updates) |
@@ -36,7 +37,7 @@ make verify-platform             # expect "Validation passed."
 | --- | --- |
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
-| `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, the read-only web console, with their encrypted Secrets |
+| `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, the web console, with their encrypted Secrets |
 | `apps/<app>/<env>/` | Generated app instances |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/`, `host/`, `tests/` | Python operator tooling and the web console's code; host systemd timers for dynamic DNS and the daily MongoDB backup (bash); offline tests and fixtures |

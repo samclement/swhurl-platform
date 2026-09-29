@@ -180,6 +180,10 @@ Not exercised: a real rotation (about months away at current volume) and a Hyper
 
 Tooling only (`e180ff2`; plan section 7). After reconciling `e180ff2`, `make app-status APP=hello ENV=prod` printed the same lines as before the change (the offline test pins them), and `make verify-platform` passed with all 13 units Ready and the same sections. Run with `allowed={'cluster'}` as the console will, `verify_platform` reported only Flux and Ingress, made no Secret read or exec call, and named the four skipped checks. `Runner.stream()` read two live lines of `kubectl logs --follow` from `hello-prod` and stopped the command when closed.
 
+## Console phase 2 (29 September 2026)
+
+Local only (`884f050`); nothing deployed. `make console-dev PORT=8765` against the live cluster: `/`, `/units`, `/platform` and `/apps/hello/prod` answered 200 and `/apps/hello/dev` 404. The platform page listed all 13 units Ready and the Traefik redirect, and named the four skipped checks; the offline tests prove it makes no Secret read or exec call. CI run 36569764386 passed with the new uv setup (`make test` now runs in `uv run --frozen`). The page layout was not checked in a browser (no browser available to the session).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

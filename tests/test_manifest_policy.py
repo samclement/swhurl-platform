@@ -90,6 +90,15 @@ class ManifestPolicyTests(unittest.TestCase):
                 self.assertIn('secret.reloader.stakater.com/reload', hr['spec']['values'][key])
                 self.assertIn(hr['metadata']['namespace'], watched, 'opt-in outside a watched namespace never reloads')
 
+    def test_console_policy_admits_only_traefik_and_spares_acme_solvers(self):
+        netpol = yaml.safe_load((ROOT / 'platform/console/networkpolicy.yaml').read_text())['spec']
+        self.assertEqual(netpol['podSelector']['matchLabels'].get('app.kubernetes.io/name'), 'console',
+                         'a namespace-wide policy blocks cert-manager HTTP-01 solver pods (port 8089)')
+        (rule,) = netpol['ingress']
+        (source,) = rule['from']
+        self.assertEqual(source['podSelector']['matchLabels'], {'app.kubernetes.io/name': 'traefik'})
+        self.assertEqual(source['namespaceSelector']['matchLabels'], {'kubernetes.io/metadata.name': 'kube-system'})
+
     def test_traefik_redirects_http_to_https(self):
         config = yaml.safe_load((ROOT / 'infra/traefik/helmchartconfig.yaml').read_text())
         web = yaml.safe_load(config['spec']['valuesContent'])['ports']['web']

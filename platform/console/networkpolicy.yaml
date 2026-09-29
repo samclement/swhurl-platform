@@ -1,13 +1,18 @@
 # The console trusts the X-Auth-Request-Email header that Traefik's ForwardAuth
 # copies from oauth2-proxy. Only Traefik may connect, so no other pod can send a
 # forged header. Kubelet probes still reach the pod (checked on k3s, 29 Sep 2026).
+# Select the console's pods only: cert-manager's HTTP-01 solver pods run in this
+# namespace too, on port 8089, and a namespace-wide policy blocks certificate issuance.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: console-only-from-traefik
   namespace: console
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: console
+      app.kubernetes.io/name: console
   policyTypes: [Ingress]
   ingress:
     - from:

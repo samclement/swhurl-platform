@@ -48,8 +48,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-console
-              tag: src-084ffd01f31a9778
-              digest: sha256:cacafa182fdfd1347c9b7e937efe10a04dce23ad40638abb1e9c5b04f99f47f4
+              tag: src-7646cab1f7681624
+              digest: sha256:2f233e436c32e7b10ee4541057de989e04d25f61862424ad8a7052c61567fe71
             env:
               CONSOLE_REPO: samclement/swhurl-platform
             # GITHUB_TOKEN: create console/* branches and open PRs (secret.sops.yaml).

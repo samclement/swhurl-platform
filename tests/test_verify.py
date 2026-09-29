@@ -9,7 +9,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from swhurl import platform, verify
+from swhurl import clickstack, platform, verify
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -30,12 +30,14 @@ def healthy(**overrides):
             {'metadata': {'name': 'homelab-a'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         ]},
         'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY)}},
-        'team': Result((), 0, KEY + '\n'),
+        'mongouri': {'data': {'connectionString.standard': b64('mongodb://u:p@db/hyperdx')}},
+        'team': Result((), 0, 'Warning: EACCES\nRESULT ' + json.dumps({'keys': [KEY]}) + '\n'),
+        'installation': Result((), 0, 'RESULT ' + json.dumps({'status': 200, 'body': {'isTeamExisting': True}}) + '\n'),
         'traefik': {'spec': {'template': {'spec': {'containers': [
             {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}},
         'ttl30': Result((), 0, '9\t9\n'),
         'untimed': Result((), 0, '0\n'),
-        'pvc': {'metadata': {'annotations': {'helm.sh/resource-policy': 'keep'}}, 'spec': {'volumeName': 'pv-1'}},
+        'pvc': {'spec': {'volumeName': 'pv-1'}},
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
     }
     responses.update(overrides)
@@ -56,9 +58,11 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
             .on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
-            .on('kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-mongodb', handler=answer('team'))
+            .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET, handler=answer('mongouri'))
+            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=answer('team'))
+            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=answer('installation'))
             .on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
-            .on('kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-clickhouse', handler=clickhouse)
+            .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
             .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
             .on('kubectl', 'get', 'pv', handler=answer('pv')))
 
@@ -83,7 +87,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== Ingress ==', '\n== Retention =='])
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -98,6 +102,11 @@ class VerifyPlatformTests(unittest.TestCase):
             'secret missing': ({'secret': {'data': {}}}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'team key unreadable': ({'team': Result((), 2, '', 'quit(2)')}, 'cannot read a unique ClickStack team'),
+            'two team keys': ({'team': Result((), 0, 'RESULT ' + json.dumps({'keys': [KEY, OTHER]}))},
+                              'cannot read a unique ClickStack team'),
+            'registration open': ({'installation': Result((), 0, 'RESULT ' + json.dumps(
+                {'status': 200, 'body': {'isTeamExisting': False}}))}, 'registration is open'),
+            'api unreachable': ({'installation': Result((), 1, '', 'no pod')}, 'could not ask the HyperDX API'),
             'invalid base64': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY) + '!'}}}, 'invalid base64'),
             'different key': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}}, 'does not match'),
             'double encoded': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(b64(KEY))}}}, 'does not match'),
@@ -108,9 +117,8 @@ class VerifyPlatformTests(unittest.TestCase):
             'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'without a 30-day TTL'),
             'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'could not read ClickHouse telemetry'),
             'system logs untimed': ({'untimed': Result((), 0, '3\n')}, '3 ClickHouse system log table(s) have no TTL'),
-            'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'PV is not Retain'),
-            'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'PV is not Retain'),
-            'pvc not kept': ({'pvc': {'metadata': {}, 'spec': {'volumeName': 'pv-1'}}}, 'lacks helm.sh/resource-policy'),
+            'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
+            'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
         }
         for label, (overrides, expected) in cases.items():
             with self.subTest(label):

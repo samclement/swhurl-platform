@@ -59,6 +59,10 @@ platform-certs-staging platform-certs-prod: ## Set CERT_ISSUER in platform-setti
 suspend resume destroy-data: ## TARGET=... [CONFIRM=...] Suspend/resume a unit or release; destroy released data
 	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) lifecycle $@ "$(TARGET)"
 
+.PHONY: clickstack-bootstrap
+clickstack-bootstrap: ## Live: register the ClickStack admin and set the team ingestion key from SOPS (idempotent)
+	@DRY_RUN=$(DRY_RUN) TIMEOUT_SECS=$(TIMEOUT_SECS) $(SWHURL) clickstack-bootstrap
+
 .PHONY: backup-mongodb
 backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb

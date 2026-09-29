@@ -50,14 +50,19 @@ elif 'traefik' in argv:
 elif 'clickhouse-client' in argv:
     print('9\\t9' if 'toIntervalDay(30)' in argv[-1] else '0')
 elif 'pvc' in argv:
-    emit({'metadata': {'annotations': {'helm.sh/resource-policy': 'keep'}}, 'spec': {'volumeName': 'pv-mongodb'}})
+    emit({'spec': {'volumeName': 'pv-mongodb'}})
 elif 'pv' in argv:
     emit({'spec': {'persistentVolumeReclaimPolicy': 'Retain'}})
+elif 'exec' in argv and 'node' in argv:
+    print('RESULT ' + json.dumps({'status': 200, 'body': {'isTeamExisting': True}}))
 elif 'exec' in argv:
-    print(os.environ['KEY'])
+    sys.stdin.read()
+    print('RESULT ' + json.dumps({'keys': [os.environ['KEY']]}))
     if scenario == 'mongo-failure':
         print('failed near ' + os.environ['KEY'], file=sys.stderr)
         sys.exit(1)
+elif 'clickstack-mongodb-hyperdx-hyperdx' in argv:
+    emit({'data': {'connectionString.standard': base64.b64encode(b'mongodb://u:p@db/hyperdx').decode()}})
 elif 'secret' in argv:
     value = os.environ['KEY'].encode()
     if scenario == 'mismatch': value = os.environ['OTHER_KEY'].encode()

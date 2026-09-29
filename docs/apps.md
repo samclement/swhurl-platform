@@ -82,7 +82,7 @@ Container stdout and stderr reach ClickStack without any setup. For metrics and 
               OTEL_SERVICE_NAME: weather-api
 ```
 
-Apps need no key: the collector adds the ingestion key, the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). In HyperDX, filter on `ServiceName` or `k8s.namespace.name`. SDK auto-instrumentation and runtime metrics work unchanged. Nothing scrapes Prometheus `/metrics` endpoints. The generator does not write these lines.
+Apps need no key: the collector adds the ingestion key, the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). In HyperDX, filter on `ServiceName` or `k8s.namespace.name`. SDK auto-instrumentation and runtime metrics work unchanged. Telemetry sent in a pod's first second can lack the pod attributes, while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints. The generator does not write these lines.
 
 ## Moving a host between instances
 

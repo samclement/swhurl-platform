@@ -111,15 +111,18 @@ class Runner:
             return 0
         return self._attach(argv)
 
-    def stream(self, args: Sequence[str | Path]) -> Iterator[str]:
-        """Yield the command's stdout line by line, redacted, as it is printed.
+    def stream(self, args: Sequence[str | Path], *, mutating: bool = False) -> Iterator[str]:
+        """Yield the command's stdout and stderr line by line, redacted, as it is printed.
 
-        For read-only commands whose output a caller shows live, such as
-        ``kubectl logs --follow`` in the console. Closing the iterator early
-        stops the command. A non-zero exit raises :class:`CommandError` (with
-        redacted stderr) after the last line.
+        For commands whose progress a caller shows live, such as ``flux
+        reconcile`` in the console. Closing the iterator early stops the
+        command. A non-zero exit raises :class:`CommandError` after the last
+        line. Under ``DRY_RUN`` a ``mutating`` command is planned, not run.
         """
         argv = tuple(str(a) for a in args)
+        if mutating and self.dry_run:
+            self._plan(argv)
+            return
         for line in self._stream(argv):
             yield self.redact(line)
 
@@ -188,17 +191,17 @@ class Runner:
 
     def _stream(self, argv: tuple[str, ...]) -> Iterator[str]:
         try:
-            process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            # One pipe for both streams keeps their order (flux prints its progress on stderr).
+            process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                        errors='replace', cwd=self.cwd,
                                        env={**os.environ, **self.env} if self.env else None)
         except FileNotFoundError:
             raise CommandError(argv, f'missing required command: {argv[0]}') from None
-        errors: list[str] = []
-        drain = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
-        drain.start()
+        last = ''
         finished = False
         try:
             for line in process.stdout:
+                last = line.strip() or last
                 yield line.rstrip('\n')
             finished = True
         finally:
@@ -206,10 +209,8 @@ class Runner:
                 process.terminate()
             process.stdout.close()
             process.wait()
-            drain.join()
-            process.stderr.close()
         if process.returncode:
-            detail = self.redact(''.join(errors).strip())
+            detail = self.redact(last)
             raise CommandError(argv, f'{self.describe(argv)} exited {process.returncode}'
                                + (f': {detail}' if detail else ''), process.returncode)
 

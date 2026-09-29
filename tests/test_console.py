@@ -6,8 +6,8 @@ from contextlib import redirect_stderr
 
 from starlette.testclient import TestClient
 
-from swhurl.console import cluster, server
-from swhurl.run import FakeRunner
+from swhurl.console import actions, cluster, server
+from swhurl.run import FakeRunner, Result
 
 REV = 'main@sha1:abc1234def'
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com'}
@@ -163,6 +163,94 @@ class PlatformTests(unittest.TestCase):
         runner = FakeRunner().on('kubectl', 'get', '--raw=/version', returncode=1, stderr='refused')
         with redirect_stderr(io.StringIO()):
             self.assertEqual(client(runner).get('/platform', headers=WHO).status_code, 502)
+
+
+ORIGIN = {**WHO, 'Origin': 'http://testserver'}
+
+
+def operate(runner, flux=None):
+    """A client whose jobs run inline, with flux answering ``flux`` and audit lines collected."""
+    audit = []
+    runner.on('flux', handler=flux or (lambda args, _: Result(args, 0, f'► {args[1]}ing\n✔ done\n')))
+    jobs = actions.Jobs(runner, audit=audit.append, inline=True)
+    return client(runner, jobs=jobs), jobs, audit
+
+
+class ActionTests(unittest.TestCase):
+    def test_reconcile_runs_flux_records_output_and_audits(self):
+        runner = fake()
+        c, jobs, audit = operate(runner)
+        response = c.post('/units/app-web-prod/reconcile', headers=ORIGIN, follow_redirects=False)
+        self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
+        flux = [call for call in runner.calls if call[0] == 'flux']
+        self.assertEqual(flux, [('flux', 'reconcile', 'kustomization', 'app-web-prod', '-n', 'flux-system',
+                                 '--with-source', '--timeout=10m')])
+        self.assertEqual(jobs.get(1).state, 'succeeded')
+        self.assertEqual(audit, ['[AUDIT] sam@swhurl.com reconcile app-web-prod: started (job 1)',
+                                 '[AUDIT] sam@swhurl.com reconcile app-web-prod: succeeded (job 1)'])
+        page = c.get('/jobs/1', headers=WHO).text
+        self.assertIn('✔ done', page)
+        self.assertNotIn('http-equiv="refresh"', page)
+        self.assertIn('reconcile app-web-prod', c.get('/jobs', headers=WHO).text)
+
+    def test_suspend_and_resume_commands(self):
+        self.assertEqual(actions.command('suspend', 'x'), ['flux', 'suspend', 'kustomization', 'x', '-n', 'flux-system'])
+        self.assertEqual(actions.command('resume', 'x')[-1], '--timeout=10m')
+
+    def test_failure_is_shown_and_audited_as_error(self):
+        c, jobs, audit = operate(fake(), lambda args, _: Result(args, 1, '✗ health check failed\n'))
+        c.post('/units/infra-base/resume', headers=ORIGIN)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('✗ health check failed', jobs.get(1).lines)
+        self.assertTrue(jobs.get(1).lines[-1].startswith('[ERROR] flux resume kustomization infra-base'))
+        self.assertTrue(audit[-1].startswith('[ERROR] sam@swhurl.com resume infra-base: failed'))
+
+    def test_refused_unknown_or_busy_actions_run_nothing(self):
+        runner = fake()
+        c, jobs, audit = operate(runner)
+        cases = {'/units/cluster-stack/suspend': 'make flux-bootstrap', '/units/cluster-sources/reconcile': 'make flux-bootstrap',
+                 '/units/nope/reconcile': 'no Flux unit', '/units/infra-base/delete': 'unknown action'}
+        for path, message in cases.items():
+            with self.subTest(path=path):
+                response = c.post(path, headers=ORIGIN)
+                self.assertEqual(response.status_code, 409)
+                self.assertIn(message, response.text)
+        busy = actions.Job(99, 'reconcile', 'infra-base', 'x', jobs.now())
+        jobs._jobs[99] = busy
+        self.assertIn('already running', c.post('/units/infra-base/suspend', headers=ORIGIN).text)
+        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
+        self.assertEqual(audit, [])
+
+    def test_posts_must_come_from_a_console_page(self):
+        runner = fake()
+        c, _, _ = operate(runner)
+        for headers in (WHO, {**WHO, 'Origin': 'https://evil.example'}, {**WHO, 'Origin': 'null'}):
+            with self.subTest(origin=headers.get('Origin')):
+                self.assertEqual(c.post('/units/infra-base/reconcile', headers=headers).status_code, 403)
+        self.assertEqual(c.post('/units/infra-base/reconcile', headers={'Origin': 'http://testserver'}).status_code, 401)
+        self.assertEqual(runner.calls, [])
+
+    def test_running_job_page_refreshes(self):
+        c, jobs, _ = operate(fake())
+        jobs._jobs[7] = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now())
+        self.assertIn('http-equiv="refresh"', c.get('/jobs/7', headers=WHO).text)
+        self.assertEqual(c.get('/jobs/8', headers=WHO).status_code, 404)
+
+    def test_units_page_offers_actions_except_on_root_units(self):
+        text = client(fake()).get('/units', headers=WHO).text
+        self.assertIn('formaction="/units/infra-base/reconcile"', text)
+        self.assertIn('formaction="/units/infra-base/suspend"', text)
+        self.assertIn('formaction="/units/app-my-api-staging/resume"', text)
+        self.assertNotIn('formaction="/units/cluster-stack/', text)
+        self.assertIn('applied by make flux-bootstrap', text)
+
+    def test_dry_run_plans_flux_instead_of_running_it(self):
+        runner = fake()
+        runner.dry_run = True
+        c, jobs, _ = operate(runner)
+        c.post('/units/infra-base/suspend', headers=ORIGIN)
+        self.assertEqual(runner.planned, [('flux', 'suspend', 'kustomization', 'infra-base', '-n', 'flux-system')])
+        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
 
 
 if __name__ == '__main__':

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.id }}{% endblock %}
+{% block head %}{% if job.state == 'running' %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
+{% block main %}
+<h1>{{ job.action | capitalize }} <span class="mono">{{ job.unit }}</span>
+  <span class="{{ {'succeeded': 'ok', 'failed': 'bad'}.get(job.state, 'warn') }}">{{ job.state }}</span></h1>
+<p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }}{% else %}; this page refreshes every 2 seconds{% endif %}.</p>
+<pre>{% for line in job.lines %}{{ line }}
+{% else %}waiting for output…{% endfor %}</pre>
+<p><a href="/units">Flux units</a> · <a href="/jobs">all jobs</a></p>
+{% endblock %}

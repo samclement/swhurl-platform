@@ -114,16 +114,22 @@ class StreamTests(unittest.TestCase):
         lines = list(runner.stream(['sh', '-c', f'echo one; echo "two {SECRET}"']))
         self.assertEqual(lines, ['one', f'two {REDACTED}'])
 
-    def test_failure_raises_after_the_last_line_with_redacted_stderr(self):
+    def test_stderr_is_streamed_in_order_and_failure_raises_redacted(self):
         runner = Runner()
         runner.add_secret(SECRET)
         seen = []
         with self.assertRaises(CommandError) as caught:
             for line in runner.stream(['sh', '-c', f'echo partial; echo "bad {SECRET}" >&2; exit 3']):
                 seen.append(line)
-        self.assertEqual(seen, ['partial'])
+        self.assertEqual(seen, ['partial', f'bad {REDACTED}'])
         self.assertEqual(caught.exception.returncode, 3)
+        self.assertIn(f'bad {REDACTED}', str(caught.exception))
         self.assertNotIn(SECRET, str(caught.exception))
+
+    def test_dry_run_plans_a_mutating_stream(self):
+        fake = FakeRunner(dry_run=True)
+        self.assertEqual(list(fake.stream(['flux', 'suspend', 'kustomization', 'x'], mutating=True)), [])
+        self.assertEqual((fake.calls, fake.planned), ([], [('flux', 'suspend', 'kustomization', 'x')]))
 
     def test_closing_early_stops_the_command(self):
         lines = Runner().stream(['sh', '-c', 'echo first; exec sleep 30'])

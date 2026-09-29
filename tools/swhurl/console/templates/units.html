@@ -2,7 +2,8 @@
 {% block title %}Flux units{% endblock %}
 {% block main %}
 <h1>Flux units</h1>
-<p class="muted">Columns follow <code>dependsOn</code>: a unit waits for the units it lists, which are in columns to its left.</p>
+<p class="muted">Columns follow <code>dependsOn</code>: a unit waits for the units it lists, which are in columns to its left.
+Reconcile fetches Git and applies the unit now; suspend stops Git changes reaching it (its HelmReleases keep their last spec) until you resume it.</p>
 <div class="columns">
   {% for level in levels %}
   <div class="column">
@@ -14,6 +15,13 @@
         {% if u.suspended %}<span class="warn">suspended</span>{% elif u.ready[0] == 'True' %}Ready · {{ u.revision }}{% else %}<span class="bad">{{ u.ready[0] }}</span>: {{ u.ready[1] }}{% endif %}
       </div>
       {% if u.depends_on %}<div class="muted">after {{ u.depends_on | join(', ') }}</div>{% endif %}
+      {% if u.name in refused %}<div class="muted">{{ refused[u.name] }}</div>
+      {% else %}{% set a = 'resume' if u.suspended else 'suspend' %}
+      <form class="actions" method="post">
+        <button formaction="/units/{{ u.name }}/reconcile">Reconcile</button>
+        <button formaction="/units/{{ u.name }}/{{ a }}" class="{{ 'risky' if a == 'suspend' }}"
+                {% if a == 'suspend' %}onclick="return confirm('Suspend {{ u.name }}? Git changes stop applying to it until you resume it.')"{% endif %}>{{ a | capitalize }}</button>
+      </form>{% endif %}
     </div>
     {% endfor %}
   </div>

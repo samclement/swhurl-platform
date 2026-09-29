@@ -8,7 +8,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, wait | Cluster |
 | `install` † | `check-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
-| `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), retention settings | Cluster (read) |
+| `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), ClickStack registration closed, retention settings, newest backup locally and in S3 younger than `BACKUP_MAX_AGE_HOURS` (26) | Cluster (read), S3 (list) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |
 | `reconcile UNIT=<name>` | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
@@ -35,7 +35,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
-| `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), then prune to 7 daily + 4 weekly (`PRUNE=false` skips) | Cluster (read), local |
+| `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), prune to 7 daily + 4 weekly (`PRUNE=false` skips), then upload files the bucket lacks to `BACKUP_S3_URI` (empty skips; AWS CLI default credentials or `AWS_PROFILE`) | Cluster (read), local, S3 |
 
 ## Offline checks
 
@@ -64,6 +64,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 
 | Target | Does | Touches |
 | --- | --- | --- |
+| `host-backup`, `host-backup-delete` † | Install or remove the daily systemd **user** timer that runs `backup-mongodb` (and so the S3 upload) at 03:30 from this checkout; needs `sudo loginctl enable-linger $USER` once | Host |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route53 dynamic DNS systemd timer (`DYNAMIC_DNS_RECORDS`, `AWS_ZONE_ID`, `AWS_PROFILE`) | Host |
 
 Environment variables the targets read: `DRY_RUN`, `SKIP_VERIFY`, and the per-target ones in the tables. Host DNS records are in [`host/dns.env`](../host/dns.env). Cluster settings live in Git, not here ([services](services.md#settings)).

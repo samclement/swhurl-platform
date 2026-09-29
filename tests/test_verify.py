@@ -1,5 +1,6 @@
 """verify-platform and check-config: every branch, offline, with FakeRunner."""
 import base64
+import datetime as dt
 import io
 import json
 import shutil
@@ -21,6 +22,11 @@ def b64(value: bytes | str) -> str:
     return base64.b64encode(value.encode() if isinstance(value, str) else value).decode()
 
 
+def fresh_backup(hours=1):
+    taken = dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours)
+    return f'clickstack-mongodb-{taken:%Y%m%dT%H%M%SZ}.archive.gz.age'
+
+
 def healthy(**overrides):
     """A FakeRunner answering every verify-platform call for a healthy cluster."""
     responses = {
@@ -39,6 +45,7 @@ def healthy(**overrides):
         'untimed': Result((), 0, '0\n'),
         'pvc': {'spec': {'volumeName': 'pv-1'}},
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
+        'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
     }
     responses.update(overrides)
 
@@ -64,14 +71,21 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
             .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
             .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
-            .on('kubectl', 'get', 'pv', handler=answer('pv')))
+            .on('kubectl', 'get', 'pv', handler=answer('pv'))
+            .on('aws', 's3api', 'list-objects-v2', handler=answer('remote')))
 
 
 def run(runner):
     out, err = io.StringIO(), io.StringIO()
     report = Report(out)
-    with redirect_stderr(err):
-        code = verify.verify_platform(runner, report)
+    backups = Path(tempfile.mkdtemp())
+    (backups / fresh_backup()).write_bytes(b'x')
+    env = {'BACKUP_DIR': str(backups), 'BACKUP_S3_URI': 's3://bucket/clickstack-mongodb/'}
+    try:
+        with redirect_stderr(err), mock.patch.dict('os.environ', env):
+            code = verify.verify_platform(runner, report)
+    finally:
+        shutil.rmtree(backups)
     return code, report, out.getvalue() + err.getvalue()
 
 
@@ -87,7 +101,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention =='])
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -150,6 +164,48 @@ class VerifyPlatformTests(unittest.TestCase):
         run(runner)
         verbs = {c[c.index('get') if 'get' in c else c.index('exec')] for c in runner.calls if c[0] == 'kubectl'}
         self.assertLessEqual(verbs, {'get', 'exec'})
+
+
+class BackupAgeTests(unittest.TestCase):
+    NOW = dt.datetime(2026, 9, 29, 12, 0, tzinfo=dt.UTC)
+
+    def check(self, local=(), remote=(), uri='s3://bucket/p/', remote_rc=0, max_hours=None):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        for name in local:
+            (folder / name).write_bytes(b'x')
+        runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', returncode=remote_rc, stderr='AccessDenied',
+                                 stdout=json.dumps([f'p/{n}' for n in remote]))
+        env = {'BACKUP_DIR': str(folder), 'BACKUP_S3_URI': uri, **({'BACKUP_MAX_AGE_HOURS': max_hours} if max_hours else {})}
+        report = Report(io.StringIO())
+        verify.check_backups(runner, report, env, now=self.NOW)
+        return report, runner
+
+    def test_fresh_backups_pass(self):
+        name = 'clickstack-mongodb-20260929T033000Z.archive.gz.age'
+        report, _ = self.check(local=[name, 'clickstack-mongodb-20260929T033000Z.json'], remote=[name])
+        self.assertEqual(report.failures, 0, report.lines)
+
+    def test_stale_missing_or_unlistable_backups_fail(self):
+        old = 'clickstack-mongodb-20260928T030000Z.archive.gz.age'
+        new = 'clickstack-mongodb-20260929T033000Z.archive.gz.age'
+        cases = {
+            'local stale': ({'local': [old], 'remote': [new]}, 'is 33 h old'),
+            'remote stale': ({'local': [new], 'remote': [old]}, 's3://bucket/p/ is 33 h old'),
+            'none local': ({'remote': [new]}, 'no MongoDB backup in'),
+            'metadata only': ({'local': ['clickstack-mongodb-20260929T033000Z.json'], 'remote': [new]}, 'no MongoDB backup'),
+            'remote unlistable': ({'local': [new], 'remote_rc': 255}, 'cannot list backups in s3://bucket/p/'),
+            'tighter limit': ({'local': [new], 'remote': [new], 'max_hours': '6'}, 'is 8 h old'),
+        }
+        for label, (kwargs, message) in cases.items():
+            with self.subTest(label):
+                report, _ = self.check(**kwargs)
+                self.assertTrue(any(line.startswith('[BAD]') and message in line for line in report.lines), report.lines)
+
+    def test_empty_uri_checks_only_local(self):
+        report, runner = self.check(local=['clickstack-mongodb-20260929T033000Z.archive.gz.age'], uri='')
+        self.assertEqual(report.failures, 0)
+        self.assertEqual(runner.calls, [])
 
 
 class VerifyConfigTests(unittest.TestCase):

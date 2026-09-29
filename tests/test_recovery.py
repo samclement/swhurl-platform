@@ -128,6 +128,45 @@ class BackupTests(unittest.TestCase):
             self.backup(self.runner())
         self.assertEqual(len(list(self.dir.glob('*.age'))), 7)
 
+    def test_backup_uploads_only_what_the_bucket_lacks(self):
+        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
+        self.dir.mkdir(parents=True)
+        (self.dir / 'clickstack-mongodb-20260927T000000Z.archive.gz.age').write_bytes(b'old')
+        (self.dir / 'clickstack-mongodb-20260927T000000Z.json').write_text('{}')
+        (self.dir / 'notes.txt').write_text('not a backup')
+        runner = self.runner().on('aws', 's3api', 'list-objects-v2', stdout=json.dumps(
+            ['clickstack-mongodb/clickstack-mongodb-20260927T000000Z.archive.gz.age',
+             'clickstack-mongodb/clickstack-mongodb-20260927T000000Z.json'])).on('aws', 's3', 'cp')
+        archive, lines = self.backup(runner)
+        copies = [c for c in runner.calls if c[:3] == ('aws', 's3', 'cp')]
+        self.assertEqual([c[-1] for c in copies], [
+            's3://bucket/clickstack-mongodb/clickstack-mongodb-20260928T120000Z.archive.gz.age',
+            's3://bucket/clickstack-mongodb/clickstack-mongodb-20260928T120000Z.json'])
+        self.assertEqual(copies[0][-2], str(archive))
+        self.assertIn('[OK] Off-host: 2 file(s) uploaded to s3://bucket/clickstack-mongodb/, 2 already there', lines)
+
+    def test_upload_failure_fails_the_backup_after_keeping_it_locally(self):
+        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
+        runner = self.runner().on('aws', 's3api', 'list-objects-v2', stdout='null').on(
+            'aws', 's3', 'cp', returncode=1, stderr='AccessDenied')
+        with self.assertRaisesRegex(CommandError, 'AccessDenied'):
+            self.backup(runner)
+        self.assertTrue(any(p.name.endswith('.archive.gz.age') for p in self.dir.iterdir()))
+
+    def test_empty_uri_skips_upload_and_bad_uri_is_refused(self):
+        _, lines = self.backup(self.runner())
+        self.assertIn('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.', lines)
+        for uri in ('bucket/prefix/', 's3://', 's3://bucket/prefix'):
+            with self.subTest(uri=uri), self.assertRaises(recovery.RecoveryError):
+                recovery.s3_location(uri)
+
+    def test_dry_run_plans_the_upload_without_listing(self):
+        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
+        runner = FakeRunner(dry_run=True)
+        _, lines = self.backup(runner)
+        self.assertIn('  - upload local backups not yet in s3://bucket/clickstack-mongodb/', lines)
+        self.assertEqual(runner.calls, [])
+
     def test_recipient_comes_from_sops_config(self):
         self.assertTrue(recovery.sops_recipient().startswith('age1'))
         root = Path(tempfile.mkdtemp())

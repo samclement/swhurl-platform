@@ -1,0 +1,12 @@
+# Managed template for the ClickStack MongoDB backup (make host-backup)
+[Unit]
+Description=Daily ClickStack MongoDB backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+# Run at the next boot if the host was off at 03:30.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

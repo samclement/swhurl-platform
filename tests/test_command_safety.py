@@ -5,6 +5,7 @@ runs and refusals that make no cluster calls, and nothing secret on stdout or
 stderr. Branch-by-branch behaviour is unit-tested with FakeRunner elsewhere.
 """
 import base64
+import datetime as dt
 import os
 import subprocess
 import sys
@@ -26,7 +27,12 @@ class CommandSafetyTests(unittest.TestCase):
         self.calls = self.bin / 'calls'
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
                         CALLS=str(self.calls), KEY=KEY, OTHER_KEY=OTHER_KEY)
-        for name in ('kubectl', 'flux'):
+        backups = self.bin / 'fresh-backups'
+        backups.mkdir()
+        stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
+        (backups / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
+        self.env.update(BACKUP_DIR=str(backups), BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        for name in ('kubectl', 'flux', 'aws'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, json, os, sys
@@ -37,7 +43,9 @@ scenario = os.environ.get('SCENARIO', 'match')
 argv = sys.argv[1:]
 def emit(obj):
     print(json.dumps(obj))
-if Path(sys.argv[0]).name == 'flux':
+if Path(sys.argv[0]).name == 'aws':
+    emit(['clickstack-mongodb/clickstack-mongodb-' + os.environ['STAMP'] + '.archive.gz.age'])
+elif Path(sys.argv[0]).name == 'flux':
     sys.exit(1 if os.environ.get('FLUX_FAIL') else 0)
 elif any(a.startswith('kustomizations') for a in argv):
     ready = 'False' if scenario == 'unready' else 'True'

@@ -62,6 +62,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ./host/dynamic-dns.sh --dry-run
+          ./host/backup-timer.sh --dry-run
           make install DRY_RUN=true
           make backup-mongodb DRY_RUN=true
           make live-test-restore-mongodb DRY_RUN=true

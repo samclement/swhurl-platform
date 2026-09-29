@@ -21,6 +21,8 @@ HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 BOOTSTRAP_PATHS = (CLUSTER / 'flux-system', SOURCES)
 ISSUERS = Path('infra/issuers')
 INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
+# Off-host copies of the encrypted MongoDB backups (versioned, 90-day lifecycle; see docs/operations.md).
+BACKUP_S3_URI = 's3://swhurl-platform-backups-110927251694/clickstack-mongodb/'
 # The collectors' copy of the ClickStack team ingestion key (namespace logging).
 INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'

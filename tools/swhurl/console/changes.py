@@ -1,24 +1,34 @@
-"""Changes through Git: clone ``main``, run the clone's own tooling, push a ``console/*`` branch, open a PR.
+"""Changes through GitHub: download ``main``, run its own tooling, commit to a ``console/*`` branch, open a PR.
 
-The clone's tooling, not this image's, generates and checks the change, so it
-follows the rules CI will apply even when the console is older than ``main``.
-The repository is public, so cloning needs no token. The token (a fine-grained
-GitHub token in the ``console-github`` Secret) is used only to push the branch
-and open the PR, and never appears in a command line: ``git`` reads it through
-a credential helper from its environment, and ``curl`` reads the API header
-from stdin. The console never pushes anything but ``console/*`` branches.
+Everything goes through GitHub's REST API with ``httpx`` (the image has no
+``git`` or ``curl``): ``main``'s tarball is unpacked into a work tree, the
+tree's own tooling (not this image's) makes and checks the change, so it
+follows the rules CI will apply even when the console is older than ``main``,
+and the files it added, changed or deleted become one commit (blobs, a tree,
+a commit and a ref) on a new ``console/*`` branch, then a PR. The token (a
+fine-grained GitHub token in the ``console-github`` Secret) travels only in the
+``Authorization`` header of those requests, never in a command line, and is
+redacted from every message. The console never writes any ref but a new
+``console/*`` branch.
 """
 from __future__ import annotations
 
-import json
+import base64
+import hashlib
+import io
 import os
 import re
 import shutil
 import sys
+import tarfile
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
+from typing import Any
+
+import httpx
 
 from swhurl import platform
 from swhurl.apps import new
@@ -31,8 +41,6 @@ DEFAULT_REPO = platform.GITHUB_REPO
 BASE = 'main'
 BRANCH_PREFIX = 'console/'
 AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
-# git asks the helper for credentials; it answers from $GITHUB_TOKEN in its own environment.
-CREDENTIAL_HELPER = '!f() { test "$1" = get && printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"; }; f'
 UNSET = ('', 'REPLACE_ME')
 
 # The app-new options the form offers, in form order: (field, flag, label).
@@ -67,6 +75,7 @@ class GitHub:
     repo: str
     token: str
     api: str = 'https://api.github.com'
+    transport: httpx.BaseTransport | None = dataclass_field(default=None, compare=False, repr=False)  # tests
 
 
 def github_from_env(runner: Runner, env: Mapping[str, str] | None = None) -> GitHub | None:
@@ -106,46 +115,96 @@ def branch_name(slug: str, revision: str) -> str:
     return branch
 
 
+class GitHubAPI:
+    """The few REST calls a PR needs; errors are ActionErrors with the token redacted."""
+
+    def __init__(self, runner: Runner, github: GitHub):
+        self.runner = runner
+        self.client = httpx.Client(
+            base_url=f'{github.api}/repos/{github.repo}', transport=github.transport, timeout=60,
+            follow_redirects=True,  # the tarball redirects to codeload; httpx drops Authorization across hosts
+            headers={'Authorization': f'Bearer {github.token}', 'Accept': 'application/vnd.github+json',
+                     'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'swhurl-console'})
+
+    def call(self, method: str, path: str, body: dict[str, Any] | None = None) -> httpx.Response:
+        try:
+            reply = self.client.request(method, path, json=body)
+        except httpx.HTTPError as error:
+            raise ActionError(f'GitHub {method} {path} failed: {self.runner.redact(str(error))}') from None
+        if reply.status_code >= 300:
+            try:
+                message = reply.json().get('message', '')
+            except ValueError:
+                message = reply.text[:200]
+            raise ActionError(f'GitHub {method} {path} returned {reply.status_code}: {self.runner.redact(message)}')
+        return reply
+
+    def json(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+        return self.call(method, path, body).json()
+
+
+def snapshot(root: Path) -> dict[str, tuple[str, str]]:
+    """``{path: (mode, sha256)}`` for every file under ``root``."""
+    files = {}
+    for path in sorted(root.rglob('*')):
+        if path.is_file():
+            mode = '100755' if os.access(path, os.X_OK) else '100644'
+            files[path.relative_to(root).as_posix()] = (mode, hashlib.sha256(path.read_bytes()).hexdigest())
+    return files
+
+
+def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
+    """Unpack the repository at ``revision`` into ``workdir/repo``."""
+    with tarfile.open(fileobj=io.BytesIO(api.call('GET', f'/tarball/{revision}').content), mode='r:gz') as tar:
+        tar.extractall(workdir / 'src', filter='data')
+    (top,) = (workdir / 'src').iterdir()  # GitHub wraps the tree in <owner>-<repo>-<sha>/
+    return top.rename(workdir / 'repo')
+
+
 def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str,
             change: Callable[[Path], None]) -> str:
-    """Clone, apply ``change(clone)``, commit, push and open a PR. Returns the PR's URL."""
+    """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL."""
     runner.add_secret(github.token)  # whoever built ``github``, the token is redacted from every message
+    api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
     try:
-        clone = workdir / 'repo'
-        job.lines.append(f'Cloning {github.repo} ({BASE})')
-        runner.run(['git', 'clone', '--quiet', '--depth', '1', '--branch', BASE,
-                    f'https://github.com/{github.repo}.git', str(clone)])
-        revision = runner.output(['git', '-C', str(clone), 'rev-parse', '--short=7', 'HEAD']).strip()
-        branch = branch_name(slug, revision)
-        change(clone)
-        if not runner.output(['git', '-C', str(clone), 'status', '--porcelain']).strip():
+        head = api.json('GET', f'/git/ref/heads/{BASE}')['object']['sha']
+        branch = branch_name(slug, head[:7])
+        job.lines.append(f'Downloading {github.repo} {BASE} ({head[:7]})')
+        tree = download(api, head, workdir)
+        before = snapshot(tree)
+        change(tree)
+        after = snapshot(tree)
+        changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p))
+        if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
-        runner.run(['git', '-C', str(clone), 'add', '--all'])
+        job.lines += [f'{"D" if p not in after else "A" if p not in before else "M"} {p}' for p in changed]
+        if runner.dry_run:
+            job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
+            return ''
+        entries = []
+        for path in changed:
+            if path not in after:
+                entries.append({'path': path, 'mode': before[path][0], 'type': 'blob', 'sha': None})
+                continue
+            content = base64.b64encode((tree / path).read_bytes()).decode()
+            blob = api.json('POST', '/git/blobs', {'content': content, 'encoding': 'base64'})['sha']
+            entries.append({'path': path, 'mode': after[path][0], 'type': 'blob', 'sha': blob})
+        base_tree = api.json('GET', f'/git/commits/{head}')['tree']['sha']
+        new_tree = api.json('POST', '/git/trees', {'base_tree': base_tree, 'tree': entries})['sha']
         message = f'[console] {title}\n\n{body}\n\nRequested-by: {job.identity}\n'
-        runner.run(['git', '-C', str(clone), '-c', f'user.name={AUTHOR[0]}', '-c', f'user.email={AUTHOR[1]}',
-                    'commit', '--quiet', '--file=-'], input=message)
-        job.lines += runner.output(['git', '-C', str(clone), 'show', '--stat', '--format=%h %s', 'HEAD']).splitlines()
-        job.lines.append(f'Pushing {branch}')
-        runner.run(['git', '-C', str(clone), '-c', 'credential.helper=', '-c', f'credential.helper={CREDENTIAL_HELPER}',
-                    'push', '--quiet', 'origin', f'HEAD:refs/heads/{branch}'],
-                   env={'GITHUB_TOKEN': github.token, 'GIT_TERMINAL_PROMPT': '0'}, mutating=True)
-        url = create_pull_request(runner, github, branch=branch, title=f'[console] {title}',
-                                  body=f'{body}\n\nRequested-by: {job.identity}')
-        job.lines.append(f'Opened {url}' if url else 'Dry run: no PR opened')
+        commit = api.json('POST', '/git/commits', {'message': message, 'tree': new_tree, 'parents': [head],
+                                                   'author': {'name': AUTHOR[0], 'email': AUTHOR[1]}})['sha']
+        job.lines.append(f'Committed {commit[:7]} [console] {title}')
+        job.lines.append(f'Creating branch {branch}')
+        api.call('POST', '/git/refs', {'ref': f'refs/heads/{branch}', 'sha': commit})
+        url = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
+                                          'body': f'{body}\n\nRequested-by: {job.identity}'})['html_url']
+        job.lines.append(f'Opened {url}')
         return url
     finally:
+        api.client.close()
         shutil.rmtree(workdir, ignore_errors=True)
-
-
-def create_pull_request(runner: Runner, github: GitHub, *, branch: str, title: str, body: str) -> str:
-    payload = json.dumps({'title': title, 'head': branch, 'base': BASE, 'body': body})
-    out = runner.output(['curl', '--silent', '--show-error', '--fail-with-body', '--config', '-',
-                         '--request', 'POST', '--header', 'Accept: application/vnd.github+json',
-                         '--header', 'Content-Type: application/json', '--data-binary', payload,
-                         f'{github.api}/repos/{github.repo}/pulls'],
-                        input=f'header = "Authorization: Bearer {github.token}"\n', mutating=True)
-    return json.loads(out)['html_url'] if out.strip() else ''
 
 
 def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str]) -> None:
@@ -154,7 +213,7 @@ def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str
                         env={'PYTHONPATH': str(clone / 'tools')})
     job.lines += (result.stdout + result.stderr).splitlines()
     if result.returncode:
-        raise ActionError(f'{command} refused this change (see above); nothing was pushed')
+        raise ActionError(f'{command} refused this change (see above); nothing was written to GitHub')
 
 
 def run_app_new(runner: Runner, job: Job, clone: Path, argv: list[str]) -> None:

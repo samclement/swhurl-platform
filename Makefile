@@ -87,7 +87,7 @@ check-apps: ## Render every app instance and check the app contract
 .PHONY: check-lint
 check-lint: ## Lint the Python tooling and the bash that stays (needs uv)
 	uvx ruff@0.16.9 check tools tests
-	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files '*.sh')
+	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
 .PHONY: check-config
 check-config: ## Decrypting units have Secrets, platform-settings has its keys

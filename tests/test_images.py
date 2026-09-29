@@ -29,7 +29,7 @@ class ConsoleImageTests(unittest.TestCase):
         self.assertEqual(arg('HELM_VERSION'), ci['azure/setup-helm'])
 
     def test_every_download_and_base_image_is_pinned(self):
-        for tool in ('KUBECTL', 'HELM', 'FLUX', 'SOPS'):
+        for tool in ('KUBECTL', 'HELM', 'SOPS'):
             self.assertRegex(arg(f'{tool}_SHA256'), r'^[0-9a-f]{64}$', tool)
         for line in re.findall(r'^FROM (\S+)', DOCKERFILE, re.M):
             self.assertRegex(line, r'@sha256:[0-9a-f]{64}$', line)

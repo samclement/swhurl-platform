@@ -43,7 +43,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - `platform-certs-*`, `app-new`, `app-promote`, `app-scale`, `app-remove` and `console-image` only edit files: commit and push before reconciling. After changing `tools/`, `images/console/` or the lock file, deploy the console with `make console-image` once the publish run finishes ([console](docs/console.md#deploy-a-new-console)); `make verify-platform` warns until then.
 - `host-dns` and `host-backup` install system units with `sudo`: the operator runs them in their own terminal. The units run scripts from this checkout, so only template changes need a reinstall.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.
-- Flux controllers come from `make flux-install` (pinned `FLUX_VERSION`, patches in `clusters/home/flux-system/install`); never plain `flux install`, which drops the patches.
+- Flux controllers come from `make flux-install` (`FLUX_VERSION` in `tools/swhurl/flux.py`, patches in `clusters/home/flux-system/install`); never plain `flux install`, which drops the patches.
 
 ## Lessons not obvious from the code
 

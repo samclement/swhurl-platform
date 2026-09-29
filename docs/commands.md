@@ -11,7 +11,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), ClickStack registration closed, retention settings, no ClickHouse merge failed in the last hour, newest backup locally and in S3 younger than `BACKUP_MAX_AGE_HOURS` (26), console image built from the current tooling (warns otherwise), GitHub accepts the console's token and it does not expire within 14 days (warns) | Cluster (read), S3 (list) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |
 | `reconcile UNIT=<name>` | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
-| `flux-install` † | Install or upgrade the Flux controllers at the Dockerfile's `FLUX_VERSION` with the patches in `clusters/home/flux-system/install`; refuses a different `flux` CLI; `DRY_RUN=true` prints the live diff | Cluster |
+| `flux-install` † | Install or upgrade the Flux controllers at `FLUX_VERSION` in `tools/swhurl/flux.py` with the patches in `clusters/home/flux-system/install`; refuses a different `flux` CLI; `DRY_RUN=true` prints the live diff | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
 
 ## Apps

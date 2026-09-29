@@ -171,42 +171,108 @@ class PlatformTests(unittest.TestCase):
 ORIGIN = {**WHO, 'Origin': 'http://testserver'}
 
 
-def operate(runner, flux=None):
-    """A client whose jobs run inline, with flux answering ``flux`` and audit lines collected."""
-    audit = []
-    runner.on('flux', handler=flux or (lambda args, _: Result(args, 0, f'► {args[1]}ing\n✔ done\n')))
-    jobs = actions.Jobs(runner, audit=audit.append, inline=True)
+class FluxAPI:
+    """Answers the console's kubectl patches, annotations and gets like Flux's controllers.
+
+    An annotated object reports the request handled after ``polls`` more gets,
+    with its Ready condition set to ``ready``."""
+
+    def __init__(self, runner, ready='True', message='', polls=0, suspended=False):
+        self.ready, self.message, self.polls, self.suspended = ready, message, polls, suspended
+        self.tokens, self.gets = {}, {}
+        runner.on('kubectl', '-n', 'flux-system', 'annotate', handler=self.annotate)
+        runner.on('kubectl', '-n', 'flux-system', 'patch', handler=lambda args, _: Result(args, 0, 'patched\n'))
+        runner.on('kubectl', '-n', 'flux-system', 'get', handler=self.get)
+
+    def annotate(self, args, _input):
+        self.tokens[args[5]] = args[6].split('=', 1)[1]
+        return Result(args, 0)
+
+    def get(self, args, _input):
+        target = args[4]
+        if target.startswith(actions.KUSTOMIZATION) and target not in self.tokens:
+            return Result(args, 0, json.dumps({'spec': {'suspend': self.suspended, 'sourceRef': {
+                'kind': 'GitRepository', 'name': 'swhurl-platform'}}}))
+        self.gets[target] = self.gets.get(target, 0) + 1
+        handled = self.gets[target] > self.polls
+        status = {'observedGeneration': 3, 'lastAppliedRevision': REV, 'artifact': {'revision': REV},
+                  'conditions': [{'type': 'Ready', 'status': self.ready if handled else 'Unknown', 'message': self.message}]}
+        if handled:
+            status['lastHandledReconcileAt'] = self.tokens[target]
+        return Result(args, 0, json.dumps({'metadata': {'generation': 3}, 'status': status}))
+
+
+def operate(runner, **flux):
+    """A client whose jobs run inline against a FluxAPI, with audit lines and sleeps collected."""
+    audit, sleeps = [], []
+    api = FluxAPI(runner, **flux)
+    jobs = actions.Jobs(runner, audit=audit.append, inline=True, sleep=sleeps.append)
+    jobs.api, jobs.sleeps = api, sleeps
     return client(runner, jobs=jobs), jobs, audit
 
 
+def mutations(runner):
+    return [call[3:] for call in runner.calls if call[:1] == ('kubectl',) and call[3] in ('annotate', 'patch')]
+
+
 class ActionTests(unittest.TestCase):
-    def test_reconcile_runs_flux_records_output_and_audits(self):
+    def test_reconcile_requests_source_then_unit_records_output_and_audits(self):
         runner = fake()
         c, jobs, audit = operate(runner)
         response = c.post('/units/app-web-prod/reconcile', headers=ORIGIN, follow_redirects=False)
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
-        flux = [call for call in runner.calls if call[0] == 'flux']
-        self.assertEqual(flux, [('flux', 'reconcile', 'kustomization', 'app-web-prod', '-n', 'flux-system',
-                                 '--with-source', '--timeout=10m')])
-        self.assertEqual(jobs.get(1).state, 'succeeded')
+        source, unit = 'gitrepositories.source.toolkit.fluxcd.io/swhurl-platform', f'{actions.KUSTOMIZATION}/app-web-prod'
+        self.assertEqual([m[:3] for m in mutations(runner)], [('annotate', '--overwrite', source),
+                                                             ('annotate', '--overwrite', unit)])
+        self.assertTrue(mutations(runner)[0][3].startswith('reconcile.fluxcd.io/requestedAt='))
+        self.assertEqual(jobs.get(1).state, 'succeeded', jobs.get(1).lines)
+        self.assertEqual(jobs.get(1).lines[-1], f'✔ applied revision {REV}')
+        self.assertIn(f'✔ fetched revision {REV}', jobs.get(1).lines)
         self.assertEqual(audit, ['[AUDIT] sam@swhurl.com reconcile app-web-prod: started (job 1)',
                                  '[AUDIT] sam@swhurl.com reconcile app-web-prod: succeeded (job 1)'])
         page = c.get('/jobs/1', headers=WHO).text
-        self.assertIn('✔ done', page)
+        self.assertIn('✔ applied revision', page)
         self.assertNotIn('http-equiv="refresh"', page)
         self.assertIn('reconcile app-web-prod', c.get('/jobs', headers=WHO).text)
+        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
 
-    def test_suspend_and_resume_commands(self):
-        self.assertEqual(actions.command('suspend', 'x'), ['flux', 'suspend', 'kustomization', 'x', '-n', 'flux-system'])
-        self.assertEqual(actions.command('resume', 'x')[-1], '--timeout=10m')
+    def test_suspend_patches_only_and_resume_patches_then_waits(self):
+        runner = fake()
+        c, jobs, _ = operate(runner, polls=2)
+        c.post('/units/infra-base/suspend', headers=ORIGIN)
+        self.assertEqual(mutations(runner), [('patch', f'{actions.KUSTOMIZATION}/infra-base', '--type=merge',
+                                              '--patch', '{"spec": {"suspend": true}}')])
+        self.assertEqual((jobs.get(1).state, jobs.sleeps), ('succeeded', []))
+        c.post('/units/infra-base/resume', headers=ORIGIN)
+        self.assertEqual(mutations(runner)[1][-1], '{"spec": {"suspend": false}}')
+        self.assertEqual(mutations(runner)[2][:3], ('annotate', '--overwrite', f'{actions.KUSTOMIZATION}/infra-base'))
+        self.assertEqual(jobs.get(2).state, 'succeeded', jobs.get(2).lines)
+        self.assertEqual(jobs.sleeps, [actions.POLL, actions.POLL], 'polled until the request was handled')
 
     def test_failure_is_shown_and_audited_as_error(self):
-        c, jobs, audit = operate(fake(), lambda args, _: Result(args, 1, '✗ health check failed\n'))
+        c, jobs, audit = operate(fake(), ready='False', message='health check failed after 5m')
         c.post('/units/infra-base/resume', headers=ORIGIN)
         self.assertEqual(jobs.get(1).state, 'failed')
-        self.assertIn('✗ health check failed', jobs.get(1).lines)
-        self.assertTrue(jobs.get(1).lines[-1].startswith('[ERROR] flux resume kustomization infra-base'))
+        self.assertEqual(jobs.get(1).lines[-1],
+                         '[ERROR] Kustomization infra-base reconciliation failed: health check failed after 5m')
         self.assertTrue(audit[-1].startswith('[ERROR] sam@swhurl.com resume infra-base: failed'))
+
+    def test_timeout_fails_the_job(self):
+        runner = fake()
+        FluxAPI(runner, polls=10**6)
+        ticks = iter(range(0, 10**4, 60))
+        jobs = actions.Jobs(runner, audit=lambda _: None, inline=True, sleep=lambda _: None, clock=lambda: next(ticks))
+        jobs.start('resume', 'infra-base', 'sam@swhurl.com')
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('timed out after 10m waiting for Kustomization infra-base', jobs.get(1).lines[-1])
+
+    def test_reconciling_a_suspended_unit_is_refused(self):
+        runner = fake()
+        c, jobs, _ = operate(runner, suspended=True)
+        c.post('/units/app-my-api-staging/reconcile', headers=ORIGIN)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('is suspended; resume it instead', jobs.get(1).lines[-1])
+        self.assertEqual(mutations(runner), [])
 
     def test_refused_unknown_or_busy_actions_run_nothing(self):
         runner = fake()
@@ -221,7 +287,7 @@ class ActionTests(unittest.TestCase):
         busy = actions.Job(99, 'reconcile', 'infra-base', 'x', jobs.now())
         jobs._jobs[99] = busy
         self.assertIn('already running', c.post('/units/infra-base/suspend', headers=ORIGIN).text)
-        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
+        self.assertEqual(mutations(runner), [])
         self.assertEqual(audit, [])
 
     def test_posts_must_come_from_a_console_page(self):
@@ -247,14 +313,15 @@ class ActionTests(unittest.TestCase):
         self.assertNotIn('formaction="/units/cluster-stack/', text)
         self.assertIn('applied by make flux-bootstrap', text)
 
-    def test_dry_run_plans_flux_instead_of_running_it(self):
+    def test_dry_run_plans_the_patches_and_does_not_wait(self):
         runner = fake()
         runner.dry_run = True
         c, jobs, _ = operate(runner)
         c.post('/units/infra-base/suspend', headers=ORIGIN)
-        self.assertEqual(runner.planned, [('flux', 'suspend', 'kustomization', 'infra-base', '-n', 'flux-system')])
-        self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
-
+        c.post('/units/infra-base/resume', headers=ORIGIN)
+        self.assertEqual([p[3] for p in runner.planned], ['patch', 'patch', 'annotate'])
+        self.assertEqual(mutations(runner), [])
+        self.assertEqual((jobs.get(2).state, jobs.sleeps), ('succeeded', []))
 
 if __name__ == '__main__':
     unittest.main()

@@ -62,6 +62,7 @@ Done since the review: #7 (the runner no longer checks for a test-only attribute
 
 **Known issues, deliberately not fixed yet**
 
+- OTel collector 0.161.0 warns that the `hostmetrics` and `kubeletstats` component names and the inline `service.telemetry.resource` map are deprecated. `platform/otel/helmrelease-daemonset.yaml` uses `kubeletstats` (its receiver settings and pipeline) and the chart's presets generate both names, so renaming only ours could duplicate receivers. Rename together with a chart version whose presets use the new names; check at each OTel chart update, before a collector release removes the aliases.
 - Staging and production `hello` differ only in namespace and host (same digest, issuer and sign-in). `make check-apps` now fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie. Public or untrusted apps must use another parent domain; none exist yet.
 

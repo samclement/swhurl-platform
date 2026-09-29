@@ -85,7 +85,7 @@ spec:
         otlphttp:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
-            authorization: "$${env:CLICKSTACK_INGESTION_KEY}"
+            authorization: "${env:CLICKSTACK_INGESTION_KEY}"
       service:
         pipelines:
           logs:

@@ -57,5 +57,29 @@ class ValidateTests(unittest.TestCase):
         self.assertIn('Validation passed for 2 active render entrypoints.', out.getvalue())
 
 
+class SubstitutionTests(unittest.TestCase):
+    """Only units with postBuild.substituteFrom substitute, as Flux does."""
+    RENDERED = 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {auth: "${env:KEY}", host: "a.${BASE_DOMAIN}"}\n'
+    SUBSTITUTES = {'postBuild': {'substituteFrom': [{'kind': 'ConfigMap', 'name': 'platform-settings', 'optional': False}]}}
+
+    def render(self, spec, rendered=RENDERED):
+        runner = FakeRunner().on('kubectl', 'kustomize', stdout=rendered).on('flux-schema')
+        validate.validate_render(runner, Report(io.StringIO()), Path.cwd() / 'unit', spec, {'BASE_DOMAIN': 'example.test'},
+                                 root=Path.cwd())
+        return runner
+
+    def test_unit_without_substitution_keeps_dollar_references(self):
+        runner = self.render({}, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {auth: "${env:KEY}"}\n')
+        schema_input = [c for c in runner.calls if c[0] == 'flux-schema']
+        self.assertTrue(schema_input)
+
+    def test_substituting_unit_rejects_an_unescaped_env_reference(self):
+        with self.assertRaisesRegex(validate.ValidationError, r'unresolved Flux substitution \$\{env:KEY\}.*escape'):
+            self.render(self.SUBSTITUTES)
+
+    def test_substituting_unit_resolves_settings(self):
+        self.render(self.SUBSTITUTES, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {host: "a.${BASE_DOMAIN}"}\n')
+
+
 if __name__ == '__main__':
     unittest.main()

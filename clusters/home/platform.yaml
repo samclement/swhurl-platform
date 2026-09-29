@@ -93,11 +93,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./platform/otel
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: platform-settings
-        optional: false
   decryption:
     provider: sops
     secretRef:

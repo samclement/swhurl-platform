@@ -67,6 +67,9 @@ class PipeTests(unittest.TestCase):
     def test_streams_between_processes(self):
         self.assertEqual(Runner().pipe(['printf', 'plaintext-stream'], ['wc', '-c']).stdout.strip(), '16')
 
+    def test_input_feeds_the_producer(self):
+        self.assertEqual(Runner().pipe(['cat'], ['tr', 'a-z', 'A-Z'], input='config-on-stdin').stdout, 'CONFIG-ON-STDIN')
+
     def test_either_side_failing_raises_like_pipefail(self):
         with self.assertRaisesRegex(CommandError, 'exited 3, 0: producer broke'):
             Runner().pipe(['sh', '-c', 'echo producer broke >&2; exit 3'], ['cat'])

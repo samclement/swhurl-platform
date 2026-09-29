@@ -19,7 +19,7 @@ Each Secret is a SOPS-encrypted Kubernetes Secret beside its consumer: platform 
 Rules:
 
 - **Write new values as `stringData`** (plain text inside the encrypted file). Flux applies it correctly; generated app stubs use it.
-- **In `data`, base64-encode exactly once.** A doubly encoded ingestion key silently dropped all telemetry once. The existing platform Secrets use `data`; do not convert them in passing, because a changed value restarts consumers.
+- **In `data`, base64-encode exactly once.** A doubly encoded ingestion key silently dropped all telemetry once. The oauth2-proxy Secret still uses `data`; the ClickStack and OTel Secrets use `stringData`.
 - **Never print values.** Check with `make check-secrets` (decrypts in memory; fails on empty or `REPLACE_ME` values, warns on probable double encoding) and `make verify-platform` (compares the ingestion key by bytes).
 
 Rotate a value:
@@ -33,11 +33,11 @@ make reconcile UNIT=platform-oauth2-proxy   # the unit that holds the Secret; ap
 
 Reloader then restarts the workloads that opted in: oauth2-proxy, both OTel collectors, and generated apps with Secrets. Anything else that reads the Secret needs a manual `kubectl rollout restart`; if Reloader ever misses the collectors: `kubectl -n logging rollout restart deploy/otel-k8s-cluster-opentelemetry-collector ds/otel-k8s-daemonset-opentelemetry-collector-agent`, then `make verify-platform`. Which Secret belongs to which service: [services](services.md).
 
-Rotate the OTel ingestion key (it must equal the ClickStack team key, not `CLICKSTACK_API_KEY`):
+Rotate the ClickStack ingestion key ([what it is](services.md#clickstack-and-otel)):
 
-1. Copy the team's ingestion key from the ClickStack UI; don't print it from MongoDB into logs.
-2. `sops platform/otel/secret.sops.yaml` and set `data.HYPERDX_API_KEY` to the key base64-encoded once (`printf %s '<key>' | base64 -w0`).
-3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-otel`.
+1. Set `CLICKSTACK_INGESTION_KEY` to the same new value (for example from `uuidgen`) in both `sops platform/clickstack/secret.sops.yaml` and `sops platform/otel/secret.sops.yaml`.
+2. `make check-secrets` (fails if the copies differ), commit, push, `make reconcile UNIT=platform-clickstack` and `make reconcile UNIT=platform-otel`. Reloader restarts the collectors.
+3. `make clickstack-bootstrap` writes the new key into the team.
 4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401. If the collector pods did not restart, restart them with the `kubectl` command above.
 
 ## Certificate mode
@@ -78,7 +78,7 @@ For each PR: read the chart's release notes and compare its `appVersion` (`helm 
 | --- | --- | --- |
 | Manifests and encrypted Secrets | Irreplaceable | GitHub |
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
-| ClickStack MongoDB (team, ingestion key, users, sources) | Irreplaceable | `make backup-mongodb`; volume `Retain`, claim kept on Helm uninstall |
+| ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | `make backup-mongodb`; data volume on `local-path-retain` |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
 
 ```bash
@@ -90,33 +90,24 @@ The backup streams `mongodump` through `age`, so no plaintext touches disk, and 
 
 The restore test passes only if the checksum, collection counts and restored ingestion key (against the Git Secret) all match; it never touches live workloads.
 
-The MongoDB volume's `Retain` policy is a live patch; a re-created claim loses it and `make verify-platform` then fails. Re-apply with the two commands in [bootstrap step 6](bootstrap.md#6-protect-data-then-verify).
+Without a backup, a fresh install needs only `make clickstack-bootstrap`: it registers the admin from SOPS and sets the Git ingestion key, and HyperDX recreates the default connection and sources. Dashboards, saved searches and other users are lost.
 
-If MongoDB is lost and there is no backup, a fresh ClickStack install seeds a new team key from `CLICKSTACK_API_KEY`; after the first sign-in, rotate the OTel ingestion key to it (see [Secrets](#secrets)).
-
-Restore into the running service (rehearsed on a throwaway cluster, not yet on the live one):
+Restore into the running service. MongoDB requires a login, so the connection string goes into a private file in the pod (never a command line) while the archive streams on stdin:
 
 ```bash
 kubectl -n observability scale deploy/clickstack-app --replicas=0
-age -d -i age.agekey <archive> | kubectl -n observability exec -i deploy/clickstack-mongodb -- mongorestore --archive --gzip --drop
+kubectl -n observability get secret clickstack-mongodb-hyperdx-hyperdx -o jsonpath='{.data.connectionString\.standard}' \
+  | base64 -d | python3 -c 'import json,sys; print("uri: " + json.dumps(sys.stdin.read()))' \
+  | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- sh -c 'umask 077; cat > /tmp/login.yaml'
+age -d -i age.agekey <archive> | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- \
+  mongorestore --config=/tmp/login.yaml --archive --gzip --drop
+kubectl -n observability exec clickstack-mongodb-0 -c mongod -- rm -f /tmp/login.yaml
 kubectl -n observability scale deploy/clickstack-app --replicas=1
+make clickstack-bootstrap   # the restored team may hold an older ingestion key
 make verify-platform
 ```
 
-Compare `mongorestore`'s document count with the backup's `.json` metadata. The collectors may log one HTTP 401 until the app is back up.
-
-## Prove behaviour on the cluster
-
-Each of these creates throwaway resources, checks them and removes them:
-
-| Command | Proves |
-| --- | --- |
-| `make live-test-lifecycle` | Suspend/resume, uninstall keeping protected data, `destroy-data`, `Orphan` deletion |
-| `make live-test-reloader` | Reloader restarts only opted-in workloads in watched namespaces |
-| `make live-test-app-template` | Generated apps deploy: worker without route, signed-in web app with a decrypted Secret, persistent prod app |
-| `make live-test-restore-mongodb` | The latest backup restores |
-
-Fixtures come from the pushed Git revision: push changes to `tests/fixtures/` first.
+Compare `mongorestore`'s document count with the backup's `.json` metadata. Restored users keep the passwords they had when the backup was taken. Backups from the chart 1.x install hold the same `hyperdx` database. Not yet run against the operator-managed MongoDB; the login-file step was tested on 29 September 2026.
 
 ## Troubleshooting
 
@@ -124,7 +115,7 @@ Fixtures come from the pushed Git revision: push changes to `tests/fixtures/` fi
 | --- | --- |
 | 403 after signing in, only on `http://` | No HTTP→HTTPS redirect, so the `Secure` sign-in cookie is not sent. Check `make verify-platform`'s Ingress line; the redirect is `ports.web.redirections` in `infra/traefik/helmchartconfig.yaml` (the old `redirectTo` key is ignored by Traefik 3). |
 | `redirect_uri_mismatch` from Google | The OAuth client's allowed redirect URI differs from `https://oauth.<BASE_DOMAIN>/oauth2/callback`. |
-| Collector logs show HTTP 401 `scheme or token does not match` | `HYPERDX_API_KEY` differs from the ClickStack team key or is encoded twice. `make verify-platform` says which; fix the Secret ([Secrets](#secrets)). |
+| Collector logs show HTTP 401 or `Unauthenticated` | The team's ingestion key differs from `CLICKSTACK_INGESTION_KEY` (after a reinstall, a restore, or a rotation in the UI). `make verify-platform` says so; run `make clickstack-bootstrap`. |
 | A signed-in route shows Traefik's default certificate for a few seconds | Normal while cert-manager issues a certificate for a host that just moved. |
 | `flux reconcile` seems ignored | A previous revision is still running health checks (up to the unit's timeout); new requests queue behind it. |
 | Deleting a broken app takes about 5 minutes | Its Helm install is still in progress; the finalizer waits for the Helm timeout. |

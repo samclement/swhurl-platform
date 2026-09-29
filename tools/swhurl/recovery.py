@@ -5,9 +5,11 @@
 
 Plaintext never touches disk: the dump streams from ``mongodump`` straight into
 ``age`` (and on restore from ``age -d`` into ``mongorestore``) through an OS
-pipe that Python never reads. Settings come from the environment, as the
-Makefile passes them: BACKUP_DIR, DRY_RUN, PRUNE, KEEP_DAILY, KEEP_WEEKLY,
-AGE_RECIPIENT, MONGO_NAMESPACE, MONGO_WORKLOAD, MONGO_DATABASE (backup) and
+pipe that Python never reads. MongoDB requires a login: the connection string
+the MongoDB operator writes (``clickstack-mongodb-hyperdx-hyperdx``) reaches
+``mongodump`` as a config file on stdin, never in a command line. Settings come
+from the environment, as the Makefile passes them: BACKUP_DIR, DRY_RUN, PRUNE,
+KEEP_DAILY, KEEP_WEEKLY, AGE_RECIPIENT, MONGO_DATABASE (backup) and
 BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE, KEEP, MONGO_IMAGE (restore test).
 """
 from __future__ import annotations
@@ -28,12 +30,14 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, platform, retention
+from swhurl import ROOT, clickstack, platform, retention
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
 COUNTS_SCRIPT = platform.COLLECTION_COUNTS_SCRIPT
+COUNTS_RESULT_SCRIPT = ('const c = {}; db.getCollectionNames().sort().forEach(n => '
+                        '{ c[n] = db[n].countDocuments(); }); print("RESULT " + JSON.stringify(c));')
 TEAM_KEY_SCRIPT = platform.TEAM_KEY_SCRIPT
 INGESTION_SECRET = platform.INGESTION_SECRET
 RECOVERY_LABEL = platform.label('recovery-test')
@@ -76,8 +80,8 @@ def private_files() -> Iterator[None]:
 class BackupSettings:
     backup_dir: Path
     recipient: str
-    namespace: str = 'observability'
-    workload: str = 'deploy/clickstack-mongodb'
+    namespace: str = clickstack.NS
+    pod: str = clickstack.MONGO_POD
     database: str = 'hyperdx'
     prune: bool = True
     keep_daily: int = 7
@@ -88,8 +92,6 @@ class BackupSettings:
         return cls(
             backup_dir=Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR),
             recipient=env.get('AGE_RECIPIENT') or sops_recipient(),
-            namespace=env.get('MONGO_NAMESPACE') or 'observability',
-            workload=env.get('MONGO_WORKLOAD') or 'deploy/clickstack-mongodb',
             database=env.get('MONGO_DATABASE') or 'hyperdx',
             prune=env.get('PRUNE', 'true') == 'true',
             keep_daily=int(env.get('KEEP_DAILY', 7)),
@@ -103,11 +105,12 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
     stamp = (now or dt.datetime.now(dt.UTC)).strftime('%Y%m%dT%H%M%SZ')
     archive = settings.backup_dir / f'clickstack-mongodb-{stamp}.archive.gz.age'
     metadata = archive.with_name(archive.name.replace('.archive.gz.age', '.json'))
-    exec_mongo = ['kubectl', '-n', settings.namespace, 'exec', settings.workload, '--']
+    exec_mongo = ['kubectl', '-n', settings.namespace, 'exec', '-i', settings.pod, '-c', 'mongod', '--']
 
     if runner.dry_run:
         out('Plan (backup-mongodb):')
-        out(f'  - mongodump --db {settings.database} from {settings.namespace}/{settings.workload}')
+        out(f'  - mongodump --db {settings.database} from {settings.namespace}/{settings.pod}, '
+            f'logging in with {clickstack.MONGO_URI_SECRET}')
         out(f'  - encrypt to age recipient {settings.recipient}')
         out(f'  - write {archive} and a metadata file; no cluster changes')
         if settings.prune:
@@ -115,16 +118,19 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
                 f'backup days and {settings.keep_weekly} ISO weeks')
         return archive
 
+    uri = clickstack.read_secret(runner, clickstack.MONGO_URI_SECRET).get('connectionString.standard', '')
+    if not uri:
+        raise RecoveryError(f'{settings.namespace}/{clickstack.MONGO_URI_SECRET} has no connection string')
     with private_files():
         settings.backup_dir.mkdir(parents=True, exist_ok=True)
         partial = archive.with_name(archive.name + '.partial')
         try:
-            runner.pipe([*exec_mongo, 'mongodump', '--quiet', '--db', settings.database, '--archive', '--gzip'],
-                        ['age', '-r', settings.recipient, '-o', partial])
+            runner.pipe([*exec_mongo, 'mongodump', '--quiet', '--config=/dev/stdin', '--db', settings.database,
+                         '--archive', '--gzip'],
+                        ['age', '-r', settings.recipient, '-o', partial], input=f'uri: {json.dumps(uri)}\n')
             if not partial.is_file() or partial.stat().st_size == 0:
                 raise RecoveryError('Backup archive is empty')
-            counts = json.loads(runner.output([*exec_mongo, 'mongosh', settings.database, '--quiet',
-                                               '--eval', COUNTS_SCRIPT]))
+            counts = clickstack.mongo(runner, uri, COUNTS_RESULT_SCRIPT)
             version_text = runner.output([*exec_mongo, 'mongod', '--version'])
             match = re.search(r'^db version v(\S+)', version_text, re.M)
             if not match:
@@ -133,7 +139,7 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
         finally:
             partial.unlink(missing_ok=True)
         metadata.write_text(json.dumps({
-            'created': stamp, 'source': f'{settings.namespace}/{settings.workload}', 'database': settings.database,
+            'created': stamp, 'source': f'{settings.namespace}/{settings.pod}', 'database': settings.database,
             'mongodb_version': match[1], 'age_recipient': settings.recipient, 'sha256': sha256(archive),
             'collections': counts}) + '\n')
     out(f'[OK] Encrypted backup: {archive}')
@@ -251,13 +257,15 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
 
         secret = yaml.safe_load(runner.output(['sops', 'decrypt', ROOT / INGESTION_SECRET], secret_output=True,
                                               env={'SOPS_AGE_KEY_FILE': str(settings.age_key)}))
+        for value in (secret.get('stringData') or {}).values():
+            runner.add_secret(str(value))
         for value in (secret.get('data') or {}).values():
             runner.add_secret(value)
             with contextlib.suppress(binascii.Error, ValueError):
                 runner.add_secret(base64.b64decode(value))
         secret['metadata']['namespace'] = ns
         runner.run(['kubectl', 'apply', '-f', '-'], input=yaml.safe_dump(secret), secret_output=True, mutating=True)
-        report.ok(f'Restored hyperdx-secret from Git into {ns}')
+        report.ok(f'Restored {platform.INGESTION_SECRET_NAME} from Git into {ns}')
 
         restored = json.loads(runner.output(['kubectl', '-n', ns, 'exec', 'mongodb', '--', 'mongosh', 'hyperdx',
                                              '--quiet', '--eval', COUNTS_SCRIPT]))
@@ -270,10 +278,10 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
                            TEAM_KEY_SCRIPT], check=False, secret_output=True)
         team_key = team.stdout.strip() if team.returncode == 0 else ''
         runner.add_secret(team_key)
-        stored = runner.json(['kubectl', '-n', ns, 'get', 'secret', 'hyperdx-secret', '-o', 'json'],
+        stored = runner.json(['kubectl', '-n', ns, 'get', 'secret', platform.INGESTION_SECRET_NAME, '-o', 'json'],
                              secret_output=True)
         try:
-            secret_key = base64.b64decode(((stored or {}).get('data') or {}).get('HYPERDX_API_KEY', '')).decode()
+            secret_key = base64.b64decode(((stored or {}).get('data') or {}).get(platform.INGESTION_KEY, '')).decode()
         except (binascii.Error, ValueError):
             secret_key = ''
         if team_key and team_key == secret_key:

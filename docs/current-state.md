@@ -200,6 +200,15 @@ Deployed read-only (`79c07f3`, fix `516c196`, image bump `eff3814`); 14 units Re
 - **Update path:** `make verify-platform` passed with `[WARN] tooling changed since console image b63d2af` (this phase changed `verify.py`). The `79c07f3` publish run built `sha256:6938c2e8…` (matched by an anonymous registry lookup; the `516c196` run skipped, inputs unchanged); after pinning it, the rollout used that digest and the check reported `[OK] console image 79c07f3 is built from the current tooling`.
 - **Signed in (operator, browser):** the first attempt answered `sign-in required: no identity from oauth2-proxy`: oauth2-proxy returned no `X-Auth-Request-Email` because `set-xauthrequest` was off, which the hand-set header in the checks above could not reveal. After `edd4f44` (flag on, oauth2-proxy rolled out, signed-out requests still 302) the operator's signed-in browser showed the console working.
 
+## Console phase 5 (29 September 2026)
+
+Reconcile, suspend and resume (`bf63344`, image deployed in `89d8b4c`; `make verify-platform` passed with the console image current).
+
+- **Locally first** (`make console-dev`-style run, admin kubeconfig): a POST without `Origin` got 403; reconcile of `app-hello-staging` ran as job 1, streamed flux's own progress lines (on stderr, now merged into the stream) and succeeded, with two `[AUDIT]` lines.
+- **Deployed account** (`kubectl auth can-i --as=system:serviceaccount:console:console`): yes to patch Kustomizations and GitRepositories in `flux-system`; no to delete or create Kustomizations, patch Kustomizations outside `flux-system`, patch HelmReleases, get or patch Secrets, `pods/exec`.
+- **Deployed actions** (through `kubectl port-forward` with the identity and `Origin` headers set by hand): on `app-hello-staging`, reconcile (job 1, applied `89d8b4c`), suspend (job 2; `flux get`: suspended True) and resume (job 3; suspended False, Ready True) all succeeded; suspending `cluster-stack` got 409. Pod logs held one `[AUDIT] sam@swhurl.com …: started` and one `…: succeeded` line per job, and all six were in ClickStack (`default.otel_logs`) within minutes.
+- **Not yet checked:** the buttons in a signed-in browser (operator), which is also the real test of the `Origin` check behind Traefik.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

@@ -78,15 +78,24 @@ For each PR: read the chart's release notes and compare its `appVersion` (`helm 
 | --- | --- | --- |
 | Manifests and encrypted Secrets | Irreplaceable | GitHub |
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
-| ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | `make backup-mongodb`; data volume on `local-path-retain` |
+| ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | Daily `make backup-mongodb` to this host and S3; data volume on `local-path-retain` |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
+| Cluster state (k3s datastore) | Reconstructible | Rebuilt from Git by Flux ([bootstrap](bootstrap.md)) |
 
 ```bash
-make backup-mongodb         # encrypted dump to ~/.local/state/swhurl-platform/backups
+make backup-mongodb              # encrypted dump to ~/.local/state/swhurl-platform/backups, then S3
 make live-test-restore-mongodb   # restores the latest into a throwaway namespace and checks it
+make host-backup                 # install the daily timer (03:30, catches up after downtime)
+systemctl --user status swhurl-backup-mongodb    # last run; logs: journalctl --user -u swhurl-backup-mongodb
 ```
 
-The backup streams `mongodump` through `age`, so no plaintext touches disk, and writes an archive plus metadata (checksum, version, counts). Each run keeps the newest backup for each of the last 7 days that have one and each of the last 4 weeks (`KEEP_DAILY`, `KEEP_WEEKLY`, `PRUNE=false`). **Backups are manual and stay on this host** until an off-host destination is chosen: copy the directory to the USB drive regularly.
+The backup streams `mongodump` through `age`, so no plaintext touches disk, and writes an archive plus metadata (checksum, version, counts). Encryption needs only the age public key, so the backup host never holds the private key. Each run keeps the newest local backup for each of the last 7 days that have one and each of the last 4 weeks (`KEEP_DAILY`, `KEEP_WEEKLY`, `PRUNE=false`), then uploads every local file missing from `s3://swhurl-platform-backups-110927251694/clickstack-mongodb/` (`BACKUP_S3_URI`). The bucket (`eu-west-2`) blocks public access, is versioned, and deletes backups after 90 days and replaced versions after 30. The upload and the timer use the AWS CLI's default profile (IAM user `sam`); a dedicated write-only user is a planned hardening step.
+
+The timer is a systemd **user** unit: it runs only while you are logged in unless lingering is on (`sudo loginctl enable-linger $USER`, once). `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
+
+**Targets:** at most 24 hours of MongoDB changes lost (daily backups); about an hour from a bare host to working ClickStack.
+
+**Recovering on a new machine** needs Git (GitHub), the age private key (its off-host copy), the newest archive and metadata from S3 (`aws s3 cp s3://…/clickstack-mongodb/<name> .`), and read access to that bucket. Follow [bootstrap](bootstrap.md) to step 4, restore MongoDB as below, then run `make clickstack-bootstrap` and `make verify-platform`. The Google OAuth client and every other credential come from SOPS.
 
 The restore test passes only if the checksum, collection counts and restored ingestion key (against the Git Secret) all match; it never touches live workloads.
 

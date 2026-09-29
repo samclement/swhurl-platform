@@ -63,7 +63,7 @@ flowchart LR
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
-**Waiting.** Every unit waits for its own resources to be healthy (`wait: true`) except `cluster-stack`, which applies the unit definitions and returns, so a slow or failing unit never holds back a new or changed definition. `make flux-reconcile` does the waiting: `swhurl flux-wait` polls until every unit is Ready at the fetched revision.
+**Waiting.** Every unit waits for its own resources to be healthy (`wait: true`) except `cluster-stack`, which applies the unit definitions and returns, so a slow or failing unit never holds back a new or changed definition. `make flux-reconcile` does the waiting: `swhurl flux-wait` polls until every unit is Ready at the fetched revision. A unit whose dependency is not Ready yet is retried after 5s (kustomize-controller `--requeue-dependency=5s`, set by `make flux-install`; the Flux default is 30s per `dependsOn` level).
 
 **Deletion.** Every unit prunes what is removed from Git. Deleting a unit *object* differs: shared units use `deletionPolicy: Orphan` and leave their resources running unmanaged; app units keep the default and uninstall. Data is also protected by never-prune annotations (`observability`, persistent app namespaces), operator-created claims that Helm uninstall leaves behind, `Retain` volumes and backups.
 

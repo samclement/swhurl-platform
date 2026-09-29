@@ -10,7 +10,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from swhurl import ROOT, clickstack, platform, verify
+from swhurl import ROOT, clickstack, flux, platform, verify
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -53,6 +53,9 @@ def healthy(**overrides):
             'tag': CONSOLE_TAG}}}}}}}},
         'git-diff': Result((), 0),
         'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
+        'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
+                                 'spec': {'template': {'spec': {'containers': [
+                                     {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
         'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
     }
     responses.update(overrides)
@@ -88,6 +91,8 @@ def healthy(**overrides):
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
+            .on('kubectl', '-n', 'flux-system', 'get', 'deployment', 'kustomize-controller',
+                handler=answer('kustomize-controller'))
             .on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
             .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET, handler=answer('mongouri'))
             .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=recorded('team'))
@@ -128,7 +133,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
-                         ['\n== Flux Kustomizations ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
+                         ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups ==',
                           '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -257,6 +262,20 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertNotIn(TOKEN, ' '.join(args))
         self.assertEqual(stdin, f'header = "Authorization: Bearer {TOKEN}"\n')
 
+    def test_flux_controllers_without_git_settings_warn(self):
+        plain = {'metadata': {'labels': {'app.kubernetes.io/version': 'v0.0.1'}},
+                 'spec': {'template': {'spec': {'containers': [{'args': ['--log-level=info']}]}}}}
+        code, report, text = run(healthy(**{'kustomize-controller': plain}))
+        self.assertEqual(code, 0, text)
+        warning = next(line for line in report.lines if line.startswith('[WARN] kustomize-controller'))
+        self.assertIn('is v0.0.1 with 0/1 Git settings', warning)
+        self.assertIn('make flux-install', warning)
+
+    def test_unreadable_flux_controller_fails(self):
+        code, report, text = run(healthy(**{'kustomize-controller': Result((), 0, '')}))
+        self.assertEqual(code, 1, text)
+        self.assertIn('[BAD] could not read flux-system/kustomize-controller', report.lines)
+
     def test_no_expiry_passes(self):
         _, report, _ = run(healthy(github=Result((), 0, 'HTTP/2 200\r\n\r\n')))
         self.assertIn('[OK] GitHub accepts the console token (no expiry date)', report.lines)
@@ -270,7 +289,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

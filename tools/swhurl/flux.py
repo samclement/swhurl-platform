@@ -1,6 +1,13 @@
-"""Wait for every Flux unit to apply the current Git revision (``make flux-reconcile``).
+"""Flux itself: install its controllers with our settings, and wait for its units.
 
-``cluster-stack`` does not wait for the units it defines, so a slow or failing
+``flux-install`` (``make flux-install``) renders ``flux install --export`` at the
+version pinned in the console Dockerfile, applies the patches in
+``clusters/home/flux-system/install`` with kustomize, and applies the result
+server-side as the ``flux`` field manager, like ``flux install`` does. A plain
+``flux install`` would drop the patches; ``verify-platform`` warns if it has.
+
+``flux-wait`` (``make flux-reconcile``) waits for every unit to apply the current
+Git revision. ``cluster-stack`` does not wait for the units it defines, so a slow or failing
 unit never holds it (or a new app's unit) back. This command gives the operator
 the wait instead: it polls until each unit reports Ready at the revision the
 GitRepository has fetched, prints units as they finish, and stops early with the
@@ -10,14 +17,23 @@ skipped. Read-only.
 from __future__ import annotations
 
 import argparse
+import re
+import shutil
 import sys
+import tempfile
 import time
 from collections.abc import Callable
+from pathlib import Path
 
+import yaml
+
+from swhurl import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 SOURCE = 'swhurl-platform'
+INSTALL = 'clusters/home/flux-system/install'
+DOCKERFILE = 'images/console/Dockerfile'
 KUSTOMIZATIONS = 'kustomizations.kustomize.toolkit.fluxcd.io'
 # Ready=False reasons that mean "not yet", not "failed at this revision".
 WAITING_REASONS = {'DependencyNotReady', 'Progressing', 'ProgressingWithRetry'}
@@ -89,4 +105,68 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         return wait(runner, report, args.timeout)
     except (CommandError, KeyError, TypeError, ValueError) as error:
         print(f'[ERROR] could not read Flux state: {error}', file=sys.stderr)
+        return 1
+
+
+class InstallError(Exception):
+    pass
+
+
+def pinned_version(root: Path = ROOT) -> str:
+    """The Flux version the console image ships, which the cluster must run too."""
+    match = re.search(r'^ARG FLUX_VERSION=(\S+)$', (root / DOCKERFILE).read_text(), re.MULTILINE)
+    if not match:
+        raise InstallError(f'no ARG FLUX_VERSION in {DOCKERFILE}')
+    return match.group(1)
+
+
+def required_args(root: Path = ROOT) -> dict[str, list[str]]:
+    """Controller arguments the install patches add, by Deployment name."""
+    kustomization = yaml.safe_load((root / INSTALL / 'kustomization.yaml').read_text())
+    required: dict[str, list[str]] = {}
+    for patch in kustomization.get('patches') or []:
+        name = patch['target']['name']
+        for op in yaml.safe_load(patch['patch']) or []:
+            if op.get('op') == 'add' and op.get('path', '').endswith('/args/-'):
+                required.setdefault(name, []).append(op['value'])
+    return required
+
+
+def render(runner: Runner, root: Path = ROOT) -> str:
+    version = pinned_version(root)
+    client = runner.output(['flux', 'version', '--client'])
+    if f'v{version}' not in client.split():
+        raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but {DOCKERFILE} pins {version}; '
+                           f'install flux {version} (or bump FLUX_VERSION and its SHA-256 to upgrade)')
+    components = runner.output(['flux', 'install', '--export', '--namespace', 'flux-system'])
+    with tempfile.TemporaryDirectory() as tmp:
+        shutil.copytree(root / INSTALL, tmp, dirs_exist_ok=True)
+        (Path(tmp) / 'gotk-components.yaml').write_text(components)
+        rendered = runner.output(['kubectl', 'kustomize', tmp])
+    for name, args in required_args(root).items():
+        missing = [a for a in args if a not in rendered]
+        if missing:
+            raise InstallError(f'rendered {name} lacks {", ".join(missing)}')
+    return rendered
+
+
+def install_main(argv: list[str] | None = None, runner: Runner | None = None, root: Path = ROOT) -> int:
+    runner = runner or Runner.from_environment()
+    try:
+        rendered = render(runner, root)
+        print(f'[INFO] Flux {pinned_version(root)} with the patches in {INSTALL}')
+        if runner.dry_run:
+            diff = runner.run(['kubectl', 'diff', '--server-side', '--field-manager=flux', '-f', '-'],
+                              input=rendered, check=False)
+            print(diff.stdout or '[OK] no changes')
+        runner.run(['kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts', '-f', '-'],
+                   input=rendered, mutating=True)
+        for name in ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller'):
+            runner.run(['kubectl', '-n', 'flux-system', 'rollout', 'status', f'deployment/{name}', '--timeout=5m'],
+                       mutating=True)
+        if not runner.dry_run:
+            print('[OK] Flux controllers applied and rolled out')
+        return 0
+    except (InstallError, CommandError, OSError, KeyError, TypeError) as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
         return 1

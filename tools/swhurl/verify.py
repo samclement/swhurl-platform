@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, clickstack, images, platform, recovery
+from swhurl import ROOT, clickstack, flux, images, platform, recovery
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -73,6 +73,26 @@ def check_flux(runner: Runner, report: Report) -> None:
             report.ok(name)
         else:
             report.bad(f'{name} is not Ready' + (f': {message}' if message else ''))
+
+
+def check_flux_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """The controllers run the pinned version with the settings in Git (a plain `flux install` drops them)."""
+    report.section('Flux Controllers')
+    version = flux.pinned_version(root)
+    for name, args in flux.required_args(root).items():
+        try:
+            deployment = runner.json(['kubectl', '-n', 'flux-system', 'get', 'deployment', name, '-o', 'json'])
+            live = deployment['metadata'].get('labels', {}).get('app.kubernetes.io/version', '')
+            running = [a for c in deployment['spec']['template']['spec']['containers'] for a in c.get('args') or []]
+        except (CommandError, KeyError, TypeError):
+            report.bad(f'could not read flux-system/{name}')
+            continue
+        missing = [a for a in args if a not in running]
+        if missing or live != f'v{version}':
+            report.warn(f'{name} is {live or "unknown"} with {len(args) - len(missing)}/{len(args)} Git settings; '
+                        f'expected v{version} with {", ".join(args)} (run: make flux-install)')
+        else:
+            report.ok(f'{name} {live} with the settings in Git')
 
 
 def read_ingestion_secret(runner: Runner) -> str:
@@ -335,6 +355,7 @@ class Check:
 
 CHECKS = (
     Check('flux', frozenset({'cluster'}), check_flux),
+    Check('flux-controllers', frozenset({'cluster', 'host'}), check_flux_controllers),
     Check('ingestion-key', frozenset({'cluster', 'secret', 'exec'}), check_ingestion),
     Check('registration', frozenset({'cluster', 'exec'}), check_registration),
     Check('ingress', frozenset({'cluster'}), check_ingress),

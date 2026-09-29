@@ -3,7 +3,9 @@
 Every page except ``/healthz`` needs the signed-in email that oauth2-proxy
 passes through Traefik as ``X-Auth-Request-Email``; without it the answer is
 401. ``--dev`` uses a fixed identity instead and is refused on any address
-but loopback, so it can never be exposed.
+but loopback, so it can never be exposed. A POST (the only way to start an
+action) must also come from a page of the console itself (its ``Origin``
+names this host), so another site cannot submit one with the sign-in cookie.
 """
 from __future__ import annotations
 
@@ -11,17 +13,18 @@ import argparse
 import datetime as dt
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
 from swhurl.apps import ops
-from swhurl.console import cluster
+from swhurl.console import actions, cluster
 from swhurl.run import Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -43,13 +46,17 @@ class RequireIdentity(BaseHTTPMiddleware):
         identity = self.dev_identity or request.headers.get(IDENTITY_HEADER, '').strip()
         if not identity:
             return PlainTextResponse('sign-in required: no identity from oauth2-proxy\n', status_code=401)
+        if request.method not in ('GET', 'HEAD') and urlparse(request.headers.get('origin', '')).netloc != request.headers.get('host'):
+            return PlainTextResponse('refused: the request did not come from a console page\n', status_code=403)
         request.state.identity = identity
         return await call_next(request)
 
 
-def create_app(runner: Runner, *, dev_identity: str | None = None) -> Starlette:
+def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None) -> Starlette:
+    jobs = jobs or actions.Jobs(runner)
+
     def page(request: Request, name: str, status_code: int = 200, **context) -> Response:
-        context.update(identity=request.state.identity, path=request.url.path,
+        context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
                        read_at=dt.datetime.now().astimezone().strftime('%H:%M:%S'))
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)
 
@@ -79,12 +86,32 @@ def create_app(runner: Runner, *, dev_identity: str | None = None) -> Starlette:
     def platform(request: Request) -> Response:
         return reading(request, 'platform.html', lambda: {'checks': cluster.platform_checks(runner)})
 
+    def start(request: Request) -> Response:
+        try:
+            job = jobs.start(request.path_params['action'], request.path_params['unit'], request.state.identity)
+        except actions.ActionError as error:
+            return page(request, 'error.html', status_code=409, error=str(error))
+        except cluster.ReadError as error:
+            return page(request, 'error.html', status_code=502, error=str(error))
+        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+
+    def job(request: Request) -> Response:
+        found = jobs.get(request.path_params['id'])
+        if found is None:
+            return page(request, 'error.html', status_code=404, error='No such job (jobs are kept in memory only).')
+        return page(request, 'job.html', job=found)
+
+    def job_list(request: Request) -> Response:
+        return page(request, 'jobs.html', jobs=jobs.recent())
+
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')
 
     return Starlette(
         routes=[Route('/', apps), Route('/apps/{app}/{env}', app), Route('/units', units),
-                Route('/platform', platform), Route('/healthz', healthz)],
+                Route('/platform', platform), Route('/healthz', healthz),
+                Route('/units/{unit}/{action}', start, methods=['POST']),
+                Route('/jobs', job_list), Route('/jobs/{id:int}', job)],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])
 
 

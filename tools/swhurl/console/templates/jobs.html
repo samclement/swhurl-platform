@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block main %}
+<h1>Jobs</h1>
+<p class="muted">Reconcile, suspend and resume started from this console, newest first. Kept in memory only: a restart clears the list; the audit lines stay in ClickStack.</p>
+{% if jobs %}
+<div class="scroll">
+<table>
+  <tr><th>Job</th><th>Action</th><th>By</th><th>Started (UTC)</th><th>State</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td><a href="/jobs/{{ j.id }}">#{{ j.id }}</a></td>
+    <td class="mono">{{ j.action }} {{ j.unit }}</td>
+    <td>{{ j.identity }}</td>
+    <td class="mono">{{ j.started.strftime('%H:%M:%S') }}</td>
+    <td class="{{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}">{{ j.state }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<p class="muted">No jobs since the console started.</p>
+{% endif %}
+{% endblock %}

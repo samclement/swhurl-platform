@@ -1,6 +1,9 @@
 # What the console's ServiceAccount (console/console, created by the HelmRelease
-# because its pod names it) may read: only the objects its pages show. Never
-# Secrets, never pods/exec, no write verbs (phase 5 adds reconcile and suspend).
+# because its pod names it) may do. Read: only the objects its pages show; never
+# Secrets or pods/exec. Write: patch Flux units and Git sources in flux-system,
+# which is what flux reconcile, suspend and resume need. RBAC cannot limit which
+# fields a patch changes; the console only ever runs those three flux commands
+# and refuses the root units (tools/swhurl/console/actions.py).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -36,6 +39,33 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: platform-console-read
+subjects:
+  - kind: ServiceAccount
+    name: console
+    namespace: console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-console-operate
+  namespace: flux-system
+rules:
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [patch]
+  - apiGroups: [source.toolkit.fluxcd.io]
+    resources: [gitrepositories]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-console-operate
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-console-operate
 subjects:
   - kind: ServiceAccount
     name: console

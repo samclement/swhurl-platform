@@ -96,6 +96,22 @@ class ManifestPolicyTests(unittest.TestCase):
         middleware = yaml.safe_load((ROOT / 'platform/oauth2-proxy/middleware.yaml').read_text())
         self.assertIn('X-Auth-Request-Email', middleware['spec']['forwardAuth']['authResponseHeaders'])
 
+    def test_console_may_write_only_flux_units_and_sources_and_never_read_secrets(self):
+        docs = [d for d in yaml.safe_load_all((ROOT / 'platform/console/rbac.yaml').read_text()) if d]
+        roles = {d['metadata']['name']: d for d in docs if d['kind'] in ('Role', 'ClusterRole')}
+        for name, role in roles.items():
+            for rule in role['rules']:
+                with self.subTest(role=name, resources=rule['resources']):
+                    self.assertFalse({'secrets', 'pods/exec', 'pods/attach', '*'} & set(rule['resources']))
+                    self.assertNotIn('*', rule['verbs'])
+                    writes = set(rule['verbs']) - {'get', 'list', 'watch'}
+                    if writes:
+                        self.assertEqual((role['kind'], role['metadata'].get('namespace')), ('Role', 'flux-system'))
+                        self.assertEqual(writes, {'patch'})
+                        self.assertLessEqual(set(rule['resources']), {'kustomizations', 'gitrepositories'})
+        subjects = [s for d in docs if d['kind'].endswith('Binding') for s in d['subjects']]
+        self.assertEqual({(s['namespace'], s['name']) for s in subjects}, {('console', 'console')})
+
     def test_console_policy_admits_only_traefik_and_spares_acme_solvers(self):
         netpol = yaml.safe_load((ROOT / 'platform/console/networkpolicy.yaml').read_text())['spec']
         self.assertEqual(netpol['podSelector']['matchLabels'].get('app.kubernetes.io/name'), 'console',

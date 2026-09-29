@@ -28,5 +28,6 @@
   {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>{% endfor %}
 </table>
 {% endif %}
+<form class="actions" method="post"><button formaction="/units/{{ i.unit }}/reconcile">Reconcile {{ i.unit }}</button></form>
 <p class="muted">Same facts as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>.</p>
 {% endblock %}

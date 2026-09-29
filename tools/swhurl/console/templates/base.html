@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Console{% endblock %} · swhurl</title>
+{% block head %}{% endblock %}
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e2e2dc;
@@ -46,6 +47,13 @@
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; background: var(--panel);
        border: 1px solid var(--line); padding: 12px; margin: 0; }
   dt { color: var(--muted); } dd { margin: 0; }
+  form.actions { display: flex; gap: 6px; margin-top: 6px; }
+  button { font: inherit; font-size: 13px; padding: 2px 10px; border-radius: 4px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  button:hover { border-color: var(--accent); }
+  button.risky { color: var(--warn); }
+  pre { background: var(--panel); border: 1px solid var(--line); padding: 12px; overflow-x: auto;
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -55,6 +63,7 @@
     <a href="/" class="{{ 'here' if path == '/' or path.startswith('/apps') }}">Apps</a>
     <a href="/units" class="{{ 'here' if path == '/units' }}">Flux units</a>
     <a href="/platform" class="{{ 'here' if path == '/platform' }}">Platform</a>
+    <a href="/jobs" class="{{ 'here' if path.startswith('/jobs') }}">Jobs</a>
   </nav>
   <span class="who">{{ identity }} · read at {{ read_at }} · <a href="{{ path }}">refresh</a></span>
 </header>

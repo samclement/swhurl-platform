@@ -58,7 +58,15 @@ make app-reconcile APP=hello ENV=prod
 make app-check APP=hello ENV=prod      # policy, offline
 ```
 
-Change an app by editing its files and pushing. Promote by copying the staging image digest into the production HelmRelease. Uninstall by removing its line from `clusters/home/kustomization.yaml` ([lifecycle](operations.md#lifecycle)). Secret values: [operations](operations.md#secrets).
+Change an app by editing its files and pushing, or with these Git-only commands (commit and push after each; the console offers the same as pull requests, [services](services.md#console)):
+
+```bash
+make app-promote APP=hello                                  # staging's image tag and digest into prod
+make app-scale APP=hello ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"
+make app-remove APP=hello ENV=staging                       # files, unit, registration, Reloader entry
+```
+
+Each checks the result against the app policy. They edit only HelmReleases that are exactly as the generator writes them; a hand-edited one is refused (edit it yourself). Removing an instance with a retained volume leaves its namespace and claim on the cluster ([lifecycle](operations.md#lifecycle)). Secret values: [operations](operations.md#secrets).
 
 ## Moving a host between instances
 

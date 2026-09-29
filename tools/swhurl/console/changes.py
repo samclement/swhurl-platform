@@ -148,10 +148,32 @@ def create_pull_request(runner: Runner, github: GitHub, *, branch: str, title: s
     return json.loads(out)['html_url'] if out.strip() else ''
 
 
-def run_app_new(runner: Runner, job: Job, clone: Path, argv: list[str]) -> None:
-    """The clone's own ``app-new``: its rules, its policy check, its SOPS recipients."""
-    result = runner.run([sys.executable, '-m', 'swhurl', 'app-new', *argv], cwd=clone, check=False,
+def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str]) -> None:
+    """The clone's own tooling (``app-new``, ``app-promote``, ...): its rules, policy check and SOPS recipients."""
+    result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False,
                         env={'PYTHONPATH': str(clone / 'tools')})
     job.lines += (result.stdout + result.stderr).splitlines()
     if result.returncode:
-        raise ActionError('app-new refused this instance (see above); nothing was pushed')
+        raise ActionError(f'{command} refused this change (see above); nothing was pushed')
+
+
+def run_app_new(runner: Runner, job: Job, clone: Path, argv: list[str]) -> None:
+    run_tool(runner, job, clone, 'app-new', argv)
+
+
+SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('cpu', 'cpu', 'CPU request'),
+                ('memory', 'memory', 'Memory request'), ('memory_limit', 'memory-limit', 'Memory limit'))
+
+
+def scale_args(form: Mapping[str, str]) -> list[str]:
+    """``--flag=value`` for each filled-in scale field; at least one is needed."""
+    argv = []
+    for field, flag, label in SCALE_FIELDS:
+        value = form.get(field, '').strip()
+        if value:
+            if not re.fullmatch(r'[0-9A-Za-z.]{1,12}', value):
+                raise ActionError(f'{label} {value!r} is not a number or quantity')
+            argv.append(f'--{flag}={value}')
+    if not argv:
+        raise ActionError('change at least one of replicas, CPU, memory or memory limit')
+    return argv

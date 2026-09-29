@@ -42,6 +42,21 @@ app-new: ## NAME=<app> ARGS="--env ... --image ..." Generate an app instance (AR
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
 	$(SWHURL) app-new $(NAME) $(ARGS)
 
+.PHONY: app-promote
+app-promote: ## APP=<app> Copy the staging image (tag and digest) into prod (Git edit; FROM=, TO= override)
+	@[[ -n "$(APP)" ]] || { echo "Usage: make app-promote APP=<app> [FROM=staging TO=prod]" >&2; exit 2; }
+	$(SWHURL) app-promote $(APP) $(if $(FROM),--from $(FROM)) $(if $(TO),--to $(TO))
+
+.PHONY: app-scale
+app-scale: ## APP= ENV= ARGS="--replicas N --cpu Q --memory Q --memory-limit Q" Change replicas or resources (Git edit)
+	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-scale APP=<app> ENV=<env> ARGS='--replicas 2'" >&2; exit 2; }
+	$(SWHURL) app-scale $(APP) $(ENV) $(ARGS)
+
+.PHONY: app-remove
+app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git edit; Flux uninstalls on push)
+	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }
+	$(SWHURL) app-remove $(APP) $(ENV)
+
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one app instance
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }

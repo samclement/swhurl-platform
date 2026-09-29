@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from swhurl import ROOT
 from swhurl.apps import policy
@@ -87,6 +87,7 @@ class InstanceStatus:
     routes: list[str]
     certificates: list[tuple[str, str]]  # name, Ready status
     problems: list[Problem]
+    settings: dict[str, str] = field(default_factory=dict)  # replicas, cpu, memory, memory_limit as in Git
 
     @property
     def applied(self) -> bool:
@@ -116,6 +117,17 @@ def problems(pods: dict | None) -> list[Problem]:
     return found
 
 
+def release_settings(release: dict | None) -> dict[str, str]:
+    """Replicas and resources as the HelmRelease sets them (what app-scale edits)."""
+    controller = ((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main') or {}
+    resources = ((controller.get('containers') or {}).get('main') or {}).get('resources') or {}
+    found = {'replicas': str(controller.get('replicas', 1)),
+             'cpu': (resources.get('requests') or {}).get('cpu'),
+             'memory': (resources.get('requests') or {}).get('memory'),
+             'memory_limit': (resources.get('limits') or {}).get('memory')}
+    return {k: str(v) for k, v in found.items() if v is not None} if release else {}
+
+
 def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     """Read the instance from the cluster; None if its Flux unit does not exist."""
     ns = instance.namespace
@@ -141,6 +153,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         routes=[rule.get('host') for ingress in ingresses for rule in ingress['spec'].get('rules') or []],
         certificates=[(cert['metadata']['name'], ready_condition(cert)[0]) for cert in certificates],
         problems=problems(pods),
+        settings=release_settings(release),
     )
 
 

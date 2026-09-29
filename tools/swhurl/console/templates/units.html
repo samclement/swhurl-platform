@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Flux units{% endblock %}
+{% block main %}
+<h1>Flux units</h1>
+<p class="muted">Columns follow <code>dependsOn</code>: a unit waits for the units it lists, which are in columns to its left.</p>
+<div class="columns">
+  {% for level in levels %}
+  <div class="column">
+    <h2 class="muted">{{ 'No dependencies' if loop.first else 'Step ' ~ loop.index }}</h2>
+    {% for u in level %}
+    <div class="card {{ 'off' if u.suspended else u.ready[0] | state }}">
+      <strong class="mono">{{ u.name }}</strong>
+      <div class="muted">
+        {% if u.suspended %}<span class="warn">suspended</span>{% elif u.ready[0] == 'True' %}Ready · {{ u.revision }}{% else %}<span class="bad">{{ u.ready[0] }}</span>: {{ u.ready[1] }}{% endif %}
+      </div>
+      {% if u.depends_on %}<div class="muted">after {{ u.depends_on | join(', ') }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

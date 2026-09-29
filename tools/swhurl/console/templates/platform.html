@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Platform{% endblock %}
+{% block main %}
+<h1>Platform checks <span class="{{ 'ok' if checks.passed else 'bad' }}">{{ 'passing' if checks.passed else 'failing' }}</span></h1>
+<p class="muted">The <code>make verify-platform</code> checks this console's read-only account can run. Checks that read Secrets, run commands in pods or need this host are left to <code>make verify-platform</code>.</p>
+{% for section, group in checks.sections %}
+<h2>{{ section }}</h2>
+<table>
+  {% for e in group %}
+  <tr><td class="{{ {'ok': 'ok', 'bad': 'bad', 'warn': 'warn'}.get(e.level, 'muted') }}" style="width: 5em">{{ e.level | upper }}</td><td>{{ e.message }}</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+{% for note in checks.notes %}<p class="muted">{{ note }}</p>{% endfor %}
+{% endblock %}

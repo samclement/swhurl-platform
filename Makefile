@@ -47,6 +47,10 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
 	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
+.PHONY: console-dev
+console-dev: ## Read-only web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)
+	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl console --dev --port $(or $(PORT),8080)
+
 # Settings -----------------------------------------------------------------------
 
 .PHONY: platform-certs-staging platform-certs-prod
@@ -77,8 +81,8 @@ check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, 
 	$(SWHURL) check-repo
 
 .PHONY: test
-test: ## Unit tests for the tooling, manifests and command safety
-	PYTHONPATH=$(CURDIR)/tools python3 -m unittest discover -s tests -v
+test: ## Unit tests for the tooling, console, manifests and command safety (needs uv)
+	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m unittest discover -s tests -v
 
 .PHONY: check-apps
 check-apps: ## Render every app instance and check the app contract

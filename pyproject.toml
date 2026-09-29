@@ -1,3 +1,14 @@
+# Not a distributable package: this table only gives uv a Python floor and a lock
+# (uv.lock) for the dependency groups below. The tooling runs from tools/ on PYTHONPATH.
+[project]
+name = "swhurl-platform"
+version = "0"
+requires-python = ">=3.11"
+
+[tool.uv]
+package = false
+default-groups = ["check", "console"]
+
 # Lint settings for the operator tooling and tests (run: uvx ruff@0.16.9 check tools tests).
 [tool.ruff]
 line-length = 120
@@ -11,6 +22,15 @@ ignore = ["E501"]
 [tool.ruff.lint.isort]
 known-first-party = ["swhurl"]
 
-# Python packages the offline checks need (CI: pip install --group check).
+# Python packages, locked in uv.lock. `check`: the offline checks (CI also runs
+# pip install --group check for the non-test steps). `console`: the web console
+# (httpx is also the test client). `make test` and `make console-dev` run both
+# through `uv run --frozen`.
 [dependency-groups]
 check = ["PyYAML==6.0.3"]
+console = [
+    "httpx==0.28.1",
+    "jinja2==3.1.6",
+    "starlette==1.7.0",
+    "uvicorn==0.54.0",
+]

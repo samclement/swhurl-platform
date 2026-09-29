@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Apps{% endblock %}
+{% block main %}
+<h1>App instances</h1>
+{% if rows %}
+<div class="scroll">
+<table>
+  <tr><th>Instance</th><th>Flux unit</th><th>Image (desired)</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td><a href="/apps/{{ row.instance.app }}/{{ row.instance.env }}">{{ row.instance.app }}/{{ row.instance.env }}</a></td>
+    <td>
+      {% if row.suspended %}<span class="warn">Suspended</span>
+      {% else %}<span class="{{ row.ready[0] | state }}">{{ 'Ready' if row.ready[0] == 'True' else 'Not ready' }}</span>{% endif %}
+      {% if row.ready[0] != 'True' %}<div class="muted">{{ row.ready[1] }}</div>{% endif %}
+    </td>
+    <td class="mono">{{ row.image }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<p class="muted">No app units (<code>app-&lt;app&gt;-&lt;env&gt;</code>) in flux-system. Add one with <code>make app-new</code>.</p>
+{% endif %}
+{% endblock %}

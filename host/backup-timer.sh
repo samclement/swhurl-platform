@@ -53,6 +53,7 @@ if [[ "$DELETE" == true ]]; then
   exit 0
 fi
 
+host_ensure_log_dir
 service="$(sed -e "s|__RUN_USER__|${run_user}|g" -e "s|__RUN_HOME__|${run_home}|g" -e "s|__REPO_DIR__|${ROOT_DIR}|g" \
   "$ROOT_DIR/host/templates/systemd/backup-mongodb.service.tmpl")"
 timer="$(cat "$ROOT_DIR/host/templates/systemd/backup-mongodb.timer.tmpl")"
@@ -63,4 +64,4 @@ if (( changed == 1 )); then
   host_sudo systemctl daemon-reload
 fi
 host_sudo systemctl enable --now "$UNIT.timer" >/dev/null
-host_log_info "Installed $UNIT.timer; run now: sudo systemctl start $UNIT; logs: journalctl -u $UNIT"
+host_log_info "Installed $UNIT.timer; run now: sudo systemctl start $UNIT; output: $HOST_LOG_DIR/$UNIT.log (and ClickStack)"

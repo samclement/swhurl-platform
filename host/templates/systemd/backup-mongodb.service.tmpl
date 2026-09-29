@@ -12,3 +12,7 @@ Environment=HOME=__RUN_HOME__
 Environment=KUBECONFIG=__RUN_HOME__/.kube/config
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/make backup-mongodb
+# Output goes to a file the OTel DaemonSet reads (service.name from the file name);
+# the journal keeps start, finish and failure lines.
+StandardOutput=append:/var/log/swhurl-platform/swhurl-backup-mongodb.log
+StandardError=append:/var/log/swhurl-platform/swhurl-backup-mongodb.log

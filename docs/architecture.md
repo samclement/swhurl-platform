@@ -38,6 +38,8 @@ flowchart LR
   auth --> clickstack
   base --> otel[platform-otel]
   base --> reloader[platform-reloader]
+  base --> console[platform-console]
+  auth --> console
   traefik[infra-traefik]
   base --> app["app-APP-ENV (one per app instance)"]
   auth -. if signed-in .-> app
@@ -56,6 +58,7 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
+| `platform-console` | The web console, its read-only RBAC and NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
@@ -115,6 +118,7 @@ flowchart TB
     end
     flux[Flux controllers<br/>flux-system, applies everything here]
     reloader[Reloader<br/>platform-system]
+    console[Console<br/>console, read-only]
     app[hello, app-template<br/>hello-staging, hello-prod]
   end
 
@@ -122,6 +126,8 @@ flowchart TB
   traefik -- ForwardAuth --> oauth
   oauth -- OIDC --> google
   traefik -- route --> app
+  traefik -- route --> console
+  console -- reads Flux, workloads --> flux
   cm -- ACME HTTP-01 --> le
   cm -- TLS Secrets --> traefik
   app -- logs --> otelds

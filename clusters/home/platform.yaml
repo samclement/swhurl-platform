@@ -123,3 +123,31 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# The web console (docs/plan.md section 7). Waits for the sign-in middleware its
+# route uses; nothing waits for it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-console
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-base
+    - name: platform-oauth2-proxy
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./platform/console
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: platform-settings
+        optional: false
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m

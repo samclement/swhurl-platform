@@ -12,6 +12,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | ClickStack | `platform-clickstack` · [`platform/clickstack`](../platform/clickstack) | `observability` | `clickstack.` | clickstack 1.1.1 |
 | OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector 0.145.0 |
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader 2.2.17 |
+| Console | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template 5.2.1, image from this repo |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`).
 
@@ -67,6 +68,16 @@ The collectors' `authorization` header reads `${env:CLICKSTACK_INGESTION_KEY}` a
 ## Reloader
 
 Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`) and both OTel collectors (`hyperdx-secret`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
+
+## Console
+
+A read-only web console at `https://console.<BASE_DOMAIN>`, behind the shared sign-in: app instances (the facts `make app-status` shows), the Flux units in columns by `dependsOn`, and the `make verify-platform` checks that need only cluster reads (Flux units and the HTTPS redirect). Changes still go through Git; reconcile, suspend and PR-based changes are planned ([plan](plan.md) section 7).
+
+- **Access:** oauth2-proxy's ForwardAuth passes the signed-in email as `X-Auth-Request-Email`; the console answers 401 without it (except `/healthz`). A NetworkPolicy admits only Traefik's pods, so no other pod can send a forged header.
+- **Identity in the cluster:** the ServiceAccount `console/console` (created by the HelmRelease) is bound to `platform-console-read`: get, list and watch on Flux units, HelmReleases, the Git source, pods, workloads, Ingresses and Certificates. No Secrets, no `pods/exec`, no write verbs. It is the one pod in the platform that mounts a service-account token by design.
+- **Image:** `ghcr.io/samclement/swhurl-console` (public), built from [`images/console/Dockerfile`](../images/console/Dockerfile) and published after CI passes on `main` ([contributing](contributing.md#operator-tooling)). The HelmRelease pins the tag (the commit it was built from) and the index digest. `make verify-platform` warns when the image's inputs (`tools/`, the Dockerfile, the lock file) have changed since that commit; to update, copy the tag and digest from the newest publish run's summary into [`platform/console/helmrelease.yaml`](../platform/console/helmrelease.yaml).
+- **State:** none. It keeps nothing between requests and has no data to back up; `/tmp` is a 1 GiB `emptyDir`. Its logs (one line per request) reach ClickStack through the OTel DaemonSet like any pod's.
+- **Run locally:** `make console-dev` serves the same pages from your checkout on `127.0.0.1`.
 
 ## Certificates, ingress and storage
 

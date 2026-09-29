@@ -35,3 +35,10 @@ metadata:
   annotations:
     # Holds irreplaceable ClickStack MongoDB data: never prune the namespace.
     kustomize.toolkit.fluxcd.io/prune: disabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: console
+  labels:
+    platform.swhurl.com/managed: "true"

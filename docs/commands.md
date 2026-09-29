@@ -8,7 +8,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, wait | Cluster |
 | `install` † | `check-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
-| `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), ClickStack registration closed, retention settings, newest backup locally and in S3 younger than `BACKUP_MAX_AGE_HOURS` (26) | Cluster (read), S3 (list) |
+| `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), ClickStack registration closed, retention settings, newest backup locally and in S3 younger than `BACKUP_MAX_AGE_HOURS` (26), console image built from the current tooling (warns otherwise) | Cluster (read), S3 (list) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |
 | `reconcile UNIT=<name>` | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
@@ -22,7 +22,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
-| `console-dev` | The read-only web console on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity, reading the cluster with your kubeconfig: apps, Flux units, cluster-only platform checks. Needs `uv`. Not yet deployed ([plan](plan.md) section 7) | Cluster (read) |
+| `console-dev` | The read-only web console on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity, reading the cluster with your kubeconfig: apps, Flux units, cluster-only platform checks. Needs `uv`. The deployed copy is at `console.<BASE_DOMAIN>` ([services](services.md#console)) | Cluster (read) |
 
 ## Settings
 

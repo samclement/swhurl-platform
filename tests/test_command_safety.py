@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT
@@ -144,12 +145,18 @@ elif 'secret' in argv:
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
         """End to end through real subprocesses and the fake kubectl (contract test)."""
-        for scenario in ('match', 'double', 'mismatch', 'missing', 'invalid',
-                         'newline', 'mongo-failure', 'unready'):
+        scenarios = ('match', 'double', 'mismatch', 'missing', 'invalid', 'newline', 'mongo-failure', 'unready')
+
+        def verify(scenario):
+            return subprocess.run([sys.executable, '-m', 'swhurl', 'verify-platform'], cwd=ROOT,
+                                  env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
+                                  capture_output=True, text=True)
+
+        # The scenarios are independent processes; running them together keeps make test quick.
+        with ThreadPoolExecutor() as pool:
+            results = dict(zip(scenarios, pool.map(verify, scenarios), strict=True))
+        for scenario, result in results.items():
             with self.subTest(scenario=scenario):
-                result = subprocess.run([sys.executable, '-m', 'swhurl', 'verify-platform'], cwd=ROOT,
-                                        env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
-                                        capture_output=True, text=True)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, scenario == 'match', output)
                 for value in (KEY, OTHER_KEY):

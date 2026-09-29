@@ -82,7 +82,7 @@ spec:
               if: 'attributes.level != nil'
               field: attributes.level
       exporters:
-        otlphttp:
+        otlp_http:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
             authorization: "${env:CLICKSTACK_INGESTION_KEY}"
@@ -91,14 +91,14 @@ spec:
           logs:
             receivers:
               - otlp
-              - filelog
+              - file_log
               - file_log/host-timers
             processors:
               - memory_limiter
               - k8s_attributes
               - batch
             exporters:
-              - otlphttp
+              - otlp_http
           metrics:
             receivers:
               - kubeletstats
@@ -108,7 +108,7 @@ spec:
               - k8s_attributes
               - batch
             exporters:
-              - otlphttp
+              - otlp_http
     extraEnvs:
       - name: CLICKSTACK_INGESTION_KEY
         valueFrom:

@@ -8,12 +8,14 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
 from swhurl import ROOT
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
+from swhurl.run import FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
 WEB = ['--env', 'staging', '--exposure', 'authenticated-web', '--host', 'x.homelab.swhurl.com',
@@ -114,6 +116,24 @@ class GeneratorTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which('helm') or os.environ.get('REQUIRE_HELM'), 'helm not installed')
+class ChartCacheTests(unittest.TestCase):
+    def test_parallel_pull_of_the_same_chart_is_not_an_error(self):
+        cache = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, cache)
+
+        def pull(argv, _input):
+            # This pull untars its chart, and another process finishes its own pull first.
+            for chart in (Path(argv[argv.index('--untardir') + 1]) / 'c', cache / 'c-1.0.0'):
+                chart.mkdir(parents=True)
+                (chart / 'Chart.yaml').write_text('name: c\n')
+            return Result(argv)
+
+        with mock.patch.object(app_policy, 'CACHE', cache):
+            path = app_policy.chart_dir('c', '1.0.0', 'https://charts', FakeRunner().on('helm', 'pull', handler=pull))
+        self.assertEqual(path, cache / 'c-1.0.0')
+        self.assertEqual([p.name for p in cache.iterdir()], ['c-1.0.0'], 'temporary pull directory left behind')
+
+
 class PolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

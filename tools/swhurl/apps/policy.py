@@ -73,7 +73,12 @@ def chart_dir(name: str, version: str, repo: str, runner: Runner) -> Path:
         CACHE.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
             runner.run(['helm', 'pull', name, '--repo', repo, '--version', version, '--untar', '--untardir', tmp])
-            (Path(tmp) / name).rename(target)
+            try:
+                (Path(tmp) / name).rename(target)
+            except OSError:
+                # A parallel check (make check runs its targets together) pulled it first.
+                if not (target / 'Chart.yaml').exists():
+                    raise
     return target
 
 

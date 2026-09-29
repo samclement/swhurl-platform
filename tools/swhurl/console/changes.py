@@ -22,6 +22,7 @@ from pathlib import Path
 
 from swhurl import platform
 from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES
+from swhurl.apps import new
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -52,6 +53,13 @@ NEW_APP_FIELDS = (
 )
 CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES,
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
+
+
+def new_app_defaults() -> dict[str, str]:
+    """What app-new uses when a field is left empty, read from its own parser (this image's copy)."""
+    parser = new.parser()
+    return {field: str(parser.get_default(field)) for field, _, _ in NEW_APP_FIELDS
+            if parser.get_default(field) is not None}
 
 
 @dataclass(frozen=True)

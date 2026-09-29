@@ -10,7 +10,7 @@ Run before every push:
 make check
 ```
 
-`check` runs `check-repo` (renders every active Flux path, validates Kubernetes and Flux schemas, SOPS structure, shell syntax, required substitutions and relative Markdown links; never contacts the cluster), `test` (the unit tests in `tests/`), `check-apps` (renders app instances with Helm against the app contract), `check-otel` (validates the rendered collector configs with the collector release they will run; `swhurl/otel.py`) and `check-lint` (Ruff and ShellCheck at the versions CI pins). CI runs the same steps.
+`check` runs `check-repo` (renders every active Flux path, validates Kubernetes and Flux schemas, SOPS structure, shell syntax, required substitutions and relative Markdown links; never contacts the cluster), `test` (the unit tests in `tests/`), `check-apps` (renders app instances with Helm against the app contract), `check-otel` (validates the rendered collector configs with the collector release they will run; `swhurl/otel.py`) and `check-lint` (Ruff and ShellCheck at the versions CI pins). `make check` runs the five in parallel and keeps each one's output together. CI runs the same steps.
 
 Prerequisites (CI pins the same): `kubectl`, `helm`, `uv`, Python 3 with the `check` dependency group from [`pyproject.toml`](../pyproject.toml) (PyYAML), and `flux-schema`. `make test` and `make console-dev` run in the environment `uv` builds from `uv.lock` (the `check` and `console` groups); after changing a group, run `uv lock` and commit `uv.lock`:
 
@@ -18,6 +18,8 @@ Prerequisites (CI pins the same): `kubectl`, `helm`, `uv`, Python 3 with the `ch
 go install github.com/fluxcd/flux-schema/cmd/flux-schema@v0.9.0
 export PATH="$(go env GOPATH)/bin:$PATH"
 ```
+
+CI downloads the same version's release binary and checks its SHA-256 (`.github/workflows/validate.yml`); bump the URL and checksum together.
 
 CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based tests cannot silently skip. `make check-secrets` needs the age key, so it runs locally only.
 
@@ -33,7 +35,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 - Unit-test with `swhurl.run.FakeRunner`: it records calls and answers from argv-prefix rules, and fails on any unexpected command.
 - A new command is a function `(argv) -> int`, registered in `COMMANDS` in `swhurl/__main__.py` and given a Makefile alias.
 - Layout: `run.py` and `report.py` (foundation); `platform.py` (repository paths, label names, Flux unit discovery; one copy, not a constant per module); `apps/` (`contract.py` rules shared by `new.py` and `policy.py`, `ops.py`, and `edit.py` for promote, scale and remove); `verify.py`, `validate.py`, `settings.py`, `secrets_check.py`, `lifecycle.py`, `clickstack.py` (first-run bootstrap; every MongoDB script, each printing one `RESULT` line, and HyperDX API access, all over stdin), `recovery.py` (backup, S3 upload and restore test), `retention.py` (pruning); `livetests/`; `console/` (the web console: `cluster.py` reads, `actions.py` runs background jobs (reconcile, suspend, resume), `changes.py` opens PRs from a clone of `main` using that clone's tooling, `server.py` and `templates/` serve; see [plan](plan.md) section 7). Its image is [`images/console/Dockerfile`](../images/console/Dockerfile), built from the repository root (`podman build -f images/console/Dockerfile .`; `.dockerignore` admits only what it copies). After `Validate` passes on `main`, [`publish-console.yml`](../.github/workflows/publish-console.yml) pushes it to `ghcr.io/samclement/swhurl-console`, tagged with the commit SHA and `src-<hash of its inputs>`, and skips the build when that hash is already published. `make console-image` (`swhurl/images.py`) computes the same hash and pins that image; a test checks it matches the workflow's shell.
-- Tests import `swhurl` directly (`from swhurl import ROOT`); `make test` puts `tools/` on `PYTHONPATH`. To run one file: `PYTHONPATH=tools uv run --frozen python -m unittest tests.test_verify`. `test_command_safety.py` is the only place that uses fake executables, for what only a real process shows; everything else uses `FakeRunner`.
+- Tests import `swhurl` directly (`from swhurl import ROOT`); `make test` puts `tools/` on `PYTHONPATH` and runs [`tests/run.py`](../tests/run.py), one test class per worker process (`-j N` sets the count, `-v` lists classes). To run one file: `PYTHONPATH=tools uv run --frozen python -m unittest tests.test_verify`. `test_command_safety.py` is the only place that uses fake executables, for what only a real process shows; everything else uses `FakeRunner`.
 - Makefile recipes stay aliases and sequencing: no shell `if`/loops, `sed`, `grep` or `jq`. Use `make` functions (`$(if)`, `$(foreach)`) for plain sequencing and move anything else into `swhurl`.
 
 ## Checklist for a change

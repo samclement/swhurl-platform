@@ -17,12 +17,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.0'
-          cache: false
-
       - name: Setup uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -43,8 +37,13 @@ jobs:
           set -Eeuo pipefail
           python3 -m pip install --upgrade 'pip>=25.1'
           python3 -m pip install --group check
-          go install github.com/fluxcd/flux-schema/cmd/flux-schema@v0.9.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # Release binary (checksum pinned) instead of go install, which compiles it on every run.
+          curl -fsSLo "$RUNNER_TEMP/flux-schema.tar.gz" \
+            https://github.com/fluxcd/flux-schema/releases/download/v0.9.0/flux-schema_0.9.0_linux_amd64.tar.gz
+          echo "104b764a53bcec30ec856a6a3efaecd13abf606099f0b057932027d755313cdb  $RUNNER_TEMP/flux-schema.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Lint Python tooling
         run: pipx run ruff==0.16.9 check tools tests

@@ -48,9 +48,9 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `check` | `check-repo`, `test`, `check-apps`, `check-otel`, `check-lint`: everything CI runs. Run before every push | Local |
+| `check` | `check-repo`, `test`, `check-apps`, `check-otel`, `check-lint` in parallel: everything CI runs. Run before every push | Local |
 | `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links | Local |
-| `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment) | Local |
+| `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment, test classes in parallel) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
 | `check-otel` | Render both OTel collectors as Flux would and run that chart's exact `otelcol-k8s` release's `validate` on the config (binary downloaded once per version, SHA-256 checked, cached); fails on config the collector would reject, warns on deprecated component names | Local |
 | `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |

@@ -14,8 +14,8 @@ help: ## List targets (generated from the ## comments in this Makefile)
 .PHONY: flux-reconcile
 flux-reconcile: ## Fetch Git and reconcile the source layer and the stack
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
-	flux reconcile kustomization cluster-sources -n flux-system --with-source --timeout=20m
-	flux reconcile kustomization cluster-stack -n flux-system --with-source --timeout=20m
+	flux reconcile kustomization cluster-sources -n flux-system --timeout=20m
+	flux reconcile kustomization cluster-stack -n flux-system --timeout=20m
 
 .PHONY: install
 install: ## check-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)
@@ -93,7 +93,8 @@ backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 # Offline checks (CI runs `make check`) -------------------------------------------
 
 .PHONY: check
-check: check-repo test check-apps check-otel check-lint ## All offline checks: the same as CI
+check: ## All offline checks: the same as CI (run in parallel; each target's output is kept together)
+	@$(MAKE) --no-print-directory -j5 --output-sync=target check-repo test check-apps check-otel check-lint
 
 .PHONY: check-repo
 check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, doc links
@@ -101,7 +102,7 @@ check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, 
 
 .PHONY: test
 test: ## Unit tests for the tooling, console, manifests and command safety (needs uv)
-	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m unittest discover -s tests -v
+	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py
 
 .PHONY: check-apps
 check-apps: ## Render every app instance and check the app contract

@@ -18,6 +18,7 @@ ROOT_UNITS = CLUSTER / 'flux-system/kustomizations.yaml'
 SOURCES = CLUSTER / 'flux-system/sources'
 SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
 HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
+GIT_REPOSITORIES = SOURCES / 'gitrepositories.yaml'
 BOOTSTRAP_PATHS = (CLUSTER / 'flux-system', SOURCES)
 ISSUERS = Path('infra/issuers')
 INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
@@ -48,6 +49,12 @@ def base_domain(root: Path = ROOT) -> str:
     """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
     data = yaml.safe_load((root / SETTINGS).read_text()).get('data') or {}
     return data['BASE_DOMAIN']
+
+
+def github_repository(root: Path = ROOT) -> str:
+    """``owner/name`` of the GitHub repository Flux applies (the swhurl-platform GitRepository)."""
+    url = yaml.safe_load((root / GIT_REPOSITORIES).read_text())['spec']['url']
+    return url.removeprefix('https://github.com/').removesuffix('.git')
 
 
 def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:

@@ -20,12 +20,14 @@ host_sudo() {
   fi
 }
 
-# Fail early, with a clear message, when sudo cannot ask for a password here
-# (for example under Claude Code's `!` prefix, which has no terminal).
+# Fail early when sudo cannot be used; sudo's own message says why.
 host_require_sudo() {
   [[ "${EUID:-$(id -u)}" -eq 0 ]] && return 0
   host_need_cmd sudo
-  sudo -v 2>/dev/null || host_die "sudo needs a password and there is no terminal; run this in a terminal"
+  if [[ ! -t 0 ]] && ! sudo -n true 2>/dev/null; then
+    host_die "sudo needs a password but stdin is not a terminal; run this in a terminal"
+  fi
+  sudo -v || host_die "sudo failed (see its message above)"
 }
 
 # True on Linux with systemd; otherwise explains and returns 1.

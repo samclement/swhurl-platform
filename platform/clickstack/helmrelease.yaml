@@ -93,6 +93,13 @@ spec:
               limits:
                 # The chart's 2Gi is below what ClickHouse used on this node (1.9Gi).
                 memory: 4Gi
+          settings:
+            extraConfig:
+              # Merged with the chart's ttl. metric_log has ~1,350 columns: a
+              # horizontal merge into a Wide part needs more than the 3.6 GiB
+              # server limit and retries forever; vertical merges one column at a time.
+              metric_log:
+                settings: vertical_merge_algorithm_min_rows_to_activate = 1
           dataVolumeClaimSpec:
             resources:
               requests:

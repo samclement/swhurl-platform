@@ -169,6 +169,21 @@ def check_retention(runner: Runner, report: Report) -> None:
             report.bad(f'{untimed} ClickHouse system log table(s) have no TTL; '
                        'the chart sets them in clickhouse.cluster.spec.settings.extraConfig')
 
+    # A merge that fails is retried at once, burning CPU and logging a stack trace each time.
+    try:
+        failed, table = (clickhouse(runner, (
+            "SELECT count(), any(database || '.' || table) FROM system.part_log WHERE event_type = 'MergeParts' "
+            "AND error != 0 AND event_time > now() - INTERVAL 1 HOUR FORMAT TSV")).split('\t') + [''])[:2]
+        failed = int(failed)
+    except (CommandError, ValueError):
+        report.bad('could not read ClickHouse merge results (system.part_log)')
+    else:
+        if failed == 0:
+            report.ok('no ClickHouse merge failed in the last hour')
+        else:
+            report.bad(f'{failed} ClickHouse merge(s) failed in the last hour (for example {table}); '
+                       'see docs/operations.md#troubleshooting')
+
     try:
         pvc = runner.json(['kubectl', '-n', 'observability', 'get', 'pvc', clickstack.MONGO_DATA_CLAIM, '-o', 'json'])
     except CommandError:

@@ -45,6 +45,7 @@ def healthy(**overrides):
             {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}},
         'ttl30': Result((), 0, '9\t9\n'),
         'untimed': Result((), 0, '0\n'),
+        'merges': Result((), 0, '0\t\n'),
         'pvc': {'spec': {'volumeName': 'pv-1'}},
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
         'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
@@ -65,7 +66,8 @@ def healthy(**overrides):
         return handler
 
     def clickhouse(args, _input):
-        return answer('ttl30' if 'toIntervalDay(30)' in args[-1] else 'untimed')(args, _input)
+        query = args[-1]
+        return answer('ttl30' if 'toIntervalDay(30)' in query else 'merges' if 'MergeParts' in query else 'untimed')(args, _input)
 
     stdin = []  # every program sent into a pod (mongosh scripts, API requests)
 
@@ -158,6 +160,9 @@ class VerifyPlatformTests(unittest.TestCase):
             'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'without a 30-day TTL'),
             'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'could not read ClickHouse telemetry'),
             'system logs untimed': ({'untimed': Result((), 0, '3\n')}, '3 ClickHouse system log table(s) have no TTL'),
+            'merges failing': ({'merges': Result((), 0, '3765\tsystem.metric_log\n')},
+                               '3765 ClickHouse merge(s) failed in the last hour (for example system.metric_log)'),
+            'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'could not read ClickHouse merge results'),
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
             'console missing': ({'console': Result((), 1, '', 'NotFound')}, 'cannot read the console HelmRelease'),

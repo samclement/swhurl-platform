@@ -266,6 +266,12 @@ Symptom: ClickHouse used about 0.75 cores (node 2.55 of 4) while queries and ins
 
 Applied at `3a63d3b`: the operator restarted ClickHouse (20:27:31 UTC); `metric_log` carries `vertical_merge_algorithm_min_rows_to_activate = 1` and the old table became `metric_log_0` (9 parts, 51k rows), given the same setting with `ALTER TABLE … MODIFY SETTING` (no data dropped; it expires on its 7-day TTL); it merged to 2 parts. Ten minutes later: no failed merge since 20:27:22, ClickHouse 100m CPU (node 0.53 cores), its own log lines 2 a minute. `make verify-platform`'s new merge check reported the 18 pre-fix failures as BAD, as intended, until they leave its one-hour window. Printing the live `ClickHouseCluster` spec during diagnosis showed the `app` user's password field in the session transcript (the limitation in services.md); not rotated.
 
+## Flux controllers from make flux-install (29 September 2026)
+
+- **`make flux-install`** (`33fb42e`): `DRY_RUN=true` rendered `flux install --export` at 2.8.1 with the Git patches, and its live `kubectl diff` showed one change: `--requeue-dependency=5s` on kustomize-controller (so the rest matched the hand-run install exactly). Applied server-side as the `flux` field manager; only kustomize-controller rolled out (new pod, the other three kept theirs).
+- **Effect:** `make flux-reconcile` on `33fb42e` took 17s, down from 64s on `9bce4a7`; the dependency waves reached Ready at 0s, 2s and 7s, not 5s, 28s and 53s.
+- **`make verify-platform`** has a Flux Controllers section: `[OK] kustomize-controller v2.8.1 with the settings in Git`. Not exercised live: the warning after a plain `flux install` (unit-tested), and a Flux upgrade through `make flux-install`.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

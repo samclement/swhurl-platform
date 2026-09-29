@@ -27,6 +27,7 @@ COMMANDS = {
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
+    'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
     'prune-backups': ('swhurl.retention', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 

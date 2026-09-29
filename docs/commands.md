@@ -22,6 +22,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
+| `console-dev` | The read-only web console on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity, reading the cluster with your kubeconfig: apps, Flux units, cluster-only platform checks. Needs `uv`. Not yet deployed ([plan](plan.md) section 7) | Cluster (read) |
 
 ## Settings
 
@@ -45,7 +46,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | --- | --- | --- |
 | `check` | `check-repo`, `test`, `check-apps`, `check-lint`: everything CI runs. Run before every push | Local |
 | `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links | Local |
-| `test` | Unit tests: lifecycle guards, verifier, policies, generator, fixtures, Flux unit rules | Local |
+| `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
 | `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |
 | `check-config` | The required Secret files and the `BASE_DOMAIN` and `CERT_ISSUER` settings exist | Local |

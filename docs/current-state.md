@@ -198,7 +198,7 @@ Deployed read-only (`79c07f3`, fix `516c196`, image bump `eff3814`); 14 units Re
 - **Inside the cluster:** the same forged header from a throwaway pod straight to `console.console.svc:8080` could not connect (exit 7). `kubectl auth can-i --as=system:serviceaccount:console:console`: yes to list Kustomizations and get pods and Certificates; no to get or list Secrets, `pods/exec`, patch Kustomizations or HelmReleases, delete pods, create Deployments.
 - **The pod's own account:** through `kubectl port-forward` with the header, `/`, `/units` (14 cards), `/platform` (passing, `platform-console` OK) and `/apps/hello/prod` answered 200; no forbidden or error lines in its logs.
 - **Update path:** `make verify-platform` passed with `[WARN] tooling changed since console image b63d2af` (this phase changed `verify.py`). The `79c07f3` publish run built `sha256:6938c2e8…` (matched by an anonymous registry lookup; the `516c196` run skipped, inputs unchanged); after pinning it, the rollout used that digest and the check reported `[OK] console image 79c07f3 is built from the current tooling`.
-- **Not yet checked:** a signed-in browser session (operator).
+- **Signed in (operator, browser):** the first attempt answered `sign-in required: no identity from oauth2-proxy`: oauth2-proxy returned no `X-Auth-Request-Email` because `set-xauthrequest` was off, which the hand-set header in the checks above could not reveal. After `edd4f44` (flag on, oauth2-proxy rolled out, signed-out requests still 302) the operator's signed-in browser showed the console working.
 
 ## Still to verify before live changes
 

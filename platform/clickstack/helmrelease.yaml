@@ -1,0 +1,99 @@
+# ClickStack: HyperDX app, its OTel collector, and operator-managed MongoDB and
+# ClickHouse (see platform/clickstack-operators). The first account and the team
+# ingestion key are set by `make clickstack-bootstrap`, not by the chart.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: clickstack
+  namespace: observability
+spec:
+  interval: 30m
+  timeout: 15m
+  releaseName: clickstack
+  valuesFrom:
+    # The app sends its own logs with the team ingestion key.
+    - kind: Secret
+      name: clickstack-runtime-inputs
+      valuesKey: CLICKSTACK_INGESTION_KEY
+      targetPath: hyperdx.secrets.HYPERDX_API_KEY
+    - kind: Secret
+      name: clickstack-runtime-inputs
+      valuesKey: MONGODB_PASSWORD
+      targetPath: hyperdx.secrets.MONGODB_PASSWORD
+    - kind: Secret
+      name: clickstack-runtime-inputs
+      valuesKey: CLICKHOUSE_PASSWORD
+      targetPath: hyperdx.secrets.CLICKHOUSE_PASSWORD
+    - kind: Secret
+      name: clickstack-runtime-inputs
+      valuesKey: CLICKHOUSE_APP_PASSWORD
+      targetPath: hyperdx.secrets.CLICKHOUSE_APP_PASSWORD
+  chart:
+    spec:
+      chart: clickstack
+      version: 3.4.0
+      sourceRef:
+        kind: HelmRepository
+        name: clickstack
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    hyperdx:
+      config:
+        FRONTEND_URL: https://clickstack.${BASE_DOMAIN}
+      ingress:
+        enabled: true
+        annotations:
+          cert-manager.io/cluster-issuer: ${CERT_ISSUER}
+          # Google sign-in in front of HyperDX's own login; also keeps first-user
+          # registration unreachable from outside before the bootstrap runs.
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
+        spec:
+          ingressClassName: traefik
+          rules:
+            - host: clickstack.${BASE_DOMAIN}
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: clickstack-app
+                        port:
+                          number: 3000
+          tls:
+            - hosts:
+                - clickstack.${BASE_DOMAIN}
+              secretName: clickstack-tls
+    mongodb:
+      spec:
+        statefulSet:
+          spec:
+            volumeClaimTemplates:
+              # Irreplaceable (team, users, sources): the volume outlives its claim.
+              - metadata:
+                  name: data-volume
+                spec:
+                  accessModes: [ReadWriteOnce]
+                  storageClassName: local-path-retain
+                  resources:
+                    requests:
+                      storage: 10Gi
+    clickhouse:
+      cluster:
+        spec:
+          containerTemplate:
+            resources:
+              limits:
+                # The chart's 2Gi is below what ClickHouse used on this node (1.9Gi).
+                memory: 4Gi
+          dataVolumeClaimSpec:
+            resources:
+              requests:
+                storage: 20Gi

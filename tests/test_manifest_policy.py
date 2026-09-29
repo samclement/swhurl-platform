@@ -1,10 +1,16 @@
 """Rules about what is in Git: sign-in, Flux unit deletion and dependencies, Reloader scope, Traefik."""
+import base64
+import os
 import re
+import shutil
+import tempfile
 import unittest
 
 import yaml
 
 from swhurl import ROOT, platform
+from swhurl.apps import policy as app_policy
+from swhurl.run import Runner
 
 
 class ManifestPolicyTests(unittest.TestCase):
@@ -107,6 +113,58 @@ class ManifestPolicyTests(unittest.TestCase):
         self.assertTrue(approved, 'Approved email list is empty')
         for email in approved:
             self.assertRegex(email, r'^[^@\s*]+@[^@\s*]+\.[^@\s*]+$')
+
+
+@unittest.skipUnless(shutil.which('helm') or os.environ.get('REQUIRE_HELM'), 'helm not installed')
+class ClickStackRenderTests(unittest.TestCase):
+    """Render the ClickStack HelmRelease as Flux would (settings substituted, valuesFrom stubbed)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.release = yaml.safe_load((ROOT / 'platform/clickstack/helmrelease.yaml').read_text())
+        settings = yaml.safe_load((ROOT / platform.SETTINGS).read_text())['data']
+        cls.domain = settings['BASE_DOMAIN']
+        values_text = yaml.safe_dump(cls.release['spec']['values'])
+        for key, value in settings.items():
+            values_text = values_text.replace(f'${{{key}}}', str(value))
+        spec = cls.release['spec']['chart']['spec']
+        runner = Runner()
+        chart = app_policy.chart_dir(spec['chart'], spec['version'],
+                                     app_policy.helm_repositories()[spec['sourceRef']['name']], runner)
+        cls.chart_defaults = yaml.safe_load((chart / 'values.yaml').read_text())
+        stubs = [f'{v["targetPath"]}=stub-{v["valuesKey"].lower()}' for v in cls.release['spec']['valuesFrom']]
+        with tempfile.NamedTemporaryFile('w', suffix='.yaml') as values:
+            values.write(values_text)
+            values.flush()
+            out = runner.output(['helm', 'template', 'clickstack', str(chart), '-n', 'observability',
+                                 '-f', values.name, '--set', ','.join(stubs)])
+        cls.docs = [d for d in yaml.safe_load_all(out) if d]
+
+    def find(self, kind, name=None):
+        return next(d for d in self.docs if d['kind'] == kind and (name is None or d['metadata']['name'] == name))
+
+    def test_every_chart_secret_comes_from_the_sops_secret(self):
+        sources = {v['targetPath']: v['valuesKey'] for v in self.release['spec']['valuesFrom']}
+        secret = self.find('Secret', 'clickstack-secret')
+        rendered = {k: base64.b64decode(v).decode() for k, v in (secret.get('data') or {}).items()}
+        rendered |= secret.get('stringData') or {}
+        for key in self.chart_defaults['hyperdx']['secrets']:
+            with self.subTest(key=key):
+                self.assertIn(f'hyperdx.secrets.{key}', sources, 'a chart default secret would reach the cluster')
+                self.assertEqual(rendered.get(key), f'stub-{sources[f"hyperdx.secrets.{key}"].lower()}')
+
+    def test_ingress_requires_sign_in_on_the_platform_host(self):
+        ingress = self.find('Ingress')
+        self.assertEqual(ingress['metadata']['annotations']['traefik.ingress.kubernetes.io/router.middlewares'],
+                         'ingress-oauth-auth-shared@kubernetescrd')
+        self.assertEqual([r['host'] for r in ingress['spec']['rules']], [f'clickstack.{self.domain}'])
+        config = self.find('ConfigMap', 'clickstack-config')['data']
+        self.assertEqual(config['FRONTEND_URL'], f'https://clickstack.{self.domain}')
+
+    def test_mongodb_data_survives_claim_deletion(self):
+        templates = self.find('MongoDBCommunity')['spec']['statefulSet']['spec']['volumeClaimTemplates']
+        data = next(t for t in templates if t['metadata']['name'] == 'data-volume')
+        self.assertEqual(data['spec']['storageClassName'], 'local-path-retain')
 
 
 if __name__ == '__main__':

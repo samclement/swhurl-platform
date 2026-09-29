@@ -145,6 +145,10 @@ spec:
       - kind: ConfigMap
         name: platform-settings
         optional: false
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan

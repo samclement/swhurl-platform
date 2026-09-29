@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - rbac.yaml
   - networkpolicy.yaml
+  - secret.sops.yaml
   - helmrelease.yaml

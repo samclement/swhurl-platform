@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}New app{% endblock %}
+{% block main %}
+<h1>New app instance</h1>
+<p class="muted">Opens a pull request; nothing changes on the cluster until you merge it and Flux applies it.
+The console clones <code>main</code>, runs <code>make app-new</code> with these options in that clone (its rules and app policy), and pushes a <code>console/…</code> branch. Leave a field empty for its default. See <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#add-an-app">docs/apps.md</a> for the rules.</p>
+{% if not github %}<p class="bad">No GitHub token is configured, so PRs cannot be opened (Secret <code>console/console-github</code>).</p>{% endif %}
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+<form class="new" method="post" action="/new">
+  <label for="name">Name</label><input id="name" name="name" required pattern="[a-z]([a-z0-9-]{0,38}[a-z0-9])?" value="{{ form.name or '' }}" placeholder="weather-api">
+  <label for="env">Environment</label>
+  <select id="env" name="env">{% for c in choices.env %}<option {{ 'selected' if form.env == c }}>{{ c }}</option>{% endfor %}</select>
+  {% for field, flag, label in fields %}
+  <label for="{{ field }}">{{ label }}</label>
+  {% if field in choices %}
+  <select id="{{ field }}" name="{{ field }}"><option value="">(default)</option>{% for c in choices[field] %}<option {{ 'selected' if form[field] == c }}>{{ c }}</option>{% endfor %}</select>
+  {% else %}
+  <input id="{{ field }}" name="{{ field }}" value="{{ form[field] or '' }}"{% if field == 'image' %} required placeholder="ghcr.io/me/app:1.0@sha256:…"{% elif field == 'secret_keys' %} placeholder="API_TOKEN,DB_URL"{% elif field == 'host' %} placeholder="weather.homelab.swhurl.com"{% elif field == 'health_path' %} placeholder="/ready"{% endif %}>
+  {% endif %}
+  {% if field == 'image' %}<span class="muted hint">No <code>latest</code>; production needs a digest.</span>{% endif %}
+  {% if field == 'secret_keys' %}<span class="muted hint">Creates an encrypted Secret with values <code>REPLACE_ME</code>; set them with <code>sops</code> before merging.</span>{% endif %}
+  {% endfor %}
+  <span></span><button {{ 'disabled' if not github }}>Open pull request</button>
+</form>
+{% endblock %}

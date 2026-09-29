@@ -16,6 +16,7 @@ from swhurl.run import FakeRunner, Result
 
 KEY = 'fixture-team-ingestion-key-0001'
 CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
+TOKEN = 'github_pat_fixture_token_0001'
 OTHER = 'fixture-other-ingestion-key-9999'
 
 
@@ -50,6 +51,8 @@ def healthy(**overrides):
         'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
             'tag': CONSOLE_TAG}}}}}}}},
         'git-diff': Result((), 0),
+        'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
+        'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
     }
     responses.update(overrides)
 
@@ -74,6 +77,11 @@ def healthy(**overrides):
 
     runner = FakeRunner()
     runner.stdin = stdin
+    runner.github = []  # (args, stdin) of each GitHub API call
+
+    def github(args, config):
+        runner.github.append((args, config))
+        return answer('github')(args, config)
     return (runner
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
@@ -88,7 +96,9 @@ def healthy(**overrides):
             .on('kubectl', 'get', 'pv', handler=answer('pv'))
             .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
             .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
-            .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff')))
+            .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
+            .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
+            .on('curl', handler=github))
 
 
 def run(runner, **kwargs):
@@ -118,7 +128,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Retention ==', '\n== Backups ==',
-                          '\n== Console =='])
+                          '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -151,6 +161,10 @@ class VerifyPlatformTests(unittest.TestCase):
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
             'console missing': ({'console': Result((), 1, '', 'NotFound')}, 'cannot read the console HelmRelease'),
+            'token placeholder': ({'token': {'data': {'GITHUB_TOKEN': b64('REPLACE_ME')}}}, 'is not set'),
+            'token secret missing': ({'token': Result((), 1, '', 'NotFound')}, 'is not set'),
+            'token rejected': ({'github': Result((), 0, 'HTTP/2 401\r\n\r\n')}, 'did not accept the console token'),
+            'github unreachable': ({'github': Result((), 6, '', 'could not resolve')}, 'did not accept'),
         }
         for label, (overrides, expected) in cases.items():
             with self.subTest(label):
@@ -183,6 +197,8 @@ class VerifyPlatformTests(unittest.TestCase):
         run(runner)
         verbs = {c[c.index('get') if 'get' in c else c.index('exec')] for c in runner.calls if c[0] == 'kubectl'}
         self.assertLessEqual(verbs, {'get', 'exec'})
+        for args, _ in runner.github:
+            self.assertFalse({'--request', '-X', '--data', '--data-binary'} & set(args), f'GitHub call is not a GET: {args}')
         read_only_scripts = (clickstack.TEAM_KEYS,)
         self.assertTrue(runner.stdin, 'verify-platform sends nothing into pods? the allowlist would be untested')
         for args, program in runner.stdin:
@@ -214,6 +230,23 @@ class ConsoleCheckTests(unittest.TestCase):
         self.assertEqual(sorted(listed), sorted(platform.CONSOLE_IMAGE_INPUTS))
 
 
+class ConsoleTokenTests(unittest.TestCase):
+    def test_expiry_soon_warns_and_token_never_leaks(self):
+        soon = (dt.datetime.now(dt.UTC) + dt.timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S UTC')
+        runner = healthy(github=Result((), 0, f'HTTP/2 200\r\ngithub-authentication-token-expiration: {soon}\r\n'))
+        code, report, text = run(runner)
+        self.assertEqual(code, 0, text)
+        self.assertTrue(any(line.startswith('[WARN]') and 'expires' in line for line in report.lines), text)
+        self.assertNotIn(TOKEN, text)
+        ((args, stdin),) = runner.github
+        self.assertNotIn(TOKEN, ' '.join(args))
+        self.assertEqual(stdin, f'header = "Authorization: Bearer {TOKEN}"\n')
+
+    def test_no_expiry_passes(self):
+        _, report, _ = run(healthy(github=Result((), 0, 'HTTP/2 200\r\n\r\n')))
+        self.assertIn('[OK] GitHub accepts the console token (no expiry date)', report.lines)
+
+
 class AllowedChecksTests(unittest.TestCase):
     def test_cluster_only_reads_no_secrets_execs_nothing_and_names_what_it_skipped(self):
         runner = healthy()
@@ -222,7 +255,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups, console',
+        self.assertIn('[INFO] skipped (need more than cluster): ingestion-key, registration, retention, backups, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

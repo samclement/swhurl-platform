@@ -27,6 +27,11 @@ BACKUP_S3_URI = 's3://swhurl-platform-backups-110927251694/clickstack-mongodb/'
 INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 AGE_KEY = Path('age.agekey')
+# The repository the console clones and opens PRs against.
+GITHUB_REPO = 'samclement/swhurl-platform'
+# The console's GitHub token (Secret console/console-github, from platform/console/secret.sops.yaml).
+CONSOLE_TOKEN_SECRET = 'console-github'
+CONSOLE_TOKEN_KEY = 'GITHUB_TOKEN'
 # What the console image is built from (images/console/Dockerfile); publish-console.yml hashes the same paths.
 CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
 

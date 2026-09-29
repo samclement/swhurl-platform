@@ -93,7 +93,7 @@ backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 # Offline checks (CI runs `make check`) -------------------------------------------
 
 .PHONY: check
-check: check-repo test check-apps check-lint ## All offline checks: the same as CI
+check: check-repo test check-apps check-otel check-lint ## All offline checks: the same as CI
 
 .PHONY: check-repo
 check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, doc links
@@ -106,6 +106,10 @@ test: ## Unit tests for the tooling, console, manifests and command safety (need
 .PHONY: check-apps
 check-apps: ## Render every app instance and check the app contract
 	$(SWHURL) check-apps
+
+.PHONY: check-otel
+check-otel: ## Render the OTel collectors and validate their config with that exact otelcol-k8s release (warns on deprecated names)
+	$(SWHURL) check-otel
 
 .PHONY: check-lint
 check-lint: ## Lint the Python tooling and the bash that stays (needs uv)

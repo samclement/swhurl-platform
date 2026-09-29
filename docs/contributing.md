@@ -10,7 +10,7 @@ Run before every push:
 make check
 ```
 
-`check` runs `check-repo` (renders every active Flux path, validates Kubernetes and Flux schemas, SOPS structure, shell syntax, required substitutions and relative Markdown links; never contacts the cluster), `test` (the unit tests in `tests/`), `check-apps` (renders app instances with Helm against the app contract) and `check-lint` (Ruff and ShellCheck at the versions CI pins). CI runs the same steps.
+`check` runs `check-repo` (renders every active Flux path, validates Kubernetes and Flux schemas, SOPS structure, shell syntax, required substitutions and relative Markdown links; never contacts the cluster), `test` (the unit tests in `tests/`), `check-apps` (renders app instances with Helm against the app contract), `check-otel` (validates the rendered collector configs with the collector release they will run; `swhurl/otel.py`) and `check-lint` (Ruff and ShellCheck at the versions CI pins). CI runs the same steps.
 
 Prerequisites (CI pins the same): `kubectl`, `helm`, `uv`, Python 3 with the `check` dependency group from [`pyproject.toml`](../pyproject.toml) (PyYAML), and `flux-schema`. `make test` and `make console-dev` run in the environment `uv` builds from `uv.lock` (the `check` and `console` groups); after changing a group, run `uv lock` and commit `uv.lock`:
 

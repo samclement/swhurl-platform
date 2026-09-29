@@ -96,6 +96,7 @@ Restore into the running service. MongoDB requires a login, so the connection st
 
 ```bash
 kubectl -n observability scale deploy/clickstack-app --replicas=0
+kubectl -n observability wait --for=delete pod -l app=clickstack --timeout=120s   # HyperDX takes ~40 s to stop
 kubectl -n observability get secret clickstack-mongodb-hyperdx-hyperdx -o jsonpath='{.data.connectionString\.standard}' \
   | base64 -d | python3 -c 'import json,sys; print("uri: " + json.dumps(sys.stdin.read()))' \
   | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- sh -c 'umask 077; cat > /tmp/login.yaml'
@@ -107,7 +108,7 @@ make clickstack-bootstrap   # the restored team may hold an older ingestion key
 make verify-platform
 ```
 
-Compare `mongorestore`'s document count with the backup's `.json` metadata. Restored users keep the passwords they had when the backup was taken. Backups from the chart 1.x install hold the same `hyperdx` database. Not yet run against the operator-managed MongoDB; the login-file step was tested on 29 September 2026.
+Compare `mongorestore`'s document count with the backup's `.json` metadata. Restored users keep the passwords they had when the backup was taken. Backups from the chart 1.x install hold the same `hyperdx` database. Run on the live cluster on 29 September 2026 ([current state](current-state.md#clickstack-340-fresh-install)); ClickStack was down for about 15 seconds plus the app's shutdown.
 
 ## Troubleshooting
 

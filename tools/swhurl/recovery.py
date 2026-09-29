@@ -36,10 +36,6 @@ from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
-COUNTS_SCRIPT = platform.COLLECTION_COUNTS_SCRIPT
-COUNTS_RESULT_SCRIPT = ('const c = {}; db.getCollectionNames().sort().forEach(n => '
-                        '{ c[n] = db[n].countDocuments(); }); print("RESULT " + JSON.stringify(c));')
-TEAM_KEY_SCRIPT = platform.TEAM_KEY_SCRIPT
 INGESTION_SECRET = platform.INGESTION_SECRET
 RECOVERY_LABEL = platform.label('recovery-test')
 
@@ -135,7 +131,7 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
                         ['age', '-r', settings.recipient, '-o', partial], input=f'uri: {json.dumps(uri)}\n')
             if not partial.is_file() or partial.stat().st_size == 0:
                 raise RecoveryError('Backup archive is empty')
-            counts = clickstack.mongo(runner, uri, COUNTS_RESULT_SCRIPT)
+            counts = clickstack.mongo(runner, uri, clickstack.COLLECTION_COUNTS)
             version_text = runner.output([*exec_mongo, 'mongod', '--version'])
             match = re.search(r'^db version v(\S+)', version_text, re.M)
             if not match:
@@ -313,16 +309,21 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
         runner.run(['kubectl', 'apply', '-f', '-'], input=yaml.safe_dump(secret), secret_output=True, mutating=True)
         report.ok(f'Restored {platform.INGESTION_SECRET_NAME} from Git into {ns}')
 
-        restored = json.loads(runner.output(['kubectl', '-n', ns, 'exec', 'mongodb', '--', 'mongosh', 'hyperdx',
-                                             '--quiet', '--eval', COUNTS_SCRIPT]))
+        scratch = clickstack.MongoPod(ns, 'mongodb', 'mongodb')
+        local = 'mongodb://127.0.0.1:27017/hyperdx'  # the throwaway MongoDB has no login
+        restored = clickstack.mongo(runner, local, clickstack.COLLECTION_COUNTS, pod=scratch)
         if restored == metadata['collections']:
             report.ok('Restored collection counts match backup metadata')
         else:
             report.bad('Restored collection counts differ from backup metadata')
 
-        team = runner.run(['kubectl', '-n', ns, 'exec', 'mongodb', '--', 'mongosh', 'hyperdx', '--quiet', '--eval',
-                           TEAM_KEY_SCRIPT], check=False, secret_output=True)
-        team_key = team.stdout.strip() if team.returncode == 0 else ''
+        try:
+            keys = clickstack.mongo(runner, local, clickstack.TEAM_KEYS, pod=scratch)['keys']
+        except (CommandError, ValueError, KeyError):
+            keys = []
+        for key in keys:
+            runner.add_secret(key)
+        team_key = keys[0] if len(keys) == 1 else ''
         runner.add_secret(team_key)
         stored = runner.json(['kubectl', '-n', ns, 'get', 'secret', platform.INGESTION_SECRET_NAME, '-o', 'json'],
                              secret_output=True)

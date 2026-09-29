@@ -205,13 +205,18 @@ class RestoreTestTests(unittest.TestCase):
         def get_secret(args, _in):
             return Result(args, 0, json.dumps(applied['secret']))
 
-        def mongosh(args, _in):
-            script = args[-1]
-            if 'countDocuments' in script:
-                return Result(args, 0, json.dumps(counts))
-            if 'apiKey' in script:
-                return Result(args, 0 if team_key else 2, team_key + '\n' if team_key else '')
+        def ping(args, _in):
             return Result(args, 0, '1')
+
+        def exec_stdin(args, stdin):
+            if 'mongorestore' in args:
+                return Result(args, restore_rc, '', 'restore failed' if restore_rc else '')
+            self.assertIn('mongodb://127.0.0.1:27017/hyperdx', stdin, 'scripts reach the throwaway pod over stdin')
+            if 'countDocuments' in stdin:
+                return Result(args, 0, 'RESULT ' + json.dumps(counts))
+            if 'apiKey' in stdin:
+                return Result(args, 0, 'RESULT ' + json.dumps({'keys': [team_key] if team_key else []}))
+            raise AssertionError(stdin)
 
         ns = 'recovery-test'
         fake = FakeRunner()
@@ -221,8 +226,8 @@ class RestoreTestTests(unittest.TestCase):
         fake.on('kubectl', 'create', 'namespace').on('kubectl', 'label', 'namespace')
         fake.on('kubectl', '-n', ns, 'apply', handler=apply).on('kubectl', 'apply', handler=apply)
         fake.on('kubectl', '-n', ns, 'wait')
-        fake.on('kubectl', '-n', ns, 'exec', '-i', 'mongodb', returncode=restore_rc, stderr='restore failed')
-        fake.on('kubectl', '-n', ns, 'exec', 'mongodb', handler=mongosh)
+        fake.on('kubectl', '-n', ns, 'exec', '-i', 'mongodb', handler=exec_stdin)
+        fake.on('kubectl', '-n', ns, 'exec', 'mongodb', handler=ping)
         fake.on('age', '-d', stdout='PLAINTEXT-ARCHIVE')
         fake.on('sops', 'decrypt', stdout=yaml.safe_dump(secret))
         fake.on('kubectl', '-n', ns, 'get', 'secret', handler=get_secret)

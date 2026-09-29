@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import time
+from dataclasses import dataclass
 
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -55,10 +56,23 @@ def read_secret(runner: Runner, name: str) -> dict[str, str]:
     return values
 
 
-def mongo(runner: Runner, uri: str, script: str, *, mutating: bool = False) -> dict:
-    """Run a mongosh ``script`` against the hyperdx database; it must print one ``RESULT`` line."""
+@dataclass(frozen=True)
+class MongoPod:
+    """Where a mongosh script runs: the live MongoDB, or the restore test's throwaway one."""
+    namespace: str
+    pod: str
+    container: str
+
+
+LIVE_MONGO = MongoPod(NS, MONGO_POD, 'mongod')
+
+
+def mongo(runner: Runner, uri: str, script: str, *, pod: MongoPod = LIVE_MONGO, mutating: bool = False) -> dict:
+    """Run a mongosh ``script`` against ``uri``; it must print one ``RESULT`` line.
+
+    The script and the connection string go over stdin, never in argv."""
     program = f'db = connect({json.dumps(uri)});\n{script}\n'
-    out = runner.output(['kubectl', '-n', NS, 'exec', '-i', MONGO_POD, '-c', 'mongod', '--',
+    out = runner.output(['kubectl', '-n', pod.namespace, 'exec', '-i', pod.pod, '-c', pod.container, '--',
                          'mongosh', '--quiet', '--nodb', '--norc', '--file', '/dev/stdin'],
                         input=program, secret_output=True, mutating=mutating)
     return _result(out)
@@ -106,6 +120,8 @@ SET_TEAM_KEY = ('const r = db.teams.updateOne({}, {$set: {apiKey: KEY}});'
                 ' print("RESULT " + JSON.stringify({matched: r.matchedCount}));')
 TEAM_KEYS = ('print("RESULT " + JSON.stringify({keys: db.teams.distinct("apiKey")'
              '.filter(k => typeof k === "string" && k.length > 0)}));')
+COLLECTION_COUNTS = ('const c = {}; db.getCollectionNames().sort().forEach(n => '
+                     '{ c[n] = db[n].countDocuments(); }); print("RESULT " + JSON.stringify(c));')
 ADMIN_EXISTS = 'print("RESULT " + JSON.stringify({admin: db.users.countDocuments({email: EMAIL})}));'
 
 

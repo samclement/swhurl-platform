@@ -52,7 +52,6 @@ class ManifestPolicyTests(unittest.TestCase):
             encrypted = any((ROOT / spec['path']).rglob('*.sops.yaml'))
             with self.subTest(unit=name):
                 self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
-        self.assertIn('postBuild', specs['platform-otel'], 'OTel needs substitution to unescape $${env:...}')
 
     def test_platform_hosts_come_from_base_domain(self):
         """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""
@@ -72,7 +71,7 @@ class ManifestPolicyTests(unittest.TestCase):
             with self.subTest(unit=unit['metadata']['name']):
                 self.assertLessEqual(used, settings, 'unknown setting')
                 substitutes = [s['name'] for s in (spec.get('postBuild') or {}).get('substituteFrom', [])]
-                self.assertEqual('platform-settings' in substitutes, bool(used) or unit['metadata']['name'] == 'platform-otel')
+                self.assertEqual('platform-settings' in substitutes, bool(used))
 
     def test_reloader_is_scoped_and_opt_in(self):
         release = yaml.safe_load((ROOT / 'platform/reloader/helmrelease.yaml').read_text())

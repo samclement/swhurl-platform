@@ -45,7 +45,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 ## Lessons not obvious from the code
 
-- **Flux substitution** consumes unescaped `${...}` in any manifest of a unit that substitutes. Escape literal references as `$${...}`; the OTel collectors rely on this for `$${env:CLICKSTACK_INGESTION_KEY}`, so `platform-otel` must keep `postBuild.substituteFrom`.
+- **Flux substitution** consumes unescaped `${...}` in any manifest of a unit with `postBuild.substituteFrom`; escape literal references there as `$${...}` (`make check-repo` fails on an unresolved one). Units without substitution, such as `platform-otel` with its `${env:...}` collector references, need no escaping.
 - **Double base64** has caused one outage: `data` values are encoded exactly once; prefer `stringData`.
 - **Traefik 3 (k3s chart 38)** ignores `ports.web.redirectTo`; the redirect is `ports.web.redirections.entryPoint`. The chart renders the redirect target as `:443`.
 - **oauth2-proxy ForwardAuth** needs `upstream=static://202`, `skip-provider-button=true` and the middleware pointing at `http://oauth2-proxy-shared.ingress.svc.cluster.local/` (not `/oauth2/auth`) so unauthenticated browsers get a followable 302. `email_domains = []` must stay in `config.configFile` or the chart's `*` default admits any Google account. Switching to GitHub: `provider: github`, drop `oidc-issuer-url`, keep the callback URL.

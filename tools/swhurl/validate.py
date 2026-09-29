@@ -132,10 +132,12 @@ def validate_render(runner: Runner, report: Report, path: Path, spec: dict, sett
     def replace_token(match: re.Match[str]) -> str:
         key = match.group(1)
         if key not in values:
-            fail(f'{label}: unresolved Flux substitution ${{{key}}}')
+            fail(f'{label}: unresolved Flux substitution ${{{key}}} '
+                 '(this unit substitutes; escape a literal reference as $${...})')
         return values[key]
 
-    substituted = TOKEN.sub(replace_token, rendered)
+    # Flux substitutes only in units with postBuild.substituteFrom; elsewhere ${...} reaches the cluster as written.
+    substituted = TOKEN.sub(replace_token, rendered) if values else rendered
     for item in yaml.safe_load_all(substituted):
         if not isinstance(item, dict) or not all(key in item for key in ('apiVersion', 'kind', 'metadata')):
             fail(f'{label}: rendered document lacks apiVersion, kind or metadata')

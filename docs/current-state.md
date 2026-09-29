@@ -163,6 +163,12 @@ k3s datastore, checked by the operator with `sudo ls -la /var/lib/rancher/k3s/se
 
 Not exercised: a scheduled (03:30) run and a restore from S3 on another machine.
 
+## Host timer logs in ClickStack
+
+29 September 2026, commits `343fdec` (DaemonSet `file_log/host-timers` receiver; unit output to `/var/log/swhurl-platform/<unit>.log`) and `bcfc416` (rotation before each run past 5 MiB, since systemd rotates only the journal and logrotate is not installed). The receiver was first run in the 0.160.0 collector image against sample lines: `service.name` came from the file name, `[OK]`→Info, `[ERROR]`→Error, `[HOST][WARN]`→Warn, unprefixed lines unset. The rotation command, unescaped as systemd runs it, was tested in fresh scratch directories: a small file stayed, a 5.3 MB file replaced `.log.1`, a missing file was a no-op; `systemd-analyze verify` accepted both units. After the operator ran `make host-backup`, `make host-dns` and started one backup: `/var/log/swhurl-platform/` holds `swhurl-backup-mongodb.log` and `aws-dns-updater.log` (root, 0644); both installed units carry `StandardOutput=append:` and the `ExecStartPre=+` rotation; both runs `Result=success` at 08:54 BST. ClickHouse received every line within seconds: `aws-dns-updater` 2 lines, `swhurl-backup-mongodb` 6 (4 `[OK]`, 2 `[INFO]`), with only `log.file.name` left as an attribute. ClickStack's collector gives unprefixed lines the text `info`.
+
+Not exercised: a real rotation (about months away at current volume) and a HyperDX alert on Error-severity timer lines.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

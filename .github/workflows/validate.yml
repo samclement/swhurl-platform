@@ -61,8 +61,8 @@ jobs:
       - name: Run operator dry runs
         run: |
           set -Eeuo pipefail
-          ./host/dynamic-dns.sh --dry-run
-          ./host/backup-timer.sh --dry-run
+          ./host/install-timer.sh dns --dry-run
+          ./host/install-timer.sh backup --dry-run
           make install DRY_RUN=true
           make backup-mongodb DRY_RUN=true
           make live-test-restore-mongodb DRY_RUN=true

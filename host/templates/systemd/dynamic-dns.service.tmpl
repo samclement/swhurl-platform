@@ -1,23 +1,23 @@
-# Managed template for host dynamic DNS updater
+# Managed template for the host dynamic DNS updater (make host-dns)
 [Unit]
-Description=Homelab Dynamic DNS Update Service
-After=network.target
+Description=Homelab dynamic DNS update (Route 53)
+Wants=network-online.target
+After=network-online.target
 
 [Service]
-Type=simple
-EnvironmentFile=__ENV_FILE__
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+Environment=HOME=__RUN_HOME__
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Read on every run: edit host/dns.env, no reinstall needed.
+EnvironmentFile=__REPO_DIR__/host/dns.env
 # Keep at most two files of about 5 MiB: rotate before each run once the log
 # passes 5 MiB (+ = as root, since the directory is root's; $$ and %% are
 # systemd escapes for $ and %).
 ExecStartPre=+/bin/sh -c 'f=/var/log/swhurl-platform/aws-dns-updater.log; if [ "$$(stat -c %%s "$$f" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$$f" "$$f.1"; fi'
-ExecStart=__EXEC_START__
-User=__RUN_USER__
-Restart=on-failure
+ExecStart=/bin/bash __REPO_DIR__/host/aws-dns-updater.sh
 # Output goes to a file the OTel DaemonSet reads (service.name from the file name);
 # the journal keeps start, finish and failure lines.
 StandardOutput=append:/var/log/swhurl-platform/aws-dns-updater.log
 StandardError=append:/var/log/swhurl-platform/aws-dns-updater.log
-RestartSec=10s
-
-[Install]
-WantedBy=multi-user.target

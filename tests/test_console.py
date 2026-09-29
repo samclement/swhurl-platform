@@ -117,6 +117,9 @@ class AppDetailTests(unittest.TestCase):
         ])
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
+        self.assertIn('id="replicas" name="replicas" placeholder="1"', text)
+        self.assertIn('formaction="/apps/web/prod/remove"', text)
+        self.assertNotIn('/promote', text, 'promote is offered only on staging')
         self.assertIn('https://web.homelab.swhurl.com', text)
         self.assertIn('CrashLoopBackOff', text)
 

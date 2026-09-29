@@ -32,6 +32,7 @@ def git_fake(app_new=APP_NEW_OK, status=' A apps/x\n'):
         'rev-parse': 'abc1234\n', 'status': status, 'show': 'abc1234 [console] apps: add\n 2 files changed\n'}.get(
         next((a for a in args if a in ('rev-parse', 'status', 'show')), ''), '')))(args, stdin))
         .on(sys.executable, '-m', 'swhurl', 'app-new', handler=remember(app_new))
+        .on(sys.executable, '-m', 'swhurl', handler=remember(Result((), 0, '[OK] edited\n')))
         .on('curl', handler=remember(Result((), 0, json.dumps({'html_url': 'https://github.com/x/pull/7'})))))
     return runner
 
@@ -180,6 +181,51 @@ class NewAppRouteTests(unittest.TestCase):
         runner = git_fake()
         c, _ = self.client(runner)
         self.assertEqual(c.post('/new', data=FORM, headers={**WHO, 'Origin': 'https://evil.example'}).status_code, 403)
+        self.assertEqual(runner.calls, [])
+
+
+
+class ChangeAppRouteTests(unittest.TestCase):
+    def client(self, runner, github=GITHUB):
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        return TestClient(server.create_app(runner, jobs=jobs, github=github)), jobs
+
+    def tool_call(self, runner):
+        return next(c for c in runner.calls if c[:3] == (sys.executable, '-m', 'swhurl'))
+
+    def test_scale_promote_and_remove_run_the_clones_commands(self):
+        cases = (
+            ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
+             ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
+             'console/scale-hello-prod-abc1234', '[console] apps: scale hello prod'),
+            ('/apps/hello/staging/promote', {}, ('app-promote', 'hello', '--from=staging', '--to=prod'), 'hello/prod',
+             'console/promote-hello-staging-abc1234', '[console] apps: promote hello staging to prod'),
+            ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
+             'console/remove-hello-staging-abc1234', '[console] apps: remove hello staging'),
+        )
+        for path, form, command, target, branch, title in cases:
+            with self.subTest(path=path):
+                runner = git_fake()
+                c, jobs = self.client(runner)
+                response = c.post(path, data=form, headers=WHO, follow_redirects=False)
+                self.assertEqual(response.status_code, 303, response.text)
+                self.assertEqual(self.tool_call(runner)[3:], command)
+                job = jobs.get(1)
+                self.assertEqual((job.state, job.unit, job.link), ('succeeded', target, 'https://github.com/x/pull/7'))
+                curl_args = next(a for a, _ in runner.stdin if a[0] == 'curl')
+                payload = json.loads(curl_args[curl_args.index('--data-binary') + 1])
+                self.assertEqual((payload['head'], payload['title']), (branch, title))
+
+    def test_refusals_run_nothing(self):
+        runner = git_fake()
+        c, _ = self.client(runner)
+        for path, form, code in (('/apps/hello/prod/promote', {}, 400), ('/apps/hello/prod/scale', {}, 400),
+                                 ('/apps/hello/prod/scale', {'replicas': '2; rm'}, 400), ('/apps/hello/prod/delete', {}, 404),
+                                 ('/apps/Hello/prod/remove', {}, 404), ('/apps/hello/dev/remove', {}, 404)):
+            with self.subTest(path=path, form=form):
+                self.assertEqual(c.post(path, data=form, headers=WHO).status_code, code)
+        c, _ = self.client(runner, github=None)
+        self.assertEqual(c.post('/apps/hello/prod/remove', headers=WHO).status_code, 409)
         self.assertEqual(runner.calls, [])
 
 

@@ -176,6 +176,10 @@ Not exercised: a real rotation (about months away at current volume) and a Hyper
 - **One way to run MongoDB scripts** (`85d87aa`): every script is in `clickstack.py` and prints one `RESULT` line; the restore test's throwaway pod uses the same helper. Live: `make backup-mongodb` (`20260929T112850Z`; retention pruned the local `20260929T075452Z`, whose S3 copy remains), `make live-test-restore-mongodb` and `make verify-platform` passed.
 - **One host timer installer** (`d7686de`): `host/install-timer.sh dns|backup` replaced `dynamic-dns.sh`, `backup-timer.sh` and `lib.sh`. After the operator ran `make host-dns` and `make host-backup`: both units come from the new templates, are `oneshot` and `static` (timer-only), the DNS service has no `multi-user.target` link any more, and `/etc/swhurl-platform/dynamic-dns.env` and `~/.local/scripts/aws-dns-updater.sh` are gone. The first run of the new DNS unit (12:45 BST) ran `host/aws-dns-updater.sh` from the checkout with `host/dns.env`, logged `IP unchanged` for both records, and reached ClickStack as `aws-dns-updater`; `make verify-platform` passed. CI failed on `d7686de` (ShellCheck SC2015 in the new script): local `make check` had passed because `check-lint` read only tracked files and the script was not yet added. Fixed in the next commit, and `check-lint` now includes untracked shell files, as the syntax check already did.
 
+## Console phase 1 (29 September 2026)
+
+Tooling only (`e180ff2`; plan section 7). After reconciling `e180ff2`, `make app-status APP=hello ENV=prod` printed the same lines as before the change (the offline test pins them), and `make verify-platform` passed with all 13 units Ready and the same sections. Run with `allowed={'cluster'}` as the console will, `verify_platform` reported only Flux and Ingress, made no Secret read or exec call, and named the four skipped checks. `Runner.stream()` read two live lines of `kubectl logs --follow` from `hello-prod` and stopped the command when closed.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

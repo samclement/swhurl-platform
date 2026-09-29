@@ -5,4 +5,3 @@ resources:
   - platform.yaml
   - app-hello-staging.yaml
   - app-hello-prod.yaml
-  - app-promote-test-prod.yaml

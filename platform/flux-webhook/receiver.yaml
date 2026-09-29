@@ -1,0 +1,19 @@
+# GitHub calls this on every push (repository webhook, docs/services.md#push-webhook);
+# Flux then fetches swhurl-platform at once instead of at its 1-minute interval.
+# Requests must be signed with the token in secret.sops.yaml. Pushes to other
+# branches (the console's console/* PR branches) are ignored by the filter.
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: github
+  namespace: flux-system
+spec:
+  type: github
+  events: [ping, push]
+  secretRef:
+    name: github-webhook-token
+  resources:
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: swhurl-platform
+  resourceFilter: has(req.ref) && req.ref == 'refs/heads/main'

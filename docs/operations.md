@@ -46,6 +46,12 @@ Replace the console's GitHub token (before it expires; `make verify-platform` wa
 2. In your own terminal: `sops platform/console/secret.sops.yaml` and replace the `GITHUB_TOKEN` value. Never paste the token anywhere else.
 3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
+Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub rejects nothing in between, but Flux ignores pushes until both sides match, so do it in one go:
+
+1. In your own terminal: `sops platform/flux-webhook/secret.sops.yaml` and set `token` to the output of `openssl rand -hex 32`.
+2. `make check-secrets`, commit, push, `make reconcile UNIT=platform-flux-webhook` (the receiver reads the Secret on each request; nothing restarts).
+3. On GitHub: Settings → Webhooks → the `flux-webhook` hook → Secret: paste the same value, save, then **Redeliver** the latest delivery and check it returns 200.
+
 ## Certificate mode
 
 `CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.

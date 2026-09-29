@@ -38,6 +38,7 @@ flowchart LR
   auth --> clickstack
   base --> otel[platform-otel]
   base --> reloader[platform-reloader]
+  base --> webhook[platform-flux-webhook]
   base --> console[platform-console]
   auth --> console
   traefik[infra-traefik]
@@ -58,6 +59,7 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
+| `platform-flux-webhook` | GitHub push `Receiver`, its token Secret, Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-console` | The web console, its RBAC (read, plus patch on Flux units), NetworkPolicy and GitHub token Secret (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 

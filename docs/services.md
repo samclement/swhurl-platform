@@ -14,6 +14,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector |
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
+| [Push webhook](#push-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (Flux `Receiver`) |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
 
@@ -69,6 +70,15 @@ The collectors' `authorization` header reads `${env:CLICKSTACK_INGESTION_KEY}` a
 ## Reloader
 
 Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`, `console`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace and `make app-remove` takes it out; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`), both OTel collectors (`clickstack-ingestion-key`) and the console (`console-github`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
+
+## Push webhook
+
+GitHub calls `https://flux-webhook.<BASE_DOMAIN>/hook/<path>` on every push to this repository; the Flux `Receiver` then fetches `main` at once, instead of within the `GitRepository`'s 1-minute interval. Pushes to other branches, such as the console's `console/*` PR branches, are ignored (`resourceFilter`).
+
+- **Token:** a random shared secret (`openssl rand -hex 32`) in [`platform/flux-webhook/secret.sops.yaml`](../platform/flux-webhook/secret.sops.yaml) and, with the same value, as the webhook's secret in the repository settings on GitHub. GitHub signs each request with it; the receiver rejects anything else. It is not a GitHub credential. Rotate it: [operations](operations.md#secrets).
+- **Route:** the only platform Ingress without sign-in (GitHub cannot sign in); it serves only `/hook/` and only Flux's `webhook-receiver` Service (`make check` enforces both). A NetworkPolicy admits Traefik to cert-manager's HTTP-01 solver in `flux-system`, which Flux's own policy would block.
+- **GitHub side:** Settings → Webhooks → `flux-webhook.<BASE_DOMAIN>`, content type `application/json`, events: push. Recent Deliveries shows each call and its response.
+- If GitHub cannot reach it, nothing breaks: Flux still polls every minute.
 
 ## Certificates, ingress and storage
 

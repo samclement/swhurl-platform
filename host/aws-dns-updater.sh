@@ -70,15 +70,18 @@ load_records() {
   fi
 }
 
+# Route 53 returns a wildcard's `*` as the octal escape `\052`, so names are
+# normalised before comparing; matching the raw name never found the wildcard.
 record_ip() {
   local record="$1"
-  local query_record="${record}."
   local ip
   ip="$(
     aws route53 list-resource-record-sets \
       --hosted-zone-id "$ZONE_ID" \
-      --query "ResourceRecordSets[?Name == '${query_record}' && Type == 'A'] | [0].ResourceRecords[0].Value" \
-      --output text 2>/dev/null || true
+      --query "ResourceRecordSets[?Type == 'A'].[Name, ResourceRecords[0].Value]" \
+      --output text 2>/dev/null \
+      | awk -F '\t' -v want="${record}." '{ name = $1; gsub(/\\052/, "*", name); if (name == want) { print $2; exit } }' \
+      || true
   )"
   if [[ "$ip" == "None" || ! $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
     printf ''

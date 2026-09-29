@@ -44,8 +44,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-console
-              tag: b63d2aff9dfd4cf9df0307e382038dcbd15e29ed
-              digest: sha256:22c069a6a2eeb12b6741429fb86c9f77e8c7b15db5192a14553ae9cc6fcc01f7
+              tag: 79c07f3fa8917dac121bb28a94213e70ac15b840
+              digest: sha256:6938c2e8751137e5b3b8fd525222a4f3358774b157f8c4366e60117639986ec2
             resources:
               requests:
                 cpu: 10m

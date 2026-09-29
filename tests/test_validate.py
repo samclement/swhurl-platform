@@ -7,7 +7,7 @@ from pathlib import Path
 
 from swhurl import platform, validate
 from swhurl.report import Report
-from swhurl.run import FakeRunner
+from swhurl.run import FakeRunner, Result
 
 SETTINGS = 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: platform-settings}\ndata: {CERT_ISSUER: x}\n'
 KUSTOMIZATION = 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources: []\n'
@@ -63,22 +63,29 @@ class SubstitutionTests(unittest.TestCase):
     SUBSTITUTES = {'postBuild': {'substituteFrom': [{'kind': 'ConfigMap', 'name': 'platform-settings', 'optional': False}]}}
 
     def render(self, spec, rendered=RENDERED):
-        runner = FakeRunner().on('kubectl', 'kustomize', stdout=rendered).on('flux-schema')
+        """Validate one unit; returns what flux-schema was given (the manifests Flux would apply)."""
+        validated = []
+
+        def schema(args, manifests):
+            validated.append(manifests)
+            return Result(args)
+        runner = FakeRunner().on('kubectl', 'kustomize', stdout=rendered).on('flux-schema', handler=schema)
         validate.validate_render(runner, Report(io.StringIO()), Path.cwd() / 'unit', spec, {'BASE_DOMAIN': 'example.test'},
                                  root=Path.cwd())
-        return runner
+        return validated[0]
 
     def test_unit_without_substitution_keeps_dollar_references(self):
-        runner = self.render({}, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {auth: "${env:KEY}"}\n')
-        schema_input = [c for c in runner.calls if c[0] == 'flux-schema']
-        self.assertTrue(schema_input)
+        manifests = self.render({}, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {auth: "${env:KEY}"}\n')
+        self.assertIn('${env:KEY}', manifests)
 
     def test_substituting_unit_rejects_an_unescaped_env_reference(self):
         with self.assertRaisesRegex(validate.ValidationError, r'unresolved Flux substitution \$\{env:KEY\}.*escape'):
             self.render(self.SUBSTITUTES)
 
     def test_substituting_unit_resolves_settings(self):
-        self.render(self.SUBSTITUTES, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {host: "a.${BASE_DOMAIN}"}\n')
+        manifests = self.render(self.SUBSTITUTES, 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\ndata: {host: "a.${BASE_DOMAIN}"}\n')
+        self.assertIn('a.example.test', manifests)
+        self.assertNotIn('${BASE_DOMAIN}', manifests)
 
 
 if __name__ == '__main__':

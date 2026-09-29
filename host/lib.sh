@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the host installers (dynamic-dns.sh, backup-timer.sh).
 # Sourced, not run. Both install system units under /etc/systemd/system that
 # run as the invoking user, and log to the system journal (journalctl -u <unit>).
@@ -17,6 +18,14 @@ host_sudo() {
     host_need_cmd sudo
     sudo "$@"
   fi
+}
+
+# Fail early, with a clear message, when sudo cannot ask for a password here
+# (for example under Claude Code's `!` prefix, which has no terminal).
+host_require_sudo() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] && return 0
+  host_need_cmd sudo
+  sudo -v 2>/dev/null || host_die "sudo needs a password and there is no terminal; run this in a terminal"
 }
 
 # True on Linux with systemd; otherwise explains and returns 1.
@@ -55,6 +64,6 @@ host_write_if_changed() {
   else
     host_log_info "Creating $(basename "$path")"
   fi
-  printf "%s" "$content" | host_sudo tee "$path" >/dev/null
+  printf "%s" "$content" | host_sudo tee "$path" >/dev/null || host_die "Could not write $path"
   return 0
 }

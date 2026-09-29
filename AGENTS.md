@@ -12,6 +12,14 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - Never print Secret values. Compare by bytes or hashes (`make check-secrets`, `make verify-platform`). `age.agekey` stays out of Git.
 - Scripted `kubectl` needs `export KUBECONFIG=$HOME/.kube/config`; the k3s wrapper otherwise reads `/etc/rancher/k3s/k3s.yaml`.
 
+## Working with the operator (draft)
+
+- **Explain concretely.** Lead with an example; show before and after for renames and moves; draw a flow for anything crossing systems; say what an offered next step produces ("draft files, nothing applied"). After a change the operator can see, end with a "Test it yourself" block.
+- **Verify like a user.** Check every entry point (http and https, signed in and out), prove scripts stop on failure, and read release notes and propose an upgrade path before merging a major version.
+- **Act without asking** on warnings and doc gaps within the current change, offline-only fixes, and the next step of an approved outline. Stop for the confirm-first list above, a real choice between options, or scope growth.
+- **Hand off commands precisely.** Label each block "run with `!`" or "run in your own terminal" (`sudo`, interactive logins; `!` has no terminal). Say what you will check afterwards, and watch long waits in the background instead of asking to be prompted.
+- **Skills:** `decision-brief` before recommending a costly or undecided approach, `new-component-checklist` when adding anything that runs, stores data or holds a credential, `phase-handoff` for multi-step work.
+
 ## Where things are documented
 
 | Topic | Canonical page |

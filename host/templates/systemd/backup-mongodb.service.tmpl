@@ -11,6 +11,10 @@ WorkingDirectory=__REPO_DIR__
 Environment=HOME=__RUN_HOME__
 Environment=KUBECONFIG=__RUN_HOME__/.kube/config
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Keep at most two files of about 5 MiB: rotate before each run once the log
+# passes 5 MiB (+ = as root, since the directory is root's; $$ and %% are
+# systemd escapes for $ and %).
+ExecStartPre=+/bin/sh -c 'f=/var/log/swhurl-platform/swhurl-backup-mongodb.log; if [ "$$(stat -c %%s "$$f" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$$f" "$$f.1"; fi'
 ExecStart=/usr/bin/make backup-mongodb
 # Output goes to a file the OTel DaemonSet reads (service.name from the file name);
 # the journal keeps start, finish and failure lines.

@@ -48,7 +48,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 
 ## Documentation
 
-- Claude Code sessions can apply the repository's documentation approach with the [`document-repo` skill](../.claude/skills/document-repo/SKILL.md) (`/document-repo`), including syncing docs to a change.
+- Claude Code sessions can apply the repository's documentation approach with the [`document-repo` skill](../.claude/skills/document-repo/SKILL.md) (`/document-repo`), including syncing docs to a change. Draft working skills (`decision-brief`, `new-component-checklist`, `phase-handoff`) sit beside it; `AGENTS.md` says when each applies.
 - Update the docs in the same commit as the behaviour. Each topic has one page; link rather than repeat:
 
   | Topic | Page |

@@ -6,6 +6,10 @@ After=network.target
 [Service]
 Type=simple
 EnvironmentFile=__ENV_FILE__
+# Keep at most two files of about 5 MiB: rotate before each run once the log
+# passes 5 MiB (+ = as root, since the directory is root's; $$ and %% are
+# systemd escapes for $ and %).
+ExecStartPre=+/bin/sh -c 'f=/var/log/swhurl-platform/aws-dns-updater.log; if [ "$$(stat -c %%s "$$f" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$$f" "$$f.1"; fi'
 ExecStart=__EXEC_START__
 User=__RUN_USER__
 Restart=on-failure

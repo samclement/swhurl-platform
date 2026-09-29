@@ -25,6 +25,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 | `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
 | `app-scale APP= ENV= ARGS="..."` | Change `--replicas` (0 to 10), `--cpu`, `--memory` or `--memory-limit` | Git |
 | `app-remove APP= ENV=` | Delete the instance's files, its unit file and registration, and its Reloader namespace; warns when a retained volume will be kept | Git |
+| `console-image` | Pin `platform/console` to the image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run | Git |
 | `console-dev` | The read-only web console on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity, reading the cluster with your kubeconfig: apps, Flux units, cluster-only platform checks. Needs `uv`. The deployed copy is at `console.<BASE_DOMAIN>` ([services](services.md#console)) | Cluster (read) |
 
 ## Settings

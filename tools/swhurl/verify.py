@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, clickstack, platform, recovery
+from swhurl import ROOT, clickstack, images, platform, recovery
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -227,7 +227,11 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
 
 
 def check_console(runner: Runner, report: Report) -> None:
-    """The console image's tag is the commit it was built from; warn if its inputs changed since then."""
+    """Warn if the console image's inputs changed since it was built.
+
+    A ``src-<hash>`` tag (make console-image) is compared with the hash of this
+    checkout's inputs; a commit tag with git diff since that commit.
+    """
     report.section('Console')
     try:
         release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
@@ -235,15 +239,22 @@ def check_console(runner: Runner, report: Report) -> None:
     except (CommandError, KeyError, TypeError):
         report.bad('cannot read the console HelmRelease image tag (console/console)')
         return
-    changed = runner.run(['git', '-C', str(ROOT), 'diff', '--quiet', tag, 'HEAD', '--',
-                          *platform.CONSOLE_IMAGE_INPUTS], check=False).returncode
-    if changed == 0:
-        report.ok(f'console image {tag[:7]} is built from the current tooling')
-    elif changed == 1:
-        report.warn(f'tooling changed since console image {tag[:7]}; after the publish run, '
-                    'copy its tag and digest into platform/console/helmrelease.yaml')
+    label = tag if tag.startswith('src-') else tag[:7]
+    if tag.startswith('src-'):
+        try:
+            changed = 0 if images.content_tag(runner) == tag else 1
+        except CommandError:
+            changed = 2
     else:
-        report.warn(f'cannot compare console image {tag[:7]} with this checkout (git fetch?)')
+        changed = runner.run(['git', '-C', str(ROOT), 'diff', '--quiet', tag, 'HEAD', '--',
+                              *platform.CONSOLE_IMAGE_INPUTS], check=False).returncode
+    if changed == 0:
+        report.ok(f'console image {label} is built from the current tooling')
+    elif changed == 1:
+        report.warn(f'tooling changed since console image {label}; after the publish run: make console-image, '
+                    'commit and push')
+    else:
+        report.warn(f'cannot compare console image {label} with this checkout (git fetch?)')
 
 
 TOKEN_WARN_DAYS = 14

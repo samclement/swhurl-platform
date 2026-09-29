@@ -1,6 +1,7 @@
-# The console image is published by .github/workflows/publish-console.yml; to
-# deploy a new one, copy the tag (commit SHA) and index digest from that run's
-# summary. make verify-platform warns when the tooling has changed since the tag.
+# The console image is published by .github/workflows/publish-console.yml. To
+# deploy the image for the current commit: make console-image (pins the
+# src-<hash of the image's inputs> tag and its digest), commit, push.
+# make verify-platform warns when the inputs have changed since the pinned image.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

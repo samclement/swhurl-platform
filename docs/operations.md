@@ -80,7 +80,7 @@ For each PR: read the chart's release notes and compare its `appVersion` (`helm 
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
 | ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | Daily `make backup-mongodb` to this host and S3; data volume on `local-path-retain` |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
-| Cluster state (k3s datastore) | Reconstructible | Rebuilt from Git by Flux ([bootstrap](bootstrap.md)) |
+| Cluster state (k3s SQLite datastore, `/var/lib/rancher/k3s/server/db`) | Reconstructible | Rebuilt from Git by Flux ([bootstrap](bootstrap.md)); not backed up |
 
 ```bash
 make backup-mongodb              # encrypted dump to ~/.local/state/swhurl-platform/backups, then S3

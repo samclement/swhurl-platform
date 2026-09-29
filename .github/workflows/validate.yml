@@ -63,6 +63,9 @@ jobs:
       - name: Check app instances against policy
         run: make check-apps
 
+      - name: Validate OTel collector config with its collector release
+        run: make check-otel
+
       - name: Run operator dry runs
         run: |
           set -Eeuo pipefail

@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: console-smoke-staging
-  labels:
-    platform.swhurl.com/managed: 'true'
-    platform.swhurl.com/app: console-smoke
-    platform.swhurl.com/environment: staging
-    platform.swhurl.com/exposure: authenticated-web

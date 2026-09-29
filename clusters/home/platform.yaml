@@ -40,11 +40,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./platform/clickstack
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: platform-settings
-        optional: false
   decryption:
     provider: sops
     secretRef:

@@ -42,16 +42,7 @@ oauth2-proxy signs users in with Google (OIDC) and serves the Traefik middleware
 
 ClickStack (HyperDX UI, ClickHouse, MongoDB) stores logs, metrics and traces. Two OTel collectors in `logging`, a per-node DaemonSet and a cluster Deployment, send node and cluster telemetry to ClickStack's collector with an ingestion key.
 
-Two keys, not to be confused:
-
-| Key | Secret | Purpose |
-| --- | --- | --- |
-| `HYPERDX_API_KEY` | `logging/hyperdx-secret` ([file](../platform/otel/secret.sops.yaml)) | Ingestion key the collectors send. Must equal the ClickStack team key held in MongoDB; `make verify-platform` compares them by bytes. |
-| `CLICKSTACK_API_KEY` | `observability/clickstack-runtime-inputs` ([file](../platform/clickstack/secret.sops.yaml)) | Chart bootstrap key passed to `hyperdx.apiKey` (the chart also renders it into `observability/clickstack-app-secrets`). On a fresh install it seeds the team key in MongoDB; after first sign-in MongoDB owns the ingestion key, which survives redeploys as long as MongoDB data does. |
-
-**Known issue:** `CLICKSTACK_API_KEY` is stored base64-encoded twice, so the ClickStack app runs with the 48-character once-decoded text. It works because nothing needs it to match the team key. Fixing the encoding restarts ClickStack with a different key: plan it rather than fixing it in passing. `make check-secrets` warns about it.
-
-Retention: telemetry expires after 30 days (the collector image sets the table TTL; `make verify-platform` checks it). ClickHouse's own logs (`system.query_log`, `trace_log`, ...) expire after 7 days through [`configmap-clickhouse-log-ttl.yaml`](../platform/clickstack/configmap-clickhouse-log-ttl.yaml), mounted into `config.d` by a HelmRelease post-renderer because the chart's `config.xml` is fixed. ClickHouse reads it only at startup, so restart `deploy/clickstack-clickhouse` after editing it; when a table definition changes, ClickHouse keeps the old table as `<name>_N` (without TTL), which you can drop once checked. `global.keepPVC: true` keeps all three ClickStack claims on Helm uninstall.
+**In progress (29 September 2026):** the chart 1.x release was uninstalled and its volumes deleted; ClickStack is being reinstalled fresh on chart 3.4.0 with operator-managed MongoDB and ClickHouse. Until that lands, the collectors cannot deliver telemetry and `make verify-platform` fails its ClickStack checks.
 
 The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:HYPERDX_API_KEY}` into the collector's `${env:...}` reference.
 

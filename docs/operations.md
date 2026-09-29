@@ -58,7 +58,7 @@ kubectl get ingress -A -o custom-columns=NS:.metadata.namespace,NAME:.metadata.n
 
 ## Lifecycle
 
-Deploy, update and uninstall through Git. Removing an app instance's unit from `clusters/home/kustomization.yaml` uninstalls it; namespaces and claims annotated `kustomize.toolkit.fluxcd.io/prune: disabled` stay. For what Git cannot express:
+Deploy, update and uninstall through Git. Removing an app instance's unit from `clusters/home/kustomization.yaml` uninstalls it (`make app-remove` or the console's Uninstall does that and removes its files, [apps](apps.md#operate-an-instance)); namespaces and claims annotated `kustomize.toolkit.fluxcd.io/prune: disabled` stay. For what Git cannot express:
 
 | Command | Effect | Data |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ Deleting a shared Flux unit by mistake is safe: shared units use `deletionPolicy
 
 For each PR: read the chart's release notes and compare its `appVersion` (`helm pull <chart> --repo <url> --version <v>` for both versions); charts that leave image tags unpinned upgrade the app with it, so a patch bump can be a large app upgrade (ClickStack 1.1.2 moved HyperDX from 2.8.0 to 2.19.0). Run `make backup-mongodb` before a ClickStack bump. For the OTel chart, CI's `make check-otel` validates the rendered collector config with the new collector version and lists deprecated component names. Let CI render it, merge, then `make flux-reconcile` and `make verify-platform` (and `make app-status` for app-template). To roll back, revert the merge commit. Renovate runs as the Mend-hosted Renovate GitHub App, which needs access to this repository and its mode set to Interactive on developer.mend.io; in silent mode it scans but opens nothing. Its run logs are there too.
 
-Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both [`validate.yml`](../.github/workflows/validate.yml) and the console image ([`images/console/Dockerfile`](../images/console/Dockerfile)), with `flux` and `sops` pinned in the image only. Bump a version in both places, with its SHA-256 in the Dockerfile, then deploy the new image with `make console-image` ([services](services.md#console)). Flux itself is not in Git: it is upgraded by running `flux install` from a newer CLI, and the Dockerfile's `FLUX_VERSION` should then match it.
+Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both [`validate.yml`](../.github/workflows/validate.yml) and the console image ([`images/console/Dockerfile`](../images/console/Dockerfile)), with `flux` and `sops` pinned in the image only. Bump a version in both places, with its SHA-256 in the Dockerfile, then deploy the new image with `make console-image` ([console](console.md#deploy-a-new-console)). Flux itself is not in Git: it is upgraded by running `flux install` from a newer CLI, and the Dockerfile's `FLUX_VERSION` should then match it.
 
 ## Backups and recovery
 

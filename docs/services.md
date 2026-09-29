@@ -5,16 +5,17 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | Service | Flux unit · path | Namespace | Host | Chart |
 | --- | --- | --- | --- | --- |
 | Namespaces, storage classes | `infra-base` · [`infra/base`](../infra/base) | — | — | — |
-| cert-manager | `infra-cert-manager` · [`infra/cert-manager`](../infra/cert-manager) | `cert-manager` | — | cert-manager v1.19.3 |
+| cert-manager | `infra-cert-manager` · [`infra/cert-manager`](../infra/cert-manager) | `cert-manager` | — | cert-manager |
 | ClusterIssuers | `infra-issuers` · [`infra/issuers`](../infra/issuers) | — | — | plain manifests |
 | Traefik settings | `infra-traefik` · [`infra/traefik`](../infra/traefik) | `kube-system` | — | k3s packaged (chart 38, Traefik 3.6) |
-| Sign-in (oauth2-proxy) | `platform-oauth2-proxy` · [`platform/oauth2-proxy`](../platform/oauth2-proxy) | `ingress` | `oauth.` | oauth2-proxy 10.1.3 |
-| ClickStack | `platform-clickstack` · [`platform/clickstack`](../platform/clickstack) | `observability` | `clickstack.` | clickstack 1.1.1 |
-| OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector 0.145.0 |
-| Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader 2.2.17 |
-| Console | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template 5.2.1, image from this repo |
+| Sign-in (oauth2-proxy) | `platform-oauth2-proxy` · [`platform/oauth2-proxy`](../platform/oauth2-proxy) | `ingress` | `oauth.` | oauth2-proxy |
+| ClickStack operators | `platform-clickstack-operators` · [`platform/clickstack-operators`](../platform/clickstack-operators) | `observability` | — | clickstack-operators (MongoDB and ClickHouse operators and CRDs) |
+| ClickStack | `platform-clickstack` · [`platform/clickstack`](../platform/clickstack) | `observability` | `clickstack.` | clickstack |
+| OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector |
+| Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
+| [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 
-Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`).
+Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
 
 ## Settings
 
@@ -67,23 +68,7 @@ The collectors' `authorization` header reads `${env:CLICKSTACK_INGESTION_KEY}` a
 
 ## Reloader
 
-Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`, `console`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`), both OTel collectors (`hyperdx-secret`) and the console (`console-github`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
-
-## Console
-
-A web console at `https://console.<BASE_DOMAIN>`, behind the shared sign-in: app instances (the facts `make app-status` shows), the Flux units in columns by `dependsOn`, and the `make verify-platform` checks that need only cluster reads (Flux units and the HTTPS redirect). Its only cluster actions are **reconcile**, **suspend** and **resume** of a Flux unit; every other change is a **pull request** it opens against this repo, which you review and merge.
-
-- **Actions:** buttons on each unit card (and Reconcile on an app's page) run `flux reconcile kustomization <unit> --with-source`, `flux suspend` or `flux resume` as a background job; its page shows flux's output as it arrives and refreshes until it finishes. One job per unit at a time. `cluster-sources` and `cluster-stack` are refused (applied by `make flux-bootstrap`). Suspending a unit stops Git changes reaching it, as `make suspend` does ([lifecycle](operations.md#lifecycle)); its HelmReleases keep their last spec. The Jobs page lists jobs since the console started (memory only).
-- **New app (PR):** the New app form takes the `make app-new` options ([apps](apps.md#add-an-app)); an empty field shows, in grey, the default `app-new` will use (read from its parser in the console's image). The job clones `main`, runs that clone's `app-new` (its rules and its app-policy check, with SOPS encryption of any Secret stub), commits as `swhurl console` with a `Requested-by: <email>` trailer, pushes `console/new-<app>-<env>-<commit>` and opens a PR titled `[console] apps: add <app> <env>`; the job page links it. Nothing reaches the cluster until you merge; CI checks the PR as usual. Set any `REPLACE_ME` Secret values with `sops` on the PR branch before merging.
-- **Promote, scale, uninstall (PRs):** an app's page has a Scale form (current replicas and resources in grey; empty fields stay), **Promote to prod** on staging, and **Uninstall**. Each job runs the clone's `make app-promote`, `app-scale` or `app-remove` equivalent ([apps](apps.md#operate-an-instance)) and opens a PR (`console/<change>-<app>-<env>-<commit>`).
-- **GitHub token:** a fine-grained token (this repository; Contents and Pull requests read/write) in [`platform/console/secret.sops.yaml`](../platform/console/secret.sops.yaml), as `GITHUB_TOKEN` in the pod. It is used only to push `console/*` branches (through a git credential helper) and to open PRs (`curl` with the header on stdin); it never appears in a command line and is redacted from all output. PRs and pushes appear as the token's owner. `main` is not protected, so the limit to `console/*` branches is the console's code (tested). `make verify-platform` checks GitHub accepts it and warns 14 days before it expires; [replacing it](operations.md#secrets). Reloader restarts the console when the Secret changes.
-- **Audit:** each job logs `[AUDIT] <email> <action> <target>: started|succeeded (job N)` (with the PR's URL for a new app), or `[ERROR] … failed`, to stdout; search for `[AUDIT]` in ClickStack.
-
-- **Access:** oauth2-proxy (with `set-xauthrequest`) returns the signed-in email as `X-Auth-Request-Email` and the ForwardAuth middleware copies it to the request; the console answers 401 without it (except `/healthz`). A POST must carry an `Origin` naming the console's own host (403 otherwise), so another site cannot start an action with the sign-in cookie. A NetworkPolicy admits only Traefik's pods, so no other pod can send a forged header.
-- **Identity in the cluster:** the ServiceAccount `console/console` (created by the HelmRelease) is bound to `platform-console-read` (get, list and watch on Flux units, HelmReleases, the Git source, pods, workloads, Ingresses and Certificates) and, in `flux-system` only, `platform-console-operate` (patch on Kustomizations and GitRepositories, which the three flux commands need). No Secrets, no `pods/exec`, nothing else writable; RBAC cannot restrict which fields a patch changes, so the console's code does. It is the one pod in the platform that mounts a service-account token by design.
-- **Image:** `ghcr.io/samclement/swhurl-console` (public), built from [`images/console/Dockerfile`](../images/console/Dockerfile) and published after CI passes on `main` ([contributing](contributing.md#operator-tooling)). Each image is tagged with its commit and with `src-<hash>` of its inputs (`tools/`, the Dockerfile, the lock file, the settings file). The HelmRelease pins a `src-` tag and its index digest. `make verify-platform` warns when this checkout's inputs hash differently from the pinned tag. To deploy: push, wait for the publish run, then `make console-image` (computes the tag, looks up its digest on GHCR, edits [`platform/console/helmrelease.yaml`](../platform/console/helmrelease.yaml)), commit, push, `make reconcile UNIT=platform-console`. A docs-only commit has the same hash, so there is nothing to deploy.
-- **State:** none. It keeps nothing between requests and has no data to back up; `/tmp` is a 1 GiB `emptyDir`. Its logs (one line per request) reach ClickStack through the OTel DaemonSet like any pod's.
-- **Run locally:** `make console-dev` serves the same pages from your checkout on `127.0.0.1`.
+Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`, `console`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace and `make app-remove` takes it out; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`), both OTel collectors (`clickstack-ingestion-key`) and the console (`console-github`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
 
 ## Certificates, ingress and storage
 

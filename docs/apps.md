@@ -24,7 +24,7 @@ git commit -m "apps: add weather-api staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging
 ```
 
-The console's New app form opens the same change as a PR ([services](services.md#console)). The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
+The console's New app form opens the same change as a PR ([console](console.md)). The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
 
 | Option | Rules |
 | --- | --- |
@@ -58,7 +58,7 @@ make app-reconcile APP=hello ENV=prod
 make app-check APP=hello ENV=prod      # policy, offline
 ```
 
-Change an app by editing its files and pushing, or with these Git-only commands (commit and push after each; the console offers the same as pull requests, [services](services.md#console)):
+Change an app by editing its files and pushing, or with these Git-only commands (commit and push after each; the console offers the same as pull requests, [console](console.md)):
 
 ```bash
 make app-promote APP=hello                                  # staging's image tag and digest into prod
@@ -92,5 +92,5 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Image tags and digests, and promotion between environments, are manual edits. Renovate opens PRs only for chart versions, including app-template ([chart updates](operations.md#chart-updates)); digest PRs are planned ([plan](plan.md) section 0, PR06).
+- Image tags and digests are edited by hand (then `make app-promote` copies staging's into prod). Renovate opens PRs only for chart versions, including app-template ([chart updates](operations.md#chart-updates)); digest PRs are planned ([plan](plan.md) section 0, PR06).
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

@@ -2,7 +2,8 @@
 #   podman build -f images/console/Dockerfile -t swhurl-console .
 # kubectl and helm versions match CI (.github/workflows/validate.yml). No flux CLI:
 # the console patches Flux objects with kubectl (tools/swhurl/console/actions.py).
-# x86-64 only. Every download is checked against a pinned SHA-256.
+# x86-64 only. Every download is checked against a pinned SHA-256. The runtime is
+# Alpine (musl); the Go CLIs are static, and the deps stage matches it so wheels are musllinux.
 
 FROM ghcr.io/astral-sh/uv:0.10.9@sha256:10902f58a1606787602f303954cea099626a4adb02acbac4c69920fe9d278f82 AS uv
 
@@ -23,14 +24,14 @@ RUN set -eux; \
     curl -fsSLo sops "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"; \
     echo "${SOPS_SHA256}  sops" | sha256sum -c -; install -m 0755 sops /out/sops
 
-FROM docker.io/library/python:3.12-slim-bookworm@sha256:1aaa65a85fda306ffb8b910824d4e93bdce61e212c7e87168123ea3073b41a1a AS deps
+FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111 AS deps
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # The check and console groups (the defaults), exactly as locked; nothing else.
 RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --no-cache --no-install-project
 
-FROM docker.io/library/python:3.12-slim-bookworm@sha256:1aaa65a85fda306ffb8b910824d4e93bdce61e212c7e87168123ea3073b41a1a
+FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111
 ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/samclement/swhurl-platform" \
       org.opencontainers.image.description="swhurl platform web console" \

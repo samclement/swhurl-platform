@@ -98,7 +98,8 @@ class GeneratorTests(unittest.TestCase):
             (fake / 'sops').write_text('#!/bin/sh\nfor f; do :; done\nprintf "sops: {}\\n" >> "$f"\n')
             (fake / 'sops').chmod(0o755)
             env = dict(os.environ, FIXTURE_ROOT=str(Path(tmp) / 'out'), PATH=f'{fake}:{os.environ["PATH"]}')
-            subprocess.run([str(FIXTURES.parent / 'apps.sh')], env=env, check=True, capture_output=True)
+            result = subprocess.run([str(FIXTURES.parent / 'apps.sh')], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             out = Path(tmp) / 'out'
             generated = {p.relative_to(out) for p in out.rglob('*.yaml')}
             committed = {p.relative_to(FIXTURES) for p in FIXTURES.rglob('*.yaml')}

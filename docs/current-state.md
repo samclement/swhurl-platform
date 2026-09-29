@@ -221,7 +221,7 @@ New-app PRs (`9364c77`, image deployed in `f09b449`).
 - **Removed** through Git (`c1a4b6f`): the unit and namespace were deleted, no `console/*` branches remain, 14 units, `make verify-platform` passed with no warnings.
 - **Pushing:** the session's SSH agent became unavailable mid-phase (`Permission denied (publickey)`); pushes from then on used HTTPS with the operator's `gh` credentials. One push got a transient GitHub 500 and succeeded on retry.
 
-## Console phase 7 (29 September 2026, in progress)
+## Console phase 7 (29 September 2026)
 
 Promote, scale and uninstall (`0acb567`, image deployed in `979692f`; `make verify-platform` passed).
 
@@ -230,6 +230,8 @@ Promote, scale and uninstall (`0acb567`, image deployed in `979692f`; `make veri
 - **Scale end to end** (operator approved): [#11](https://github.com/samclement/swhurl-platform/pull/11) merged (`c6e8b07`): Helm upgrade to `hello.v3`, `hello-staging` 2/2 ready. A second console scale PR, [#12](https://github.com/samclement/swhurl-platform/pull/12) (form showed replicas 2), merged (`daa0bcb`): back to 1/1. `apps/hello/staging/helmrelease.yaml` now says `replicas: 1` explicitly, which behaves the same as before.
 - **Promote test fixture:** `promote-test` staging on nginx-unprivileged `1.28-alpine@sha256:7377697a…` and prod on `1.27-alpine@sha256:65e3e85d…` (`1ca0fd3`, private, both 1/1), for the operator to promote from the console.
 - **`make console-image` instead of Renovate digest updates** (`af2b11d`): Renovate cannot update SHA-tagged images (they never move). The command hashes the image's inputs at `HEAD` as the workflow does; for `1ca0fd3` it computed `src-6fb6f2d67262ea9d`, which GHCR resolved to the deployed `sha256:2189aa67…`. After the `af2b11d` publish run it pinned `src-2a5af15faa99bdb5@sha256:044d6a12…` (`8a3a9f2`); the pod runs that digest, `make verify-platform` reported the image current, and a second run said "already pinned".
+- **Promote end to end** (operator clicked Promote on `promote-test/staging`): [#13](https://github.com/samclement/swhurl-platform/pull/13) changed exactly the prod tag and digest lines (`1.27-alpine@65e3e85d…` to `1.28-alpine@7377697a…`), author `swhurl console`, body `make app-promote APP=promote-test`; CI passed. Merged with approval (`edf1c17`): Helm upgrade to `promote-test.v2`, prod running `sha256:7377697a…`, 1/1.
+- **Uninstall end to end:** the console opened [#14](https://github.com/samclement/swhurl-platform/pull/14) (staging) and [#15](https://github.com/samclement/swhurl-platform/pull/15) (prod), each removing its three files, unit file and registration line; CI passed on both. After #14 merged (`138d6b1`), #15 conflicted (adjacent lines in `clusters/home/kustomization.yaml`), so it was closed and the console opened [#16](https://github.com/samclement/swhurl-platform/pull/16) against the new `main`, merged as `7470b5e`. Both namespaces were deleted, 14 units, no `console/*` branches left, `make verify-platform` passed with no warnings.
 
 ## Still to verify before live changes
 

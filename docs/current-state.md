@@ -247,6 +247,14 @@ At `8ab5f2c` (after `a2f3e9a`, which renamed `otlphttp` and `filelog` with byte-
 - **`make check-otel`** (`56a7aff`, in `make check` and CI): renders both HelmReleases and validates them with `otelcol-k8s` 0.161.0, downloaded and SHA-256-checked from the collector releases. Pod-only inputs are stubbed: `/hostfs` (host metrics), the service-account CA (`kubeletstats`), and environment variables (literal values from the pod spec, a placeholder for `valueFrom`; a first attempt with a placeholder for `GOMEMLIMIT` crashed the collector's Go runtime). Both configs pass; it warns on `k8sobjects`, `hostmetrics` and `kubeletstats`, the aliases the live collectors log. With one pipeline edited to name `k8s_attributez` it failed with the collector's own `references processor "k8s_attributez" which is not configured`.
 - **Pushing:** GitHub refused `56a7aff` over HTTPS because the `gh` login lacks the `workflow` scope; another session working in the same checkout then pushed it with its own commits (`a2f3e9a`, `8ab5f2c`, `bfc1c74`) over SSH. CI passed on all of them, including the new "Validate OTel collector config" step, and `make check-otel` on `bfc1c74` still passed with the same three warnings. The console image with this tooling was deployed with `make console-image` (`d82e522`, `src-f41a0465ad37188b`); `make verify-platform` passed with no warnings.
 
+## Faster checks and CI (29 September 2026)
+
+- **`make test`** (`4bd61a4`) runs `tests/run.py`, one test class per worker process, and the verifier's eight scenarios run together: 21s to 12s locally (4 CPUs, shared with k3s). A per-method split was slower because `PolicyTests.setUpClass` then ran for every method. With a deliberately failing test, or a test module that fails to import, it exits non-zero and prints the failure.
+- **`make check`** runs its five targets with `make -j5 --output-sync=target`: 30s to 19s; a failing test still fails it.
+- **CI** downloads the `flux-schema` 0.9.0 release binary, SHA-256-checked, instead of `go install`: installing dependencies went from 40s to 2s, and the whole Validate job from 65–125s to 24s (`a8106cf`).
+- **Race found by CI:** with an empty chart cache, two processes pulled `app-template` at once and the second rename failed (`Directory not empty`); it passed locally only because the chart was already cached. `policy.chart_dir` now accepts a chart another process cached first (`a8106cf`, with a test); `make check` with an empty chart cache passed three times.
+- **`make flux-reconcile`** fetches Git once (no `--with-source` on the two Kustomization reconciles): 45s on `a8106cf`, almost all of it `cluster-stack` waiting for every child unit; all 14 Kustomizations Ready. The console image with the chart cache fix was deployed with `make console-image` (`640b2fc`, `src-fbc6aa87b619b848`); `make verify-platform` passed with no warnings.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

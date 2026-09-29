@@ -68,6 +68,22 @@ make app-remove APP=hello ENV=staging                       # files, unit, regis
 
 Each checks the result against the app policy. They edit only HelmReleases that are exactly as the generator writes them; a hand-edited one is refused (edit it yourself). Removing an instance with a retained volume leaves its namespace and claim on the cluster ([lifecycle](operations.md#lifecycle)). Secret values: [operations](operations.md#secrets).
 
+## Telemetry
+
+Container stdout and stderr reach ClickStack without any setup. For metrics and traces (and structured logs), use an OpenTelemetry SDK that sends OTLP to the collector on the app's own node: it runs with host networking, so the address is the node IP. Add this to the container in the HelmRelease, in every environment:
+
+```yaml
+            env:
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318   # gRPC: port 4317
+              OTEL_SERVICE_NAME: weather-api
+```
+
+Apps need no key: the collector adds the ingestion key, the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). In HyperDX, filter on `ServiceName` or `k8s.namespace.name`. SDK auto-instrumentation and runtime metrics work unchanged. Nothing scrapes Prometheus `/metrics` endpoints. The generator does not write these lines.
+
 ## Moving a host between instances
 
 Deploy the new instance on a temporary host and check it. Then, in one commit, remove the old route and put the host on the new instance. Expect a few seconds of Traefik's default certificate while cert-manager issues the new one.

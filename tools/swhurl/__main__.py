@@ -15,6 +15,7 @@ COMMANDS = {
     'check-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
     'check-config': ('swhurl.verify', 'verify_config', 'Check required Secret files and settings exist (no cluster)'),
     'verify-platform': ('swhurl.verify', 'main', 'Check live platform state: Flux, keys, redirect, retention'),
+    'flux-wait': ('swhurl.flux', 'main', 'Wait for every Flux unit to apply the fetched Git revision (read-only)'),
     'platform-certs': ('swhurl.settings', 'platform_certs', 'Set CERT_ISSUER in platform-settings (Git edit only)'),
     'check-secrets': ('swhurl.secrets_check', 'main', 'Decrypt tracked Secrets in memory and flag problems'),
     'app': ('swhurl.apps.ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),

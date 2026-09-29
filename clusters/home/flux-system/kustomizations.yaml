@@ -33,5 +33,7 @@ spec:
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan
   prune: true
-  wait: true
-  timeout: 20m
+  # Applies the unit definitions without waiting for the units: a slow or failing
+  # unit cannot hold new definitions back. make flux-reconcile waits (swhurl flux-wait).
+  wait: false
+  timeout: 5m

@@ -12,10 +12,11 @@ help: ## List targets (generated from the ## comments in this Makefile)
 # Deploy and verify --------------------------------------------------------------
 
 .PHONY: flux-reconcile
-flux-reconcile: ## Fetch Git and reconcile the source layer and the stack
+flux-reconcile: ## Fetch Git, reconcile the source layer and the stack, wait for every unit at that revision
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-sources -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-stack -n flux-system --timeout=20m
+	$(SWHURL) flux-wait
 
 .PHONY: install
 install: ## check-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)

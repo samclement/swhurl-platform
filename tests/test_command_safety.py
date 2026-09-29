@@ -14,7 +14,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, flux
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -33,6 +33,8 @@ class CommandSafetyTests(unittest.TestCase):
         stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
         (backups / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
         self.env.update(BACKUP_DIR=str(backups), BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
+                        FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
@@ -63,6 +65,9 @@ elif 'console-github' in argv:
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
         'tag': os.environ['CONSOLE_TAG']}}}}}}}})
+elif 'kustomize-controller' in argv:
+    emit({'metadata': {'labels': {'app.kubernetes.io/version': os.environ['FLUX_VERSION']}},
+          'spec': {'template': {'spec': {'containers': [{'args': os.environ['FLUX_ARGS'].split()}]}}}})
 elif 'traefik' in argv:
     emit({'spec': {'template': {'spec': {'containers': [{'args': [
         '--entryPoints.web.http.redirections.entryPoint.to=:443',

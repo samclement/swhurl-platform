@@ -31,6 +31,10 @@ reconcile: ## UNIT=<name> Fetch Git and reconcile one Flux unit (for example aft
 verify-platform: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
 	@$(SWHURL) verify-platform
 
+.PHONY: flux-install
+flux-install: ## Install or upgrade the Flux controllers at the pinned version with the settings in Git (DRY_RUN=true shows the live diff)
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) flux-install
+
 .PHONY: flux-bootstrap
 flux-bootstrap: ## Apply the root units and sources (Flux must already be installed)
 	@echo "[INFO] Requires Flux controllers already installed (see docs/bootstrap.md)."

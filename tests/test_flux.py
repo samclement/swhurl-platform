@@ -1,7 +1,9 @@
-"""flux-wait: every unit state, offline, with FakeRunner."""
+"""flux-wait and flux-install, offline, with FakeRunner."""
 import io
 import json
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 
 from swhurl import flux
 from swhurl.report import Report
@@ -87,6 +89,69 @@ class WaitTests(unittest.TestCase):
     def test_source_without_artifact_fails(self):
         runner = FakeRunner().on('kubectl', stdout='{"status": {}}')
         self.assertEqual(flux.wait(runner, Report(out=io.StringIO()), 60), 1)
+
+
+class InstallTests(unittest.TestCase):
+    def runner(self, client=None, rendered_extra=True, dry_run=False):
+        version = flux.pinned_version()
+        seen = {}
+
+        def kustomize(argv, _input):
+            directory = Path(argv[-1])
+            seen['components'] = (directory / 'gotk-components.yaml').read_text()
+            seen['files'] = sorted(p.name for p in directory.iterdir())
+            args = flux.required_args()['kustomize-controller'] if rendered_extra else []
+            return Result(argv, 0, 'kind: Deployment\nargs: ' + ' '.join(args) + '\n')
+
+        runner = (FakeRunner(dry_run=dry_run)
+                  .on('flux', 'version', '--client', stdout=client or f'flux: v{version}\n')
+                  .on('flux', 'install', '--export', stdout='# exported components\n')
+                  .on('kubectl', 'kustomize', handler=kustomize)
+                  .on('kubectl', 'diff', stdout='+ --requeue-dependency=5s\n', returncode=1)
+                  .on('kubectl', stdout=''))
+        return runner, seen
+
+    def install(self, runner):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = flux.install_main([], runner)
+        return code, out.getvalue() + err.getvalue()
+
+    def test_renders_the_export_with_the_git_patches_and_applies_as_flux(self):
+        runner, seen = self.runner()
+        code, text = self.install(runner)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(seen['components'], '# exported components\n')
+        self.assertEqual(seen['files'], ['gotk-components.yaml', 'kustomization.yaml'])
+        apply = next(c for c in runner.calls if c[:2] == ('kubectl', 'apply'))
+        self.assertEqual(apply, ('kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts',
+                                 '-f', '-'))
+        self.assertEqual(sum('rollout' in c for c in runner.calls), 4)
+
+    def test_refuses_a_different_flux_cli(self):
+        runner, _ = self.runner(client='flux: v9.9.9\n')
+        code, text = self.install(runner)
+        self.assertEqual(code, 1)
+        self.assertIn('flux CLI is flux: v9.9.9', text)
+        self.assertFalse([c for c in runner.calls if c[:2] == ('flux', 'install')])
+
+    def test_refuses_output_missing_a_patch(self):
+        runner, _ = self.runner(rendered_extra=False)
+        code, text = self.install(runner)
+        self.assertEqual(code, 1)
+        self.assertIn('rendered kustomize-controller lacks --requeue-dependency', text)
+        self.assertFalse([c for c in runner.calls if c[:2] == ('kubectl', 'apply')])
+
+    def test_dry_run_shows_the_live_diff_and_changes_nothing(self):
+        runner, _ = self.runner(dry_run=True)
+        code, text = self.install(runner)
+        self.assertEqual(code, 0, text)
+        self.assertIn('+ --requeue-dependency=5s', text)
+        self.assertFalse([c for c in runner.calls if c[:2] == ('kubectl', 'apply') or 'rollout' in c])
+        self.assertEqual(len(runner.planned), 5)
+
+    def test_required_args_come_from_the_patch_files(self):
+        self.assertEqual(flux.required_args(), {'kustomize-controller': ['--requeue-dependency=5s']})
 
 
 if __name__ == '__main__':

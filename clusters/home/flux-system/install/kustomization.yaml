@@ -1,0 +1,17 @@
+# Flux controller settings, applied by make flux-install (not by Flux and not by
+# make flux-bootstrap). gotk-components.yaml is not in Git: make flux-install writes
+# it from `flux install --export` at the version pinned in images/console/Dockerfile.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gotk-components.yaml
+patches:
+  # Retry a unit whose dependency is not Ready yet after 5s, not the default 30s: each
+  # dependsOn level otherwise adds up to 30s to a reconcile (docs/architecture.md).
+  - target:
+      kind: Deployment
+      name: kustomize-controller
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --requeue-dependency=5s

@@ -30,7 +30,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: platform-clickstack
+  name: platform-clickstack-operators
   namespace: flux-system
 spec:
   dependsOn:
@@ -39,7 +39,34 @@ spec:
   sourceRef:
     kind: GitRepository
     name: swhurl-platform
+  path: ./platform/clickstack-operators
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-clickstack
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-base
+    - name: platform-clickstack-operators
+    - name: platform-oauth2-proxy
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
   path: ./platform/clickstack
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: platform-settings
+        optional: false
   decryption:
     provider: sops
     secretRef:

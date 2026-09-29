@@ -8,14 +8,15 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 
 **Remaining plan work**
 
-1. **PR06 — GHCR publishing and Renovate** (section 4). Chart update PRs are live ([operations](operations.md#chart-updates)); the first, ClickStack 1.1.2, was merged and verified on 28 September 2026. ClickStack 3.x was installed fresh rather than upgraded on 29 September 2026 ([current state](current-state.md)). Still needs decisions only you can make: which app repository goes first and public or private GHCR images (private needs pull credentials per namespace). Image digest updates stay disabled in `renovate.json` until then: Renovate reads the `hello` image's `tag` but not its separate `digest` field, and would bump both environments at once.
+1. **PR06 — GHCR publishing and Renovate** (section 4). Chart update PRs are live ([operations](operations.md#chart-updates)); the first, ClickStack 1.1.2, was merged and verified on 28 September 2026. ClickStack 3.x was installed fresh rather than upgraded on 29 September 2026 ([current state](current-state.md)). The GHCR half starts with the console image (section 7, phase 3), published **public** from this repo; still to decide: which app repository goes first, and public or private for app images (private needs pull credentials per namespace). Image digest updates stay disabled in `renovate.json` until then: Renovate reads the `hello` image's `tag` but not its separate `digest` field, and would bump both environments at once.
 2. **PR08a remainder** (section 5): off-host copies (S3) and a daily timer are live since 29 September 2026 ([operations](operations.md#backups-and-recovery)). The k3s datastore is SQLite and reconstructible from Git. Left: the gate: restore on a separate machine from S3 using only the docs. Follow-ups: a write-only IAM user for backups instead of `sam`, and then possibly a Kubernetes CronJob with a published backup image (after PR06's GHCR half).
 3. **Final operator exercise** (section 6), using only the docs.
-4. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
+4. **Console** (section 7): a signed-in web console for apps and Flux units; changes go through PRs. Decided 29 September 2026. Phase 1 (tooling only) in progress.
+5. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
 
-5. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
+6. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
 
-6. ~~Cleanup~~ done 28 September 2026 (steps 1 to 4): the repository review below, recorded 28 September 2026. Item numbers follow the review.
+7. ~~Cleanup~~ done 28 September 2026 (steps 1 to 4): the repository review below, recorded 28 September 2026. Item numbers follow the review.
 
 **Cleanup plan**
 
@@ -150,7 +151,32 @@ The age key is backed up (P0b); integrate it into the full recovery sequence. Re
 Using only current docs: onboard web and worker; publish/deploy, promote, and roll back a digest; diagnose bad image and probe; rotate a Secret without exposing it; deploy during ClickStack failure; suspend/resume; uninstall a disposable persistent app with retained state; restore workload and age key. 
 After the core exercise, consider tailnet private browser access, DNS-01, wildcard certs, a second cluster, or directory renaming. Hermes remains a separate project requiring model-network design and stronger command-execution isolation than a namespace alone.
 
-## 7. References
+## 7. Console
+
+A web console at `console.homelab.swhurl.com`, behind the shared sign-in, that shows app instances, Flux units and cluster health, runs reconcile and suspend/resume, and makes every other change by opening a PR against this repo. Flux still applies only what is merged.
+
+**Decisions** (29 September 2026)
+
+- **Code lives in this repo** (`tools/swhurl/console/`), so tooling changes and the console that uses them are tested together. The image is published from here.
+- **Reads use the image's own code; writes use the clone's CLI.** Status, units and health import `swhurl` from the image and read the cluster (units come from the cluster, not Git). A write clones `main`, runs `python -m swhurl app-new …` and `check-apps` inside the clone, commits, pushes a `console/*` branch and opens a PR, so every change is generated by the rules CI checks it with. The only cross-version interface is `app-new`'s flags.
+- **A platform unit, not an app:** `platform-console` needs a service-account token and RBAC, which the app policy forbids. Read access excludes Secrets and `pods/exec`; the only cluster writes are the reconcile annotation and `spec.suspend` (RBAC grants `patch`; the code limits the fields and refuses `cluster-sources`, `cluster-stack` and `destroy-data`). A NetworkPolicy admits only Traefik, so the sign-in header cannot be forged from inside the cluster.
+- **GitHub access: a fine-grained personal token** (this repo; Contents and Pull requests read/write), stored in SOPS, passed to `git` on stdin and redacted. Chosen over a GitHub App for simplicity; the security impact is low for a homelab. PRs appear as the operator, marked by the `console/` branch, a `[console]` title and a `Requested-by:` trailer. `verify-platform` warns 14 days before the token expires. `main` stays unprotected (the commit-to-`main` loop is unchanged); a test ensures the console pushes only `console/*` branches.
+- **Image: public on GHCR**, pinned by digest; Renovate digest updates are safe here because there is one instance.
+- `verify-platform` checks are labelled by what they need (`cluster`, `secret`, `exec`, `host`); the console runs only the `cluster` ones and links to HyperDX for host timer logs.
+
+**Phases** (each ends in `make check`; phases 4 to 7 also reconcile, verify live and record evidence in `docs/current-state.md`)
+
+1. **Tooling, offline:** `app status` split into gathering (`gather_status`) and printing; `verify-platform` checks labelled by need, selectable in code; `Runner.stream()` (line by line, redacted, stops the command when closed); `Report` keeps structured entries. CLI output unchanged.
+2. **Read-only console, local:** apps, unit graph, cluster checks and `/healthz`; `make console-dev` on `127.0.0.1` with a fixed identity (refused on any other address).
+3. **Image and GHCR publishing:** Dockerfile with pinned Python, `kubectl`, `flux`, `helm`, `sops` and `git`, labelled with the source commit; a publish workflow tagging by commit SHA.
+4. **Deploy read-only:** `console` namespace in `infra-base`, `platform/console/` (read-only RBAC, NetworkPolicy, HelmRelease), the `platform-console` unit (after `infra-base` and `platform-oauth2-proxy`), Reloader namespace, `verify-platform` checks that the console is Ready and not built from older tooling than `main`. Live: redirect, signed-out 302, signed-in pages, forged header from a throwaway pod blocked, `kubectl auth can-i` denies Secrets, exec and patch.
+5. **Flux operations:** patch RBAC; reconcile and suspend/resume as background jobs with streamed progress and one audit log line each (reaching ClickStack). Live: on `hello-staging`.
+6. **Changes through Git:** the token Secret (operator creates the token), clone, commit, push and PR; the new-app wizard. Live: a throwaway app PR through CI, merged only after asking, then an uninstall PR.
+7. **Promote, scale, uninstall PRs;** Renovate digest updates for the console image only.
+
+**Out of scope:** `destroy-data`, Secret values, credential rotation, `flux-system` root units, host timers, triggering live tests, users other than the operator.
+
+## 8. References
 
 - [Flux pruning and deletion](https://fluxcd.io/flux/components/kustomize/kustomizations/)
 - [Flux HelmChart reconcile strategies](https://fluxcd.io/flux/components/source/helmcharts/)

@@ -155,3 +155,33 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# GitHub push webhook: Flux fetches Git as soon as main changes (docs/services.md#push-webhook).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-flux-webhook
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./platform/flux-webhook
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: platform-settings
+        optional: false
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m

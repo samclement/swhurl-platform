@@ -1,0 +1,27 @@
+# The only platform route without Google sign-in: GitHub cannot sign in. It reaches
+# only /hook/ on Flux's webhook receiver, which rejects requests not signed with the
+# shared token (tests/test_manifest_policy.py keeps it that way).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flux-webhook
+  namespace: flux-system
+  annotations:
+    cert-manager.io/cluster-issuer: "${CERT_ISSUER}"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: flux-webhook.${BASE_DOMAIN}
+      http:
+        paths:
+          - path: /hook/
+            pathType: Prefix
+            backend:
+              service:
+                name: webhook-receiver
+                port:
+                  name: http
+  tls:
+    - secretName: flux-webhook-tls
+      hosts:
+        - flux-webhook.${BASE_DOMAIN}

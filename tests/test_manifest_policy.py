@@ -195,6 +195,23 @@ class ClickStackRenderTests(unittest.TestCase):
         config = self.find('ConfigMap', 'clickstack-config')['data']
         self.assertEqual(config['FRONTEND_URL'], f'https://clickstack.{self.domain}')
 
+    def test_only_the_flux_webhook_route_skips_sign_in(self):
+        """Raw platform Ingresses need sign-in, except GitHub's webhook to Flux's receiver (chart Ingresses: other tests)."""
+        unauthenticated = []
+        for _, unit in platform.flux_unit_documents():
+            if not unit['spec']['path'].startswith('./platform/'):
+                continue
+            for path in sorted((ROOT / unit['spec']['path']).rglob('*.yaml')):
+                for doc in yaml.safe_load_all(path.read_text()):
+                    if doc and doc.get('kind') == 'Ingress' and 'router.middlewares' not in str(doc['metadata']):
+                        unauthenticated.append(doc)
+        self.assertEqual([d['metadata']['name'] for d in unauthenticated], ['flux-webhook'])
+        paths = [p for rule in unauthenticated[0]['spec']['rules'] for p in rule['http']['paths']]
+        self.assertEqual([(p['path'], p['backend']['service']['name']) for p in paths], [('/hook/', 'webhook-receiver')])
+        receiver = yaml.safe_load((ROOT / 'platform/flux-webhook/receiver.yaml').read_text())
+        self.assertEqual(receiver['spec']['secretRef']['name'], 'github-webhook-token')
+        self.assertIn("req.ref == 'refs/heads/main'", receiver['spec']['resourceFilter'])
+
     def test_mongodb_data_survives_claim_deletion(self):
         templates = self.find('MongoDBCommunity')['spec']['statefulSet']['spec']['volumeClaimTemplates']
         data = next(t for t in templates if t['metadata']['name'] == 'data-volume')

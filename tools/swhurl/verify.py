@@ -74,11 +74,11 @@ def check_flux(runner: Runner, report: Report) -> None:
 def read_ingestion_secret(runner: Runner) -> str:
     """The Secret's ``data`` value: base64 text, exactly as Kubernetes stores it."""
     try:
-        secret = runner.json(['kubectl', '-n', 'logging', 'get', 'secret', 'hyperdx-secret', '-o', 'json'],
+        secret = runner.json(['kubectl', '-n', 'logging', 'get', 'secret', platform.INGESTION_SECRET_NAME, '-o', 'json'],
                              secret_output=True)
     except CommandError:
         return ''
-    value = ((secret or {}).get('data') or {}).get('HYPERDX_API_KEY', '')
+    value = ((secret or {}).get('data') or {}).get(platform.INGESTION_KEY, '')
     runner.add_secret(value)
     return value
 
@@ -86,9 +86,9 @@ def read_ingestion_secret(runner: Runner) -> str:
 def check_runtime_secret(stored: str, report: Report) -> None:
     report.section('Runtime Secrets')
     if stored:
-        report.ok('logging/hyperdx-secret.HYPERDX_API_KEY present')
+        report.ok(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} present')
     else:
-        report.bad('logging/hyperdx-secret.HYPERDX_API_KEY is empty (run: make reconcile UNIT=platform-otel)')
+        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty (run: make reconcile UNIT=platform-otel)')
 
 
 def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
@@ -110,13 +110,13 @@ def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
         decoded = b''
     runner.add_secret(decoded)
     if not decoded:
-        report.bad('logging/hyperdx-secret.HYPERDX_API_KEY is empty or invalid base64')
+        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty or invalid base64')
     elif decoded == team_key.encode() and stored == base64.b64encode(team_key.encode()).decode():
         report.ok('ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart')
     else:
-        report.bad('HYPERDX_API_KEY does not match the ClickStack ingestion key')
-        report.detail('Fix: update HYPERDX_API_KEY in platform/otel/secret.sops.yaml')
-        report.detail('     using exactly one base64 layer in data; commit+push, then run: make reconcile UNIT=platform-otel')
+        report.bad(f'{platform.INGESTION_KEY} does not match the ClickStack team ingestion key')
+        report.detail('Fix: run make clickstack-bootstrap (writes the Git key into the team); if the two')
+        report.detail('     SOPS copies differ, make check-secrets says so')
 
 
 def check_ingress(runner: Runner, report: Report) -> None:

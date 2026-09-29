@@ -21,6 +21,9 @@ HELM_REPOSITORIES = SOURCES / 'helmrepositories.yaml'
 BOOTSTRAP_PATHS = (CLUSTER / 'flux-system', SOURCES)
 ISSUERS = Path('infra/issuers')
 INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
+# The collectors' copy of the ClickStack team ingestion key (namespace logging).
+INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
+INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 AGE_KEY = Path('age.agekey')
 
 # Labels and annotations under the platform's domain.

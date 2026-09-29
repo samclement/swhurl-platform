@@ -12,6 +12,15 @@ class SecretsCheckTests(unittest.TestCase):
         self.assertFalse(module.looks_double_encoded(bytes(range(40))), 'binary bytes are not base64 text')
         self.assertNotIn('.sops.yaml', [p.name for p in module.secret_files()])
 
+    def test_ingestion_key_must_be_one_value_in_both_secrets(self):
+        from swhurl.secrets_check import INGESTION_FILES, ingestion_key_problem
+        clickstack, otel = INGESTION_FILES
+        self.assertIsNone(ingestion_key_problem({clickstack: 'a', otel: 'a'}))
+        self.assertIn('differs', ingestion_key_problem({clickstack: 'a', otel: 'b'}))
+        self.assertIn('exactly', ingestion_key_problem({clickstack: 'a'}))
+        self.assertIn('exactly', ingestion_key_problem({}))
+        self.assertIn('exactly', ingestion_key_problem({clickstack: 'a', otel: 'a', 'platform/x.sops.yaml': 'a'}))
+
 
 if __name__ == '__main__':
     unittest.main()

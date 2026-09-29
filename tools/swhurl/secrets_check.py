@@ -8,8 +8,8 @@ locally, not in CI. Decrypts each tracked *.sops.yaml in memory and reports per 
   WARN   double-encoded   `data` value decodes to printable base64 text that decodes
                           again: probably base64-encoded twice (the P0c bug). Use
                           stringData for human-authored values.
-  WARN   keys-match       CLICKSTACK_API_KEY equals HYPERDX_API_KEY (allowed during
-                          bootstrap; steady state is separate keys)
+  ERROR  ingestion-key    CLICKSTACK_INGESTION_KEY is not in exactly the ClickStack and
+                          OTel Secrets, or the two copies differ
 
 Exit status is non-zero only for ERRORs.
 """
@@ -43,6 +43,19 @@ def looks_double_encoded(raw: bytes) -> bool:
     return len(inner) > 0 and all(32 <= c < 127 for c in inner)
 
 
+INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
+INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret.sops.yaml')
+
+
+def ingestion_key_problem(copies: dict[str, str]) -> str | None:
+    """``copies`` maps each file holding the ingestion key to its value's fingerprint."""
+    if sorted(copies) != sorted(INGESTION_FILES):
+        return f'{INGESTION_KEY} must be in exactly {" and ".join(INGESTION_FILES)}; found in {sorted(copies) or "none"}'
+    if len(set(copies.values())) != 1:
+        return f'{INGESTION_KEY} differs between {" and ".join(INGESTION_FILES)}'
+    return None
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / platform.AGE_KEY)
     if not Path(key_file).is_file():
@@ -50,7 +63,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         return 2
     runner = runner or Runner(cwd=ROOT, env={'SOPS_AGE_KEY_FILE': key_file})
     errors = warnings = 0
-    fingerprints: dict[str, str] = {}
+    ingestion: dict[str, str] = {}
     for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
@@ -66,7 +79,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         for field, values in fields.items():
             for key, value in values.items():
                 raw = base64.b64decode(value) if field == 'data' else str(value).encode()
-                fingerprints[key] = hashlib.sha256(raw).hexdigest()
+                if key == INGESTION_KEY and not fixture:
+                    ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
                 where = f'{rel}: {field}.{key}'
                 if not raw:
                     print(f'  [ERROR] {where}: empty')
@@ -77,9 +91,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 elif field == 'data' and looks_double_encoded(raw):
                     print(f'  [WARN] {where}: decodes to base64 text; probably encoded twice')
                     warnings += 1
-    if fingerprints.get('CLICKSTACK_API_KEY') and \
-            fingerprints.get('CLICKSTACK_API_KEY') == fingerprints.get('HYPERDX_API_KEY'):
-        print('[WARN] CLICKSTACK_API_KEY equals HYPERDX_API_KEY; expected only during bootstrap')
-        warnings += 1
+    problem = ingestion_key_problem(ingestion)
+    if problem:
+        print(f'[ERROR] {problem}')
+        errors += 1
+    else:
+        print(f'[OK] {INGESTION_KEY} is identical in {" and ".join(INGESTION_FILES)}')
     print(f'\n{errors} error(s), {warnings} warning(s).')
     return 1 if errors else 0

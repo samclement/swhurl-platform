@@ -24,7 +24,7 @@ spec:
   values:
     # Restart when the ingestion key Secret changes (platform-reloader).
     annotations:
-      secret.reloader.stakater.com/reload: hyperdx-secret
+      secret.reloader.stakater.com/reload: clickstack-ingestion-key
     mode: daemonset
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
@@ -56,7 +56,7 @@ spec:
         otlphttp:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
-            authorization: "$${env:HYPERDX_API_KEY}"
+            authorization: "$${env:CLICKSTACK_INGESTION_KEY}"
       service:
         pipelines:
           logs:
@@ -80,10 +80,10 @@ spec:
             exporters:
               - otlphttp
     extraEnvs:
-      - name: HYPERDX_API_KEY
+      - name: CLICKSTACK_INGESTION_KEY
         valueFrom:
           secretKeyRef:
-            name: hyperdx-secret
-            key: HYPERDX_API_KEY
+            name: clickstack-ingestion-key
+            key: CLICKSTACK_INGESTION_KEY
     clusterRole:
       create: true

@@ -65,7 +65,7 @@ elif 'secret' in argv:
     if scenario == 'double': value = base64.b64encode(value)
     encoded = base64.b64encode(value).decode()
     if scenario == 'invalid': encoded += '!'
-    emit({'data': {} if scenario == 'missing' else {'HYPERDX_API_KEY': encoded}})
+    emit({'data': {} if scenario == 'missing' else {'CLICKSTACK_INGESTION_KEY': encoded}})
 ''')
             path.chmod(0o700)
 

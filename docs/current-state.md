@@ -153,8 +153,14 @@ PR #6 (opentelemetry-collector chart `0.145.0 → 0.173.1` for both releases, co
 - **Restore exercise:** the documented procedure restored a fresh backup (`20260929T065017Z`, 9 documents) into the live MongoDB: `mongorestore` reported 9 restored and 0 failed, the login file was removed afterwards, the app was back after 14 seconds, and the live collection counts then matched the backup exactly. `make clickstack-bootstrap` found the team key already matching, `make verify-platform` passed, and the collectors logged no authentication errors. It exposed a gap: `scale --replicas=0` returns before HyperDX stops (about 40 seconds), so the old pod could still serve during `mongorestore`; the procedure now waits for `app=clickstack` pods to be deleted.
 - **Not exercised:** a key rotation through SOPS.
 
+## Off-host backups (PR08a)
+
+29 September 2026, commit `a022fda`. Bucket `swhurl-platform-backups-110927251694` (`eu-west-2`) created with the AWS CLI as IAM user `sam`: public access blocked (all four settings), versioning enabled, SSE-S3 default encryption, lifecycle `expire-backups` on `clickstack-mongodb/` (current objects 90 days, noncurrent 30, incomplete uploads 7). `make backup-mongodb` uploaded the three retained backups and their metadata (6 files); the next run uploaded only its 2 new files and found 4 present. `make host-backup` installed `swhurl-backup-mongodb.timer` (next run 03:35 BST); starting the service by hand ran backup, prune and upload under systemd (`Result=success`). `make verify-platform` then reported the newest backup 0.0 h old locally and in S3. Offline tests cover the upload (only missing files, archive before metadata, failure keeps the local copy, dry run lists nothing) and the staleness rules; making the upload copy everything, or the check ignore age, each failed them.
+
+Not exercised: a timer run while logged out (lingering was off when installed), a restore from S3 on another machine, and the k3s datastore type (needs root).
+
 ## Still to verify before live changes
 
-- The k3s datastore type, an off-host backup destination and schedule, and restore on a separate machine.
+- The k3s datastore type and a restore on a separate machine.
 - Router forwarding and public DNS records (not inspected; external reachability is shown only by the operator's own browser use).
 - Workloads outside Git, image publication workflows, and the Mac model service and its network path.

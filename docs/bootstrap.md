@@ -71,8 +71,9 @@ It waits for the HyperDX API, registers the admin account from SOPS (HyperDX the
 ## 6. Verify and back up
 
 ```bash
+make backup-mongodb     # first backup, locally and to S3
+make host-backup         # daily timer; then once: sudo loginctl enable-linger $USER
 make verify-platform
-make backup-mongodb
 ```
 
 `make verify-platform` checks every Flux unit, the HTTP→HTTPS redirect, the ingestion key (by bytes, never printed), that ClickStack registration is closed, retention settings and the MongoDB volume's reclaim policy.

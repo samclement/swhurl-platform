@@ -52,7 +52,7 @@ spec:
               digest: sha256:640435506d94af3618515eee11262a228d5eb36af3ad1412f5cf471a5e51667a
             env:
               CONSOLE_REPO: samclement/swhurl-platform
-            # GITHUB_TOKEN: push console/* branches and open PRs (secret.sops.yaml).
+            # GITHUB_TOKEN: create console/* branches and open PRs (secret.sops.yaml).
             envFrom:
             - secretRef:
                 name: console-github

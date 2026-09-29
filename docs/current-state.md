@@ -184,6 +184,10 @@ Tooling only (`e180ff2`; plan section 7). After reconciling `e180ff2`, `make app
 
 Local only (`884f050`); nothing deployed. `make console-dev PORT=8765` against the live cluster: `/`, `/units`, `/platform` and `/apps/hello/prod` answered 200 and `/apps/hello/dev` 404. The platform page listed all 13 units Ready and the Traefik redirect, and named the four skipped checks; the offline tests prove it makes no Secret read or exec call. CI run 36569764386 passed with the new uv setup (`make test` now runs in `uv run --frozen`). The page layout was not checked in a browser (no browser available to the session).
 
+## Console phase 3 (29 September 2026)
+
+`b63d2af` built locally with podman (469 MB) and ran as UID 65532 with a read-only root and only `/tmp` writable: `kubectl` 1.34.4, `helm` 3.19.0, `flux` 2.8.1, `sops` 3.12.1, `git`; `/healthz` 200, pages 401 without the identity header and 200 with it, reading the live cluster through a mounted kubeconfig. After Validate passed, publish run 36571595603 pushed `ghcr.io/samclement/swhurl-console:b63d2aff9dfd4cf9df0307e382038dcbd15e29ed`, index digest `sha256:22c069a6a2eeb12b6741429fb86c9f77e8c7b15db5192a14553ae9cc6fcc01f7` (amd64 image `sha256:91cf7546…` plus a build attestation). The package is public: an anonymous pull (empty auth file) succeeded, and the pulled image is labelled with revision `b63d2af`. Pin the index digest.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

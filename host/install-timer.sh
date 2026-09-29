@@ -44,7 +44,9 @@ if [[ "$DRY_RUN" == true ]]; then
   echo "Dry run: nothing changed."
   exit 0
 fi
-[[ "$(uname -s)" == Linux ]] && command -v systemctl >/dev/null || die "Needs Linux with systemd"
+if [[ "$(uname -s)" != Linux ]] || ! command -v systemctl >/dev/null; then
+  die "Needs Linux with systemd"
+fi
 
 # Fail early when sudo cannot be used; sudo's own message says why.
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then

@@ -47,7 +47,7 @@ spec:
         memory: 512Mi
     config:
       exporters:
-        otlphttp:
+        otlp_http:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
           headers:
             authorization: "${env:CLICKSTACK_INGESTION_KEY}"
@@ -61,7 +61,7 @@ spec:
               - k8s_attributes
               - batch
             exporters:
-              - otlphttp
+              - otlp_http
           metrics:
             receivers:
               - k8s_cluster
@@ -70,7 +70,7 @@ spec:
               - k8s_attributes
               - batch
             exporters:
-              - otlphttp
+              - otlp_http
     extraEnvs:
       - name: CLICKSTACK_INGESTION_KEY
         valueFrom:

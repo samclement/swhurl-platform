@@ -9,6 +9,10 @@ EnvironmentFile=__ENV_FILE__
 ExecStart=__EXEC_START__
 User=__RUN_USER__
 Restart=on-failure
+# Output goes to a file the OTel DaemonSet reads (service.name from the file name);
+# the journal keeps start, finish and failure lines.
+StandardOutput=append:/var/log/swhurl-platform/aws-dns-updater.log
+StandardError=append:/var/log/swhurl-platform/aws-dns-updater.log
 RestartSec=10s
 
 [Install]

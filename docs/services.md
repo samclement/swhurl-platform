@@ -60,6 +60,8 @@ Personal API keys in the HyperDX UI belong to users (for HyperDX's external API)
 
 **Chart quirks:** `hyperdx.frontendUrl` is ignored; the URL is `hyperdx.config.FRONTEND_URL`. ClickStack's collector image ignores the subchart's `config`; customise it with `global.otelCollector.customConfig`.
 
+The DaemonSet also reads the host timers' output, `/var/log/swhurl-platform/<unit>.log` through its read-only `/hostfs` mount: backups arrive as service `swhurl-backup-mongodb` and dynamic DNS as `aws-dns-updater`, with `[ERROR]`/`[BAD]` lines at severity Error and `[WARN]` at Warn, which a HyperDX alert can match. Only lines written while the collector runs are read (`start_at: end`).
+
 The OTel collectors need their Flux unit's substitution even though they use no settings: it turns `$${env:CLICKSTACK_INGESTION_KEY}` into the collector's `${env:...}` reference.
 
 ## Reloader

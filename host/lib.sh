@@ -54,6 +54,13 @@ host_user_home() {
   printf '%s' "$home"
 }
 
+# Units append their output here; the OTel DaemonSet reads it through /hostfs.
+readonly HOST_LOG_DIR=/var/log/swhurl-platform
+
+host_ensure_log_dir() {
+  [[ -d "$HOST_LOG_DIR" ]] || host_sudo install -d -m 0755 "$HOST_LOG_DIR" || host_die "Could not create $HOST_LOG_DIR"
+}
+
 # Write content to a root-owned path; returns 1 (no write) when unchanged.
 host_write_if_changed() {
   local path="$1" content="$2"

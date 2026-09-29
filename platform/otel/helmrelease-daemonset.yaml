@@ -52,6 +52,35 @@ spec:
         kubeletstats:
           endpoint: 127.0.0.1:10250
           insecure_skip_verify: true
+        # Host systemd timers (make host-backup, make host-dns) append their output
+        # to /var/log/swhurl-platform/<unit>.log; the file name becomes service.name
+        # and [ERROR]/[BAD]/[WARN]/[INFO]/[OK] prefixes become severities.
+        file_log/host-timers:
+          include:
+            - /hostfs/var/log/swhurl-platform/*.log
+          start_at: end
+          include_file_name: true
+          operators:
+            - type: regex_parser
+              id: service
+              parse_from: attributes["log.file.name"]
+              regex: '^(?P<service>[a-z0-9-]+)\.log$'
+            - type: move
+              from: attributes.service
+              to: resource["service.name"]
+            - type: regex_parser
+              id: level
+              if: 'body matches "^\\[(HOST\\]\\[)?(OK|INFO|WARN|BAD|ERROR)\\]"'
+              regex: '^\[(?:HOST\]\[)?(?P<level>OK|INFO|WARN|BAD|ERROR)\]'
+              severity:
+                parse_from: attributes.level
+                mapping:
+                  error: [ERROR, BAD]
+                  warn: WARN
+                  info: [INFO, OK]
+            - type: remove
+              if: 'attributes.level != nil'
+              field: attributes.level
       exporters:
         otlphttp:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
@@ -63,6 +92,7 @@ spec:
             receivers:
               - otlp
               - filelog
+              - file_log/host-timers
             processors:
               - memory_limiter
               - k8sattributes

@@ -113,6 +113,7 @@ host_dynamic_dns_apply() {
   timer_content="$(cat "$timer_template")"
 
   host_sudo mkdir -p "$HOST_DDNS_ENV_DIR"
+  host_ensure_log_dir
 
   local config_changed=0 unit_changed=0
   if host_write_if_changed "$HOST_DDNS_ENV_PATH" "$env_content"; then

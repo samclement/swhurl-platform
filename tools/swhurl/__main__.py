@@ -24,6 +24,7 @@ COMMANDS = {
     'live-test-lifecycle': ('swhurl.livetests.lifecycle', 'main', 'Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app'),
     'live-test-reloader': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),
     'live-test-app-template': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
+    'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'prune-backups': ('swhurl.retention', 'main', 'Prune ClickStack MongoDB backups to the retention set'),

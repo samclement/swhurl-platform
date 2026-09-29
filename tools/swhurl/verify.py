@@ -12,7 +12,7 @@ import binascii
 import sys
 from pathlib import Path
 
-from swhurl import ROOT, platform
+from swhurl import ROOT, clickstack, platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -95,14 +95,12 @@ def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
     """The collectors' key must be exactly one base64 layer around the ClickStack team key."""
     report.section('Ingestion Key Sync')
     try:
-        team_key = runner.output(['kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-mongodb', '--',
-                                  'mongosh', 'hyperdx', '--quiet', '--eval', platform.TEAM_KEY_SCRIPT],
-                                 secret_output=True).rstrip('\n')
-    except CommandError:
+        team_key = clickstack.team_key(runner)
+    except (CommandError, ValueError, KeyError):
         team_key = ''
-    runner.add_secret(team_key)
     if not team_key:
-        report.bad('cannot read a unique ClickStack team ingestion key; check MongoDB availability and team configuration')
+        report.bad('cannot read a unique ClickStack team ingestion key; is MongoDB Running and '
+                   'make clickstack-bootstrap done?')
         return
     try:
         decoded = base64.b64decode(stored, validate=True)
@@ -134,7 +132,7 @@ def check_ingress(runner: Runner, report: Report) -> None:
 
 
 def clickhouse(runner: Runner, query: str) -> str:
-    return runner.output(['kubectl', '-n', 'observability', 'exec', 'deploy/clickstack-clickhouse', '--',
+    return runner.output(['kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, '--',
                           'clickhouse-client', '-q', query]).strip()
 
 
@@ -165,10 +163,10 @@ def check_retention(runner: Runner, report: Report) -> None:
             report.ok('ClickHouse system logs expire after 7 days')
         else:
             report.bad(f'{untimed} ClickHouse system log table(s) have no TTL; '
-                       'restart clickstack-clickhouse after config changes')
+                       'the chart sets them in clickhouse.cluster.spec.settings.extraConfig')
 
     try:
-        pvc = runner.json(['kubectl', '-n', 'observability', 'get', 'pvc', 'clickstack-mongodb', '-o', 'json'])
+        pvc = runner.json(['kubectl', '-n', 'observability', 'get', 'pvc', clickstack.MONGO_DATA_CLAIM, '-o', 'json'])
     except CommandError:
         pvc = {}
     volume = (pvc.get('spec') or {}).get('volumeName', '')
@@ -180,14 +178,22 @@ def check_retention(runner: Runner, report: Report) -> None:
         except (CommandError, KeyError, TypeError):
             policy = ''
     if policy == 'Retain':
-        report.ok('ClickStack MongoDB PV reclaim policy is Retain')
+        report.ok('ClickStack MongoDB data volume is Retain (outlives its claim)')
     else:
-        report.bad('ClickStack MongoDB PV is not Retain; see docs/operations.md#backups-and-recovery')
-    if ((pvc.get('metadata') or {}).get('annotations') or {}).get('helm.sh/resource-policy') == 'keep':
-        report.ok('ClickStack MongoDB PVC survives Helm uninstall')
-    else:
-        report.bad('ClickStack MongoDB PVC lacks helm.sh/resource-policy=keep')
+        report.bad('ClickStack MongoDB data volume is not Retain; its storage class must be local-path-retain')
 
+
+def check_registration(runner: Runner, report: Report) -> None:
+    report.section('ClickStack Sign-up')
+    try:
+        closed = clickstack.api(runner, 'GET', '/installation')['body'].get('isTeamExisting')
+    except (CommandError, ValueError, KeyError, AttributeError):
+        report.bad('could not ask the HyperDX API whether a team exists')
+        return
+    if closed:
+        report.ok('a team exists, so HyperDX registration is closed')
+    else:
+        report.bad('no team yet: HyperDX registration is open (run: make clickstack-bootstrap)')
 
 def verify_platform(runner: Runner, report: Report) -> int:
     report.redact = runner.redact
@@ -203,6 +209,7 @@ def verify_platform(runner: Runner, report: Report) -> int:
     stored = read_ingestion_secret(runner)
     check_runtime_secret(stored, report)
     check_ingestion_key(runner, report, stored)
+    check_registration(runner, report)
     check_ingress(runner, report)
     check_retention(runner, report)
     if report.passed:

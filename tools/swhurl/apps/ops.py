@@ -93,6 +93,21 @@ class InstanceStatus:
     def applied(self) -> bool:
         return self.desired_revision == self.applied_revision
 
+    @property
+    def image_state(self) -> str:
+        """Compare by digest: Kubernetes records a running image as repository@digest, never by tag.
+
+        'matches' (every pod runs the desired digest), 'different' (some pod runs another image:
+        a rollout in progress or failing), 'none' (no pod running) or 'unpinned' (Git pins no digest,
+        so only the tag is known and nothing can be compared).
+        """
+        if not self.running_images:
+            return 'none'
+        if '@' not in self.desired_image:
+            return 'unpinned'
+        want = self.desired_image.split('@', 1)[1]
+        return 'matches' if all(image.endswith('@' + want) for image in self.running_images) else 'different'
+
 
 def replicas(workloads: dict | None) -> list[Replicas]:
     found = []
@@ -166,9 +181,14 @@ def status_lines(found: InstanceStatus) -> list[str]:
         f"applied {found.applied_revision.split(':')[-1]}{note}",
         f'Flux unit  {found.unit[0]}: {found.unit[1]}',
         'Release    ' + (f'{found.release[0]}: {found.release[1]}' if found.release else 'Unknown: not found'),
-        f'Image      desired {found.desired_image}',
-        f"           running {', '.join(found.running_images) or 'none'}",
     ]
+    if found.image_state == 'matches':
+        lines += [f'Image      {found.desired_image}', '           running: matches desired']
+    else:
+        note = {'different': '  <- different image (rollout in progress or failing)',
+                'unpinned': '  (Git pins no digest, so this cannot be compared)'}.get(found.image_state, '')
+        lines += [f'Image      desired {found.desired_image}',
+                  f"           running {', '.join(found.running_images) or 'none'}{note}"]
     lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
     lines += [f'Route      https://{host}' for host in found.routes]
     lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]

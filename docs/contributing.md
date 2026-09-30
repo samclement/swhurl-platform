@@ -62,7 +62,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
   | Shared services, settings, keys | [services](services.md) |
   | App instances, generator, policy | [apps](apps.md) |
   | Web console: use, deploy, token, protection | [console](console.md) |
-  | Units, dependencies, ownership | [architecture](architecture.md) |
+  | Units, dependencies, ownership, how changes reach the cluster | [architecture](architecture.md) |
   | Dated live evidence | [current state](current-state.md) |
   | Remaining planned work | [plan](plan.md) section 0 |
 

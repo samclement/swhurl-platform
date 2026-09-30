@@ -1,6 +1,6 @@
 # Architecture
 
-One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the documented operator commands.
+One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the operator commands listed in [how changes reach the cluster](#how-changes-reach-the-cluster).
 
 ## Principles
 
@@ -72,6 +72,59 @@ Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/
 **Suspension** stops a unit applying Git changes. The HelmReleases it created keep reconciling unless they are suspended too.
 
 **Moving a resource between units** without recreating it: make sure the old unit cannot prune (make it `Orphan` in its own commit first; app units are not `Orphan` by default), add the resource unchanged to the new unit, reconcile, confirm the new unit's inventory lists it, then remove it from the old unit in a later commit. The capability split moved 22 resources this way with no recreation ([evidence](current-state.md#pr03-capability-split)). To rename a unit, replace it in one commit once the old one is `Orphan` and the new path renders byte-identically ([evidence](current-state.md#names-and-layout-cleanup-step-4)). Don't suspend a unit through Git for this: the suspend lands as a new revision, and a unit suspended before it is Ready stays not Ready.
+
+## How changes reach the cluster
+
+Almost every change is a commit on `main` that Flux applies. They differ in who writes the commit and whether anyone reviews it first:
+
+| Change | Who writes it | Path to `main` | Reviewed before it deploys | Details |
+| --- | --- | --- | --- | --- |
+| Anything in the repo: manifests, app values, Secrets (SOPS), settings | You, by hand or with a Git-only `make` target (`app-new`, `app-promote`, `app-scale`, `app-remove`, `platform-certs-*`, `console-image`) | Direct push | `make check` locally; CI runs after the push, it does not gate Flux | [README](../README.md#make-a-change), [commands](commands.md) |
+| New app, promote, scale, uninstall from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Yes: you merge | [console](console.md#use-it) |
+| Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
+| The console's own image pin | The "Publish console image" run (`github-actions[bot]`) | Direct push, after Validate passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
+
+`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because the bot also pushes to `main`, run `git pull --rebase` before pushing. New app image pins are edited by you today ([deploy a new image](apps.md#deploy-a-new-image)); automating them is open in [plan](plan.md) section 0 (PR06).
+
+**From commit to running pods.** The same chain runs for every change on `main`; this is an app's image update:
+
+```mermaid
+sequenceDiagram
+  participant Git as GitHub (main)
+  participant NC as notification-controller<br/>(Receiver github)
+  participant SC as source-controller<br/>(GitRepository swhurl-platform)
+  participant KC as kustomize-controller<br/>(unit app-hello-staging)
+  participant HC as helm-controller<br/>(HelmRelease hello)
+  participant K as Deployment hello
+  Git->>NC: push webhook, signed with the shared token
+  NC->>SC: request a reconcile (main only)
+  SC->>Git: fetch main, store the new revision
+  SC-->>KC: new revision available (watch)
+  KC->>HC: server-side apply the changed HelmRelease values
+  HC->>K: helm upgrade: new image tag and digest
+  K->>K: rolling update: the old pod stops once the new one is Ready
+```
+
+About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); without the webhook, the `GitRepository` polls every minute. Every unit then reconciles against the new revision; a unit with `dependsOn` is retried every 5 seconds until its dependencies have applied it (kustomize-controller `--requeue-dependency=5s`, [Waiting](#flux-units)). Units whose files did not change find nothing to apply. The rollout itself takes as long as the new pod needs to become Ready.
+
+**Making Flux act now.** All of these fetch Git first; they differ in what they wait for:
+
+| Trigger | Waits for |
+| --- | --- |
+| Push webhook (automatic) | Nothing: it only starts the chain above |
+| `make flux-reconcile` | Every unit Ready at the new revision; stops at the first unit that fails there |
+| `make reconcile UNIT=<name>`, `make app-reconcile APP= ENV=`, the console's **Reconcile** | That one unit |
+
+**Outside Git.** A few changes cannot be a commit Flux applies, so they are operator commands that write to the cluster directly:
+
+| Command | Why it is not a commit |
+| --- | --- |
+| `make flux-bootstrap` | Applies the root units and sources that tell Flux what to reconcile; Flux does not reconcile itself |
+| `make flux-install` | Installs Flux's controllers (the version and patches are in Git; the upstream manifests are rendered at install time) |
+| `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
+| `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
+| `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |
+| `make host-dns`, `make host-backup` | systemd units on the host, not in the cluster ([commands](commands.md#host)) |
 
 ## C4 views
 

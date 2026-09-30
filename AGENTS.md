@@ -31,7 +31,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Shared services, settings, keys, known issues | `docs/services.md` |
 | App instances, generator, app policy | `docs/apps.md` |
 | Web console: use, deploy, token, protection | `docs/console.md` |
-| Flux units, dependencies, ownership, deletion | `docs/architecture.md` |
+| Flux units, dependencies, ownership, deletion, how changes reach the cluster | `docs/architecture.md` |
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |
 | Dated live evidence and unexercised paths | `docs/current-state.md` |
 | Remaining planned work | `docs/plan.md` section 0 |

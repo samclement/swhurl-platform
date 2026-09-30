@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_form.html" as ui with context %}
 {% set i = status.instance %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
@@ -40,20 +41,25 @@
 
 <h2>Change through a pull request</h2>
 <p class="muted">Each opens a PR made by <code>main</code>'s own <code>make app-*</code> command; nothing changes until you merge it.{% if not github %} <span class="bad">No GitHub token is configured.</span>{% endif %}</p>
-<form class="new" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
-  {% for field, flag, label in scale_fields %}
-  <label for="{{ field }}">{{ label }}</label>
-  <input id="{{ field }}" name="{{ field }}" placeholder="{{ status.settings.get(field, '') }}">
-  {% endfor %}
-  <span class="muted">Empty fields stay as they are (shown in grey).</span><button {{ 'disabled' if not github }}>Open scale PR</button>
+<div class="forms">
+<form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
+  <fieldset>
+    <legend>Scale</legend>
+    <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
+    <span class="muted hint">Empty fields keep their current value, shown in grey.</span>
+  </fieldset>
+  {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
 </form>
-<form class="new" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
-  <label for="exposure">Who can reach it</label>
-  <select id="exposure" name="exposure">{% for value, label in exposures.items() %}<option value="{{ value }}" {{ 'selected' if value == status.exposure }}>{{ label }}</option>{% endfor %}</select>
-  <label for="expose_host">Host</label>
-  <input id="expose_host" name="host" placeholder="{{ status.routes[0] if status.routes else 'signed-in: derived; public: required, outside the sign-in domain' }}">
-  <span class="muted">Signed-in keeps its host or derives one; public needs a host outside the sign-in domain; private removes the route. Staging and production may differ.</span><button {{ 'disabled' if not github }}>Open access PR</button>
+<form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
+  <fieldset>
+    <legend>Who can reach it</legend>
+    {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
+    {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
+                     hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
+  </fieldset>
+  {{ ui.submit('Open access PR', 'Private removes the web address.') }}
 </form>
+</div>
 <form class="actions" method="post">
   {% if i.env == 'staging' %}<button formaction="/apps/{{ i.app }}/staging/promote" {{ 'disabled' if not github }}
     onclick="return confirm('Open a PR copying the staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button>{% endif %}

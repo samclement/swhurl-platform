@@ -298,6 +298,12 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIn('<details class="advanced" open>', page)
         self.assertIn('value="9090"', page)
 
+    def test_pr_description_explains_setting_secret_values(self):
+        body = changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging', '--secret-keys=API_TOKEN,DB_URL'])
+        self.assertIn('Before merging, set the secret values** (API_TOKEN, DB_URL)', body)
+        self.assertIn('    sops apps/weather-api/staging/secret.sops.yaml', body)
+        self.assertNotIn('sops', changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging']))
+
     def test_invalid_form_or_missing_token_runs_nothing(self):
         runner = tree_fake()
         c, _ = self.client(runner)

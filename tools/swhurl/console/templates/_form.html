@@ -1,0 +1,27 @@
+{# Shared pieces of the console's forms (New app, and the app page's pull requests), so they look and read the same.
+   Import with context: {% import "_form.html" as ui with context %} #}
+
+{# One text field: label above, input, optional hint below. #}
+{% macro text_field(id, label, value='', placeholder='', hint='', name='') %}
+<div class="field">
+  <label for="{{ id }}">{{ label }}</label>
+  <input id="{{ id }}" name="{{ name or id }}" value="{{ value }}" placeholder="{{ placeholder }}">
+  {% if hint %}<span class="muted hint">{{ hint }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{# Who can reach an app: three described choices. ``marked`` gets a note such as "(default)" or "(now)". #}
+{% macro exposure_choices(current, marked='', mark='') %}
+{% for value, (title, text) in exposure_text.items() %}
+<label class="choice"><input type="radio" name="exposure" value="{{ value }}" {{ 'checked' if current == value }}>
+  <span><strong>{{ title }}</strong>{% if marked == value %} <span class="muted">({{ mark }})</span>{% endif %}<br><span class="muted">{{ text.format(domain=domain) }}</span></span></label>
+{% endfor %}
+{% endmacro %}
+
+{# The submit row: primary button and a note on what happens next. #}
+{% macro submit(label, note) %}
+<div class="submit">
+  <button class="primary" {{ 'disabled' if not github }}>{{ label }}</button>
+  <span class="muted">{{ note }}</span>
+</div>
+{% endmacro %}

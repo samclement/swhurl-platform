@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% import "_form.html" as ui with context %}
 {% block title %}New app{% endblock %}
 {% macro hint(field) %}
   {% if field == 'image' %}<span class="muted hint">No <code>latest</code>. Production needs a digest (<code>@sha256:…</code>); from the swhurl template, copy the line the image build prints.</span>
   {% elif field == 'host' %}<span class="muted hint">Leave empty for a signed-in app to get the address shown. A public app needs its own host outside {{ domain }}.</span>
-  {% elif field == 'secret_keys' %}<span class="muted hint">Comma-separated names. Creates an encrypted Secret with the value <code>REPLACE_ME</code> for each; set them with <code>sops</code> on the PR branch before merging.</span>
+  {% elif field == 'secret_keys' %}<span class="muted hint">Optional. Names only, comma-separated, for example <code>API_TOKEN,DB_URL</code>. The app receives each one as an environment variable. Don't type values here: after the PR opens, you set them in its encrypted file (the PR description says how).</span>
   {% elif field == 'uid' %}<span class="muted hint">The image's non-root user; it must match the image (nginx-unprivileged is 101) or the pod cannot start.</span>
   {% elif field == 'port' %}<span class="muted hint">The port the app listens on inside the container.</span>
   {% elif field == 'health_path' %}<span class="muted hint">A path that answers 200 when the app is ready; web apps need one.</span>
@@ -60,11 +61,7 @@
 
   <fieldset>
     <legend>Who can reach it</legend>
-    {% set current = form.exposure or defaults.get('exposure') or 'private' %}
-    {% for value, (title, text) in exposures.items() %}
-    <label class="choice"><input type="radio" name="exposure" value="{{ value }}" {{ 'checked' if current == value }}>
-      <span><strong>{{ title }}</strong>{% if defaults.get('exposure') == value %} <span class="muted">(default)</span>{% endif %}<br><span class="muted">{{ text.format(domain=domain) }}</span></span></label>
-    {% endfor %}
+    {{ ui.exposure_choices(form.exposure or defaults.get('exposure') or 'private', defaults.get('exposure'), 'default') }}
     {{ field('host') }}
   </fieldset>
 
@@ -78,10 +75,7 @@
     {% endfor %}
   </details>
 
-  <div class="submit">
-    <button class="primary" {{ 'disabled' if not github }}>Open pull request</button>
-    <span class="muted">You review and merge it on GitHub.</span>
-  </div>
+  {{ ui.submit('Open pull request', 'You review and merge it on GitHub.') }}
 </form>
 
 <aside class="summary" aria-live="polite">
@@ -90,6 +84,7 @@
     <dt>Namespace</dt><dd><code id="s-namespace">&lt;name&gt;-staging</code></dd>
     <dt>Flux unit</dt><dd><code id="s-unit">app-&lt;name&gt;-staging</code></dd>
     <dt>Address</dt><dd id="s-address" class="mono">depends on who can reach it</dd>
+    <dt>Secrets</dt><dd id="s-secrets">none</dd>
     <dt>Files</dt><dd><code id="s-files">apps/&lt;name&gt;/staging/</code><br><code id="s-unit-file">clusters/home/app-&lt;name&gt;-staging.yaml</code></dd>
   </dl>
   <p class="muted">CI checks the PR with the same app policy. After merging, Flux applies it within a minute.</p>
@@ -115,6 +110,10 @@
     $('s-address').textContent = worker ? 'none (a worker has no web address)' : exposure === 'private' ? 'none (private)'
       : exposure === 'public' ? (host ? `https://${host} (public)` : 'a host outside ' + domain + ' is required')
       : `https://${host || derived} (signed in)`;
+    const keys = value('secret_keys').split(',').map((k) => k.trim()).filter(Boolean);
+    $('s-secrets').textContent = keys.length
+      ? `${keys.join(', ')} (values set on the PR branch)`
+      : 'none';
     $('digest-warning').hidden = !(env === 'prod' && value('image') && !value('image').includes('@sha256:'));
   }
   form.addEventListener('input', update);

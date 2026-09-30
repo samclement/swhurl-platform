@@ -52,15 +52,6 @@
            border: 1px solid var(--line); background: var(--bg); color: var(--text); }
   button:hover { border-color: var(--accent); }
   button.risky { color: var(--warn); }
-  form.new { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 8px 16px; align-items: center;
-             background: var(--panel); border: 1px solid var(--line); padding: 16px; }
-  form.new input, form.new select { font: inherit; padding: 4px 6px; border: 1px solid var(--line);
-             border-radius: 4px; background: var(--bg); color: var(--text); width: 100%; }
-  form.new .hint { grid-column: 2; margin-top: -6px; }
-  form.new details { grid-column: 1 / -1; }
-  form.new details > div { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 8px 16px; align-items: center; margin-top: 8px; }
-  form.new details .hint { grid-column: 2; }
-  @media (max-width: 600px) { form.new, form.new details > div { grid-template-columns: 1fr; } form.new .hint { grid-column: 1; } }
   /* New app form (new.html): one column, label above field, so opening Advanced cannot shift anything. */
   .lead { color: var(--muted); max-width: 60em; }
   .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0 8px; }
@@ -95,8 +86,10 @@
   form.wizard .submit { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; border-top: 1px solid var(--line); padding-top: 16px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-size: 14px; font-weight: 600; padding: 6px 16px; }
   button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26em), 1fr)); gap: 16px; align-items: start; max-width: 62em; margin-bottom: 12px; }
   aside.summary { position: sticky; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
   aside.summary h2 { margin-top: 0; }
+  aside.summary dd { min-width: 0; overflow-wrap: anywhere; }
   dl.plain { background: none; border: 0; padding: 0; gap: 4px 12px; }
   pre { background: var(--panel); border: 1px solid var(--line); padding: 12px; overflow-x: auto;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }

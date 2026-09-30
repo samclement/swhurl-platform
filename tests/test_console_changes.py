@@ -100,6 +100,19 @@ class FormTests(unittest.TestCase):
                                 '--image=ghcr.io/me/weather:1.0', '--host=weather.homelab.swhurl.com',
                                 '--health-path=/ready', '--cpu=--no-policy-check'])
 
+    def test_otlp_checkbox_becomes_a_bare_flag(self):
+        _, _, ticked = changes.new_app_args({**FORM, 'otlp': 'on'})
+        _, _, unticked = changes.new_app_args(FORM)
+        self.assertEqual(ticked[-1], '--otlp')
+        self.assertNotIn('--otlp', unticked)
+        with self.assertRaisesRegex(actions.ActionError, 'checkbox'):
+            changes.new_app_args({**FORM, 'otlp': '--no-policy-check'})
+
+    def test_otlp_hint_states_the_cluster_default(self):
+        self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', changes.OTLP_HINT)
+        self.assertIn('OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf', changes.OTLP_HINT)
+        self.assertNotIn('otlp', changes.new_app_defaults())
+
     def test_bad_input_is_refused_before_anything_runs(self):
         for form, message in (({**FORM, 'name': 'Weather'}, 'DNS label'), ({**FORM, 'env': 'dev'}, 'env must'),
                               ({**FORM, 'kind': 'cron'}, 'Kind must'), ({**FORM, 'host': 'a\nb'}, 'one line')):
@@ -235,6 +248,8 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIn('<option value="">web (default)</option>', form)
         self.assertIn('<option value="">private (default)</option>', form)
         self.assertIn('nginx-unprivileged is 101', form)
+        self.assertIn('<input type="checkbox" id="otlp" name="otlp" >', form)
+        self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', form)
         response = c.post('/new', data=FORM, headers=WHO, follow_redirects=False)
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
         job = jobs.get(1)

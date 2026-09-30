@@ -38,6 +38,7 @@ from swhurl.apps.contract import (
     MANAGED,
     RETAINED_STORAGE_CLASS,
     in_cookie_domain,
+    otlp_env,
 )
 from swhurl.run import CommandError, Runner
 
@@ -98,6 +99,8 @@ def build_values(args) -> dict:
     }
     if args.command:
         container['command'] = shlex.split(args.command)
+    if args.otlp:
+        container['env'] = otlp_env(args.name)
     if args.secret_keys:
         container['envFrom'] = [{'secretRef': {'name': f'{args.name}-secret'}}]
     if args.kind == 'web':
@@ -289,6 +292,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--mount-path', default='/data')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
+    p.add_argument('--otlp', action='store_true',
+                   help='the app has an OpenTelemetry SDK: point it at the cluster collector (OTEL_* env)')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
     p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-register', dest='register', action='store_false',

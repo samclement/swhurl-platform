@@ -32,7 +32,7 @@ import httpx
 
 from swhurl import platform
 from swhurl.apps import new
-from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES
+from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -57,17 +57,24 @@ NEW_APP_FIELDS = (
     ('memory_limit', 'memory-limit', 'Memory limit'),
     ('persistence', 'persistence', 'Persistent volume size'),
     ('secret_keys', 'secret-keys', 'Secret keys'),
+    ('otlp', 'otlp', 'Sends OpenTelemetry'),
     ('issuer', 'issuer', 'Certificate issuer'),
 )
 CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES,
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
+CHECKBOXES = {'otlp'}
+"""Fields that are a flag without a value: ticked adds ``--<flag>``."""
+OTLP_HINT = (f'Writes the cluster default: OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} ({OTLP_HOST_IP} is the '
+             f'node IP, where the collector listens), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and '
+             'OTEL_SERVICE_NAME=<name>. Tick only if the app has an OpenTelemetry SDK that reads these standard '
+             'variables; it needs no key. Logs on stdout reach ClickStack either way.')
 
 
 def new_app_defaults() -> dict[str, str]:
     """What app-new uses when a field is left empty, read from its own parser (this image's copy)."""
     parser = new.parser()
     return {field: str(parser.get_default(field)) for field, _, _ in NEW_APP_FIELDS
-            if parser.get_default(field) is not None}
+            if parser.get_default(field) is not None and field not in CHECKBOXES}
 
 
 @dataclass(frozen=True)
@@ -98,6 +105,12 @@ def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
     argv = [name, f'--env={env}']
     for field, flag, label in NEW_APP_FIELDS:
         value = form.get(field, '').strip()
+        if field in CHECKBOXES:
+            if value not in ('', 'on'):
+                raise ActionError(f'{label} is a checkbox')
+            if value:
+                argv.append(f'--{flag}')
+            continue
         if not value:
             continue
         if '\n' in value or '\r' in value:

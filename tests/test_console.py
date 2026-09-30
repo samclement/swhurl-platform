@@ -122,6 +122,9 @@ class AppDetailTests(unittest.TestCase):
         self.assertNotIn('/promote', text, 'promote is offered only on staging')
         self.assertIn('https://web.homelab.swhurl.com', text)
         self.assertIn('CrashLoopBackOff', text)
+        self.assertIn('public (no sign-in)', text, 'a route without the sign-in middleware reads as public')
+        self.assertIn('action="/apps/web/prod/expose"', text)
+        self.assertIn('<option value="authenticated-web" >signed-in (Google sign-in)</option>', text)
 
     def test_unknown_or_invalid_instance_is_404_without_odd_kubectl_calls(self):
         runner = fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'app-nope-prod',

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from swhurl import ROOT
 from swhurl.apps import policy
-from swhurl.apps.contract import INSTANCE_ROOTS
+from swhurl.apps.contract import AUTH_MIDDLEWARE, INSTANCE_ROOTS
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 
@@ -88,6 +88,7 @@ class InstanceStatus:
     certificates: list[tuple[str, str]]  # name, Ready status
     problems: list[Problem]
     settings: dict[str, str] = field(default_factory=dict)  # replicas, cpu, memory, memory_limit as in Git
+    exposure: str = ''  # private, authenticated-web or public, from the live routes
 
     @property
     def applied(self) -> bool:
@@ -107,6 +108,19 @@ class InstanceStatus:
             return 'unpinned'
         want = self.desired_image.split('@', 1)[1]
         return 'matches' if all(image.endswith('@' + want) for image in self.running_images) else 'different'
+
+
+EXPOSURE_LABELS = {'private': 'private (no route)', 'authenticated-web': 'signed-in (Google sign-in)',
+                   'public': 'public (no sign-in)'}
+
+
+def live_exposure(ingresses: list[dict]) -> str:
+    """Who can reach the instance, from its routes: none, all behind sign-in, or open."""
+    if not ingresses:
+        return 'private'
+    signed_in = all(AUTH_MIDDLEWARE in ((i.get('metadata') or {}).get('annotations') or {}).get(
+        'traefik.ingress.kubernetes.io/router.middlewares', '') for i in ingresses)
+    return 'authenticated-web' if signed_in else 'public'
 
 
 def replicas(workloads: dict | None) -> list[Replicas]:
@@ -169,6 +183,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         certificates=[(cert['metadata']['name'], ready_condition(cert)[0]) for cert in certificates],
         problems=problems(pods),
         settings=release_settings(release),
+        exposure=live_exposure(ingresses),
     )
 
 
@@ -190,6 +205,7 @@ def status_lines(found: InstanceStatus) -> list[str]:
         lines += [f'Image      desired {found.desired_image}',
                   f"           running {', '.join(found.running_images) or 'none'}{note}"]
     lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
+    lines.append(f'Exposure   {EXPOSURE_LABELS.get(found.exposure, found.exposure)}')
     lines += [f'Route      https://{host}' for host in found.routes]
     lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
     if found.problems:

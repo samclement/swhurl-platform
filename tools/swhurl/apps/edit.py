@@ -20,8 +20,16 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps.contract import ENVIRONMENTS, add_image_markers, strip_image_markers
-from swhurl.apps.new import NAME_RE, check_generated, dump
+from swhurl.apps.contract import (
+    ENVIRONMENTS,
+    EXPOSURE,
+    EXPOSURES,
+    add_image_markers,
+    default_host,
+    in_cookie_domain,
+    strip_image_markers,
+)
+from swhurl.apps.new import NAME_RE, check_generated, depends_on, dump, ingress_values
 
 PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
 CPU_RE = re.compile(r'^\d+(\.\d+)?m?$')
@@ -114,6 +122,55 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     return instance
 
 
+def load_generated(path: Path) -> dict:
+    """One generated YAML document, refused if it was edited by hand (it would not round-trip)."""
+    text = path.read_text()
+    docs = [d for d in yaml.safe_load_all(text) if d]
+    if len(docs) != 1 or dump(docs) != text:
+        raise EditError(f'{path} was edited by hand (it does not round-trip); edit it yourself')
+    return docs[0]
+
+
+def expose(root: Path, app: str, env: str, exposure: str, host: str | None = None) -> Path:
+    """Change who can reach an instance: its route, sign-in, Namespace label and unit dependencies."""
+    instance = instance_dir(root, app, env)
+    release = load_release(instance)
+    values = release['spec']['values']
+    route = (values.get('ingress') or {}).get('main')
+    current_host = route['hosts'][0]['host'] if route else None
+    namespace_path, unit_path = instance / 'namespace.yaml', root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    namespace, unit = load_generated(namespace_path), load_generated(unit_path)
+    current = namespace['metadata']['labels'].get(EXPOSURE)
+    if exposure != 'private' and 'service' not in values:
+        raise EditError(f'{app}/{env} is a worker (no Service): it can only be private')
+    if exposure == 'authenticated-web':
+        host = host or (current_host if current_host and in_cookie_domain(current_host) else default_host(app, env))
+        if not in_cookie_domain(host):
+            raise EditError(f'signed-in hosts must be under {default_host("x", "prod")[2:]} (shared sign-in cookie)')
+    elif exposure == 'public':
+        host = host or (current_host if current_host and not in_cookie_domain(current_host) else None)
+        if not host:
+            raise EditError('a public instance needs --host, outside the sign-in cookie domain')
+        if in_cookie_domain(host):
+            raise EditError(f'public hosts must be outside {default_host("x", "prod")[2:]}: the sign-in cookie would reach them')
+    elif host:
+        raise EditError('a private instance has no route; drop --host')
+    if (exposure, host) == (current, current_host):
+        raise EditError(f'{app}/{env} is already {exposure}' + (f' at {host}' if host else ''))
+    issuer = ((route or {}).get('annotations') or {}).get('cert-manager.io/cluster-issuer', 'letsencrypt-prod')
+    if exposure == 'private':
+        values.pop('ingress', None)
+    else:
+        values['ingress'] = {'main': ingress_values(app, host, exposure, issuer)}
+    namespace['metadata']['labels'][EXPOSURE] = exposure
+    unit['spec']['dependsOn'] = [{'name': d} for d in depends_on(exposure)]
+    save_release(instance, release)
+    namespace_path.write_text(dump([namespace]))
+    unit_path.write_text(dump([unit]))
+    print(f'[OK] {app}/{env}: {current} -> {exposure}' + (f' at https://{host}' if host else ' (no route)'))
+    return instance
+
+
 def remove(root: Path, app: str, env: str) -> None:
     instance = instance_dir(root, app, env)
     namespace_file = instance / 'namespace.yaml'
@@ -186,6 +243,18 @@ def main_scale(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     return run(lambda: scale(args.root.resolve(), args.app, args.env, replicas=args.replicas, cpu=args.cpu,
                              memory=args.memory, memory_limit=args.memory_limit), True)
+
+
+def main_expose(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-expose', description='Change who can reach an app instance')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--exposure', required=True, choices=EXPOSURES,
+                   help='private: no route; authenticated-web: Google sign-in; public: no sign-in, host outside the domain')
+    p.add_argument('--host', help='default for authenticated-web: the current host if signed-in, else the derived one')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: expose(args.root.resolve(), args.app, args.env, args.exposure, args.host), True)
 
 
 def main_remove(argv: list[str] | None = None) -> int:

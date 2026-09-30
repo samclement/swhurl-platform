@@ -57,6 +57,11 @@ app-scale: ## APP= ENV= ARGS="--replicas N --cpu Q --memory Q --memory-limit Q" 
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-scale APP=<app> ENV=<env> ARGS='--replicas 2'" >&2; exit 2; }
 	$(SWHURL) app-scale $(APP) $(ENV) $(ARGS)
 
+.PHONY: app-expose
+app-expose: ## APP= ENV= ARGS="--exposure private|authenticated-web|public [--host H]" Change who can reach an instance (Git edit)
+	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-expose APP=<app> ENV=<env> ARGS='--exposure public --host app.example.com'" >&2; exit 2; }
+	$(SWHURL) app-expose $(APP) $(ENV) $(ARGS)
+
 .PHONY: app-remove
 app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git edit; Flux uninstalls on push)
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }

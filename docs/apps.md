@@ -71,7 +71,7 @@ metadata:
 ## Operate an instance
 
 ```bash
-make app-status APP=hello ENV=prod     # Git revision applied?, running image matches desired?, replicas, route, TLS, failing containers
+make app-status APP=hello ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
 make app-logs APP=hello ENV=prod       # FOLLOW=true, TAIL=N
 make app-reconcile APP=hello ENV=prod
 make app-check APP=hello ENV=prod      # policy, offline
@@ -82,8 +82,11 @@ Change an app by editing its files and pushing, or with these Git-only commands 
 ```bash
 make app-promote APP=hello                                  # staging's image tag and digest into prod
 make app-scale APP=hello ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"
+make app-expose APP=hello ENV=staging ARGS="--exposure public --host hello.example.com"   # who can reach it
 make app-remove APP=hello ENV=staging                       # files, unit, registration, Reloader entry
 ```
+
+`app-expose` switches an instance between `private` (no route), `authenticated-web` (Google sign-in; it keeps a signed-in host or derives `staging-<name>.homelab.swhurl.com`) and `public` (no sign-in; `--host` outside `homelab.swhurl.com`, so the sign-in cookie never reaches it). It rewrites the route, the Namespace's exposure label and the unit's dependencies together, and refuses a route on a worker. Staging and production may differ (for example a signed-in staging preview of a public app); `make check-apps` then compares their other settings but not their routes.
 
 Each checks the result against the app policy. They edit only HelmReleases that are exactly as the generator writes them; a hand-edited one is refused (edit it yourself). Removing an instance with a retained volume leaves its namespace and claim on the cluster ([lifecycle](operations.md#lifecycle)). Secret values: [operations](operations.md#secrets).
 

@@ -28,7 +28,9 @@ def cluster(**overrides):
             {'ready': True, 'imageID': f'docker-pullable://docker.io/x/web@{DIGEST}'}]}}]},
         'deploy,statefulset,daemonset': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'web'},
                                                     'spec': {'replicas': 1}, 'status': {'readyReplicas': 1}}]},
-        'ingress': {'items': [{'spec': {'rules': [{'host': 'web.homelab.swhurl.com'}]}}]},
+        'ingress': {'items': [{'metadata': {'annotations': {
+            'traefik.ingress.kubernetes.io/router.middlewares': 'ingress-oauth-auth-shared@kubernetescrd'}},
+            'spec': {'rules': [{'host': 'web.homelab.swhurl.com'}]}}]},
         'certificate': {'items': [{'metadata': {'name': 'web-tls'}, **ready()}]},
     }
     objects.update(overrides)
@@ -62,6 +64,7 @@ class StatusTests(unittest.TestCase):
             f'Image      docker.io/x/web:1.0@{DIGEST}',
             '           running: matches desired',
             'Replicas   Deployment/web: 1/1 ready',
+            'Exposure   signed-in (Google sign-in)',
             'Route      https://web.homelab.swhurl.com',
             'TLS        web-tls: True',
         ])
@@ -116,6 +119,16 @@ class ImageStateTests(unittest.TestCase):
         moved = app_ops.status_lines(self.found(want, [f'docker.io/x/web@{other}']))
         self.assertIn(f'Image      desired {want}', moved)
         self.assertTrue(any('different image' in line for line in moved))
+
+
+class LiveExposureTests(unittest.TestCase):
+    def test_read_from_the_routes(self):
+        signed_in = {'metadata': {'annotations': {'traefik.ingress.kubernetes.io/router.middlewares':
+                                                  'ingress-oauth-auth-shared@kubernetescrd'}}}
+        self.assertEqual(app_ops.live_exposure([]), 'private')
+        self.assertEqual(app_ops.live_exposure([signed_in]), 'authenticated-web')
+        self.assertEqual(app_ops.live_exposure([{'metadata': {}}]), 'public')
+        self.assertEqual(app_ops.live_exposure([signed_in, {}]), 'public', 'any open route makes it public')
 
 
 class GatherStatusTests(unittest.TestCase):

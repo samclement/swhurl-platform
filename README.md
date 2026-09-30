@@ -6,12 +6,12 @@ The cluster is live. What has been verified on it, and when, is in [current stat
 
 ## Make a change
 
-Every change goes through Git; Flux applies what is on `main`.
+Every change goes through Git; Flux applies what is on `main` within seconds of a push. Other ways in (console and Renovate pull requests, the console's own deploys, the few operator commands that write to the cluster directly): [how changes reach the cluster](docs/architecture.md#how-changes-reach-the-cluster).
 
 ```bash
 make check                       # offline checks, the same as CI
 git commit -am "..." && git push
-make flux-reconcile              # apply now and wait, instead of waiting for Flux to poll Git (every minute)
+make flux-reconcile              # optional: waits until every unit is Ready at your commit (the push webhook already started it)
 make verify-platform             # expect "Validation passed."
 ```
 
@@ -23,11 +23,13 @@ make verify-platform             # expect "Validation passed."
 | --- | --- |
 | See apps and Flux units, or change them from a browser | [Console](docs/console.md) |
 | Deploy an app or change one | [Apps](docs/apps.md) |
+| Deploy a new image of an app | [Deploy a new image](docs/apps.md#deploy-a-new-image) |
+| Understand how the console deploys itself | [Deploy a new console](docs/console.md#deploy-a-new-console) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |
-| Review a Renovate chart update PR | [Chart updates](docs/operations.md#chart-updates) |
+| Understand or review Renovate chart update PRs | [Chart updates](docs/operations.md#chart-updates) |
 | Look up a `make` target | [Commands](docs/commands.md) |
 | Understand a shared service, its settings or Secrets | [Services](docs/services.md) |
-| See how the pieces depend on and own each other | [Architecture](docs/architecture.md) |
+| See how the pieces depend on and own each other, and how a commit becomes running pods | [Architecture](docs/architecture.md) |
 | Build the platform on a bare host | [Bootstrap](docs/bootstrap.md) |
 | Change the repo safely (tests, fixtures, docs) | [Contributing](docs/contributing.md) |
 

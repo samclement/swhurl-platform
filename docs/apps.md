@@ -21,7 +21,7 @@ sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME valu
 make check-apps check-secrets
 git add apps/weather-api clusters/home platform/reloader
 git commit -m "apps: add weather-api staging" && git push
-make flux-reconcile && make app-status APP=weather-api ENV=staging
+make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
 ```
 
 The console's New app form opens the same change as a PR ([console](console.md)). The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
@@ -84,6 +84,25 @@ Container stdout and stderr reach ClickStack without any setup. For metrics and 
 
 Apps need no key: the collector adds the ingestion key, the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). In HyperDX, filter on `ServiceName` or `k8s.namespace.name`. SDK auto-instrumentation and runtime metrics work unchanged. Telemetry sent in a pod's first second can lack the pod attributes, while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints. The generator does not write these lines.
 
+## Deploy a new image
+
+An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Nothing updates these for apps yet: you change them, staging first, and promote the same digest to production. Everything after the commit is automatic.
+
+1. Find the new image's digest: the registry's page for that tag, the digest your image build printed, or `docker buildx imagetools inspect <repository>:<tag>` (the `Digest:` line; use the index digest for a multi-architecture image).
+2. In `apps/<app>/staging/helmrelease.yaml`, set both lines under `controllers.main.containers.main.image`:
+
+   ```yaml
+   tag: 1.28-alpine
+   digest: sha256:<new digest>
+   ```
+
+   Staging accepts a tag alone, but `make app-promote` refuses an image without a digest (production requires one), so set both.
+3. `make app-check APP=<app> ENV=staging`, commit, push (or open a pull request and merge it). The [push webhook](services.md#push-webhook) has Flux fetch it within seconds; its unit applies the new values and helm-controller rolls the Deployment ([the full chain](architecture.md#how-changes-reach-the-cluster)).
+4. `make app-status APP=<app> ENV=staging` shows the desired and running digest; they match once the new pod is Ready.
+5. Promote the same image: `make app-promote APP=<app>`, commit, push; or **Promote to prod** in the console, which opens the pull request for you.
+
+To roll back, revert the commit (or set the previous tag and digest) and push. Chart versions are different: Renovate opens pull requests for app-template, and one merged PR updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
+
 ## Moving a host between instances
 
 Deploy the new instance on a temporary host and check it. Then, in one commit, remove the old route and put the host on the new instance. Expect a few seconds of Traefik's default certificate while cert-manager issues the new one.
@@ -92,5 +111,5 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Image tags and digests are edited by hand (then `make app-promote` copies staging's into prod). Renovate opens PRs only for chart versions, including app-template ([chart updates](operations.md#chart-updates)); digest PRs are planned ([plan](plan.md) section 0, PR06).
+- Image tags and digests are edited by hand ([deploy a new image](#deploy-a-new-image)). Automating them (Renovate digest PRs or Flux image automation) is open in [plan](plan.md) section 0 (PR06).
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

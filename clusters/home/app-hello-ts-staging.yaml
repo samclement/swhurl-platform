@@ -14,4 +14,4 @@ spec:
   path: ./apps/hello-ts/staging
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 3m

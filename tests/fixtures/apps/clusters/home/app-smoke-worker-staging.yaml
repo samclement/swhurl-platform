@@ -13,4 +13,4 @@ spec:
   path: ./apps/smoke-worker/staging
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 3m

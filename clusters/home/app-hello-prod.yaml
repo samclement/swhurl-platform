@@ -14,4 +14,4 @@ spec:
   path: ./apps/hello/prod
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 3m

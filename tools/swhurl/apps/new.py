@@ -37,6 +37,7 @@ from swhurl.apps.contract import (
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
+    FAIL_AFTER,
     IMAGE_AUTOMATION_FILE,
     MANAGED,
     PRESETS,
@@ -234,11 +235,12 @@ def generate(args, root: Path) -> list[Path]:
         'metadata': {'name': args.name, 'namespace': namespace},
         'spec': {
             'interval': '30m',
+            'timeout': FAIL_AFTER,
             'chart': {'spec': {'chart': CHART, 'version': CHART_VERSION,
                                'sourceRef': {'kind': 'HelmRepository', 'name': CHART_REPOSITORY, 'namespace': 'flux-system'},
                                'interval': '30m'}},
-            'install': {'remediation': {'retries': 3}},
-            'upgrade': {'remediation': {'retries': 3}},
+            'install': {'remediation': {'retries': 1}},
+            'upgrade': {'remediation': {'retries': 1}},
             'values': build_values(args),
         },
     }
@@ -269,7 +271,7 @@ def generate(args, root: Path) -> list[Path]:
     if args.secret_keys:
         spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
     # App unit: default MirrorPrune, so removing it from Git uninstalls the instance.
-    spec |= {'prune': True, 'wait': True, 'timeout': '10m'}
+    spec |= {'prune': True, 'wait': True, 'timeout': FAIL_AFTER}
     files[unit_file] = dump([{'apiVersion': 'kustomize.toolkit.fluxcd.io/v1', 'kind': 'Kustomization',
                               'metadata': {'name': unit, 'namespace': 'flux-system'}, 'spec': spec}])
 

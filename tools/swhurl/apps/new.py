@@ -181,16 +181,26 @@ def build_values(args) -> dict:
     if args.kind == 'web':
         values['service'] = {'main': {'controller': 'main', 'ports': {'http': {'port': args.port}}}}
     if args.exposure in ('authenticated-web', 'public'):
-        annotations = {'cert-manager.io/cluster-issuer': args.issuer}
-        if args.exposure == 'authenticated-web':
-            annotations['traefik.ingress.kubernetes.io/router.middlewares'] = AUTH_MIDDLEWARE
-        values['ingress'] = {'main': {
-            'className': 'traefik',
-            'annotations': annotations,
-            'hosts': [{'host': args.host, 'paths': [{'path': '/', 'service': {'identifier': 'main', 'port': 'http'}}]}],
-            'tls': [{'hosts': [args.host], 'secretName': f'{args.name}-tls'}],
-        }}
+        values['ingress'] = {'main': ingress_values(args.name, args.host, args.exposure, args.issuer)}
     return values
+
+
+def ingress_values(name: str, host: str, exposure: str, issuer: str) -> dict:
+    """The app-template route for a signed-in or public instance (app-expose writes the same)."""
+    annotations = {'cert-manager.io/cluster-issuer': issuer}
+    if exposure == 'authenticated-web':
+        annotations['traefik.ingress.kubernetes.io/router.middlewares'] = AUTH_MIDDLEWARE
+    return {
+        'className': 'traefik',
+        'annotations': annotations,
+        'hosts': [{'host': host, 'paths': [{'path': '/', 'service': {'identifier': 'main', 'port': 'http'}}]}],
+        'tls': [{'hosts': [host], 'secretName': f'{name}-tls'}],
+    }
+
+
+def depends_on(exposure: str) -> list[str]:
+    """The units an instance waits for: signed-in routes need the sign-in middleware."""
+    return ['infra-base'] + (['platform-oauth2-proxy'] if exposure == 'authenticated-web' else [])
 
 
 def dump(docs) -> str:
@@ -249,7 +259,7 @@ def generate(args, root: Path) -> list[Path]:
     if auto_deploys(args):
         files[instance / IMAGE_AUTOMATION_FILE] = dump(image_automation(args))
 
-    depends = ['infra-base'] + (['platform-oauth2-proxy'] if args.exposure == 'authenticated-web' else [])
+    depends = depends_on(args.exposure)
     spec = {
         'dependsOn': [{'name': d} for d in depends],
         'interval': '10m',

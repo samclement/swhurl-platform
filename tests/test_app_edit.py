@@ -7,8 +7,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+import yaml
+
 from swhurl import ROOT
-from swhurl.apps import contract, edit
+from swhurl.apps import contract, edit, new, policy
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
 
@@ -86,6 +88,54 @@ class EditTests(unittest.TestCase):
         self.assertIn('tag: 1.28-alpine\n', self.prod.read_text(), 'production gets the tag, never the markers')
         self.assertNotIn('imagepolicy', self.prod.read_text())
         self.assertNotEqual(before, self.prod.read_text())
+
+    def expose(self, env, exposure, host=None):
+        return self.quiet(edit.expose, self.root, 'hello', env, exposure, host)
+
+    def state(self, env):
+        instance = self.root / 'apps/hello' / env
+        values = edit.load_release(instance)['spec']['values']
+        route = (values.get('ingress') or {}).get('main')
+        namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
+        unit = yaml.safe_load((self.root / f'clusters/home/app-hello-{env}.yaml').read_text())
+        return {'exposure': namespace['metadata']['labels'][contract.EXPOSURE],
+                'host': route['hosts'][0]['host'] if route else None,
+                'sign_in': bool(route) and contract.AUTH_MIDDLEWARE in str(route['annotations']),
+                'depends': [d['name'] for d in unit['spec']['dependsOn']]}
+
+    def test_expose_switches_route_sign_in_label_and_dependencies(self):
+        self.expose('staging', 'public', 'hello.example.com')
+        self.assertEqual(self.state('staging'), {'exposure': 'public', 'host': 'hello.example.com', 'sign_in': False,
+                                                 'depends': ['infra-base']})
+        self.expose('staging', 'private')
+        self.assertEqual(self.state('staging'), {'exposure': 'private', 'host': None, 'sign_in': False,
+                                                 'depends': ['infra-base']})
+        self.expose('staging', 'authenticated-web')  # host derived
+        self.assertEqual(self.state('staging'), {'exposure': 'authenticated-web', 'sign_in': True,
+                                                 'host': 'staging-hello.homelab.swhurl.com',
+                                                 'depends': ['infra-base', 'platform-oauth2-proxy']})
+        instances = [self.root / 'apps/hello/staging', self.root / 'apps/hello/prod']
+        self.expose('staging', 'public', 'hello.example.com')
+        self.assertEqual(policy.drift(instances), [], 'exposure may differ between environments')
+
+    def test_expose_refusals(self):
+        cases = (('public', None, 'needs --host'), ('public', 'x.homelab.swhurl.com', 'outside'),
+                 ('authenticated-web', 'hello.example.com', 'must be under'), ('private', 'x.example.com', 'drop --host'),
+                 ('authenticated-web', None, 'already authenticated-web'))
+        for exposure, host, message in cases:
+            with self.subTest(exposure=exposure, host=host), self.assertRaisesRegex(edit.EditError, message):
+                edit.expose(self.root, 'hello', 'staging', exposure, host)
+
+    def test_expose_refuses_a_worker_route_and_hand_edits(self):
+        with redirect_stdout(io.StringIO()):
+            new.main(['job', '--env', 'staging', '--kind', 'worker', '--image', 'r/job:1', '--root', str(self.root),
+                      '--no-policy-check'])
+        with self.assertRaisesRegex(edit.EditError, 'worker'):
+            edit.expose(self.root, 'job', 'staging', 'public', 'job.example.com')
+        namespace = self.root / 'apps/hello/staging/namespace.yaml'
+        namespace.write_text('# tuned by hand\n' + namespace.read_text())
+        with self.assertRaisesRegex(edit.EditError, 'edited by hand'):
+            edit.expose(self.root, 'hello', 'staging', 'private')
 
     def test_scale_refuses_bad_values(self):
         for kwargs, message in (({}, 'at least one'), ({'replicas': 11}, '0 to 10'), ({'replicas': -1}, '0 to 10'),

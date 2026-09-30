@@ -20,7 +20,8 @@ with Helm) and checks the resulting Kubernetes objects:
 and, across the environments of one app (source manifests, not rendered):
 
   env-drift           environments differ only in namespace, hosts, image tag/digest,
-                      replicas, resources and issuer; encrypted Secrets and the staging-only
+                      replicas, resources, issuer and exposure (route and sign-in); encrypted
+                      Secrets and the staging-only
                       image-automation.yaml (automatic deploys) are skipped
 
 A reviewed exception goes on the HelmRelease as
@@ -207,27 +208,37 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
 
 
 VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT}
+# Exposure may differ per environment (for example a signed-in staging preview of a public app). When
+# the environments' exposure labels differ, their routes are not compared; each environment is still
+# checked against the exposure rules on its own. With the same exposure, routes must match.
+EXPOSURE_VARIES = {'ingress', EXPOSURE}
 VARIES_LISTS = {'hosts'}  # lists of host names (TLS); lists of rules are compared
 
 
-def flatten(node, path: str = '') -> dict[str, object]:
+def flatten(node, path: str = '', varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
     """Leaf values by dotted path, with the settings environments may vary removed."""
     if isinstance(node, dict):
         leaves = {}
         for key, value in node.items():
-            if key in VARIES or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
+            if key in varies or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
                 continue
-            leaves.update(flatten(value, f'{path}.{key}' if path else str(key)))
+            leaves.update(flatten(value, f'{path}.{key}' if path else str(key), varies))
         return leaves
     if isinstance(node, list):
         leaves = {}
         for index, value in enumerate(node):
-            leaves.update(flatten(value, f'{path}[{index}]'))
+            leaves.update(flatten(value, f'{path}[{index}]', varies))
         return leaves
     return {path: node}
 
 
-def source(instance: Path) -> dict[str, object]:
+def exposure_of(instance: Path) -> str | None:
+    path = instance / 'namespace.yaml'
+    docs = [d for d in yaml.safe_load_all(path.read_text()) if d] if path.exists() else []
+    return ((docs[0].get('metadata') or {}).get('labels') or {}).get(EXPOSURE) if docs else None
+
+
+def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
         if path.name.endswith('.sops.yaml') or path.name == IMAGE_AUTOMATION_FILE:
@@ -237,7 +248,7 @@ def source(instance: Path) -> dict[str, object]:
                 doc['metadata'].pop('name', None)
             if doc.get('kind') == 'Kustomization' and IMAGE_AUTOMATION_FILE in (doc.get('resources') or []):
                 doc['resources'] = [r for r in doc['resources'] if r != IMAGE_AUTOMATION_FILE]
-            leaves.update(flatten(doc, f'{path.name}#{index}'))
+            leaves.update(flatten(doc, f'{path.name}#{index}', varies))
     return leaves
 
 
@@ -246,13 +257,13 @@ def drift(environments: list[Path]) -> list[str]:
     if len(environments) < 2:
         return []
     base, *others = environments
-    reference = source(base)
     problems = []
     for other in others:
         allowed, _ = exceptions([d for d in yaml.safe_load_all((other / 'helmrelease.yaml').read_text()) if d])
         if 'env-drift' in allowed:
             continue
-        leaves = source(other)
+        varies = frozenset(VARIES | (EXPOSURE_VARIES if exposure_of(base) != exposure_of(other) else set()))
+        reference, leaves = source(base, varies), source(other, varies)
         changed = sorted(k for k in reference.keys() | leaves.keys() if reference.get(k, '<absent>') != leaves.get(k, '<absent>'))
         if changed:
             shown = ', '.join(changed[:5]) + (f' (+{len(changed) - 5} more)' if len(changed) > 5 else '')

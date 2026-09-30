@@ -77,7 +77,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         status = ops.gather_status(runner, found) if found else None
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
-        return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github)
+        return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github,
+                    exposures=ops.EXPOSURE_LABELS)
 
     def units(request: Request) -> Response:
         def read():
@@ -139,10 +140,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     async def change_app(request: Request) -> Response:
-        """Promote, scale or remove an instance: a PR made by the clone's app-promote/app-scale/app-remove."""
+        """Promote, scale, change access to or remove an instance: a PR made by the clone's app-* command."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = cluster.instance(app, env)
-        if found is None or change not in ('promote', 'scale', 'remove'):
+        if found is None or change not in ('promote', 'scale', 'expose', 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
@@ -156,6 +157,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             elif change == 'scale':
                 command, argv, target = 'app-scale', [app, env, *changes.scale_args(form)], f'{app}/{env}'
                 title, make = f'apps: scale {app} {env}', f'make app-scale APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+            elif change == 'expose':
+                command, argv, target = 'app-expose', [app, env, *changes.expose_args(form)], f'{app}/{env}'
+                title, make = f'apps: change access to {app} {env}', f'make app-expose APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
                 title, make = f'apps: remove {app} {env}', f'make app-remove APP={app} ENV={env}'

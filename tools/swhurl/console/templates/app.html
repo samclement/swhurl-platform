@@ -22,6 +22,8 @@
   {% endif %}
   <dt>Replicas</dt>
   <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }}</span> {{ r.workload }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+  <dt>Who can reach it</dt>
+  <dd class="{{ 'warn' if status.exposure == 'public' else '' }}">{{ exposures.get(status.exposure, status.exposure) }}</dd>
   <dt>Routes</dt>
   <dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }}</a></div>{% else %}<span class="muted">private (no route)</span>{% endfor %}</dd>
   <dt>TLS</dt>
@@ -44,6 +46,13 @@
   <input id="{{ field }}" name="{{ field }}" placeholder="{{ status.settings.get(field, '') }}">
   {% endfor %}
   <span class="muted">Empty fields stay as they are (shown in grey).</span><button {{ 'disabled' if not github }}>Open scale PR</button>
+</form>
+<form class="new" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
+  <label for="exposure">Who can reach it</label>
+  <select id="exposure" name="exposure">{% for value, label in exposures.items() %}<option value="{{ value }}" {{ 'selected' if value == status.exposure }}>{{ label }}</option>{% endfor %}</select>
+  <label for="expose_host">Host</label>
+  <input id="expose_host" name="host" placeholder="{{ status.routes[0] if status.routes else 'signed-in: derived; public: required, outside the sign-in domain' }}">
+  <span class="muted">Signed-in keeps its host or derives one; public needs a host outside the sign-in domain; private removes the route. Staging and production may differ.</span><button {{ 'disabled' if not github }}>Open access PR</button>
 </form>
 <form class="actions" method="post">
   {% if i.env == 'staging' %}<button formaction="/apps/{{ i.app }}/staging/promote" {{ 'disabled' if not github }}

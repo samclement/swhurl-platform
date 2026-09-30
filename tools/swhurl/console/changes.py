@@ -249,6 +249,16 @@ SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('cpu', 'cpu', 'CPU reques
                 ('memory', 'memory', 'Memory request'), ('memory_limit', 'memory-limit', 'Memory limit'))
 
 
+def expose_args(form: Mapping[str, str]) -> list[str]:
+    """``--exposure=`` and an optional ``--host=`` for app-expose."""
+    exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
+    if exposure not in EXPOSURES:
+        raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+    if host and not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', host):
+        raise ActionError(f'host {host!r} is not a DNS name')
+    return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
+
+
 def scale_args(form: Mapping[str, str]) -> list[str]:
     """``--flag=value`` for each filled-in scale field; at least one is needed."""
     argv = []

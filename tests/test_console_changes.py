@@ -127,6 +127,15 @@ class FormTests(unittest.TestCase):
         self.assertEqual(changes.new_app_checked('swhurl-web'), {'otlp': True})
         self.assertEqual(changes.new_app_checked(''), {'otlp': False})
 
+    def test_expose_form_becomes_app_expose_arguments(self):
+        self.assertEqual(changes.expose_args({'exposure': 'public', 'host': 'weather.example.com'}),
+                         ['--exposure=public', '--host=weather.example.com'])
+        self.assertEqual(changes.expose_args({'exposure': 'private', 'host': ''}), ['--exposure=private'])
+        for form, message in (({'exposure': 'open'}, 'exposure must'),
+                              ({'exposure': 'public', 'host': '--root=/'}, 'not a DNS name')):
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
+                changes.expose_args(form)
+
     def test_bad_input_is_refused_before_anything_runs(self):
         for form, message in (({**FORM, 'name': 'Weather'}, 'DNS label'), ({**FORM, 'env': 'dev'}, 'env must'),
                               ({**FORM, 'kind': 'cron'}, 'Kind must'), ({**FORM, 'host': 'a\nb'}, 'one line')):

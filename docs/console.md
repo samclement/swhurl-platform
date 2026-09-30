@@ -7,7 +7,7 @@ A web page at `https://console.<BASE_DOMAIN>` (`console.homelab.swhurl.com`) for
 | Page | Shows | Buttons and what they do |
 | --- | --- | --- |
 | **Apps** | Each app instance: Flux unit state and desired image | — |
-| An app (`/apps/<app>/<env>`) | What `make app-status` shows: Git revision desired vs applied, image desired vs running, replicas, route, TLS, failing containers | **Reconcile** its unit. **Scale** (replicas and resources; current values in grey, empty fields unchanged), **Promote to prod** (staging only) and **Uninstall** each open a PR |
+| An app (`/apps/<app>/<env>`) | What `make app-status` shows: Git revision desired vs applied, whether the running image matches Git, replicas, who can reach it, route, TLS, failing containers | **Reconcile** its unit. **Scale** (replicas and resources; current values in grey, empty fields unchanged), **Who can reach it** (private, signed-in or public, with the host), **Promote to prod** (staging only) and **Uninstall** each open a PR |
 | **Flux units** | Every unit, in columns by `dependsOn`, with state and applied revision | **Reconcile**, **Suspend** / **Resume**. None on `cluster-sources` and `cluster-stack`, which `make flux-bootstrap` applies |
 | **Platform** | The `make verify-platform` checks that need only cluster reads: Flux units and the HTTPS redirect | — (run `make verify-platform` for the rest) |
 | **New app** | A form for `make app-new`. It starts on the **Web app from the swhurl template** preset (name, environment, image, exposure, host and Secret keys; the rest under **Advanced**); **Worker** and **Other image** (every option) are one click away. Empty fields show the default that will be used | **Open pull request** |

@@ -76,6 +76,10 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: SOURCE_REVISION=${{ steps.source.outputs.revision }}
+          # Layer cache in GitHub Actions (mode=max keeps the tools and deps stages too), so a
+          # change under tools/ rebuilds only the last layers.
+          cache-from: type=gha,scope=console
+          cache-to: type=gha,mode=max,scope=console
           tags: |
             ${{ env.IMAGE }}:${{ steps.source.outputs.revision }}
             ${{ env.IMAGE }}:src-${{ steps.source.outputs.content }}

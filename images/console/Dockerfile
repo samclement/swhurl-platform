@@ -32,10 +32,6 @@ COPY pyproject.toml uv.lock ./
 RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --no-cache --no-install-project
 
 FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111
-ARG SOURCE_REVISION=unknown
-LABEL org.opencontainers.image.source="https://github.com/samclement/swhurl-platform" \
-      org.opencontainers.image.description="swhurl platform web console" \
-      org.opencontainers.image.revision="${SOURCE_REVISION}"
 # No git or curl: PRs go through GitHub's API from Python (tools/swhurl/console/changes.py).
 # The base image's ca-certificates serve kubectl and helm.
 COPY --from=tools /out/ /usr/local/bin/
@@ -47,10 +43,15 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONPATH=/app/tools \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    SWHURL_SOURCE_REVISION=${SOURCE_REVISION} \
     HOME=/tmp \
     XDG_CACHE_HOME=/tmp/cache
 WORKDIR /app
 USER 65532:65532
 EXPOSE 8080
 CMD ["python", "-m", "swhurl", "console", "--port", "8080"]
+# Last, so a new revision does not invalidate the cached layers above.
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/samclement/swhurl-platform" \
+      org.opencontainers.image.description="swhurl platform web console" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}"
+ENV SWHURL_SOURCE_REVISION=${SOURCE_REVISION}

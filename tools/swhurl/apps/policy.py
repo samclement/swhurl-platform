@@ -20,7 +20,8 @@ with Helm) and checks the resulting Kubernetes objects:
 and, across the environments of one app (source manifests, not rendered):
 
   env-drift           environments differ only in namespace, hosts, image tag/digest,
-                      replicas, resources and issuer; encrypted Secrets are skipped
+                      replicas, resources and issuer; encrypted Secrets and the staging-only
+                      image-automation.yaml (automatic deploys) are skipped
 
 A reviewed exception goes on the HelmRelease as
   platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
@@ -44,6 +45,7 @@ from swhurl.apps.contract import (
     ENVIRONMENT,
     EXCEPTIONS,
     EXPOSURE,
+    IMAGE_AUTOMATION_FILE,
     INSTANCE_ROOTS,
     OTLP_HOST_IP,
     STORAGE_CLASSES,
@@ -228,11 +230,13 @@ def flatten(node, path: str = '') -> dict[str, object]:
 def source(instance: Path) -> dict[str, object]:
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
-        if path.name.endswith('.sops.yaml'):
-            continue
+        if path.name.endswith('.sops.yaml') or path.name == IMAGE_AUTOMATION_FILE:
+            continue  # automatic deploys exist in staging only
         for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)
+            if doc.get('kind') == 'Kustomization' and IMAGE_AUTOMATION_FILE in (doc.get('resources') or []):
+                doc['resources'] = [r for r in doc['resources'] if r != IMAGE_AUTOMATION_FILE]
             leaves.update(flatten(doc, f'{path.name}#{index}'))
     return leaves
 

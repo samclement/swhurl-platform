@@ -52,6 +52,13 @@ Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub r
 2. `make check-secrets`, commit, push, `make reconcile UNIT=platform-flux-webhook` (the receiver reads the Secret on each request; nothing restarts).
 3. On GitHub: Settings → Webhooks → the `flux-webhook` hook → Secret: paste the same value, save, then **Redeliver** the latest delivery and check it returns 200.
 
+Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-image)), adding the new key before removing the old so automatic deploys keep working:
+
+1. In your own terminal: `ssh-keygen -t ed25519 -N '' -C flux-image-automation -f /tmp/flux-deploy`.
+2. On GitHub: Settings → Deploy keys → add `/tmp/flux-deploy.pub` as `flux-image-automation` with **Allow write access** (keep the old key for now).
+3. `sops platform/image-automation/secret.sops.yaml`: replace `identity` and `identity.pub` with the two files' contents, then delete `/tmp/flux-deploy*`. `make check-secrets`, commit, push, `make reconcile UNIT=platform-image-automation`.
+4. `make verify-platform` shows Image Automation Ready; then delete the old deploy key on GitHub.
+
 ## Certificate mode
 
 `CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.

@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps.contract import ENVIRONMENTS
+from swhurl.apps.contract import ENVIRONMENTS, add_image_markers, strip_image_markers
 from swhurl.apps.new import NAME_RE, check_generated, dump
 
 PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
@@ -43,7 +43,7 @@ def instance_dir(root: Path, app: str, env: str) -> Path:
 
 
 def load_release(instance: Path) -> dict:
-    text = (instance / 'helmrelease.yaml').read_text()
+    text, _ = strip_image_markers((instance / 'helmrelease.yaml').read_text())
     docs = list(yaml.safe_load_all(text))
     if dump(docs) != text or len(docs) != 1:
         raise EditError(f'{instance / "helmrelease.yaml"} was edited by hand (it does not round-trip); edit it yourself')
@@ -51,7 +51,11 @@ def load_release(instance: Path) -> dict:
 
 
 def save_release(instance: Path, release: dict) -> None:
-    (instance / 'helmrelease.yaml').write_text(dump([release]))
+    """Write the release, keeping Flux's automatic-deploy markers if the file had them."""
+    path = instance / 'helmrelease.yaml'
+    _, policy = strip_image_markers(path.read_text())
+    text = dump([release])
+    path.write_text(add_image_markers(text, policy) if policy else text)
 
 
 def container(release: dict) -> dict:

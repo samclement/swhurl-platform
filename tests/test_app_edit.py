@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import edit
+from swhurl.apps import contract, edit
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
 
@@ -73,6 +73,19 @@ class EditTests(unittest.TestCase):
                          sorted(['+        replicas: 2', '-                memory: 128Mi', '+                memory: 256Mi']))
         with self.assertRaisesRegex(edit.EditError, 'already has'):
             edit.scale(self.root, 'hello', 'prod', replicas=2)
+
+    def test_edits_keep_automatic_deploy_markers(self):
+        self.staging.write_text(contract.add_image_markers(self.staging.read_text(), 'hello-staging'))
+        self.quiet(edit.scale, self.root, 'hello', 'staging', replicas=2)
+        text = self.staging.read_text()
+        self.assertIn('replicas: 2', text)
+        self.assertEqual(contract.strip_image_markers(text)[1], 'hello-staging')
+        before = self.prod.read_text()
+        self.staging.write_text(text.replace('tag: 1.27-alpine', 'tag: 1.28-alpine'))
+        self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
+        self.assertIn('tag: 1.28-alpine\n', self.prod.read_text(), 'production gets the tag, never the markers')
+        self.assertNotIn('imagepolicy', self.prod.read_text())
+        self.assertNotEqual(before, self.prod.read_text())
 
     def test_scale_refuses_bad_values(self):
         for kwargs, message in (({}, 'at least one'), ({'replicas': 11}, '0 to 10'), ({'replicas': -1}, '0 to 10'),

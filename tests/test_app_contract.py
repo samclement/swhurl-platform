@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -19,6 +19,7 @@ from swhurl.apps import policy as app_policy
 from swhurl.run import FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
+TEMPLATE_IMAGE = 'ghcr.io/samclement/w:12-abcdef0@sha256:' + 'b' * 64
 WEB = ['--env', 'staging', '--exposure', 'authenticated-web', '--host', 'x.homelab.swhurl.com',
        '--image', 'repo/app:1.0', '--health-path', '/healthz']
 
@@ -100,7 +101,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIsNone(env('p'), 'without --otlp nothing is written')
 
     def test_web_preset_fills_template_conventions_and_derives_the_host(self):
-        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', 'ghcr.io/me/w:1-abc1234',
+        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         values = yaml.safe_load((self.tmp / 'apps/w/staging/helmrelease.yaml').read_text())['spec']['values']
         main = values['controllers']['main']['containers']['main']
@@ -109,6 +110,41 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(main['env']['OTEL_SERVICE_NAME'], 'w')
         self.assertEqual(values['ingress']['main']['hosts'][0]['host'], 'staging-w.homelab.swhurl.com')
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
+
+    def test_auto_deploy_watches_the_image_and_marks_staging_only(self):
+        for env in ('staging', 'prod'):
+            self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', env, '--image', TEMPLATE_IMAGE,
+                                           '--root', str(self.tmp), '--no-policy-check']), 0)
+        staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
+        repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
+        self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),
+                         ('ImageRepository', 'flux-system', 'ghcr.io/samclement/w'))
+        self.assertEqual(image_policy['metadata']['name'], 'w-staging')
+        self.assertEqual(image_policy['spec']['digestReflectionPolicy'], 'Always')
+        self.assertEqual(image_policy['spec']['filterTags']['extract'], '$run')
+        text = (staging / 'helmrelease.yaml').read_text()
+        self.assertIn('tag: 12-abcdef0 # {"$imagepolicy": "flux-system:w-staging:tag"}', text)
+        self.assertIn(' # {"$imagepolicy": "flux-system:w-staging:digest"}', text)
+        self.assertIn(contract.IMAGE_AUTOMATION_FILE, (staging / 'kustomization.yaml').read_text())
+        self.assertFalse((prod / contract.IMAGE_AUTOMATION_FILE).exists())
+        self.assertNotIn('imagepolicy', (prod / 'helmrelease.yaml').read_text())
+        self.assertEqual(app_policy.drift([staging, prod]), [], 'the staging-only automation is not drift')
+
+    def test_auto_deploy_needs_a_template_tag_and_digest(self):
+        for image in ('ghcr.io/samclement/w:1.0@sha256:' + 'a' * 64, 'ghcr.io/samclement/w:12-abcdef0'):
+            with self.subTest(image=image), redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', image,
+                                               '--root', str(self.tmp), '--no-policy-check']), 2)
+            self.assertIn('automatic deploys need', err.getvalue())
+        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--no-auto-deploy',
+                                       '--image', 'ghcr.io/samclement/w:1.0', '--root', str(self.tmp),
+                                       '--no-policy-check']), 0)
+
+    def test_markers_round_trip(self):
+        text = '    image:\n      tag: 12-abcdef0\n      digest: sha256:aa\n'
+        marked = contract.add_image_markers(text, 'w-staging')
+        self.assertEqual(contract.strip_image_markers(marked), (text, 'w-staging'))
+        self.assertEqual(contract.strip_image_markers(text), (text, None))
 
     def test_explicit_flags_beat_the_preset(self):
         args = app_new.parse_args(['w', '--preset', 'swhurl-web', '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,

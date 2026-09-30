@@ -318,6 +318,8 @@ Baseline, `b12b325`: push to Ready console pod about 88 s (Validate 33 s, Publis
 
 `19b09fe`, deployed by the publish workflow as `src-493a0c44…` (`4d6c56a`). Before: opening **Advanced** widened the label column to about 630 px (the `details` element spanned the form's grid and its nested grid was wider than the outer columns). After, in headless Chromium against `make console-dev` and the deployed console (port-forward with the identity header): one column, grouped fields, exposure as three described choices; opening Advanced leaves every field above it where it was; at 390 px wide the form is one column with no overflow. The live summary gave `weather-prod`, `https://weather.homelab.swhurl.com (signed in)` for prod signed-in, "a host outside homelab.swhurl.com is required" for public, "none (a worker has no web address)" for a worker, and showed the digest warning for a prod image without `@sha256:`. The app page (scale and expose forms, unchanged styles) returned 200. Not exercised: opening a real PR from the new form (the request it sends is unchanged apart from always naming `--exposure`).
 
+Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who can reach it forms use the same panels and shared macros (`templates/_form.html`), with the current exposure marked "(now)"; "Secret keys" became "Secret environment variables" with a names-only hint, a Secrets row in the summary, and a PR description that gives the `sops` command. Checked in headless Chromium against `make console-dev` and on the deployed console (both forms and the renamed field served).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

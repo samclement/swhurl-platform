@@ -307,6 +307,13 @@ The published image went from 470 MB (`src-6ab0c453…`) to 308 MB (`src-084ffd0
 - **Traces were missing** in that run (metrics and logs arrived; every request logged `trace_id: null`): the template is an ES module and `auto-instrumentations-node/register` never registers the loader hook, with `--require` or `--import`. Shown locally with a console span exporter; fixed in the template by `src/instrumentation.ts` (registers `@opentelemetry/instrumentation/hook.mjs`, then starts the SDK) and copied into `hello-ts`. That push (17:50:14) deployed `4-19fd686` automatically by 17:52:14, and ClickStack then held `hello-ts` spans (`GET`, `k8s.namespace.name = hello-ts-staging`).
 - **Production**: `hello-ts/prod` created on `3-06c524d` (no automation file, no markers; env-drift passes), then `make app-promote` moved it to `4-19fd686` (`8f4b4f7`). `make verify-platform` passed with no warnings, including Image Automation (`hello-ts-staging: newest image 4-19fd686`). Not exercised: the console's New app form end to end with a preset (its form tests pass; the PR path was exercised on 29 September), and rotating the deploy key.
 
+## Faster feedback and console builds (30 September 2026)
+
+Baseline, `b12b325`: push to Ready console pod about 88 s (Validate 33 s, Publish job 44 s with a 21 s image build, pin commit, webhook, apply about 9 s); no-op `make flux-reconcile` 6.6 s, `make check` 21 s.
+
+- **Layer cache** (`66b760d`): `cache-from/to: type=gha,mode=max` and the revision `ARG`/`LABEL`/`ENV` moved after the `COPY` layers. The first (cold) build took 55 s while writing the cache; the next, for a `tools/` change (`3e24261`), built in 7 s and its Publish job ran 22 s (was 44 s); that run also waited about 40 s for a GitHub-hosted runner. The published image's revision label and `SWHURL_SOURCE_REVISION` matched the commit (BuildKit; local Podman builds reuse those layers across revisions).
+- **App instances fail fast** (`3e24261`): `FAIL_AFTER = 3m` is the app unit's `timeout` and the HelmRelease's `spec.timeout`, with one remediation retry. Throwaway namespace `timing-test` (deleted), two HelmReleases of the hello values with a missing image tag: old settings (Helm default 5 m, 3 retries) first reported `InstallFailed` at 299 s and were still retrying; new settings at 176 s, and `Stalled` (gave up) at 372 s. The unit's own timeout went from 10 to 3 minutes. After reconcile, all four hello instances carry the new settings, Ready, with their pods not recreated.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

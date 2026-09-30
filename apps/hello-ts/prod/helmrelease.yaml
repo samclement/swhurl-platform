@@ -1,0 +1,103 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hello-ts
+  namespace: hello-ts-prod
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/hello-ts
+              tag: 3-06c524d
+              digest: sha256:78884e7f41628efb8618afba2deaa5ba4d491264b09cee292b60db0b2a3da799
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            env:
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: hello-ts
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080
+    ingress:
+      main:
+        className: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
+        hosts:
+        - host: hello-ts.homelab.swhurl.com
+          paths:
+          - path: /
+            service:
+              identifier: main
+              port: http
+        tls:
+        - hosts:
+          - hello-ts.homelab.swhurl.com
+          secretName: hello-ts-tls

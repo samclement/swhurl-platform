@@ -6,3 +6,4 @@ resources:
   - app-hello-staging.yaml
   - app-hello-prod.yaml
   - app-hello-ts-staging.yaml
+  - app-hello-ts-prod.yaml

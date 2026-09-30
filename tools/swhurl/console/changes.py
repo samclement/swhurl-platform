@@ -32,7 +32,7 @@ import httpx
 
 from swhurl import platform
 from swhurl.apps import new
-from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL
+from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL, PRESETS
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -63,18 +63,28 @@ NEW_APP_FIELDS = (
 CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES,
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
 CHECKBOXES = {'otlp'}
-"""Fields that are a flag without a value: ticked adds ``--<flag>``."""
+"""On/off fields: always sent explicitly (``--<flag>`` or ``--no-<flag>``), so a preset's default can be turned off."""
+BASIC_FIELDS = {'exposure', 'image', 'host', 'secret_keys'}
+"""With a preset, the fields shown up front; the preset fills the rest (under Advanced)."""
+PRESET_LABELS = {'swhurl-web': 'Web app from the swhurl template', 'swhurl-worker': 'Worker from the swhurl template',
+                 '': 'Other image'}
 OTLP_HINT = (f'Writes the cluster default: OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} ({OTLP_HOST_IP} is the '
              f'node IP, where the collector listens), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and '
              'OTEL_SERVICE_NAME=<name>. Tick only if the app has an OpenTelemetry SDK that reads these standard '
              'variables; it needs no key. Logs on stdout reach ClickStack either way.')
 
 
-def new_app_defaults() -> dict[str, str]:
+def new_app_defaults(preset: str = '') -> dict[str, str]:
     """What app-new uses when a field is left empty, read from its own parser (this image's copy)."""
-    parser = new.parser()
+    parser = new.parser(preset or None)
     return {field: str(parser.get_default(field)) for field, _, _ in NEW_APP_FIELDS
             if parser.get_default(field) is not None and field not in CHECKBOXES}
+
+
+def new_app_checked(preset: str = '') -> dict[str, bool]:
+    """Whether each checkbox starts ticked (a preset can turn one on)."""
+    parser = new.parser(preset or None)
+    return {field: bool(parser.get_default(field)) for field in CHECKBOXES}
 
 
 @dataclass(frozen=True)
@@ -102,14 +112,16 @@ def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
         raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
     if env not in ENVIRONMENTS:
         raise ActionError(f'env must be one of {", ".join(ENVIRONMENTS)}')
-    argv = [name, f'--env={env}']
+    preset = form.get('preset', '').strip()
+    if preset and preset not in PRESETS:
+        raise ActionError(f'preset must be one of {", ".join(sorted(PRESETS))}')
+    argv = [name, f'--env={env}'] + ([f'--preset={preset}'] if preset else [])
     for field, flag, label in NEW_APP_FIELDS:
         value = form.get(field, '').strip()
         if field in CHECKBOXES:
             if value not in ('', 'on'):
                 raise ActionError(f'{label} is a checkbox')
-            if value:
-                argv.append(f'--{flag}')
+            argv.append(f'--{flag}' if value else f'--no-{flag}')
             continue
         if not value:
             continue

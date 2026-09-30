@@ -23,7 +23,7 @@ from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from swhurl.apps import ops
+from swhurl.apps import contract, ops
 from swhurl.console import actions, changes, cluster
 from swhurl.run import Runner
 
@@ -105,9 +105,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return page(request, 'job.html', job=found)
 
     def new_app_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
+        form = form or {}
+        preset = form.get('preset', request.query_params.get('preset', 'swhurl-web'))
+        if preset not in changes.PRESET_LABELS:
+            preset = 'swhurl-web'
+        checked = {f: bool(form.get(f)) for f in changes.CHECKBOXES} if form else changes.new_app_checked(preset)
         return page(request, 'new.html', status_code=status_code, fields=changes.NEW_APP_FIELDS,
                     choices=changes.CHOICES, checkboxes=changes.CHECKBOXES, otlp_hint=changes.OTLP_HINT,
-                    defaults=changes.new_app_defaults(), form=form or {}, error=error, github=github)
+                    preset=preset, presets=changes.PRESET_LABELS, domain=contract.COOKIE_DOMAIN, basic=changes.BASIC_FIELDS, checked=checked,
+                    defaults=changes.new_app_defaults(preset), form=form, error=error, github=github)
 
     async def new_app(request: Request) -> Response:
         if request.method == 'GET':

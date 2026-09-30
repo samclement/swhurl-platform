@@ -13,10 +13,11 @@ Both require sign-in and serve the stock nginx page as UID 101 on port 8080. Sta
 
 ## Add an app
 
+An app built from the [swhurl template](https://github.com/samclement/swhurl-app-template-typescript) needs only a name, its image and who can reach it; the preset fills in the rest:
+
 ```bash
-make app-new NAME=weather-api ARGS="--env staging --image ghcr.io/me/weather-api:1.4.0 \
-  --exposure authenticated-web --host weather.homelab.swhurl.com --health-path /ready \
-  --secret-keys API_TOKEN,DB_URL --otlp"
+make app-new NAME=weather-api ARGS="--preset swhurl-web --env staging \
+  --image ghcr.io/samclement/weather-api:42-a1b2c3d@sha256:<digest> --secret-keys API_TOKEN,DB_URL"
 sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
 make check-apps check-secrets
 git add apps/weather-api clusters/home platform/reloader
@@ -24,7 +25,19 @@ git commit -m "apps: add weather-api staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
 ```
 
-The console's New app form opens the same change as a PR ([console](console.md)). The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
+| Preset | Fills in | For |
+| --- | --- | --- |
+| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
+| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp` | A background worker from the template |
+
+Any flag you give wins over the preset (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
+
+```bash
+make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \
+  --exposure authenticated-web --uid 101 --health-path /"
+```
+
+The console's New app form opens the same change as a PR ([console](console.md)): it starts on the web preset, showing only name, environment, image, exposure, host and Secret keys, with the preset's values under **Advanced**; **Other image** shows every option. The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) renders what it wrote against the app policy before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it), and writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, and registers the unit in `clusters/home/kustomization.yaml`. Files under `apps` deploy nothing until that registration exists. The output is plain YAML; edit it like any manifest afterwards.
 
 | Option | Rules |
 | --- | --- |
@@ -32,7 +45,9 @@ The console's New app form opens the same change as a PR ([console](console.md))
 | `--exposure` | `private` (no route, default); `authenticated-web` (sign-in, host under `homelab.swhurl.com`); `public` (no sign-in, host **outside** `homelab.swhurl.com` so the sign-in cookie never reaches it) |
 | `--image` | `repo:tag`, `repo@sha256:…` or both; no `latest`; **production requires a digest** |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned |
-| `--otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
+| `--preset` | `swhurl-web` or `swhurl-worker`: defaults for an app from the template (table above) |
+| `--host` | Required for `public`; for `authenticated-web` it defaults to `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) |
+| `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--secret-keys A,B` | An encrypted Secret stub (`stringData`, values `REPLACE_ME`) injected with `envFrom`; sets the unit's decryption and adds the namespace to Reloader so changes restart the app |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 

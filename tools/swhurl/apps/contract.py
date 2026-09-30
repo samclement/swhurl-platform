@@ -12,6 +12,9 @@ from swhurl.platform import base_domain, label
 CHART = 'app-template'
 CHART_VERSION = '5.2.1'
 CHART_REPOSITORY = 'bjw-s'
+# How long an instance may take to become Ready before its unit and HelmRelease report failure
+# (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
+FAIL_AFTER = '3m'
 
 COOKIE_DOMAIN = base_domain()
 """Every host under this domain receives the shared sign-in cookie."""

@@ -13,4 +13,4 @@ spec:
   path: ./apps/smoke-data/prod
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 3m

@@ -5,6 +5,7 @@ metadata:
   namespace: hello-ts-prod
 spec:
   interval: 30m
+  timeout: 3m
   chart:
     spec:
       chart: app-template
@@ -16,10 +17,10 @@ spec:
       interval: 30m
   install:
     remediation:
-      retries: 3
+      retries: 1
   upgrade:
     remediation:
-      retries: 3
+      retries: 1
   values:
     defaultPodOptions:
       automountServiceAccountToken: false

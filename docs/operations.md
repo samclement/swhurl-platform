@@ -158,7 +158,7 @@ Compare `mongorestore`'s document count with the backup's `.json` metadata. Rest
 | Collector logs show HTTP 401 or `Unauthenticated` | The team's ingestion key differs from `CLICKSTACK_INGESTION_KEY` (after a reinstall, a restore, or a rotation in the UI). `make verify-platform` says so; run `make clickstack-bootstrap`. |
 | A signed-in route shows Traefik's default certificate for a few seconds | Normal while cert-manager issues a certificate for a host that just moved. |
 | `flux reconcile` seems ignored | A previous revision is still running health checks (up to the unit's timeout); new requests queue behind it. |
-| Deleting a broken app takes about 5 minutes | Its Helm install is still in progress; the finalizer waits for the Helm timeout. |
+| Deleting a broken app takes about 3 minutes | Its Helm install is still in progress; the finalizer waits for the Helm timeout (`FAIL_AFTER`, [apps](apps.md)). |
 | A certificate stays not Ready on a new host | DNS has not propagated or Let's Encrypt cannot reach port 80; check `kubectl get challenges -A` and the router forward. |
 | A new host doesn't resolve | Multi-label names are not covered by the wildcard; add them to `DYNAMIC_DNS_RECORDS` and re-run `make host-dns`. |
 | ClickHouse has `*_log_0` tables after a restart | ClickHouse renamed system log tables whose definition changed. Check, then drop them, or leave them to expire (they keep their 7-day TTL). |

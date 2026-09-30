@@ -111,9 +111,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if preset not in changes.PRESET_LABELS:
             preset = 'swhurl-web'
         checked = {f: bool(form.get(f)) for f in changes.CHECKBOXES} if form else changes.new_app_checked(preset)
+        advanced = [f for _, group in changes.ADVANCED_GROUPS for f in group]
         return page(request, 'new.html', status_code=status_code, fields=changes.NEW_APP_FIELDS,
+                    labels={f: label for f, _, label in changes.NEW_APP_FIELDS},
                     choices=changes.CHOICES, checkboxes=changes.CHECKBOXES, otlp_hint=changes.OTLP_HINT,
-                    preset=preset, presets=changes.PRESET_LABELS, domain=contract.COOKIE_DOMAIN, basic=changes.BASIC_FIELDS, checked=checked,
+                    exposures=changes.EXPOSURE_LABELS, groups=changes.ADVANCED_GROUPS,
+                    # Open when nothing fills it (no preset) or a returned form set something in it.
+                    advanced_open=not preset or any(form.get(f) for f in advanced if f not in changes.CHECKBOXES),
+                    preset=preset, presets=changes.PRESET_LABELS, domain=contract.COOKIE_DOMAIN, checked=checked,
                     defaults=changes.new_app_defaults(preset), form=form, error=error, github=github)
 
     async def new_app(request: Request) -> Response:

@@ -71,7 +71,7 @@ metadata:
 ## Operate an instance
 
 ```bash
-make app-status APP=hello ENV=prod     # desired vs running revision and digest, replicas, route, TLS, failing containers
+make app-status APP=hello ENV=prod     # Git revision applied?, running image matches desired?, replicas, route, TLS, failing containers
 make app-logs APP=hello ENV=prod       # FOLLOW=true, TAIL=N
 make app-reconcile APP=hello ENV=prod
 make app-check APP=hello ENV=prod      # policy, offline
@@ -150,7 +150,7 @@ The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "
    Staging accepts a tag alone, but `make app-promote` refuses an image without a digest (production requires one), so set both.
 3. `make app-check APP=<app> ENV=staging`, commit, push (or open a pull request and merge it). The [push webhook](services.md#push-webhook) has Flux fetch it within seconds; its unit applies the new values and helm-controller rolls the Deployment ([the full chain](architecture.md#how-changes-reach-the-cluster)).
 
-**Then, for both:** `make app-status APP=<app> ENV=staging` shows the desired and running digest (they match once the new pod is Ready), and you promote the same image with `make app-promote APP=<app>` (commit, push) or **Promote to prod** in the console, which opens the pull request.
+**Then, for both:** `make app-status APP=<app> ENV=staging` compares the running image with Git by digest (Kubernetes records a running image as `repository@digest`, without the tag): `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails, and you promote the same image with `make app-promote APP=<app>` (commit, push) or **Promote to prod** in the console, which opens the pull request.
 
 To roll back staging, revert the commit that changed the pin; for an automatic app, a newer image then replaces it again, so fix forward in the app, or remove the markers first. Chart versions are different: Renovate opens pull requests for app-template, and one merged PR updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
 

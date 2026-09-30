@@ -13,7 +13,13 @@
   <dd>{% if status.release %}<span class="{{ status.release[0] | state }}">{{ status.release[0] }}</span> <span class="muted">{{ status.release[1] }}</span>
       {% else %}<span class="bad">not found</span>{% endif %}</dd>
   <dt>Image</dt>
-  <dd class="mono">desired {{ status.desired_image }}<br>running {{ status.running_images | join(', ') or 'none' }}</dd>
+  {% if status.image_state == 'matches' %}
+  <dd><span class="mono">{{ status.desired_image }}</span><br><span class="ok">running: matches desired</span></dd>
+  {% else %}
+  <dd class="mono">desired {{ status.desired_image }}<br>running {{ status.running_images | join(', ') or 'none' }}
+      {% if status.image_state == 'different' %}<br><span class="bad">different image: a rollout in progress or failing</span>
+      {% elif status.image_state == 'unpinned' %}<br><span class="muted">Git pins no digest, so this cannot be compared</span>{% endif %}</dd>
+  {% endif %}
   <dt>Replicas</dt>
   <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }}</span> {{ r.workload }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
   <dt>Routes</dt>

@@ -59,8 +59,8 @@ class StatusTests(unittest.TestCase):
             'Git        desired abc123, applied abc123',
             f'Flux unit  True: Applied revision: {REV}',
             'Release    True: Helm upgrade succeeded',
-            f'Image      desired docker.io/x/web:1.0@{DIGEST}',
-            f'           running docker.io/x/web@{DIGEST}',
+            f'Image      docker.io/x/web:1.0@{DIGEST}',
+            '           running: matches desired',
             'Replicas   Deployment/web: 1/1 ready',
             'Route      https://web.homelab.swhurl.com',
             'TLS        web-tls: True',
@@ -87,6 +87,35 @@ class StatusTests(unittest.TestCase):
         code, _, err = run(cluster(kustomization=None), 'status', 'web', 'prod')
         self.assertEqual(code, 1)
         self.assertIn('Flux unit app-web-prod not found', err)
+
+
+class ImageStateTests(unittest.TestCase):
+    def found(self, desired, running):
+        instance = app_ops.Instance('web', 'prod')
+        return app_ops.InstanceStatus(instance, REV, REV, ('True', ''), None, desired, running, [], [], [], [])
+
+    def test_compared_by_digest_because_running_images_have_no_tag(self):
+        want = f'docker.io/x/web:1.0@{DIGEST}'
+        other = 'sha256:' + 'f' * 64
+        cases = {
+            'matches': (want, [f'docker.io/x/web@{DIGEST}']),
+            'different': (want, [f'docker.io/x/web@{DIGEST}', f'docker.io/x/web@{other}']),  # mid-rollout
+            'none': (want, []),
+            'unpinned': ('docker.io/x/web:1.0', [f'docker.io/x/web@{DIGEST}']),
+        }
+        for state, (desired, running) in cases.items():
+            with self.subTest(state=state):
+                self.assertEqual(self.found(desired, running).image_state, state)
+
+    def test_lines_say_it_plainly(self):
+        want = f'docker.io/x/web:1.0@{DIGEST}'
+        same = app_ops.status_lines(self.found(want, [f'docker.io/x/web@{DIGEST}']))
+        self.assertIn(f'Image      {want}', same)
+        self.assertIn('           running: matches desired', same)
+        other = 'sha256:' + 'f' * 64
+        moved = app_ops.status_lines(self.found(want, [f'docker.io/x/web@{other}']))
+        self.assertIn(f'Image      desired {want}', moved)
+        self.assertTrue(any('different image' in line for line in moved))
 
 
 class GatherStatusTests(unittest.TestCase):

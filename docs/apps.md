@@ -8,8 +8,10 @@ An **app instance** is one app in one environment: namespace `<app>-<env>`, a He
 | --- | --- | --- |
 | `hello/staging` | `staging-hello.homelab.swhurl.com` | `nginxinc/nginx-unprivileged:1.27-alpine`, pinned by digest |
 | `hello/prod` | `hello.homelab.swhurl.com` | same digest |
+| `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts) from the template; deployed automatically on each push |
+| `hello-ts/prod` | `hello-ts.homelab.swhurl.com` | changes only through a promote |
 
-Both require sign-in and serve the stock nginx page as UID 101 on port 8080. Staging and production differ only in namespace and host: staging is a separate rollout and failure boundary, not a separate trust boundary.
+All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080; `hello-ts` is the template's TypeScript app, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging and production differ only in namespace, host and image: staging is a separate rollout and failure boundary, not a separate trust boundary.
 
 ## Add an app
 

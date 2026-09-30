@@ -35,6 +35,11 @@ INSTALL = 'clusters/home/flux-system/install'
 # The Flux release the cluster runs: make flux-install installs it and refuses any other flux CLI.
 # Renovate does not see it; to upgrade, see docs/operations.md (chart and tool updates).
 FLUX_VERSION = '2.8.1'
+# Controllers beyond flux install's default four: image automation deploys newer app images to
+# staging (platform/image-automation, docs/apps.md#deploy-a-new-image).
+EXTRA_COMPONENTS = ('image-reflector-controller', 'image-automation-controller')
+CONTROLLERS = ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller',
+               *EXTRA_COMPONENTS)
 KUSTOMIZATIONS = 'kustomizations.kustomize.toolkit.fluxcd.io'
 # Ready=False reasons that mean "not yet", not "failed at this revision".
 WAITING_REASONS = {'DependencyNotReady', 'Progressing', 'ProgressingWithRetry'}
@@ -136,7 +141,8 @@ def render(runner: Runner, root: Path = ROOT) -> str:
     if f'v{version}' not in client.split():
         raise InstallError(f'flux CLI is {client.strip() or "unknown"}, but tools/swhurl/flux.py pins {version}; '
                            f'install flux {version} (or bump FLUX_VERSION to upgrade)')
-    components = runner.output(['flux', 'install', '--export', '--namespace', 'flux-system'])
+    components = runner.output(['flux', 'install', '--export', '--namespace', 'flux-system',
+                                f'--components-extra={",".join(EXTRA_COMPONENTS)}'])
     with tempfile.TemporaryDirectory() as tmp:
         shutil.copytree(root / INSTALL, tmp, dirs_exist_ok=True)
         (Path(tmp) / 'gotk-components.yaml').write_text(components)
@@ -159,7 +165,7 @@ def install_main(argv: list[str] | None = None, runner: Runner | None = None, ro
             print(diff.stdout or '[OK] no changes')
         runner.run(['kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts', '-f', '-'],
                    input=rendered, mutating=True)
-        for name in ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller'):
+        for name in CONTROLLERS:
             runner.run(['kubectl', '-n', 'flux-system', 'rollout', 'status', f'deployment/{name}', '--timeout=5m'],
                        mutating=True)
         if not runner.dry_run:

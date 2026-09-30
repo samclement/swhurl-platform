@@ -58,6 +58,10 @@ elif Path(sys.argv[0]).name == 'aws':
 elif Path(sys.argv[0]).name == 'gh':
     emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
            'last_response': {'code': 200}}])
+elif any(a.startswith('imageupdateautomations') for a in argv):
+    emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
+elif any(a.startswith('imagepolicies') for a in argv):
+    emit({'items': []})
 elif any(a.startswith('receivers') for a in argv):
     emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif Path(sys.argv[0]).name == 'flux':
@@ -71,7 +75,7 @@ elif 'console-github' in argv:
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
         'tag': os.environ['CONSOLE_TAG']}}}}}}}})
-elif 'kustomize-controller' in argv:
+elif 'flux-system' in argv and 'deployment' in argv:
     emit({'metadata': {'labels': {'app.kubernetes.io/version': os.environ['FLUX_VERSION']}},
           'spec': {'template': {'spec': {'containers': [{'args': os.environ['FLUX_ARGS'].split()}]}}}})
 elif 'traefik' in argv:

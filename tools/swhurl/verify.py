@@ -21,6 +21,7 @@ from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
 
+APP_LABEL = 'platform.swhurl.com/app'  # apps.contract.APP; set on each app's ImagePolicy
 SYSTEM_LOGS = ('query_log', 'metric_log', 'asynchronous_metric_log', 'crash_log', 'processors_profile_log',
                'part_log', 'trace_log', 'query_thread_log', 'query_views_log', 'opentelemetry_span_log')
 
@@ -79,20 +80,27 @@ def check_flux_controllers(runner: Runner, report: Report, root: Path = ROOT) ->
     """The controllers run the pinned version with the settings in Git (a plain `flux install` drops them)."""
     report.section('Flux Controllers')
     version = flux.pinned_version(root)
-    for name, args in flux.required_args(root).items():
+    required = flux.required_args(root)
+    for name in flux.CONTROLLERS:
+        args = required.get(name, [])
         try:
             deployment = runner.json(['kubectl', '-n', 'flux-system', 'get', 'deployment', name, '-o', 'json'])
+        except CommandError:
+            report.warn(f'{name} is not installed (run: make flux-install)')
+            continue
+        try:
             live = deployment['metadata'].get('labels', {}).get('app.kubernetes.io/version', '')
             running = [a for c in deployment['spec']['template']['spec']['containers'] for a in c.get('args') or []]
-        except (CommandError, KeyError, TypeError):
+        except (KeyError, TypeError):
             report.bad(f'could not read flux-system/{name}')
             continue
         missing = [a for a in args if a not in running]
         if missing or live != f'v{version}':
-            report.warn(f'{name} is {live or "unknown"} with {len(args) - len(missing)}/{len(args)} Git settings; '
-                        f'expected v{version} with {", ".join(args)} (run: make flux-install)')
+            expected = f'v{version}' + (f' with {", ".join(args)}' if args else '')
+            report.warn(f'{name} is {live or "unknown"}' + (f' with {len(args) - len(missing)}/{len(args)} Git settings'
+                        if args else '') + f'; expected {expected} (run: make flux-install)')
         else:
-            report.ok(f'{name} {live} with the settings in Git')
+            report.ok(f'{name} {live}' + (' with the settings in Git' if args else ''))
 
 
 def read_ingestion_secret(runner: Runner) -> str:
@@ -329,6 +337,37 @@ def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> Non
                     + '; see Recent Deliveries on the webhook (Flux still polls every minute)')
 
 
+def check_image_automation(runner: Runner, report: Report) -> None:
+    """Automatic staging deploys: the ImageUpdateAutomation is Ready and each app's ImagePolicy found an image."""
+    report.section('Image Automation')
+    base = ['kubectl', '-n', 'flux-system', 'get']
+    try:
+        automation = runner.json([*base, 'imageupdateautomations.image.toolkit.fluxcd.io', 'apps-staging', '-o', 'json'])
+        status, message = ready_condition(automation)
+    except (CommandError, TypeError):
+        report.warn('ImageUpdateAutomation flux-system/apps-staging not found: staging images are not deployed '
+                    'automatically (make flux-install, make reconcile UNIT=platform-image-automation)')
+        return
+    if status == 'True':
+        pushed = (automation.get('status') or {}).get('lastPushTime')
+        report.ok('ImageUpdateAutomation apps-staging is Ready' + (f'; last pushed {pushed}' if pushed else ''))
+    else:
+        report.bad(f'ImageUpdateAutomation apps-staging is not Ready: {message}')
+    try:
+        policies = runner.json([*base, 'imagepolicies.image.toolkit.fluxcd.io', '-l', APP_LABEL, '-o', 'json'])['items']
+    except (CommandError, KeyError, TypeError):
+        report.bad('could not read the apps\' ImagePolicies')
+        return
+    for policy in sorted(policies, key=lambda p: p['metadata']['name']):
+        name = policy['metadata']['name']
+        status, message = ready_condition(policy)
+        latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
+        if status == 'True':
+            report.ok(f'{name}: newest image {latest}')
+        else:
+            report.bad(f'ImagePolicy {name} is not Ready: {message}')
+
+
 def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
     """GitHub accepts the console's token, and it is not about to expire (read from GitHub's reply)."""
     report.section('Console GitHub Token')
@@ -393,6 +432,7 @@ CHECKS = (
     Check('ingestion-key', frozenset({'cluster', 'secret', 'exec'}), check_ingestion),
     Check('registration', frozenset({'cluster', 'exec'}), check_registration),
     Check('ingress', frozenset({'cluster'}), check_ingress),
+    Check('image-automation', frozenset({'cluster'}), check_image_automation),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),

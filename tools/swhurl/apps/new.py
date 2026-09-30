@@ -27,6 +27,8 @@ from swhurl.apps import policy
 from swhurl.apps.contract import (
     APP,
     AUTH_MIDDLEWARE,
+    AUTO_DEPLOY_ENV,
+    AUTO_DEPLOY_TAG_PATTERN,
     CHART,
     CHART_REPOSITORY,
     CHART_VERSION,
@@ -35,10 +37,13 @@ from swhurl.apps.contract import (
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
+    IMAGE_AUTOMATION_FILE,
     MANAGED,
     PRESETS,
     RETAINED_STORAGE_CLASS,
+    add_image_markers,
     default_host,
+    image_policy_name,
     in_cookie_domain,
     otlp_env,
 )
@@ -89,6 +94,33 @@ def validate(args) -> None:
         raise GenerationError('web apps need --health-path (the app\'s real readiness endpoint)')
     if args.env == 'prod' and 'digest' not in parse_image(args.image):
         raise GenerationError('production instances must pin an image digest (REPO:TAG@sha256:...)')
+    if auto_deploys(args):
+        image = parse_image(args.image)
+        if not re.match(AUTO_DEPLOY_TAG_PATTERN, image.get('tag', '')) or 'digest' not in image:
+            raise GenerationError('automatic deploys need an image REPO:<run>-<sha>@sha256:... as the swhurl '
+                                  "template's workflow publishes it (or use --no-auto-deploy)")
+
+
+def auto_deploys(args) -> bool:
+    """--auto-deploy applies to staging only; production changes through app-promote."""
+    return bool(args.auto_deploy) and args.env == AUTO_DEPLOY_ENV
+
+
+def image_automation(args) -> list[dict]:
+    """The ImageRepository and ImagePolicy Flux uses to find newer images of this app (flux-system)."""
+    repository = parse_image(args.image)['repository']
+    labels = {MANAGED: 'true', APP: args.name}
+    return [
+        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageRepository',
+         'metadata': {'name': args.name, 'namespace': 'flux-system', 'labels': labels},
+         'spec': {'image': repository, 'interval': '1m'}},
+        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImagePolicy',
+         'metadata': {'name': image_policy_name(args.name), 'namespace': 'flux-system', 'labels': labels},
+         'spec': {'imageRepositoryRef': {'name': args.name},
+                  'filterTags': {'pattern': AUTO_DEPLOY_TAG_PATTERN, 'extract': '$run'},
+                  'policy': {'numerical': {'order': 'asc'}},
+                  'digestReflectionPolicy': 'Always'}},
+    ]
 
 
 def build_values(args) -> dict:
@@ -201,12 +233,19 @@ def generate(args, root: Path) -> list[Path]:
     resources = ['namespace.yaml', 'helmrelease.yaml']
     if args.secret_keys:
         resources.insert(1, 'secret.sops.yaml')
+    release_text = dump([release])
+    if auto_deploys(args):
+        resources.append(IMAGE_AUTOMATION_FILE)
+        release_text = add_image_markers(release_text, image_policy_name(args.name))
     files = {
         instance / 'namespace.yaml': dump([ns]),
-        instance / 'helmrelease.yaml': dump([release]),
+        instance / 'helmrelease.yaml': release_text,
         instance / 'kustomization.yaml': dump([{'apiVersion': 'kustomize.config.k8s.io/v1beta1',
                                                'kind': 'Kustomization', 'resources': resources}]),
     }
+
+    if auto_deploys(args):
+        files[instance / IMAGE_AUTOMATION_FILE] = dump(image_automation(args))
 
     depends = ['infra-base'] + (['platform-oauth2-proxy'] if args.exposure == 'authenticated-web' else [])
     spec = {
@@ -308,6 +347,9 @@ def parser(preset: str | None = None) -> argparse.ArgumentParser:
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
     p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,
                    help='the app has an OpenTelemetry SDK: point it at the cluster collector (OTEL_* env)')
+    p.add_argument('--auto-deploy', action=argparse.BooleanOptionalAction, default=False,
+                   help='staging only: Flux deploys each newer image the app publishes (tags <run>-<sha>); '
+                        'production still changes through app-promote')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
     p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-register', dest='register', action='store_false',

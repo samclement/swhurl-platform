@@ -39,6 +39,7 @@ flowchart LR
   base --> otel[platform-otel]
   base --> reloader[platform-reloader]
   base --> webhook[platform-flux-webhook]
+  base --> imageauto[platform-image-automation]
   base --> console[platform-console]
   auth --> console
   traefik[infra-traefik]
@@ -59,6 +60,7 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
+| `platform-image-automation` | The write `GitRepository` (SSH, deploy key), its SOPS Secret and the `ImageUpdateAutomation` that pushes staging image pins (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its own staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver`, its token Secret, Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-console` | The web console, its RBAC (read, plus patch on Flux units), NetworkPolicy and GitHub token Secret (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
@@ -83,8 +85,9 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 | New app, promote, scale, uninstall from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Yes: you merge | [console](console.md#use-it) |
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | The "Publish console image" run (`github-actions[bot]`) | Direct push, after Validate passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
+| A staging app's image pin (apps generated with `--auto-deploy`, the template presets) | Flux image automation (`fluxcdbot`, with a deploy key that can write only this repository) | Direct push when the app publishes a newer `<run>-<sha>` image | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
 
-`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because the bot also pushes to `main`, run `git pull --rebase` before pushing. New app image pins are edited by you today ([deploy a new image](apps.md#deploy-a-new-image)); automating them is open in [plan](plan.md) section 0 (PR06).
+`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because two bots also push to `main`, run `git pull --rebase` before pushing. Other apps' image pins are edited by you ([deploy a new image](apps.md#deploy-a-new-image)).
 
 **From commit to running pods.** The same chain runs for every change on `main`; this is an app's image update:
 
@@ -120,7 +123,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | Command | Why it is not a commit |
 | --- | --- |
 | `make flux-bootstrap` | Applies the root units and sources that tell Flux what to reconcile; Flux does not reconcile itself |
-| `make flux-install` | Installs Flux's controllers (the version and patches are in Git; the upstream manifests are rendered at install time) |
+| `make flux-install` | Installs Flux's controllers, including the two image automation controllers (the version, components and patches are in Git; the upstream manifests are rendered at install time) |
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |

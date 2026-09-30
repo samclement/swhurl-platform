@@ -1,0 +1,15 @@
+# This repository over SSH with the write deploy key, used only by the ImageUpdateAutomation to
+# push staging image pins. Flux applies manifests from the read-only HTTPS source
+# (swhurl-platform), not from this one.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: swhurl-platform-write
+  namespace: flux-system
+spec:
+  interval: 30m
+  url: ssh://git@github.com/samclement/swhurl-platform
+  ref:
+    branch: main
+  secretRef:
+    name: flux-image-automation-git

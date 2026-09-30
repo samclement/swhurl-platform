@@ -27,8 +27,8 @@ make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reco
 
 | Preset | Fills in | For |
 | --- | --- | --- |
-| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
-| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp` | A background worker from the template |
+| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
+| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` | A background worker from the template |
 
 Any flag you give wins over the preset (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
 
@@ -47,6 +47,7 @@ The console's New app form opens the same change as a PR ([console](console.md))
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned |
 | `--preset` | `swhurl-web` or `swhurl-worker`: defaults for an app from the template (table above) |
 | `--host` | Required for `public`; for `authenticated-web` it defaults to `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) |
+| `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--secret-keys A,B` | An encrypted Secret stub (`stringData`, values `REPLACE_ME`) injected with `envFrom`; sets the unit's decryption and adds the namespace to Reloader so changes restart the app |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
@@ -120,7 +121,21 @@ To add this to an existing instance, paste the block into each environment's Hel
 
 ## Deploy a new image
 
-An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Nothing updates these for apps yet: you change them, staging first, and promote the same digest to production. Everything after the commit is automatic.
+An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Staging changes first; production gets the same digest only when you promote it.
+
+**Apps from the template (automatic in staging).** An instance generated with `--preset` (or `--auto-deploy`) in staging is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own:
+
+```text
+app push → its workflow publishes ghcr.io/<owner>/<app>:<run>-<sha>
+  → image-reflector-controller sees the new tag (checks every minute)
+  → ImagePolicy <app>-staging picks the highest <run> and its digest
+  → image-automation-controller commits the new tag and digest to apps/<app>/staging as fluxcdbot
+  → push webhook → Flux applies → helm-controller rolls the Deployment
+```
+
+The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` keeps them). `make verify-platform` shows each app's newest image under Image Automation. To stop automatic deploys for one app, remove the markers (and `image-automation.yaml` with its line in `kustomization.yaml`) in a commit; staging then keeps its current image until you change it by hand.
+
+**Other apps (by hand).** Nothing watches them; change the pin yourself:
 
 1. Find the new image's digest: the registry's page for that tag, the digest your image build printed, or `docker buildx imagetools inspect <repository>:<tag>` (the `Digest:` line; use the index digest for a multi-architecture image).
 2. In `apps/<app>/staging/helmrelease.yaml`, set both lines under `controllers.main.containers.main.image`:
@@ -132,10 +147,10 @@ An instance runs the image named by `repository`, `tag` and `digest` in its Helm
 
    Staging accepts a tag alone, but `make app-promote` refuses an image without a digest (production requires one), so set both.
 3. `make app-check APP=<app> ENV=staging`, commit, push (or open a pull request and merge it). The [push webhook](services.md#push-webhook) has Flux fetch it within seconds; its unit applies the new values and helm-controller rolls the Deployment ([the full chain](architecture.md#how-changes-reach-the-cluster)).
-4. `make app-status APP=<app> ENV=staging` shows the desired and running digest; they match once the new pod is Ready.
-5. Promote the same image: `make app-promote APP=<app>`, commit, push; or **Promote to prod** in the console, which opens the pull request for you.
 
-To roll back, revert the commit (or set the previous tag and digest) and push. Chart versions are different: Renovate opens pull requests for app-template, and one merged PR updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
+**Then, for both:** `make app-status APP=<app> ENV=staging` shows the desired and running digest (they match once the new pod is Ready), and you promote the same image with `make app-promote APP=<app>` (commit, push) or **Promote to prod** in the console, which opens the pull request.
+
+To roll back staging, revert the commit that changed the pin; for an automatic app, a newer image then replaces it again, so fix forward in the app, or remove the markers first. Chart versions are different: Renovate opens pull requests for app-template, and one merged PR updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
 
 ## Moving a host between instances
 
@@ -145,5 +160,5 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Image tags and digests are edited by hand ([deploy a new image](#deploy-a-new-image)). Automating them (Renovate digest PRs or Flux image automation) is open in [plan](plan.md) section 0 (PR06).
+- Only staging updates automatically, and only for apps whose tags follow `<run>-<sha>` (the template's workflow); other apps' pins are edited by hand ([deploy a new image](#deploy-a-new-image)).
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

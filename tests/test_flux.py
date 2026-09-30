@@ -126,7 +126,9 @@ class InstallTests(unittest.TestCase):
         apply = next(c for c in runner.calls if c[:2] == ('kubectl', 'apply'))
         self.assertEqual(apply, ('kubectl', 'apply', '--server-side', '--field-manager=flux', '--force-conflicts',
                                  '-f', '-'))
-        self.assertEqual(sum('rollout' in c for c in runner.calls), 4)
+        self.assertEqual(sum('rollout' in c for c in runner.calls), len(flux.CONTROLLERS))
+        export = next(c for c in runner.calls if c[:3] == ('flux', 'install', '--export'))
+        self.assertIn('--components-extra=image-reflector-controller,image-automation-controller', export)
 
     def test_refuses_a_different_flux_cli(self):
         runner, _ = self.runner(client='flux: v9.9.9\n')
@@ -148,7 +150,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertIn('+ --requeue-dependency=5s', text)
         self.assertFalse([c for c in runner.calls if c[:2] == ('kubectl', 'apply') or 'rollout' in c])
-        self.assertEqual(len(runner.planned), 5)
+        self.assertEqual(len(runner.planned), 1 + len(flux.CONTROLLERS))  # apply, then each rollout
 
     def test_required_args_come_from_the_patch_files(self):
         self.assertEqual(flux.required_args(), {'kustomize-controller': ['--requeue-dependency=5s']})

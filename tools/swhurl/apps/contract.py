@@ -4,6 +4,7 @@ Both sides import these, so generated output and the check cannot drift apart.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from swhurl.platform import base_domain, label
@@ -52,8 +53,9 @@ TEMPLATE_HEALTH_PATH = '/healthz'
 TEMPLATE_UID = 65532
 PRESETS = {
     'swhurl-web': {'kind': 'web', 'exposure': 'authenticated-web', 'port': TEMPLATE_PORT,
-                   'health_path': TEMPLATE_HEALTH_PATH, 'uid': TEMPLATE_UID, 'otlp': True},
-    'swhurl-worker': {'kind': 'worker', 'exposure': 'private', 'uid': TEMPLATE_UID, 'otlp': True},
+                   'health_path': TEMPLATE_HEALTH_PATH, 'uid': TEMPLATE_UID, 'otlp': True, 'auto_deploy': True},
+    'swhurl-worker': {'kind': 'worker', 'exposure': 'private', 'uid': TEMPLATE_UID, 'otlp': True,
+                      'auto_deploy': True},
 }
 """app-new defaults per preset; flags given explicitly still win."""
 
@@ -61,6 +63,37 @@ PRESETS = {
 def default_host(name: str, env: str) -> str:
     """A signed-in app's host when none is given: <name>.<domain> in prod, <env>-<name>.<domain> otherwise."""
     return f'{name}.{COOKIE_DOMAIN}' if env == 'prod' else f'{env}-{name}.{COOKIE_DOMAIN}'
+
+
+# Automatic staging deploys (Flux image automation, platform/image-automation): for an app with
+# --auto-deploy, app-new writes an ImageRepository and ImagePolicy (in flux-system, where the one
+# ImageUpdateAutomation finds them) into the staging instance, and marks the staging image's tag
+# and digest lines so Flux rewrites them when a newer image is published. Tags must be
+# <run number>-<commit sha>, as the template's workflow publishes them; the highest run wins.
+IMAGE_AUTOMATION_FILE = 'image-automation.yaml'
+AUTO_DEPLOY_TAG_PATTERN = r'^(?P<run>[0-9]+)-[0-9a-f]{7,40}$'
+AUTO_DEPLOY_ENV = 'staging'
+_MARKER = re.compile(r' # \{"\$imagepolicy": "flux-system:([a-z0-9-]+):(tag|digest)"\}$', re.M)
+
+
+def image_policy_name(app: str) -> str:
+    return f'{app}-{AUTO_DEPLOY_ENV}'
+
+
+def add_image_markers(text: str, policy: str) -> str:
+    """Mark the single image tag and digest lines of a HelmRelease for Flux's setters."""
+    for field in ('tag', 'digest'):
+        text, count = re.subn(rf'^(\s+{field}: \S+)$', rf'\g<1> # {{"$imagepolicy": "flux-system:{policy}:{field}"}}',
+                              text, count=1, flags=re.M)
+        if count != 1:
+            raise ValueError(f'no image {field}: line to mark for automatic deploys')
+    return text
+
+
+def strip_image_markers(text: str) -> tuple[str, str | None]:
+    """The HelmRelease text without Flux's setter markers, and the policy they named (or None)."""
+    policies = set(m[0] for m in _MARKER.findall(text))
+    return _MARKER.sub('', text), (policies.pop() if len(policies) == 1 else None)
 
 
 INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))

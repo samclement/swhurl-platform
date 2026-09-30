@@ -154,7 +154,10 @@ class PlatformTests(unittest.TestCase):
     def test_runs_only_cluster_checks_and_says_what_it_skipped(self):
         traefik = {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}
         runner = fake(**{'kubectl get --raw=/version': '{}',
-                         'kubectl -n kube-system get deploy traefik': json.dumps(traefik)})
+                         'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
+                         'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
+                             json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
+                         'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []})})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
         self.assertIn('failing', response.text)

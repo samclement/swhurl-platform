@@ -36,7 +36,9 @@ from swhurl.apps.contract import (
     EXPOSURE,
     EXPOSURES,
     MANAGED,
+    PRESETS,
     RETAINED_STORAGE_CLASS,
+    default_host,
     in_cookie_domain,
     otlp_env,
 )
@@ -61,6 +63,12 @@ def parse_image(image: str) -> dict:
         if match[key]:
             image[key] = match[key]
     return image
+
+
+def resolve(args) -> None:
+    """Fill values derived from others: a signed-in app's host."""
+    if args.exposure == 'authenticated-web' and not args.host and NAME_RE.match(args.name):
+        args.host = default_host(args.name, args.env)
 
 
 def validate(args) -> None:
@@ -156,6 +164,7 @@ def dump(docs) -> str:
 
 
 def generate(args, root: Path) -> list[Path]:
+    resolve(args)
     validate(args)
     namespace = f'{args.name}-{args.env}'
     unit = f'app-{args.name}-{args.env}'
@@ -271,16 +280,21 @@ def watch_namespace(root: Path, namespace: str) -> None:
         path.write_text(text)
 
 
-def parser() -> argparse.ArgumentParser:
+def parser(preset: str | None = None) -> argparse.ArgumentParser:
+    """The app-new options, with a preset's values as the defaults (explicit flags still win)."""
     p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
+    p.add_argument('--preset', choices=sorted(PRESETS),
+                   help='defaults for an app built from the swhurl template: '
+                        + '; '.join(f'{n}: ' + ', '.join(f'{k}={v}' for k, v in d.items()) for n, d in PRESETS.items()))
     p.add_argument('--env', required=True, choices=ENVIRONMENTS)
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
                         f'public: no sign-in, host outside {COOKIE_DOMAIN}')
-    p.add_argument('--host')
+    p.add_argument('--host', help=f'default for authenticated-web: <name>.{COOKIE_DOMAIN} in prod, '
+                                  f'<env>-<name>.{COOKIE_DOMAIN} otherwise')
     p.add_argument('--port', type=int, default=8080)
     p.add_argument('--health-path', help='HTTP readiness/liveness path (required for web)')
     p.add_argument('--command', help='container command, shell-quoted')
@@ -292,7 +306,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument('--mount-path', default='/data')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
-    p.add_argument('--otlp', action='store_true',
+    p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,
                    help='the app has an OpenTelemetry SDK: point it at the cluster collector (OTEL_* env)')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
     p.add_argument('--root', type=Path, default=ROOT)
@@ -300,11 +314,20 @@ def parser() -> argparse.ArgumentParser:
                    help='do not add the unit to clusters/home/kustomization.yaml')
     p.add_argument('--no-policy-check', dest='policy_check', action='store_false',
                    help='skip rendering the new instance against the app policy (needs helm)')
+    if preset:
+        p.set_defaults(**PRESETS[preset])
     return p
 
 
+def parse_args(argv=None) -> argparse.Namespace:
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument('--preset', choices=sorted(PRESETS))
+    known, _ = pre.parse_known_args(argv)
+    return parser(known.preset).parse_args(argv)
+
+
 def main(argv=None) -> int:
-    args = parser().parse_args(argv)
+    args = parse_args(argv)
     try:
         written = generate(args, args.root.resolve())
     except GenerationError as error:

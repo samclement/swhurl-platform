@@ -13,6 +13,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
+from swhurl.apps import contract
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.run import FakeRunner, Result
@@ -97,6 +98,28 @@ class GeneratorTests(unittest.TestCase):
             'OTEL_SERVICE_NAME': 'o',
         })
         self.assertIsNone(env('p'), 'without --otlp nothing is written')
+
+    def test_web_preset_fills_template_conventions_and_derives_the_host(self):
+        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', 'ghcr.io/me/w:1-abc1234',
+                                       '--root', str(self.tmp), '--no-policy-check']), 0)
+        values = yaml.safe_load((self.tmp / 'apps/w/staging/helmrelease.yaml').read_text())['spec']['values']
+        main = values['controllers']['main']['containers']['main']
+        self.assertEqual(main['probes']['readiness']['spec']['httpGet'], {'path': '/healthz', 'port': 8080})
+        self.assertEqual(values['defaultPodOptions']['securityContext']['runAsUser'], 65532)
+        self.assertEqual(main['env']['OTEL_SERVICE_NAME'], 'w')
+        self.assertEqual(values['ingress']['main']['hosts'][0]['host'], 'staging-w.homelab.swhurl.com')
+        self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
+
+    def test_explicit_flags_beat_the_preset(self):
+        args = app_new.parse_args(['w', '--preset', 'swhurl-web', '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
+                                   '--no-otlp', '--port', '3000', '--exposure', 'private'])
+        self.assertEqual((args.otlp, args.port, args.exposure, args.health_path), (False, 3000, 'private', '/healthz'))
+        worker = app_new.parse_args(['q', '--preset', 'swhurl-worker', '--env', 'staging', '--image', 'r/q:1'])
+        self.assertEqual((worker.kind, worker.exposure, worker.otlp), ('worker', 'private', True))
+
+    def test_signed_in_host_is_derived_per_environment(self):
+        self.assertEqual(contract.default_host('w', 'prod'), 'w.homelab.swhurl.com')
+        self.assertEqual(contract.default_host('w', 'staging'), 'staging-w.homelab.swhurl.com')
 
     def test_missing_sops_leaves_no_plaintext(self):
         old_path = os.environ['PATH']

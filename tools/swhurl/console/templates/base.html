@@ -57,7 +57,10 @@
   form.new input, form.new select { font: inherit; padding: 4px 6px; border: 1px solid var(--line);
              border-radius: 4px; background: var(--bg); color: var(--text); width: 100%; }
   form.new .hint { grid-column: 2; margin-top: -6px; }
-  @media (max-width: 600px) { form.new { grid-template-columns: 1fr; } form.new .hint { grid-column: 1; } }
+  form.new details { grid-column: 1 / -1; }
+  form.new details > div { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 8px 16px; align-items: center; margin-top: 8px; }
+  form.new details .hint { grid-column: 2; }
+  @media (max-width: 600px) { form.new, form.new details > div { grid-template-columns: 1fr; } form.new .hint { grid-column: 1; } }
   pre { background: var(--panel); border: 1px solid var(--line); padding: 12px; overflow-x: auto;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 </style>

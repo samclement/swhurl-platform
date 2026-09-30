@@ -98,13 +98,13 @@ class FormTests(unittest.TestCase):
         self.assertEqual((name, env), ('weather-api', 'staging'))
         self.assertEqual(argv, ['weather-api', '--env=staging', '--exposure=authenticated-web',
                                 '--image=ghcr.io/me/weather:1.0', '--host=weather.homelab.swhurl.com',
-                                '--health-path=/ready', '--cpu=--no-policy-check'])
+                                '--health-path=/ready', '--cpu=--no-policy-check', '--no-otlp'])
 
     def test_otlp_checkbox_becomes_a_bare_flag(self):
         _, _, ticked = changes.new_app_args({**FORM, 'otlp': 'on'})
         _, _, unticked = changes.new_app_args(FORM)
         self.assertEqual(ticked[-1], '--otlp')
-        self.assertNotIn('--otlp', unticked)
+        self.assertEqual(unticked[-1], '--no-otlp', 'explicit, so unticking overrides a preset')
         with self.assertRaisesRegex(actions.ActionError, 'checkbox'):
             changes.new_app_args({**FORM, 'otlp': '--no-policy-check'})
 
@@ -112,6 +112,20 @@ class FormTests(unittest.TestCase):
         self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', changes.OTLP_HINT)
         self.assertIn('OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf', changes.OTLP_HINT)
         self.assertNotIn('otlp', changes.new_app_defaults())
+
+    def test_preset_is_passed_to_app_new(self):
+        _, _, argv = changes.new_app_args({'name': 'weather-api', 'env': 'staging', 'preset': 'swhurl-web',
+                                           'image': 'ghcr.io/me/weather:42-abc1234', 'otlp': 'on'})
+        self.assertEqual(argv, ['weather-api', '--env=staging', '--preset=swhurl-web',
+                                '--image=ghcr.io/me/weather:42-abc1234', '--otlp'])
+        with self.assertRaisesRegex(actions.ActionError, 'preset must be'):
+            changes.new_app_args({**FORM, 'preset': 'nope'})
+
+    def test_preset_defaults_come_from_app_new(self):
+        self.assertEqual(changes.new_app_defaults('swhurl-web')['health_path'], '/healthz')
+        self.assertEqual(changes.new_app_defaults('swhurl-web')['exposure'], 'authenticated-web')
+        self.assertEqual(changes.new_app_checked('swhurl-web'), {'otlp': True})
+        self.assertEqual(changes.new_app_checked(''), {'otlp': False})
 
     def test_bad_input_is_refused_before_anything_runs(self):
         for form, message in (({**FORM, 'name': 'Weather'}, 'DNS label'), ({**FORM, 'env': 'dev'}, 'env must'),
@@ -241,8 +255,15 @@ class NewAppRouteTests(unittest.TestCase):
     def test_form_opens_a_pr_as_a_job(self):
         runner = tree_fake()
         c, jobs = self.client(runner)
-        form = c.get('/new', headers=WHO).text
+        preset = c.get('/new', headers=WHO).text
+        self.assertIn('<strong>Web app from the swhurl template</strong>', preset)
+        self.assertIn('<input type="hidden" name="preset" value="swhurl-web">', preset)
+        self.assertIn('<option value="">authenticated-web (default)</option>', preset)
+        self.assertIn('<details><summary>Advanced', preset)
+        self.assertIn('<input type="checkbox" id="otlp" name="otlp" checked>', preset)
+        form = c.get('/new?preset=', headers=WHO).text
         self.assertIn('Open pull request', form)
+        self.assertNotIn('<details>', form)
         self.assertIn('id="port" name="port" value="" placeholder="8080"', form)
         self.assertIn('id="uid" name="uid" value="" placeholder="65532"', form)
         self.assertIn('<option value="">web (default)</option>', form)

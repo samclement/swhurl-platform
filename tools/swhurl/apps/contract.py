@@ -45,6 +45,24 @@ def otlp_env(service: str) -> dict:
     }
 
 
+# Apps built from the template repository (samclement/swhurl-app-template-typescript) follow
+# these conventions, so a preset can fill everything but the name, image and exposure.
+TEMPLATE_PORT = 8080
+TEMPLATE_HEALTH_PATH = '/healthz'
+TEMPLATE_UID = 65532
+PRESETS = {
+    'swhurl-web': {'kind': 'web', 'exposure': 'authenticated-web', 'port': TEMPLATE_PORT,
+                   'health_path': TEMPLATE_HEALTH_PATH, 'uid': TEMPLATE_UID, 'otlp': True},
+    'swhurl-worker': {'kind': 'worker', 'exposure': 'private', 'uid': TEMPLATE_UID, 'otlp': True},
+}
+"""app-new defaults per preset; flags given explicitly still win."""
+
+
+def default_host(name: str, env: str) -> str:
+    """A signed-in app's host when none is given: <name>.<domain> in prod, <env>-<name>.<domain> otherwise."""
+    return f'{name}.{COOKIE_DOMAIN}' if env == 'prod' else f'{env}-{name}.{COOKIE_DOMAIN}'
+
+
 INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))
 """Where instances live: the real ones and the generated test fixtures."""
 

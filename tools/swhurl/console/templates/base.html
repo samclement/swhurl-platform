@@ -61,6 +61,43 @@
   form.new details > div { display: grid; grid-template-columns: max-content minmax(0, 28em); gap: 8px 16px; align-items: center; margin-top: 8px; }
   form.new details .hint { grid-column: 2; }
   @media (max-width: 600px) { form.new, form.new details > div { grid-template-columns: 1fr; } form.new .hint { grid-column: 1; } }
+  /* New app form (new.html): one column, label above field, so opening Advanced cannot shift anything. */
+  .lead { color: var(--muted); max-width: 60em; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0 8px; }
+  .tabs a { padding: 6px 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs a.here { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+  .new-app { display: grid; grid-template-columns: minmax(0, 38em) minmax(0, 22em); gap: 24px; align-items: start; margin-top: 16px; }
+  @media (max-width: 900px) { .new-app { grid-template-columns: minmax(0, 1fr); } }
+  form.wizard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 20px; }
+  form.wizard fieldset { border: 0; margin: 0 0 20px; padding: 0; min-width: 0; }
+  form.wizard legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
+  form.wizard .field { margin-bottom: 12px; }
+  form.wizard .field > label:not(.check), form.wizard .label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  form.wizard input:not([type=checkbox]):not([type=radio]), form.wizard select {
+    font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
+  form.wizard input:focus-visible, form.wizard select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  form.wizard .hint { display: block; margin: 4px 0 0; }
+  form.wizard [hidden] { display: none; }
+  form.wizard .check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .segmented label { padding: 6px 14px; cursor: pointer; }
+  .segmented label + label { border-left: 1px solid var(--line); }
+  .segmented label:has(input:checked) { background: var(--bg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+  .choice { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
+            border: 1px solid var(--line); border-radius: 6px; }
+  .choice input { margin-top: 4px; }
+  .choice:has(input:checked) { border-color: var(--accent); }
+  form.wizard .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+  form.wizard .pair .field:has(.check) { grid-column: 1 / -1; }
+  @media (max-width: 600px) { form.wizard .pair { grid-template-columns: minmax(0, 1fr); } }
+  details.advanced { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 16px; }
+  details.advanced > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+  form.wizard .submit { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; border-top: 1px solid var(--line); padding-top: 16px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-size: 14px; font-weight: 600; padding: 6px 16px; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  aside.summary { position: sticky; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
+  aside.summary h2 { margin-top: 0; }
+  dl.plain { background: none; border: 0; padding: 0; gap: 4px 12px; }
   pre { background: var(--panel); border: 1px solid var(--line); padding: 12px; overflow-x: auto;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 </style>

@@ -64,14 +64,22 @@ CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
 CHECKBOXES = {'otlp'}
 """On/off fields: always sent explicitly (``--<flag>`` or ``--no-<flag>``), so a preset's default can be turned off."""
-BASIC_FIELDS = {'exposure', 'image', 'host', 'secret_keys'}
-"""With a preset, the fields shown up front; the preset fills the rest (under Advanced)."""
+EXPOSURE_LABELS = {
+    'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
+    'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
+    'private': ('Private', 'No web address; reachable only inside the cluster. For workers and internal services.'),
+}
+"""The form's plain-language names for each exposure: (title, description)."""
+ADVANCED_GROUPS = (('Runtime', ('kind', 'port', 'health_path', 'uid')),
+                   ('Resources', ('cpu', 'memory', 'memory_limit', 'persistence')),
+                   ('Telemetry and TLS', ('otlp', 'issuer')))
+"""The New app form's Advanced section, in order. Name, environment, image, exposure, host and secret keys are
+up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
 PRESET_LABELS = {'swhurl-web': 'Web app from the swhurl template', 'swhurl-worker': 'Worker from the swhurl template',
                  '': 'Other image'}
-OTLP_HINT = (f'Writes the cluster default: OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} ({OTLP_HOST_IP} is the '
-             f'node IP, where the collector listens), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and '
-             'OTEL_SERVICE_NAME=<name>. Tick only if the app has an OpenTelemetry SDK that reads these standard '
-             'variables; it needs no key. Logs on stdout reach ClickStack either way.')
+OTLP_HINT = (f'Tick if the app has an OpenTelemetry SDK. Sets OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} '
+             f'({OTLP_HOST_IP} is the node IP), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and OTEL_SERVICE_NAME=<name>; '
+             'no key needed. Logs on stdout reach ClickStack either way.')
 
 
 def new_app_defaults(preset: str = '') -> dict[str, str]:

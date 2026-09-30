@@ -265,18 +265,19 @@ class NewAppRouteTests(unittest.TestCase):
         runner = tree_fake()
         c, jobs = self.client(runner)
         preset = c.get('/new', headers=WHO).text
-        self.assertIn('<strong>Web app from the swhurl template</strong>', preset)
+        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">Web app from the swhurl template</a>', preset)
         self.assertIn('<input type="hidden" name="preset" value="swhurl-web">', preset)
-        self.assertIn('<option value="">authenticated-web (default)</option>', preset)
-        self.assertIn('<details><summary>Advanced', preset)
+        self.assertIn('name="exposure" value="authenticated-web" checked>', preset)
+        self.assertIn('<details class="advanced">', preset)
         self.assertIn('<input type="checkbox" id="otlp" name="otlp" checked>', preset)
         form = c.get('/new?preset=', headers=WHO).text
         self.assertIn('Open pull request', form)
-        self.assertNotIn('<details>', form)
+        self.assertIn('<details class="advanced" open>', form, 'no preset fills Advanced, so it starts open')
         self.assertIn('id="port" name="port" value="" placeholder="8080"', form)
         self.assertIn('id="uid" name="uid" value="" placeholder="65532"', form)
         self.assertIn('<option value="">web (default)</option>', form)
-        self.assertIn('<option value="">private (default)</option>', form)
+        self.assertIn('name="exposure" value="private" checked>', form)
+        self.assertNotIn('clones', form + preset, 'the intro describes the API-based PR')
         self.assertIn('nginx-unprivileged is 101', form)
         self.assertIn('<input type="checkbox" id="otlp" name="otlp" >', form)
         self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', form)
@@ -285,6 +286,17 @@ class NewAppRouteTests(unittest.TestCase):
         job = jobs.get(1)
         self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'weather-api/staging'))
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
+
+    def test_every_field_is_on_the_form_once_and_a_bad_form_keeps_advanced_open(self):
+        c, _ = self.client(tree_fake())
+        for preset in ('swhurl-web', 'swhurl-worker', ''):
+            page = c.get(f'/new?preset={preset}', headers=WHO).text
+            for field, _, _ in changes.NEW_APP_FIELDS:
+                with self.subTest(preset=preset, field=field):
+                    self.assertEqual(page.count(f'name="{field}"'), 3 if field == 'exposure' else 1)
+        page = c.post('/new', data={**FORM, 'name': 'Bad', 'port': '9090', 'preset': 'swhurl-web'}, headers=WHO).text
+        self.assertIn('<details class="advanced" open>', page)
+        self.assertIn('value="9090"', page)
 
     def test_invalid_form_or_missing_token_runs_nothing(self):
         runner = tree_fake()

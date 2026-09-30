@@ -293,6 +293,11 @@ The published image went from 470 MB (`src-6ab0c453…`) to 308 MB (`src-084ffd0
 - **`make verify-platform`** passed with no warnings, including the new Push Webhook section (receiver Ready; GitHub's latest delivery 200) and `console image src-68a511fc56439e7a is built from the current tooling`.
 - Not exercised live: the skip when `main` has moved to other image inputs, and the rebase-and-retry after a rejected push (both unit-tested with `FakeRunner`).
 
+## app-new --otlp (30 September 2026)
+
+- **`d01453d`**: `make app-new … --otlp` and the console's **Sends OpenTelemetry** box write the cluster OTLP default; `check-apps` rule `otlp-host-ip`. The publish run deployed the console on its own (`ec418c4`).
+- **`make live-test-app-template`** passed with the `smoke-web` fixture generated with `--otlp`: inside its pod `OTEL_EXPORTER_OTLP_ENDPOINT=http://192.168.1.200:4318` (the node's InternalIP), `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, `OTEL_SERVICE_NAME=smoke-web`; the test cleaned up its instances. Delivery from an SDK to that endpoint was shown on 29 September ([App OTLP metrics and traces](#app-otlp-metrics-and-traces-29-september-2026)); nginx has no SDK, so this run shows the configuration, not new telemetry.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

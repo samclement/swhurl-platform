@@ -119,7 +119,9 @@ def image_automation(args) -> list[dict]:
          'spec': {'imageRepositoryRef': {'name': args.name},
                   'filterTags': {'pattern': AUTO_DEPLOY_TAG_PATTERN, 'extract': '$run'},
                   'policy': {'numerical': {'order': 'asc'}},
-                  'digestReflectionPolicy': 'Always'}},
+                  # Tags are immutable, so re-reading the current tag's digest hourly is plenty; a new
+                  # tag's digest is read when the repository scan finds it. Always requires an interval.
+                  'digestReflectionPolicy': 'Always', 'interval': '1h'}},
     ]
 
 

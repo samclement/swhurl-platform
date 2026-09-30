@@ -121,6 +121,7 @@ class GeneratorTests(unittest.TestCase):
                          ('ImageRepository', 'flux-system', 'ghcr.io/samclement/w'))
         self.assertEqual(image_policy['metadata']['name'], 'w-staging')
         self.assertEqual(image_policy['spec']['digestReflectionPolicy'], 'Always')
+        self.assertIn('interval', image_policy['spec'], 'Flux rejects Always without an interval')
         self.assertEqual(image_policy['spec']['filterTags']['extract'], '$run')
         text = (staging / 'helmrelease.yaml').read_text()
         self.assertIn('tag: 12-abcdef0 # {"$imagepolicy": "flux-system:w-staging:tag"}', text)

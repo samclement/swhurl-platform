@@ -12,7 +12,9 @@ The console clones <code>main</code>, runs <code>make app-new</code> with these 
   <select id="env" name="env">{% for c in choices.env %}<option {{ 'selected' if form.env == c }}>{{ c }}</option>{% endfor %}</select>
   {% for field, flag, label in fields %}
   <label for="{{ field }}">{{ label }}</label>
-  {% if field in choices %}
+  {% if field in checkboxes %}
+  <input type="checkbox" id="{{ field }}" name="{{ field }}" {{ 'checked' if form[field] }}>
+  {% elif field in choices %}
   <select id="{{ field }}" name="{{ field }}"><option value="">{{ defaults[field] ~ ' (default)' if field in defaults else '(none)' }}</option>{% for c in choices[field] %}<option {{ 'selected' if form[field] == c }}>{{ c }}</option>{% endfor %}</select>
   {% else %}
   <input id="{{ field }}" name="{{ field }}" value="{{ form[field] or '' }}"{% if field in defaults %} placeholder="{{ defaults[field] }}"{% elif field == 'image' %} required placeholder="ghcr.io/me/app:1.0@sha256:…"{% elif field == 'secret_keys' %} placeholder="API_TOKEN,DB_URL"{% elif field == 'host' %} placeholder="weather.homelab.swhurl.com"{% elif field == 'health_path' %} placeholder="/ready"{% elif field == 'persistence' %} placeholder="none (e.g. 1Gi)"{% endif %}>
@@ -20,6 +22,7 @@ The console clones <code>main</code>, runs <code>make app-new</code> with these 
   {% if field == 'image' %}<span class="muted hint">No <code>latest</code>; production needs a digest.</span>{% endif %}
   {% if field == 'uid' %}<span class="muted hint">The image's non-root user; it must match the image (nginx-unprivileged is 101) or the pod cannot start.</span>{% endif %}
   {% if field == 'port' %}<span class="muted hint">The port the app listens on inside the container.</span>{% endif %}
+  {% if field == 'otlp' %}<span class="muted hint">{{ otlp_hint }} See <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#telemetry">docs/apps.md</a>.</span>{% endif %}
   {% if field == 'secret_keys' %}<span class="muted hint">Creates an encrypted Secret with values <code>REPLACE_ME</code>; set them with <code>sops</code> before merging.</span>{% endif %}
   {% endfor %}
   <span></span><button {{ 'disabled' if not github }}>Open pull request</button>

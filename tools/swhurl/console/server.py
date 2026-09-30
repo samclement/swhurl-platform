@@ -106,7 +106,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def new_app_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         return page(request, 'new.html', status_code=status_code, fields=changes.NEW_APP_FIELDS,
-                    choices=changes.CHOICES, defaults=changes.new_app_defaults(), form=form or {}, error=error, github=github)
+                    choices=changes.CHOICES, checkboxes=changes.CHECKBOXES, otlp_hint=changes.OTLP_HINT,
+                    defaults=changes.new_app_defaults(), form=form or {}, error=error, github=github)
 
     async def new_app(request: Request) -> Response:
         if request.method == 'GET':

@@ -83,6 +83,21 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(unit['spec']['decryption']['secretRef']['name'], 'sops-age')
         self.assertIn('namespaces: [ingress, logging, s-staging]', reloader.read_text())
 
+    def test_otlp_points_the_sdk_at_the_node_collector(self):
+        self.assertEqual(self.gen('o', *WEB, '--otlp'), 0)
+        self.assertEqual(self.gen('p', *WEB), 0)
+
+        def env(app):
+            release = yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())
+            return release['spec']['values']['controllers']['main']['containers']['main'].get('env')
+        self.assertEqual(env('o'), {
+            'HOST_IP': {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
+            'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://$(HOST_IP):4318',
+            'OTEL_EXPORTER_OTLP_PROTOCOL': 'http/protobuf',
+            'OTEL_SERVICE_NAME': 'o',
+        })
+        self.assertIsNone(env('p'), 'without --otlp nothing is written')
+
     def test_missing_sops_leaves_no_plaintext(self):
         old_path = os.environ['PATH']
         os.environ['PATH'] = str(self.tmp)  # no sops (and nothing else) on PATH
@@ -157,6 +172,25 @@ class PolicyTests(unittest.TestCase):
         for key, docs in self.rendered.items():
             with self.subTest(instance=key):
                 self.assertEqual(app_policy.check(docs), [])
+
+    def test_otlp_fixture_renders_host_ip_before_its_use(self):
+        names = [v['name'] for v in self.container(self.docs('smoke-web/staging'))['env']]
+        self.assertLess(names.index('HOST_IP'), names.index('OTEL_EXPORTER_OTLP_ENDPOINT'))
+
+    def test_otlp_without_host_ip_is_caught(self):
+        for broken in ([],  # HOST_IP missing
+                       [{'name': 'HOST_IP', 'value': '10.0.0.1'}],  # defined, but not the node IP
+                       'after'):  # defined after its use: Kubernetes leaves $(HOST_IP) literal
+            docs = self.docs('smoke-web/staging')
+            env = self.container(docs)['env']
+            host_ip = next(v for v in env if v['name'] == 'HOST_IP')
+            env.remove(host_ip)
+            if broken == 'after':
+                env.append(host_ip)
+            else:
+                env[:0] = broken
+            with self.subTest(broken=broken):
+                self.assertIn('otlp-host-ip', self.rules(docs))
 
     def test_worker_has_no_route_and_web_has_sign_in(self):
         worker = self.rendered['smoke-worker/staging']

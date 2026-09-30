@@ -16,7 +16,7 @@ Both require sign-in and serve the stock nginx page as UID 101 on port 8080. Sta
 ```bash
 make app-new NAME=weather-api ARGS="--env staging --image ghcr.io/me/weather-api:1.4.0 \
   --exposure authenticated-web --host weather.homelab.swhurl.com --health-path /ready \
-  --secret-keys API_TOKEN,DB_URL"
+  --secret-keys API_TOKEN,DB_URL --otlp"
 sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
 make check-apps check-secrets
 git add apps/weather-api clusters/home platform/reloader
@@ -32,6 +32,7 @@ The console's New app form opens the same change as a PR ([console](console.md))
 | `--exposure` | `private` (no route, default); `authenticated-web` (sign-in, host under `homelab.swhurl.com`); `public` (no sign-in, host **outside** `homelab.swhurl.com` so the sign-in cookie never reaches it) |
 | `--image` | `repo:tag`, `repo@sha256:…` or both; no `latest`; **production requires a digest** |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned |
+| `--otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--secret-keys A,B` | An encrypted Secret stub (`stringData`, values `REPLACE_ME`) injected with `envFrom`; sets the unit's decryption and adds the namespace to Reloader so changes restart the app |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
@@ -70,19 +71,37 @@ Each checks the result against the app policy. They edit only HelmReleases that 
 
 ## Telemetry
 
-Container stdout and stderr reach ClickStack without any setup. For metrics and traces (and structured logs), use an OpenTelemetry SDK that sends OTLP to the collector on the app's own node: it runs with host networking, so the address is the node IP. Add this to the container in the HelmRelease, in every environment:
+What reaches ClickStack depends on whether the app has an OpenTelemetry SDK:
+
+| Your app | Do | What reaches ClickStack |
+| --- | --- | --- |
+| No OpenTelemetry SDK | Nothing | stdout and stderr as logs, with pod, namespace and deployment attributes |
+| An SDK that should report here | `--otlp` (the console's **Sends OpenTelemetry** box) | The logs above, plus traces, metrics and structured logs under `ServiceName` = the app name |
+| An SDK that should not report here, or reports to its own backend | Leave `--otlp` off; set `OTEL_SDK_DISABLED=true` or its own endpoint | Logs only. An unconfigured SDK sends to `localhost:4318`, where nothing listens in the pod, and logs export errors |
+
+`--otlp` writes the cluster default into the container, the same in every environment (the values come from [`contract.py`](../tools/swhurl/apps/contract.py)):
 
 ```yaml
             env:
               HOST_IP:
                 valueFrom:
                   fieldRef:
-                    fieldPath: status.hostIP
-              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318   # gRPC: port 4317
-              OTEL_SERVICE_NAME: weather-api
+                    fieldPath: status.hostIP                # the node IP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: weather-api                # the app name
 ```
 
-Apps need no key: the collector adds the ingestion key, the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)). In HyperDX, filter on `ServiceName` or `k8s.namespace.name`. SDK auto-instrumentation and runtime metrics work unchanged. Telemetry sent in a pod's first second can lack the pod attributes, while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints. The generator does not write these lines.
+The collector DaemonSet runs on every node with host networking, so it listens on the node IP: 4318 for OTLP over HTTP, 4317 for gRPC. It adds the ingestion key and the pod, namespace and deployment, and forwards to ClickStack ([services](services.md#clickstack-and-otel)).
+
+**What must be true of the app** for `--otlp` to work:
+
+- It has an OpenTelemetry SDK or auto-instrumentation.
+- The SDK reads the standard `OTEL_*` environment variables; an endpoint hard-coded in the app overrides them.
+- It exports OTLP over HTTP/protobuf. For gRPC, change the endpoint port to 4317 and the protocol to `grpc` by hand.
+- It sends no key or auth headers; the collector adds them.
+
+To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK. In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging from production). Telemetry sent in a pod's first second can lack the pod attributes while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints.
 
 ## Deploy a new image
 

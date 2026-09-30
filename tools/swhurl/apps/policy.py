@@ -14,6 +14,8 @@ with Helm) and checks the resulting Kubernetes objects:
                       host under the cookie domain; public: host outside it
   ingress-tls         every Ingress host is covered by TLS
   storage-class       claims name local-path or local-path-retain
+  otlp-host-ip        a container that uses $(HOST_IP) (the OTLP endpoint) defines HOST_IP
+                      from status.hostIP before it; otherwise the SDK gets the literal text
 
 and, across the environments of one app (source manifests, not rendered):
 
@@ -43,6 +45,7 @@ from swhurl.apps.contract import (
     EXCEPTIONS,
     EXPOSURE,
     INSTANCE_ROOTS,
+    OTLP_HOST_IP,
     STORAGE_CLASSES,
     in_cookie_domain,
 )
@@ -165,6 +168,14 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
             if ctx.get('privileged') or ctx.get('allowPrivilegeEscalation') is not False or 'ALL' not in caps \
                     or (ctx.get('capabilities') or {}).get('add'):
                 violations.append(('no-escalation', f'{name} allows privilege escalation or extra capabilities'))
+            defined: dict[str, dict] = {}
+            for var in container.get('env') or []:
+                if f'$({OTLP_HOST_IP})' in str(var.get('value', '')):
+                    source = defined.get(OTLP_HOST_IP, {}).get('valueFrom', {}).get('fieldRef', {}).get('fieldPath')
+                    if source != 'status.hostIP':
+                        violations.append(('otlp-host-ip', f"{name} uses $({OTLP_HOST_IP}) in {var['name']} without "
+                                           f'defining {OTLP_HOST_IP} from status.hostIP before it'))
+                defined[var['name']] = var
             res = container.get('resources') or {}
             if not {'cpu', 'memory'} <= set(res.get('requests') or {}) or 'memory' not in (res.get('limits') or {}):
                 violations.append(('resources', f'{name} lacks CPU/memory requests or a memory limit'))

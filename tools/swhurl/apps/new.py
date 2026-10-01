@@ -33,6 +33,10 @@ from swhurl.apps.contract import (
     CHART_REPOSITORY,
     CHART_VERSION,
     COOKIE_DOMAIN,
+    DATA_MOUNT,
+    DATABASE_PATH_ENV,
+    DATABASES,
+    DEFAULT_DATABASE_SIZE,
     ENVIRONMENT,
     ENVIRONMENTS,
     EXPOSURE,
@@ -42,6 +46,7 @@ from swhurl.apps.contract import (
     MANAGED,
     PRESETS,
     RETAINED_STORAGE_CLASS,
+    SQLITE_PATH,
     add_image_markers,
     default_host,
     image_policy_name,
@@ -72,9 +77,12 @@ def parse_image(image: str) -> dict:
 
 
 def resolve(args) -> None:
-    """Fill values derived from others: a signed-in app's host."""
+    """Fill values derived from others: a signed-in app's host; a database's volume."""
     if args.exposure == 'authenticated-web' and not args.host and NAME_RE.match(args.name):
         args.host = default_host(args.name, args.env)
+    if args.database == 'sqlite':
+        args.persistence = args.persistence or args.database_size
+        args.mount_path = DATA_MOUNT
 
 
 def validate(args) -> None:
@@ -144,6 +152,8 @@ def build_values(args) -> dict:
         container['command'] = shlex.split(args.command)
     if args.otlp:
         container['env'] = otlp_env(args.name)
+    if args.database == 'sqlite':
+        container['env'] = {**container.get('env', {}), DATABASE_PATH_ENV: SQLITE_PATH}
     if args.secret_keys:
         container['envFrom'] = [{'secretRef': {'name': f'{args.name}-secret'}}]
     if args.kind == 'web':
@@ -153,6 +163,11 @@ def build_values(args) -> dict:
         container['probes'] = {'readiness': probe(), 'liveness': probe()}
 
     controller: dict = {'containers': {'main': container}}
+    if args.persistence:
+        # One writer: the volume is ReadWriteOnce on one node, and a database file must not have two
+        # processes writing it. Stop the old pod before starting the new one; never run two (rule single-writer).
+        controller['replicas'] = 1
+        controller['strategy'] = 'Recreate'
     if args.secret_keys:
         controller['annotations'] = {'secret.reloader.stakater.com/reload': f'{args.name}-secret'}
 
@@ -355,7 +370,11 @@ def parser(preset: str | None = None) -> argparse.ArgumentParser:
     p.add_argument('--cpu', default='10m')
     p.add_argument('--memory', default='32Mi')
     p.add_argument('--memory-limit', default='128Mi')
-    p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi')
+    p.add_argument('--database', choices=DATABASES,
+                   help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_ENV}; '
+                        'one replica, stop-first updates')
+    p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
+    p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')
     p.add_argument('--mount-path', default='/data')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')

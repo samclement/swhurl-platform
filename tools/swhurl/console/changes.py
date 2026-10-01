@@ -32,7 +32,7 @@ import httpx
 
 from swhurl import platform
 from swhurl.apps import new
-from swhurl.apps.contract import ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL, PRESETS
+from swhurl.apps.contract import DATABASES, ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL, PRESETS
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -57,10 +57,11 @@ NEW_APP_FIELDS = (
     ('memory_limit', 'memory-limit', 'Memory limit'),
     ('persistence', 'persistence', 'Persistent volume size'),
     ('secret_keys', 'secret-keys', 'Secret environment variables'),
+    ('database', 'database', 'Database'),
     ('otlp', 'otlp', 'Sends OpenTelemetry'),
     ('issuer', 'issuer', 'Certificate issuer'),
 )
-CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES,
+CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES, 'database': DATABASES,
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
 CHECKBOXES = {'otlp'}
 """On/off fields: always sent explicitly (``--<flag>`` or ``--no-<flag>``), so a preset's default can be turned off."""
@@ -73,8 +74,8 @@ EXPOSURE_LABELS = {
 ADVANCED_GROUPS = (('Runtime', ('kind', 'port', 'health_path', 'uid')),
                    ('Resources', ('cpu', 'memory', 'memory_limit', 'persistence')),
                    ('Telemetry and TLS', ('otlp', 'issuer')))
-"""The New app form's Advanced section, in order. Name, environment, image, exposure, host and secret keys are
-up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
+"""The New app form's Advanced section, in order. Name, environment, image, secret keys, database, exposure and
+host are up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
 PRESET_LABELS = {'swhurl-web': 'Web app from the swhurl template', 'swhurl-worker': 'Worker from the swhurl template',
                  '': 'Other image'}
 OTLP_HINT = (f'Tick if the app has an OpenTelemetry SDK. Sets OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} '

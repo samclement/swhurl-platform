@@ -8,7 +8,8 @@
   {% elif field == 'uid' %}<span class="muted hint">The image's non-root user; it must match the image (nginx-unprivileged is 101) or the pod cannot start.</span>
   {% elif field == 'port' %}<span class="muted hint">The port the app listens on inside the container.</span>
   {% elif field == 'health_path' %}<span class="muted hint">A path that answers 200 when the app is ready; web apps need one.</span>
-  {% elif field == 'persistence' %}<span class="muted hint">A volume that outlives the app, for example <code>1Gi</code>. Empty for none.</span>
+  {% elif field == 'persistence' %}<span class="muted hint">A volume that outlives the app, for example <code>1Gi</code>. Empty for none; with a database, the database's volume (default 1Gi).</span>
+  {% elif field == 'database' %}<span class="muted hint">SQLite: a volume that outlives the app, with the database file at <code>/data/app.db</code>, passed to the app as <code>DATABASE_PATH</code>. One copy runs at a time and updates stop it first. Staging and prod each have their own database; promoting copies the image, not the data.</span>
   {% elif field == 'otlp' %}<span class="muted hint">{{ otlp_hint }} See <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#telemetry">docs/apps.md</a>.</span>
   {% endif %}
 {% endmacro %}
@@ -58,6 +59,7 @@
     {{ field('image') }}
     <p class="warn hint" id="digest-warning" hidden>Production needs a digest: add <code>@sha256:…</code> to the image.</p>
     {{ field('secret_keys') }}
+    {{ field('database') }}
   </fieldset>
 
   <fieldset>
@@ -86,6 +88,7 @@
     <dt>Flux unit</dt><dd><code id="s-unit">app-&lt;name&gt;-staging</code></dd>
     <dt>Address</dt><dd id="s-address" class="mono">depends on who can reach it</dd>
     <dt>Secrets</dt><dd id="s-secrets">none</dd>
+    <dt>Database</dt><dd id="s-database">none</dd>
     <dt>Files</dt><dd><code id="s-files">apps/&lt;name&gt;/staging/</code><br><code id="s-unit-file">clusters/home/app-&lt;name&gt;-staging.yaml</code></dd>
   </dl>
   <p class="muted">CI checks the PR with the same app policy. After merging, Flux applies it within a minute.</p>
@@ -115,6 +118,8 @@
     $('s-secrets').textContent = keys.length
       ? `${keys.join(', ')} (values set on the PR branch)`
       : 'none';
+    $('s-database').textContent = value('database') === 'sqlite'
+      ? `SQLite at /data/app.db, ${value('persistence') || '1Gi'} volume kept on uninstall` : 'none';
     $('digest-warning').hidden = !(env === 'prod' && value('image') && !value('image').includes('@sha256:'));
   }
   form.addEventListener('input', update);

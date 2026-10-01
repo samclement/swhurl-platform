@@ -12,6 +12,13 @@ from swhurl.platform import base_domain, label
 CHART = 'app-template'
 CHART_VERSION = '5.2.1'
 CHART_REPOSITORY = 'bjw-s'
+# Capabilities an app can ask for beyond running (docs/plan.md item 12). sqlite: a retained volume
+# with the database file at SQLITE_PATH, given to the app as DATABASE_PATH.
+DATABASES = ('sqlite',)
+DATA_MOUNT = '/data'
+SQLITE_PATH = f'{DATA_MOUNT}/app.db'
+DATABASE_PATH_ENV = 'DATABASE_PATH'
+DEFAULT_DATABASE_SIZE = '1Gi'
 # How long an instance may take to become Ready before its unit and HelmRelease report failure
 # (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
 FAIL_AFTER = '3m'

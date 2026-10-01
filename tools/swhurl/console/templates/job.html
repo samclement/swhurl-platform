@@ -8,5 +8,5 @@
 {% if job.link %}<p><a href="{{ job.link }}">{{ job.link }}</a></p>{% endif %}
 <pre>{% for line in job.lines %}{{ line }}
 {% else %}waiting for output…{% endfor %}</pre>
-<p><a href="/units">Flux units</a> · <a href="/jobs">all jobs</a></p>
+<p>{% if '/' in job.unit %}<a href="/apps/{{ job.unit }}">Back to {{ job.unit }}</a>{% else %}<a href="/units/{{ job.unit }}">Back to {{ job.unit }}</a>{% endif %} · <a href="/activity">All activity</a></p>
 {% endblock %}

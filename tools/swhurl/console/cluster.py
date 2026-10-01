@@ -36,6 +36,29 @@ class Unit:
     depends_on: list[str]
     revision: str
     level: int  # 0 for units with no dependencies, else one more than the deepest dependency
+    path: str = ''
+    interval: str = ''
+    needed_by: tuple[str, ...] = ()
+
+    @property
+    def layer(self) -> str:
+        return layer_of(self.name)
+
+    @property
+    def healthy(self) -> bool:
+        return self.ready[0] == 'True' and not self.suspended
+
+
+# Units by name prefix, in the order they build on each other: (prefix, title, what they hold).
+LAYERS = (('cluster-', 'Cluster', "Flux's own Git source and unit list, applied by make flux-bootstrap"),
+          ('infra-', 'Infrastructure', 'Namespaces, certificates and the ingress controller'),
+          ('platform-', 'Platform services', 'Sign-in, observability, this console and automation'),
+          ('app-', 'Apps', 'One unit per app instance'))
+OTHER_LAYER = 'Other'
+
+
+def layer_of(name: str) -> str:
+    return next((title for prefix, title, _ in LAYERS if name.startswith(prefix)), OTHER_LAYER)
 
 
 def instance(app: str, env: str) -> ops.Instance | None:
@@ -79,10 +102,15 @@ def units(runner: Runner) -> list[Unit]:
             levels[name] = 1 + max((level(d, seen | {name}) for d in deps if d not in seen), default=-1)
         return levels[name]
 
+    needed_by: dict[str, list[str]] = {}
+    for name, unit in found.items():
+        for d in unit['spec'].get('dependsOn') or []:
+            needed_by.setdefault(d['name'], []).append(name)
     return sorted((Unit(name, ready_condition(unit), bool(unit['spec'].get('suspend')),
                         [d['name'] for d in unit['spec'].get('dependsOn') or []],
                         (unit.get('status') or {}).get('lastAppliedRevision', '').split(':')[-1][:7],
-                        level(name))
+                        level(name), unit['spec'].get('path', ''), unit['spec'].get('interval', ''),
+                        tuple(sorted(needed_by.get(name, []))))
                    for name, unit in found.items()), key=lambda u: (u.level, u.name))
 
 
@@ -91,6 +119,39 @@ class Checks:
     passed: bool
     sections: list[tuple[str, list[Entry]]]  # in the order verify-platform runs them
     notes: list[str]  # which checks were skipped, and why
+
+    @property
+    def skipped(self) -> list[str]:
+        """The checks left to ``make verify-platform`` (they read Secrets, exec into pods or need the host)."""
+        return [name.strip() for note in self.notes if ':' in note for name in note.split(':', 1)[1].split(',')]
+
+    @property
+    def count(self) -> int:
+        return sum(len(group) for _, group in self.sections)
+
+
+FLUX_SECTION = 'Flux Kustomizations'  # the units list shows these; the check's failures still count as problems
+
+
+@dataclass(frozen=True)
+class Problem:
+    level: str  # 'bad' or 'warn'
+    text: str
+    link: str = ''
+
+
+def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
+    """What needs attention: failing or warning checks, then suspended units (which can still be Ready)."""
+    names = {u.name for u in found}
+    out = []
+    for section, group in checks.sections:
+        for entry in group:
+            if entry.level in ('bad', 'warn'):
+                unit = entry.message.split(' ', 1)[0] if section == FLUX_SECTION else ''
+                out.append(Problem(entry.level, entry.message, f'/units/{unit}' if unit in names else ''))
+    out += [Problem('warn', f'{u.name} is suspended: Git changes are not applied to it until it is resumed',
+                    f'/units/{u.name}') for u in found if u.suspended]
+    return out
 
 
 def platform_checks(runner: Runner) -> Checks:

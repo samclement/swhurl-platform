@@ -320,6 +320,10 @@ Baseline, `b12b325`: push to Ready console pod about 88 s (Validate 33 s, Publis
 
 Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who can reach it forms use the same panels and shared macros (`templates/_form.html`), with the current exposure marked "(now)"; "Secret keys" became "Secret environment variables" with a names-only hint, a Secrets row in the summary, and a PR description that gives the `sops` command. Checked in headless Chromium against `make console-dev` and on the deployed console (both forms and the renamed field served).
 
+## Console redesign step 1: navigation by task (1 October 2026)
+
+`1a71d76`, deployed by the publish workflow (`3392930`). Navigation is Overview · Apps · Platform · Activity with **+ New app**; Platform merges the units and checks pages, each unit has its own page with its actions, Activity lists open console PRs. On the deployed console (port-forward with the identity and `Origin` headers): `/`, `/apps`, `/platform`, `/units/app-hello-staging`, `/activity`, `/new` and `/apps/hello/staging` 200; `/units` and `/jobs` 301 to `/platform#units` and `/activity`; Overview said "Everything is healthy" and listed open console PRs from GitHub without error (none open). A reconcile of `app-hello-staging` from its unit page showed "1 running" in the header, succeeded, and then appeared on Activity, Overview's recent activity and the unit's page, with the job page linking back to the unit. Through Traefik: HTTP 301 to HTTPS; signed-out HTTPS 302 to Google, including `/units/infra-base`.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

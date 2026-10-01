@@ -53,6 +53,21 @@ class GeneratorTests(unittest.TestCase):
                 self.assertEqual(self.gen(*args), 2)
         self.assertFalse((self.tmp / 'apps').exists(), 'a refused instance wrote files')
 
+    def test_sqlite_capability_wires_volume_path_and_a_single_writer(self):
+        self.assertEqual(self.gen('notes', '--env', 'staging', '--kind', 'worker', '--image', 'r/notes:1', '--database', 'sqlite'), 0)
+        values = yaml.safe_load((self.tmp / 'apps/notes/staging/helmrelease.yaml').read_text())['spec']['values']
+        main = values['controllers']['main']
+        self.assertEqual((main['replicas'], main['strategy']), (1, 'Recreate'))
+        self.assertEqual(main['containers']['main']['env'], {'DATABASE_PATH': '/data/app.db'})
+        data = values['persistence']['data']
+        self.assertEqual((data['size'], data['storageClass'], data['globalMounts']), ('1Gi', 'local-path-retain', [{'path': '/data'}]))
+        namespace = yaml.safe_load((self.tmp / 'apps/notes/staging/namespace.yaml').read_text())
+        self.assertEqual(namespace['metadata']['annotations'], {'kustomize.toolkit.fluxcd.io/prune': 'disabled'}, 'data outlives the app')
+        self.assertEqual(self.gen('sized', '--env', 'staging', '--kind', 'worker', '--image', 'r/s:1', '--database', 'sqlite',
+                                  '--database-size', '5Gi'), 0)
+        sized = yaml.safe_load((self.tmp / 'apps/sized/staging/helmrelease.yaml').read_text())['spec']['values']
+        self.assertEqual(sized['persistence']['data']['size'], '5Gi')
+
     def test_writes_registers_and_refuses_overwrite(self):
         self.assertEqual(self.gen('x', *WEB), 0)
         instance = self.tmp / 'apps/x/staging'
@@ -285,6 +300,10 @@ class PolicyTests(unittest.TestCase):
             self.find(d, 'PersistentVolumeClaim')['spec']['storageClassName'] = 'fast'
         def no_tls(d):
             self.find(d, 'Ingress')['spec']['tls'] = []
+        def two_writers(d):
+            self.find(d, 'Deployment')['spec']['replicas'] = 2
+        def rolling_update(d):
+            self.find(d, 'Deployment')['spec']['strategy'] = {'type': 'RollingUpdate'}
         cases = [
             ('smoke-web/staging', web_without_middleware, 'exposure'),
             ('smoke-web/staging', public_on_cookie_domain, 'exposure'),
@@ -298,6 +317,8 @@ class PolicyTests(unittest.TestCase):
             ('smoke-worker/staging', no_limits, 'resources'),
             ('smoke-worker/staging', latest, 'image-pinned'),
             ('smoke-data/prod', storage, 'storage-class'),
+            ('smoke-data/prod', two_writers, 'single-writer'),
+            ('smoke-data/prod', rolling_update, 'single-writer'),
         ]
         for key, mutate, rule in cases:
             with self.subTest(case=mutate.__name__):

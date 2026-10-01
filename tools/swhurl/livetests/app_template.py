@@ -4,8 +4,8 @@ revision) through real Flux units, check them, and remove them:
   smoke-worker-staging  worker: runs, has no Service or Ingress
   smoke-web-staging     authenticated web: SOPS Secret decrypted by its own
                         unit and injected, route redirects to sign-in
-  smoke-data-prod       persistent, digest-pinned: claim on local-path-retain,
-                        data written
+  smoke-data-prod       SQLite capability, digest-pinned: claim on local-path-retain,
+                        data written, DATABASE_PATH set, one replica, stop-first updates
 Touches only the app-smoke-* units, their namespaces and PVs.
 """
 from __future__ import annotations
@@ -92,9 +92,14 @@ def body(t: LiveTest) -> None:
             'claim bound on local-path-retain', 'claim not bound on local-path-retain')
     t.check(t.succeeds('-n', ns, 'exec', 'deploy/smoke-data', '--', 'test', '-s', '/data/log'),
             'persistent volume written', 'no data written')
-    image = ((t.get('-n', ns, 'get', 'deploy', 'smoke-data') or {}).get('spec') or {}).get('template', {}).get(
-        'spec', {}).get('containers', [{}])[0].get('image', '')
-    t.check('@sha256:' in image, 'prod image pinned by digest', 'prod image not digest-pinned')
+    deploy = (t.get('-n', ns, 'get', 'deploy', 'smoke-data') or {}).get('spec') or {}
+    container = deploy.get('template', {}).get('spec', {}).get('containers', [{}])[0]
+    t.check('@sha256:' in container.get('image', ''), 'prod image pinned by digest', 'prod image not digest-pinned')
+    env = {v.get('name'): v.get('value') for v in container.get('env') or []}
+    t.check(env.get('DATABASE_PATH') == '/data/app.db', 'DATABASE_PATH points into the volume',
+            f"DATABASE_PATH is {env.get('DATABASE_PATH')!r}")
+    t.check(deploy.get('replicas') == 1 and (deploy.get('strategy') or {}).get('type') == 'Recreate',
+            'one replica, stop-first updates (single writer)', f"replicas {deploy.get('replicas')}, strategy {deploy.get('strategy')}")
 
 
 def main(argv: list[str] | None = None, runner=None, report=None, sleep=None) -> int:

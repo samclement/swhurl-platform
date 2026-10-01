@@ -55,6 +55,10 @@ spec:
             - sh
             - -c
             - date -u >> /data/log; exec sleep 3600000
+            env:
+              DATABASE_PATH: /data/app.db
+        replicas: 1
+        strategy: Recreate
     persistence:
       tmp:
         type: emptyDir

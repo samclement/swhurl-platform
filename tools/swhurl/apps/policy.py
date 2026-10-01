@@ -14,6 +14,9 @@ with Helm) and checks the resulting Kubernetes objects:
                       host under the cookie domain; public: host outside it
   ingress-tls         every Ingress host is covered by TLS
   storage-class       claims name local-path or local-path-retain
+  single-writer       a workload that mounts a ReadWriteOnce claim runs at most one replica, and a
+                      Deployment stops the old pod before starting the new one (strategy Recreate):
+                      two processes must never write one volume (a SQLite file, for example)
   otlp-host-ip        a container that uses $(HOST_IP) (the OTLP endpoint) defines HOST_IP
                       from status.hostIP before it; otherwise the SDK gets the literal text
 
@@ -182,6 +185,20 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
             res = container.get('resources') or {}
             if not {'cpu', 'memory'} <= set(res.get('requests') or {}) or 'memory' not in (res.get('limits') or {}):
                 violations.append(('resources', f'{name} lacks CPU/memory requests or a memory limit'))
+
+    rwo = {d['metadata']['name'] for d in docs if d['kind'] == 'PersistentVolumeClaim'
+           and 'ReadWriteOnce' in (d['spec'].get('accessModes') or [])}
+    for doc in docs:
+        spec = pod_spec(doc)
+        claims = {v['persistentVolumeClaim']['claimName'] for v in (spec or {}).get('volumes') or []
+                  if 'persistentVolumeClaim' in v}
+        if spec is None or not claims & rwo or doc['kind'] in ('Job', 'CronJob'):
+            continue
+        where = f"{doc['kind']}/{doc['metadata']['name']}"
+        if doc['spec'].get('replicas', 1) > 1:
+            violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim and runs {doc["spec"]["replicas"]} replicas; at most 1'))
+        if doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate':
+            violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim, so it must stop the old pod first (strategy Recreate)'))
 
     for doc in docs:
         if doc['kind'] == 'Ingress':

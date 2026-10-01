@@ -173,7 +173,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
         def work(job: actions.Job) -> None:
             job.link = changes.open_pr(
-                runner, github, job, slug=f'new-{name}-{env}', title=f'apps: add {name} {env}',
+                runner, github, job, slug=f'new-{name}-{env}', title=f'apps: add {name}/{env}',
                 body=changes.new_app_body(name, env, argv),
                 change=lambda clone: changes.run_app_new(runner, job, clone, argv))
         try:
@@ -196,16 +196,16 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 if env != 'staging':
                     raise actions.ActionError('promote from the staging instance')
                 command, argv, target = 'app-promote', [app, '--from=staging', '--to=prod'], f'{app}/prod'
-                title, make = f'apps: promote {app} staging to prod', f'make app-promote APP={app}'
+                title, make = f'apps: promote {app}/staging to {app}/prod', f'make app-promote APP={app}'
             elif change == 'scale':
                 command, argv, target = 'app-scale', [app, env, *changes.scale_args(form)], f'{app}/{env}'
-                title, make = f'apps: scale {app} {env}', f'make app-scale APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+                title, make = f'apps: scale {app}/{env}', f'make app-scale APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
             elif change == 'expose':
                 command, argv, target = 'app-expose', [app, env, *changes.expose_args(form)], f'{app}/{env}'
-                title, make = f'apps: change access to {app} {env}', f'make app-expose APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+                title, make = f'apps: change access to {app}/{env}', f'make app-expose APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
-                title, make = f'apps: remove {app} {env}', f'make app-remove APP={app} ENV={env}'
+                title, make = f'apps: remove {app}/{env}', f'make app-remove APP={app} ENV={env}'
         except actions.ActionError as error:
             return page(request, 'error.html', status_code=400, error=str(error))
 

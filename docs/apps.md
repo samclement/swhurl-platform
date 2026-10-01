@@ -23,7 +23,7 @@ make app-new NAME=weather-api ARGS="--preset swhurl-web --env staging \
 sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
 make check-apps check-secrets
 git add apps/weather-api clusters/home platform/reloader
-git commit -m "apps: add weather-api staging" && git push
+git commit -m "apps: add weather-api/staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
 ```
 

@@ -84,7 +84,7 @@ Things now change without you (staging deploys, Renovate merges), so Flux sends 
 
 Tapping a notification opens the console. A unit that keeps failing notifies again on each retry (about every 10 minutes).
 
-- **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show it in your own terminal with `sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml` (the part after `https://ntfy.sh/` and before `?`).
+- **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show the topic name in your own terminal with `SOPS_AGE_KEY_FILE=./age.agekey sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml | sed 's|https://ntfy.sh/||; s|?.*||'` (from the repository root; the key file is not in Git).
 - **How:** Flux has no ntfy provider, so the `generic` provider posts each event as JSON and ntfy renders it with the template in the address (`tpl=yes&t=…&m={{.message}}`). Rotate: [operations](operations.md#secrets).
 - `make verify-platform` checks both alerts exist and point at existing providers; Flux reports no delivery status for them.
 

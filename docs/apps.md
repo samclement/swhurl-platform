@@ -187,13 +187,15 @@ The console's **Promote to prod** (on the staging page) opens the same change as
 
 ```bash
 make app-status APP=hello ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
-make app-logs APP=hello ENV=prod       # FOLLOW=true, TAIL=N
+make app-logs APP=hello ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=hello ENV=prod  # fetch Git and reconcile this instance's unit now
 make app-check APP=hello ENV=prod      # the app policy, offline
 make app-scale APP=hello ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
 ```
 
 The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). The edit commands (`app-scale`, `app-expose`, `app-promote`, `app-remove`) change only files exactly as the generator wrote them and refuse a hand-edited one (edit it yourself); each checks its result against the app policy.
+
+When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise `--memory-limit`), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
 
 An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 

@@ -148,6 +148,42 @@ class RunningImagesTests(unittest.TestCase):
         self.assertEqual(app_ops.running_images(waiting), [], 'not pulled yet: nothing runs')
 
 
+class HintTests(unittest.TestCase):
+    SETTINGS = {'memory_limit': '128Mi', 'health_path': '/healthz', 'port': '8080'}
+
+    def problem(self, state, last=None):
+        status = {'ready': False, 'state': state}
+        if last:
+            status['lastState'] = {'terminated': {'reason': last}}
+        pods = {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [status]}}]}
+        (found,) = app_ops.problems(pods, app_ops.Instance('web', 'prod'), self.SETTINGS)
+        return found
+
+    def test_each_common_failure_names_its_fix(self):
+        cases = {
+            'oom': (self.problem({'waiting': {'reason': 'CrashLoopBackOff'}}, last='OOMKilled'),
+                    'ran out of memory (limit 128Mi)', 'make app-scale APP=web ENV=prod'),
+            'pull': (self.problem({'waiting': {'reason': 'ImagePullBackOff'}}), 'cannot pull the image', 'public'),
+            'secret': (self.problem({'waiting': {'reason': 'CreateContainerConfigError'}}),
+                       'apps/web/prod/secret.sops.yaml', 'check-secrets'),
+            'crash': (self.problem({'waiting': {'reason': 'CrashLoopBackOff'}}, last='Error'),
+                      'PREVIOUS=true', 'port other than 8080'),
+            'probe': (self.problem({'running': {}}), '/healthz on port 8080', '--health-path'),
+        }
+        for name, (found, *expected) in cases.items():
+            with self.subTest(name=name):
+                for text in expected:
+                    self.assertIn(text, found.hint)
+        self.assertEqual(cases['oom'][0].message, 'last exit: OOMKilled')
+
+    def test_unknown_reasons_have_no_hint_and_status_prints_hints(self):
+        self.assertEqual(self.problem({'waiting': {'reason': 'SomethingNew'}}).hint, '')
+        instance = app_ops.Instance('web', 'prod')
+        found = app_ops.InstanceStatus(instance, REV, REV, ('True', ''), None, 'x:1', [], [], [], [],
+                                       [self.problem({'waiting': {'reason': 'ImagePullBackOff'}})])
+        self.assertTrue(any(line.startswith('    fix: The node cannot pull') for line in app_ops.status_lines(found)))
+
+
 class LiveExposureTests(unittest.TestCase):
     def test_read_from_the_routes(self):
         signed_in = {'metadata': {'annotations': {'traefik.ingress.kubernetes.io/router.middlewares':

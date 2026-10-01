@@ -6,7 +6,7 @@ from contextlib import redirect_stderr
 
 from starlette.testclient import TestClient
 
-from swhurl.console import actions, cluster, server
+from swhurl.console import actions, changes, cluster, server
 from swhurl.run import FakeRunner, Result
 
 REV = 'main@sha1:abc1234def'
@@ -110,6 +110,35 @@ class AppsTests(unittest.TestCase):
         self.assertIn('connection refused', response.text)
 
 
+class AppSummaryTests(unittest.TestCase):
+    def row(self, env, tag, digest='', app='hello-ts'):
+        return cluster.AppRow(cluster.ops.Instance(app, env), ('True', ''), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
+
+    def test_compares_staging_with_prod(self):
+        cases = {('5-aaaaaaa', 'sha256:1', '4-bbbbbbb', 'sha256:2'): 'ahead',
+                 ('4-bbbbbbb', 'sha256:2', '5-aaaaaaa', 'sha256:1'): 'differs',
+                 ('1.27', 'sha256:1', '1.27', 'sha256:1'): 'same',
+                 ('1.28', 'sha256:3', '1.27', 'sha256:1'): 'differs'}
+        for (st, sd, pt, pd), expected in cases.items():
+            with self.subTest(staging=st, prod=pt):
+                (summary,) = cluster.summaries([self.row('staging', st, sd), self.row('prod', pt, pd)])
+                self.assertEqual(summary.comparison, expected)
+        (only,) = cluster.summaries([self.row('staging', '1')])
+        self.assertEqual(only.comparison, '')
+
+    def test_apps_list_offers_promote_when_staging_differs(self):
+        units = [unit('app-web-staging'), unit('app-web-prod')]
+        releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
+        text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
+        self.assertIn('Staging and prod differ', text)
+        self.assertIn('action="/apps/web/staging/promote"><button  onclick', text, 'enabled with a token')
+
+    def test_every_page_names_app_instances_the_same_way(self):
+        self.assertEqual(cluster.target('app-hello-staging'), ('hello/staging', '/apps/hello/staging'))
+        self.assertEqual(cluster.target('hello/staging'), ('hello/staging', '/apps/hello/staging'))
+        self.assertEqual(cluster.target('infra-base'), ('infra-base', '/units/infra-base'))
+
+
 class AppDetailTests(unittest.TestCase):
     def test_shows_gathered_status(self):
         def get(kind, value):
@@ -129,7 +158,9 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
         self.assertEqual(text.count('<form class="wizard"'), 2, 'the app page uses the New app form layout')
-        self.assertIn('formaction="/apps/web/prod/remove"', text)
+        self.assertIn('action="/apps/web/prod/remove"', text)
+        self.assertIn('<section class="danger">', text)
+        self.assertIn('<strong>Not healthy</strong>', text, 'a failing pod makes the verdict')
         self.assertNotIn('/promote', text, 'promote is offered only on staging')
         self.assertIn('https://web.homelab.swhurl.com', text)
         self.assertIn('CrashLoopBackOff', text)
@@ -168,7 +199,7 @@ class UnitsTests(unittest.TestCase):
         self.assertIn('<details class="section" open>', text, 'a unit not Ready opens the units list')
         self.assertNotIn('<form', text, 'actions live on each unit\'s page')
         self.assertNotIn('<strong>Flux Kustomizations</strong>', text, 'the units list replaces that check group')
-        self.assertIn('app-my-api-staging is suspended', text)
+        self.assertIn('my-api/staging is suspended', text)
 
     def test_unit_page_offers_its_actions_and_explains_them(self):
         c = client(fake())
@@ -195,8 +226,9 @@ class OverviewTests(unittest.TestCase):
     def test_lists_what_needs_attention_with_links(self):
         text = client(fake(**CHECKS)).get('/', headers=WHO).text
         self.assertIn('things need attention', text)
-        self.assertIn('<a href="/units/app-my-api-staging">app-my-api-staging is not Ready', text)
-        self.assertIn('app-my-api-staging is suspended', text)
+        self.assertIn('<a href="/apps/my-api/staging">my-api/staging is not Ready', text)
+        self.assertIn('my-api/staging is suspended', text)
+        self.assertNotIn('app-my-api-staging', text, 'Overview names app instances <app>/<env>')
         self.assertIn('2 app instances', text)
         self.assertIn('more checks need your terminal', text)
 
@@ -292,7 +324,8 @@ class ActionTests(unittest.TestCase):
         page = c.get('/jobs/1', headers=WHO).text
         self.assertIn('✔ applied revision', page)
         self.assertNotIn('http-equiv="refresh"', page)
-        self.assertIn('app-web-prod', c.get('/activity', headers=WHO).text)
+        self.assertIn('reconcile <a href="/apps/web/prod">web/prod</a>', c.get('/activity', headers=WHO).text,
+                      'an app instance is <app>/<env> on every page, not its unit name')
         self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
 
     def test_suspend_patches_only_and_resume_patches_then_waits(self):

@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass
 
 from swhurl.apps import ops
-from swhurl.apps.contract import ENVIRONMENTS
+from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
@@ -26,6 +27,48 @@ class AppRow:
     ready: tuple[str, str]
     suspended: bool
     image: str
+    tag: str = ''
+    digest: str = ''
+    hosts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AppSummary:
+    """One app across its environments, for the Apps list."""
+    app: str
+    envs: dict[str, AppRow]
+    comparison: str  # 'same', 'ahead' (staging has a newer run), 'differs', or '' with one environment
+
+
+def release_image(release: dict | None) -> dict:
+    return (((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {})
+            .get('main', {}).get('containers', {}).get('main', {}).get('image') or {})
+
+
+def release_hosts(release: dict | None) -> tuple[str, ...]:
+    """The hosts Git gives the app's routes."""
+    ingresses = (((release or {}).get('spec') or {}).get('values') or {}).get('ingress') or {}
+    return tuple(h['host'] for ing in ingresses.values() for h in (ing or {}).get('hosts') or [] if h.get('host'))
+
+
+def compare(staging: AppRow, prod: AppRow) -> str:
+    if (staging.digest or prod.digest) and staging.digest == prod.digest or staging.image == prod.image:
+        return 'same'
+    runs = [re.match(AUTO_DEPLOY_TAG_PATTERN, row.tag) for row in (staging, prod)]
+    if all(runs) and int(runs[0]['run']) > int(runs[1]['run']):
+        return 'ahead'
+    return 'differs'
+
+
+def summaries(rows: list[AppRow]) -> list[AppSummary]:
+    by_app: dict[str, dict[str, AppRow]] = {}
+    for row in rows:
+        by_app.setdefault(row.instance.app, {})[row.instance.env] = row
+    out = []
+    for app, envs in sorted(by_app.items()):
+        both = 'staging' in envs and 'prod' in envs
+        out.append(AppSummary(app, envs, compare(envs['staging'], envs['prod']) if both else ''))
+    return out
 
 
 @dataclass(frozen=True)
@@ -73,6 +116,18 @@ def instance_of_unit(name: str) -> ops.Instance | None:
     return instance(app, env) if name.startswith('app-') else None
 
 
+def target(name: str) -> tuple[str, str]:
+    """How every page names a job's or problem's subject: ``(label, link)``. An app instance is always
+    ``<app>/<env>`` and links to its app page, whether given as its unit (``app-<app>-<env>``) or as
+    ``<app>/<env>``; anything else is a Flux unit, by name."""
+    found = instance_of_unit(name)
+    app, _, env = name.partition('/')
+    found = found or (instance(app, env) if env else None)
+    if found:
+        return f'{found.app}/{found.env}', f'/apps/{found.app}/{found.env}'
+    return name, f'/units/{name}'
+
+
 def items(runner: Runner, args: list[str]) -> list[dict]:
     try:
         return (runner.json(args) or {}).get('items', [])
@@ -87,8 +142,10 @@ def apps(runner: Runner) -> list[AppRow]:
         found = instance_of_unit(unit['metadata']['name'])
         if found:
             release = releases.get((found.namespace, found.app))
+            image = release_image(release)
             rows.append(AppRow(found, ready_condition(unit), bool(unit['spec'].get('suspend')),
-                               ops.desired_image(release) if release else 'no HelmRelease'))
+                               ops.desired_image(release) if release else 'no HelmRelease',
+                               image.get('tag', ''), image.get('digest', ''), release_hosts(release)))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 
@@ -147,10 +204,16 @@ def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
     for section, group in checks.sections:
         for entry in group:
             if entry.level in ('bad', 'warn'):
-                unit = entry.message.split(' ', 1)[0] if section == FLUX_SECTION else ''
-                out.append(Problem(entry.level, entry.message, f'/units/{unit}' if unit in names else ''))
-    out += [Problem('warn', f'{u.name} is suspended: Git changes are not applied to it until it is resumed',
-                    f'/units/{u.name}') for u in found if u.suspended]
+                unit, _, rest = entry.message.partition(' ')
+                if section == FLUX_SECTION and unit in names:
+                    label, link = target(unit)
+                    out.append(Problem(entry.level, f'{label} {rest}', link))
+                else:
+                    out.append(Problem(entry.level, entry.message))
+    for u in found:
+        if u.suspended:
+            label, link = target(u.name)
+            out.append(Problem('warn', f'{label} is suspended: Git changes are not applied to it until it is resumed', link))
     return out
 
 

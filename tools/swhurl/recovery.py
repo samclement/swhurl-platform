@@ -171,11 +171,11 @@ def remote_names(runner: Runner, uri: str) -> list[str]:
     return [key.removeprefix(prefix) for key in keys]
 
 
-def upload(runner: Runner, backup_dir: Path, uri: str, out: Callable[[str], None] = print) -> list[Path]:
+def upload(runner: Runner, backup_dir: Path, uri: str, out: Callable[[str], None] = print, *,
+           prefix: str = 'clickstack-mongodb-', suffixes: tuple[str, ...] = ('.archive.gz.age', '.json')) -> list[Path]:
     """Copy every local archive and metadata file missing from ``uri``; files are already age-encrypted."""
     present = set(remote_names(runner, uri))
-    local = sorted(p for p in backup_dir.glob('clickstack-mongodb-*')
-                   if p.name.endswith(('.archive.gz.age', '.json')))
+    local = sorted(p for p in backup_dir.glob(f'{prefix}*') if p.name.endswith(suffixes))
     missing = [p for p in local if p.name not in present]
     for path in missing:
         runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)

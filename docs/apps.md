@@ -71,7 +71,7 @@ The console's **New app** form opens the same change as a pull request ([console
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)) |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
-| `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Not yet backed up ([plan](plan.md) item 12) |
+| `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Backed up daily with the platform's backups ([operations](operations.md#backups-and-recovery)) |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 

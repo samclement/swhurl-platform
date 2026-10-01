@@ -62,6 +62,8 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
+elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
+    emit({'items': []})
 elif any(a.startswith('alerts.notification') for a in argv):
     emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]})
 elif any(a.startswith('providers.notification') for a in argv):

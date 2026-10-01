@@ -100,6 +100,10 @@ clickstack-bootstrap: ## Live: register the ClickStack admin and set the team in
 backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb
 
+.PHONY: backup-sqlite
+backup-sqlite: ## Encrypted backup of every app's SQLite database to BACKUP_DIR/sqlite and S3, then prune
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-sqlite
+
 # Offline checks (CI runs `make check`) -------------------------------------------
 
 .PHONY: check

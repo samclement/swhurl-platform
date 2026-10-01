@@ -1,6 +1,6 @@
-# Managed template for the ClickStack MongoDB backup (make host-backup)
+# Managed template for the nightly backups (make host-backup): ClickStack MongoDB, then app SQLite databases
 [Unit]
-Description=Encrypted ClickStack MongoDB backup, copied to S3
+Description=Encrypted ClickStack MongoDB and app SQLite backups, copied to S3
 Wants=network-online.target
 After=network-online.target k3s.service
 
@@ -16,6 +16,8 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 # systemd escapes for $ and %).
 ExecStartPre=+/bin/sh -c 'f=/var/log/swhurl-platform/swhurl-backup-mongodb.log; if [ "$$(stat -c %%s "$$f" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$$f" "$$f.1"; fi'
 ExecStart=/usr/bin/make backup-mongodb
+# Runs only if the MongoDB backup succeeded; make verify-platform flags either one going stale.
+ExecStart=/usr/bin/make backup-sqlite
 # Output goes to a file the OTel DaemonSet reads (service.name from the file name);
 # the journal keeps start, finish and failure lines.
 StandardOutput=append:/var/log/swhurl-platform/swhurl-backup-mongodb.log

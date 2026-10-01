@@ -111,13 +111,15 @@ Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both
 | Manifests and encrypted Secrets | Irreplaceable | GitHub |
 | age private key | Irreplaceable | Encrypted off-host copy (location kept outside Git) |
 | ClickStack MongoDB (team, users, sources, dashboards) | Irreplaceable | Daily `make backup-mongodb` to this host and S3; data volume on `local-path-retain` |
+| App SQLite databases (`--database sqlite`) | Irreplaceable | Daily `make backup-sqlite` to this host and S3 (`app-sqlite/<namespace>/`); data volume on `local-path-retain` |
 | ClickHouse telemetry | Expendable | Expires after 30 days; ClickHouse's own logs after 7 |
 | Cluster state (k3s SQLite datastore, `/var/lib/rancher/k3s/server/db`) | Reconstructible | Rebuilt from Git by Flux ([bootstrap](bootstrap.md)); not backed up |
 
 ```bash
 make backup-mongodb              # encrypted dump to ~/.local/state/swhurl-platform/backups, then S3
 make live-test-restore-mongodb   # restores the latest into a throwaway namespace and checks it
-make host-backup                 # install the daily timer (03:30, catches up after downtime)
+make backup-sqlite               # every app SQLite database, encrypted, then S3
+make host-backup                 # install the daily timer (03:30: MongoDB, then SQLite; catches up after downtime)
 systemctl status swhurl-backup-mongodb  # last run; output: /var/log/swhurl-platform/swhurl-backup-mongodb.log
 ```
 
@@ -125,7 +127,9 @@ The backup streams `mongodump` through `age`, so no plaintext touches disk, and 
 
 Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that runs as the user who installed it, so it runs whether or not you are logged in. Its output goes to `/var/log/swhurl-platform/swhurl-backup-mongodb.log` and to ClickStack as service `swhurl-backup-mongodb` ([services](services.md#clickstack-and-otel)); the journal keeps start, finish and failure lines. `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
 
-**Targets:** at most 24 hours of MongoDB changes lost (daily backups); about an hour from a bare host to working ClickStack.
+**App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count and checksum. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old. A tested restore procedure is not written yet ([plan](plan.md) item 12).
+
+**Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.
 
 **Recovering on a new machine** needs Git (GitHub), the age private key (its off-host copy), the newest archive and metadata from S3 (`aws s3 cp s3://…/clickstack-mongodb/<name> .`), and read access to that bucket. Follow [bootstrap](bootstrap.md) to step 4, restore MongoDB as below, then run `make clickstack-bootstrap` and `make verify-platform`. The Google OAuth client and every other credential come from SOPS.
 

@@ -357,6 +357,10 @@ Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read 
 
 `073c8a0` (CI passed on `985dbd6`, which contains it). `make live-test-app-template` passed: the `smoke-data-prod` fixture, now generated with `--database sqlite --database-size 64Mi`, became Ready through its own Flux unit with its claim bound on `local-path-retain`, data written to `/data`, `DATABASE_PATH=/data/app.db` in the container, one replica and `strategy: Recreate`; the other two fixtures passed as before and all test instances were removed. app-template 5.2.1 already defaults Deployments to `Recreate` (all live apps run with it); the generator now states it, and the `single-writer` policy rule refuses more than one replica or a rolling update on an instance that mounts a ReadWriteOnce claim (unit tests). Not exercised: an app that actually uses SQLite; backups of SQLite databases (not built yet).
 
+## App SQLite backups (2 October 2026)
+
+`make backup-sqlite` tried against a throwaway namespace `sqlite-test` (labelled, deleted afterwards): a Deployment running as UID 65532 with `DATABASE_PATH=/data/app.db` on a `local-path` claim, holding a WAL-mode database with one table and two rows, kept running throughout. With `BACKUP_DIR` in a scratch directory and the S3 upload off, the backup pod ran as the app's user, the copy passed `integrity_check`, and the run wrote `sqlite-<UTC>.db.age` and its metadata (source, table count, checksum), both mode 600, then deleted the pod. Decrypted with the age key, the copy passed `integrity_check` and held both rows. `make verify-platform` with the same `BACKUP_DIR` reported the backup fresh under "App SQLite backups". Not exercised: the S3 upload to `app-sqlite/<namespace>/` (the shared upload code is unit-tested and live for MongoDB); the systemd timer running it (needs `make host-backup`); a restore into a running app.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

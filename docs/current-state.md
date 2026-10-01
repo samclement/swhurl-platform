@@ -328,6 +328,13 @@ Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who c
 
 `a9b5a90`, deployed by the publish workflow (`c7f5485`). Read-only checks on the deployed console (port-forward, identity `claude-live-test (port-forward)`; no jobs started): `/apps`, all four app pages, `/`, `/platform` and `/activity` 200; each app page had one verdict, the staging/prod switch and the Uninstall section apart. During the check Flux image automation deployed `hello-ts` `6-e7270fa` to staging (`6c12ad5`); while units applied the new revision the pages showed **Updating**, then **Healthy**. Afterwards Apps showed `hello` "Same image in both" and `hello-ts` "Staging is ahead of prod" (`6-e7270fa` against `4-19fd686`) with **Promote to prod**, also offered on `hello-ts/staging` (not pressed). Platform's Apps group shows each unit's `<app>/<env>` name beside it.
 
+## App dependency updates through Renovate (1 October 2026)
+
+- **Registration**: with the Renovate GitHub App on all repositories, `swhurl-app-template-typescript` and `hello-ts` (created from it) got Dependency Dashboards and update pull requests without any per-repository step, and Renovate applied the shared preset (the OpenTelemetry packages appear as one grouped update).
+- **Checks** (template PR #1, `hello-ts` PR #4): pull requests run type-check, `npm test` (`test/healthz.test.mjs`), an image build and a smoke test of the image with a read-only root filesystem; only `main` pushes. Both configs passed `renovate-config-validator --strict`. A throwaway pull request that broke the OpenTelemetry preload path passed the unit tests and failed the smoke test with `ERR_MODULE_NOT_FOUND` (closed, branch deleted). Merging `hello-ts` PR #4 at 07:06:42 deployed `6-e7270fa` to staging on its own.
+- **Automerge, end to end**: Renovate rebased its four open pull requests onto the new checks (all passed by 07:15). It merges only when it runs; after the dashboard's "run again" box was ticked at 07:57 it merged `hello-ts` #1 (`@types/node`) at 08:04:19. That push built `11-e8db915`, the ImagePolicy picked it at 08:06:15, `fluxcdbot` committed the pin (`d0c6560`) and staging ran it, with no step by hand. GitHub's "Allow auto-merge" stays off in both repositories (without branch protection it would not wait for checks; Renovate's own automerge does).
+- Not exercised: an app without tests (`"automerge": false`, documented), and a failing Renovate update reaching staging.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

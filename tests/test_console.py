@@ -111,6 +111,22 @@ class AppsTests(unittest.TestCase):
         self.assertIn('connection refused', response.text)
 
 
+class PolishTests(unittest.TestCase):
+    def test_long_hashes_are_shortened_with_the_full_value_on_hover_and_still_escaped(self):
+        sha = '1edf37052ebd0a94814cac0407f3380aa6a9c614'
+        self.assertEqual(str(server.short_hashes(f'Applied revision: main@sha1:{sha}')),
+                         f'Applied revision: main@sha1:<span class="hash" title="{sha}">1edf37052ebd…</span>')
+        self.assertEqual(str(server.short_hashes('<script>1edf370</script>')), '&lt;script&gt;1edf370&lt;/script&gt;')
+
+    def test_header_breadcrumbs_and_updated_time(self):
+        c, jobs, _ = operate(fake())
+        jobs._jobs[3] = actions.Job(3, 'reconcile', 'app-web-prod', 'sam@swhurl.com', jobs.now())
+        job = c.get('/jobs/3', headers=WHO).text
+        self.assertIn('<a href="/activity">Activity</a> › Job #3', job)
+        self.assertIn('↻ Refresh</a>', job)
+        self.assertRegex(job, r'Updated \d\d:\d\d ·')
+
+
 class StateTests(unittest.TestCase):
     def test_one_vocabulary_and_waiting_is_updating_not_failing(self):
         state = cluster.state_of

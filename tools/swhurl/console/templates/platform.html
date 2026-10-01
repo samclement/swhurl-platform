@@ -18,7 +18,7 @@
 <details class="section"{{ ' open' if failing }}>
   <summary><strong>{{ section }}</strong> · {% if failing %}<span class="bad">{{ failing | length }} of {{ group | length }} not passing</span>{% else %}<span class="ok">{{ group | length }} passing</span>{% endif %}</summary>
   <ul class="items">
-    {% for e in group %}<li>{{ st.check(e.level) }} {{ e.message }}</li>{% endfor %}
+    {% for e in group %}<li>{{ st.check(e.level) }} {{ e.message | short }}</li>{% endfor %}
   </ul>
 </details>
 {% endfor %}

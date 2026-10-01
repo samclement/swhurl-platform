@@ -4,11 +4,12 @@
 {% block head %}{% if job.state == 'running' %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
 {% block main %}
 {% set label, link = target(job.unit) %}
+<p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
   · {{ st.job(job) }} <span class="state {{ {'succeeded': 'healthy', 'failed': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
 <p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }}{% else %}; this page refreshes every 2 seconds{% endif %}.</p>
 {% if job.link %}<p><a href="{{ job.link }}">{{ job.link }}</a></p>{% endif %}
-<pre>{% for line in job.lines %}{{ line }}
+<pre>{% for line in job.lines %}{{ line | short }}
 {% else %}waiting for output…{% endfor %}</pre>
 <p><a href="{{ link }}">Back to {{ label }}</a> · <a href="/activity">All activity</a></p>
 {% endblock %}

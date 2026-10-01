@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -21,6 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
+from markupsafe import Markup, escape
 from starlette.templating import Jinja2Templates
 
 from swhurl.apps import contract, ops
@@ -34,6 +36,15 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / 'templates')
 # A Ready status ('True', 'False', 'Unknown') as a CSS class.
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
+HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
+
+
+def short_hashes(text: object) -> Markup:
+    """Escape ``text`` and shorten each commit SHA or digest to 12 characters, the full value on hover."""
+    return Markup(HASH.sub(lambda m: f'<span class="hash" title="{m[0]}">{m[1]}…</span>', str(escape(text))))
+
+
+TEMPLATES.env.filters['short'] = short_hashes
 TEMPLATES.env.globals['target'] = cluster.target
 
 
@@ -62,7 +73,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def page(request: Request, name: str, status_code: int = 200, **context) -> Response:
         context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
-                       read_at=dt.datetime.now().astimezone().strftime('%H:%M:%S'),
+                       read_at=dt.datetime.now().astimezone().strftime('%H:%M'),
                        running_jobs=[j for j in jobs.recent() if j.state == 'running'])
         context.setdefault('github', github)
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)

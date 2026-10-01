@@ -182,9 +182,9 @@ def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -
         return (f'A Secret or key it uses is missing: set the values in apps/{app}/{env}/secret.sops.yaml '
                 '(make check-secrets finds REPLACE_ME), commit and push.')
     if reason in ('CrashLoopBackOff', 'Error'):
+        port = settings.get('port', "the instance's port")
         return (f'It starts and exits: read why with make app-logs APP={app} ENV={env} PREVIOUS=true. Usual causes: '
-                f'it listens on a port other than {settings.get("port", "the instance\'s port")}, or writes outside /tmp '
-                '(the root filesystem is read-only).')
+                f'it listens on a port other than {port}, or writes outside /tmp (the root filesystem is read-only).')
     if reason == 'not ready':
         probe = f'{settings["health_path"]} on port {settings["port"]}' if 'health_path' in settings else 'its health path'
         return (f'Running, but not answering its readiness check ({probe}): make the app answer that path, or change '

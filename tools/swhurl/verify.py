@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, clickstack, flux, images, platform, recovery
+from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -269,6 +269,49 @@ def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None 
             report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 
 
+def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
+                         now: dt.datetime | None = None) -> None:
+    """Each app SQLite database's newest backup, locally and off-host, is younger than BACKUP_MAX_AGE_HOURS (26)."""
+    env = os.environ if env is None else env
+    report.section('App SQLite backups')
+    try:
+        databases = sqlite_backup.find(runner)
+    except (CommandError, recovery.RecoveryError, KeyError, TypeError) as error:
+        report.bad(f'cannot find app SQLite databases: {error}')
+        return
+    if not databases:
+        report.ok('no app has a SQLite database')
+        return
+    now = now or dt.datetime.now(dt.UTC)
+    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
+    backup_dir = Path(env.get('BACKUP_DIR') or recovery.DEFAULT_BACKUP_DIR)
+    uri = env.get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
+
+    def newest(names: list[str]) -> dt.datetime | None:
+        times = [dt.datetime.strptime(m[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.UTC)
+                 for m in map(sqlite_backup.PATTERN.match, names) if m]
+        return max(times) if times else None
+
+    for db in databases:
+        local = backup_dir / 'sqlite' / db.namespace
+        places = [(str(local), lambda local=local: [p.name for p in local.iterdir()] if local.is_dir() else [])]
+        if uri:
+            places.append((f'{uri}{db.namespace}/', lambda ns=db.namespace: recovery.remote_names(runner, f'{uri}{ns}/')))
+        for where, names in places:
+            try:
+                taken = newest(names())
+            except (CommandError, recovery.RecoveryError, TypeError) as error:
+                report.bad(f'{db.name}: cannot list backups in {where}: {error}')
+                continue
+            if taken is None:
+                report.bad(f'{db.name}: no SQLite backup in {where} (run: make backup-sqlite)')
+            elif now - taken > limit:
+                report.bad(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
+                           'check: systemctl status swhurl-backup-mongodb')
+            else:
+                report.ok(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
+
+
 def check_console(runner: Runner, report: Report) -> None:
     """Warn if the console image's inputs changed since it was built.
 
@@ -462,6 +505,7 @@ CHECKS = (
     Check('alerts', frozenset({'cluster'}), check_alerts),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
+    Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),

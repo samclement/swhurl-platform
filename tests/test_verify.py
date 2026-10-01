@@ -49,6 +49,7 @@ def healthy(**overrides):
         'pvc': {'spec': {'volumeName': 'pv-1'}},
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
         'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
+        'deployments': {'items': []},
         'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
             'tag': CONSOLE_TAG}}}}}}}},
         'git-diff': Result((), 0),
@@ -110,6 +111,7 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
             .on('kubectl', 'get', 'pv', handler=answer('pv'))
             .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
+            .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments'))
             .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
             .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
             .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
@@ -150,7 +152,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                           '\n== Push Webhook ==', '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -344,7 +346,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] * 2)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, push-webhook, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

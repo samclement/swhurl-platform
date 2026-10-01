@@ -33,6 +33,7 @@ COMMANDS = {
     'live-test-app-template': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
+    'backup-sqlite': ('swhurl.sqlite_backup', 'backup_sqlite', 'Encrypted backup of every app SQLite database, then prune and copy to S3'),
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
     'console-image': ('swhurl.images', 'main', 'Pin the console HelmRelease to the image published for this checkout (Git edit)'),

@@ -24,6 +24,8 @@ ISSUERS = Path('infra/issuers')
 INGESTION_SECRET = Path('platform/otel/secret.sops.yaml')
 # Off-host copies of the encrypted MongoDB backups (versioned, 90-day lifecycle; see docs/operations.md).
 BACKUP_S3_URI = 's3://swhurl-platform-backups-110927251694/clickstack-mongodb/'
+# App SQLite backups: one prefix per namespace below this (backup-sqlite).
+SQLITE_S3_URI = 's3://swhurl-platform-backups-110927251694/app-sqlite/'
 # The collectors' copy of the ClickStack team ingestion key (namespace logging).
 INGESTION_SECRET_NAME = 'clickstack-ingestion-key'
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'

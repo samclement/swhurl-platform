@@ -45,6 +45,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), prune to 7 daily + 4 weekly (`PRUNE=false` skips), then upload files the bucket lacks to `BACKUP_S3_URI` (empty skips; AWS CLI default credentials or `AWS_PROFILE`) | Cluster (read), local, S3 |
+| `backup-sqlite` † | For each app with a SQLite database (`DATABASE_PATH`): a short-lived pod running as the app's user copies it with `sqlite3 .backup`, checks it (`integrity_check`), and streams it through age to `BACKUP_DIR/sqlite/<namespace>/`; prune to 7 daily + 4 weekly, then upload to `SQLITE_S3_URI<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
 
 ## Offline checks
 
@@ -74,7 +75,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb`, and so the S3 upload, at 03:30 | Host |
+| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb` and then `backup-sqlite`, and so the S3 uploads, at 03:30 | Host |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`) | Host |
 
 Both use [`host/install-timer.sh`](../host/install-timer.sh): a system unit that runs a script from this checkout as you, so edits to the script or `host/dns.env` apply at the next run; only unit template changes need a reinstall. Both ask for `sudo`, so run them in your own terminal. Output goes to `/var/log/swhurl-platform/<unit>.log` and ClickStack.

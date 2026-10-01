@@ -324,6 +324,10 @@ Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who c
 
 `1a71d76`, deployed by the publish workflow (`3392930`). Navigation is Overview · Apps · Platform · Activity with **+ New app**; Platform merges the units and checks pages, each unit has its own page with its actions, Activity lists open console PRs. On the deployed console (port-forward with the identity and `Origin` headers): `/`, `/apps`, `/platform`, `/units/app-hello-staging`, `/activity`, `/new` and `/apps/hello/staging` 200; `/units` and `/jobs` 301 to `/platform#units` and `/activity`; Overview said "Everything is healthy" and listed open console PRs from GitHub without error (none open). A reconcile of `app-hello-staging` from its unit page showed "1 running" in the header, succeeded, and then appeared on Activity, Overview's recent activity and the unit's page, with the job page linking back to the unit. Through Traefik: HTTP 301 to HTTPS; signed-out HTTPS 302 to Google, including `/units/infra-base`.
 
+## Console redesign step 2: apps by app (1 October 2026)
+
+`a9b5a90`, deployed by the publish workflow (`c7f5485`). Read-only checks on the deployed console (port-forward, identity `claude-live-test (port-forward)`; no jobs started): `/apps`, all four app pages, `/`, `/platform` and `/activity` 200; each app page had one verdict, the staging/prod switch and the Uninstall section apart. During the check Flux image automation deployed `hello-ts` `6-e7270fa` to staging (`6c12ad5`); while units applied the new revision the pages showed **Updating**, then **Healthy**. Afterwards Apps showed `hello` "Same image in both" and `hello-ts` "Staging is ahead of prod" (`6-e7270fa` against `4-19fd686`) with **Promote to prod**, also offered on `hello-ts/staging` (not pressed). Platform's Apps group shows each unit's `<app>/<env>` name beside it.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

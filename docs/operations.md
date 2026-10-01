@@ -59,6 +59,8 @@ Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-imag
 3. `sops platform/image-automation/secret.sops.yaml`: replace `identity` and `identity.pub` with the two files' contents, then delete `/tmp/flux-deploy*`. `make check-secrets`, commit, push, `make reconcile UNIT=platform-image-automation`.
 4. `make verify-platform` shows Image Automation Ready; then delete the old deploy key on GitHub.
 
+Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops` both `platform/alerts/secret-failures.sops.yaml` and `secret-deploys.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in each `address`; `make check-secrets`, commit, push, `make reconcile UNIT=platform-alerts`; subscribe to the new topic in the ntfy app and unsubscribe from the old.
+
 ## Certificate mode
 
 `CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.

@@ -1,0 +1,64 @@
+# Push notifications to the ntfy app (docs/services.md#alerts). Flux has no ntfy provider, so the
+# generic provider posts each event as JSON and ntfy renders it with the template in the address
+# (secret-*.sops.yaml). Every unit and source lives in flux-system, and a unit turns red when a
+# release in it fails, so these sources cover every app and platform component.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: ntfy-failures
+  namespace: flux-system
+spec:
+  type: generic
+  secretRef:
+    name: ntfy-failures
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: ntfy-deploys
+  namespace: flux-system
+spec:
+  type: generic
+  secretRef:
+    name: ntfy-deploys
+---
+# Failures: a unit that cannot apply or whose workloads fail their health check (an app's 3-minute
+# fail-fast included), a source that cannot fetch, and image automation that cannot scan or push.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: failures
+  namespace: flux-system
+spec:
+  providerRef:
+    name: ntfy-failures
+  eventSeverity: error
+  eventSources:
+    - kind: Kustomization
+      name: '*'
+    - kind: GitRepository
+      name: '*'
+    - kind: HelmRepository
+      name: '*'
+    - kind: ImageRepository
+      name: '*'
+    - kind: ImagePolicy
+      name: '*'
+    - kind: ImageUpdateAutomation
+      name: '*'
+---
+# Staging deploys: each commit image automation pushes (a new app image going to staging).
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: staging-deploys
+  namespace: flux-system
+spec:
+  providerRef:
+    name: ntfy-deploys
+  eventSeverity: info
+  eventSources:
+    - kind: ImageUpdateAutomation
+      name: '*'
+  inclusionList:
+    - '.*pushed commit.*'

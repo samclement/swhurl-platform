@@ -59,6 +59,9 @@ def healthy(**overrides):
         'automation': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}},
         'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
+        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}},
+                             {'metadata': {'name': 'staging-deploys'}, 'spec': {'providerRef': {'name': 'ntfy-deploys'}}}]},
+        'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         'hooks': [{'active': True, 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
                    'last_response': {'code': 200, 'message': 'OK'}}],
@@ -113,6 +116,8 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
                 handler=answer('receiver'))
             .on('gh', 'api', handler=answer('hooks'))
+            .on('kubectl', '-n', 'flux-system', 'get', 'alerts.notification.toolkit.fluxcd.io', handler=answer('alerts'))
+            .on('kubectl', '-n', 'flux-system', 'get', 'providers.notification.toolkit.fluxcd.io', handler=answer('providers'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imageupdateautomations.image.toolkit.fluxcd.io',
                 handler=answer('automation'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
@@ -145,7 +150,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Retention ==', '\n== Backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==',
                           '\n== Push Webhook ==', '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -303,6 +308,13 @@ class ConsoleTokenTests(unittest.TestCase):
         _, report, _ = run(healthy())
         self.assertIn('[OK] w-staging: newest image 12-abcdef0', report.lines)
 
+    def test_alert_problems(self):
+        _, report, text = run(healthy(alerts={'items': []}))
+        self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
+                      report.lines, text)
+        _, report, text = run(healthy(providers={'items': []}))
+        self.assertIn('[BAD] alert failures points at provider ntfy-failures, which does not exist', report.lines, text)
+
     def test_push_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
         cases = {
@@ -330,7 +342,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2)
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] * 2)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, push-webhook, console, console-token',
                       report.lines)

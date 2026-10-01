@@ -30,7 +30,8 @@
 <h2 class="bad">Failing pods</h2>
 <table class="compact">
   <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
-  {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>{% endfor %}
+  {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>
+  {% if p.hint %}<tr><td></td><td colspan="2"><strong>Fix:</strong> {{ p.hint }}</td></tr>{% endif %}{% endfor %}
 </table>
 {% endif %}
 

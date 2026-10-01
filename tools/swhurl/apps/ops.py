@@ -2,7 +2,8 @@
 ``app-<app>-<env>``, HelmRelease ``<app>``).
 
     app status    APP ENV   desired vs applied revision and image, replicas, route, failure reason
-    app logs      APP ENV   recent logs from the instance's workload (FOLLOW=true to stream, TAIL=N)
+    app logs      APP ENV   recent logs from the instance's workload (FOLLOW=true to stream, TAIL=N,
+                            PREVIOUS=true for the last crashed container)
     app reconcile APP ENV   fetch Git and reconcile only this instance
     app check     APP ENV   render and check this instance against the app contract (offline)
 """
@@ -87,6 +88,7 @@ class Problem:
     pod: str
     reason: str
     message: str
+    hint: str = ''  # what usually causes this on the platform, and the fix
 
 
 @dataclass(frozen=True)
@@ -149,7 +151,7 @@ def replicas(workloads: dict | None) -> list[Replicas]:
     return found
 
 
-def problems(pods: dict | None) -> list[Problem]:
+def problems(pods: dict | None, instance: Instance | None = None, settings: dict[str, str] | None = None) -> list[Problem]:
     found = []
     for pod in (pods or {}).get('items', []):
         for status in (pod.get('status') or {}).get('containerStatuses') or []:
@@ -157,9 +159,37 @@ def problems(pods: dict | None) -> list[Problem]:
                 continue
             state = status.get('state') or {}
             waiting, terminated = state.get('waiting') or {}, state.get('terminated') or {}
-            found.append(Problem(pod['metadata']['name'], waiting.get('reason') or terminated.get('reason') or 'not ready',
-                                 (waiting.get('message') or '')[:160]))
+            last = ((status.get('lastState') or {}).get('terminated') or {}).get('reason', '')
+            reason = waiting.get('reason') or terminated.get('reason') or 'not ready'
+            message = (waiting.get('message') or '')[:160]
+            if last and last != reason:
+                message = f'last exit: {last}' + (f'; {message}' if message else '')
+            found.append(Problem(pod['metadata']['name'], reason, message,
+                                 hint(reason, last, instance, settings or {}) if instance else ''))
     return found
+
+
+def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -> str:
+    """The usual cause of a container problem on this platform, and the command that fixes it."""
+    app, env = instance.app, instance.env
+    if 'OOMKilled' in (reason, last):
+        return (f'It ran out of memory (limit {settings.get("memory_limit", "?")}): raise it with '
+                f'make app-scale APP={app} ENV={env} ARGS="--memory-limit 256Mi", or Scale in the console.')
+    if reason in ('ImagePullBackOff', 'ErrImagePull', 'InvalidImageName'):
+        return ('The node cannot pull the image: check the tag and digest exist, and that the GHCR package is public '
+                '(the cluster has no registry credentials; on GitHub: the package\'s settings, Change visibility).')
+    if reason == 'CreateContainerConfigError':
+        return (f'A Secret or key it uses is missing: set the values in apps/{app}/{env}/secret.sops.yaml '
+                '(make check-secrets finds REPLACE_ME), commit and push.')
+    if reason in ('CrashLoopBackOff', 'Error'):
+        return (f'It starts and exits: read why with make app-logs APP={app} ENV={env} PREVIOUS=true. Usual causes: '
+                f'it listens on a port other than {settings.get("port", "the instance\'s port")}, or writes outside /tmp '
+                '(the root filesystem is read-only).')
+    if reason == 'not ready':
+        probe = f'{settings["health_path"]} on port {settings["port"]}' if 'health_path' in settings else 'its health path'
+        return (f'Running, but not answering its readiness check ({probe}): make the app answer that path, or change '
+                '--health-path/--port to match it (edit the HelmRelease).')
+    return ''
 
 
 def release_settings(release: dict | None) -> dict[str, str]:
@@ -170,6 +200,9 @@ def release_settings(release: dict | None) -> dict[str, str]:
              'cpu': (resources.get('requests') or {}).get('cpu'),
              'memory': (resources.get('requests') or {}).get('memory'),
              'memory_limit': (resources.get('limits') or {}).get('memory')}
+    probe = (((((controller.get('containers') or {}).get('main') or {}).get('probes') or {}).get('readiness') or {})
+             .get('spec') or {}).get('httpGet') or {}
+    found |= {'health_path': probe.get('path'), 'port': probe.get('port')}
     return {k: str(v) for k, v in found.items() if v is not None} if release else {}
 
 
@@ -197,7 +230,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         replicas=replicas(workloads),
         routes=[rule.get('host') for ingress in ingresses for rule in ingress['spec'].get('rules') or []],
         certificates=[(cert['metadata']['name'], ready_condition(cert)[0]) for cert in certificates],
-        problems=problems(pods),
+        problems=problems(pods, instance, release_settings(release)),
         settings=release_settings(release),
         exposure=live_exposure(ingresses),
     )
@@ -226,7 +259,10 @@ def status_lines(found: InstanceStatus) -> list[str]:
     lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
     if found.problems:
         lines.append('Problems')
-        lines += [f'  {p.pod}: {p.reason} {p.message}'.rstrip() for p in found.problems]
+        for p in found.problems:
+            lines.append(f'  {p.pod}: {p.reason} {p.message}'.rstrip())
+            if p.hint:
+                lines.append(f'    fix: {p.hint}')
     return lines
 
 
@@ -240,9 +276,11 @@ def status(runner: Runner, instance: Instance) -> int:
     return 0
 
 
-def logs(runner: Runner, instance: Instance, *, tail: str = '100', follow: bool = False) -> int:
+def logs(runner: Runner, instance: Instance, *, tail: str = '100', follow: bool = False,
+         previous: bool = False) -> int:
+    """Recent logs; ``previous`` shows the last crashed container's output (for CrashLoopBackOff)."""
     args = ['kubectl', '-n', instance.namespace, 'logs', f'deploy/{instance.app}', '--all-containers',
-            f'--tail={tail}']
+            f'--tail={tail}', *(['--previous'] if previous else [])]
     return runner.attached([*args, '--follow'] if follow else args)
 
 
@@ -269,7 +307,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             return status(runner, instance)
         if action == 'logs':
             return logs(runner, instance, tail=os.environ.get('TAIL', '100'),
-                        follow=os.environ.get('FOLLOW', 'false') == 'true')
+                        follow=os.environ.get('FOLLOW', 'false') == 'true',
+                        previous=os.environ.get('PREVIOUS', 'false') == 'true')
         return reconcile(runner, instance)
     except CommandError as error:
         print(f'[ERROR] {error}', file=sys.stderr)

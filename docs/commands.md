@@ -24,7 +24,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
 | `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
 | `app-status APP= ENV=` | Whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
-| `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`) | Cluster (read) |
+| `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
 | `app-scale APP= ENV= ARGS="..."` | Change `--replicas` (0 to 10), `--cpu`, `--memory` or `--memory-limit` | Git |

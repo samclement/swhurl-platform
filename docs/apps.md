@@ -155,7 +155,7 @@ The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "
    Staging accepts a tag alone, but `make app-promote` refuses an image without a digest (production requires one), so set both.
 3. `make app-check APP=<app> ENV=staging`, commit, push (or open a pull request and merge it). The [push webhook](services.md#push-webhook) has Flux fetch it within seconds; its unit applies the new values and helm-controller rolls the Deployment.
 
-**Check it:** `make app-status APP=<app> ENV=staging` compares the running image with Git by digest (Kubernetes records a running image as `repository@digest`, without the tag): `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails ([operate an instance](#operate-an-instance)).
+**Check it:** `make app-status APP=<app> ENV=staging` compares the running image with Git by digest: each pod's spec names the digest it was given, and a pull by digest guarantees that content (the node's own image ID can name another digest for the same image, when two builds published identical content). It reports `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails ([operate an instance](#operate-an-instance)).
 
 **Roll back** staging by reverting the commit that changed the pin; for an automatic app, a newer image then replaces it again, so fix forward in the app, or remove the markers first. Chart versions are different: Renovate opens pull requests for app-template in this repository, and one merged pull request updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
 

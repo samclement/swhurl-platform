@@ -347,6 +347,12 @@ Found during the check, not yet fixed: `hello-ts/staging` shows **Updating** ("d
 
 Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read from the pod's spec when it pins a digest, the node's ID otherwise. `make app-status APP=hello-ts ENV=staging` went from `different image` (before, on `main`) to `running: matches desired`; on the deployed console `hello-ts/staging`, `hello-ts/prod` and `hello/staging` read Healthy and Overview "Everything is healthy".
 
+## Shared app workflow, failure hints and alerts (1 October 2026)
+
+- **Shared app workflow** (template PRs #6, #8; `hello-ts` PR #7): the checks and image build moved to the template's reusable `app.yml`, which each app's `container.yml` calls at `@main`. Pull requests ran it as `app / Check, build and smoke-test`; the template's `main` published `22-68f1e7e` under its own name, and `hello-ts`'s merge published `20-2ccbad1`, which image automation deployed to staging (19:10:03). Future CI fixes reach apps without copying.
+- **Failure hints** (`122d88d`, CI fix `eb23e58`): `make app-status` and the app page add a fix line for out of memory (read from the previous exit), image pull errors, missing Secret values, crash loops and failing readiness checks; `make app-logs PREVIOUS=true` passes `--previous` to kubectl (shown against a healthy pod, which has no previous container). `122d88d` failed CI for one run (an f-string valid only on Python 3.12+); no console image was published from it.
+- **Alerts** (`d1a9c32`): `platform-alerts` Ready; `make verify-platform` shows both alerts pointing at their providers. A push to `hello-ts` at 19:17:47 UTC produced a "Staging deploy" ntfy message at 19:19:06 ("pushed commit '4961b90' to branch 'main'", priority 3, rocket tag), read back from the topic. The failure template rendered correctly from a sample Flux event posted straight to ntfy; a real Flux failure event has not been sent yet.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

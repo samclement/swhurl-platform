@@ -32,6 +32,16 @@ UNITS = [unit('cluster-sources'), unit('infra-base'), unit('platform-oauth2-prox
 RELEASES = [release('web-prod', 'web')]
 
 
+TRAEFIK_REDIRECTS = {'spec': {'template': {'spec': {'containers': [
+    {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}}
+CHECKS = {'kubectl get --raw=/version': '{}',
+          'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
+          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
+              json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
+          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []})}
+"""Answers for the cluster-only platform checks (Overview and Platform run them)."""
+
+
 def fake(units=UNITS, releases=RELEASES, **extra):
     runner = FakeRunner()
     runner.on(*cluster.UNITS[:5], stdout=json.dumps({'items': units}))
@@ -48,7 +58,7 @@ def client(runner, **kwargs):
 class IdentityTests(unittest.TestCase):
     def test_pages_need_the_oauth2_proxy_identity(self):
         runner = fake()
-        for path in ('/', '/units', '/platform', '/apps/web/prod'):
+        for path in ('/', '/apps', '/units', '/units/infra-base', '/platform', '/activity', '/apps/web/prod'):
             with self.subTest(path):
                 response = client(runner).get(path)
                 self.assertEqual(response.status_code, 401)
@@ -64,8 +74,8 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_identity_is_shown(self):
-        self.assertIn('sam@swhurl.com', client(fake()).get('/', headers=WHO).text)
-        self.assertIn(server.DEV_IDENTITY, client(fake(), dev_identity=server.DEV_IDENTITY).get('/').text)
+        self.assertIn('sam@swhurl.com', client(fake()).get('/apps', headers=WHO).text)
+        self.assertIn(server.DEV_IDENTITY, client(fake(), dev_identity=server.DEV_IDENTITY).get('/apps').text)
 
     def test_dev_identity_only_binds_to_loopback(self):
         with redirect_stderr(io.StringIO()) as err:
@@ -75,7 +85,7 @@ class IdentityTests(unittest.TestCase):
 
 class AppsTests(unittest.TestCase):
     def test_lists_app_units_only_with_state_and_image(self):
-        text = client(fake()).get('/', headers=WHO).text
+        text = client(fake()).get('/apps', headers=WHO).text
         self.assertIn('href="/apps/web/prod"', text)
         self.assertIn('docker.io/x/web:1.0', text)
         self.assertIn('href="/apps/my-api/staging"', text)
@@ -84,7 +94,7 @@ class AppsTests(unittest.TestCase):
         self.assertNotIn('infra-base</a>', text)
 
     def test_cluster_values_are_escaped(self):
-        text = client(fake()).get('/', headers=WHO).text
+        text = client(fake()).get('/apps', headers=WHO).text
         self.assertNotIn('<script>x</script>', text)
         self.assertIn('&lt;script&gt;', text)
 
@@ -95,7 +105,7 @@ class AppsTests(unittest.TestCase):
 
     def test_unreadable_cluster_is_a_502_page_not_a_crash(self):
         runner = FakeRunner().on('kubectl', returncode=1, stderr='connection refused')
-        response = client(runner).get('/', headers=WHO)
+        response = client(runner).get('/apps', headers=WHO)
         self.assertEqual(response.status_code, 502)
         self.assertIn('connection refused', response.text)
 
@@ -148,11 +158,52 @@ class UnitsTests(unittest.TestCase):
         units = [unit('a', ['b']), unit('b', ['a']), unit('c', ['gone'])]
         self.assertEqual({u.name: u.level for u in cluster.units(fake(units=units))}, {'a': 1, 'b': 0, 'c': 0})
 
-    def test_page_shows_state_and_revision(self):
-        text = client(fake()).get('/units', headers=WHO).text
-        self.assertIn('Ready · abc1234', text)
-        self.assertIn('suspended', text)
-        self.assertIn('after infra-base, platform-oauth2-proxy', text)
+    def test_platform_groups_units_by_layer_without_buttons(self):
+        text = client(fake(**CHECKS)).get('/platform', headers=WHO).text
+        for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps'):
+            self.assertIn(f'<h3>{layer} ', text)
+        self.assertIn('href="/units/infra-base"', text)
+        self.assertIn('abc1234', text)
+        self.assertIn('infra-base, platform-oauth2-proxy', text, 'what each unit waits for')
+        self.assertIn('<details class="section" open>', text, 'a unit not Ready opens the units list')
+        self.assertNotIn('<form', text, 'actions live on each unit\'s page')
+        self.assertNotIn('<strong>Flux Kustomizations</strong>', text, 'the units list replaces that check group')
+        self.assertIn('app-my-api-staging is suspended', text)
+
+    def test_unit_page_offers_its_actions_and_explains_them(self):
+        c = client(fake())
+        text = c.get('/units/infra-base', headers=WHO).text
+        self.assertIn('action="/units/infra-base/reconcile"', text)
+        self.assertIn('action="/units/infra-base/suspend"', text)
+        self.assertIn('href="/units/platform-oauth2-proxy"', text, 'needed by')
+        resume = c.get('/units/app-my-api-staging', headers=WHO).text
+        self.assertIn('action="/units/app-my-api-staging/resume"', resume)
+        self.assertIn('href="/apps/my-api/staging"', resume)
+        root = c.get('/units/cluster-sources', headers=WHO).text
+        self.assertNotIn('<form', root)
+        self.assertIn('make flux-bootstrap', root)
+        self.assertEqual(c.get('/units/nope', headers=WHO).status_code, 404)
+
+    def test_old_addresses_redirect(self):
+        c = client(fake())
+        for old, new in (('/units', '/platform#units'), ('/jobs', '/activity')):
+            response = c.get(old, headers=WHO, follow_redirects=False)
+            self.assertEqual((response.status_code, response.headers['location']), (301, new))
+
+
+class OverviewTests(unittest.TestCase):
+    def test_lists_what_needs_attention_with_links(self):
+        text = client(fake(**CHECKS)).get('/', headers=WHO).text
+        self.assertIn('things need attention', text)
+        self.assertIn('<a href="/units/app-my-api-staging">app-my-api-staging is not Ready', text)
+        self.assertIn('app-my-api-staging is suspended', text)
+        self.assertIn('2 app instances', text)
+        self.assertIn('more checks need your terminal', text)
+
+    def test_healthy_cluster_says_so(self):
+        text = client(fake(units=[unit('infra-base')], **CHECKS)).get('/', headers=WHO).text
+        self.assertIn('Everything is healthy', text)
+        self.assertNotIn('Needs attention', text)
 
 
 class PlatformTests(unittest.TestCase):
@@ -165,9 +216,9 @@ class PlatformTests(unittest.TestCase):
                          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []})})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('failing', response.text)
+        self.assertIn('<strong>Ingress</strong> · <span class="bad">1 of 1 not passing</span>', response.text)
         self.assertIn('Traefik does not redirect HTTP to HTTPS', response.text)
-        self.assertIn('skipped (need more than cluster)', response.text)
+        self.assertIn('8 more checks read Secrets, run commands in pods or need your machine', response.text)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
 
     def test_unreachable_cluster_is_a_502(self):
@@ -241,7 +292,7 @@ class ActionTests(unittest.TestCase):
         page = c.get('/jobs/1', headers=WHO).text
         self.assertIn('✔ applied revision', page)
         self.assertNotIn('http-equiv="refresh"', page)
-        self.assertIn('reconcile app-web-prod', c.get('/jobs', headers=WHO).text)
+        self.assertIn('app-web-prod', c.get('/activity', headers=WHO).text)
         self.assertFalse([call for call in runner.calls if call[0] == 'flux'])
 
     def test_suspend_patches_only_and_resume_patches_then_waits(self):
@@ -315,13 +366,13 @@ class ActionTests(unittest.TestCase):
         self.assertIn('http-equiv="refresh"', c.get('/jobs/7', headers=WHO).text)
         self.assertEqual(c.get('/jobs/8', headers=WHO).status_code, 404)
 
-    def test_units_page_offers_actions_except_on_root_units(self):
-        text = client(fake()).get('/units', headers=WHO).text
-        self.assertIn('formaction="/units/infra-base/reconcile"', text)
-        self.assertIn('formaction="/units/infra-base/suspend"', text)
-        self.assertIn('formaction="/units/app-my-api-staging/resume"', text)
-        self.assertNotIn('formaction="/units/cluster-stack/', text)
-        self.assertIn('applied by make flux-bootstrap', text)
+    def test_running_job_shows_in_the_header_and_activity(self):
+        c, jobs, _ = operate(fake())
+        jobs._jobs[7] = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now())
+        self.assertIn('1 running</span>', c.get('/apps', headers=WHO).text)
+        activity = c.get('/activity', headers=WHO).text
+        self.assertIn('href="/jobs/7"', activity)
+        self.assertIn('href="/units/infra-base">Back to infra-base', c.get('/jobs/7', headers=WHO).text)
 
     def test_dry_run_plans_the_patches_and_does_not_wait(self):
         runner = fake()

@@ -56,6 +56,10 @@ class FakeGitHub:
             'POST /git/commits': {'sha': 'def5678' + '0' * 33},
             'POST /git/refs': {'ref': 'x'},
             'POST /pulls': {'html_url': 'https://github.com/x/pull/7'},
+            'GET /pulls': [{'number': 7, 'title': '[console] apps: add weather-api staging', 'html_url': 'https://github.com/x/pull/7',
+                            'head': {'ref': 'console/new-weather-api-staging-abc1234'}, 'created_at': '2026-10-01T07:00:00Z'},
+                           {'number': 8, 'title': 'chore(deps): bump', 'html_url': 'https://github.com/x/pull/8',
+                            'head': {'ref': 'renovate/x'}, 'created_at': '2026-10-01T07:00:00Z'}],
         }
         if key not in answers:
             return httpx.Response(404, json={'message': 'Not Found'})
@@ -303,6 +307,18 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIn('Before merging, set the secret values** (API_TOKEN, DB_URL)', body)
         self.assertIn('    sops apps/weather-api/staging/secret.sops.yaml', body)
         self.assertNotIn('sops', changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging']))
+
+    def test_open_console_prs_are_listed_and_others_ignored(self):
+        c, _ = self.client(tree_fake())
+        text = c.get('/activity', headers=WHO).text
+        self.assertIn('#7 [console] apps: add weather-api staging', text)
+        self.assertNotIn('pull/8', text)
+        self.assertEqual(changes.console_prs(FakeRunner(), self.api.github)[0].opened, '2026-10-01')
+        c, _ = self.client(tree_fake(), github=False)
+        self.assertIn('No GitHub token is configured, so open pull requests are not listed', c.get('/activity', headers=WHO).text)
+        api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
+        page = TestClient(server.create_app(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
+        self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
 
     def test_invalid_form_or_missing_token_runs_nothing(self):
         runner = tree_fake()

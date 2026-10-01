@@ -60,7 +60,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def page(request: Request, name: str, status_code: int = 200, **context) -> Response:
         context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
-                       read_at=dt.datetime.now().astimezone().strftime('%H:%M:%S'))
+                       read_at=dt.datetime.now().astimezone().strftime('%H:%M:%S'),
+                       running_jobs=[j for j in jobs.recent() if j.state == 'running'])
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)
 
     def reading(request: Request, name: str, read, **context) -> Response:
@@ -68,6 +69,23 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, name, **context, **read())
         except cluster.ReadError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
+
+    def open_prs() -> tuple[list[changes.PullRequest], str]:
+        """The console's open PRs, or why they could not be listed (the page still renders)."""
+        if github is None:
+            return [], 'No GitHub token is configured, so open pull requests are not listed.'
+        try:
+            return changes.console_prs(runner, github), ''
+        except actions.ActionError as error:
+            return [], f'Could not list open pull requests: {error}'
+
+    def overview(request: Request) -> Response:
+        def read():
+            checks, found = cluster.platform_checks(runner), cluster.units(runner)
+            prs, prs_error = open_prs()
+            return {'checks': checks, 'units': found, 'apps': cluster.apps(runner), 'problems': cluster.problems(checks, found),
+                    'prs': prs, 'prs_error': prs_error, 'recent': [j for j in jobs.recent() if j.state != 'running'][:5]}
+        return reading(request, 'overview.html', read)
 
     def apps(request: Request) -> Response:
         return reading(request, 'apps.html', lambda: {'rows': cluster.apps(runner)})
@@ -80,15 +98,30 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN)
 
-    def units(request: Request) -> Response:
-        def read():
-            found = cluster.units(runner)
-            levels = [[u for u in found if u.level == n] for n in range(max((u.level for u in found), default=-1) + 1)]
-            return {'levels': levels}
-        return reading(request, 'units.html', read)
-
     def platform(request: Request) -> Response:
-        return reading(request, 'platform.html', lambda: {'checks': cluster.platform_checks(runner)})
+        def read():
+            checks, found = cluster.platform_checks(runner), cluster.units(runner)
+            layers = [(title, text, [u for u in found if u.layer == title])
+                      for title, text in [(t, d) for _, t, d in cluster.LAYERS] + [(cluster.OTHER_LAYER, '')]]
+            return {'checks': checks, 'units': found, 'problems': cluster.problems(checks, found),
+                    'layers': [layer for layer in layers if layer[2]], 'flux_section': cluster.FLUX_SECTION}
+        return reading(request, 'platform.html', read)
+
+    def unit(request: Request) -> Response:
+        def read():
+            found = {u.name: u for u in cluster.units(runner)}
+            name = request.path_params['unit']
+            if name not in found:
+                raise LookupError(name)
+            return {'u': found[name], 'app': cluster.instance_of_unit(name),
+                    'unit_jobs': [j for j in jobs.recent() if j.unit == name]}
+        try:
+            return reading(request, 'unit.html', read)
+        except LookupError:
+            return page(request, 'error.html', status_code=404, error='No Flux unit by that name.')
+
+    def moved(target: str):
+        return lambda _request: RedirectResponse(target, status_code=301)
 
     def start(request: Request) -> Response:
         try:
@@ -182,17 +215,18 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
-    def job_list(request: Request) -> Response:
-        return page(request, 'jobs.html', jobs=jobs.recent())
+    def activity(request: Request) -> Response:
+        prs, prs_error = open_prs()
+        return page(request, 'activity.html', jobs=jobs.recent(), prs=prs, prs_error=prs_error)
 
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')
 
     return Starlette(
-        routes=[Route('/', apps), Route('/apps/{app}/{env}', app), Route('/units', units),
-                Route('/platform', platform), Route('/healthz', healthz),
-                Route('/units/{unit}/{action}', start, methods=['POST']),
-                Route('/jobs', job_list), Route('/jobs/{id:int}', job),
+        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app),
+                Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
+                Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
+                Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
                 Route('/new', new_app, methods=['GET', 'POST']),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])

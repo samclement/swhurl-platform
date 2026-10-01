@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block main %}
+<h1>Overview</h1>
+<p class="verdict">{% if problems %}<span class="mark bad"></span> <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
+{% else %}<span class="mark ok"></span> <strong>Everything is healthy</strong>{% endif %}</p>
+<p class="muted">{{ apps | length }} app instances · {{ units | length }} Flux units · {{ checks.count }} health checks, read at {{ read_at }}.
+{% if checks.skipped %}{{ checks.skipped | length }} more checks need your terminal: <code>make verify-platform</code>.{% endif %}</p>
+
+{% if problems %}
+<h2>Needs attention</h2>
+<ul class="items">
+  {% for p in problems %}<li><span class="mark {{ p.level }}"></span> {% if p.link %}<a href="{{ p.link }}">{{ p.text }}</a>{% else %}{{ p.text }}{% endif %}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if running_jobs %}
+<h2>Running now</h2>
+<ul class="items">
+  {% for j in running_jobs %}<li><span class="mark warn"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ j.unit }}</a> <span class="muted">by {{ j.identity }}, started {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
+</ul>
+{% endif %}
+
+<h2>Pull requests waiting for you</h2>
+{% if prs %}
+<ul class="items">
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
+</ul>
+{% elif prs_error %}<p class="muted">{{ prs_error }}</p>
+{% else %}<p class="muted">None. Changes you make here open a pull request; it waits here until you merge or close it.</p>{% endif %}
+
+<h2>Recent activity</h2>
+{% if recent %}
+<ul class="items">
+  {% for j in recent %}<li><span class="mark {{ 'ok' if j.state == 'succeeded' else 'bad' }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ j.unit }}</a>
+    <span class="muted">{{ j.state }} {{ j.finished.strftime('%H:%M') if j.finished }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
+</ul>
+<p><a href="/activity">All activity</a></p>
+{% else %}<p class="muted">Nothing since the console started. Reconciles, suspends and pull requests you start appear here.</p>{% endif %}
+{% endblock %}

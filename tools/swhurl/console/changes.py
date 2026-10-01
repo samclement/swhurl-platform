@@ -188,6 +188,27 @@ class GitHubAPI:
         return self.call(method, path, body).json()
 
 
+@dataclass(frozen=True)
+class PullRequest:
+    number: int
+    title: str
+    url: str
+    branch: str
+    opened: str  # YYYY-MM-DD
+
+
+def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
+    """Open pull requests the console made (``console/*`` branches), newest first."""
+    runner.add_secret(github.token)
+    api = GitHubAPI(runner, github)
+    try:
+        pulls = api.json('GET', '/pulls?state=open&sort=created&direction=desc&per_page=50')
+    finally:
+        api.client.close()
+    return [PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10])
+            for p in pulls if p['head']['ref'].startswith(BRANCH_PREFIX)]
+
+
 def snapshot(root: Path) -> dict[str, tuple[str, str]]:
     """``{path: (mode, sha256)}`` for every file under ``root``."""
     files = {}

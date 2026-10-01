@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ u.name }}{% endblock %}
+{% block main %}
+<p class="crumbs"><a href="/platform#units">Platform</a> › {{ u.layer }}</p>
+<h1 class="mono">{{ u.name }}</h1>
+<p class="verdict">{% if u.suspended %}<span class="mark warn"></span> <strong>Suspended</strong> <span class="muted">— Git changes are not applied until you resume it</span>
+{% elif u.ready[0] == 'True' %}<span class="mark ok"></span> <strong>Ready</strong> <span class="muted">— applied {{ u.revision }}</span>
+{% else %}<span class="mark bad"></span> <strong>Not ready</strong> <span class="muted">— {{ u.ready[1] }}</span>{% endif %}</p>
+
+<dl>
+  <dt>Applies</dt><dd class="mono">{{ u.path or '—' }}</dd>
+  <dt>Checks Git</dt><dd>every {{ u.interval or '—' }}, and at once on a push (webhook)</dd>
+  <dt>Waits for</dt><dd>{% for d in u.depends_on %}<a class="mono" href="/units/{{ d }}">{{ d }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
+  <dt>Needed by</dt><dd>{% for d in u.needed_by %}<a class="mono" href="/units/{{ d }}">{{ d }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
+  {% if app %}<dt>App</dt><dd><a href="/apps/{{ app.app }}/{{ app.env }}">{{ app.app }}/{{ app.env }}</a></dd>{% endif %}
+  {% if u.ready[0] == 'True' and u.ready[1] %}<dt>Last message</dt><dd class="muted">{{ u.ready[1] }}</dd>{% endif %}
+</dl>
+
+<h2>Actions</h2>
+{% if u.name in refused %}
+<p class="muted">None here: this unit is {{ refused[u.name] }}. Change it with <code>make flux-bootstrap</code>.</p>
+{% else %}
+<div class="action-row">
+  <form method="post" action="/units/{{ u.name }}/reconcile"><button>Reconcile now</button></form>
+  <span class="muted">Fetch Git and apply this unit now instead of at the next check. Safe: it applies what Git already says.</span>
+</div>
+{% if u.suspended %}
+<div class="action-row">
+  <form method="post" action="/units/{{ u.name }}/resume"><button>Resume</button></form>
+  <span class="muted">Apply Git changes to this unit again, starting with a reconcile.</span>
+</div>
+{% else %}
+<div class="action-row">
+  <form method="post" action="/units/{{ u.name }}/suspend"><button class="risky" onclick="return confirm('Suspend {{ u.name }}? Git changes stop applying to it until you resume it.')">Suspend</button></form>
+  <span class="muted">Stop applying Git changes to this unit until you resume it; what is running stays as it is. Use it while you investigate or try something by hand.</span>
+</div>
+{% endif %}
+{% endif %}
+
+<h2>Jobs on this unit</h2>
+{% if unit_jobs %}
+<ul class="items">
+  {% for j in unit_jobs %}<li><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
+</ul>
+{% else %}<p class="muted">None since the console started.</p>{% endif %}
+{% endblock %}

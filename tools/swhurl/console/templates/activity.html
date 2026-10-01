@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block main %}
+<h1>Activity</h1>
+<p class="lead">What the console has done, and what is waiting for you: pull requests it opened that are not merged yet, and every job started here.</p>
+
+<h2>Pull requests waiting for you</h2>
+{% if prs %}
+<ul class="items">
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">opened {{ pr.opened }} · <code>{{ pr.branch }}</code></span></li>{% endfor %}
+</ul>
+{% elif prs_error %}<p class="muted">{{ prs_error }}</p>
+{% else %}<p class="muted">None open.</p>{% endif %}
+
+<h2>Jobs</h2>
+{% if jobs %}
+<div class="scroll">
+<table class="compact">
+  <tr><th>Job</th><th>What</th><th>By</th><th>Started (UTC)</th><th>State</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td><a href="/jobs/{{ j.id }}">#{{ j.id }}</a></td>
+    <td>{{ j.action }} <span class="mono">{{ j.unit }}</span>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</td>
+    <td>{{ j.identity }}</td>
+    <td class="mono">{{ j.started.strftime('%H:%M:%S') }}</td>
+    <td><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> {{ j.state }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<p class="muted">No jobs since the console started. A job is a reconcile, suspend or resume (from a unit's page) or a pull request (from New app or an app's page).</p>
+{% endif %}
+<p class="muted">This list is kept in memory and cleared when the console restarts; each job's audit line stays in ClickStack (search <code>[AUDIT]</code>).</p>
+{% endblock %}

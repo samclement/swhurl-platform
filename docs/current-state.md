@@ -345,6 +345,8 @@ Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who c
 
 Found during the check, not yet fixed: `hello-ts/staging` shows **Updating** ("different image") although the rollout finished. The pod's spec names the desired digest (`sha256:1cafaf63…`, run 15) but the node reports `sha256:09432ab7…`, another image index (likely run 16) wrapping the same amd64 image (`062fec38…`; only the attestation differs), because containerd records the first digest it pulled that image under. `ops.image_state` (also `make app-status`) compares the node's ID with Git's digest, so identical content published twice reads as different.
 
+Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read from the pod's spec when it pins a digest, the node's ID otherwise. `make app-status APP=hello-ts ENV=staging` went from `different image` (before, on `main`) to `running: matches desired`; on the deployed console `hello-ts/staging`, `hello-ts/prod` and `hello/staging` read Healthy and Overview "Everything is healthy".
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

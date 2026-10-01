@@ -121,6 +121,33 @@ class ImageStateTests(unittest.TestCase):
         self.assertTrue(any('different image' in line for line in moved))
 
 
+class RunningImagesTests(unittest.TestCase):
+    def pod(self, spec_image, image_id, name='main'):
+        return {'spec': {'containers': [{'name': name, 'image': spec_image}]},
+                'status': {'containerStatuses': [{'name': name, 'imageID': image_id}]}}
+
+    def test_a_pinned_digest_is_what_runs_even_when_the_node_names_another(self):
+        index = 'sha256:' + '1' * 64
+        alias = 'sha256:' + '0' * 64  # the same content, first pulled under another index digest
+        pods = {'items': [self.pod(f'ghcr.io/x/app:15-74b90c4@{index}', f'ghcr.io/x/app@{alias}')]}
+        self.assertEqual(app_ops.running_images(pods), [f'ghcr.io/x/app@{index}'])
+        found = app_ops.InstanceStatus(app_ops.Instance('app', 'staging'), REV, REV, ('True', ''), None,
+                                       f'ghcr.io/x/app:15-74b90c4@{index}', app_ops.running_images(pods), [], [], [], [])
+        self.assertEqual(found.image_state, 'matches')
+
+    def test_unpinned_or_mid_rollout_still_read_correctly(self):
+        old, new = 'sha256:' + 'a' * 64, 'sha256:' + 'b' * 64
+        self.assertEqual(app_ops.running_images({'items': [self.pod('docker.io/x/web:1.0', f'docker-pullable://docker.io/x/web@{old}')]}),
+                         [f'docker.io/x/web@{old}'], 'no pinned digest: the node is all there is')
+        rollout = {'items': [self.pod(f'docker.io/x/web:1@{old}', 'x'), self.pod(f'docker.io/x/web:2@{new}', 'y')]}
+        self.assertEqual(app_ops.running_images(rollout), [f'docker.io/x/web@{old}', f'docker.io/x/web@{new}'])
+        self.assertEqual(app_ops.running_images({'items': [self.pod(f'localhost:5000/web@{new}', 'z')]}),
+                         [f'localhost:5000/web@{new}'], 'a registry port is not a tag')
+        waiting = {'items': [{'spec': {'containers': [{'name': 'main', 'image': f'x@{new}'}]},
+                              'status': {'containerStatuses': [{'name': 'main', 'imageID': ''}]}}]}
+        self.assertEqual(app_ops.running_images(waiting), [], 'not pulled yet: nothing runs')
+
+
 class LiveExposureTests(unittest.TestCase):
     def test_read_from_the_routes(self):
         signed_in = {'metadata': {'annotations': {'traefik.ingress.kubernetes.io/router.middlewares':

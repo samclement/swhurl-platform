@@ -52,10 +52,26 @@ def desired_image(release: dict | None) -> str:
 
 
 def running_images(pods: dict | None) -> list[str]:
-    ids = {status['imageID'].removeprefix('docker-pullable://')
-           for pod in (pods or {}).get('items', [])
-           for status in (pod.get('status') or {}).get('containerStatuses') or []
-           if status.get('imageID')}
+    """The image each started container runs, as ``repository@digest``.
+
+    When the pod's spec pins the image by digest, that digest is what runs: a pull by digest
+    guarantees the content. The node's ``imageID`` can name a different digest for the same
+    content: containerd keeps the first digest it pulled an image under, and two builds can
+    publish the same image under different index digests (only their attestations differ).
+    Without a pinned digest the node's ``imageID`` is all there is.
+    """
+    ids = set()
+    for pod in (pods or {}).get('items', []):
+        spec = {c.get('name'): c.get('image', '') for c in (pod.get('spec') or {}).get('containers') or []}
+        for status in (pod.get('status') or {}).get('containerStatuses') or []:
+            if not status.get('imageID'):
+                continue  # not pulled yet: nothing is running
+            pinned = spec.get(status.get('name'), '')
+            if '@sha256:' in pinned:
+                repository, digest = pinned.split('@', 1)
+                ids.add(f"{repository.rsplit(':', 1)[0] if ':' in repository.rsplit('/', 1)[-1] else repository}@{digest}")
+            else:
+                ids.add(status['imageID'].removeprefix('docker-pullable://'))
     return sorted(ids)
 
 

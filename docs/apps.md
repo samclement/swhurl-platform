@@ -159,6 +159,18 @@ The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "
 
 To roll back staging, revert the commit that changed the pin; for an automatic app, a newer image then replaces it again, so fix forward in the app, or remove the markers first. Chart versions are different: Renovate opens pull requests for app-template, and one merged PR updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
 
+## Dependency updates in app repositories
+
+Apps from the template update their own dependencies: the Renovate GitHub App is installed for all repositories (a config file required), so a new repository from the template is registered on Renovate's next run, and its `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json). Every pull request runs the app's checks: type-check, `npm test`, image build, and a smoke test that starts the image as the cluster does (read-only root filesystem) and expects `/healthz` ([template README](https://github.com/samclement/swhurl-app-template-typescript#checks-and-dependency-updates)).
+
+| Situation | What validates an update | What deploys |
+| --- | --- | --- |
+| New app created after Renovate updated the template | The template's own pull request checks; then the app's first push | Its first image, by hand (New app), then automatically in staging |
+| App with tests (the template ships `test/healthz.test.mjs`) | All checks; minor, patch and digest updates merge themselves, majors wait | Each merge publishes an image that deploys to staging; promote to production |
+| App without tests | Type-check, build and smoke test only; set `"automerge": false`, so you merge | Staging after your merge; check it before promoting |
+
+The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them. Template changes other than the preset do not reach existing apps; copy them by hand ([plan](plan.md) section 0, item 9).
+
 ## Moving a host between instances
 
 Deploy the new instance on a temporary host and check it. Then, in one commit, remove the old route and put the host on the new instance. Expect a few seconds of Traefik's default certificate while cert-manager issues the new one.

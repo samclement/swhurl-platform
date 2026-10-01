@@ -1,18 +1,16 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Platform{% endblock %}
 {% block main %}
 <h1>Platform</h1>
 <p class="lead">The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Open a unit to reconcile, suspend or resume it.</p>
 {% set unhealthy = units | rejectattr('healthy') | list %}
-<p class="verdict">{% if problems %}<span class="mark bad"></span> <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
-{% else %}<span class="mark ok"></span> <strong>All {{ checks.count }} checks pass; all {{ units | length }} units are Ready</strong>{% endif %}</p>
+<p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
+{% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
+{% else %}{{ st.mark('healthy') }} <strong>Healthy</strong> <span class="muted">— all {{ checks.count }} checks pass and all {{ units | length }} units are applied</span>{% endif %}</p>
 
-{% if problems %}
-<h2>Needs attention</h2>
-<ul class="items">
-  {% for p in problems %}<li><span class="mark {{ p.level }}"></span> {% if p.link %}<a href="{{ p.link }}">{{ p.text }}</a>{% else %}{{ p.text }}{% endif %}</li>{% endfor %}
-</ul>
-{% endif %}
+{% if problems %}<h2>Needs attention</h2>{{ st.items(problems) }}{% endif %}
+{% if updating %}<h2>Updating now</h2>{{ st.items(updating) }}{% endif %}
 
 <h2>Health checks</h2>
 {% for section, group in checks.sections if section != flux_section %}
@@ -20,7 +18,7 @@
 <details class="section"{{ ' open' if failing }}>
   <summary><strong>{{ section }}</strong> · {% if failing %}<span class="bad">{{ failing | length }} of {{ group | length }} not passing</span>{% else %}<span class="ok">{{ group | length }} passing</span>{% endif %}</summary>
   <ul class="items">
-    {% for e in group %}<li><span class="mark {{ e.level if e.level in ('ok', 'warn', 'bad') else 'warn' }}"></span> {{ e.message }}</li>{% endfor %}
+    {% for e in group %}<li>{{ st.check(e.level) }} {{ e.message }}</li>{% endfor %}
   </ul>
 </details>
 {% endfor %}
@@ -28,7 +26,7 @@
 
 <h2 id="units">Flux units</h2>
 <details class="section"{{ ' open' if unhealthy }}>
-  <summary>{{ units | length }} units · {% if unhealthy %}<span class="bad">{{ unhealthy | length }} not Ready or suspended</span>{% else %}<span class="ok">all Ready</span>{% endif %} · grouped by what they hold</summary>
+  <summary>{{ units | length }} units · {% if unhealthy %}<span class="warn">{{ unhealthy | length }} not healthy</span>{% else %}<span class="ok">all healthy</span>{% endif %} · grouped by what they hold</summary>
   {% for title, text, members in layers %}
   <h3>{{ title }} <span class="muted">— {{ text }}</span></h3>
   <div class="scroll">
@@ -37,7 +35,7 @@
     {% for u in members %}
     <tr>
       <td><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</td>
-      <td>{% if u.suspended %}<span class="mark warn"></span> <span class="warn">Suspended</span>{% elif u.ready[0] == 'True' %}<span class="mark ok"></span> Ready{% else %}<span class="mark bad"></span> <span class="bad">Not ready</span> <span class="muted">{{ u.ready[1] }}</span>{% endif %}</td>
+      <td>{{ st.state(u.state, detail=u.state.key in ('updating', 'failing')) }}</td>
       <td class="mono">{{ u.revision or '—' }}</td>
       <td class="muted">{{ u.depends_on | join(', ') or '—' }}</td>
     </tr>

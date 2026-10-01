@@ -1,23 +1,22 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Overview{% endblock %}
 {% block main %}
 <h1>Overview</h1>
-<p class="verdict">{% if problems %}<span class="mark bad"></span> <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
-{% else %}<span class="mark ok"></span> <strong>Everything is healthy</strong>{% endif %}</p>
+<p class="lead">Start here: whether anything needs you, what is waiting for your review, and what happened recently.</p>
+<p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
+{% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
+{% else %}{{ st.mark('healthy') }} <strong>Everything is healthy</strong>{% endif %}</p>
 <p class="muted">{{ apps | length }} app instances · {{ units | length }} Flux units · {{ checks.count }} health checks, read at {{ read_at }}.
 {% if checks.skipped %}{{ checks.skipped | length }} more checks need your terminal: <code>make verify-platform</code>.{% endif %}</p>
 
-{% if problems %}
-<h2>Needs attention</h2>
-<ul class="items">
-  {% for p in problems %}<li><span class="mark {{ p.level }}"></span> {% if p.link %}<a href="{{ p.link }}">{{ p.text }}</a>{% else %}{{ p.text }}{% endif %}</li>{% endfor %}
-</ul>
-{% endif %}
+{% if problems %}<h2>Needs attention</h2>{{ st.items(problems) }}{% endif %}
+{% if updating %}<h2>Updating now</h2>{{ st.items(updating) }}{% endif %}
 
 {% if running_jobs %}
 <h2>Running now</h2>
 <ul class="items">
-  {% for j in running_jobs %}<li><span class="mark warn"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a> <span class="muted">by {{ j.identity }}, started {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
+  {% for j in running_jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a> <span class="muted">by {{ j.identity }}, started {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
 </ul>
 {% endif %}
 
@@ -32,7 +31,7 @@
 <h2>Recent activity</h2>
 {% if recent %}
 <ul class="items">
-  {% for j in recent %}<li><span class="mark {{ 'ok' if j.state == 'succeeded' else 'bad' }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a>
+  {% for j in recent %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a>
     <span class="muted">{{ j.state }} {{ j.finished.strftime('%H:%M') if j.finished }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
 </ul>
 <p><a href="/activity">All activity</a></p>

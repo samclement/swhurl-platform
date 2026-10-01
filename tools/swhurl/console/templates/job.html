@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Job {{ job.id }}{% endblock %}
 {% block head %}{% if job.state == 'running' %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
 {% block main %}
 {% set label, link = target(job.unit) %}
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
-  <span class="{{ {'succeeded': 'ok', 'failed': 'bad'}.get(job.state, 'warn') }}">{{ job.state }}</span></h1>
+  · {{ st.job(job) }} <span class="state {{ {'succeeded': 'healthy', 'failed': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
 <p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }}{% else %}; this page refreshes every 2 seconds{% endif %}.</p>
 {% if job.link %}<p><a href="{{ job.link }}">{{ job.link }}</a></p>{% endif %}
 <pre>{% for line in job.lines %}{{ line }}

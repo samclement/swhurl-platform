@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
+{% import "_status.html" as st %}
 {% set i = status.instance %}
 {% set row = summary.envs.get(i.env) if summary else none %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
@@ -10,14 +11,7 @@
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ i.app }}/{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-{# One verdict from the facts below, worst first. #}
-{% if row and row.suspended %}{% set level, verdict, why = 'warn', 'Suspended', 'Git changes are not applied until its Flux unit is resumed' %}
-{% elif status.problems %}{% set level, verdict, why = 'bad', 'Not healthy', status.problems | length ~ ' pod(s) failing; see below' %}
-{% elif status.unit[0] == 'False' or (status.release and status.release[0] == 'False') %}{% set level, verdict, why = 'bad', 'Not ready', (status.release[1] if status.release and status.release[0] == 'False' else status.unit[1]) %}
-{% elif not status.applied %}{% set level, verdict, why = 'warn', 'Updating', 'a Git change is not applied yet' %}
-{% elif status.image_state == 'different' %}{% set level, verdict, why = 'warn', 'Updating', 'a new image is rolling out (or failing to)' %}
-{% else %}{% set level, verdict, why = 'ok', 'Healthy', '' %}{% endif %}
-<p class="verdict"><span class="mark {{ level }}"></span> <strong>{{ verdict }}</strong>{% if why %} <span class="muted">— {{ why }}</span>{% endif %}</p>
+<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail }}</span>{% endif %}</p>
 <p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
   · {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{{ ', ' if not loop.last }}{% else %}no web address{% endfor %}
   · {{ exposures.get(status.exposure, status.exposure) }}</p>
@@ -98,7 +92,7 @@
 <h2>Recent jobs</h2>
 {% if unit_jobs %}
 <ul class="items">
-  {% for j in unit_jobs %}<li><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
+  {% for j in unit_jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
 </ul>
 {% else %}<p class="muted">None since the console started.</p>{% endif %}
 

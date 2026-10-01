@@ -335,6 +335,10 @@ Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who c
 - **Automerge, end to end**: Renovate rebased its four open pull requests onto the new checks (all passed by 07:15). It merges only when it runs; after the dashboard's "run again" box was ticked at 07:57 it merged `hello-ts` #1 (`@types/node`) at 08:04:19. That push built `11-e8db915`, the ImagePolicy picked it at 08:06:15, `fluxcdbot` committed the pin (`d0c6560`) and staging ran it, with no step by hand. GitHub's "Allow auto-merge" stays off in both repositories (without branch protection it would not wait for checks; Renovate's own automerge does).
 - Not exercised: an app without tests (`"automerge": false`, documented), and a failing Renovate update reaching staging.
 
+## Console redesign step 3: one status vocabulary (1 October 2026)
+
+`aed774c`, deployed by the publish workflow (`faa891e`); `6646e0f` before it made PR titles name instances `<app>/<env>`. Read-only checks on the deployed console (port-forward, identity `claude-live-test (port-forward)`): all pages 200, a missing job 404 with the new error page; 21 Healthy and 1 Updating state labels and none of the old wording (Ready / Not ready / Not healthy). Right after the console's own deploy commit, Overview and Platform showed an **Updating** verdict (one unit still applying it), not "things need attention", and about 30 seconds later "Everything is healthy". Earlier the same day, merging a promote had made every app show a red "Not ready" for about 10 seconds (`DependencyNotReady` while `platform-oauth2-proxy` re-checked); that case is now Updating, "waiting for platform-oauth2-proxy" (unit test).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

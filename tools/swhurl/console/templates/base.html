@@ -91,7 +91,12 @@
   .verdict { font-size: 17px; margin: 0 0 4px; }
   .tabs + .verdict { margin-top: 16px; }
   .mark { display: inline-block; width: 1.2em; text-align: center; font-weight: 700; }
-  .mark.ok::before { content: "✓"; } .mark.warn::before { content: "!"; } .mark.bad::before { content: "✕"; }
+  .mark.healthy { color: var(--ok); } .mark.healthy::before { content: "✓"; }
+  .mark.updating { color: var(--accent); } .mark.updating::before { content: "↻"; }
+  .mark.failing { color: var(--bad); } .mark.failing::before { content: "✕"; }
+  .mark.suspended { color: var(--warn); } .mark.suspended::before { content: "‖"; }
+  .mark.warn { color: var(--warn); } .mark.warn::before { content: "!"; }
+  .state.failing { color: var(--bad); } .state.suspended { color: var(--warn); }
   .crumbs { color: var(--muted); font-size: 13px; margin: 0; }
   ul.items { list-style: none; padding: 0; margin: 0 0 8px; }
   ul.items li { padding: 6px 0; border-bottom: 1px solid var(--line); }

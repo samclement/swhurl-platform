@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from swhurl.apps import ops
 from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
+from swhurl.flux import WAITING_REASONS
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition, verify_platform
@@ -22,6 +23,39 @@ class ReadError(Exception):
 
 
 @dataclass(frozen=True)
+class State:
+    """The one status vocabulary every page uses (each shown with its own mark, not colour alone)."""
+    key: str  # healthy, updating, failing or suspended
+    detail: str = ''
+
+    @property
+    def label(self) -> str:
+        return self.key.capitalize()
+
+
+DEPENDENCY = re.compile(r"dependency '(?:[^/']+/)?([^']+)' is not ready")
+
+
+def ready_reason(obj: dict) -> str:
+    return next((c.get('reason', '') for c in (obj.get('status') or {}).get('conditions') or []
+                 if c.get('type') == 'Ready'), '')
+
+
+def state_of(ready: tuple[str, str], suspended: bool = False, reason: str = '') -> State:
+    """A Flux object's state. Waiting for a dependency or applying a change is Updating, not Failing:
+    every push re-checks every unit, and dependents wait a few seconds meanwhile."""
+    status, message = ready
+    if suspended:
+        return State('suspended', 'Git changes are not applied until it is resumed')
+    if status == 'True':
+        return State('healthy')
+    waiting = DEPENDENCY.search(message or '')
+    if status == 'Unknown' or reason in WAITING_REASONS or waiting:
+        return State('updating', f'waiting for {waiting[1]}' if waiting else (message or 'applying a change'))
+    return State('failing', message)
+
+
+@dataclass(frozen=True)
 class AppRow:
     instance: ops.Instance
     ready: tuple[str, str]
@@ -30,6 +64,11 @@ class AppRow:
     tag: str = ''
     digest: str = ''
     hosts: tuple[str, ...] = ()
+    reason: str = ''
+
+    @property
+    def state(self) -> State:
+        return state_of(self.ready, self.suspended, self.reason)
 
 
 @dataclass(frozen=True)
@@ -82,6 +121,11 @@ class Unit:
     path: str = ''
     interval: str = ''
     needed_by: tuple[str, ...] = ()
+    reason: str = ''
+
+    @property
+    def state(self) -> State:
+        return state_of(self.ready, self.suspended, self.reason)
 
     @property
     def layer(self) -> str:
@@ -89,7 +133,7 @@ class Unit:
 
     @property
     def healthy(self) -> bool:
-        return self.ready[0] == 'True' and not self.suspended
+        return self.state.key == 'healthy'
 
 
 # Units by name prefix, in the order they build on each other: (prefix, title, what they hold).
@@ -145,7 +189,7 @@ def apps(runner: Runner) -> list[AppRow]:
             image = release_image(release)
             rows.append(AppRow(found, ready_condition(unit), bool(unit['spec'].get('suspend')),
                                ops.desired_image(release) if release else 'no HelmRelease',
-                               image.get('tag', ''), image.get('digest', ''), release_hosts(release)))
+                               image.get('tag', ''), image.get('digest', ''), release_hosts(release), ready_reason(unit)))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 
@@ -167,7 +211,7 @@ def units(runner: Runner) -> list[Unit]:
                         [d['name'] for d in unit['spec'].get('dependsOn') or []],
                         (unit.get('status') or {}).get('lastAppliedRevision', '').split(':')[-1][:7],
                         level(name), unit['spec'].get('path', ''), unit['spec'].get('interval', ''),
-                        tuple(sorted(needed_by.get(name, []))))
+                        tuple(sorted(needed_by.get(name, []))), ready_reason(unit))
                    for name, unit in found.items()), key=lambda u: (u.level, u.name))
 
 
@@ -190,30 +234,65 @@ class Checks:
 FLUX_SECTION = 'Flux Kustomizations'  # the units list shows these; the check's failures still count as problems
 
 
+def updating(found: list[Unit]) -> list[Problem]:
+    """Units applying a change or waiting for a dependency: normal for a few seconds after every push."""
+    out = []
+    for u in found:
+        if u.state.key == 'updating':
+            label, link = target(u.name)
+            out.append(Problem('updating', f'{label}: {u.state.detail}', link))
+    return out
+
+
+def instance_state(status: ops.InstanceStatus, row: AppRow | None) -> State:
+    """An app instance's state from what its page shows, worst first."""
+    if row and row.suspended:
+        return State('suspended', 'Git changes are not applied until its Flux unit is resumed')
+    if status.problems:
+        return State('failing', f'{len(status.problems)} pod(s) failing; see below')
+    unit = state_of(status.unit, reason=row.reason if row else '')
+    if unit.key == 'failing':
+        return unit
+    if status.release and status.release[0] == 'False':
+        return State('failing', status.release[1])
+    if unit.key == 'updating':
+        return unit
+    if not status.applied:
+        return State('updating', 'a Git change is not applied yet')
+    if status.image_state == 'different':
+        return State('updating', 'a new image is rolling out (or failing to)')
+    if status.release and status.release[0] != 'True':
+        return State('updating', status.release[1])
+    return State('healthy')
+
+
 @dataclass(frozen=True)
 class Problem:
-    level: str  # 'bad' or 'warn'
+    level: str  # a mark: failing, warn, suspended or updating
     text: str
     link: str = ''
 
 
 def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
     """What needs attention: failing or warning checks, then suspended units (which can still be Ready)."""
-    names = {u.name for u in found}
+    by_name = {u.name: u for u in found}
+    names = set(by_name)
     out = []
     for section, group in checks.sections:
         for entry in group:
             if entry.level in ('bad', 'warn'):
                 unit, _, rest = entry.message.partition(' ')
+                if section == FLUX_SECTION and unit in names and by_name[unit].state.key == 'updating':
+                    continue  # waiting, not failing: listed by updating()
                 if section == FLUX_SECTION and unit in names:
                     label, link = target(unit)
-                    out.append(Problem(entry.level, f'{label} {rest}', link))
+                    out.append(Problem('failing' if entry.level == 'bad' else 'warn', f'{label} {rest}', link))
                 else:
-                    out.append(Problem(entry.level, entry.message))
+                    out.append(Problem('failing' if entry.level == 'bad' else 'warn', entry.message))
     for u in found:
         if u.suspended:
             label, link = target(u.name)
-            out.append(Problem('warn', f'{label} is suspended: Git changes are not applied to it until it is resumed', link))
+            out.append(Problem('suspended', f'{label} is suspended: Git changes are not applied to it until it is resumed', link))
     return out
 
 

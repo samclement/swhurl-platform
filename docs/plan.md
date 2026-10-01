@@ -18,7 +18,7 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
 11. **Console redesign** (review 1 October 2026; one commit per step, each checked live):
     1. ~~Structure~~ done 1 October 2026: navigation Overview · Apps · Platform · Activity with **+ New app**; Overview; Platform merging units and checks with a page per unit for its actions; Activity with open console PRs.
     2. ~~Apps~~ done 1 October 2026: one row per app with Staging and Prod columns and Promote; the app page with a verdict, main actions, a staging/prod switch, Details collapsed, Scale and Who can reach it as disclosures, Uninstall apart; app instances named `<app>/<env>` on every page.
-    3. **Language and states**: one status vocabulary (Healthy, Updating, Failing, Suspended, with a shape as well as colour) across pages; purpose-first page intros; empty states.
+    3. ~~Language and states~~ done 1 October 2026: one vocabulary (Healthy ✓, Updating ↻, Failing ✕, Suspended ‖) on every page; a dependency wait after a push is Updating, not a problem; purpose lines on every page; empty states and a more helpful error page.
     4. **Polish**: shortened hashes with the full value on hover, breadcrumbs everywhere, "Updated 07:34 ↻" in the header.
 5. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
 

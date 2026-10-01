@@ -1,11 +1,10 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}{{ u.name }}{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/platform#units">Platform</a> › {{ u.layer }}</p>
 <h1 class="mono">{{ u.name }}</h1>
-<p class="verdict">{% if u.suspended %}<span class="mark warn"></span> <strong>Suspended</strong> <span class="muted">— Git changes are not applied until you resume it</span>
-{% elif u.ready[0] == 'True' %}<span class="mark ok"></span> <strong>Ready</strong> <span class="muted">— applied {{ u.revision }}</span>
-{% else %}<span class="mark bad"></span> <strong>Not ready</strong> <span class="muted">— {{ u.ready[1] }}</span>{% endif %}</p>
+<p class="verdict">{{ st.mark(u.state.key) }} <strong>{{ u.state.label }}</strong> <span class="muted">— {{ u.state.detail or 'applied ' ~ u.revision }}</span></p>
 
 <dl>
   <dt>Applies</dt><dd class="mono">{{ u.path or '—' }}</dd>
@@ -40,7 +39,7 @@
 <h2>Jobs on this unit</h2>
 {% if unit_jobs %}
 <ul class="items">
-  {% for j in unit_jobs %}<li><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
+  {% for j in unit_jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
 </ul>
 {% else %}<p class="muted">None since the console started.</p>{% endif %}
 {% endblock %}

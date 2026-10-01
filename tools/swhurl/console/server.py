@@ -87,6 +87,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             checks, found = cluster.platform_checks(runner), cluster.units(runner)
             prs, prs_error = open_prs()
             return {'checks': checks, 'units': found, 'apps': cluster.apps(runner), 'problems': cluster.problems(checks, found),
+                    'updating': cluster.updating(found),
                     'prs': prs, 'prs_error': prs_error, 'recent': [j for j in jobs.recent() if j.state != 'running'][:5]}
         return reading(request, 'overview.html', read)
 
@@ -101,14 +102,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
-                    summary=summary, unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
+                    summary=summary, state=cluster.instance_state(status, summary.envs.get(found.env) if summary else None), unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
 
     def platform(request: Request) -> Response:
         def read():
             checks, found = cluster.platform_checks(runner), cluster.units(runner)
             layers = [(title, text, [u for u in found if u.layer == title])
                       for title, text in [(t, d) for _, t, d in cluster.LAYERS] + [(cluster.OTHER_LAYER, '')]]
-            return {'checks': checks, 'units': found, 'problems': cluster.problems(checks, found),
+            return {'checks': checks, 'units': found, 'problems': cluster.problems(checks, found), 'updating': cluster.updating(found),
                     'layers': [layer for layer in layers if layer[2]], 'flux_section': cluster.FLUX_SECTION}
         return reading(request, 'platform.html', read)
 

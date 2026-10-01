@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Activity{% endblock %}
 {% block main %}
 <h1>Activity</h1>
@@ -23,7 +24,7 @@
     {% set label, link = target(j.unit) %}<td>{{ j.action }} <a href="{{ link }}">{{ label }}</a>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</td>
     <td>{{ j.identity }}</td>
     <td class="mono">{{ j.started.strftime('%H:%M:%S') }}</td>
-    <td><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> {{ j.state }}</td>
+    <td>{{ st.job(j) }} {{ j.state }}</td>
   </tr>
   {% endfor %}
 </table>

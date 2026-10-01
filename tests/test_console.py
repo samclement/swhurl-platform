@@ -94,7 +94,8 @@ class AppsTests(unittest.TestCase):
         self.assertNotIn('infra-base</a>', text)
 
     def test_cluster_values_are_escaped(self):
-        text = client(fake()).get('/apps', headers=WHO).text
+        units = [unit('app-x-prod', ready='False', message='<script>x</script>')]
+        text = client(fake(units=units)).get('/apps', headers=WHO).text
         self.assertNotIn('<script>x</script>', text)
         self.assertIn('&lt;script&gt;', text)
 
@@ -108,6 +109,25 @@ class AppsTests(unittest.TestCase):
         response = client(runner).get('/apps', headers=WHO)
         self.assertEqual(response.status_code, 502)
         self.assertIn('connection refused', response.text)
+
+
+class StateTests(unittest.TestCase):
+    def test_one_vocabulary_and_waiting_is_updating_not_failing(self):
+        state = cluster.state_of
+        self.assertEqual(state(('True', 'Applied')), cluster.State('healthy'))
+        self.assertEqual(state(('False', "dependency 'flux-system/platform-oauth2-proxy' is not ready"), reason='DependencyNotReady'),
+                         cluster.State('updating', 'waiting for platform-oauth2-proxy'))
+        self.assertEqual(state(('False', 'Reconciliation in progress'), reason='Progressing').key, 'updating')
+        self.assertEqual(state(('Unknown', 'Running health checks')).key, 'updating')
+        self.assertEqual(state(('False', 'health check failed'), reason='HealthCheckFailed'), cluster.State('failing', 'health check failed'))
+        self.assertEqual(state(('True', ''), suspended=True).key, 'suspended')
+
+    def test_a_dependency_wait_is_not_a_problem(self):
+        waiting = unit('app-web-prod', ready='False', message="dependency 'flux-system/infra-base' is not ready")
+        text = client(fake(units=[unit('infra-base'), waiting], **CHECKS)).get('/', headers=WHO).text
+        self.assertIn('<strong>Updating</strong>', text)
+        self.assertIn('<a href="/apps/web/prod">web/prod: waiting for infra-base</a>', text)
+        self.assertNotIn('Needs attention', text)
 
 
 class AppSummaryTests(unittest.TestCase):
@@ -160,7 +180,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertEqual(text.count('<form class="wizard"'), 2, 'the app page uses the New app form layout')
         self.assertIn('action="/apps/web/prod/remove"', text)
         self.assertIn('<section class="danger">', text)
-        self.assertIn('<strong>Not healthy</strong>', text, 'a failing pod makes the verdict')
+        self.assertIn('<strong>Failing</strong>', text, 'a failing pod makes the verdict')
         self.assertNotIn('/promote', text, 'promote is offered only on staging')
         self.assertIn('https://web.homelab.swhurl.com', text)
         self.assertIn('CrashLoopBackOff', text)

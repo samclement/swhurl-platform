@@ -1,6 +1,6 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Apps{% endblock %}
-{% macro state(row) %}{% if row.suspended %}<span class="mark warn"></span> <span class="warn">Suspended</span>{% elif row.ready[0] == 'True' %}<span class="mark ok"></span> Ready{% elif row.ready[0] == 'False' %}<span class="mark bad"></span> <span class="bad">Not ready</span>{% else %}<span class="mark warn"></span> Updating{% endif %}{% endmacro %}
 {% block main %}
 <h1>Apps</h1>
 <p class="lead">Each app and what runs in staging and production. Open an environment to see its health or change it through a pull request.</p>
@@ -20,9 +20,9 @@
     </td>
     {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}
     <td>{% if row %}
-      <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ state(row) }}
+      <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ st.state(row.state, detail=false) }}
       <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code></div>
-      {% if row.ready[0] not in ('True', 'Unknown') %}<div class="muted">{{ row.ready[1] }}</div>{% endif %}
+      {% if row.state.detail and row.state.key != 'suspended' %}<div class="muted">{{ row.state.detail }}</div>{% endif %}
       {% for host in row.hosts %}<div class="muted">{{ host }}</div>{% else %}<div class="muted">no web address</div>{% endfor %}
     {% else %}<span class="muted">not deployed</span>{% endif %}</td>
     {% endfor %}

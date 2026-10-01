@@ -1,0 +1,7 @@
+{# The console's one status vocabulary: Healthy, Updating, Failing, Suspended (cluster.State), each with its
+   own mark so meaning does not rest on colour. Import with: {% import "_status.html" as st %} #}
+{% macro mark(key) %}<span class="mark {{ key }}" aria-hidden="true"></span>{% endmacro %}
+{% macro state(s, detail=true) %}{{ mark(s.key) }} <span class="state {{ s.key }}">{{ s.label }}</span>{% if detail and s.detail %} <span class="muted">— {{ s.detail }}</span>{% endif %}{% endmacro %}
+{% macro job(j) %}{{ mark({'running': 'updating', 'succeeded': 'healthy', 'failed': 'failing'}.get(j.state, 'updating')) }}{% endmacro %}
+{% macro check(level) %}{{ mark({'ok': 'healthy', 'bad': 'failing'}.get(level, 'warn')) }}{% endmacro %}
+{% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text }}</a>{% else %}{{ p.text }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}

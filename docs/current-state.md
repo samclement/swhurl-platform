@@ -353,6 +353,10 @@ Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read 
 - **Failure hints** (`122d88d`, CI fix `eb23e58`): `make app-status` and the app page add a fix line for out of memory (read from the previous exit), image pull errors, missing Secret values, crash loops and failing readiness checks; `make app-logs PREVIOUS=true` passes `--previous` to kubectl (shown against a healthy pod, which has no previous container). `122d88d` failed CI for one run (an f-string valid only on Python 3.12+); no console image was published from it.
 - **Alerts** (`d1a9c32`): `platform-alerts` Ready; `make verify-platform` shows both alerts pointing at their providers. A push to `hello-ts` at 19:17:47 UTC produced a "Staging deploy" ntfy message at 19:19:06 ("pushed commit '4961b90' to branch 'main'", priority 3, rocket tag), read back from the topic. The failure template rendered correctly from a sample Flux event posted straight to ntfy; a real Flux failure event has not been sent yet.
 
+## SQLite capability and the single-writer rule (1 October 2026)
+
+`073c8a0` (CI passed on `985dbd6`, which contains it). `make live-test-app-template` passed: the `smoke-data-prod` fixture, now generated with `--database sqlite --database-size 64Mi`, became Ready through its own Flux unit with its claim bound on `local-path-retain`, data written to `/data`, `DATABASE_PATH=/data/app.db` in the container, one replica and `strategy: Recreate`; the other two fixtures passed as before and all test instances were removed. app-template 5.2.1 already defaults Deployments to `Recreate` (all live apps run with it); the generator now states it, and the `single-writer` policy rule refuses more than one replica or a rolling update on an instance that mounts a ReadWriteOnce claim (unit tests). Not exercised: an app that actually uses SQLite; backups of SQLite databases (not built yet).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

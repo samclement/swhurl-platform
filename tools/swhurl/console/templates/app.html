@@ -11,7 +11,7 @@
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ i.app }}/{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail }}</span>{% endif %}</p>
+<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail | short }}</span>{% endif %}</p>
 <p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
   · {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{{ ', ' if not loop.last }}{% else %}no web address{% endfor %}
   · {{ exposures.get(status.exposure, status.exposure) }}</p>
@@ -38,18 +38,18 @@
   <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
 <dl>
   <dt>Git</dt>
-  <dd class="mono">desired {{ status.desired_revision.split(':')[-1][:12] }}, applied {{ status.applied_revision.split(':')[-1][:12] }}
+  <dd class="mono">desired {{ status.desired_revision.split(':')[-1] | short }}, applied {{ status.applied_revision.split(':')[-1] | short }}
     {% if not status.applied %}<span class="warn">not yet applied</span>{% endif %}</dd>
   <dt>Flux unit</dt>
-  <dd><a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="{{ status.unit[0] | state }}">{{ status.unit[0] }}</span> <span class="muted">{{ status.unit[1] }}</span></dd>
+  <dd><a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="{{ status.unit[0] | state }}">{{ status.unit[0] }}</span> <span class="muted">{{ status.unit[1] | short }}</span></dd>
   <dt>Release</dt>
-  <dd>{% if status.release %}<span class="{{ status.release[0] | state }}">{{ status.release[0] }}</span> <span class="muted">{{ status.release[1] }}</span>
+  <dd>{% if status.release %}<span class="{{ status.release[0] | state }}">{{ status.release[0] }}</span> <span class="muted">{{ status.release[1] | short }}</span>
       {% else %}<span class="bad">not found</span>{% endif %}</dd>
   <dt>Image</dt>
   {% if status.image_state == 'matches' %}
-  <dd><span class="mono">{{ status.desired_image }}</span><br><span class="ok">running: matches desired</span></dd>
+  <dd><span class="mono">{{ status.desired_image | short }}</span><br><span class="ok">running: matches desired</span></dd>
   {% else %}
-  <dd class="mono">desired {{ status.desired_image }}<br>running {{ status.running_images | join(', ') or 'none' }}
+  <dd class="mono">desired {{ status.desired_image | short }}<br>running {{ (status.running_images | join(', ') or 'none') | short }}
       {% if status.image_state == 'different' %}<br><span class="bad">different image: a rollout in progress or failing</span>
       {% elif status.image_state == 'unpinned' %}<br><span class="muted">Git pins no digest, so this cannot be compared</span>{% endif %}</dd>
   {% endif %}

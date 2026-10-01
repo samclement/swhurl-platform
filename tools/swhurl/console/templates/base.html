@@ -98,6 +98,7 @@
   .mark.warn { color: var(--warn); } .mark.warn::before { content: "!"; }
   .state.failing { color: var(--bad); } .state.suspended { color: var(--warn); }
   .crumbs { color: var(--muted); font-size: 13px; margin: 0; }
+  .hash { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
   ul.items { list-style: none; padding: 0; margin: 0 0 8px; }
   ul.items li { padding: 6px 0; border-bottom: 1px solid var(--line); }
   ul.items li:last-child { border-bottom: 0; }
@@ -138,7 +139,7 @@
     <a href="/activity" class="{{ 'here' if path.startswith('/activity') or path.startswith('/jobs') }}">Activity{% if running_jobs %} <span class="badge" title="Jobs running now">{{ running_jobs | length }} running</span>{% endif %}</a>
   </nav>
   <a class="button primary" href="/new">+ New app</a>
-  <span class="who">{{ identity }} · read at {{ read_at }} · <a href="{{ path }}">refresh</a></span>
+  <span class="who">{{ identity }} · Updated {{ read_at }} · <a href="{{ path }}" title="Read the cluster again">↻ Refresh</a></span>
 </header>
 <main>
 {% block main %}{% endblock %}

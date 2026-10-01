@@ -16,6 +16,8 @@ A web page at `https://console.<BASE_DOMAIN>` (`console.homelab.swhurl.com`) for
 
 **States.** Every page uses the same four, each with its own mark so the meaning does not rest on colour: **Healthy** (✓), **Updating** (↻: waiting for a dependency, applying a change or rolling out a new image, with what it waits for), **Failing** (✕, with Flux's or Helm's message) and **Suspended** (‖). After every push Flux re-checks every unit and dependents wait a few seconds (`DependencyNotReady`); the console shows that as Updating, lists it under **Updating now**, and does not count it as something needing attention. Health checks are passing or not passing.
 
+Long commit SHAs and image digests are shortened to 12 characters; hover for the full value.
+
 Every page names an app instance `<app>/<env>` (for example `hello/staging`), linking to its app page; the Flux unit's own name (`app-hello-staging`) appears only on Platform and the unit's page. Each button starts a **job**: its page shows the output as it arrives and refreshes until it finishes; one job per unit or app instance at a time.
 
 - **Cluster actions** make the changes `flux reconcile kustomization <unit> --with-source`, `flux suspend` and `flux resume` would, with `kubectl` (the image has no `flux` CLI): suspend and resume set the unit's `spec.suspend`; reconcile sets the `reconcile.fluxcd.io/requestedAt` annotation on the unit's Git source and then on the unit, and resume on the unit. Each waits (up to 10 minutes) until Flux reports the request handled, then shows the revision or the unit's error. A suspended unit is not reconciled: resume it. Suspending stops Git changes reaching the unit, as `make suspend` does ([lifecycle](operations.md#lifecycle)).

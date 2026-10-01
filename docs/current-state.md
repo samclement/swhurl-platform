@@ -339,6 +339,12 @@ Follow-up `50c7d6e` (deployed `src-457f9838…`): the app page's Scale and Who c
 
 `aed774c`, deployed by the publish workflow (`faa891e`); `6646e0f` before it made PR titles name instances `<app>/<env>`. Read-only checks on the deployed console (port-forward, identity `claude-live-test (port-forward)`): all pages 200, a missing job 404 with the new error page; 21 Healthy and 1 Updating state labels and none of the old wording (Ready / Not ready / Not healthy). Right after the console's own deploy commit, Overview and Platform showed an **Updating** verdict (one unit still applying it), not "things need attention", and about 30 seconds later "Everything is healthy". Earlier the same day, merging a promote had made every app show a red "Not ready" for about 10 seconds (`DependencyNotReady` while `platform-oauth2-proxy` re-checked); that case is now Updating, "waiting for platform-oauth2-proxy" (unit test).
 
+## Console redesign step 4: polish (1 October 2026)
+
+`560d9c7` failed CI (import order in `server.py`: it was committed without a passing `make check`); `6fd74e8` fixed it and the publish workflow deployed both (`afb992e`). Read-only checks on the deployed console (identity `claude-live-test (port-forward)`): header "Updated 18:51 · ↻ Refresh"; on `hello-ts/staging` five revisions and digests shortened to 12 characters with the full value on hover and no full-length SHA outside hover text; the New app breadcrumb; `/`, `/apps`, `/platform`, `/activity` 200. That completes the console redesign (plan item 11).
+
+Found during the check, not yet fixed: `hello-ts/staging` shows **Updating** ("different image") although the rollout finished. The pod's spec names the desired digest (`sha256:1cafaf63…`, run 15) but the node reports `sha256:09432ab7…`, another image index (likely run 16) wrapping the same amd64 image (`062fec38…`; only the attestation differs), because containerd records the first digest it pulled that image under. `ops.image_state` (also `make app-status`) compares the node's ID with Git's digest, so identical content published twice reads as different.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

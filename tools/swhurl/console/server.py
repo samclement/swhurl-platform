@@ -16,13 +16,13 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from markupsafe import Markup, escape
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
-from markupsafe import Markup, escape
 from starlette.templating import Jinja2Templates
 
 from swhurl.apps import contract, ops

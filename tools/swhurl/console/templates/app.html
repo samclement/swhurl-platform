@@ -1,15 +1,53 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
 {% set i = status.instance %}
+{% set row = summary.envs.get(i.env) if summary else none %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
-<h1>{{ i.app }}/{{ i.env }} <span class="muted">namespace {{ i.namespace }}</span></h1>
+<p class="crumbs"><a href="/apps">Apps</a> › {{ i.app }}</p>
+<h1>{{ i.app }}/{{ i.env }}</h1>
+<nav class="tabs" aria-label="Environment">
+{% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ i.app }}/{{ env }}</a>{% endif %}{% endfor %}
+</nav>
+
+{# One verdict from the facts below, worst first. #}
+{% if row and row.suspended %}{% set level, verdict, why = 'warn', 'Suspended', 'Git changes are not applied until its Flux unit is resumed' %}
+{% elif status.problems %}{% set level, verdict, why = 'bad', 'Not healthy', status.problems | length ~ ' pod(s) failing; see below' %}
+{% elif status.unit[0] == 'False' or (status.release and status.release[0] == 'False') %}{% set level, verdict, why = 'bad', 'Not ready', (status.release[1] if status.release and status.release[0] == 'False' else status.unit[1]) %}
+{% elif not status.applied %}{% set level, verdict, why = 'warn', 'Updating', 'a Git change is not applied yet' %}
+{% elif status.image_state == 'different' %}{% set level, verdict, why = 'warn', 'Updating', 'a new image is rolling out (or failing to)' %}
+{% else %}{% set level, verdict, why = 'ok', 'Healthy', '' %}{% endif %}
+<p class="verdict"><span class="mark {{ level }}"></span> <strong>{{ verdict }}</strong>{% if why %} <span class="muted">— {{ why }}</span>{% endif %}</p>
+<p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
+  · {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{{ ', ' if not loop.last }}{% else %}no web address{% endfor %}
+  · {{ exposures.get(status.exposure, status.exposure) }}</p>
+
+<div class="toolbar">
+  {% if status.routes %}<a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>{% endif %}
+  {% if i.env == 'staging' and summary and summary.comparison in ('ahead', 'differs') %}
+  <form method="post" action="/apps/{{ i.app }}/staging/promote"><button {{ 'disabled' if not github }}
+    onclick="return confirm('Open a PR copying the staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button></form>
+  <span class="muted">{{ 'Staging is ahead of prod.' if summary.comparison == 'ahead' else 'Staging and prod run different images.' }}</span>
+  {% endif %}
+  <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
+</div>
+
+{% if status.problems %}
+<h2 class="bad">Failing pods</h2>
+<table class="compact">
+  <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
+  {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<details class="section">
+  <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
 <dl>
   <dt>Git</dt>
   <dd class="mono">desired {{ status.desired_revision.split(':')[-1][:12] }}, applied {{ status.applied_revision.split(':')[-1][:12] }}
     {% if not status.applied %}<span class="warn">not yet applied</span>{% endif %}</dd>
   <dt>Flux unit</dt>
-  <dd><span class="{{ status.unit[0] | state }}">{{ status.unit[0] }}</span> <span class="muted">{{ status.unit[1] }}</span></dd>
+  <dd><a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="{{ status.unit[0] | state }}">{{ status.unit[0] }}</span> <span class="muted">{{ status.unit[1] }}</span></dd>
   <dt>Release</dt>
   <dd>{% if status.release %}<span class="{{ status.release[0] | state }}">{{ status.release[0] }}</span> <span class="muted">{{ status.release[1] }}</span>
       {% else %}<span class="bad">not found</span>{% endif %}</dd>
@@ -29,42 +67,45 @@
   <dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }}</a></div>{% else %}<span class="muted">private (no route)</span>{% endfor %}</dd>
   <dt>TLS</dt>
   <dd>{% for name, ready in status.certificates %}<div><span class="{{ ready | state }}">{{ ready }}</span> {{ name }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+  <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>
 </dl>
-{% if status.problems %}
-<h2 class="bad">Problems</h2>
-<table>
-  <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
-  {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>{% endfor %}
-</table>
-{% endif %}
-<form class="actions" method="post"><button formaction="/units/{{ i.unit }}/reconcile">Reconcile {{ i.unit }}</button></form>
+</details>
 
-<h2>Change through a pull request</h2>
-<p class="muted">Each opens a PR made by <code>main</code>'s own <code>make app-*</code> command; nothing changes until you merge it.{% if not github %} <span class="bad">No GitHub token is configured.</span>{% endif %}</p>
-<div class="forms">
-<form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
-  <fieldset>
-    <legend>Scale</legend>
-    <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-    <span class="muted hint">Empty fields keep their current value, shown in grey.</span>
-  </fieldset>
-  {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
-</form>
-<form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
-  <fieldset>
-    <legend>Who can reach it</legend>
-    {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
-    {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
-                     hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
-  </fieldset>
-  {{ ui.submit('Open access PR', 'Private removes the web address.') }}
-</form>
-</div>
-<form class="actions" method="post">
-  {% if i.env == 'staging' %}<button formaction="/apps/{{ i.app }}/staging/promote" {{ 'disabled' if not github }}
-    onclick="return confirm('Open a PR copying the staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button>{% endif %}
-  <button formaction="/apps/{{ i.app }}/{{ i.env }}/remove" class="risky" {{ 'disabled' if not github }}
-    onclick="return confirm('Open a PR removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it (a retained volume and its namespace are kept).')">Uninstall</button>
-</form>
-<p class="muted">Same facts as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>.</p>
+<h2>Change</h2>
+<p class="muted">Each opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; nothing changes until you merge it.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
+<details class="section disclose">
+  <summary><strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
+  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
+    <fieldset>
+      <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
+      <span class="muted hint">Empty fields keep their current value, shown in grey.</span>
+    </fieldset>
+    {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
+  </form>
+</details>
+<details class="section disclose">
+  <summary><strong>Who can reach it</strong> <span class="muted">— signed in, public or private, and the host</span></summary>
+  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
+    <fieldset>
+      {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
+      {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
+                       hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
+    </fieldset>
+    {{ ui.submit('Open access PR', 'Private removes the web address.') }}
+  </form>
+</details>
+
+<h2>Recent jobs</h2>
+{% if unit_jobs %}
+<ul class="items">
+  {% for j in unit_jobs %}<li><span class="mark {{ {'succeeded': 'ok', 'failed': 'bad'}.get(j.state, 'warn') }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
+</ul>
+{% else %}<p class="muted">None since the console started.</p>{% endif %}
+
+<section class="danger">
+  <h2>Uninstall</h2>
+  <p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
+  <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove"><button class="risky" {{ 'disabled' if not github }}
+    onclick="return confirm('Open a PR removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it (a retained volume and its namespace are kept).')">Open uninstall PR</button></form>
+</section>
 {% endblock %}

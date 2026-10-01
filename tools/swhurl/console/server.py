@@ -33,6 +33,8 @@ LOOPBACK = ('127.0.0.1', '::1', 'localhost')
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / 'templates')
 # A Ready status ('True', 'False', 'Unknown') as a CSS class.
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
+# Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
+TEMPLATES.env.globals['target'] = cluster.target
 
 
 class RequireIdentity(BaseHTTPMiddleware):
@@ -62,6 +64,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
                        read_at=dt.datetime.now().astimezone().strftime('%H:%M:%S'),
                        running_jobs=[j for j in jobs.recent() if j.state == 'running'])
+        context.setdefault('github', github)
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)
 
     def reading(request: Request, name: str, read, **context) -> Response:
@@ -88,15 +91,17 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return reading(request, 'overview.html', read)
 
     def apps(request: Request) -> Response:
-        return reading(request, 'apps.html', lambda: {'rows': cluster.apps(runner)})
+        return reading(request, 'apps.html', lambda: {'apps': cluster.summaries(cluster.apps(runner))})
 
     def app(request: Request) -> Response:
         found = cluster.instance(request.path_params['app'], request.path_params['env'])
         status = ops.gather_status(runner, found) if found else None
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
+        summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github,
-                    exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN)
+                    exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
+                    summary=summary, unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
 
     def platform(request: Request) -> Response:
         def read():

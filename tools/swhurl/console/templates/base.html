@@ -89,6 +89,7 @@
   dl.plain { background: none; border: 0; padding: 0; gap: 4px 12px; }
   /* Overview, Platform, unit and Activity pages. A status mark pairs colour with a shape. */
   .verdict { font-size: 17px; margin: 0 0 4px; }
+  .tabs + .verdict { margin-top: 16px; }
   .mark { display: inline-block; width: 1.2em; text-align: center; font-weight: 700; }
   .mark.ok::before { content: "✓"; } .mark.warn::before { content: "!"; } .mark.bad::before { content: "✕"; }
   .crumbs { color: var(--muted); font-size: 13px; margin: 0; }
@@ -106,6 +107,18 @@
   .action-row form { flex: none; width: 10em; }
   .action-row button { width: 100%; }
   .action-row:last-child { border-bottom: 0; }
+  /* Apps list and app page. */
+  table.apps td { vertical-align: top; }
+  table.apps th:first-child { width: 22%; }
+  .hint-line { font-size: 13px; margin: 2px 0 6px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 8px; }
+  .toolbar form { margin: 0; }
+  .toolbar button, .toolbar .button { font-size: 14px; padding: 4px 12px; }
+  details.disclose { border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--panel); }
+  details.disclose[open] { padding-bottom: 12px; }
+  details.disclose form.wizard { border: 0; padding: 8px 0 0; background: none; }
+  section.danger { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 8px; }
+  section.danger h2 { color: var(--bad); }
   pre { background: var(--panel); border: 1px solid var(--line); padding: 12px; overflow-x: auto;
         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 </style>

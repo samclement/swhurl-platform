@@ -1,26 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Apps{% endblock %}
+{% macro state(row) %}{% if row.suspended %}<span class="mark warn"></span> <span class="warn">Suspended</span>{% elif row.ready[0] == 'True' %}<span class="mark ok"></span> Ready{% elif row.ready[0] == 'False' %}<span class="mark bad"></span> <span class="bad">Not ready</span>{% else %}<span class="mark warn"></span> Updating{% endif %}{% endmacro %}
 {% block main %}
 <h1>Apps</h1>
-<p class="lead">Every app instance and the image Git says it should run. Open one to see its health or change it through a pull request.</p>
-{% if rows %}
+<p class="lead">Each app and what runs in staging and production. Open an environment to see its health or change it through a pull request.</p>
+{% if apps %}
 <div class="scroll">
-<table>
-  <tr><th>Instance</th><th>Flux unit</th><th>Image (desired)</th></tr>
-  {% for row in rows %}
+<table class="compact apps">
+  <tr><th>App</th>{% for env in ('staging', 'prod') %}<th>{{ env | capitalize }}</th>{% endfor %}</tr>
+  {% for a in apps %}
   <tr>
-    <td><a href="/apps/{{ row.instance.app }}/{{ row.instance.env }}">{{ row.instance.app }}/{{ row.instance.env }}</a></td>
-    <td>
-      {% if row.suspended %}<span class="warn">Suspended</span>
-      {% else %}<span class="{{ row.ready[0] | state }}">{{ 'Ready' if row.ready[0] == 'True' else 'Not ready' }}</span>{% endif %}
-      {% if row.ready[0] != 'True' %}<div class="muted">{{ row.ready[1] }}</div>{% endif %}
+    <td><strong>{{ a.app }}</strong>
+      {% if a.comparison == 'ahead' %}<div class="warn hint-line">Staging is ahead of prod</div>
+      {% elif a.comparison == 'differs' %}<div class="muted hint-line">Staging and prod differ</div>
+      {% elif a.comparison == 'same' %}<div class="muted hint-line">Same image in both</div>{% endif %}
+      {% if a.comparison in ('ahead', 'differs') %}
+      <form method="post" action="/apps/{{ a.app }}/staging/promote"><button {{ 'disabled' if not github }} onclick="return confirm('Open a PR copying the staging image into {{ a.app }}/prod?')">Promote to prod</button></form>
+      {% endif %}
     </td>
-    <td class="mono">{{ row.image }}</td>
+    {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}
+    <td>{% if row %}
+      <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ state(row) }}
+      <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code></div>
+      {% if row.ready[0] not in ('True', 'Unknown') %}<div class="muted">{{ row.ready[1] }}</div>{% endif %}
+      {% for host in row.hosts %}<div class="muted">{{ host }}</div>{% else %}<div class="muted">no web address</div>{% endfor %}
+    {% else %}<span class="muted">not deployed</span>{% endif %}</td>
+    {% endfor %}
   </tr>
   {% endfor %}
 </table>
 </div>
 {% else %}
-<p class="muted">No app units (<code>app-&lt;app&gt;-&lt;env&gt;</code>) in flux-system. Add one with <code>make app-new</code>.</p>
+<p class="muted">No apps yet. <a href="/new">Add one</a>: the console opens a pull request that deploys it to staging.</p>
 {% endif %}
 {% endblock %}

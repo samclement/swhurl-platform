@@ -36,7 +36,7 @@
     <tr><th>Unit</th><th>State</th><th>Applied</th><th>Waits for</th></tr>
     {% for u in members %}
     <tr>
-      <td><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a></td>
+      <td><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</td>
       <td>{% if u.suspended %}<span class="mark warn"></span> <span class="warn">Suspended</span>{% elif u.ready[0] == 'True' %}<span class="mark ok"></span> Ready{% else %}<span class="mark bad"></span> <span class="bad">Not ready</span> <span class="muted">{{ u.ready[1] }}</span>{% endif %}</td>
       <td class="mono">{{ u.revision or '—' }}</td>
       <td class="muted">{{ u.depends_on | join(', ') or '—' }}</td>

@@ -17,7 +17,7 @@
 {% if running_jobs %}
 <h2>Running now</h2>
 <ul class="items">
-  {% for j in running_jobs %}<li><span class="mark warn"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ j.unit }}</a> <span class="muted">by {{ j.identity }}, started {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
+  {% for j in running_jobs %}<li><span class="mark warn"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a> <span class="muted">by {{ j.identity }}, started {{ j.started.strftime('%H:%M') }} UTC</span></li>{% endfor %}
 </ul>
 {% endif %}
 
@@ -32,7 +32,7 @@
 <h2>Recent activity</h2>
 {% if recent %}
 <ul class="items">
-  {% for j in recent %}<li><span class="mark {{ 'ok' if j.state == 'succeeded' else 'bad' }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ j.unit }}</a>
+  {% for j in recent %}<li><span class="mark {{ 'ok' if j.state == 'succeeded' else 'bad' }}"></span> <a href="/jobs/{{ j.id }}">{{ j.action }} {{ target(j.unit)[0] }}</a>
     <span class="muted">{{ j.state }} {{ j.finished.strftime('%H:%M') if j.finished }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
 </ul>
 <p><a href="/activity">All activity</a></p>

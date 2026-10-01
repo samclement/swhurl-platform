@@ -353,11 +353,11 @@ class ChangeAppRouteTests(unittest.TestCase):
         cases = (
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
-             'console/scale-hello-prod-abc1234', '[console] apps: scale hello prod'),
+             'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
             ('/apps/hello/staging/promote', {}, ('app-promote', 'hello', '--from=staging', '--to=prod'), 'hello/prod',
-             'console/promote-hello-staging-abc1234', '[console] apps: promote hello staging to prod'),
+             'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
-             'console/remove-hello-staging-abc1234', '[console] apps: remove hello staging'),
+             'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):

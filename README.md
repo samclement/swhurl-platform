@@ -22,7 +22,8 @@ make verify-platform             # expect "Validation passed."
 | I want to… | Read |
 | --- | --- |
 | See apps and Flux units, or change them from a browser | [Console](docs/console.md) |
-| Deploy an app or change one | [Apps](docs/apps.md) |
+| Create, change, promote or remove an app (its whole life) | [Apps](docs/apps.md) |
+| Start a new app's code | [Start from the template](docs/apps.md#start-from-the-template) |
 | Deploy a new image of an app | [Deploy a new image](docs/apps.md#deploy-a-new-image) |
 | Understand how the console deploys itself | [Deploy a new console](docs/console.md#deploy-a-new-console) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |

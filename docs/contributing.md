@@ -60,7 +60,7 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
   | Health, Secrets, certificates, lifecycle, chart updates, backups, troubleshooting | [operations](operations.md) |
   | Every `make` target | [commands](commands.md) |
   | Shared services, settings, keys | [services](services.md) |
-  | App instances, generator, policy | [apps](apps.md) |
+  | App lifecycle (template to removal), generator, policy | [apps](apps.md) |
   | Web console: use, deploy, token, protection | [console](console.md) |
   | Units, dependencies, ownership, how changes reach the cluster | [architecture](architecture.md) |
   | Dated live evidence | [current state](current-state.md) |

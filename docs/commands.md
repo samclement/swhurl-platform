@@ -16,16 +16,18 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 
 ## Apps
 
+In the order of an app's life ([apps](apps.md)): create, set access, promote, operate, remove; then the console's own image.
+
 | Target | Does | Touches |
 | --- | --- | --- |
 | `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy ([apps](apps.md)) | Git |
-| `app-status APP= ENV=` | Desired vs applied Git revision and image digest, replicas, route, certificate, failing containers | Cluster (read) |
+| `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
+| `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
+| `app-status APP= ENV=` | Whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
-| `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
 | `app-scale APP= ENV= ARGS="..."` | Change `--replicas` (0 to 10), `--cpu`, `--memory` or `--memory-limit` | Git |
-| `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
 | `app-remove APP= ENV=` | Delete the instance's files, its unit file and registration, and its Reloader namespace; warns when a retained volume will be kept | Git |
 | `console-image` | Pin `platform/console` to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run. The publish run does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
 | `console-dev` | The [console](console.md) on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub | Cluster (read) |

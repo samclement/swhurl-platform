@@ -211,3 +211,28 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# Push notifications for failures and staging deploys, to the ntfy app (docs/services.md#alerts).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-alerts
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./platform/alerts
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m

@@ -368,6 +368,32 @@ def check_image_automation(runner: Runner, report: Report) -> None:
             report.bad(f'ImagePolicy {name} is not Ready: {message}')
 
 
+ALERTS = ('failures', 'staging-deploys')  # platform/alerts/alerts.yaml
+
+
+def check_alerts(runner: Runner, report: Report) -> None:
+    """The ntfy alerts exist and point at existing providers (v1beta3 objects report no Ready status)."""
+    report.section('Alerts')
+    base = ['kubectl', '-n', 'flux-system', 'get']
+    try:
+        alerts = {a['metadata']['name']: a for a in runner.json([*base, 'alerts.notification.toolkit.fluxcd.io',
+                                                                 '-o', 'json'])['items']}
+        providers = {p['metadata']['name'] for p in runner.json([*base, 'providers.notification.toolkit.fluxcd.io',
+                                                                 '-o', 'json'])['items']}
+    except (CommandError, KeyError, TypeError):
+        report.bad('could not read Flux alerts and providers')
+        return
+    for name in ALERTS:
+        alert = alerts.get(name)
+        provider = ((alert or {}).get('spec') or {}).get('providerRef', {}).get('name')
+        if alert is None:
+            report.warn(f'alert {name} is missing: no push notifications for it (make reconcile UNIT=platform-alerts)')
+        elif provider not in providers:
+            report.bad(f'alert {name} points at provider {provider}, which does not exist')
+        else:
+            report.ok(f'alert {name} sends to {provider}')
+
+
 def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
     """GitHub accepts the console's token, and it is not about to expire (read from GitHub's reply)."""
     report.section('Console GitHub Token')
@@ -433,6 +459,7 @@ CHECKS = (
     Check('registration', frozenset({'cluster', 'exec'}), check_registration),
     Check('ingress', frozenset({'cluster'}), check_ingress),
     Check('image-automation', frozenset({'cluster'}), check_image_automation),
+    Check('alerts', frozenset({'cluster'}), check_alerts),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),

@@ -38,7 +38,10 @@ CHECKS = {'kubectl get --raw=/version': '{}',
           'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
           'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
               json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
-          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []})}
+          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
+          'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': [
+              {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]}),
+          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': [{'metadata': {'name': 'p'}}]})}
 """Answers for the cluster-only platform checks (Overview and Platform run them)."""
 
 
@@ -281,7 +284,9 @@ class PlatformTests(unittest.TestCase):
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
                          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
                              json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
-                         'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []})})
+                         'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
+                         'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': []}),
+                         'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<strong>Ingress</strong> · <span class="bad">1 of 1 not passing</span>', response.text)

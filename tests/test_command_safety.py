@@ -62,6 +62,10 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
+elif any(a.startswith('alerts.notification') for a in argv):
+    emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]})
+elif any(a.startswith('providers.notification') for a in argv):
+    emit({'items': [{'metadata': {'name': 'p'}}]})
 elif any(a.startswith('receivers') for a in argv):
     emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
 elif Path(sys.argv[0]).name == 'flux':

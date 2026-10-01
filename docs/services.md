@@ -15,6 +15,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
+| [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | Flux notification Providers and Alerts, to ntfy.sh |
 | [Push webhook](#push-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (Flux `Receiver`) |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
@@ -71,6 +72,21 @@ The collectors' `authorization` header reads `${env:CLICKSTACK_INGESTION_KEY}` a
 ## Reloader
 
 Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`, `console`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace and `make app-remove` takes it out; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`), both OTel collectors (`clickstack-ingestion-key`) and the console (`console-github`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
+
+## Alerts
+
+Things now change without you (staging deploys, Renovate merges), so Flux sends a push notification to the [ntfy](https://ntfy.sh) app:
+
+| Notification | When | Priority |
+| --- | --- | --- |
+| `<Kind> <name>: <reason>` 🚨 | A unit cannot apply or its workloads fail their health check (an app's 3-minute fail-fast included), a Git or Helm source cannot fetch, or image automation cannot scan or push | High |
+| `Staging deploy` 🚀 | Image automation pushed a new app image to staging | Normal |
+
+Tapping a notification opens the console. A unit that keeps failing notifies again on each retry (about every 10 minutes).
+
+- **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show it in your own terminal with `sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml` (the part after `https://ntfy.sh/` and before `?`).
+- **How:** Flux has no ntfy provider, so the `generic` provider posts each event as JSON and ntfy renders it with the template in the address (`tpl=yes&t=…&m={{.message}}`). Rotate: [operations](operations.md#secrets).
+- `make verify-platform` checks both alerts exist and point at existing providers; Flux reports no delivery status for them.
 
 ## Push webhook
 

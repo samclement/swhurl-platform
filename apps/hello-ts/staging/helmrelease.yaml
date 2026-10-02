@@ -41,7 +41,7 @@ spec:
               digest: sha256:610dd10f98031bf67441fe3041faf24afc0d85b80afafc5c82a6684c5a5854db # {"$imagepolicy": "flux-system:hello-ts-staging:digest"}
             resources:
               requests:
-                cpu: 15m
+                cpu: 10m
                 memory: 32Mi
               limits:
                 memory: 128Mi

@@ -56,6 +56,8 @@ from swhurl.apps.contract import (
     PRESETS,
     RETAINED_STORAGE_CLASS,
     SQLITE_PATH,
+    STARTUP_PERIOD,
+    STARTUP_SECONDS,
     ManifestError,
     add_image_markers,
     default_host,
@@ -112,6 +114,11 @@ def validate(args) -> None:
         raise GenerationError('--host only applies to authenticated-web or public exposure')
     if args.kind == 'web' and not args.health_path:
         raise GenerationError('web apps need --health-path (the app\'s real readiness endpoint)')
+    if args.startup_seconds is not None:
+        if args.kind != 'web':
+            raise GenerationError('--startup-seconds applies to web apps (a worker has no probes)')
+        if not STARTUP_SECONDS[0] <= args.startup_seconds <= STARTUP_SECONDS[1]:
+            raise GenerationError(f'--startup-seconds must be between {STARTUP_SECONDS[0]} and {STARTUP_SECONDS[1]}')
     if args.env == 'prod' and 'digest' not in parse_image(args.image):
         raise GenerationError('production instances must pin an image digest (REPO:TAG@sha256:...)')
     if auto_deploys(args):
@@ -172,6 +179,12 @@ def build_values(args) -> dict:
             return {'enabled': True, 'custom': True,
                     'spec': {'httpGet': {'path': args.health_path, 'port': args.port}}}
         container['probes'] = {'readiness': probe(), 'liveness': probe()}
+        if args.startup_seconds:
+            # Liveness waits until the app first answers, for up to startup_seconds (a JVM can take a while
+            # when the node is busy); without this, three failed liveness checks would restart it mid-start.
+            container['probes']['startup'] = probe()
+            container['probes']['startup']['spec'] |= {
+                'periodSeconds': STARTUP_PERIOD, 'failureThreshold': -(-args.startup_seconds // STARTUP_PERIOD)}
 
     controller: dict = {'containers': {'main': container}}
     if args.persistence:
@@ -419,6 +432,9 @@ def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.
     p.add_argument('--port', type=int, default=8080)
     p.add_argument('--health-path', help='HTTP readiness/liveness path (required for web)')
     p.add_argument('--command', help='container command, shell-quoted')
+    p.add_argument('--startup-seconds', type=int, metavar='N',
+                   help=f'web only: a startup probe gives the app up to N seconds ({STARTUP_SECONDS[0]}-{STARTUP_SECONDS[1]}) '
+                        'to first answer its health path before liveness checks start (slow starters such as a JVM)')
     p.add_argument('--uid', type=int, default=65532, help='non-root UID/GID the image runs as')
     p.add_argument('--cpu', default='10m')
     p.add_argument('--memory', default='32Mi')

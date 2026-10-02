@@ -61,6 +61,9 @@ def otlp_env(service: str) -> dict:
 # explicitly still win. Name, environment, image and host are per instance and never in the file.
 MANIFEST_FILE = 'swhurl.yaml'
 MANIFEST_VERSION = 1
+STARTUP_SECONDS = (10, 600)
+"""Bounds for startupSeconds: how long a slow starter (a JVM) may take to answer its health path first."""
+STARTUP_PERIOD = 5
 KINDS = ('web', 'worker')
 TELEMETRY = ('otlp', 'none')
 
@@ -79,7 +82,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'startupSeconds'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -107,8 +110,13 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         defaults['health_path'] = field('healthPath', str)
         if not defaults['health_path']:
             raise fail('healthPath is required for kind web (the app\'s readiness endpoint)')
-    elif doc.get('port') is not None or doc.get('healthPath') is not None:
-        raise fail('port and healthPath apply to kind web only')
+        startup = field('startupSeconds', int)
+        if startup is not None:
+            if not STARTUP_SECONDS[0] <= startup <= STARTUP_SECONDS[1]:
+                raise fail(f'startupSeconds must be between {STARTUP_SECONDS[0]} and {STARTUP_SECONDS[1]}')
+            defaults['startup_seconds'] = startup
+    elif any(doc.get(k) is not None for k in ('port', 'healthPath', 'startupSeconds')):
+        raise fail('port, healthPath and startupSeconds apply to kind web only')
     if field('database', str, DATABASES):
         defaults['database'] = doc['database']
         if field('databaseSize', str):
@@ -135,7 +143,14 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
 
 # Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a
 # new repository; the template's own CI renders it and runs the shared app checks on the result.
-STACKS = {'typescript': 'samclement/swhurl-app-template-typescript'}
+STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
+          'kotlin': 'samclement/swhurl-app-template-kotlin'}
+STACK_DESCRIPTIONS = {
+    'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
+    'kotlin': 'Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, '
+              'about 200 MB of memory.',
+}
+"""One line per stack for the New app form; both offer web or worker and SQLite."""
 COPIER = 'copier@9.18.2'
 APP_OWNER = 'samclement'
 APP_WORKFLOW = 'Container'

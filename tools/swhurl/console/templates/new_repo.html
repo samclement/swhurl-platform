@@ -27,7 +27,7 @@
       <span class="label">Stack</span>
       {% for key, template in stacks.items() %}
       <label class="choice"><input type="radio" name="stack" value="{{ key }}" {{ 'checked' if (form.stack or 'typescript') == key }}>
-        <span><strong>{{ key }}</strong><br><span class="muted">From <a href="https://github.com/{{ template }}">{{ template }}</a>: an HTTP service on port 8080 with <code>/healthz</code>, OpenTelemetry and JSON logs.</span></span></label>
+        <span><strong>{{ key }}</strong><br><span class="muted">{{ stack_text.get(key, '') }} From <a href="https://github.com/{{ template }}">{{ template }}</a>.</span></span></label>
       {% endfor %}
     </div>
     {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}

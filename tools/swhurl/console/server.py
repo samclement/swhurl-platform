@@ -179,7 +179,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 features[stack], features_error = [], str(problem)
         return page(request, 'new_repo.html', status_code=status_code, presets=changes.PRESET_LABELS,
                     features=features, features_error=features_error,
-                    preset=changes.NEW_REPO, stacks=contract.STACKS, owner=contract.APP_OWNER,
+                    preset=changes.NEW_REPO, stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
+                    owner=contract.APP_OWNER,
                     exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
                     github=github, app_repos=app_repos)
 

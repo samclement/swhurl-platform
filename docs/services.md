@@ -53,19 +53,23 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 
 | Source | Handling |
 | --- | --- |
-| Apps, Flux, MongoDB, MongoDB operator, ClickStack collector; any JSON object | `msg`/`message` becomes the body; other fields become attributes. HyperDX's `[API]`/`[APP]` JSON prefixes are accepted. |
+| Apps, Flux, MongoDB, MongoDB operator, cert-manager, Traefik, Reloader, console, OTel collectors; any JSON object | `msg`/`message` becomes the body; other fields become attributes. HyperDX's `[API]`/`[APP]` JSON prefixes are accepted. |
 | ClickHouse and Keeper | Timestamp, thread/query IDs, level, logger and message from their text prefix. |
 | ClickHouse operator and platform collectors | Tab-separated logger output and its trailing JSON fields. |
-| cert-manager and metrics-server | Kubernetes klog prefix (level, caller, PID and message). |
+| metrics-server and older cert-manager logs | Kubernetes klog prefix (level, caller, PID, message and quoted key/value fields). |
 | nginx and oauth2-proxy | Request fields (method, path, status, client, user agent, sizes); separate parsers for application/error lines. |
 | CoreDNS | Bracketed level and message. |
-| local-path provisioner, Traefik and Reloader | Quoted logfmt fields. |
-| Console | Uvicorn access/application lines and audit prefixes. |
+| local-path provisioner; older Traefik and Reloader logs | Quoted logfmt fields. |
+| Older console logs | Uvicorn access/application lines and audit prefixes. |
 | Host timers | Existing filename-to-service mapping and `[OK]`/`[WARN]`/`[BAD]`/`[ERROR]` prefixes. |
 | Kubernetes events | Message or note becomes body, Warning becomes WARN and Normal becomes INFO; event metadata uses `k8s.event.*` attributes. |
 | Helpers, shell output, MongoDB agent, unmatched or malformed lines | Body passes unchanged; `log.parser=plain` explicitly identifies the fallback. No severity is guessed from words in the message. |
 
 `LogAttributes.log.parser` identifies the matched format. Explicit string levels, Pino numeric levels and MongoDB's `s` field become OTel severity. Valid trace/span IDs at the top level or under `mdc` populate the record so a trace opens its logs. Existing OTLP severity, timestamps, attributes, resource identity and trace context take precedence. Source timestamps fill missing record timestamps; container timestamps remain authoritative.
+
+cert-manager's three components, Traefik's existing log streams, Reloader, the platform collectors and console emit native JSON. cert-manager's klog JSON uses `v` for informational records and `err` for error records; the source-specific mapping handles these without guessing from message text. Console access logs include method, path and status; its action audit records include identity, action, unit, state, job ID and link ([console](console.md#how-it-is-protected)). Verbosity and access-log enablement stay at their existing settings.
+
+HyperDX also sends already structured native OTLP logs directly to ClickStack, alongside its stdout stream. Those retain their SDK attributes and trace context; `verify-logs` identifies scope `node-logger` as `native-otlp`, without claiming they passed through a node parser. Missing SDK severity remains unspecified. Native map-valued OTLP bodies passing through the node collector remain structured maps.
 
 Nested objects flatten to dotted attribute names, arrays remain JSON strings, and objects below four map levels remain JSON strings. The collector's `ottl.functions.enableLambda` gate enables the bounded array-preserving mapping; `make check-otel` uses that same gate and runs synthetic fixtures through the actual deployed collector version, including CRI partial lines and Docker framing. This catches changed parser behaviour during collector upgrades.
 

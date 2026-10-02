@@ -75,6 +75,8 @@ Two fine-grained tokens in [`platform/console/secret.sops.yaml`](../platform/con
 
 ## How it is protected
 
+Application, Uvicorn access and action audit logs are one-line JSON. Audits retain the signed-in identity, action, unit, state, job ID and result link; access logs expose method, path and status as fields. Their collection and ClickStack searches are described in [structured logs](services.md#structured-logs).
+
 - **Who:** oauth2-proxy returns the signed-in email as `X-Auth-Request-Email` (it needs `set-xauthrequest`) and Traefik copies it to the request; without it the console answers 401 (except `/healthz`). A NetworkPolicy admits only Traefik's pods, so no other pod can send a forged header. A POST must carry an `Origin` naming the console's own host (403 otherwise), so another website cannot use your sign-in cookie to start an action.
 - **What it may do in the cluster:** its ServiceAccount `console/console` may read Flux units, HelmReleases, the Git source, pods, workloads, Ingresses and Certificates, and in `flux-system` only patch Kustomizations and GitRepositories ([`rbac.yaml`](../platform/console/rbac.yaml)). No Secrets, no `pods/exec`, nothing else writable. RBAC cannot limit which fields a patch changes; the console's code does, and refuses the root units.
 - **The repository token** could change or delete any of your repositories, so only one class uses it ([`repos.py`](../tools/swhurl/console/repos.py)), and it can only check whether a repository exists, create a new public one, write the first commit to a repository it created in the same job, and read that repository's workflow runs. It has no delete call and refuses any other write (tested). Rendering uses Copier and `git` in the image, which only read the public template.

@@ -72,6 +72,9 @@ spec:
           headers:
             authorization: "${env:CLICKSTACK_INGESTION_KEY}"
       service:
+        telemetry:
+          logs:
+            encoding: json
         pipelines:
           logs:
             receivers:

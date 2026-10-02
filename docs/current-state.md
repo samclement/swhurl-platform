@@ -452,3 +452,11 @@ Plan item 14, steps 4 to 6; CI passed for each and `make verify-platform` passed
 - A restore on a separate machine.
 - Router forwarding and public DNS records (not inspected; external reachability is shown only by the operator's own browser use).
 - Workloads outside Git, image publication workflows, and the Mac model service and its network path.
+
+## Structured logs across the cluster (2 October 2026)
+
+Phase 1 (`cf3df0c`): node collector release 12 and cluster collector release 10 Ready, both without restarts after rollout. `make check` passed (358 tests, 54 node-log and 6 event fixtures through otelcol-k8s 0.161.0, including CRI partial-line reassembly and Docker framing); the required shell syntax and CI dry runs passed. All 19 Flux units Ready at that revision; `make verify-platform` passed (console publish initially pending) and `make app-status APP=hello-ts ENV=staging` reported running: matches desired.
+
+Fresh ClickHouse records verified for Flux JSON, MongoDB JSON, ClickHouse/Keeper text, ClickHouse operator tab-separated output, nginx requests, oauth2-proxy requests/application lines, CoreDNS, HyperDX prefixed JSON and Kubernetes events (the live receiver wraps them in `object`, covered by fixtures). Their changed bodies carry `log.record.original`; request fields and event metadata are searchable. Requests to hello-ts prod and staging through their Services returned 200 and produced INFO (number 9) JSON records with trace/span IDs and retained originals. Node agent: 31m CPU, 71Mi memory; cluster collector: 3m CPU, 46Mi; no observed parsing failures. Quiet service formats are covered offline, not claimed live.
+
+HyperDX's separate direct OTLP stream (`node-logger`, service `hdx-oss-api`) already carries nested request fields flattened by its SDK and trace context, but no SDK severity. It bypasses the node collector; the coverage tool identifies it separately. No routing or schema changes were made. Native JSON settings and the console logger are phase 2.

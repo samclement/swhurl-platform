@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import itertools
 import json
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -115,7 +116,7 @@ class Job:
 
 
 class Jobs:
-    def __init__(self, runner: Runner, *, audit: Callable[[str], None] = lambda line: print(line, flush=True),
+    def __init__(self, runner: Runner, *, audit: Callable[[str], None] | None = None,
                  now: Callable[[], dt.datetime] = lambda: dt.datetime.now(dt.UTC), inline: bool = False,
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
         """``inline`` runs each job before ``start`` returns instead of in a thread (tests)."""
@@ -159,7 +160,7 @@ class Jobs:
             self._jobs[job.id] = job
             while len(self._jobs) > KEEP and next(iter(self._jobs.values())).state != 'running':
                 self._jobs.popitem(last=False)
-        self.audit(f'[AUDIT] {identity} {action} {target}: started (job {job.id})')
+        self._audit(job, f'[AUDIT] {identity} {action} {target}: started (job {job.id})', 'started')
         if self.inline:
             self._run(job, work)
         else:
@@ -179,4 +180,13 @@ class Jobs:
         job.finished = self.now()
         level = 'AUDIT' if job.state == 'succeeded' else 'ERROR'
         link = f' {job.link}' if job.link else ''
-        self.audit(f'[{level}] {job.identity} {job.action} {job.unit}: {job.state} (job {job.id}){link}')
+        self._audit(job, f'[{level}] {job.identity} {job.action} {job.unit}: {job.state} (job {job.id}){link}', job.state)
+
+    def _audit(self, job: Job, line: str, state: str) -> None:
+        if self.audit is not None:
+            self.audit(line)
+            return
+        logging.getLogger('swhurl.console.audit').log(
+            logging.ERROR if state == 'failed' else logging.INFO, line,
+            extra={'identity': job.identity, 'action': job.action, 'unit': job.unit,
+                   'state': state, 'job_id': job.id, 'pr_url': job.link})

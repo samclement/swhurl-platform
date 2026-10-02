@@ -93,89 +93,97 @@ spec:
             statements:
             - set(cache["original"], body) where (IsString(body))
             - set(cache["candidate"], body) where (IsString(body))
-            - set(attributes["log.parser"], "plain") where (attributes["log.parser"] == nil) and ((IsString(body)))
+            - set(cache["parser"], "plain") where IsString(body)
             - replace_pattern(cache["candidate"], "^\\[(API|APP)\\]\\s*", "") where (IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-app-")) and ((IsString(body)))
             - set(cache["fields"], ParseJSON(cache["candidate"])) where (IsString(cache["candidate"]) and IsMatch(cache["candidate"],
               "^\\s*\\{"))
-            - set(attributes["log.parser"], "json") where (IsMap(cache["fields"])) and ((IsString(cache["candidate"]) and IsMatch(cache["candidate"],
+            - set(cache["parser"], "json") where (IsMap(cache["fields"])) and ((IsString(cache["candidate"]) and IsMatch(cache["candidate"],
               "^\\s*\\{")))
             - 'set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}\\.\\d{2}\\.\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)
               \\[\\s*(?P<thread_id>\\d+)\\s*\\] \\{(?P<query_id>[^}]*)\\} <(?P<level>\\w+)> (?P<logger>[^:]+): (?P<message>[\\s\\S]*)$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^clickstack-(clickhouse|keeper)-"))'
-            - set(attributes["log.parser"], "clickhouse") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-(clickhouse|keeper)-")))
+            - set(cache["parser"], "clickhouse") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-(clickhouse|keeper)-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}-\\d\\d-\\d\\dT\\S+)\\s+(?P<level>DEBUG|INFO|WARN|ERROR|DPANIC|PANIC|FATAL)\\s+(?P<logger>\\S+)\\s+(?P<message>[^\\t]+)(?:\\t(?P<fields_json>\\{.*\\}))?$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^clickstack-operators-"))
-            - set(attributes["log.parser"], "zap-console") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-operators-")))
+            - set(cache["parser"], "zap-console") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-operators-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}-\\d\\d-\\d\\dT\\S+)\\s+(?P<level>debug|info|warn|error|fatal)\\s+(?P<caller>\\S+)\\s+(?P<message>[^\\t]+)(?:\\t(?P<fields_json>\\{.*\\}))?$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^otel-k8s-|^clickstack-otel-"))
-            - set(attributes["log.parser"], "otel-console") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^otel-k8s-|^clickstack-otel-")))
+            - set(cache["parser"], "otel-console") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^otel-k8s-|^clickstack-otel-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<level>[IWEF])(?P<date>\\d{4})\\s+(?P<clock>\\d\\d:\\d\\d:\\d\\d\\.\\d+)\\s+(?P<pid>\\d+)\\s+(?P<caller>[^]]+)\\]\\s+(?P<message>.*)$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^cert-manager|^metrics-server"))
-            - set(attributes["log.parser"], "klog") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain" and
-              IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^cert-manager|^metrics-server")))
+            - set(cache["parser"], "klog") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^cert-manager|^metrics-server")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<client_address>\\S+) - (?P<user>\\S+) \\[(?P<timestamp>[^]]+)\\]
               \"(?P<method>\\S+) (?P<path>\\S+) (?P<protocol>[^\"]+)\" (?P<status>\\d{3}) (?P<response_bytes>\\d+) \"(?P<referer>[^\"]*)\"
-              \"(?P<user_agent>[^\"]*)\"(?:.*)$")) where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              \"(?P<user_agent>[^\"]*)\"(?:.*)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^hello-"))
-            - set(attributes["log.parser"], "nginx-access") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
+            - set(cache["parser"], "nginx-access") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
             - 'set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d)
-              \\[(?P<level>\\w+)\\] (?P<pid>\\d+)#(?P<thread_id>\\d+): (?P<message>.*)$")) where (attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^hello-"))'
-            - set(attributes["log.parser"], "nginx-error") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
+              \\[(?P<level>\\w+)\\] (?P<pid>\\d+)#(?P<thread_id>\\d+): (?P<message>.*)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-"))'
+            - set(cache["parser"], "nginx-error") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<client_address>\\S+) - (?P<request_id>\\S+) - (?P<user>\\S+)
               \\[(?P<timestamp>[^]]+)\\] (?P<host>\\S+) (?P<method>\\S+) \\S+ \"(?P<path>[^\"]*)\" (?P<protocol>\\S+) \"(?P<user_agent>[^\"]*)\"
-              (?P<status>\\d{3}) (?P<response_bytes>\\d+) (?P<duration_seconds>\\S+)$")) where (attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-"))
-            - set(attributes["log.parser"], "oauth-request") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-")))
-            - set(cache["fields"], ExtractPatterns(cache["candidate"], "^\\[(?P<timestamp>\\d{4}/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d)\\]
-              \\[(?P<caller>[^]]+)\\] (?P<message>.*)$")) where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              (?P<status>\\d{3}) (?P<response_bytes>\\d+) (?P<duration_seconds>\\S+)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-"))
-            - set(attributes["log.parser"], "oauth-console") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-")))
+            - set(cache["parser"], "oauth-request") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-")))
+            - set(cache["fields"], ExtractPatterns(cache["candidate"], "^\\[(?P<timestamp>\\d{4}/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d)\\]
+              \\[(?P<caller>[^]]+)\\] (?P<message>.*)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-"))
+            - set(cache["parser"], "oauth-console") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^oauth2-proxy-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^\\[(?P<level>DEBUG|INFO|WARNING|ERROR|FATAL)\\]\\s*(?P<message>.*)$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^coredns-"))
-            - set(attributes["log.parser"], "coredns") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^coredns-")))
+            - set(cache["parser"], "coredns") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^coredns-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<level>INFO|WARN|WARNING|ERROR):\\s+(?P<client_address>\\S+)
-              - \"(?P<method>\\S+) (?P<path>\\S+) (?P<protocol>[^\"]+)\" (?P<status>\\d{3}) (?P<message>.*)$")) where (attributes["log.parser"]
+              - \"(?P<method>\\S+) (?P<path>\\S+) (?P<protocol>[^\"]+)\" (?P<status>\\d{3}) (?P<message>.*)$")) where (cache["parser"]
               == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^console-"))
-            - set(attributes["log.parser"], "uvicorn-access") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^console-")))
+            - set(cache["parser"], "uvicorn-access") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^console-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<level>DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL):\\s+(?P<message>.*)$"))
-              where (attributes["log.parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^console-"))
-            - set(attributes["log.parser"], "uvicorn") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain"
-              and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^console-")))
+            - set(cache["parser"], "uvicorn") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
+              and IsMatch(resource.attributes["k8s.pod.name"], "^console-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^\\[(?:HOST\\]\\[)?(?P<level>OK|INFO|WARN|BAD|ERROR|AUDIT)\\]\\s*(?P<message>.*)$"))
-              where (attributes["log.parser"] == "plain" and IsString(cache["candidate"]) and IsMatch(cache["candidate"], "^\\[(HOST\\]\\[)?(OK|INFO|WARN|BAD|ERROR|AUDIT)\\]"))
-            - set(attributes["log.parser"], "prefix") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain" and
-              IsString(cache["candidate"]) and IsMatch(cache["candidate"], "^\\[(HOST\\]\\[)?(OK|INFO|WARN|BAD|ERROR|AUDIT)\\]")))
-            - set(cache["fields"], ParseKeyValue(cache["candidate"])) where (attributes["log.parser"] == "plain" and IsString(cache["candidate"])
+              where (cache["parser"] == "plain" and IsString(cache["candidate"]) and IsMatch(cache["candidate"], "^\\[(HOST\\]\\[)?(OK|INFO|WARN|BAD|ERROR|AUDIT)\\]"))
+            - set(cache["parser"], "prefix") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(cache["candidate"])
+              and IsMatch(cache["candidate"], "^\\[(HOST\\]\\[)?(OK|INFO|WARN|BAD|ERROR|AUDIT)\\]")))
+            - set(cache["fields"], ParseKeyValue(cache["candidate"])) where (cache["parser"] == "plain" and IsString(cache["candidate"])
               and IsMatch(cache["candidate"], "^(time=|level=)") and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^local-path-provisioner-|^traefik-|^reloader-"))
-            - set(attributes["log.parser"], "logfmt") where (Len(cache["fields"]) > 0) and ((attributes["log.parser"] == "plain" and
-              IsString(cache["candidate"]) and IsMatch(cache["candidate"], "^(time=|level=)") and IsString(resource.attributes["k8s.pod.name"])
-              and IsMatch(resource.attributes["k8s.pod.name"], "^local-path-provisioner-|^traefik-|^reloader-")))
+            - set(cache["parser"], "logfmt") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(cache["candidate"])
+              and IsMatch(cache["candidate"], "^(time=|level=)") and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              "^local-path-provisioner-|^traefik-|^reloader-")))
             - merge_maps(cache["fields"], ParseJSON(cache["fields"]["fields_json"]), "insert") where (IsMap(cache["fields"]) and IsString(cache["fields"]["fields_json"]))
             - delete_key(cache["fields"], "fields_json") where (IsMap(cache["fields"]) and IsString(cache["fields"]["fields_json"]))
+            - merge_maps(cache["fields"], ExtractPatterns(cache["fields"]["message"], "^\"(?P<msg>(?:\\\\.|[^\"])*)\"(?:\\s+(?P<fields_logfmt>.*))?$"),
+              "insert") where cache["parser"] == "klog" and IsString(cache["fields"]["message"])
+            - merge_maps(cache["fields"], ParseKeyValue(cache["fields"]["fields_logfmt"]), "insert") where IsString(cache["fields"]["fields_logfmt"])
+              and cache["fields"]["fields_logfmt"] != ""
+            - delete_key(cache["fields"], "fields_logfmt") where IsMap(cache["fields"])
             - set(cache["level"], cache["fields"]["level"]) where (IsMap(cache["fields"]))
             - set(cache["level"], cache["fields"]["severity"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))
             - set(cache["level"], cache["fields"]["s"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))
             - set(cache["level"], cache["fields"]["severityText"]) where (cache["level"] == nil) and ((IsMap(cache["fields"])))
-            - set(cache["level"], "INFO") where (attributes["log.parser"] == "nginx-access" or attributes["log.parser"] == "oauth-request")
-              and ((IsMap(cache["fields"])))
+            - set(cache["level"], "ERROR") where cache["level"] == nil and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              "^cert-manager") and cache["fields"]["err"] != nil
+            - set(cache["level"], "INFO") where cache["level"] == nil and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
+              "^cert-manager") and cache["fields"]["v"] != nil
+            - set(cache["level"], "INFO") where (cache["parser"] == "nginx-access" or cache["parser"] == "oauth-request") and ((IsMap(cache["fields"])))
             - set(cache["level"], ConvertCase(cache["level"], "upper")) where (IsString(cache["level"])) and ((IsMap(cache["fields"])))
             - set(severity_number, 1) where (severity_number == 0 and (cache["level"] == "TRACE" or cache["level"] == "T" or cache["level"]
               == 10)) and ((IsMap(cache["fields"])))
@@ -199,8 +207,8 @@ spec:
             - set(body, cache["fields"]["msg"]) where (IsString(cache["fields"]["msg"])) and ((IsMap(cache["fields"])))
             - set(body, cache["fields"]["message"]) where (not IsString(cache["fields"]["msg"]) and IsString(cache["fields"]["message"]))
               and ((IsMap(cache["fields"])))
-            - set(body, Concat([cache["fields"]["method"], cache["fields"]["path"], cache["fields"]["status"]], " ")) where (attributes["log.parser"]
-              == "nginx-access" or attributes["log.parser"] == "oauth-request") and ((IsMap(cache["fields"])))
+            - set(body, Concat([cache["fields"]["method"], cache["fields"]["path"], cache["fields"]["status"]], " ")) where (cache["parser"]
+              == "nginx-access" or cache["parser"] == "oauth-request") and ((IsMap(cache["fields"])))
             - set(attributes["log.record.original"], cache["original"]) where (IsString(cache["original"]) and body != cache["original"]
               and attributes["log.record.original"] == nil) and ((IsMap(cache["fields"])))
             - set(trace_id.string, cache["fields"]["trace_id"]) where (trace_id.string == "00000000000000000000000000000000" and IsString(cache["fields"]["trace_id"])
@@ -231,6 +239,8 @@ spec:
               String(v1), v1)))) where (IsMap(cache["fields"]))
             - flatten(cache["fields"], resolveConflicts=true) where (IsMap(cache["fields"]))
             - merge_maps(attributes, cache["fields"], "insert") where (IsMap(cache["fields"]))
+            - set(attributes["log.parser"], cache["parser"]) where attributes["log.parser"] == nil and IsString(cache["parser"])
+            - set(attributes["log.parser"], "native-otlp") where attributes["log.parser"] == nil and not IsString(body)
         # Kubernetes probes call every web app's health path every few seconds; their spans were nearly all
         # of an app's traces. Drop the spans of requests whose user agent is kube-probe (old and new names).
         filter/kube-probes:
@@ -245,6 +255,9 @@ spec:
           headers:
             authorization: "${env:CLICKSTACK_INGESTION_KEY}"
       service:
+        telemetry:
+          logs:
+            encoding: json
         pipelines:
           logs:
             receivers:

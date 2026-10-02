@@ -1,0 +1,31 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: test-2
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-2
+spec:
+  image: ghcr.io/samclement/test-2
+  interval: 1m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: test-2-staging
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-2
+spec:
+  imageRepositoryRef:
+    name: test-2
+  filterTags:
+    pattern: ^(?P<run>[0-9]+)-[0-9a-f]{7,40}$
+    extract: $run
+  policy:
+    numerical:
+      order: asc
+  digestReflectionPolicy: Always
+  interval: 1h

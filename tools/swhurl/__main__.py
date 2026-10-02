@@ -28,6 +28,7 @@ COMMANDS = {
     'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),
     'check-otel': ('swhurl.otel', 'main', 'Validate each OTel collector config with the collector version it will run'),
     'check-apps': ('swhurl.apps.policy', 'main', 'Render app instances and check the app contract'),
+    'check-templates': ('swhurl.apps.templates_check', 'main', 'Render every stack template combination; its swhurl.yaml must pass app-new and the app policy'),
     'lifecycle': ('swhurl.lifecycle', 'main', 'suspend | resume | destroy-data a Flux unit, release or volume'),
     'live-test-lifecycle': ('swhurl.livetests.lifecycle', 'main', 'Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app'),
     'live-test-reloader': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),

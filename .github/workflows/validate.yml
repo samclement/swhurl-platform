@@ -62,6 +62,9 @@ jobs:
       - name: Check app instances against policy
         run: make check-apps
 
+      - name: Check every stack template combination against the app contract
+        run: make check-templates
+
       - name: Validate OTel collector config with its collector release
         run: make check-otel
 

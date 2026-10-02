@@ -275,7 +275,9 @@ class NewAppRouteTests(unittest.TestCase):
         runner = tree_fake()
         c, jobs = self.client(runner)
         preset = c.get('/new?preset=swhurl-web', headers=WHO).text
-        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">Web app from the swhurl template</a>', preset)
+        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">\n    <strong>Deploy an existing image</strong>', preset)
+        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">Web app, platform conventions</a>', preset)
+        self.assertIn('choose <strong>Custom</strong>', preset, 'says when the conventions do not fit')
         self.assertIn('<input type="hidden" name="preset" value="swhurl-web">', preset)
         self.assertIn('name="exposure" value="authenticated-web" checked>', preset)
         self.assertIn('<details class="advanced">', preset)
@@ -325,6 +327,28 @@ class NewAppRouteTests(unittest.TestCase):
         api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
         page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
+
+    def test_an_image_can_take_its_settings_from_the_repository(self):
+        c, jobs = self.client(tree_fake())
+        page = c.get('/new?preset=from-repo', headers=WHO).text
+        self.assertIn('class="here" aria-current="page">From the repository&#39;s swhurl.yaml</a>', page)
+        self.assertIn('<input type="hidden" name="preset" value="from-repo">', page)
+        self.assertIn('id="repo" name="repo" required', page)
+        self.assertIn('empty fields come from swhurl.yaml', page)
+        self.assertIn('name="exposure" value="" checked>', page, "exposure defaults to the file's, not private")
+        self.assertIn('id="port" name="port" value="" placeholder="from swhurl.yaml">', page, 'no preset default is shown')
+        form = {**FORM, 'preset': 'from-repo', 'repo': 'samclement/hello-ts@v1', 'exposure': '', 'host': '', 'health_path': ''}
+        _, _, argv = changes.new_app_args(form)
+        self.assertEqual(argv[:3], ['weather-api', '--env=staging', '--from-repo=samclement/hello-ts@v1'])
+        self.assertNotIn('--preset', ' '.join(argv))
+        self.assertNotIn('--no-otlp', argv, "unticked keeps swhurl.yaml's telemetry")
+        self.assertIn('--otlp', changes.new_app_args({**form, 'otlp': 'on'})[2])
+        for bad in ('', 'hello-ts', '--all/x', 'a/b c'):
+            with self.subTest(bad), self.assertRaisesRegex(actions.ActionError, 'repository must be OWNER/REPO'):
+                changes.new_app_args({**form, 'repo': bad})
+        response = c.post('/new', data={**form, 'repo': 'nope'}, headers=WHO)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('id="repo" name="repo" required pattern=', response.text, 'the returned form keeps its tab')
 
     def test_reserved_secret_keys_are_refused_on_the_form(self):
         with self.assertRaisesRegex(actions.ActionError, 'reserved for the platform: OTEL_SERVICE_NAME'):
@@ -582,7 +606,8 @@ class NewRepoRouteTests(unittest.TestCase):
         platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
         c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
         page = c.get('/new', headers=WHO).text
-        self.assertIn('class="here" aria-current="page">New app and repository</a>', page)
+        self.assertIn('<a href="/new" class="here" aria-current="page">\n    <strong>Start a new app</strong>', page)
+        self.assertIn('<a href="/new?preset=swhurl-web">\n    <strong>Deploy an existing image</strong>', page)
         self.assertIn('action="/new/repo"', page)
         self.assertIn('name="stack" value="typescript" checked', page)
         self.assertIn('name="feature-kind" value="web" checked', page)

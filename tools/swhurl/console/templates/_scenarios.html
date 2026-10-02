@@ -1,0 +1,15 @@
+{# The New app page's first choice. current: 'new' or 'existing'. #}
+{% macro choose(current) %}
+<nav class="scenarios" aria-label="What are you adding?">
+  <a href="/new"{% if current == 'new' %} class="here" aria-current="page"{% endif %}>
+    <strong>Start a new app</strong>
+    <span class="muted">Generate working code from a stack (TypeScript or Kotlin) with the features you pick.</span>
+    <span class="produces">Creates a GitHub repository, builds its first image, then opens a platform pull request for staging.</span>
+  </a>
+  <a href="/new?preset=swhurl-web"{% if current == 'existing' %} class="here" aria-current="page"{% endif %}>
+    <strong>Deploy an existing image</strong>
+    <span class="muted">An image you already build: your own repository, an app made here that needs production, or a retry after a failed first build.</span>
+    <span class="produces">Opens a platform pull request only; nothing is created on GitHub.</span>
+  </a>
+</nav>
+{% endmacro %}

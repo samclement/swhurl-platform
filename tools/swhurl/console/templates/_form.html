@@ -11,7 +11,9 @@
 {% endmacro %}
 
 {# Who can reach an app: three described choices. ``marked`` gets a note such as "(default)" or "(now)". #}
-{% macro exposure_choices(current, marked='', mark='') %}
+{% macro exposure_choices(current, marked='', mark='', inherit='') %}
+{% if inherit %}<label class="choice"><input type="radio" name="exposure" value="" {{ 'checked' if not current }}>
+  <span><strong>{{ inherit }}</strong><br><span class="muted">Its <code>exposure</code>; without one, signed in for a web app and private for a worker.</span></span></label>{% endif %}
 {% for value, (title, text) in exposure_text.items() %}
 <label class="choice"><input type="radio" name="exposure" value="{{ value }}" {{ 'checked' if current == value }}>
   <span><strong>{{ title }}</strong>{% if marked == value %} <span class="muted">({{ mark }})</span>{% endif %}<br><span class="muted">{{ text.format(domain=domain) }}</span></span></label>

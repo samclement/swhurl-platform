@@ -185,7 +185,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 features[stack] = stack_questions(stack)
             except repo.RepoError as problem:
                 features[stack], features_error = [], str(problem)
-        return page(request, 'new_repo.html', status_code=status_code, presets=changes.PRESET_LABELS,
+        return page(request, 'new_repo.html', status_code=status_code,
                     features=features, features_error=features_error,
                     preset=changes.NEW_REPO, stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER,
@@ -236,7 +236,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     exposure_text=changes.EXPOSURE_LABELS, groups=changes.ADVANCED_GROUPS,
                     # Open when nothing fills it (no preset) or a returned form set something in it.
                     advanced_open=not preset or any(form.get(f) for f in advanced if f not in changes.CHECKBOXES),
-                    preset=preset, presets=changes.PRESET_LABELS, domain=contract.COOKIE_DOMAIN, checked=checked,
+                    preset=preset, existing=changes.EXISTING_LABELS, domain=contract.COOKIE_DOMAIN, checked=checked,
                     defaults=changes.new_app_defaults(preset), form=form, error=error, github=github)
 
     async def new_app(request: Request) -> Response:

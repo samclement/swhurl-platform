@@ -90,6 +90,12 @@
   /* Overview, Platform, unit and Activity pages. A status mark pairs colour with a shape. */
   .verdict { font-size: 17px; margin: 0 0 4px; }
   .tabs + .verdict { margin-top: 16px; }
+  .scenarios { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+  @media (max-width: 600px) { .scenarios { grid-template-columns: minmax(0, 1fr); } }
+  .scenarios a { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--line);
+                 border-radius: 6px; background: var(--panel); color: var(--text); text-decoration: none; }
+  .scenarios a.here { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .scenarios .produces { font-size: 0.9em; }
   .mark { display: inline-block; width: 1.2em; text-align: center; font-weight: 700; }
   .mark.healthy { color: var(--ok); } .mark.healthy::before { content: "✓"; }
   .mark.updating { color: var(--accent); } .mark.updating::before { content: "↻"; }

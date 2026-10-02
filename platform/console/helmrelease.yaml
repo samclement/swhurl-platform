@@ -49,8 +49,8 @@ spec:
           main:
             image: &operator-image
               repository: ghcr.io/samclement/swhurl-console
-              tag: src-ded797aec824cbae
-              digest: sha256:9096348932f1f49305e44425242f589870d45e6f263063c6889b472d80c0f840
+              tag: src-6063f8dd9e6d4c68
+              digest: sha256:23f3efb8089775d982bea5c170aaa5d5b5254eb4ae6fdfeefaf115712858af07
             env:
               CONSOLE_REPO: samclement/swhurl-platform
             # GITHUB_TOKEN: create console/* branches and open PRs; APP_REPOS_TOKEN: create new app

@@ -87,7 +87,7 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 | New app, promote, scale, uninstall from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Yes: you merge | [console](console.md#use-it) |
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | The "Publish console image" run (`github-actions[bot]`) | Direct push, after Validate passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
-| A staging app's image pin (apps generated with `--auto-deploy`, the template presets) | Flux image automation (`fluxcdbot`, with a deploy key that can write only this repository) | Direct push when the app publishes a newer `<run>-<sha>` image | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
+| A staging app's image pin (apps generated with `autoDeploy: true` in their `swhurl.yaml`, `--auto-deploy` or the template presets) | Flux image automation (`fluxcdbot`, with a deploy key that can write only this repository) | Direct push when the app publishes a newer `<run>-<sha>` image | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
 
 `main` has no branch protection: the console's code alone limits it to `console/*` branches. Because two bots also push to `main`, run `git pull --rebase` before pushing. Other apps' image pins are edited by you ([deploy a new image](apps.md#deploy-a-new-image)).
 

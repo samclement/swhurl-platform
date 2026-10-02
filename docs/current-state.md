@@ -371,6 +371,14 @@ An earlier run (before the plaintext size and SHA-256 checks existed) received a
 
 `aa0c06a` (plan section 8, phase 2). `swhurl.yaml` (version 1) was added to the template (`samclement/swhurl-app-template-typescript`) and to `hello-ts`, each with a README paragraph. With no `GITHUB_TOKEN`, `app-new hello-ts --from-repo samclement/hello-ts --env staging|prod` (images as pinned in Git) read the file through GitHub's API and wrote both instances, unit files included, byte-identical to `apps/hello-ts/` and `clusters/home/`, and both passed the app policy; `--from-repo` on the template rendered a staging instance too. The `hello-ts` push published `25-01edf61`, which image automation deployed to staging (`a57c7d0`): `make app-status APP=hello-ts ENV=staging` shows `running: matches desired`, 1/1 ready; `make verify-platform` passed. Not exercised: a private repository (`GITHUB_TOKEN`) and the console's New app (still uses presets; phase 4).
 
+## Copier template and make app-repo (2 October 2026)
+
+Plan section 8, phase 3. The TypeScript template became a Copier template (app under `template/`; template PR #11): its new Template workflow renders it and runs the shared `app.yml` on the result (checks, image build, smoke test, nothing published), green on the PR and on `main`. Its **Use this template** setting was turned off (that layout no longer builds as a GitHub template). `hello-ts`, which calls `app.yml@main`, built and published `26-01edf61` with the changed workflow, and image automation deployed it to staging (running: matches desired).
+
+`make app-repo NAME=swhurl-try-1` (`1edda4a`) created the public repository `samclement/swhurl-try-1` from the template, pushed over SSH, waited for run 1 and printed `ghcr.io/samclement/swhurl-try-1:1-8f926e0@sha256:a92d1745…` (digest read anonymously from GHCR) in 1 minute 57 seconds. The printed `app-new --from-repo` line generated `swhurl-try-1/staging`, which passed the app policy, became Ready through Flux in 19 seconds (`e7566a2`) and answered unauthenticated HTTPS with a 302 to Google sign-in; then `make app-remove` (`b10142b`) uninstalled it and its namespace is gone.
+
+Found during the test: `make app-status` showed the instance as public (no sign-in) with its route listed twice while the certificate was issued, because it counted cert-manager's HTTP-01 challenge Ingress; fixed in `f861132`. Adding and removing the app also sent two failure notifications from its ImagePolicy ("no tags in database" before the first scan; "referenced ImageRepository does not exist" during removal); both messages are now excluded from the failures alert. The repository `samclement/swhurl-try-1` and its GHCR package still exist (deleting them needs the operator).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

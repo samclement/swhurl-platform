@@ -38,6 +38,7 @@ spec:
           type: RuntimeDefault
     controllers:
       main:
+        forceRename: console
         # The chart creates this ServiceAccount; rbac.yaml binds it.
         serviceAccount:
           name: console
@@ -46,7 +47,7 @@ spec:
           secret.reloader.stakater.com/reload: console-github
         containers:
           main:
-            image:
+            image: &operator-image
               repository: ghcr.io/samclement/swhurl-console
               tag: src-39bf8768ca17f448
               digest: sha256:390cea427762e4ee46deb71af6a3328e882f472fcef1e605b796a751d9904ae2
@@ -84,6 +85,32 @@ spec:
                   httpGet:
                     path: /healthz
                     port: 8080
+      dashboards:
+        type: cronjob
+        serviceAccount:
+          name: dashboard-sync
+        cronjob:
+          schedule: "* * * * *"
+          concurrencyPolicy: Forbid
+          startingDeadlineSeconds: 30
+          successfulJobsHistory: 1
+          failedJobsHistory: 1
+          backoffLimit: 0
+        containers:
+          main:
+            image: *operator-image
+            command: [timeout, "50", python, -m, swhurl, clickstack-dashboards, --cluster]
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
     persistence:
       tmp:
         type: emptyDir

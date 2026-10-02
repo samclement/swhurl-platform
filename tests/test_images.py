@@ -64,6 +64,16 @@ class ConsoleImageCommandTests(unittest.TestCase):
         with self.assertRaises(images.ImageError):
             images.pin(text + '    tag: again\n', 'x', 'y')
 
+    def test_dashboard_job_shares_the_published_image_without_console_credentials(self):
+        pinned = images.pin((ROOT / images.RELEASE).read_text(), 'src-0123456789abcdef', 'sha256:' + 'c' * 64)
+        controllers = yaml.safe_load(pinned)['spec']['values']['controllers']
+        web, job = controllers['main'], controllers['dashboards']
+        self.assertEqual(web['containers']['main']['image'], job['containers']['main']['image'])
+        self.assertEqual(web['forceRename'], 'console', 'adding a controller must keep the live Deployment name')
+        self.assertEqual(job['serviceAccount']['name'], 'dashboard-sync')
+        self.assertNotIn('envFrom', job['containers']['main'])
+        self.assertEqual(job['cronjob']['concurrencyPolicy'], 'Forbid')
+
     def lookup(self, head):
         return (FakeRunner().on('curl', '--silent', '--show-error', '--fail', stdout=json.dumps({'token': 'anon-token'}))
                 .on('curl', '--silent', '--show-error', '--head', stdout=head))

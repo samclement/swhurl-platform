@@ -1,4 +1,5 @@
 """The read-only console: identity, pages and what it reads, offline, with FakeRunner."""
+import datetime as dt
 import io
 import json
 import unittest
@@ -34,7 +35,9 @@ RELEASES = [release('web-prod', 'web')]
 
 TRAEFIK_REDIRECTS = {'spec': {'template': {'spec': {'containers': [
     {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}}
-CHECKS = {'kubectl get --raw=/version': '{}',
+CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
+              'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}}),
+          'kubectl get --raw=/version': '{}',
           'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
           'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
               json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
@@ -280,7 +283,8 @@ class OverviewTests(unittest.TestCase):
 class PlatformTests(unittest.TestCase):
     def test_runs_only_cluster_checks_and_says_what_it_skipped(self):
         traefik = {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}
-        runner = fake(**{'kubectl get --raw=/version': '{}',
+        runner = fake(**{'kubectl -n console get cronjob console-dashboards': CHECKS['kubectl -n console get cronjob console-dashboards'],
+                         'kubectl get --raw=/version': '{}',
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
                          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
                              json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),

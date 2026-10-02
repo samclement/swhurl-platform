@@ -421,6 +421,10 @@ Plan item 13. `0712a16`: the node collector's `transform/trace-context` and `fil
 
 Still wrong (known, not fixed): the request log above has severity `trace`, guessed from its text.
 
+## Test leftovers removed (2 October 2026)
+
+The operator deleted the repositories and packages `swhurl-try-4` and `swhurl-try-5`; `make destroy-data` then deleted both claims and their volumes (`pvc-6c37f25d…`, `pvc-95176ef0…`) and the two namespaces were deleted. No `swhurl-try-*` namespace or volume remains.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

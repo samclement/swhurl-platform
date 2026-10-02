@@ -367,6 +367,10 @@ Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read 
 
 An earlier run (before the plaintext size and SHA-256 checks existed) received an empty copy: the checks then present (integrity and table count) refused it, the live database was untouched, and the app was scaled back and its HelmRelease resumed, as designed. The cause was not found: 20 repeated transfers of the same size through `kubectl exec -i` all arrived whole. An empty stream on the backup side would also have passed the old backup check (an age file of nothing still has a header), so backups now record the plaintext size and SHA-256 measured in the pod and fail when the archive is smaller than the plaintext; the restore compares the received file's SHA-256 with it. No real app had a SQLite backup yet, so no existing backup was affected. Not exercised: restoring a real app instance (none has a database), and restoring from S3 on another machine.
 
+## swhurl.yaml and app-new --from-repo (2 October 2026)
+
+`aa0c06a` (plan section 8, phase 2). `swhurl.yaml` (version 1) was added to the template (`samclement/swhurl-app-template-typescript`) and to `hello-ts`, each with a README paragraph. With no `GITHUB_TOKEN`, `app-new hello-ts --from-repo samclement/hello-ts --env staging|prod` (images as pinned in Git) read the file through GitHub's API and wrote both instances, unit files included, byte-identical to `apps/hello-ts/` and `clusters/home/`, and both passed the app policy; `--from-repo` on the template rendered a staging instance too. The `hello-ts` push published `25-01edf61`, which image automation deployed to staging (`a57c7d0`): `make app-status APP=hello-ts ENV=staging` shows `running: matches desired`, 1/1 ready; `make verify-platform` passed. Not exercised: a private repository (`GITHUB_TOKEN`) and the console's New app (still uses presets; phase 4).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

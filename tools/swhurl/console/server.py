@@ -162,10 +162,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def stack_questions(stack: str) -> list[repo.Question]:
         """The stack template's questions (its copier.yml on GitHub), read at most every 5 minutes."""
-        read_at, found = questions_cache.get(stack, (0.0, []))
-        if time.monotonic() - read_at > 300:
-            found = repo.template_questions(stack, **({'opener': repo_opener} if repo_opener else {}))
-            questions_cache[stack] = (time.monotonic(), found)
+        cached = questions_cache.get(stack)
+        if cached is not None and time.monotonic() - cached[0] <= 300:
+            return cached[1]
+        found = repo.template_questions(stack, **({'opener': repo_opener} if repo_opener else {}))
+        questions_cache[stack] = (time.monotonic(), found)
         return found
 
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:

@@ -7,7 +7,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - Update documentation in the same change as behaviour. Each topic has one canonical page (map below); link, don't copy. Describe what is, not what was.
 - Validate before every commit: `make check`. For script, Makefile or layout changes also run `for f in host/*.sh tests/fixtures/*.sh; do bash -n "$f"; done` and the `DRY_RUN=true` variants CI runs (see `.github/workflows/validate.yml`).
 - Commit to `main` after validation, push, `make flux-reconcile`, verify on the cluster (`make verify-platform`, `make app-status`), then record dated evidence in `docs/current-state.md`.
-- Confirm with the user before hard-to-reverse live actions: deleting data (`make destroy-data`, namespaces, PVs), rotating real credentials, changing where backups go, or anything under `flux-system`.
+- Confirm with the user before hard-to-reverse live actions: deleting data (`make destroy-data`, namespaces, PVs), rotating real credentials, changing where backups go, or anything under `flux-system`. `make app-repo` and the console's **New app and repository** create a real public GitHub repository and package; only the user can delete them (`gh` lacks `delete_repo`), so name throwaway ones `swhurl-try-<n>` and list them for deletion afterwards.
 - New operator logic goes in the `tools/swhurl` package, calling external tools only through `Runner` and tested with `FakeRunner` ([contributing](docs/contributing.md#operator-tooling)); keep short glue and host scripts as bash.
 - Never print Secret values. Compare by bytes or hashes (`make check-secrets`, `make verify-platform`). `age.agekey` stays out of Git.
 - Scripted `kubectl` needs `export KUBECONFIG=$HOME/.kube/config`; the k3s wrapper otherwise reads `/etc/rancher/k3s/k3s.yaml`.
@@ -62,4 +62,5 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - **Reloader** only acts in namespaces listed in its HelmRelease; add the namespace before opting a workload in (`make app-new --secret-keys` does).
 - **`nginx-unprivileged`** listens on IPv4 only with a read-only root; use `127.0.0.1` inside the pod.
 - **Managed label domain** is `platform.swhurl.com/*`; throwaway test namespaces carry `platform.swhurl.com/<test>=true` and scripts refuse to touch namespaces without it.
+- **Stack templates** (`swhurl-app-template-*`, Copier): Renovate cannot see versions inside `*.jinja` files, so keep versions in plain files (the Kotlin `build.gradle.kts` reads answers from `gradle.properties` instead). A new Copier question needs a line in the template's Template workflow matrix. Docker mounts `--tmpfs /tmp` noexec, unlike podman: anything that unpacks and loads a native library from `/tmp` (the SQLite JDBC driver) passes locally and fails in CI.
 - `showboat` is not installed globally; use `uvx showboat ...`.

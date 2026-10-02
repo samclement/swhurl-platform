@@ -2,7 +2,7 @@
 
 GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello.homelab.swhurl.com`. A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
 
-The cluster is live. What has been verified on it, and when, is in [current state](docs/current-state.md). The [implementation plan](docs/plan.md) is paused; its section 0 lists what is left.
+The cluster is live. What has been verified on it, and when, is in [current state](docs/current-state.md); what is left to build is in [the plan](docs/plan.md), section 0.
 
 ## Make a change
 
@@ -21,10 +21,10 @@ make verify-platform             # expect "Validation passed."
 
 | I want to… | Read |
 | --- | --- |
+| Start a new app: repository, code and staging, from the console or `make app-repo` | [Start a new app](docs/apps.md#start-a-new-app) |
+| Deploy a new version, or put an app in production | [Deploy a new image](docs/apps.md#deploy-a-new-image), [add production](docs/apps.md#add-production) |
+| Change, operate or remove an app (its whole life) | [Apps](docs/apps.md) |
 | See apps and Flux units, or change them from a browser | [Console](docs/console.md) |
-| Create, change, promote or remove an app (its whole life) | [Apps](docs/apps.md) |
-| Start a new app's code | [Start from the template](docs/apps.md#start-from-the-template) |
-| Deploy a new image of an app | [Deploy a new image](docs/apps.md#deploy-a-new-image) |
 | Understand how the console deploys itself | [Deploy a new console](docs/console.md#deploy-a-new-console) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |
 | Understand or review Renovate chart update PRs | [Chart updates](docs/operations.md#chart-updates) |
@@ -41,6 +41,6 @@ make verify-platform             # expect "Validation passed."
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
 | `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, the web console, with their encrypted Secrets |
-| `apps/<app>/<env>/` | Generated app instances |
+| `apps/<app>/<env>/` | Generated app instances (each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features)) |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/`, `host/`, `tests/` | Python operator tooling and the web console's code; host systemd timers for dynamic DNS and the daily MongoDB backup (bash); offline tests and fixtures |

@@ -4,18 +4,17 @@ An **app instance** is one app in one environment: namespace `<app>-<env>`, a He
 
 An app's life, and where each step is described. Every change is a Git edit (by hand, a `make` command or a console pull request) that Flux applies ([how changes reach the cluster](architecture.md#how-changes-reach-the-cluster)):
 
-| Stage | Command | Console | Section |
+| Stage | Console | Command | Section |
 | --- | --- | --- | --- |
-| Start the code | `make app-repo` | **New app** (creates the repository too) | [Start from the template](#start-from-the-template) |
-| Create an instance | `make app-new` | **New app** | [Add an app](#add-an-app) |
-| Choose who can reach it | `make app-expose` | **Who can reach it** | [Who can reach it](#who-can-reach-it) |
-| Give it secrets | `sops apps/<app>/<env>/secret.sops.yaml` | — | [Secrets](#secrets) |
-| Send traces and metrics | `--otlp` | **Sends OpenTelemetry** | [Telemetry](#telemetry) |
-| Ship a new version | push to the app repository (template apps) or edit the pin | — | [Deploy a new image](#deploy-a-new-image) |
-| Keep dependencies current | Renovate pull requests in the app repository | — | [Dependency updates](#dependency-updates-in-app-repositories) |
-| Promote to production | `make app-promote` | **Promote to prod** | [Promote to production](#promote-to-production) |
-| Watch, resize, fix | `make app-status`, `app-logs`, `app-scale`, `app-reconcile` | the app page, **Scale**, **Reconcile** | [Operate an instance](#operate-an-instance) |
-| Remove | `make app-remove` | **Uninstall** | [Remove an app](#remove-an-app) |
+| Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
+| Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
+| Promote to production | **Promote to prod** | `make app-promote` | [Promote to production](#promote-to-production) |
+| Add an image that already exists | **New app**, other tabs | `make app-new` | [Add an existing image](#add-an-existing-image) |
+| Choose who can reach it | **Who can reach it** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
+| Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
+| Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
+| Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-scale`, `app-reconcile` | [Operate an instance](#operate-an-instance) |
+| Remove | **Uninstall** | `make app-remove` | [Remove an app](#remove-an-app) |
 
 ## Current instances
 
@@ -23,86 +22,101 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 | --- | --- | --- |
 | `hello/staging` | `staging-hello.homelab.swhurl.com` | `nginxinc/nginx-unprivileged:1.27-alpine`, pinned by digest |
 | `hello/prod` | `hello.homelab.swhurl.com` | same digest |
-| `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts) from the template; deployed automatically on each push |
+| `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts); deployed automatically on each push |
 | `hello-ts/prod` | `hello-ts.homelab.swhurl.com` | changes only through a promote |
 
-All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080; `hello-ts` is the template's TypeScript app, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080; `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
 
-## Start from the template
+## Start a new app
 
-New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework:
+From nothing to a running staging app in a few minutes (about three for TypeScript; six or seven for Kotlin, whose first build downloads its dependencies): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
+
+**In the console:** **New app** → **New app and repository** (the first tab). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+
+**From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
+
+```bash
+make app-repo NAME=weather-api STACK=kotlin ANSWERS="kind=web database=sqlite"   # DRY_RUN=true shows the plan
+# [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-kotlin
+# [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
+#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"   # the printed line
+git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/staging" && git push
+make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
+```
+
+`make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run `make app-new` with the image that run publishes.
+
+### Stacks and features
+
+A **stack** is a [Copier](https://copier.readthedocs.io/) template repository for one language and framework:
 
 | Stack | Template | Runs as |
 | --- | --- | --- |
-| `typescript` | [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) | Node 24; starts in about a second, about 60 MB of memory; the platform's default resources |
-| `kotlin` | [`samclement/swhurl-app-template-kotlin`](https://github.com/samclement/swhurl-app-template-kotlin) | Kotlin on Micronaut, Java 25 (a `jlink` runtime with the OpenTelemetry agent, about 150 MB image); about 10 s to start, about 200 MB of memory; its `swhurl.yaml` asks for 100m CPU, 192Mi (limit 384Mi) and `startupSeconds: 120` |
- The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
+| `typescript` (default) | [`swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) | Node 24; starts in about a second, about 60 MB of memory; the platform's default resources |
+| `kotlin` | [`swhurl-app-template-kotlin`](https://github.com/samclement/swhurl-app-template-kotlin) | Kotlin on Micronaut, Java 25, about 150 MB image; about 10 s to start, about 200 MB of memory. Its `swhurl.yaml` asks for 100m CPU, 192Mi (limit 384Mi) and two minutes to start |
 
-```bash
-make app-repo NAME=weather-api                  # STACK=typescript, ANSWERS="kind=worker database=sqlite", DESCRIPTION="..." optional; DRY_RUN=true for the plan
-# [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-typescript
-# [INFO] samclement/weather-api: run 1 in_progress
-# [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
-#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"
-```
+**Features** are the template's own questions (its `copier.yml`, read from GitHub, so a stack's features need no platform code); both stacks ask:
 
-It refuses a name that already exists on GitHub, renders the template (`uvx copier`) into a scratch directory, creates the **public** repository with your `gh` login (so the cluster can pull its images without credentials), pushes the first commit over SSH with your usual Git access, waits for the repository's first Container run (checks, image build, smoke test, publish; about two minutes) and reads the image's digest from GHCR anonymously, as the cluster will. The last line it prints adds the app to staging ([below](#add-an-app)). A failed first run stops it with the run's link; fix the app and push, then use the image that run publishes.
-
-**Features** are the stack template's own questions (its `copier.yml`, read from GitHub, so the console and `make app-repo` need no code per stack); unknown questions or choices are refused before anything is created. Both stacks ask:
-
-| Question | Choices | The app gets | On the platform |
+| Feature | Choices | The app gets | The platform adds |
 | --- | --- | --- | --- |
-| `kind` | `web` (default), `worker` | An HTTP service with `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
-| `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` (`node:sqlite`, or `sqlite-jdbc` in Kotlin), migrations in `migrations/` applied at startup | The [SQLite capability](#swhurlyaml): a retained volume, one copy at a time, nightly backups, [restore](operations.md#backups-and-recovery) |
+| `kind` | `web` (default), `worker` | An HTTP service answering `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
+| `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
 
-The answers go into the app's `swhurl.yaml`, so `app-new --from-repo` sets the platform side to match. The rendered app already meets what the platform expects: port 8080 and `GET /healthz` (web), a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. The template's README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one. Each app keeps `.copier-answers.yml`, which records the template version it came from; bringing later template changes to existing apps is phase 7 of the [plan](plan.md) (section 8). Until then only the shared workflow (`app.yml`) and Renovate preset reach existing apps.
+Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tmp` (and `/data` with a database), sends traces and metrics over OpenTelemetry, logs JSON linked to its traces, and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`. Nothing in the app's repository names the cluster: its [`swhurl.yaml`](#swhurlyaml) says what it needs, and this repo writes the manifests. Each template's README is the guide on the app's side. Template changes reach existing apps only through the shared workflow (`app.yml`) and Renovate preset; applying the rest (`copier update`) is [planned](plan.md) (section 8, phase 7).
 
-## Add an app
+### Add production
 
-An app with a `swhurl.yaml` needs only a name, its image and the environment; the file fills in the rest:
-
-```bash
-make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging \
-  --image ghcr.io/samclement/weather-api:42-a1b2c3d@sha256:<digest>"
-```
-
-`--from-repo OWNER/REPO[@REF]` reads the file from the repository's default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set (needed for a private repository); `--manifest PATH` reads a local copy. Without a `swhurl.yaml`, a preset fills in the same values:
+Production is created once, with the image staging runs, and changes only through a promote afterwards. Use the app's `swhurl.yaml` (`--from-repo`), so production gets the same resources, probes and database as staging:
 
 ```bash
-make app-new NAME=weather-api ARGS="--preset swhurl-web --env staging \
-  --image ghcr.io/samclement/weather-api:42-a1b2c3d@sha256:<digest> --secret-keys API_TOKEN,DB_URL"
-sops apps/weather-api/staging/secret.sops.yaml     # replace the REPLACE_ME values
-make check-apps check-secrets
-git add apps/weather-api clusters/home platform/reloader
-git commit -m "apps: add weather-api/staging" && git push
-make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
+make app-status APP=weather-api ENV=staging    # the Image line: REPO:TAG@sha256:…
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env prod --image <that image>"
+git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/prod" && git push
 ```
 
-| Preset (the template's `swhurl.yaml`) | Fills in | For |
+Production requires the digest and never deploys automatically. The console's preset tabs can create production too, but they carry the TypeScript template's defaults: for a Kotlin app, set **Memory request** 192Mi, **Memory limit** 384Mi and **CPU request** 100m under **Advanced**; the start-up allowance is not on the form, so use the command.
+
+## Add an existing image
+
+For an image that already exists: an app made elsewhere, a public image such as nginx, or a retry after a failed first build. Pick the source of the defaults:
+
+| The app | Command | Console |
 | --- | --- | --- |
-| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
-| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` | A background worker from the template |
-
-Any flag you give wins over the preset or `swhurl.yaml` (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
+| Has a `swhurl.yaml` in its repository | `make app-new NAME=<app> ARGS="--from-repo OWNER/REPO --env staging --image …"` | (not on the form; use the command) |
+| Follows the TypeScript template's conventions | `--preset swhurl-web` or `--preset swhurl-worker` | **Web app** or **Worker** tab |
+| Anything else | every option yourself (table below) | **Other image** tab, with **Advanced** open |
 
 ```bash
 make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \
   --exposure authenticated-web --uid 101 --health-path /"
+make check-apps
+git add apps/hello clusters/home && git commit -m "apps: add hello/staging" && git push
+make flux-reconcile && make app-status APP=hello ENV=staging   # flux-reconcile waits for the new unit
 ```
 
-The console's **New app** form opens the same change as a pull request ([console](console.md)): it starts on the web preset, showing only name, environment, image, secret environment variables, exposure and host, with the preset's values under **Advanced**; **Other image** opens Advanced for every option. The generator ([`tools/swhurl/apps/new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists all options) writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and renders the result against [the app policy](#the-app-policy) before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it). The output is plain YAML; edit it like any manifest afterwards.
+`--from-repo OWNER/REPO[@REF]` reads `swhurl.yaml` from the default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set (a private repository needs it); `--manifest PATH` reads a local copy. A flag you give wins over `swhurl.yaml` or a preset (for example `--exposure public --host weather.example.com`). With `--secret-keys`, set the values before pushing ([secrets](#secrets)) and also `git add platform/reloader`.
+
+| Preset | Fills in |
+| --- | --- |
+| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) |
+| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` |
+
+### What the generator writes
+
+`make app-new` ([`new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists every option) writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and checks the result against [the app policy](#the-app-policy) before exiting (it warns and skips the check if Helm is missing; `--no-policy-check` skips it). The output is plain YAML; edit it like any manifest afterwards. The console's New app pull requests run this same command in a copy of `main`.
 
 | Option | Rules |
 | --- | --- |
-| `--preset` | `swhurl-web` or `swhurl-worker`: defaults for an app from the template (table above) |
+| `--from-repo`, `--manifest`, `--preset` | Where the defaults come from (one of them, or none) |
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `repo:tag`, `repo@sha256:…` or both; no `latest`; **production requires a digest** |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)) |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
-| `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Backed up daily with the platform's backups and restored with `make restore-sqlite` ([operations](operations.md#backups-and-recovery)) |
-| `--startup-seconds N` | Web only: a startup probe on the health path gives the app up to N seconds (10-600) to answer before liveness checks begin; without it, three failed liveness checks (about 30 s) restart a slow starter |
+| `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
+| `--startup-seconds N` | Web only: a startup probe gives the app up to N seconds (10-600) to first answer its health path before liveness checks begin; without it, three failed liveness checks (about 30 s) restart a slow starter |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
@@ -110,34 +124,23 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## swhurl.yaml
 
-What an app needs from the platform, kept in the app's own repository and read by `app-new --from-repo` and `--manifest`. Each field becomes an `app-new` default; flags given on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
+What an app needs from the platform, kept in the app's own repository (the templates write it from your feature answers) and read by `app-new --from-repo` and `--manifest`. Each field becomes an `app-new` default; flags on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
 
 ```yaml
 version: 1              # required; this platform reads version 1
-stack: typescript       # which template the app came from (informational)
-kind: web               # required: web or worker
-port: 8080              # web only (default 8080)
-healthPath: /healthz    # web only, required: readiness and liveness
-startupSeconds: 120     # web only, optional (10-600): a startup probe lets a slow starter (a JVM) take this long
-uid: 65532              # the non-root user the image runs as (default 65532)
-telemetry: otlp         # otlp: the app has an OpenTelemetry SDK; none (default)
-autoDeploy: true        # staging deploys each image the app publishes (<run>-<sha> tags)
-database: sqlite        # optional: the SQLite capability; databaseSize: 1Gi (default)
-secrets: [API_TOKEN]    # optional: environment variable names for an encrypted Secret
-resources: {cpu: 10m, memory: 32Mi, memoryLimit: 128Mi}   # optional
-exposure: authenticated-web   # optional default: web apps authenticated-web, workers private
+stack: kotlin           # which template the app came from (informational)
+kind: web               # required: web or worker            --kind
+port: 8080              # web only (default 8080)            --port
+healthPath: /healthz    # web only, required                 --health-path
+startupSeconds: 120     # web only, optional (10-600)         --startup-seconds
+uid: 65532              # default 65532                      --uid
+telemetry: otlp         # otlp or none (default)             --otlp
+autoDeploy: true        # staging follows new images         --auto-deploy
+database: sqlite        # optional; databaseSize: 1Gi        --database, --database-size
+secrets: [API_TOKEN]    # optional: variable names           --secret-keys
+resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
+exposure: authenticated-web   # optional; default: web apps authenticated-web, workers private
 ```
-
-| Field | `app-new` option |
-| --- | --- |
-| `kind`, `port`, `healthPath`, `uid` | `--kind`, `--port`, `--health-path`, `--uid` |
-| `startupSeconds` | `--startup-seconds` |
-| `telemetry: otlp` | `--otlp` |
-| `autoDeploy: true` | `--auto-deploy` |
-| `database`, `databaseSize` | `--database`, `--database-size` |
-| `secrets` | `--secret-keys` |
-| `resources.cpu`, `.memory`, `.memoryLimit` | `--cpu`, `--memory`, `--memory-limit` |
-| `exposure` | `--exposure` |
 
 ## Who can reach it
 
@@ -187,13 +190,19 @@ The collector DaemonSet runs on every node with host networking, so it listens o
 - It exports OTLP over HTTP/protobuf. For gRPC, change the endpoint port to 4317 and the protocol to `grpc` by hand.
 - It sends no key or auth headers; the collector adds them.
 
-To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK. **Logs linked to traces:** a JSON log line that carries `trace_id` and `span_id` (32 and 16 hex characters, at the top level as pino writes them, or under `mdc` as logback writes them with the Java agent) is attached to that trace, so a trace in HyperDX shows its logs. Both templates do this already. **Health checks are not traced:** the collector drops the spans of requests whose user agent is `kube-probe/…`, so a health path that does more (a database query) leaves child spans without a parent; keep it cheap. In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging from production). Telemetry sent in a pod's first second can lack the pod attributes while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints.
+To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK.
+
+**Logs linked to traces:** a JSON log line that carries `trace_id` and `span_id` (32 and 16 hex characters, at the top level as pino writes them, or under `mdc` as logback writes them with the Java agent) is attached to that trace, so a trace in HyperDX shows its logs. Both templates do this already.
+
+**Health checks are not traced:** the collector drops the spans of requests whose user agent is `kube-probe/…`, so a health path that does more (a database query) leaves child spans without a parent; keep it cheap.
+
+In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging from production). Telemetry sent in a pod's first second can lack the pod attributes while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints.
 
 ## Deploy a new image
 
 An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Staging changes first; production gets the same digest only when you [promote](#promote-to-production) it.
 
-**Apps from the template (automatic in staging).** A staging instance generated with `--preset` (or `--auto-deploy`) is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own, in about two minutes:
+**Apps from a template (automatic in staging).** A staging instance with `autoDeploy: true` in its `swhurl.yaml` (both templates), `--preset` or `--auto-deploy` is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own, in about two minutes:
 
 ```text
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
@@ -224,15 +233,15 @@ The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "
 
 ## Dependency updates in app repositories
 
-Apps from the template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new repository from the template is registered on Renovate's next run, and its `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json). Every pull request runs the app's checks: type-check, `npm test`, image build, and a smoke test that starts the image as the cluster does (read-only root filesystem) and expects `/healthz` ([template README](https://github.com/samclement/swhurl-app-template-typescript#checks-and-dependency-updates)).
+Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compile or type-check, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README).
 
 | Situation | What validates an update | What deploys |
 | --- | --- | --- |
-| New app created after Renovate updated the template | The template's own pull request checks; then the app's first push | Its first image, by hand (New app), then automatically in staging |
-| App with tests (the template ships `test/healthz.test.mjs`) | All checks; minor, patch and digest updates merge themselves, majors wait | Each merge publishes an image that deploys to staging; promote to production |
-| App without tests | Type-check, build and smoke test only; set `"automerge": false`, so you merge | Staging after your merge; check it before promoting |
+| A template's own update pull request | The template's CI, which renders every combination of features and runs the app checks on each | Nothing: new apps start from the updated template |
+| App with tests (both templates ship some) | All checks; minor, patch and digest updates merge themselves, majors wait | Each merge publishes an image that deploys to staging; promote to production |
+| App without tests | Build and smoke test only; set `"automerge": false`, so you merge | Staging after your merge; check it before promoting |
 
-Renovate merges only when it runs, so a passing update can wait hours; tick "run again" on the repository's Dependency Dashboard issue to hurry it. The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them.
+Renovate merges only when it runs, so a passing update can wait hours; tick "run again" on the repository's Dependency Dashboard issue to hurry it. The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them. A version written inside a template's `*.jinja` file is invisible to Renovate; keep versions in plain files.
 
 ## Promote to production
 
@@ -244,7 +253,7 @@ git commit -am "apps: promote <app> to prod" && git push
 make app-status APP=<app> ENV=prod
 ```
 
-The console's **Promote to prod** (on the staging page) opens the same change as a pull request. Promote refuses an image without a digest, never copies the automatic-deploy markers (production has none), and checks the result against the app policy. The production instance must exist: create it once with `make app-new … --env prod` (with the same preset; `--auto-deploy` does not apply to production).
+The console's **Promote to prod** (on the staging page) opens the same change as a pull request. Promote refuses an image without a digest, never copies the automatic-deploy markers (production has none), and checks the result against the app policy. The production instance must exist: create it once ([add production](#add-production)).
 
 ## Operate an instance
 

@@ -361,6 +361,70 @@ Fixed the same day in `724f902` (deployed `907f9a4`): the running image is read 
 
 `make backup-sqlite` tried against a throwaway namespace `sqlite-test` (labelled, deleted afterwards): a Deployment running as UID 65532 with `DATABASE_PATH=/data/app.db` on a `local-path` claim, holding a WAL-mode database with one table and two rows, kept running throughout. With `BACKUP_DIR` in a scratch directory and the S3 upload off, the backup pod ran as the app's user, the copy passed `integrity_check`, and the run wrote `sqlite-<UTC>.db.age` and its metadata (source, table count, checksum), both mode 600, then deleted the pod. Decrypted with the age key, the copy passed `integrity_check` and held both rows. `make verify-platform` with the same `BACKUP_DIR` reported the backup fresh under "App SQLite backups". Not exercised: the S3 upload to `app-sqlite/<namespace>/` (the shared upload code is unit-tested and live for MongoDB); the systemd timer running it (needs `make host-backup`); a restore into a running app.
 
+## App SQLite restore (2 October 2026)
+
+`make restore-sqlite` and `make live-test-restore-sqlite` (plan section 8, phase 1). The live test creates namespace `sqlite-restore-test` (labelled) with a throwaway app-template HelmRelease holding a WAL-mode database (rows one, two), backs it up with `backup-sqlite`'s code to a scratch directory, changes the live rows to two, three, then restores. Three consecutive runs passed: HelmRelease suspended, app scaled to 0, the copy received and checked (plaintext SHA-256, `integrity_check`, table count), rows one, two after the restore, the replaced database in `/data/before-restore-<UTC>/` still reading two, three, HelmRelease resumed and Ready; namespace and volume deleted.
+
+An earlier run (before the plaintext size and SHA-256 checks existed) received an empty copy: the checks then present (integrity and table count) refused it, the live database was untouched, and the app was scaled back and its HelmRelease resumed, as designed. The cause was not found: 20 repeated transfers of the same size through `kubectl exec -i` all arrived whole. An empty stream on the backup side would also have passed the old backup check (an age file of nothing still has a header), so backups now record the plaintext size and SHA-256 measured in the pod and fail when the archive is smaller than the plaintext; the restore compares the received file's SHA-256 with it. No real app had a SQLite backup yet, so no existing backup was affected. Not exercised: restoring a real app instance (none has a database), and restoring from S3 on another machine.
+
+## swhurl.yaml and app-new --from-repo (2 October 2026)
+
+`aa0c06a` (plan section 8, phase 2). `swhurl.yaml` (version 1) was added to the template (`samclement/swhurl-app-template-typescript`) and to `hello-ts`, each with a README paragraph. With no `GITHUB_TOKEN`, `app-new hello-ts --from-repo samclement/hello-ts --env staging|prod` (images as pinned in Git) read the file through GitHub's API and wrote both instances, unit files included, byte-identical to `apps/hello-ts/` and `clusters/home/`, and both passed the app policy; `--from-repo` on the template rendered a staging instance too. The `hello-ts` push published `25-01edf61`, which image automation deployed to staging (`a57c7d0`): `make app-status APP=hello-ts ENV=staging` shows `running: matches desired`, 1/1 ready; `make verify-platform` passed. Not exercised: a private repository (`GITHUB_TOKEN`) and the console's New app (still uses presets; phase 4).
+
+## Copier template and make app-repo (2 October 2026)
+
+Plan section 8, phase 3. The TypeScript template became a Copier template (app under `template/`; template PR #11): its new Template workflow renders it and runs the shared `app.yml` on the result (checks, image build, smoke test, nothing published), green on the PR and on `main`. Its **Use this template** setting was turned off (that layout no longer builds as a GitHub template). `hello-ts`, which calls `app.yml@main`, built and published `26-01edf61` with the changed workflow, and image automation deployed it to staging (running: matches desired).
+
+`make app-repo NAME=swhurl-try-1` (`1edda4a`) created the public repository `samclement/swhurl-try-1` from the template, pushed over SSH, waited for run 1 and printed `ghcr.io/samclement/swhurl-try-1:1-8f926e0@sha256:a92d1745…` (digest read anonymously from GHCR) in 1 minute 57 seconds. The printed `app-new --from-repo` line generated `swhurl-try-1/staging`, which passed the app policy, became Ready through Flux in 19 seconds (`e7566a2`) and answered unauthenticated HTTPS with a 302 to Google sign-in; then `make app-remove` (`b10142b`) uninstalled it and its namespace is gone.
+
+Found during the test: `make app-status` showed the instance as public (no sign-in) with its route listed twice while the certificate was issued, because it counted cert-manager's HTTP-01 challenge Ingress; fixed in `f861132`. Adding and removing the app also sent two failure notifications from its ImagePolicy ("no tags in database" before the first scan; "referenced ImageRepository does not exist" during removal); both messages are now excluded from the failures alert. The operator deleted the repository `samclement/swhurl-try-1` and its GHCR package afterwards; both were confirmed gone (GitHub cannot resolve the repository, the package page returns 404).
+
+## Console New app and repository (2 October 2026)
+
+Plan section 8, phase 4 (`7a72d6c`, fix `6546879`). The console's second token (`APP_REPOS_TOKEN`) and a rotated `GITHUB_TOKEN` went in with `29d0860`: the previous `GITHUB_TOKEN` value had been exposed in a chat transcript, was revoked by the operator (GitHub answered 401 for it before the swap), and `make verify-platform` then reported GitHub accepting both new tokens.
+
+- **First run** (`swhurl-try-2`): rendered the template and created the repository, then GitHub refused the first blob (403 "Resource not accessible by personal access token"): the token had Contents read-only. Reads of the new repository worked and the blob was still refused minutes later, so it was the permission, not a delay. The job stopped with nothing else written and no PR; `6546879` makes such a 403 name the permission to check. The operator set Contents and Workflows to read and write (same token value).
+- **Second run** (`swhurl-try-3`, from the deployed console through a port-forward with identity `claude-live-test (port-forward)`): form to open PR in 2 minutes 10 seconds. Rendered 14 files, created `samclement/swhurl-try-3`, pushed `d4ea2ee` on top of GitHub's initial commit, waited for run 1 (success), read `ghcr.io/samclement/swhurl-try-3:1-d4ea2ee@sha256:3e7685350f4d…` from GHCR, ran `app-new --from-repo` in `main` (policy passed) and opened PR #23 (CI passed). The repository's `.copier-answers.yml` records template commit `7cb4a72`.
+- **Merged** (`060d825`): `app-swhurl-try-3-staging` Ready in 15 seconds, `make app-status` running: matches desired and signed-in while the certificate was issued (the `f861132` fix); HTTP 301 to HTTPS, HTTPS (Let's Encrypt YR2) 302 to Google sign-in when signed out. Removed with `make app-remove` (`6c2b66d`): namespace and image automation objects gone. The failures and deploys ntfy topics received nothing during the test (the `1117048` exclusions). `make verify-platform` passed.
+
+Not exercised: a stack other than `typescript`; a public or private exposure from this form. The operator then deleted the repositories `samclement/swhurl-try-2` and `samclement/swhurl-try-3` and the package `swhurl-try-3`; all three confirmed gone (GitHub cannot resolve either repository; the package page returns 404).
+
+## Template features: worker and SQLite (2 October 2026)
+
+Plan section 8, phase 5. Template PR #13 (merged): Copier questions `kind` (web, worker) and `database` (none, sqlite on `node:sqlite`, migrations at startup); the Template workflow rendered all four combinations and each passed type-check, tests, image build and the smoke test, which now reads `swhurl.yaml` (logs: "smoke test passed (web)", "(web, sqlite)", "(worker)", "(worker, sqlite)"). `hello-ts`, which has no SIGTERM handler or database, built with the changed `app.yml` and deployed to staging. Platform `6bd7c7c`: the console and `make app-repo ANSWERS=` read the questions from the template's `copier.yml`.
+
+- **Console** (`claude-live-test (port-forward)`): the deployed form showed Kind and Database from the template. **web + sqlite** `swhurl-try-4`: 2 minutes 31 seconds to PR #24, whose instance has the retained 1Gi claim, `DATABASE_PATH=/data/app.db`, one replica and Recreate.
+- **CI caught a bug before merge:** the form's question cache treated "never read" as "read at monotonic time 0", so on a host up for under five minutes (a fresh runner) it showed no features; fixed in `0d05cc7` with a test that pins the clock. `b7ddf60` makes the console tests read the questions from a fixture.
+- **Merged** (`3c8fd32`): Ready in 15 seconds, running: matches desired, claim Bound on `local-path-retain`. Through a port-forward to its Service: visits 1, 2, 3; after `rollout restart` (new pod) 4; no ExperimentalWarning in the logs. `backup-sqlite` (scratch `BACKUP_DIR`, no S3 upload) found it and recorded 2 tables, integrity ok, 16384 bytes and the plaintext SHA-256; one more visit made 5; `make restore-sqlite APP=swhurl-try-4 ENV=staging` suspended the HelmRelease, stopped the app, restored and resumed it, and the next visit was 5 again (the post-backup write rolled back): the first restore of a real app instance.
+- **Removed** (`ec7c072`): Helm uninstalled the app; its namespace and claim stay, as for any app with a volume.
+
+Not exercised live: a worker instance (CI smoke tests only).
+
+## The Kotlin stack (2 October 2026)
+
+Plan section 8, phase 6. New template `samclement/swhurl-app-template-kotlin` (Micronaut 5.2, Kotlin 2.3, Java 25): its Template workflow passed all four combinations of `kind` and `database` on GitHub, smoke tests included. Local measurements (podman): images 151 MB (web + SQLite) and 133 MB (worker), a `jlink` runtime on `distroless/cc` with the OpenTelemetry agent; ready in 12.7 s on half a CPU without the agent, 52.7 s with it, 15.6-19.7 s with it and `-XX:TieredStopAtLevel=1`, 120 s on a tenth of a CPU. Hence `startupSeconds` (`da05f41`): a startup probe, 24 × 5 s.
+
+Found on the way: Docker mounts `--tmpfs /tmp` noexec, so the SQLite driver could not load the native library it unpacks there (podman's tmpfs allows it, so local runs passed); the worker variant still passed CI because the database only opened on first use and the failure was logged. The image now ships the library unpacked (`-Dorg.sqlite.lib.path`), and the database opens at startup (`@Context`), so a broken database stops the app. The second CI run passed with `noexec` in place.
+
+- **Console** (`claude-live-test (port-forward)`): stack **kotlin**, web + SQLite, `swhurl-try-5`: 6 minutes 31 seconds to PR #27 (the first Gradle build downloads everything; the job waits up to 10 minutes). The instance had 100m CPU, 192Mi (limit 384Mi), the startup probe and the retained claim.
+- **Merged**: container started to Ready in 9.0 s on the cluster, no restarts; `make app-status` running: matches desired. Visits 1, 2, 3, then 4 after `rollout restart`; 156Mi memory. `backup-sqlite` (scratch, no upload) backed up its database (2 tables, integrity ok). In ClickStack: traces as `swhurl-try-5` (HTTP `GET`, SQLite `SELECT`/`INSERT` including `schema_migrations`), logs as JSON with `mdc.trace_id` attributes, `jvm.gc.duration`. Removed (`f30acfc`); its namespace and claim stay.
+
+Not working yet: the agent's other JVM metrics (`jvm.memory.*`, `jvm.thread.*`) did not reach ClickStack (container CPU and memory come from the node collector); and no app's logs fill the `TraceId` column (hello-ts: 0 of 24 rows), because the log pipeline does not promote a trace id from the JSON body. Both recorded in the plan.
+
+## Observability fixes (2 October 2026)
+
+Plan item 13. `0712a16`: the node collector's `transform/trace-context` and `filter/kube-probes`, accepted by `make check-otel` (otelcol-k8s 0.161.0); the DaemonSet pod restarted at 15:05:00 with no errors. Template PRs: TypeScript #14 (local resource detectors only), Kotlin #4 (health check without a database query); all four combinations of each passed CI and both merged. `hello-ts` got the same detector line by hand (`e34293b`, deployed as `28-e34293b`).
+
+- **Logs linked to traces:** three requests to `hello-ts` (`/obs-test-1..3`, through a port-forward): each log row in ClickStack had the request's `TraceId` and `SpanId`, and each trace existed. After the new image, a request log and its `GET` span share a trace id. Before: 0 of 24 `hello-ts` log rows in a day had a `TraceId`.
+- **Probe spans dropped:** 318 `kube-probe/1.34` spans from `hello-ts` and `swhurl-try-5` in the 15 minutes before; the last at 15:04:53, none in the 100 seconds after the collector started (probes every 10 s); requests from curl still traced.
+- **No cloud lookups:** the `hello-ts` pod running `28-e34293b` logged no `MetadataLookupWarning` and no error-level lines; its traces keep 13 host, process and container resource attributes.
+
+Still wrong (known, not fixed): the request log above has severity `trace`, guessed from its text.
+
+## Test leftovers removed (2 October 2026)
+
+The operator deleted the repositories and packages `swhurl-try-4` and `swhurl-try-5`; `make destroy-data` then deleted both claims and their volumes (`pvc-6c37f25d…`, `pvc-95176ef0…`) and the two namespaces were deleted. No `swhurl-try-*` namespace or volume remains.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

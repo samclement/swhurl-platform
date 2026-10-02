@@ -6,7 +6,7 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 
 | Stage | Command | Console | Section |
 | --- | --- | --- | --- |
-| Start the code | **Use this template** on GitHub | — | [Start from the template](#start-from-the-template) |
+| Start the code | `make app-repo` | **New app** (creates the repository too) | [Start from the template](#start-from-the-template) |
 | Create an instance | `make app-new` | **New app** | [Add an app](#add-an-app) |
 | Choose who can reach it | `make app-expose` | **Who can reach it** | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | `sops apps/<app>/<env>/secret.sops.yaml` | — | [Secrets](#secrets) |
@@ -30,13 +30,43 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 ## Start from the template
 
-New app code starts from the GitHub template repository [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) (**Use this template**; keep the repository public so the cluster can pull its images without credentials). It already meets what the platform expects: port 8080, `GET /healthz`, a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, and a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, printing the image with its digest. Its README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one.
+New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework:
 
-Template changes do not reach apps already created from it, except the shared Renovate preset; copy other improvements by hand ([plan](plan.md) section 0, item 9).
+| Stack | Template | Runs as |
+| --- | --- | --- |
+| `typescript` | [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) | Node 24; starts in about a second, about 60 MB of memory; the platform's default resources |
+| `kotlin` | [`samclement/swhurl-app-template-kotlin`](https://github.com/samclement/swhurl-app-template-kotlin) | Kotlin on Micronaut, Java 25 (a `jlink` runtime with the OpenTelemetry agent, about 150 MB image); about 10 s to start, about 200 MB of memory; its `swhurl.yaml` asks for 100m CPU, 192Mi (limit 384Mi) and `startupSeconds: 120` |
+ The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
+
+```bash
+make app-repo NAME=weather-api                  # STACK=typescript, ANSWERS="kind=worker database=sqlite", DESCRIPTION="..." optional; DRY_RUN=true for the plan
+# [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-typescript
+# [INFO] samclement/weather-api: run 1 in_progress
+# [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
+#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"
+```
+
+It refuses a name that already exists on GitHub, renders the template (`uvx copier`) into a scratch directory, creates the **public** repository with your `gh` login (so the cluster can pull its images without credentials), pushes the first commit over SSH with your usual Git access, waits for the repository's first Container run (checks, image build, smoke test, publish; about two minutes) and reads the image's digest from GHCR anonymously, as the cluster will. The last line it prints adds the app to staging ([below](#add-an-app)). A failed first run stops it with the run's link; fix the app and push, then use the image that run publishes.
+
+**Features** are the stack template's own questions (its `copier.yml`, read from GitHub, so the console and `make app-repo` need no code per stack); unknown questions or choices are refused before anything is created. Both stacks ask:
+
+| Question | Choices | The app gets | On the platform |
+| --- | --- | --- | --- |
+| `kind` | `web` (default), `worker` | An HTTP service with `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
+| `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` (`node:sqlite`, or `sqlite-jdbc` in Kotlin), migrations in `migrations/` applied at startup | The [SQLite capability](#swhurlyaml): a retained volume, one copy at a time, nightly backups, [restore](operations.md#backups-and-recovery) |
+
+The answers go into the app's `swhurl.yaml`, so `app-new --from-repo` sets the platform side to match. The rendered app already meets what the platform expects: port 8080 and `GET /healthz` (web), a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. The template's README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one. Each app keeps `.copier-answers.yml`, which records the template version it came from; bringing later template changes to existing apps is phase 7 of the [plan](plan.md) (section 8). Until then only the shared workflow (`app.yml`) and Renovate preset reach existing apps.
 
 ## Add an app
 
-An app built from the template needs only a name, its image and who can reach it; the preset fills in the rest:
+An app with a `swhurl.yaml` needs only a name, its image and the environment; the file fills in the rest:
+
+```bash
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging \
+  --image ghcr.io/samclement/weather-api:42-a1b2c3d@sha256:<digest>"
+```
+
+`--from-repo OWNER/REPO[@REF]` reads the file from the repository's default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set (needed for a private repository); `--manifest PATH` reads a local copy. Without a `swhurl.yaml`, a preset fills in the same values:
 
 ```bash
 make app-new NAME=weather-api ARGS="--preset swhurl-web --env staging \
@@ -48,12 +78,12 @@ git commit -m "apps: add weather-api/staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
 ```
 
-| Preset | Fills in | For |
+| Preset (the template's `swhurl.yaml`) | Fills in | For |
 | --- | --- | --- |
 | `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
 | `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` | A background worker from the template |
 
-Any flag you give wins over the preset (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
+Any flag you give wins over the preset or `swhurl.yaml` (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
 
 ```bash
 make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \
@@ -71,11 +101,43 @@ The console's **New app** form opens the same change as a pull request ([console
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)) |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
-| `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Backed up daily with the platform's backups ([operations](operations.md#backups-and-recovery)) |
+| `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Backed up daily with the platform's backups and restored with `make restore-sqlite` ([operations](operations.md#backups-and-recovery)) |
+| `--startup-seconds N` | Web only: a startup probe on the health path gives the app up to N seconds (10-600) to answer before liveness checks begin; without it, three failed liveness checks (about 30 s) restart a slow starter |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
 Every instance runs non-root with no service-account token, all capabilities dropped and a read-only root filesystem with a writable `/tmp`. The generator refuses to overwrite an instance, expose a worker, put a public app in the sign-in cookie domain, or ship production without a digest.
+
+## swhurl.yaml
+
+What an app needs from the platform, kept in the app's own repository and read by `app-new --from-repo` and `--manifest`. Each field becomes an `app-new` default; flags given on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
+
+```yaml
+version: 1              # required; this platform reads version 1
+stack: typescript       # which template the app came from (informational)
+kind: web               # required: web or worker
+port: 8080              # web only (default 8080)
+healthPath: /healthz    # web only, required: readiness and liveness
+startupSeconds: 120     # web only, optional (10-600): a startup probe lets a slow starter (a JVM) take this long
+uid: 65532              # the non-root user the image runs as (default 65532)
+telemetry: otlp         # otlp: the app has an OpenTelemetry SDK; none (default)
+autoDeploy: true        # staging deploys each image the app publishes (<run>-<sha> tags)
+database: sqlite        # optional: the SQLite capability; databaseSize: 1Gi (default)
+secrets: [API_TOKEN]    # optional: environment variable names for an encrypted Secret
+resources: {cpu: 10m, memory: 32Mi, memoryLimit: 128Mi}   # optional
+exposure: authenticated-web   # optional default: web apps authenticated-web, workers private
+```
+
+| Field | `app-new` option |
+| --- | --- |
+| `kind`, `port`, `healthPath`, `uid` | `--kind`, `--port`, `--health-path`, `--uid` |
+| `startupSeconds` | `--startup-seconds` |
+| `telemetry: otlp` | `--otlp` |
+| `autoDeploy: true` | `--auto-deploy` |
+| `database`, `databaseSize` | `--database`, `--database-size` |
+| `secrets` | `--secret-keys` |
+| `resources.cpu`, `.memory`, `.memoryLimit` | `--cpu`, `--memory`, `--memory-limit` |
+| `exposure` | `--exposure` |
 
 ## Who can reach it
 
@@ -125,7 +187,7 @@ The collector DaemonSet runs on every node with host networking, so it listens o
 - It exports OTLP over HTTP/protobuf. For gRPC, change the endpoint port to 4317 and the protocol to `grpc` by hand.
 - It sends no key or auth headers; the collector adds them.
 
-To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK. In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging from production). Telemetry sent in a pod's first second can lack the pod attributes while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints.
+To add this to an existing instance, paste the block into each environment's HelmRelease. `make check-apps` fails (rule `otlp-host-ip`) if `$(HOST_IP)` is used without `HOST_IP` defined from `status.hostIP` before it; Kubernetes would otherwise pass the literal text to the SDK. **Logs linked to traces:** a JSON log line that carries `trace_id` and `span_id` (32 and 16 hex characters, at the top level as pino writes them, or under `mdc` as logback writes them with the Java agent) is attached to that trace, so a trace in HyperDX shows its logs. Both templates do this already. **Health checks are not traced:** the collector drops the spans of requests whose user agent is `kube-probe/…`, so a health path that does more (a database query) leaves child spans without a parent; keep it cheap. In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging from production). Telemetry sent in a pod's first second can lack the pod attributes while the collector's pod lookup catches up. Nothing scrapes Prometheus `/metrics` endpoints.
 
 ## Deploy a new image
 

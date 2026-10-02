@@ -56,17 +56,118 @@ def otlp_env(service: str) -> dict:
     }
 
 
+# swhurl.yaml: what an app needs from the platform, kept in the app's own repository (docs/apps.md).
+# app-new --from-repo / --manifest reads it; each field becomes an app-new default, and flags given
+# explicitly still win. Name, environment, image and host are per instance and never in the file.
+MANIFEST_FILE = 'swhurl.yaml'
+MANIFEST_VERSION = 1
+STARTUP_SECONDS = (10, 600)
+"""Bounds for startupSeconds: how long a slow starter (a JVM) may take to answer its health path first."""
+STARTUP_PERIOD = 5
+KINDS = ('web', 'worker')
+TELEMETRY = ('otlp', 'none')
+
+
+class ManifestError(ValueError):
+    pass
+
+
+def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
+    """app-new defaults from a swhurl.yaml document; raise ManifestError naming the first problem."""
+    def fail(message: str) -> ManifestError:
+        return ManifestError(f'{source}: {message}')
+
+    if not isinstance(doc, dict):
+        raise fail('must be a mapping')
+    if doc.get('version') != MANIFEST_VERSION:
+        raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
+    allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'startupSeconds'}
+    unknown = sorted(set(doc) - allowed)
+    if unknown:
+        raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
+
+    def field(key: str, kind: type | tuple, choices: tuple = ()):
+        value = doc.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, kind) or isinstance(value, bool) and kind is int:
+            raise fail(f'{key} must be {getattr(kind, "__name__", kind)}')
+        if choices and value not in choices:
+            raise fail(f'{key} must be one of {", ".join(choices)}')
+        return value
+
+    kind = field('kind', str, KINDS)
+    if not kind:
+        raise fail(f'kind is required ({", ".join(KINDS)})')
+    defaults: dict = {'kind': kind, 'uid': field('uid', int) or TEMPLATE_UID,
+                      'otlp': field('telemetry', str, TELEMETRY) == 'otlp',
+                      'auto_deploy': bool(field('autoDeploy', bool)),
+                      'exposure': field('exposure', str, EXPOSURES)
+                      or ('authenticated-web' if kind == 'web' else 'private')}
+    if kind == 'web':
+        defaults['port'] = field('port', int) or TEMPLATE_PORT
+        defaults['health_path'] = field('healthPath', str)
+        if not defaults['health_path']:
+            raise fail('healthPath is required for kind web (the app\'s readiness endpoint)')
+        startup = field('startupSeconds', int)
+        if startup is not None:
+            if not STARTUP_SECONDS[0] <= startup <= STARTUP_SECONDS[1]:
+                raise fail(f'startupSeconds must be between {STARTUP_SECONDS[0]} and {STARTUP_SECONDS[1]}')
+            defaults['startup_seconds'] = startup
+    elif any(doc.get(k) is not None for k in ('port', 'healthPath', 'startupSeconds')):
+        raise fail('port, healthPath and startupSeconds apply to kind web only')
+    if field('database', str, DATABASES):
+        defaults['database'] = doc['database']
+        if field('databaseSize', str):
+            defaults['database_size'] = doc['databaseSize']
+    elif doc.get('databaseSize') is not None:
+        raise fail('databaseSize needs database')
+    secrets = field('secrets', list)
+    if secrets:
+        if not all(isinstance(k, str) and re.fullmatch(r'[A-Z_][A-Z0-9_]*', k) for k in secrets):
+            raise fail('secrets must be environment variable names (A-Z, 0-9, _)')
+        defaults['secret_keys'] = secrets
+    resources = field('resources', dict) or {}
+    names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}
+    if set(resources) - set(names):
+        raise fail(f'resources may set {", ".join(names)} only')
+    for key, dest in names.items():
+        if resources.get(key) is not None:
+            if not isinstance(resources[key], str):
+                raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
+            defaults[dest] = resources[key]
+    field('stack', str)
+    return defaults
+
+
+# Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a
+# new repository; the template's own CI renders it and runs the shared app checks on the result.
+STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
+          'kotlin': 'samclement/swhurl-app-template-kotlin'}
+STACK_DESCRIPTIONS = {
+    'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
+    'kotlin': 'Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, '
+              'about 200 MB of memory.',
+}
+"""One line per stack for the New app form; both offer web or worker and SQLite."""
+COPIER = 'copier@9.18.2'
+APP_OWNER = 'samclement'
+APP_WORKFLOW = 'Container'
+"""The workflow in every app repository that checks and publishes its image (calls the template's app.yml)."""
+
+
 # Apps built from the template repository (samclement/swhurl-app-template-typescript) follow
-# these conventions, so a preset can fill everything but the name, image and exposure.
+# these conventions; each preset is the swhurl.yaml such an app would carry.
 TEMPLATE_PORT = 8080
 TEMPLATE_HEALTH_PATH = '/healthz'
 TEMPLATE_UID = 65532
-PRESETS = {
-    'swhurl-web': {'kind': 'web', 'exposure': 'authenticated-web', 'port': TEMPLATE_PORT,
-                   'health_path': TEMPLATE_HEALTH_PATH, 'uid': TEMPLATE_UID, 'otlp': True, 'auto_deploy': True},
-    'swhurl-worker': {'kind': 'worker', 'exposure': 'private', 'uid': TEMPLATE_UID, 'otlp': True,
-                      'auto_deploy': True},
+PRESET_MANIFESTS = {
+    'swhurl-web': {'version': 1, 'kind': 'web', 'port': TEMPLATE_PORT, 'healthPath': TEMPLATE_HEALTH_PATH,
+                   'uid': TEMPLATE_UID, 'telemetry': 'otlp', 'autoDeploy': True},
+    'swhurl-worker': {'version': 1, 'kind': 'worker', 'uid': TEMPLATE_UID, 'telemetry': 'otlp', 'autoDeploy': True},
 }
+PRESETS = {name: manifest_defaults(doc, f'preset {name}') for name, doc in PRESET_MANIFESTS.items()}
 """app-new defaults per preset; flags given explicitly still win."""
 
 

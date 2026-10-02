@@ -40,10 +40,12 @@ Rotate the ClickStack ingestion key ([what it is](services.md#clickstack-and-ote
 3. `make clickstack-bootstrap` writes the new key into the team.
 4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401. If the collector pods did not restart, restart them with the `kubectl` command above.
 
-Replace the console's GitHub token (before it expires; `make verify-platform` warns 14 days ahead):
+Replace one of the console's two GitHub tokens ([what each is for](console.md#github-tokens)) before it expires; `make verify-platform` warns 14 days ahead:
 
-1. On GitHub: Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only `samclement/swhurl-platform`; permissions: Contents and Pull requests, read and write; the longest expiry offered.
-2. In your own terminal: `sops platform/console/secret.sops.yaml` and replace the `GITHUB_TOKEN` value. Never paste the token anywhere else.
+1. On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate, resource owner `samclement`, the longest expiry offered:
+   - `GITHUB_TOKEN` (name `swhurl-console`): repository access only `samclement/swhurl-platform`; Contents and Pull requests, read and write.
+   - `APP_REPOS_TOKEN` (name `swhurl-console-app-repos`): **All repositories** (GitHub requires it to create repositories); Administration, Contents and Workflows read and write, Actions read-only.
+2. In your own terminal, from the repository root, set the value without echoing it (replace `KEY` with `GITHUB_TOKEN` or `APP_REPOS_TOKEN`, then paste the token): `read -rs T && SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["KEY"]' "\"$T\""; unset T`. Never paste the token anywhere else.
 3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
 Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub rejects nothing in between, but Flux ignores pushes until both sides match, so do it in one go:
@@ -127,7 +129,16 @@ The backup streams `mongodump` through `age`, so no plaintext touches disk, and 
 
 Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that runs as the user who installed it, so it runs whether or not you are logged in. Its output goes to `/var/log/swhurl-platform/swhurl-backup-mongodb.log` and to ClickStack as service `swhurl-backup-mongodb` ([services](services.md#clickstack-and-otel)); the journal keeps start, finish and failure lines. `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
 
-**App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count and checksum. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old. A tested restore procedure is not written yet ([plan](plan.md) item 12).
+**App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count, the archive's checksum and the plaintext's size and SHA-256 (measured in the pod); an archive smaller than the plaintext means the stream was cut short, and the run fails. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old.
+
+Restore an app's database from its newest local backup (or `BACKUP_FILE=`; on another machine, first copy one from `s3://…/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/`):
+
+```bash
+make restore-sqlite APP=notes ENV=prod DRY_RUN=true          # checks the backup, prints the plan
+make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod    # the app is down for about a minute
+```
+
+It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app.
 
 **Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.
 

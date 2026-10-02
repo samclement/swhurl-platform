@@ -96,6 +96,12 @@ def tree_fake(app_new=APP_NEW_OK, edit=None):
     return runner
 
 
+def app_under_test(runner, **kwargs):
+    """The console app, its template questions read from COPIER_YML: no test here reaches GitHub."""
+    kwargs.setdefault('repo_opener', ghcr_opener)
+    return server.create_app(runner, **kwargs)
+
+
 class FormTests(unittest.TestCase):
     def test_form_becomes_flag_equals_value_arguments(self):
         name, env, argv = changes.new_app_args({**FORM, 'cpu': '--no-policy-check'})
@@ -263,12 +269,12 @@ class NewAppRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
-        return TestClient(server.create_app(runner, jobs=jobs, github=github)), jobs
+        return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
     def test_form_opens_a_pr_as_a_job(self):
         runner = tree_fake()
         c, jobs = self.client(runner)
-        preset = c.get('/new', headers=WHO).text
+        preset = c.get('/new?preset=swhurl-web', headers=WHO).text
         self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">Web app from the swhurl template</a>', preset)
         self.assertIn('<input type="hidden" name="preset" value="swhurl-web">', preset)
         self.assertIn('name="exposure" value="authenticated-web" checked>', preset)
@@ -317,7 +323,7 @@ class NewAppRouteTests(unittest.TestCase):
         c, _ = self.client(tree_fake(), github=False)
         self.assertIn('No GitHub token is configured, so open pull requests are not listed', c.get('/activity', headers=WHO).text)
         api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
-        page = TestClient(server.create_app(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
+        page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
 
     def test_invalid_form_or_missing_token_runs_nothing(self):
@@ -327,7 +333,7 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('value="Bad"', response.text)
         c, _ = self.client(runner, github=False)
-        self.assertIn('No GitHub token', c.get('/new', headers=WHO).text)
+        self.assertIn('No GitHub token', c.get('/new?preset=swhurl-web', headers=WHO).text)
         self.assertEqual(c.post('/new', data=FORM, headers=WHO).status_code, 409)
         self.assertEqual(runner.calls, [])
 
@@ -344,7 +350,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
-        return TestClient(server.create_app(runner, jobs=jobs, github=github)), jobs
+        return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
     def tool_call(self, runner):
         return next(c for c in runner.calls if c[:3] == (sys.executable, '-m', 'swhurl'))
@@ -386,3 +392,245 @@ class ChangeAppRouteTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+APP_COMMIT = '9f8e7d6' + '1' * 33
+DIGEST = 'sha256:' + 'd' * 64
+
+
+class FakeAppGitHub:
+    """GitHub's API as the second token sees it: notes does not exist until created; its first run succeeds."""
+
+    def __init__(self, existing=('hello-ts',), runs=None):
+        self.requests: list[httpx.Request] = []
+        self.existing = set(existing)
+        self.runs = list(runs if runs is not None else [None, {'status': 'in_progress'}, {'status': 'completed',
+                                                                                        'conclusion': 'success'}])
+        from swhurl.console import repos
+        self.config = repos.AppReposToken('github_pat_app_repos_fixture_0123', transport=httpx.MockTransport(self.handle))
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path, method = request.url.path, request.method
+        if method == 'GET' and path.count('/') == 3 and path.startswith('/repos/samclement/'):
+            return httpx.Response(200 if path.rsplit('/', 1)[1] in self.existing else 404, json={'message': 'x'})
+        if (method, path) == ('POST', '/user/repos'):
+            self.existing.add(json.loads(request.content)['name'])
+            return httpx.Response(201, json={'html_url': 'https://github.com/samclement/notes'})
+        answers = {('GET', '/repos/samclement/notes/git/ref/heads/main'): {'object': {'sha': 'init000'}},
+                   ('POST', '/repos/samclement/notes/git/blobs'): {'sha': 'blob'},
+                   ('POST', '/repos/samclement/notes/git/trees'): {'sha': 'tree'},
+                   ('POST', '/repos/samclement/notes/git/commits'): {'sha': APP_COMMIT},
+                   ('PATCH', '/repos/samclement/notes/git/refs/heads/main'): {'ref': 'refs/heads/main'}}
+        if (method, path) == ('GET', '/repos/samclement/notes/actions/runs'):
+            run = self.runs.pop(0) if len(self.runs) > 1 else self.runs[0]
+            runs = [] if run is None else [{'name': 'Container', 'run_number': 1, 'html_url': 'https://run/1',
+                                            'conclusion': None, **run}]
+            return httpx.Response(200, json={'workflow_runs': runs})
+        if (method, path) in answers:
+            return httpx.Response(200, json=answers[(method, path)])
+        return httpx.Response(404, json={'message': 'Not Found'})
+
+    def writes(self):
+        return [(r.method, r.url.path) for r in self.requests if r.method != 'GET']
+
+
+COPIER_YML = """_subdirectory: template
+app_name:
+  type: str
+description:
+  type: str
+kind:
+  type: str
+  help: web or worker
+  choices: {web: web, worker: worker}
+  default: web
+database:
+  type: str
+  help: none or sqlite
+  choices: [none, sqlite]
+  default: none
+"""
+
+
+def ghcr_opener(request):
+    if request.full_url.endswith('/contents/copier.yml'):
+        return {}, COPIER_YML.encode()
+    if 'token' in request.full_url:
+        return {}, json.dumps({'token': 'anon'}).encode()
+    return {'Docker-Content-Digest': DIGEST}, b''
+
+
+def render_into_dest(args, _input):
+    dest = Path(args[-1])
+    (dest / '.github/workflows').mkdir(parents=True)
+    (dest / 'swhurl.yaml').write_text('version: 1\n')
+    (dest / '.github/workflows/container.yml').write_text('name: Container\n')
+    return Result(args, 0)
+
+
+def repo_runner(runner=None):
+    runner = runner or FakeRunner()
+    return runner.on('copier', handler=render_into_dest).on('uvx', handler=render_into_dest)
+
+
+class AppReposTests(unittest.TestCase):
+    def job(self):
+        return actions.Job(1, 'new app and repository', 'notes/staging', 'sam@swhurl.com', None)
+
+    def test_creates_pushes_waits_and_returns_the_first_image(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        api = FakeAppGitHub()
+        client, job = repos.AppRepos(repo_runner(), api.config), self.job()
+        image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
+                                      opener=ghcr_opener)
+        self.assertEqual(image, f'ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}')
+        self.assertEqual(api.writes(), [('POST', '/user/repos')] + [('POST', '/repos/samclement/notes/git/blobs')] * 2
+                         + [('POST', '/repos/samclement/notes/git/trees'), ('POST', '/repos/samclement/notes/git/commits'),
+                            ('PATCH', '/repos/samclement/notes/git/refs/heads/main')])
+        created = json.loads(api.requests[1].content)
+        self.assertEqual((created['private'], created['auto_init']), (False, True))
+        tree = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/git/trees')))
+        self.assertEqual(sorted(e['path'] for e in tree['tree']), ['.github/workflows/container.yml', 'swhurl.yaml'])
+        self.assertNotIn('base_tree', tree, 'the rendered files replace the initial README')
+        commit = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/git/commits')))
+        self.assertEqual(commit['parents'], ['init000'])
+        self.assertIn('Requested-by: sam@swhurl.com', commit['message'])
+        self.assertIn('A swhurl.yaml', job.lines)
+        self.assertIn('run 1 in_progress', job.lines)
+        self.assertNotIn('github_pat_app_repos_fixture_0123', '\n'.join(job.lines))
+
+    def test_a_permission_refusal_names_the_permission_to_check(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        api = FakeAppGitHub()
+        handle = api.handle
+        api.handle = None
+        def refuse_blobs(request):
+            if request.url.path.endswith('/git/blobs'):
+                return httpx.Response(403, json={'message': 'Resource not accessible by personal access token'})
+            return handle(request)
+        config = repos.AppReposToken(api.config.token, transport=httpx.MockTransport(refuse_blobs))
+        client = repos.AppRepos(repo_runner(), config)
+        with self.assertRaisesRegex(actions.ActionError, 'Contents: Read and write and Workflows: Read and write'):
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+
+    def test_writes_only_to_a_repository_it_created(self):
+        from swhurl.console import repos
+        api = FakeAppGitHub()
+        client = repos.AppRepos(FakeRunner(), api.config)
+        with self.assertRaisesRegex(actions.ActionError, 'writes only to a repository it created'):
+            client.push_first_commit('hello-ts', Path('.'), 'x', sleep=lambda _: None)
+        self.assertEqual(api.requests, [])
+        self.assertFalse([name for name in dir(client) if 'delete' in name.lower()], 'no deleting method')
+
+    def test_an_existing_name_or_a_failed_first_run_stops_with_the_reason(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        api = FakeAppGitHub(existing=('notes',))
+        client = repos.AppRepos(repo_runner(), api.config)
+        with self.assertRaisesRegex(actions.ActionError, 'already exists on GitHub'):
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+        self.assertEqual(api.writes(), [])
+        self.assertEqual(client.runner.calls, [], 'nothing rendered')
+        api = FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'failure'}])
+        client = repos.AppRepos(repo_runner(), api.config)
+        with self.assertRaisesRegex(actions.ActionError, 'ended failure: https://run/1'):
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+        ticks = iter(range(0, 10_000, 100))
+        client = repos.AppRepos(repo_runner(), FakeAppGitHub(runs=[None]).config)
+        with self.assertRaisesRegex(actions.ActionError, 'no finished Container run after 10 minutes'):
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
+                                  clock=lambda: next(ticks))
+
+
+class NewRepoRouteTests(unittest.TestCase):
+    def test_the_form_creates_the_repository_then_opens_the_platform_pr(self):
+        runner = repo_runner(tree_fake())
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
+        c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('class="here" aria-current="page">New app and repository</a>', page)
+        self.assertIn('action="/new/repo"', page)
+        self.assertIn('name="stack" value="typescript" checked', page)
+        self.assertIn('name="feature-kind" value="web" checked', page)
+        self.assertIn('name="feature-database" value="sqlite" >', page)
+        self.assertIn('none or sqlite', page, "the template's own help text")
+        response = c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'description': 'Take notes',
+                                             'exposure': 'authenticated-web', 'host': ''}, headers=WHO,
+                          follow_redirects=False)
+        self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
+        job = jobs.get(1)
+        self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'notes/staging'),
+                         '\n'.join(job.lines))
+        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
+        self.assertEqual(app_new[4:], ('notes', '--from-repo=samclement/notes', '--env=staging',
+                                       f'--image=ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}',
+                                       '--exposure=authenticated-web'))
+        copy = next(c for c in runner.calls if 'copy' in c)
+        self.assertIn('kind=web', copy)
+        self.assertIn('database=none', copy)
+        body = platform_api.sent('POST /pulls')[0]['body']
+        self.assertIn('created https://github.com/samclement/notes from', body)
+
+    def test_a_worker_with_sqlite_gets_no_route_and_its_answers(self):
+        runner = repo_runner(tree_fake())
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
+        c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'feature-kind': 'worker',
+                                  'feature-database': 'sqlite', 'exposure': 'authenticated-web', 'host': ''}, headers=WHO)
+        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
+        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
+        self.assertFalse([a for a in app_new if a.startswith(('--exposure', '--host'))], 'swhurl.yaml makes a worker private')
+        copy = next(c for c in runner.calls if 'copy' in c)
+        self.assertIn('kind=worker', copy)
+        self.assertIn('database=sqlite', copy)
+        self.assertIn('Rendering samclement/swhurl-app-template-typescript (typescript) for notes with database=sqlite, kind=worker',
+                      jobs.get(1).lines)
+        for form, message in (({'feature-kind': 'cron'}, 'kind must be one of web, worker'),
+                              ({'feature-kind': 'worker', 'host': 'notes.homelab.swhurl.com'}, 'a worker has no web address')):
+            with self.subTest(message=message):
+                response = c.post('/new/repo', data={'name': 'notes2', 'stack': 'typescript', **form}, headers=WHO)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.text)
+
+    def test_kotlin_is_a_stack_with_its_own_template(self):
+        runner = repo_runner(tree_fake())
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github,
+                                      app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('name="stack" value="kotlin"', page)
+        self.assertIn('Kotlin on Micronaut', page)
+        self.assertEqual(page.count('<fieldset class="features"'), 2, 'one Features set per stack')
+        c.post('/new/repo', data={'name': 'notes', 'stack': 'kotlin', 'feature-kind': 'web', 'feature-database': 'sqlite'},
+               headers=WHO)
+        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
+        copy = next(c for c in runner.calls if 'copy' in c)
+        self.assertIn('https://github.com/samclement/swhurl-app-template-kotlin.git', copy)
+
+    def test_template_questions_are_read_on_first_use_whatever_the_clock(self):
+        from unittest import mock
+        with mock.patch('swhurl.console.server.time.monotonic', return_value=5.0):  # a host booted 5 s ago
+            page = TestClient(app_under_test(repo_runner(tree_fake()), github=FakeGitHub().github,
+                                             app_repos=FakeAppGitHub().config)).get('/new', headers=WHO).text
+        self.assertIn('name="feature-kind" value="web" checked', page)
+
+    def test_bad_input_or_a_missing_token_creates_nothing(self):
+        runner = repo_runner(tree_fake())
+        app_api = FakeAppGitHub()
+        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github,
+                                         app_repos=app_api.config))
+        for form, message in (({'name': 'Notes', 'stack': 'typescript'}, 'DNS label'),
+                              ({'name': 'notes', 'stack': 'cobol'}, 'stack must be one of'),
+                              ({'name': 'notes', 'stack': 'typescript', 'host': 'bad host'}, 'not a DNS name')):
+            with self.subTest(message=message):
+                response = c.post('/new/repo', data=form, headers=WHO)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.text)
+        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github))
+        self.assertIn('No token for creating repositories', c.get('/new', headers=WHO).text)
+        self.assertEqual(c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript'}, headers=WHO).status_code, 409)
+        self.assertEqual((runner.calls, app_api.requests), ([], []))

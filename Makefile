@@ -67,6 +67,11 @@ app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }
 	$(SWHURL) app-remove $(APP) $(ENV)
 
+.PHONY: app-repo
+app-repo: ## NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite"] [DESCRIPTION=] Create the app's GitHub repository from a template; wait for its first image
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-repo NAME=<app> [STACK=typescript]" >&2; exit 2; }
+	@DRY_RUN=$(DRY_RUN) STACK="$(STACK)" ANSWERS="$(ANSWERS)" DESCRIPTION="$(DESCRIPTION)" $(SWHURL) app-repo $(NAME)
+
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one app instance
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
@@ -103,6 +108,11 @@ backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 .PHONY: backup-sqlite
 backup-sqlite: ## Encrypted backup of every app's SQLite database to BACKUP_DIR/sqlite and S3, then prune
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-sqlite
+
+.PHONY: restore-sqlite
+restore-sqlite: ## APP= ENV= CONFIRM=<app>/<env> Restore an app's SQLite database from its newest backup (stops the app meanwhile)
+	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>" >&2; exit 2; }
+	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) restore-sqlite $(APP) $(ENV)
 
 # Offline checks (CI runs `make check`) -------------------------------------------
 
@@ -156,6 +166,10 @@ live-test-app-template: ## Deploy the generated app fixtures through Flux, check
 .PHONY: live-test-restore-mongodb
 live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway namespace and check it
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-mongodb
+
+.PHONY: live-test-restore-sqlite
+live-test-restore-sqlite: ## Back up a throwaway app's SQLite database, change it, restore it and check it
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-sqlite
 
 # Host ---------------------------------------------------------------------------
 

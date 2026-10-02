@@ -1,6 +1,6 @@
 # Commands
 
-Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
+Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit; **GitHub** means it creates a repository there. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
 
 ## Deploy and verify
 
@@ -20,7 +20,8 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy ([apps](apps.md)) | Git |
+| `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`STACK=typescript` or `kotlin`, `ANSWERS="kind=worker database=sqlite"`, `DESCRIPTION=`), push it, wait for its first image and print the `app-new` line ([start from the template](apps.md#start-from-the-template)) | GitHub |
+| `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy; `--from-repo OWNER/REPO` takes its defaults from the app's [`swhurl.yaml`](apps.md#swhurlyaml) | Git |
 | `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
 | `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
 | `app-status APP= ENV=` | Whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
@@ -46,6 +47,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), prune to 7 daily + 4 weekly (`PRUNE=false` skips), then upload files the bucket lacks to `BACKUP_S3_URI` (empty skips; AWS CLI default credentials or `AWS_PROFILE`) | Cluster (read), local, S3 |
 | `backup-sqlite` † | For each app with a SQLite database (`DATABASE_PATH`): a short-lived pod running as the app's user copies it with `sqlite3 .backup`, checks it (`integrity_check`), and streams it through age to `BACKUP_DIR/sqlite/<namespace>/`; prune to 7 daily + 4 weekly, then upload to `SQLITE_S3_URI<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
+| `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database from its newest backup in `BACKUP_DIR/sqlite/<app>-<env>/` (`BACKUP_FILE`, `AGE_KEY_FILE`): suspends its HelmRelease, stops the app, checks the copy, keeps the replaced files in `before-restore-<UTC>/`, starts the app ([backups](operations.md#backups-and-recovery)) | Cluster |
 
 ## Offline checks
 
@@ -70,6 +72,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `live-test-reloader` † | Prove Reloader's opt-in and namespace scope | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
 | `live-test-restore-mongodb` † | Restore the latest backup into a throwaway namespace and check it (`BACKUP_FILE`, `AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
+| `live-test-restore-sqlite` † | Back up a throwaway app's SQLite database, change it, restore it with `restore-sqlite` and check the rows, the kept files and the resumed HelmRelease (`AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
 
 ## Host
 

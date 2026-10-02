@@ -20,12 +20,13 @@ Work paused on 28 September 2026 after PR07b. Everything in the delivery table (
     2. ~~Apps~~ done 1 October 2026: one row per app with Staging and Prod columns and Promote; the app page with a verdict, main actions, a staging/prod switch, Details collapsed, Scale and Who can reach it as disclosures, Uninstall apart; app instances named `<app>/<env>` on every page.
     3. ~~Language and states~~ done 1 October 2026: one vocabulary (Healthy ✓, Updating ↻, Failing ✕, Suspended ‖) on every page; a dependency wait after a push is Updating, not a problem; purpose lines on every page; empty states and a more helpful error page.
     4. ~~Polish~~ done 1 October 2026: commit SHAs and digests shortened to 12 characters with the full value on hover; breadcrumbs on every page below the top level; "Updated 19:46 · ↻ Refresh" in the header.
-12. **Templated apps by capability** (proposed 1 October 2026): an app declares what it needs in `swhurl.yaml` in its own repository (`kind: web|worker`, optional `database: sqlite`, `secrets: [...]`); each capability is one module here that owns its manifests, policy rules, backup hook, live test and docs. New app shrinks to repository, name and environment. Alternatives considered: more `app-new` flags (rules scattered, every flag must be understood), a `kind: App` resource with an operator (a large new component; revisit with many apps), a Helm chart per app type (rules hidden in templates).
-    1. **Capabilities in the generator**, starting with `sqlite`. *Done 1 October 2026:* `--database sqlite` (console: **Database**): a retained volume at `/data`, `DATABASE_PATH=/data/app.db`, `strategy: Recreate` and one replica for any instance with a volume, enforced by the new `single-writer` policy rule (app-template already defaults to Recreate; the explicit values and the rule guard against scaling past one or a changed default). *Done 2 October 2026:* `make backup-sqlite` in the nightly timer: a pod as the app's user copies each database (`sqlite3 .backup`, integrity-checked) through age to this host and S3; `verify-platform` checks its age. *Left:* a tested SQLite restore procedure, then today's web, worker, secrets, public and telemetry options expressed the same way.
-    2. **`swhurl.yaml`** in the template, read by `app-new` and the console's New app.
-    3. **Catalogue**: a web-with-SQLite template beside web and worker.
-    4. **Template updates by reference**: a shared build workflow and base image, pinned and bumped by Renovate (item 9).
-    5. **App page shows capabilities and their health** (for example the last backup).
+12. **New app from a catalogue** (proposed 1 October 2026, widened 2 October 2026 to include creating the app's GitHub repository): plan in [section 8](#8-new-app-from-a-catalogue). Done so far: the `sqlite` capability (`--database sqlite`, 1 October 2026) and its nightly backups (`make backup-sqlite`, 2 October 2026). Decided 2 October 2026: Copier, a second token, Kotlin on Micronaut (JVM). Phases 1 (SQLite restore), 2 (`swhurl.yaml`, `app-new --from-repo`), 3 (Copier template, `make app-repo`), 4 (the console's New app creates the repository) and 5 (worker and SQLite features) and 6 (Kotlin stack) done 2 October 2026. Next: phase 7, template updates reaching existing apps.
+13. ~~**Observability fixes**~~ done 2 October 2026 (agreed the same day, before section 8 phase 7; [current state](current-state.md#observability-fixes-2-october-2026)). A review found ten compromises in how telemetry works (logs read from stdout, auto-instrumentation, one shared node collector, best effort, alerts on deploy failures only). Fixing the three cheapest with the most value:
+    1. **Link logs to traces:** the node collector reads each JSON log line's `trace_id` and `span_id` (top level, or under `mdc` as logback writes them) into the record, so ClickStack's `TraceId` column fills and a trace opens its logs. Today it is empty for every app.
+    2. **Drop health-check traces:** spans from Kubernetes probes (user agent `kube-probe/…`) are dropped in the node collector; they were all 34,507 of `hello-ts`'s traces in a day. The Kotlin template's health check stops querying the database, so no child span is left without its parent.
+    3. **Silence the cloud check in TypeScript apps:** the template (and `hello-ts`) limit the SDK's resource detectors to the local ones, removing the `MetadataLookupWarning` logged at every start.
+
+    Left as known: log severity guessed from text (a `hello-ts` request log is labelled "trace" because it mentions `traceId`), attribute names that change with OpenTelemetry updates, the Java agent's start-up cost and missing `jvm.memory.*`/`jvm.thread.*` metrics, no backup of telemetry, no alerts from app behaviour (error rates, latency, a stuck worker), and a collector that trusts every pod.
 5. ~~Documentation restructure~~ done 28 September 2026: task-based pages in `docs/` with one canonical page per topic (map in `docs/contributing.md#documentation`), `AGENTS.md` trimmed. The `document-repo` skill used for it is committed at [`.claude/skills/document-repo/SKILL.md`](../.claude/skills/document-repo/SKILL.md).
 
 6. ~~Operator tooling in the right language~~ done 28 September 2026: move logic (parsing, safety decisions, Secret handling, polling, live-test assertions) from bash into a tested Python package; keep short glue, streaming host scripts and systemd units as linted bash. The `make` interface does not change. The rule for choosing is in [contributing](contributing.md#operator-tooling); the finished sub-plan was removed and is in Git history (`97faeeb:Swhurl-platform-tooling-plan.md`).
@@ -191,7 +192,78 @@ A web console at `console.homelab.swhurl.com`, behind the shared sign-in, that s
 
 **Out of scope:** `destroy-data`, Secret values, credential rotation, `flux-system` root units, host timers, triggering live tests, users other than the operator.
 
-## 8. References
+## 8. New app from a catalogue
+
+Agreed 2 October 2026. Replaces the five sub-steps of item 12 in section 0.
+
+**Goal.** On the console's **New app** page you choose a language and framework, tick the features you want and give a name. The console then creates the app's GitHub repository with working code, waits for the first image and opens the platform pull request. Once you merge it, the app runs in staging, and every push to its `main` deploys it there. Production stays behind **Promote to prod**.
+
+Example: *TypeScript · features: SQLite* with the name `notes` produces the repository `samclement/notes`, the image `ghcr.io/samclement/notes:1-<sha>` and a PR `[console] new app notes/staging`, which serves `staging-notes.homelab.swhurl.com` once merged.
+
+```mermaid
+flowchart LR
+  form["New app form<br/>stack, features, name"] --> job["console job"]
+  job -->|"render template<br/>(Copier)"| repo["new GitHub repo<br/>code + swhurl.yaml"]
+  repo -->|"CI: checks, build"| ghcr["GHCR image<br/>1-&lt;sha&gt;@digest"]
+  job -->|"waits for the image,<br/>reads swhurl.yaml"| pr["platform PR<br/>app-new --from-repo"]
+  pr -->|"merge"| flux["Flux: staging<br/>+ image automation"]
+```
+
+**How it fits together.**
+
+- **A stack** is one template repository per language and framework, for example `swhurl-app-template-typescript` (exists) or a Micronaut one. It holds the conventions every app already follows (port 8080, `/healthz`, UID 65532, writes only to `/tmp`, the OpenTelemetry SDK, the shared publish workflow).
+- **A feature** is optional code inside a stack: SQLite access with migrations, or a worker loop instead of an HTTP server, the shared libraries. The template renders it only when it is ticked. A feature that the cluster also has to provide (a volume, a Secret, a route) declares that in `swhurl.yaml`.
+- **`swhurl.yaml`** is written into the app repository by the template. It is the app's contract with the platform: `kind`, `database`, `secrets`, `telemetry`, resource defaults and `stack`. `app-new --from-repo` reads it, so a stack's needs (a JVM wants more than 128Mi) live in the stack, not in the console.
+- **A capability** is the platform side of a feature, as item 12 proposed: one module here owns its manifests, policy rules, backup hook, live test and docs. `sqlite` is the first one and is done.
+
+**Decisions** (2 October 2026):
+
+1. **Copier renders a stack's features.** There is one template repository per stack, with features as Copier questions, and each app commits `.copier-answers.yml` so that `copier update` can bring later template changes to existing apps (the open point from item 9). Rejected:
+   - one template repository per combination: the number of repositories multiplies;
+   - **Use this template** followed by our own feature patches: a second template system to maintain;
+   - a generator in `tools/swhurl`: language-specific code in this repo, which item 9 ruled out.
+
+   Cost: the console image gains `copier` and `git`, and every template's CI renders each feature combination and runs its checks.
+2. **A second token creates repositories.** It is fine-grained and covers all repositories: Administration, Contents and Workflows read/write, plus Actions read so the console can follow the first run. It is held only by the console, separate from today's token, which stays limited to this repository. Such a token could delete any repository, so the console's code may only create a new repository, push its first commit to a repository it just created, and read runs (tested, like the `console/*` branch rule). `verify-platform` warns before it expires, as it does for the first token. Rejected:
+   - a GitHub organisation with a GitHub App: images, Renovate and the template would all move;
+   - creating the repository by hand: New app would not be complete.
+3. **The second stack is Kotlin on Micronaut, running on the JVM, with a small image:** a `jlink` runtime holding only the modules the app needs, on a distroless base, with the image size reported in CI. No GraalVM native image.
+
+**Deferred:** sign-in roles in apps (authn/authz) and the shared libraries feature. Traefik already passes `X-Auth-Request-Email` to signed-in apps (`platform/oauth2-proxy/middleware.yaml`), but an app can trust it only once its namespace has a NetworkPolicy admitting just Traefik.
+
+**Phases.** Each phase ends in `make check`. Phases that change the cluster or GitHub also reconcile, verify live and record evidence in `docs/current-state.md`. Throwaway repositories are deleted only after asking.
+
+1. ~~**Finish the SQLite capability**~~ done 2 October 2026: `make restore-sqlite`, proven by `make live-test-restore-sqlite` ([current state](current-state.md#app-sqlite-restore-2-october-2026)); backups now record the plaintext size and SHA-256.
+2. ~~**The `swhurl.yaml` contract**~~ done 2 October 2026 ([apps](apps.md#swhurlyaml)): the schema in `contract.py` (version 1; each of today's options is a field, and the presets are the template's `swhurl.yaml`), `app-new --from-repo OWNER/REPO[@REF]` and `--manifest PATH`; the template and `hello-ts` carry the file, and `hello-ts` regenerates byte-identical from it. Splitting each capability into its own module waits for a capability that needs more than generator defaults.
+3. ~~**The TypeScript stack on Copier, with no features yet**~~ done 2 October 2026 ([apps](apps.md#start-from-the-template)). Convert the template to Copier. Its CI renders the template and runs the rendered app's checks, build and smoke test. Add `make app-repo NAME= STACK=` (Python, through `Runner`, using your own `gh` login): it renders the template, creates the public repository, pushes it, waits for the first publish run and prints the image with its digest, ready for `app-new --from-repo`. Live: a throwaway app from `make app-repo` reaches staging.
+4. ~~**New app creates the repository**~~ done 2 October 2026 ([console](console.md#github-tokens)): the tab **New app and repository** (the default) runs one job: render with Copier (now in the console image, with `git`), create the repository and its first commit through the API with `APP_REPOS_TOKEN` (writes only to a repository created in the same job), wait for the first build, open the platform PR with `app-new --from-repo`. The preset tabs stay for images that already exist (production, or a retry after a failed first build).
+5. ~~**Features in the TypeScript stack**~~ done 2 October 2026 ([apps](apps.md#start-from-the-template)): Copier questions `kind` (web, worker) and `database` (none, sqlite on `node:sqlite` with migrations at startup); the template's CI renders every combination and `app.yml`'s smoke test reads `swhurl.yaml`; the console and `make app-repo ANSWERS=` read the questions from the template's `copier.yml`, so a stack's features need no platform code. The preset tabs stay for images that already exist.
+6. ~~**The Kotlin Micronaut stack**~~ done 2 October 2026 ([apps](apps.md#start-from-the-template)): `samclement/swhurl-app-template-kotlin` with the same questions; Java 25 in a `jlink` runtime on `distroless/cc` with the OpenTelemetry agent (about 150 MB); `-XX:TieredStopAtLevel=1` (the agent made start-up 50 s on half a CPU, 16 s with the flag); a new optional `startupSeconds` in `swhurl.yaml` (`app-new --startup-seconds`) writes a startup probe so liveness waits for a slow starter. Follow-ups found live: the agent's `jvm.memory.*` and `jvm.thread.*` metrics do not reach ClickStack (only `jvm.gc.duration`); the log pipeline does not set `TraceId` from a JSON log's trace id for any app; the first Kotlin build takes about 6.5 of the job's 10 minutes.
+7. **Template updates.** Apps receive template changes as pull requests: Renovate's Copier manager, or a scheduled `copier update` workflow, decided by trying Renovate first. The shared publish workflow and base images stay pinned and bumped by Renovate (item 9).
+8. **The app page shows the stack, its features and each capability's health**: for example the last SQLite backup, or "roles: 3 users".
+
+**Operator actions:** create the second token before phase 4 (decision 2); in phases 3, 4 and 6, approve deletion of each throwaway repository; check the New app form signed in, in phase 4.
+
+**In scope:**
+- creating the app repository;
+- stacks: TypeScript and Kotlin on Micronaut;
+- features: worker and SQLite;
+- `swhurl.yaml` and `app-new --from-repo`;
+- template CI across feature combinations;
+- updates to existing apps from their template;
+- the SQLite restore.
+
+**Out of scope** (pull back in if wanted):
+- private repositories and images (PR06 decides public or private; everything stays public until then);
+- databases other than SQLite;
+- sign-in roles in apps and shared libraries (deferred, above); apps running their own OIDC login;
+- deleting or archiving the repository on **Uninstall** (the platform side only; you delete the repository on GitHub);
+- creating production from the form (production is still created once with `make app-new … --env prod`, then promoted);
+- a `kind: App` operator;
+- more than two stacks;
+- users other than you.
+
+## 9. References
 
 - [Flux pruning and deletion](https://fluxcd.io/flux/components/kustomize/kustomizations/)
 - [Flux HelmChart reconcile strategies](https://fluxcd.io/flux/components/source/helmcharts/)

@@ -1,7 +1,11 @@
 """Generate one app instance: namespace, app-template HelmRelease, Flux unit.
 
     make app-new NAME=<app> ARGS="--env staging|prod --image IMAGE [options]"
+    make app-new NAME=<app> ARGS="--from-repo OWNER/REPO[@REF] --env staging --image IMAGE"
     python3 -m swhurl app-new NAME --env staging|prod --image IMAGE [options]
+
+--from-repo reads the app's swhurl.yaml from GitHub (GITHUB_TOKEN if set, for private
+repositories) and --manifest from a file; its fields become the defaults, as a preset's do.
 
 Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
@@ -15,9 +19,13 @@ checks the rendered result.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shlex
 import sys
+import urllib.error
+import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -44,13 +52,18 @@ from swhurl.apps.contract import (
     FAIL_AFTER,
     IMAGE_AUTOMATION_FILE,
     MANAGED,
+    MANIFEST_FILE,
     PRESETS,
     RETAINED_STORAGE_CLASS,
     SQLITE_PATH,
+    STARTUP_PERIOD,
+    STARTUP_SECONDS,
+    ManifestError,
     add_image_markers,
     default_host,
     image_policy_name,
     in_cookie_domain,
+    manifest_defaults,
     otlp_env,
 )
 from swhurl.run import CommandError, Runner
@@ -101,6 +114,11 @@ def validate(args) -> None:
         raise GenerationError('--host only applies to authenticated-web or public exposure')
     if args.kind == 'web' and not args.health_path:
         raise GenerationError('web apps need --health-path (the app\'s real readiness endpoint)')
+    if args.startup_seconds is not None:
+        if args.kind != 'web':
+            raise GenerationError('--startup-seconds applies to web apps (a worker has no probes)')
+        if not STARTUP_SECONDS[0] <= args.startup_seconds <= STARTUP_SECONDS[1]:
+            raise GenerationError(f'--startup-seconds must be between {STARTUP_SECONDS[0]} and {STARTUP_SECONDS[1]}')
     if args.env == 'prod' and 'digest' not in parse_image(args.image):
         raise GenerationError('production instances must pin an image digest (REPO:TAG@sha256:...)')
     if auto_deploys(args):
@@ -161,6 +179,12 @@ def build_values(args) -> dict:
             return {'enabled': True, 'custom': True,
                     'spec': {'httpGet': {'path': args.health_path, 'port': args.port}}}
         container['probes'] = {'readiness': probe(), 'liveness': probe()}
+        if args.startup_seconds:
+            # Liveness waits until the app first answers, for up to startup_seconds (a JVM can take a while
+            # when the node is busy); without this, three failed liveness checks would restart it mid-start.
+            container['probes']['startup'] = probe()
+            container['probes']['startup']['spec'] |= {
+                'periodSeconds': STARTUP_PERIOD, 'failureThreshold': -(-args.startup_seconds // STARTUP_PERIOD)}
 
     controller: dict = {'containers': {'main': container}}
     if args.persistence:
@@ -348,13 +372,55 @@ def watch_namespace(root: Path, namespace: str) -> None:
         path.write_text(text)
 
 
-def parser(preset: str | None = None) -> argparse.ArgumentParser:
-    """The app-new options, with a preset's values as the defaults (explicit flags still win)."""
+REPO_RE = re.compile(r'^(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:@(?P<ref>[A-Za-z0-9_./-]+))?$')
+Opener = Callable[[urllib.request.Request], bytes]
+
+
+def _open(request: urllib.request.Request) -> bytes:
+    with urllib.request.urlopen(request, timeout=30) as reply:  # noqa: S310 (https only, built below)
+        return reply.read()
+
+
+def fetch_manifest(spec: str, *, token: str = '', opener: Opener = _open,
+                   api: str = 'https://api.github.com') -> str:
+    """swhurl.yaml from ``OWNER/REPO[@REF]`` on GitHub (default branch without a ref)."""
+    match = REPO_RE.match(spec)
+    if not match:
+        raise GenerationError(f'--from-repo must be OWNER/REPO or OWNER/REPO@REF: {spec}')
+    url = f'{api}/repos/{match["repo"]}/contents/{MANIFEST_FILE}' + (f'?ref={match["ref"]}' if match['ref'] else '')
+    headers = {'Accept': 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28',
+               'User-Agent': 'swhurl-app-new'}
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    try:
+        return opener(urllib.request.Request(url, headers=headers)).decode()
+    except urllib.error.HTTPError as error:
+        hint = f'{spec} has no {MANIFEST_FILE}, or is private (set GITHUB_TOKEN)' if error.code == 404 else error.reason
+        raise GenerationError(f'could not read {MANIFEST_FILE} from {spec}: {error.code} {hint}') from None
+    except urllib.error.URLError as error:
+        raise GenerationError(f'could not reach GitHub for {spec}: {error.reason}') from None
+
+
+def load_manifest(text: str, source: str) -> dict:
+    try:
+        return manifest_defaults(yaml.safe_load(text), source)
+    except yaml.YAMLError as error:
+        raise GenerationError(f'{source}: not valid YAML: {error}') from None
+    except ManifestError as error:
+        raise GenerationError(str(error)) from None
+
+
+def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.ArgumentParser:
+    """The app-new options, with a preset's (or swhurl.yaml's) values as the defaults (explicit flags still win)."""
     p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
-    p.add_argument('--preset', choices=sorted(PRESETS),
-                   help='defaults for an app built from the swhurl template: '
+    source = p.add_mutually_exclusive_group()
+    source.add_argument('--preset', choices=sorted(PRESETS),
+                        help='defaults for an app built from the swhurl template: '
                         + '; '.join(f'{n}: ' + ', '.join(f'{k}={v}' for k, v in d.items()) for n, d in PRESETS.items()))
+    source.add_argument('--from-repo', metavar='OWNER/REPO[@REF]',
+                        help=f"defaults from the app repository's {MANIFEST_FILE} on GitHub")
+    source.add_argument('--manifest', type=Path, metavar='PATH', help=f'defaults from a local {MANIFEST_FILE}')
     p.add_argument('--env', required=True, choices=ENVIRONMENTS)
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
@@ -366,6 +432,9 @@ def parser(preset: str | None = None) -> argparse.ArgumentParser:
     p.add_argument('--port', type=int, default=8080)
     p.add_argument('--health-path', help='HTTP readiness/liveness path (required for web)')
     p.add_argument('--command', help='container command, shell-quoted')
+    p.add_argument('--startup-seconds', type=int, metavar='N',
+                   help=f'web only: a startup probe gives the app up to N seconds ({STARTUP_SECONDS[0]}-{STARTUP_SECONDS[1]}) '
+                        'to first answer its health path before liveness checks start (slow starters such as a JVM)')
     p.add_argument('--uid', type=int, default=65532, help='non-root UID/GID the image runs as')
     p.add_argument('--cpu', default='10m')
     p.add_argument('--memory', default='32Mi')
@@ -391,18 +460,36 @@ def parser(preset: str | None = None) -> argparse.ArgumentParser:
                    help='skip rendering the new instance against the app policy (needs helm)')
     if preset:
         p.set_defaults(**PRESETS[preset])
+    if defaults:
+        p.set_defaults(**defaults)
     return p
 
 
-def parse_args(argv=None) -> argparse.Namespace:
+def parse_args(argv=None, opener: Opener = _open) -> argparse.Namespace:
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument('--preset', choices=sorted(PRESETS))
+    pre.add_argument('--from-repo')
+    pre.add_argument('--manifest', type=Path)
     known, _ = pre.parse_known_args(argv)
-    return parser(known.preset).parse_args(argv)
+    defaults = None
+    if known.from_repo:
+        text = fetch_manifest(known.from_repo, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
+        defaults = load_manifest(text, f'{known.from_repo}:{MANIFEST_FILE}')
+    elif known.manifest:
+        try:
+            text = known.manifest.read_text()
+        except OSError as error:
+            raise GenerationError(f'cannot read {known.manifest}: {error.strerror}') from None
+        defaults = load_manifest(text, str(known.manifest))
+    return parser(known.preset, defaults).parse_args(argv)
 
 
-def main(argv=None) -> int:
-    args = parse_args(argv)
+def main(argv=None, opener: Opener = _open) -> int:
+    try:
+        args = parse_args(argv, opener)
+    except GenerationError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 2
     try:
         written = generate(args, args.root.resolve())
     except GenerationError as error:

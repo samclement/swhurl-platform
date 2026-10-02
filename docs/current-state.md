@@ -431,6 +431,14 @@ The operator deleted the repositories and packages `swhurl-try-4` and `swhurl-tr
 - **TypeScript 7 in `hello-ts`** (#6): the template has run TypeScript 7 since the operator merged it (template #9); `hello-ts` CI passed, the merge deployed `29-843055a` to staging (running: matches desired) and it answered `/` and `/healthz`.
 - **Kotlin template**: template PR #7 first (the Kotlin standard library and `kotlin-reflect` take the Kotlin plugin's version instead of `kotlinVersion` from `gradle.properties.jinja`, which Renovate cannot see, and a regex manager in the preset updates `micronautVersion`), then KSP 2.3.12, Gradle 9.8.0, Shadow 9.6.1 and Kotlin 2.4.20. A bug in the merge script let three of them merge without waiting for CI on the updated branch; every resulting `main` run, the last with all updates together, passed all four combinations.
 
+## Console follow-ups (2 October 2026)
+
+Plan item 14, steps 1 to 3; CI and the console publish run passed for each, and `make verify-platform` passed after the last. Checked through a port-forward to the live console with an identity header (not a real signed-in browser):
+
+- **New app links** (`8e77604`): `/apps/hello-ts/staging` 200; `/apps/nope-x/staging` 404 "No such app instance". **Not exercised:** the **Not created yet** page needs a real New app job or an open `console/new-*` PR (covered offline only).
+- **Secret names** (`7574584`): `hello-ts/staging` Details shows **Provided by the platform** `HOST_IP` (from the pod), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME` and **Your secrets** none. No app in Git had a Secret, so nothing used a reserved name.
+- **New app by scenario** (`8e9ffec`): `/new` and `/new?preset=from-repo` both 200 with the two choices; the swhurl.yaml tab's exposure starts on **As its swhurl.yaml says**. **Not exercised:** opening a PR from that tab.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

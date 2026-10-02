@@ -58,8 +58,11 @@ def apps(paths: list[Path] | None = None) -> list[App]:
             for name, entry in sorted(found.items())]
 
 
+CHART_HEIGHT = 9  # grid rows; 3 (HyperDX's usual) is too short to read a line chart
+
+
 def _line(name: str, x: int, y: int, w: int, source: str, select: dict) -> dict:
-    return {'name': name, 'x': x, 'y': y, 'w': w, 'h': 3,
+    return {'name': name, 'x': x, 'y': y, 'w': w, 'h': CHART_HEIGHT,
             'config': {'displayType': 'line', 'sourceId': source, 'groupBy': NAMESPACE, 'select': [select]}}
 
 
@@ -78,9 +81,9 @@ def dashboard(app: App, traces: str, logs: str) -> dict:
         _line('p95 duration (ms)', 16, 0, 8, traces,
               {'aggFn': 'quantile', 'level': 0.95, 'valueExpression': 'Duration / 1e6', 'where': spans,
                'whereLanguage': 'sql', 'alias': 'p95 ms'}),
-        _line('Error logs', 0, 3, 12, logs, select(f"{mine} AND lower(SeverityText) IN ('error', 'fatal')", alias='errors')),
-        _line('Log lines', 12, 3, 12, logs, select(mine, alias='lines')),
-        {'name': 'Latest logs', 'x': 0, 'y': 6, 'w': 24, 'h': 6,
+        _line('Error logs', 0, CHART_HEIGHT, 12, logs, select(f"{mine} AND lower(SeverityText) IN ('error', 'fatal')", alias='errors')),
+        _line('Log lines', 12, CHART_HEIGHT, 12, logs, select(mine, alias='lines')),
+        {'name': 'Latest logs', 'x': 0, 'y': 2 * CHART_HEIGHT, 'w': 24, 'h': 6,
          'config': {'displayType': 'search', 'sourceId': logs, 'whereLanguage': 'sql', 'where': mine,
                     'select': f"Timestamp, {NAMESPACE} AS environment, SeverityText, Body"}},
     ]

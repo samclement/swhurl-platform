@@ -133,6 +133,15 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     return defaults
 
 
+# Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a
+# new repository; the template's own CI renders it and runs the shared app checks on the result.
+STACKS = {'typescript': 'samclement/swhurl-app-template-typescript'}
+COPIER = 'copier@9.18.2'
+APP_OWNER = 'samclement'
+APP_WORKFLOW = 'Container'
+"""The workflow in every app repository that checks and publishes its image (calls the template's app.yml)."""
+
+
 # Apps built from the template repository (samclement/swhurl-app-template-typescript) follow
 # these conventions; each preset is the swhurl.yaml such an app would carry.
 TEMPLATE_PORT = 8080

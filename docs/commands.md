@@ -1,6 +1,6 @@
 # Commands
 
-Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
+Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit; **GitHub** means it creates a repository there. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
 
 ## Deploy and verify
 
@@ -20,6 +20,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 
 | Target | Does | Touches |
 | --- | --- | --- |
+| `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`STACK=typescript`, `DESCRIPTION=`), push it, wait for its first image and print the `app-new` line ([start from the template](apps.md#start-from-the-template)) | GitHub |
 | `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy; `--from-repo OWNER/REPO` takes its defaults from the app's [`swhurl.yaml`](apps.md#swhurlyaml) | Git |
 | `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
 | `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |

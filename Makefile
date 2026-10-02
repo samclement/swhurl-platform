@@ -67,6 +67,11 @@ app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }
 	$(SWHURL) app-remove $(APP) $(ENV)
 
+.PHONY: app-repo
+app-repo: ## NAME=<app> [STACK=typescript] [DESCRIPTION=] Create the app's GitHub repository from a template; wait for its first image
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-repo NAME=<app> [STACK=typescript]" >&2; exit 2; }
+	@DRY_RUN=$(DRY_RUN) STACK="$(STACK)" DESCRIPTION="$(DESCRIPTION)" $(SWHURL) app-repo $(NAME)
+
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one app instance
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }

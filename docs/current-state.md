@@ -512,3 +512,16 @@ Implementation `6bac215`; automatic publish pin `42eebe5`, console image `src-de
 Commit `e55dba8` splits the four long checks into independent GitHub jobs, caches the checksum-verified OTel binaries, and enables setup-uv's cache for Copier's `uvx` environment. The shallow clone (`git clone --depth 1`) was already in place. On GitHub Validate `37063718831`, the first run finished in 42 seconds (the repo/schema job took 42s); a rerun with both caches warm finished in 33 seconds. The collector job used the cached binary on the rerun and completed in 13 seconds; all five jobs passed. Flux applied `e55dba8` to all 20 units, `make verify-platform` passed, and `make app-status` showed all five instances matching their desired images, one ready replica and valid TLS.
 
 The Kotlin template's single Gradle invocation (checks and packaging together) merged as `21c1b2f` from [PR #9](https://github.com/samclement/swhurl-app-template-kotlin/pull/9). All four template combinations passed PR CI `37062927534` and main CI `37064383313`. The Docker build copies SQLite migrations before running tests and directs SQLite's test-only native-library extraction to `build/sqlite-tmp`, which is executable when Docker mounts `/tmp` as noexec. Template validation does not publish an application image.
+
+## ClickHouse load: baseline (2 October 2026)
+
+Measured over the preceding 60 minutes (21:18 UTC) with read-only queries on `system.metric_log`, `system.part_log` and the `otel_*` tables, before the telemetry noise work in [plan](plan.md) item 15. A 24-hour history shows the same shape every hour (average 0.12 to 0.35 cores, 10-second peaks 0.3 to 1.8 cores), so the spikes seen in `top` are the normal background merging, not an event.
+
+| Measure | Baseline |
+| --- | --- |
+| Server CPU | 0.21 cores average, 1.22 cores peak (10-second windows); merge threads about 91% of CPU time |
+| New parts and merge seconds per hour | traces 403 and 99 s; metrics sum 591 and 83 s; metrics gauge 638 and 68 s; metrics histogram 300 and 44 s; logs 720 and 28 s |
+| Log lines per hour | 26,352, of which 20,319 (77%) from the `observability` namespace and 300 mislabelled `fatal` (HyperDX's `[ALERT-TASK]` lines are info) |
+| `observability` warn and error lines | 6 warn, 4 error in the hour (must not fall) |
+| HyperDX's own spans per hour | 12,866 (about 610 of them health checks); `otel_traces` holds nothing else of note |
+| Metric rows per hour | about 753,000 (hostmetrics every 10 s, kubeletstats every 20 s) |

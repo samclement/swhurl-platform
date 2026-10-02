@@ -79,6 +79,10 @@ def check_records(cases: list[dict], found: list[dict]) -> list[str]:
     errors = []
     for case in cases:
         matches = indexed.get(case['name'], [])
+        if case.get('dropped'):
+            if matches:
+                errors.append(f'{case["name"]}: expected the record to be dropped, got {len(matches)}')
+            continue
         if len(matches) != 1:
             errors.append(f'{case["name"]}: expected one record, got {len(matches)}')
             continue
@@ -106,12 +110,15 @@ def check_records(cases: list[dict], found: list[dict]) -> list[str]:
 
 
 def _fixtures_complete(cases: list[dict], found: list[dict]) -> bool:
-    """True once the exporter flushed exactly one record for every expected case."""
-    names = []
+    """True once the exporter flushed a record for every case that is not meant to be dropped.
+
+    Fixtures travel in one OTLP request, so a record a processor drops is already gone when the others
+    flush. Duplicates and records that should have been dropped are reported by ``check_records``."""
+    seen = set()
     for record in found:
         attrs = {a['key']: unpack(a['value']) for a in record.get('attributes', [])}
-        names.append(attrs.get('test.case', ''))
-    return len(names) == len(cases) and all(names.count(case['name']) == 1 for case in cases)
+        seen.add(attrs.get('test.case', ''))
+    return all(case['name'] in seen for case in cases if not case.get('dropped'))
 
 
 def _read_records(path: Path) -> list[dict] | None:
@@ -124,7 +131,7 @@ def _read_records(path: Path) -> list[dict] | None:
 
 def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], cases: list[dict]) -> list[str]:
     """Run rendered processors against OTLP fixtures and real container framing, isolated from the cluster."""
-    names = [n for n in config['service']['pipelines']['logs']['processors'] if n.startswith('transform/')]
+    names = [n for n in config['service']['pipelines']['logs']['processors'] if n.startswith(('transform/', 'filter/'))]
     if not names:
         return []
     with tempfile.TemporaryDirectory(prefix='swhurl-logs-') as directory:

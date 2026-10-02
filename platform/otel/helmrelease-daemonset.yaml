@@ -94,7 +94,7 @@ spec:
             - set(cache["original"], body) where (IsString(body))
             - set(cache["candidate"], body) where (IsString(body))
             - set(cache["parser"], "plain") where IsString(body)
-            - replace_pattern(cache["candidate"], "^\\[(API|APP)\\]\\s*", "") where (IsString(resource.attributes["k8s.pod.name"])
+            - replace_pattern(cache["candidate"], "^\\[(API|APP|ALERT-TASK)\\]\\s*", "") where (IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-app-")) and ((IsString(body)))
             - set(cache["fields"], ParseJSON(cache["candidate"])) where (IsString(cache["candidate"]) and IsMatch(cache["candidate"],
               "^\\s*\\{"))
@@ -241,6 +241,18 @@ spec:
             - merge_maps(attributes, cache["fields"], "insert") where (IsMap(cache["fields"]))
             - set(attributes["log.parser"], cache["parser"]) where attributes["log.parser"] == nil and IsString(cache["parser"])
             - set(attributes["log.parser"], "native-otlp") where attributes["log.parser"] == nil and not IsString(body)
+        # ClickStack's own pods wrote 77% of all log lines, nearly all of it probe and connection chatter that is
+        # never read: Keeper and operator lines below INFO (the Keeper logs every kube-probe at trace level,
+        # the operator every reconcile step at debug) and MongoDB's connection lifecycle (one open, close and
+        # client-metadata line per probe or client). Warnings and errors stay, and so do the pods' own container
+        # logs on the node (kubectl logs). Placed after transform/log-structure, which sets severity_number
+        # and body; a line with no parsed severity (0) is kept.
+        filter/platform-noise:
+          error_mode: ignore
+          logs:
+            log_record:
+              - 'IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-(keeper|operators)-") and severity_number > 0 and severity_number < 9'
+              - 'IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"], "^clickstack-mongodb-") and IsString(body) and IsMatch(body, "^(Connection accepted|Connection ended|client metadata|Authentication succeeded)$")'
         # Kubernetes probes call every web app's health path every few seconds; their spans were nearly all
         # of an app's traces. Drop the spans of requests whose user agent is kube-probe (old and new names).
         filter/kube-probes:
@@ -267,6 +279,7 @@ spec:
             processors:
               - memory_limiter
               - transform/log-structure
+              - filter/platform-noise
               - k8s_attributes
               - batch
             exporters:

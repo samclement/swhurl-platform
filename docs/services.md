@@ -53,7 +53,7 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 
 | Source | Handling |
 | --- | --- |
-| Apps, Flux, MongoDB, MongoDB operator, cert-manager, Traefik, Reloader, console, OTel collectors; any JSON object | `msg`/`message` becomes the body; other fields become attributes. HyperDX's `[API]`/`[APP]` JSON prefixes are accepted. |
+| Apps, Flux, MongoDB, MongoDB operator, cert-manager, Traefik, Reloader, console, OTel collectors; any JSON object | `msg`/`message` becomes the body; other fields become attributes. HyperDX's `[API]`, `[APP]` and `[ALERT-TASK]` JSON prefixes are accepted. |
 | ClickHouse and Keeper | Timestamp, thread/query IDs, level, logger and message from their text prefix. |
 | ClickHouse operator and platform collectors | Tab-separated logger output and its trailing JSON fields. |
 | metrics-server and older cert-manager logs | Kubernetes klog prefix (level, caller, PID, message and quoted key/value fields). |
@@ -74,6 +74,8 @@ HyperDX also sends already structured native OTLP logs directly to ClickStack, a
 Nested objects flatten to dotted attribute names, arrays remain JSON strings, and objects below four map levels remain JSON strings. The collector's `ottl.functions.enableLambda` gate enables the bounded array-preserving mapping; `make check-otel` uses that same gate and runs synthetic fixtures through the actual deployed collector version, including CRI partial lines and Docker framing. This catches changed parser behaviour during collector upgrades.
 
 When the body changes, `LogAttributes.log.record.original` retains the complete original line (additional storage, under the same retention). A JSON object without a message retains its JSON body and still exposes its fields. Malformed input never drops the record. Parsers are scoped to the source workload for non-JSON formats.
+
+**Deliberately not collected.** ClickStack's own pods wrote 77% of all log lines (20,319 of 26,352 an hour on 2 October 2026), nearly all of it health-probe and connection chatter nobody reads. The node collector's `filter/platform-noise` drops, after parsing: Keeper and ClickHouse operator lines below INFO (the Keeper logs every kube-probe at trace level, the operator each reconcile step at debug) and MongoDB's connection lifecycle (`Connection accepted`, `Connection ended`, `client metadata`, `Authentication succeeded`). Warnings and errors from those pods, a line whose severity could not be parsed, and every other pod's lines are kept. The pods' own container logs are untouched, so `kubectl -n observability logs <pod>` still shows everything; to look at the dropped lines in ClickStack, remove the filter from the logs pipeline in [`helmrelease-daemonset.yaml`](../platform/otel/helmrelease-daemonset.yaml). The fixtures in `tests/fixtures/logs.json` (`dropped: true` cases) prove each drop and each keep through the real collector (`make check-otel`).
 
 In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:hello-ts-prod AND LogAttributes.method:GET`; open a result to see fields, its original line and any linked trace. `make verify-logs` reports fresh format/severity/trace coverage for every running container without printing bodies or attribute values; quiet containers are reported separately. It also includes events and host timers that logged within the selected window (`MINUTES=`, default 15). The systemd/k3s journal is not collected.
 

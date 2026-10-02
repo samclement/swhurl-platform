@@ -32,6 +32,39 @@ class LogsTests(unittest.TestCase):
         self.assertTrue(logs.check_records([case], [{**record, 'attributes': []}]))
         self.assertTrue(logs.check_records([case], [{**record, 'traceId': 'changed'}]))
 
+    def test_a_dropped_fixture_must_not_arrive_and_completion_ignores_it(self):
+        kept = {'name': 'kept', 'input': 'x', 'expected': {'body': 'x'}}
+        dropped = {'name': 'noise', 'input': 'y', 'dropped': True}
+        record = lambda name, body='x': {'body': logs.any_value(body), 'attributes': logs.attributes({'test.case': name})}  # noqa: E731
+        self.assertEqual(logs.check_records([kept, dropped], [record('kept')]), [])
+        self.assertEqual(logs.check_records([kept, dropped], [record('kept'), record('noise', 'y')]),
+                         ['noise: expected the record to be dropped, got 1'])
+        self.assertTrue(logs._fixtures_complete([kept, dropped], [record('kept')]), 'a dropped case is never waited for')
+        self.assertFalse(logs._fixtures_complete([kept, dropped], [record('noise', 'y')]))
+
+    def test_a_duplicated_record_is_reported_as_one_instead_of_waiting_for_the_deadline(self):
+        cases = [{'name': 'a', 'input': 'x', 'expected': {'body': 'x'}}, {'name': 'b', 'input': 'x', 'expected': {'body': 'x'}}]
+        record = lambda name: {'body': logs.any_value('x'), 'attributes': logs.attributes({'test.case': name})}  # noqa: E731
+        found = [record('a'), record('a'), record('b')]
+        self.assertTrue(logs._fixtures_complete(cases, found))
+        self.assertEqual(logs.check_records(cases, found), ['a: expected one record, got 2'])
+
+    def test_filter_processors_run_with_the_transforms_in_pipeline_order(self):
+        seen = {}
+        case = {'name': 'fixture', 'input': 'message', 'expected': {'body': 'message'}}
+
+        def run(args, _):
+            config = yaml.safe_load(Path(args[-1].removeprefix('--config=file:')).read_text())
+            seen['processors'] = config['service']['pipelines']['logs']['processors']
+            Path(config['exporters']['file']['path']).write_text(json.dumps(logs.fixture_payload([case])) + '\n')
+            return Result(args)
+
+        config = {'processors': {'transform/a': {}, 'filter/platform-noise': {}, 'k8s_attributes': {}, 'batch': {}},
+                  'service': {'pipelines': {'logs': {'processors': ['transform/a', 'filter/platform-noise', 'k8s_attributes', 'batch']}}}}
+        with mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
+            self.assertEqual(logs.exercise(FakeRunner().on('/collector', handler=run), Path('/collector'), config, [], [case]), [])
+        self.assertEqual(seen['processors'], ['transform/a', 'filter/platform-noise'])
+
     def test_fixture_runtime_uses_runner_and_exact_processors_and_flags(self):
         seen = {}
         case = {'name': 'fixture', 'input': 'message', 'attributes': {'log.parser': 'plain'},

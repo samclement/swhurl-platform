@@ -387,7 +387,7 @@ Plan section 8, phase 4 (`7a72d6c`, fix `6546879`). The console's second token (
 - **Second run** (`swhurl-try-3`, from the deployed console through a port-forward with identity `claude-live-test (port-forward)`): form to open PR in 2 minutes 10 seconds. Rendered 14 files, created `samclement/swhurl-try-3`, pushed `d4ea2ee` on top of GitHub's initial commit, waited for run 1 (success), read `ghcr.io/samclement/swhurl-try-3:1-d4ea2ee@sha256:3e7685350f4d…` from GHCR, ran `app-new --from-repo` in `main` (policy passed) and opened PR #23 (CI passed). The repository's `.copier-answers.yml` records template commit `7cb4a72`.
 - **Merged** (`060d825`): `app-swhurl-try-3-staging` Ready in 15 seconds, `make app-status` running: matches desired and signed-in while the certificate was issued (the `f861132` fix); HTTP 301 to HTTPS, HTTPS (Let's Encrypt YR2) 302 to Google sign-in when signed out. Removed with `make app-remove` (`6c2b66d`): namespace and image automation objects gone. The failures and deploys ntfy topics received nothing during the test (the `1117048` exclusions). `make verify-platform` passed.
 
-Not exercised: a stack other than `typescript`; a public or private exposure from this form. The repositories `samclement/swhurl-try-2` and `samclement/swhurl-try-3` and the package `swhurl-try-3` await the operator's deletion.
+Not exercised: a stack other than `typescript`; a public or private exposure from this form. The operator then deleted the repositories `samclement/swhurl-try-2` and `samclement/swhurl-try-3` and the package `swhurl-try-3`; all three confirmed gone (GitHub cannot resolve either repository; the package page returns 404).
 
 ## Still to verify before live changes
 

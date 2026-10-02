@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, logs
 from swhurl.apps import policy
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -99,7 +99,8 @@ def deprecated_names(config: dict, known: dict[str, set[str]]) -> list[str]:
     return found
 
 
-def validate(runner: Runner, binary: Path, config: dict, env: dict[str, str]) -> str:
+def validate(runner: Runner, binary: Path, config: dict, env: dict[str, str],
+             extra_args: list[str] | None = None) -> str:
     """The collector's own verdict; '' if valid, otherwise its error message."""
     with tempfile.TemporaryDirectory() as tmp:
         for receiver in (config.get('receivers') or {}).values():
@@ -111,7 +112,8 @@ def validate(runner: Runner, binary: Path, config: dict, env: dict[str, str]) ->
                 receiver['auth_type'] = 'none'  # the service-account token and CA exist only in the pod
         path = Path(tmp) / 'config.yaml'
         path.write_text(yaml.safe_dump(config))
-        result = runner.run([str(binary), 'validate', f'--config=file:{path}'], check=False,
+        gates = [arg for arg in extra_args or [] if arg.startswith('--feature-gates=')]
+        result = runner.run([str(binary), 'validate', *gates, f'--config=file:{path}'], check=False,
                             env=env)
     return '' if result.returncode == 0 else (result.stderr or result.stdout).strip()
 
@@ -124,11 +126,14 @@ def check(runner: Runner, report: Report, root: Path = ROOT) -> int:
         try:
             config, env, version = render(runner, release)
             binary = collector(runner, version)
-            error = validate(runner, binary, config, env)
+            extra_args = release['spec'].get('values', {}).get('command', {}).get('extraArgs', [])
+            error = validate(runner, binary, config, env, extra_args)
             if error:
                 report.bad(f'{COLLECTOR} {version} rejects the rendered config: {error}')
                 continue
             report.ok(f'{COLLECTOR} {version} accepts the rendered config ({path.relative_to(root)})')
+            if any(name.startswith('transform/') for name in config.get('processors', {})):
+                logs.check_fixtures(runner, binary, config, extra_args, report)
             for deprecated in deprecated_names(config, canonical_names(runner, binary)):
                 report.warn(f'deprecated component name: {deprecated}')
         except (CommandError, OtelError, KeyError, StopIteration) as error:

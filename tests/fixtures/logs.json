@@ -1,0 +1,967 @@
+[
+  {
+    "name": "pino",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":30,\"time\":1790960400000,\"msg\":\"request completed\",\"req\":{\"method\":\"GET\",\"headers\":{\"host\":\"example.test\"}},\"labels\":[\"one\",\"two\"],\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"span_id\":\"0123456789abcdef\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "req.method": "GET",
+        "req.headers.host": "example.test",
+        "labels": "[\"one\",\"two\"]"
+      },
+      "body": "request completed",
+      "severityNumber": 9,
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "spanId": "0123456789abcdef"
+    }
+  },
+  {
+    "name": "pino-level-10",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":10,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 1
+    }
+  },
+  {
+    "name": "pino-level-20",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":20,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 5
+    }
+  },
+  {
+    "name": "pino-level-30",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":30,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "pino-level-40",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":40,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "pino-level-50",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":50,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "pino-level-60",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":60,\"msg\":\"trace error words do not set severity\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "trace error words do not set severity",
+      "severityNumber": 21
+    }
+  },
+  {
+    "name": "logback",
+    "resource": {
+      "k8s.pod.name": "kotlin-test"
+    },
+    "input": "{\"level\":\"INFO\",\"message\":\"query completed\",\"mdc\":{\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"span_id\":\"0123456789abcdef\"},\"logger_name\":\"app.Database\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "mdc.trace_id": "0123456789abcdef0123456789abcdef"
+      },
+      "body": "query completed",
+      "severityNumber": 9,
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "spanId": "0123456789abcdef"
+    }
+  },
+  {
+    "name": "flux",
+    "resource": {
+      "k8s.pod.name": "source-controller-test"
+    },
+    "input": "{\"level\":\"info\",\"ts\":\"2026-10-02T17:00:00Z\",\"msg\":\"reconciled\",\"GitRepository\":{\"name\":\"platform\",\"namespace\":\"flux-system\"}}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "GitRepository.name": "platform"
+      },
+      "body": "reconciled",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "mongo",
+    "resource": {
+      "k8s.pod.name": "clickstack-mongodb-0"
+    },
+    "input": "{\"t\":{\"$date\":\"2026-10-02T17:00:00.000Z\"},\"s\":\"W\",\"c\":\"STORAGE\",\"msg\":\"slow operation\",\"attr\":{\"durationMillis\":42}}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "attr.durationMillis": 42
+      },
+      "body": "slow operation",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "mongo-operator",
+    "resource": {
+      "k8s.pod.name": "mongodb-kubernetes-operator-test"
+    },
+    "input": "{\"level\":\"info\",\"msg\":\"reconciled\",\"operation\":\"update\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "reconciled",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "hyperdx-api",
+    "resource": {
+      "k8s.pod.name": "clickstack-app-test"
+    },
+    "input": "[API] {\"level\":50,\"msg\":\"query failed\",\"req\":{\"id\":3}}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "req.id": 3
+      },
+      "body": "query failed",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "hyperdx-app",
+    "resource": {
+      "k8s.pod.name": "clickstack-app-test"
+    },
+    "input": "[APP] {\"level\":30,\"msg\":\"server ready\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "server ready",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "clickstack-collector",
+    "resource": {
+      "k8s.pod.name": "clickstack-otel-collector-test"
+    },
+    "input": "{\"level\":\"warn\",\"msg\":\"retrying\",\"caller\":\"exporter.go:10\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "retrying",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "cert-manager-test",
+    "resource": {
+      "k8s.pod.name": "cert-manager-test"
+    },
+    "input": "E1002 17:00:00.123456       1 controller.go:100] \"reconcile failed\" key=\"value\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "klog",
+        "caller": "controller.go:100"
+      },
+      "body": "\"reconcile failed\" key=\"value\"",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "cert-manager-cainjector-test",
+    "resource": {
+      "k8s.pod.name": "cert-manager-cainjector-test"
+    },
+    "input": "E1002 17:00:00.123456       1 controller.go:100] \"reconcile failed\" key=\"value\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "klog",
+        "caller": "controller.go:100"
+      },
+      "body": "\"reconcile failed\" key=\"value\"",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "cert-manager-webhook-test",
+    "resource": {
+      "k8s.pod.name": "cert-manager-webhook-test"
+    },
+    "input": "E1002 17:00:00.123456       1 controller.go:100] \"reconcile failed\" key=\"value\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "klog",
+        "caller": "controller.go:100"
+      },
+      "body": "\"reconcile failed\" key=\"value\"",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "metrics-server-test",
+    "resource": {
+      "k8s.pod.name": "metrics-server-test"
+    },
+    "input": "E1002 17:00:00.123456       1 controller.go:100] \"reconcile failed\" key=\"value\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "klog",
+        "caller": "controller.go:100"
+      },
+      "body": "\"reconcile failed\" key=\"value\"",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "cert-json",
+    "resource": {
+      "k8s.pod.name": "cert-manager-test"
+    },
+    "input": "{\"ts\":1790960400.5,\"level\":\"info\",\"msg\":\"ready\",\"v\":0}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "ready",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "clickhouse",
+    "resource": {
+      "k8s.pod.name": "clickstack-clickhouse-clickhouse-0-0-0"
+    },
+    "input": "2026.10.02 17:00:00.123456 [ 780 ] {test-query} <Warning> Query: slow request",
+    "expected": {
+      "attributes": {
+        "log.parser": "clickhouse",
+        "query_id": "test-query",
+        "logger": "Query"
+      },
+      "body": "slow request",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "keeper",
+    "resource": {
+      "k8s.pod.name": "clickstack-keeper-keeper-0-0"
+    },
+    "input": "2026.10.02 17:00:00.123456 [ 25 ] {} <Trace> Handler: received request",
+    "expected": {
+      "attributes": {
+        "log.parser": "clickhouse"
+      },
+      "body": "received request",
+      "severityNumber": 1
+    }
+  },
+  {
+    "name": "operator-zap",
+    "resource": {
+      "k8s.pod.name": "clickstack-operators-clickhouse-test"
+    },
+    "input": "2026-10-02T17:00:00Z\tDEBUG\tclickhouse\treconciled\t{\"namespace\":\"observability\",\"name\":\"clickstack\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "zap-console",
+        "namespace": "observability"
+      },
+      "body": "reconciled",
+      "severityNumber": 5
+    }
+  },
+  {
+    "name": "collector-text",
+    "resource": {
+      "k8s.pod.name": "otel-k8s-daemonset-test"
+    },
+    "input": "2026-10-02T17:00:00.123Z\twarn\tbuilders/builders.go:40\talias deprecated\t{\"receiver\":\"test\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "otel-console",
+        "receiver": "test"
+      },
+      "body": "alias deprecated",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "nginx-access",
+    "resource": {
+      "k8s.pod.name": "hello-test"
+    },
+    "input": "10.42.0.1 - - [02/Oct/2026:17:00:00 +0000] \"GET /index.html HTTP/1.1\" 200 12 \"-\" \"test-client\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "nginx-access",
+        "status": "200",
+        "user_agent": "test-client"
+      },
+      "body": "GET /index.html 200",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "nginx-error",
+    "resource": {
+      "k8s.pod.name": "hello-test"
+    },
+    "input": "2026/10/02 17:00:00 [error] 21#21: file missing",
+    "expected": {
+      "attributes": {
+        "log.parser": "nginx-error"
+      },
+      "body": "file missing",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "oauth-request",
+    "resource": {
+      "k8s.pod.name": "oauth2-proxy-test"
+    },
+    "input": "10.42.0.1 - request-1 - - [2026/10/02 17:00:00] app.example.test GET - \"/\" HTTP/1.1 \"test-client\" 302 517 0.001",
+    "expected": {
+      "attributes": {
+        "log.parser": "oauth-request",
+        "duration_seconds": "0.001"
+      },
+      "body": "GET / 302",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "oauth-console",
+    "resource": {
+      "k8s.pod.name": "oauth2-proxy-test"
+    },
+    "input": "[2026/10/02 17:00:00] [oauthproxy.go:1086] Initiating login.",
+    "expected": {
+      "attributes": {
+        "log.parser": "oauth-console"
+      },
+      "body": "Initiating login."
+    }
+  },
+  {
+    "name": "coredns",
+    "resource": {
+      "k8s.pod.name": "coredns-test"
+    },
+    "input": "[WARNING] No files matching import glob pattern: /etc/coredns/custom/*.server",
+    "expected": {
+      "attributes": {
+        "log.parser": "coredns"
+      },
+      "body": "No files matching import glob pattern: /etc/coredns/custom/*.server",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "uvicorn-access",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "INFO:     10.42.0.1:44698 - \"GET /healthz HTTP/1.1\" 200 OK",
+    "expected": {
+      "attributes": {
+        "log.parser": "uvicorn-access",
+        "path": "/healthz",
+        "status": "200"
+      },
+      "body": "OK",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "uvicorn",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "ERROR:    Application failed",
+    "expected": {
+      "attributes": {
+        "log.parser": "uvicorn"
+      },
+      "body": "Application failed",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "logfmt-local-path-provisioner-test",
+    "resource": {
+      "k8s.pod.name": "local-path-provisioner-test"
+    },
+    "input": "time=\"2026-10-02T17:00:00Z\" level=warning msg=\"quoted message with spaces\" reason=\"test\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "logfmt",
+        "reason": "test"
+      },
+      "body": "quoted message with spaces",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "logfmt-traefik-test",
+    "resource": {
+      "k8s.pod.name": "traefik-test"
+    },
+    "input": "time=\"2026-10-02T17:00:00Z\" level=warning msg=\"quoted message with spaces\" reason=\"test\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "logfmt",
+        "reason": "test"
+      },
+      "body": "quoted message with spaces",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "logfmt-reloader-test",
+    "resource": {
+      "k8s.pod.name": "reloader-test"
+    },
+    "input": "time=\"2026-10-02T17:00:00Z\" level=warning msg=\"quoted message with spaces\" reason=\"test\"",
+    "expected": {
+      "attributes": {
+        "log.parser": "logfmt",
+        "reason": "test"
+      },
+      "body": "quoted message with spaces",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "reloader-json",
+    "resource": {
+      "k8s.pod.name": "reloader-test"
+    },
+    "input": "{\"level\":\"info\",\"msg\":\"restart requested\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "restart requested",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "traefik-json",
+    "resource": {
+      "k8s.pod.name": "traefik-test"
+    },
+    "input": "{\"level\":\"info\",\"message\":\"starting\",\"time\":\"2026-10-02T17:00:00Z\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "starting",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "console-json",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "{\"level\":\"INFO\",\"message\":\"request completed\",\"method\":\"GET\",\"status\":200}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "method": "GET",
+        "status": 200
+      },
+      "body": "request completed",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "prefix-WARN",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "[WARN] operation finished",
+    "expected": {
+      "attributes": {
+        "log.parser": "prefix"
+      },
+      "body": "operation finished",
+      "severityNumber": 13
+    }
+  },
+  {
+    "name": "prefix-BAD",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "[BAD] operation finished",
+    "expected": {
+      "attributes": {
+        "log.parser": "prefix"
+      },
+      "body": "operation finished",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "prefix-OK",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "[OK] operation finished",
+    "expected": {
+      "attributes": {
+        "log.parser": "prefix"
+      },
+      "body": "operation finished",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "prefix-HOST][ERROR",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "[HOST][ERROR] operation finished",
+    "expected": {
+      "attributes": {
+        "log.parser": "prefix"
+      },
+      "body": "operation finished",
+      "severityNumber": 17
+    }
+  },
+  {
+    "name": "prefix-AUDIT",
+    "resource": {
+      "k8s.pod.name": "console-test"
+    },
+    "input": "[AUDIT] operation finished",
+    "expected": {
+      "attributes": {
+        "log.parser": "prefix"
+      },
+      "body": "operation finished",
+      "severityNumber": 9
+    }
+  },
+  {
+    "name": "unknown-level",
+    "resource": {
+      "k8s.pod.name": "app-test"
+    },
+    "input": "{\"level\":\"unknown\",\"msg\":\"error trace warning\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "error trace warning",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "json-no-message",
+    "resource": {
+      "k8s.pod.name": "app-test"
+    },
+    "input": "{\"status\":200,\"nested\":{\"one\":{\"two\":{\"three\":{\"four\":{\"five\":1}}}}}}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "status": 200
+      }
+    }
+  },
+  {
+    "name": "malformed",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "{\"level\":",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "{\"level\":",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "plain",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "error trace warning are just words",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "error trace warning are just words",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "empty",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "helper",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "+ iptables -t nat -A TEST",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "+ iptables -t nat -A TEST",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "mongo-agent",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "agent connected",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "agent connected",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "unknown-json-array",
+    "resource": {
+      "k8s.pod.name": "helper-test"
+    },
+    "input": "[1,2,3]",
+    "expected": {
+      "attributes": {
+        "log.parser": "plain"
+      },
+      "body": "[1,2,3]",
+      "severityNumber": 0
+    }
+  },
+  {
+    "name": "existing-otel",
+    "resource": {
+      "k8s.pod.name": "app-test"
+    },
+    "input": "{\"level\":\"ERROR\",\"msg\":\"message\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"span_id\":\"0123456789abcdef\",\"status\":500}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json",
+        "status": 200
+      },
+      "body": "message",
+      "severityNumber": 13
+    },
+    "attributes": {
+      "status": 200
+    },
+    "record": {
+      "severityNumber": 13,
+      "severityText": "WARN",
+      "timeUnixNano": "1790960400000000000",
+      "traceId": "abcdef0123456789abcdef0123456789",
+      "spanId": "abcdef0123456789"
+    }
+  },
+  {
+    "name": "timestamp-pino",
+    "resource": {
+      "k8s.pod.name": "hello-ts-test"
+    },
+    "input": "{\"level\":30,\"time\":1790960400000,\"msg\":\"timed\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "timed",
+      "severityNumber": 9,
+      "timeUnixNano": "1790960400000000000"
+    }
+  },
+  {
+    "name": "timestamp-mongo",
+    "resource": {
+      "k8s.pod.name": "clickstack-mongodb-0"
+    },
+    "input": "{\"s\":\"I\",\"t\":{\"$date\":\"2026-10-02T17:00:00.000Z\"},\"msg\":\"timed\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "timed",
+      "severityNumber": 9,
+      "timeUnixNano": "1790960400000000000"
+    }
+  },
+  {
+    "name": "cri-partial",
+    "resource": {
+      "k8s.pod.name": "hello-ts-framing"
+    },
+    "input": "{\"level\":30,\"msg\":\"partial reassembled\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "partial reassembled",
+      "severityNumber": 9
+    },
+    "framing": [
+      "2026-10-02T17:00:00.000000000Z stdout P {\"level\":30,\"msg\":\"p",
+      "2026-10-02T17:00:00.000000000Z stdout F artial reassembled\"}"
+    ]
+  },
+  {
+    "name": "docker-framing",
+    "resource": {
+      "k8s.pod.name": "hello-ts-docker"
+    },
+    "input": "{\"level\":30,\"msg\":\"docker framed\"}",
+    "expected": {
+      "attributes": {
+        "log.parser": "json"
+      },
+      "body": "docker framed",
+      "severityNumber": 9
+    },
+    "framing": [
+      "{\"log\":\"{\\\"level\\\":30,\\\"msg\\\":\\\"docker framed\\\"}\\n\",\"stream\":\"stdout\",\"time\":\"2026-10-02T17:00:00.000000000Z\"}"
+    ],
+    "original": "{\"level\":30,\"msg\":\"docker framed\"}\n"
+  },
+  {
+    "name": "event-Warning",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "kind": "Event",
+      "type": "Warning",
+      "message": "event occurred",
+      "reason": "Test",
+      "involvedObject": {
+        "name": "test",
+        "kind": "Pod"
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.reason": "Test",
+        "k8s.event.involvedObject.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 13
+    },
+    "pipeline": "events"
+  },
+  {
+    "name": "event-Normal",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "kind": "Event",
+      "type": "Normal",
+      "message": "event occurred",
+      "reason": "Test",
+      "involvedObject": {
+        "name": "test",
+        "kind": "Pod"
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.reason": "Test",
+        "k8s.event.involvedObject.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 9
+    },
+    "pipeline": "events"
+  },
+  {
+    "name": "event-v1",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "kind": "Event",
+      "type": "Warning",
+      "note": "event occurred",
+      "reason": "Test",
+      "regarding": {
+        "name": "test"
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.regarding.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 13
+    },
+    "pipeline": "events"
+  },
+  {
+    "name": "wrapped-event-Warning",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "type": "ADDED",
+      "object": {
+        "kind": "Event",
+        "type": "Warning",
+        "message": "event occurred",
+        "reason": "Test",
+        "involvedObject": {
+          "name": "test",
+          "kind": "Pod"
+        }
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.reason": "Test",
+        "k8s.event.involvedObject.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 13
+    },
+    "pipeline": "events"
+  },
+  {
+    "name": "wrapped-event-Normal",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "type": "ADDED",
+      "object": {
+        "kind": "Event",
+        "type": "Normal",
+        "message": "event occurred",
+        "reason": "Test",
+        "involvedObject": {
+          "name": "test",
+          "kind": "Pod"
+        }
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.reason": "Test",
+        "k8s.event.involvedObject.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 9
+    },
+    "pipeline": "events"
+  },
+  {
+    "name": "wrapped-event-v1",
+    "resource": {
+      "k8s.pod.name": ""
+    },
+    "input": {
+      "type": "ADDED",
+      "object": {
+        "kind": "Event",
+        "type": "Warning",
+        "note": "event occurred",
+        "reason": "Test",
+        "regarding": {
+          "name": "test"
+        }
+      }
+    },
+    "expected": {
+      "attributes": {
+        "log.parser": "k8s-event",
+        "k8s.event.regarding.name": "test"
+      },
+      "body": "event occurred",
+      "severityNumber": 13
+    },
+    "pipeline": "events"
+  }
+]

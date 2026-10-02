@@ -46,6 +46,26 @@ spec:
         cpu: 500m
         memory: 512Mi
     config:
+      processors:
+        transform/events:
+          error_mode: silent
+          log_statements:
+          - context: log
+            statements:
+            - set(cache["event"], body)
+            - set(cache["event"], body["object"]) where IsMap(body["object"])
+            - set(attributes["log.parser"], "k8s-event")
+            - set(severity_number, 13) where severity_number == 0 and cache["event"]["type"] == "Warning"
+            - set(severity_number, 9) where severity_number == 0 and cache["event"]["type"] == "Normal"
+            - set(severity_text, "WARN") where severity_text == "" and severity_number == 13
+            - set(severity_text, "INFO") where severity_text == "" and severity_number == 9
+            - set(attributes["log.record.original"], String(body)) where attributes["log.record.original"] == nil
+            - set(body, cache["event"]["message"]) where IsString(cache["event"]["message"])
+            - set(body, cache["event"]["note"]) where IsString(cache["event"]["note"]) and not IsString(cache["event"]["message"])
+            - flatten(cache["event"], "k8s.event", resolveConflicts=true)
+            - merge_maps(attributes, cache["event"], "insert")
+            conditions:
+            - IsMap(body)
       exporters:
         otlp_http:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
@@ -58,6 +78,7 @@ spec:
               - k8sobjects
             processors:
               - memory_limiter
+              - transform/events
               - k8s_attributes
               - batch
             exporters:

@@ -45,7 +45,33 @@ oauth2-proxy signs users in with Google (OIDC) and serves the Traefik middleware
 
 ## ClickStack and OTel
 
-ClickStack stores logs, metrics and traces: the HyperDX app (UI and API), ClickStack's own OTel collector, MongoDB (team, users, sources) and ClickHouse (telemetry). MongoDB and ClickHouse are run by operators that `platform-clickstack-operators` installs first (MongoDB Community operator; ClickHouse operator with a Keeper). Two OTel collectors in `logging`, a per-node DaemonSet and a cluster Deployment, send node and cluster telemetry to ClickStack's collector (`clickstack-otel-collector.observability:4318`). The DaemonSet also accepts OTLP logs, metrics and traces from apps on the node IP (host networking, ports 4317 and 4318) and forwards them with the same key; apps send no key of their own ([apps](apps.md#telemetry)). On the way it attaches JSON pod log lines to their traces (`transform/trace-context`: `trace_id`/`span_id` at the top level or under `mdc`) and drops the spans of Kubernetes probe requests (`filter/kube-probes`, user agent `kube-probe/…`), which were nearly all of an app's traces. The cluster Deployment's OTLP Service is the chart default and forwards nothing that apps send.
+ClickStack stores logs, metrics and traces: the HyperDX app (UI and API), ClickStack's own OTel collector, MongoDB (team, users, sources) and ClickHouse (telemetry). MongoDB and ClickHouse are run by operators that `platform-clickstack-operators` installs first (MongoDB Community operator; ClickHouse operator with a Keeper). Two OTel collectors in `logging`, a per-node DaemonSet and a cluster Deployment, send node and cluster telemetry to ClickStack's collector (`clickstack-otel-collector.observability:4318`). The DaemonSet also accepts OTLP logs, metrics and traces from apps on the node IP (host networking, ports 4317 and 4318) and forwards them with the same key; apps send no key of their own ([apps](apps.md#telemetry)). It normalizes logs ([formats](#structured-logs)), attaches their trace context, and drops the spans of Kubernetes probe requests (`filter/kube-probes`, user agent `kube-probe/…`). The cluster Deployment's OTLP Service is the chart default and forwards nothing that apps send.
+
+### Structured logs
+
+For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"status":200}` becomes body `request completed`, severity INFO, and searchable `LogAttributes.req.method` and `LogAttributes.status`. The node collector parses after container framing and partial-line reassembly; ClickStack receives normalized OTLP, without a second platform parser at ingestion. Existing rows keep their original format.
+
+| Source | Handling |
+| --- | --- |
+| Apps, Flux, MongoDB, MongoDB operator, ClickStack collector; any JSON object | `msg`/`message` becomes the body; other fields become attributes. HyperDX's `[API]`/`[APP]` JSON prefixes are accepted. |
+| ClickHouse and Keeper | Timestamp, thread/query IDs, level, logger and message from their text prefix. |
+| ClickHouse operator and platform collectors | Tab-separated logger output and its trailing JSON fields. |
+| cert-manager and metrics-server | Kubernetes klog prefix (level, caller, PID and message). |
+| nginx and oauth2-proxy | Request fields (method, path, status, client, user agent, sizes); separate parsers for application/error lines. |
+| CoreDNS | Bracketed level and message. |
+| local-path provisioner, Traefik and Reloader | Quoted logfmt fields. |
+| Console | Uvicorn access/application lines and audit prefixes. |
+| Host timers | Existing filename-to-service mapping and `[OK]`/`[WARN]`/`[BAD]`/`[ERROR]` prefixes. |
+| Kubernetes events | Message or note becomes body, Warning becomes WARN and Normal becomes INFO; event metadata uses `k8s.event.*` attributes. |
+| Helpers, shell output, MongoDB agent, unmatched or malformed lines | Body passes unchanged; `log.parser=plain` explicitly identifies the fallback. No severity is guessed from words in the message. |
+
+`LogAttributes.log.parser` identifies the matched format. Explicit string levels, Pino numeric levels and MongoDB's `s` field become OTel severity. Valid trace/span IDs at the top level or under `mdc` populate the record so a trace opens its logs. Existing OTLP severity, timestamps, attributes, resource identity and trace context take precedence. Source timestamps fill missing record timestamps; container timestamps remain authoritative.
+
+Nested objects flatten to dotted attribute names, arrays remain JSON strings, and objects below four map levels remain JSON strings. The collector's `ottl.functions.enableLambda` gate enables the bounded array-preserving mapping; `make check-otel` uses that same gate and runs synthetic fixtures through the actual deployed collector version, including CRI partial lines and Docker framing. This catches changed parser behaviour during collector upgrades.
+
+When the body changes, `LogAttributes.log.record.original` retains the complete original line (additional storage, under the same retention). A JSON object without a message retains its JSON body and still exposes its fields. Malformed input never drops the record. Parsers are scoped to the source workload for non-JSON formats.
+
+In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:hello-ts-prod AND LogAttributes.req.method:GET`; open a result to see fields, its original line and any linked trace. `make verify-logs` reports fresh format/severity/trace coverage for every running container without printing bodies or attribute values; quiet containers are reported separately. It also includes events and host timers that logged within the selected window (`MINUTES=`, default 15). The systemd/k3s journal is not collected.
 
 **Sign-in.** `https://clickstack.<BASE_DOMAIN>` sits behind Google sign-in, then HyperDX's own login. HyperDX has no setting for its first account: `make clickstack-bootstrap` registers `CLICKSTACK_ADMIN_EMAIL` with `CLICKSTACK_ADMIN_PASSWORD` while no team exists, and HyperDX closes registration once one does (`make verify-platform` checks that it is closed). Read the password with `sops -d --extract '["stringData"]["CLICKSTACK_ADMIN_PASSWORD"]' platform/clickstack/secret.sops.yaml`. Invite further users from the UI.
 

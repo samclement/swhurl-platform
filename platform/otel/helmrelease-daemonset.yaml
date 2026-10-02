@@ -51,9 +51,15 @@ spec:
       extraArgs: ["--feature-gates=ottl.functions.enableLambda"]
     config:
       receivers:
+        # Metrics are most of what ClickHouse stores and merges (about 750,000 rows an hour), and each scrape
+        # becomes inserts and merges. A minute is fine for pod and node graphs; the chart presets scrape every
+        # 20 s (kubeletstats) and 10 s (hostmetrics).
         kubeletstats:
+          collection_interval: 60s
           endpoint: 127.0.0.1:10250
           insecure_skip_verify: true
+        hostmetrics:
+          collection_interval: 30s
         # Host systemd timers (make host-backup, make host-dns) append their output
         # to /var/log/swhurl-platform/<unit>.log; the file name becomes service.name
         # and [ERROR]/[BAD]/[WARN]/[INFO]/[OK] prefixes become severities.

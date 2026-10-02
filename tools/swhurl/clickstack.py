@@ -78,9 +78,11 @@ def mongo(runner: Runner, uri: str, script: str, *, pod: MongoPod = LIVE_MONGO, 
     return _result(out)
 
 
-def api(runner: Runner, method: str, path: str, body: dict | None = None, *, mutating: bool = False) -> dict:
-    """Call the HyperDX API from inside the app pod; returns ``{status, body}``."""
-    request = {'method': method, 'headers': {'content-type': 'application/json'}, 'redirect': 'manual'}
+def api(runner: Runner, method: str, path: str, body: dict | None = None, *, mutating: bool = False,
+        headers: dict[str, str] | None = None) -> dict:
+    """Call the HyperDX API from inside the app pod; returns ``{status, body}``. ``headers`` (an access key)
+    travel in the program on stdin, never in argv."""
+    request = {'method': method, 'headers': {'content-type': 'application/json', **(headers or {})}, 'redirect': 'manual'}
     if body is not None:
         request['body'] = json.dumps(body)
     program = (f'const r = await fetch({json.dumps(API + path)}, {json.dumps(request)});\n'

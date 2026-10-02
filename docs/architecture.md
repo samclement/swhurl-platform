@@ -129,6 +129,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |
+| `make clickstack-dashboards` | Writes app dashboards through HyperDX's API; HyperDX keeps dashboards in its database, not in files Flux could apply ([apps](apps.md#dashboards)) |
 | `make host-dns`, `make host-backup` | systemd units on the host, not in the cluster ([commands](commands.md#host)) |
 
 ## C4 views

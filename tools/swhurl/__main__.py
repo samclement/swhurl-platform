@@ -34,6 +34,8 @@ COMMANDS = {
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'backup-sqlite': ('swhurl.sqlite_backup', 'backup_sqlite', 'Encrypted backup of every app SQLite database, then prune and copy to S3'),
+    'restore-sqlite': ('swhurl.sqlite_restore', 'main', 'Restore one app SQLite database from its backup (stops the app meanwhile)'),
+    'live-test-restore-sqlite': ('swhurl.livetests.restore_sqlite', 'main', 'Live: back up and restore a throwaway app SQLite database'),
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
     'console-image': ('swhurl.images', 'main', 'Pin the console HelmRelease to the image published for this checkout (Git edit)'),

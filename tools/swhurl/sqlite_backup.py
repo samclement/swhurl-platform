@@ -81,11 +81,11 @@ def find(runner: Runner) -> list[Database]:
     return sorted(found, key=lambda d: d.name)
 
 
-def pod_manifest(db: Database) -> dict:
-    """The backup pod: the app's user, the app's claim, nothing else (as hardened as an app pod)."""
+def pod_manifest(db: Database, name: str | None = None) -> dict:
+    """The backup (or restore) pod: the app's user, the app's claim, nothing else (as hardened as an app pod)."""
     return {
         'apiVersion': 'v1', 'kind': 'Pod',
-        'metadata': {'name': db.pod, 'namespace': db.namespace, 'labels': {BACKUP_LABEL: 'true'}},
+        'metadata': {'name': name or db.pod, 'namespace': db.namespace, 'labels': {BACKUP_LABEL: 'true'}},
         'spec': {
             'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'activeDeadlineSeconds': 900,
             'securityContext': {'runAsNonRoot': True, 'runAsUser': db.uid, 'runAsGroup': db.uid, 'fsGroup': db.uid,
@@ -101,6 +101,13 @@ def pod_manifest(db: Database) -> dict:
                         {'name': 'tmp', 'emptyDir': {}}],
         },
     }
+
+
+def plain_fingerprint(runner: Runner, exec_pod: list[str], path: str) -> tuple[int, str]:
+    """Size and SHA-256 of a file in the pod, so the stream can be checked without plaintext on this host."""
+    size = int(runner.output([*exec_pod, 'wc', '-c', path]).split()[0])
+    digest = runner.output([*exec_pod, 'sha256sum', path]).split()[0]
+    return size, digest
 
 
 def backup_one(runner: Runner, db: Database, settings: BackupSettings, *, stamp: str,
@@ -121,19 +128,23 @@ def backup_one(runner: Runner, db: Database, settings: BackupSettings, *, stamp:
             raise RecoveryError(f'{db.name}: the copy failed integrity_check: {check[:200]}')
         tables = int(runner.output([*exec_pod, 'sqlite3', COPY,
                                     "SELECT count(*) FROM sqlite_master WHERE type = 'table';"]).strip() or 0)
+        size, digest = plain_fingerprint(runner, exec_pod, COPY)
         with private_files():
             directory.mkdir(parents=True, exist_ok=True)
             partial = archive.with_name(archive.name + '.partial')
             try:
                 runner.pipe([*exec_pod, 'cat', COPY], ['age', '-r', settings.recipient, '-o', partial])
-                if not partial.is_file() or partial.stat().st_size == 0:
-                    raise RecoveryError(f'{db.name}: the encrypted copy is empty')
+                # age adds a header and 16 bytes per 64 KiB, so a whole copy is never smaller than the plaintext;
+                # an age file of a truncated or empty stream is (it still has a header).
+                if not partial.is_file() or partial.stat().st_size < max(size, 1):
+                    raise RecoveryError(f'{db.name}: the encrypted copy is smaller than the database '
+                                        f'({size} bytes): the stream was cut short')
                 partial.replace(archive)
             finally:
                 partial.unlink(missing_ok=True)
             archive.with_name(archive.name.replace('.db.age', '.json')).write_text(json.dumps({
                 'created': stamp, 'source': db.name, 'claim': db.claim, 'path': db.path, 'tables': tables,
-                'integrity_check': check, 'age_recipient': settings.recipient, 'sha256': sha256(archive)}) + '\n')
+                'integrity_check': check, 'bytes': size, 'plain_sha256': digest, 'age_recipient': settings.recipient, 'sha256': sha256(archive)}) + '\n')
     finally:
         runner.run(['kubectl', '-n', db.namespace, 'delete', 'pod', db.pod, '--ignore-not-found', '--wait=false'],
                    check=False, mutating=True)

@@ -127,7 +127,16 @@ The backup streams `mongodump` through `age`, so no plaintext touches disk, and 
 
 Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that runs as the user who installed it, so it runs whether or not you are logged in. Its output goes to `/var/log/swhurl-platform/swhurl-backup-mongodb.log` and to ClickStack as service `swhurl-backup-mongodb` ([services](services.md#clickstack-and-otel)); the journal keeps start, finish and failure lines. `make verify-platform` fails when the newest backup, locally or in S3, is older than 26 hours (`BACKUP_MAX_AGE_HOURS`).
 
-**App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count and checksum. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old. A tested restore procedure is not written yet ([plan](plan.md) item 12).
+**App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count, the archive's checksum and the plaintext's size and SHA-256 (measured in the pod); an archive smaller than the plaintext means the stream was cut short, and the run fails. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old.
+
+Restore an app's database from its newest local backup (or `BACKUP_FILE=`; on another machine, first copy one from `s3://…/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/`):
+
+```bash
+make restore-sqlite APP=notes ENV=prod DRY_RUN=true          # checks the backup, prints the plan
+make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod    # the app is down for about a minute
+```
+
+It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app.
 
 **Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.
 

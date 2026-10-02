@@ -24,11 +24,12 @@ known-first-party = ["swhurl"]
 
 # Python packages, locked in uv.lock. `check`: the offline checks (CI also runs
 # pip install --group check for the non-test steps). `console`: the web console
-# (httpx is also the test client). `make test` and `make console-dev` run both
+# (httpx is also the test client; copier renders new app repositories). `make test` and `make console-dev` run both
 # through `uv run --frozen`.
 [dependency-groups]
 check = ["PyYAML==6.0.3"]
 console = [
+    "copier==9.18.2",
     "httpx==0.28.1",
     "jinja2==3.1.6",
     "starlette==1.7.0",

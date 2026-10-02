@@ -6,7 +6,7 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 
 | Stage | Command | Console | Section |
 | --- | --- | --- | --- |
-| Start the code | `make app-repo` | — | [Start from the template](#start-from-the-template) |
+| Start the code | `make app-repo` | **New app** (creates the repository too) | [Start from the template](#start-from-the-template) |
 | Create an instance | `make app-new` | **New app** | [Add an app](#add-an-app) |
 | Choose who can reach it | `make app-expose` | **Who can reach it** | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | `sops apps/<app>/<env>/secret.sops.yaml` | — | [Secrets](#secrets) |
@@ -30,7 +30,7 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 ## Start from the template
 
-New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework. Today there is one, `typescript` ([`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript)). `make app-repo` creates the app's repository from it and waits for its first image:
+New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework. Today there is one, `typescript` ([`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript)). The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
 
 ```bash
 make app-repo NAME=weather-api                  # STACK=typescript, DESCRIPTION="..." optional; DRY_RUN=true for the plan

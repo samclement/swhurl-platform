@@ -333,6 +333,14 @@ class ConsoleTokenTests(unittest.TestCase):
                 _, report, text = run(healthy(**overrides))
                 self.assertTrue(any(expected in line for line in report.lines), text)
 
+    def test_the_repository_token_is_optional_and_checked_when_set(self):
+        _, report, _ = run(healthy())
+        self.assertTrue(any(line.startswith('[WARN] console/console-github.APP_REPOS_TOKEN is not set') for line in report.lines))
+        code, report, text = run(healthy(token={'data': {'GITHUB_TOKEN': b64(TOKEN), 'APP_REPOS_TOKEN': b64('github_pat_two')}}))
+        self.assertEqual(code, 0, text)
+        self.assertTrue(any('GitHub accepts the console repository token; it expires 2099-01-01' in line for line in report.lines))
+        self.assertNotIn('github_pat_two', text)
+
     def test_no_expiry_passes(self):
         _, report, _ = run(healthy(github=Result((), 0, 'HTTP/2 200\r\n\r\n')))
         self.assertIn('[OK] GitHub accepts the console token (no expiry date)', report.lines)

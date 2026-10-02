@@ -32,6 +32,7 @@ class Cluster:
         r = self.runner = FakeRunner()
         r.on('gh', 'repo', 'view', returncode=0 if exists else 1)
         r.on('uvx', stdout='')
+        r.on('copier', stdout='')
         r.on('git', stdout='')
         r.on('gh', 'repo', 'create', stdout='')
         r.on('gh', 'run', 'list', handler=self.run_list)
@@ -54,9 +55,8 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual(image, f'ghcr.io/samclement/notes:1-abcdef0@{DIGEST}')
         verbs = [c[1] if c[0] == 'git' and c[1] != '-C' else (c[3] if c[0] == 'git' else ' '.join(c[:3]))
                  for c in cluster.runner.calls if c[:3] != ('gh', 'run', 'list')]
-        self.assertEqual(verbs, ['gh repo view', 'uvx copier@9.18.2 copy', 'init', 'add', 'commit', 'gh repo create',
-                                 'push'])
-        copy = next(c for c in cluster.runner.calls if c[0] == 'uvx')
+        self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'gh repo create', 'push'])
+        copy = next(c for c in cluster.runner.calls if 'copy' in c)
         self.assertIn('app_name=notes', copy)
         self.assertIn('description=Take notes', copy)
         self.assertIn('https://github.com/samclement/swhurl-app-template-typescript.git', copy)
@@ -76,7 +76,7 @@ class AppRepoTests(unittest.TestCase):
                                       (repo.Request('notes', stack='cobol'), Cluster(), 'STACK must be')):
             with self.subTest(message=message), self.assertRaisesRegex(repo.RepoError, message):
                 self.create(cluster, req)
-            self.assertFalse([c for c in cluster.runner.calls if c[0] in ('uvx', 'git') or 'create' in c])
+            self.assertFalse([c for c in cluster.runner.calls if c[0] in ('uvx', 'copier', 'git') or 'create' in c])
 
     def test_a_failed_first_run_or_a_private_package_is_explained(self):
         failed = Cluster(runs=[[{'number': 1, 'headSha': SHA, 'status': 'completed', 'conclusion': 'failure',

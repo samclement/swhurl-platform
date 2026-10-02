@@ -65,6 +65,11 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 
 Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tmp` (and `/data` with a database), sends traces and metrics over OpenTelemetry, logs JSON linked to its traces, and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`. Nothing in the app's repository names the cluster: its [`swhurl.yaml`](#swhurlyaml) says what it needs, and this repo writes the manifests. Each template's README is the guide on the app's side. Template changes reach existing apps only through the shared workflow (`app.yml`) and Renovate preset; applying the rest (`copier update`) is [planned](plan.md) (section 8, phase 7).
 
+**How templates are tested.** Two halves, so neither grows with the other:
+
+- **The template's own CI** (its Template workflow) renders combinations of its questions and, for each, type-checks, tests, builds the image and smoke-tests it. Today it builds every combination (four per stack). From a third question on, list the defaults, each non-default choice on its own and all non-defaults together, instead of every combination: that grows with the number of choices rather than doubling with each question. Each combination keeps its own image build cache.
+- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into a staging and a prod instance with `app-new --manifest`; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing, takes about 20 seconds for both stacks, and catches a template declaring something the platform refuses before anyone creates an app from it.
+
 ### Add production
 
 Production is created once, with the image staging runs, and changes only through a promote afterwards. Use the app's `swhurl.yaml` (`--from-repo`), so production gets the same resources, probes and database as staging:

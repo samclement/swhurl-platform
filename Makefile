@@ -118,7 +118,7 @@ restore-sqlite: ## APP= ENV= CONFIRM=<app>/<env> Restore an app's SQLite databas
 
 .PHONY: check
 check: ## All offline checks: the same as CI (run in parallel; each target's output is kept together)
-	@$(MAKE) --no-print-directory -j5 --output-sync=target check-repo test check-apps check-otel check-lint
+	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-templates check-otel check-lint
 
 .PHONY: check-repo
 check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, doc links
@@ -131,6 +131,10 @@ test: ## Unit tests for the tooling, console, manifests and command safety (need
 .PHONY: check-apps
 check-apps: ## Render every app instance and check the app contract
 	$(SWHURL) check-apps
+
+.PHONY: check-templates
+check-templates: ## Render every stack template combination; each swhurl.yaml must pass app-new and the app policy (needs network)
+	$(SWHURL) check-templates
 
 .PHONY: check-otel
 check-otel: ## Render the OTel collectors and validate their config with that exact otelcol-k8s release (warns on deprecated names)

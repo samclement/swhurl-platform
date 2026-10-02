@@ -400,6 +400,17 @@ Plan section 8, phase 5. Template PR #13 (merged): Copier questions `kind` (web,
 
 Not exercised live: a worker instance (CI smoke tests only).
 
+## The Kotlin stack (2 October 2026)
+
+Plan section 8, phase 6. New template `samclement/swhurl-app-template-kotlin` (Micronaut 5.2, Kotlin 2.3, Java 25): its Template workflow passed all four combinations of `kind` and `database` on GitHub, smoke tests included. Local measurements (podman): images 151 MB (web + SQLite) and 133 MB (worker), a `jlink` runtime on `distroless/cc` with the OpenTelemetry agent; ready in 12.7 s on half a CPU without the agent, 52.7 s with it, 15.6-19.7 s with it and `-XX:TieredStopAtLevel=1`, 120 s on a tenth of a CPU. Hence `startupSeconds` (`da05f41`): a startup probe, 24 × 5 s.
+
+Found on the way: Docker mounts `--tmpfs /tmp` noexec, so the SQLite driver could not load the native library it unpacks there (podman's tmpfs allows it, so local runs passed); the worker variant still passed CI because the database only opened on first use and the failure was logged. The image now ships the library unpacked (`-Dorg.sqlite.lib.path`), and the database opens at startup (`@Context`), so a broken database stops the app. The second CI run passed with `noexec` in place.
+
+- **Console** (`claude-live-test (port-forward)`): stack **kotlin**, web + SQLite, `swhurl-try-5`: 6 minutes 31 seconds to PR #27 (the first Gradle build downloads everything; the job waits up to 10 minutes). The instance had 100m CPU, 192Mi (limit 384Mi), the startup probe and the retained claim.
+- **Merged**: container started to Ready in 9.0 s on the cluster, no restarts; `make app-status` running: matches desired. Visits 1, 2, 3, then 4 after `rollout restart`; 156Mi memory. `backup-sqlite` (scratch, no upload) backed up its database (2 tables, integrity ok). In ClickStack: traces as `swhurl-try-5` (HTTP `GET`, SQLite `SELECT`/`INSERT` including `schema_migrations`), logs as JSON with `mdc.trace_id` attributes, `jvm.gc.duration`. Removed (`f30acfc`); its namespace and claim stay.
+
+Not working yet: the agent's other JVM metrics (`jvm.memory.*`, `jvm.thread.*`) did not reach ClickStack (container CPU and memory come from the node collector); and no app's logs fill the `TraceId` column (hello-ts: 0 of 24 rows), because the log pipeline does not promote a trace id from the JSON body. Both recorded in the plan.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

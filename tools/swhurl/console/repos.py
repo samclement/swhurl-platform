@@ -33,6 +33,9 @@ from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, STACKS
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 
+# What a 403 from each call usually means: the token lacks this permission (docs/console.md#github-tokens).
+PERMISSION_HINTS = {'/user/repos': 'Administration: Read and write', '/git/': 'Contents: Read and write',
+                    '/actions/': 'Actions: Read-only'}
 FIRST_RUN_TIMEOUT = 600.0  # seconds: the first build is about two minutes
 POLL = 5.0
 
@@ -79,6 +82,11 @@ class AppRepos:
                 message = reply.json().get('message', '')
             except ValueError:
                 message = reply.text[:200]
+            hint = next((h for part, h in PERMISSION_HINTS.items() if part in path), '')
+            if reply.status_code == 403 and hint:
+                message += (f'. Check that the APP_REPOS_TOKEN has {hint}'
+                            + (' and Workflows: Read and write' if '/git/' in path else '')
+                            + ' (GitHub → Settings → Developer settings → Fine-grained tokens → Edit)')
             raise ActionError(f'GitHub {method} {path} returned {reply.status_code}: {self.runner.redact(message)}')
         return reply
 

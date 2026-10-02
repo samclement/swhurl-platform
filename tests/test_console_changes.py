@@ -475,6 +475,21 @@ class AppReposTests(unittest.TestCase):
         self.assertIn('run 1 in_progress', job.lines)
         self.assertNotIn('github_pat_app_repos_fixture_0123', '\n'.join(job.lines))
 
+    def test_a_permission_refusal_names_the_permission_to_check(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        api = FakeAppGitHub()
+        handle = api.handle
+        api.handle = None
+        def refuse_blobs(request):
+            if request.url.path.endswith('/git/blobs'):
+                return httpx.Response(403, json={'message': 'Resource not accessible by personal access token'})
+            return handle(request)
+        config = repos.AppReposToken(api.config.token, transport=httpx.MockTransport(refuse_blobs))
+        client = repos.AppRepos(repo_runner(), config)
+        with self.assertRaisesRegex(actions.ActionError, 'Contents: Read and write and Workflows: Read and write'):
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+
     def test_writes_only_to_a_repository_it_created(self):
         from swhurl.console import repos
         api = FakeAppGitHub()

@@ -207,6 +207,17 @@ class GatherStatusTests(unittest.TestCase):
         self.assertEqual((found.routes, found.certificates, found.problems),
                          (['web.homelab.swhurl.com'], [('web-tls', 'True')], []))
 
+    def test_environment_lists_platform_variables_and_the_secret_by_name(self):
+        container = {'env': {'HOST_IP': {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
+                             'OTEL_SERVICE_NAME': 'web'},
+                     'envFrom': [{'secretRef': {'name': 'web-secret'}}]}
+        release = {'spec': {'values': {'controllers': {'main': {'containers': {'main': container}}}}}}
+        self.assertEqual(app_ops.release_env(release),
+                         ({'HOST_IP': 'from the pod (status.hostIP)', 'OTEL_SERVICE_NAME': 'web'}, 'web-secret'))
+        container['env'] = [{'name': 'A', 'value': '1'}]
+        self.assertEqual(app_ops.release_env(release)[0], {'A': '1'})
+        self.assertEqual(app_ops.release_env(None), ({}, ''))
+
     def test_missing_unit_is_none_and_missing_release_is_none(self):
         self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), app_ops.Instance('web', 'prod')))
         found = app_ops.gather_status(cluster(helmrelease=None), app_ops.Instance('web', 'prod'))

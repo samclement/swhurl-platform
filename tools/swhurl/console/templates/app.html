@@ -36,7 +36,7 @@
 {% endif %}
 
 <details class="section">
-  <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
+  <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS, environment (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
 <dl>
   <dt>Git</dt>
   <dd class="mono">desired {{ status.desired_revision.split(':')[-1] | short }}, applied {{ status.applied_revision.split(':')[-1] | short }}
@@ -62,6 +62,10 @@
   <dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }}</a></div>{% else %}<span class="muted">private (no route)</span>{% endfor %}</dd>
   <dt>TLS</dt>
   <dd>{% for name, ready in status.certificates %}<div><span class="{{ ready | state }}">{{ ready }}</span> {{ name }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+  <dt>Provided by the platform</dt>
+  <dd>{% for name, value in status.environment.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+  <dt>Your secrets</dt>
+  <dd>{% if status.secret_env %}every key of the Secret <code>{{ status.secret_env }}</code>, as a variable of the same name. Names and values are in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a> (encrypted; edit with <code>sops</code>){% else %}<span class="muted">none</span>{% endif %}</dd>
   <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>
 </dl>
 </details>

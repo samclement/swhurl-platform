@@ -56,6 +56,28 @@ def otlp_env(service: str) -> dict:
     }
 
 
+# Environment names the platform sets or may set. An app's secret keys arrive through envFrom, and a
+# container's own env silently wins over envFrom, so a secret with one of these names would never be seen.
+# New platform variables use the SWHURL_ prefix. KUBERNETES_* are the API server's address for in-cluster clients.
+RESERVED_ENV_NAMES = (OTLP_HOST_IP, DATABASE_PATH_ENV)
+RESERVED_ENV_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
+
+
+def secret_key_problem(keys: list[str]) -> str:
+    """Why these secret keys cannot be used, or '' if they can."""
+    bad = [k for k in keys if not re.fullmatch(r'[A-Z_][A-Z0-9_]*', k)]
+    if bad:
+        return f'secret keys must be environment variable names (A-Z, 0-9, _): {", ".join(bad)}'
+    reserved = [k for k in keys if k in RESERVED_ENV_NAMES or k.startswith(RESERVED_ENV_PREFIXES)]
+    if reserved:
+        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(RESERVED_ENV_NAMES)} '
+                f'and names starting {", ".join(RESERVED_ENV_PREFIXES)}); choose another name')
+    duplicates = sorted({k for k in keys if keys.count(k) > 1})
+    if duplicates:
+        return f'secret keys repeated: {", ".join(duplicates)}'
+    return ''
+
+
 # swhurl.yaml: what an app needs from the platform, kept in the app's own repository (docs/apps.md).
 # app-new --from-repo / --manifest reads it; each field becomes an app-new default, and flags given
 # explicitly still win. Name, environment, image and host are per instance and never in the file.
@@ -125,8 +147,10 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         raise fail('databaseSize needs database')
     secrets = field('secrets', list)
     if secrets:
-        if not all(isinstance(k, str) and re.fullmatch(r'[A-Z_][A-Z0-9_]*', k) for k in secrets):
+        if not all(isinstance(k, str) for k in secrets):
             raise fail('secrets must be environment variable names (A-Z, 0-9, _)')
+        if problem := secret_key_problem(secrets):
+            raise fail(problem)
         defaults['secret_keys'] = secrets
     resources = field('resources', dict) or {}
     names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}

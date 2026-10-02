@@ -65,6 +65,7 @@ from swhurl.apps.contract import (
     in_cookie_domain,
     manifest_defaults,
     otlp_env,
+    secret_key_problem,
 )
 from swhurl.run import CommandError, Runner
 
@@ -101,6 +102,8 @@ def resolve(args) -> None:
 def validate(args) -> None:
     if not NAME_RE.match(args.name):
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
+    if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
+        raise GenerationError(problem)
     if args.kind == 'worker' and args.exposure != 'private':
         raise GenerationError('a worker has no Service or route; use --exposure private')
     if args.exposure in ('authenticated-web', 'public'):

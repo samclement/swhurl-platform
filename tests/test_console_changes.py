@@ -326,6 +326,14 @@ class NewAppRouteTests(unittest.TestCase):
         page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
 
+    def test_reserved_secret_keys_are_refused_on_the_form(self):
+        with self.assertRaisesRegex(actions.ActionError, 'reserved for the platform: OTEL_SERVICE_NAME'):
+            changes.new_app_args({**FORM, 'secret_keys': 'API_TOKEN, OTEL_SERVICE_NAME'})
+        response = self.client(tree_fake())[0].post('/new', data={**FORM, 'secret_keys': 'DATABASE_PATH'}, headers=WHO)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('reserved for the platform: DATABASE_PATH', response.text)
+        self.assertEqual(self.api.requests, [], 'nothing reaches GitHub')
+
     def test_a_new_app_not_yet_applied_waits_for_its_pr(self):
         runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', returncode=1, stderr='NotFound')
         c, _ = self.client(runner)

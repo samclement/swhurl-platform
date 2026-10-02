@@ -173,6 +173,13 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(contract.default_host('w', 'prod'), 'w.homelab.swhurl.com')
         self.assertEqual(contract.default_host('w', 'staging'), 'staging-w.homelab.swhurl.com')
 
+    def test_secret_keys_the_platform_sets_are_refused_before_writing(self):
+        for key in ('HOST_IP', 'SWHURL_X', 'KUBERNETES_SERVICE_HOST', 'api-token'):
+            with self.subTest(key):
+                self.assertEqual(self.gen('n', *WEB, '--secret-keys', f'API_TOKEN,{key}'), 2)
+                self.assertFalse((self.tmp / 'apps/n').exists())
+        self.assertEqual(contract.secret_key_problem(['API_TOKEN', 'OTELX', 'PORT']), '')
+
     def test_missing_sops_leaves_no_plaintext(self):
         old_path = os.environ['PATH']
         os.environ['PATH'] = str(self.tmp)  # no sops (and nothing else) on PATH

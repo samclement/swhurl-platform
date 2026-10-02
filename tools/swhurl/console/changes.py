@@ -50,6 +50,8 @@ from swhurl.run import Runner
 DEFAULT_REPO = platform.GITHUB_REPO
 BASE = 'main'
 BRANCH_PREFIX = 'console/'
+AUTO_MERGE_LABEL = 'auto-merge'
+"""A console PR with this label merges itself once Validate passes (.github/workflows/auto-merge.yml)."""
 AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
 UNSET = ('', 'REPLACE_ME')
 
@@ -303,8 +305,11 @@ def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
 
 
 def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str,
-            change: Callable[[Path], None]) -> str:
-    """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL."""
+            change: Callable[[Path], None], auto_merge: bool = False) -> str:
+    """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL.
+
+    With ``auto_merge`` the PR is labelled to merge itself once Validate passes, unless it adds or changes an
+    encrypted file: a new Secret's values are ``REPLACE_ME`` until someone sets them on the branch."""
     runner.add_secret(github.token)  # whoever built ``github``, the token is redacted from every message
     api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
@@ -320,6 +325,9 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
         job.lines += [f'{"D" if p not in after else "A" if p not in before else "M"} {p}' for p in changed]
+        if auto_merge and any(p.endswith('.sops.yaml') for p in changed):
+            auto_merge = False
+            job.lines.append('Not merging automatically: set the Secret values on the branch first, then merge it yourself')
         if runner.dry_run:
             job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
             return ''
@@ -339,9 +347,17 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         job.lines.append(f'Committed {commit[:7]} [console] {title}')
         job.lines.append(f'Creating branch {branch}')
         api.call('POST', '/git/refs', {'ref': f'refs/heads/{branch}', 'sha': commit})
-        url = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
-                                          'body': f'{body}\n\nRequested-by: {job.identity}'})['html_url']
+        note = '\n\nMerges itself when Validate passes (label `auto-merge`; remove it to merge by hand).' if auto_merge else ''
+        pr = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
+                                         'body': f'{body}{note}\n\nRequested-by: {job.identity}'})
+        url = pr['html_url']
         job.lines.append(f'Opened {url}')
+        if auto_merge:
+            try:
+                api.call('POST', f"/issues/{pr['number']}/labels", {'labels': [AUTO_MERGE_LABEL]})
+                job.lines.append('Labelled auto-merge: it merges itself when Validate passes')
+            except ActionError as error:  # the PR stands; it just waits for a person
+                job.lines.append(f'Could not label it auto-merge ({error}); merge it yourself')
         return url
     finally:
         api.client.close()

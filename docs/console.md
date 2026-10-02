@@ -19,11 +19,32 @@ A web page at `https://console.<BASE_DOMAIN>` (`console.homelab.swhurl.com`) for
 
 Long commit SHAs and image digests are shortened to 12 characters; hover for the full value.
 
-Every page names an app instance `<app>/<env>` (for example `hello/staging`), linking to its app page; the Flux unit's own name (`app-hello-staging`) appears only on Platform and the unit's page. Each button starts a **job**: its page shows the output as it arrives and refreshes until it finishes; one job per unit or app instance at a time.
+Every page names an app instance `<app>/<env>` (for example `hello/staging`), linking to its app page; the Flux unit's own name (`app-hello-staging`) appears only on Platform and the unit's page. Pull requests that are easy to undo merge themselves once checks pass ([auto-merge](#auto-merge)). Each button starts a **job**: its page shows the output as it arrives and refreshes until it finishes; one job per unit or app instance at a time.
 
 - **Cluster actions** make the changes `flux reconcile kustomization <unit> --with-source`, `flux suspend` and `flux resume` would, with `kubectl` (the image has no `flux` CLI): suspend and resume set the unit's `spec.suspend`; reconcile sets the `reconcile.fluxcd.io/requestedAt` annotation on the unit's Git source and then on the unit, and resume on the unit. Each waits (up to 10 minutes) until Flux reports the request handled, then shows the revision or the unit's error. A suspended unit is not reconciled: resume it. Suspending stops Git changes reaching the unit, as `make suspend` does ([lifecycle](operations.md#lifecycle)).
 - **PR actions** download `main` through GitHub's API (the image has no `git`), run that tree's own `make app-new`, `app-promote`, `app-scale` or `app-remove` ([apps](apps.md)), so the change follows the rules CI will check, then commit the files it added, changed or deleted to a new `console/<change>-<app>-<env>-<commit>` branch (blobs, tree, commit and ref through the API; the job lists each file as `A`, `M` or `D`) and open a PR titled `[console] …` with a `Requested-by: <email>` line. If the command refuses (for example prod without a digest), nothing is written to GitHub and the job shows why. After merging, the push webhook has Flux apply it within seconds ([how changes reach the cluster](architecture.md#how-changes-reach-the-cluster)); `make flux-reconcile` if you want to wait for it. Set any `REPLACE_ME` Secret values with `sops` on the PR branch before merging.
 - **Audit:** every job logs `[AUDIT] <email> <action> <target>: started|succeeded (job N)` (with the PR's URL), or `[ERROR] … failed`; search `[AUDIT]` in ClickStack. The Activity page's job list is lost on restart. Old addresses `/units` and `/jobs` redirect to Platform and Activity.
+
+## Auto-merge
+
+Some console pull requests merge themselves once **Validate** passes; the rest wait for you.
+
+| Change | Merges itself |
+| --- | --- |
+| New app (either scenario), staging, no Secret | yes |
+| Scale | yes |
+| Promote to prod | only with **merge when checks pass** ticked on the app page (the Promote button on Apps never) |
+| New app in production, Who can reach it, Uninstall, anything adding or changing a `*.sops.yaml` | never |
+
+```mermaid
+flowchart LR
+  console["console job"] -->|"opens PR,<br/>label auto-merge"| pr["console/* PR"]
+  pr --> validate["Validate"]
+  validate -->|"passed"| wf["Auto-merge workflow<br/>re-checks the PR"]
+  wf -->|"merge commit"| main["main"] -->|"webhook"| flux["Flux applies it"]
+```
+
+The console adds the label `auto-merge` (its PR description says so; remove the label to merge by hand, or add it to merge a waiting console PR once Validate has passed). [`.github/workflows/auto-merge.yml`](../.github/workflows/auto-merge.yml) then merges with a merge commit and deletes the branch, only if the PR is open, on a `console/*` branch of this repository, its current commit passed Validate, and it changes only `apps/<app>/<env>/`, `clusters/home/app-*.yaml` and `clusters/home/kustomization.yaml` with no encrypted file. Otherwise the run says why and leaves the PR. A merge made by the workflow's token starts no other workflow (no Validate run on `main`); Flux's webhook still applies it within seconds. `main` has no branch protection, so nothing else changes about pushing to it.
 
 ## Deploy a new console
 

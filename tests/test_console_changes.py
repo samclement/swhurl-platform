@@ -55,7 +55,8 @@ class FakeGitHub:
             'POST /git/trees': {'sha': 'tree1'},
             'POST /git/commits': {'sha': 'def5678' + '0' * 33},
             'POST /git/refs': {'ref': 'x'},
-            'POST /pulls': {'html_url': 'https://github.com/x/pull/7'},
+            'POST /pulls': {'html_url': 'https://github.com/x/pull/7', 'number': 7},
+            'POST /issues/7/labels': [{'name': 'auto-merge'}],
             'GET /pulls': [{'number': 7, 'title': '[console] apps: add weather-api staging', 'html_url': 'https://github.com/x/pull/7',
                             'head': {'ref': 'console/new-weather-api-staging-abc1234'}, 'created_at': '2026-10-01T07:00:00Z'},
                            {'number': 8, 'title': 'chore(deps): bump', 'html_url': 'https://github.com/x/pull/8',
@@ -187,6 +188,32 @@ class OpenPrTests(unittest.TestCase):
                               body='body', change=change or (lambda tree: changes.run_app_new(runner, job, tree, ['x'])))
         return url, job, api
 
+    def test_auto_merge_labels_the_pr_unless_it_adds_a_secret(self):
+        api = FakeGitHub()
+        job = actions.Job(1, 'new app', 'weather-api/staging', 'sam@swhurl.com', None)
+        runner = tree_fake()
+        changes.open_pr(runner, api.github, job, slug='new-weather-api-staging', title='t', body='b', auto_merge=True,
+                        change=lambda tree: changes.run_app_new(runner, job, tree, ['x']))
+        self.assertEqual(api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}])
+        self.assertIn('Labelled auto-merge: it merges itself when Validate passes', job.lines)
+
+        def with_secret(tree):
+            (tree / 'apps/x').mkdir(parents=True)
+            (tree / 'apps/x/secret.sops.yaml').write_text('sops: {}\n')
+        api, job, runner = FakeGitHub(), actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake(edit=with_secret)
+        changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
+                        change=lambda tree: changes.run_app_new(runner, job, tree, ['x']))
+        self.assertEqual(api.sent('POST /issues/7/labels'), [])
+        self.assertNotIn('Merges itself', api.sent('POST /pulls')[0]['body'])
+        self.assertIn('Not merging automatically: set the Secret values on the branch first, then merge it yourself', job.lines)
+
+        api = FakeGitHub(fail={'POST /issues/7/labels': (403, 'Resource not accessible')})
+        job, runner = actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake()
+        url = changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
+                              change=lambda tree: changes.run_app_new(runner, job, tree, ['x']))
+        self.assertEqual(url, 'https://github.com/x/pull/7', 'a failed label leaves the PR for a person')
+        self.assertTrue(any(line.startswith('Could not label it auto-merge') for line in job.lines))
+
     def test_commits_exactly_the_changed_files_on_a_console_branch(self):
         def edit(tree):
             (tree / 'apps/hello/staging/helmrelease.yaml').write_text('kind: HelmRelease\nchanged: true\n')
@@ -297,6 +324,10 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
         job = jobs.get(1)
         self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'weather-api/staging'))
+        self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
+        c.post('/new', data={**FORM, 'env': 'prod', 'image': 'ghcr.io/me/weather:1.0@sha256:' + 'a' * 64}, headers=WHO)
+        self.assertEqual((jobs.get(2).state, len(self.api.sent('POST /pulls'))), ('succeeded', 2))
+        self.assertEqual(len(self.api.sent('POST /issues/7/labels')), 1, 'production is merged by a person')
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
 
     def test_every_field_is_on_the_form_once_and_a_bad_form_keeps_advanced_open(self):
@@ -430,6 +461,20 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual((job.state, job.unit, job.link), ('succeeded', target, 'https://github.com/x/pull/7'))
                 (payload,) = self.api.sent('POST /pulls')
                 self.assertEqual((payload['head'], payload['title']), (branch, title))
+
+    def test_only_easily_undone_changes_merge_themselves(self):
+        cases = (('/apps/hello/prod/scale', {'replicas': '2'}, True),
+                 ('/apps/hello/staging/promote', {}, False),
+                 ('/apps/hello/staging/promote', {'auto_merge': 'on'}, True),
+                 ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
+                 ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
+        for path, form, merges in cases:
+            with self.subTest(path=path, form=form):
+                c, jobs = self.client(tree_fake())
+                c.post(path, data=form, headers=WHO)
+                self.assertEqual(jobs.get(1).state, 'succeeded')
+                self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])
+                self.assertEqual('Merges itself when Validate passes' in self.api.sent('POST /pulls')[0]['body'], merges)
 
     def test_refusals_run_nothing(self):
         runner = tree_fake()

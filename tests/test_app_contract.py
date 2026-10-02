@@ -16,7 +16,7 @@ from swhurl import ROOT
 from swhurl.apps import contract
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
-from swhurl.run import FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
 TEMPLATE_IMAGE = 'ghcr.io/samclement/w:12-abcdef0@sha256:' + 'b' * 64
@@ -33,6 +33,27 @@ class GeneratorTests(unittest.TestCase):
 
     def gen(self, *args):
         return app_new.main(['--root', str(self.tmp), '--no-policy-check', *args])
+
+    def test_requested_validation_cannot_silently_skip_missing_or_failed_tools(self):
+        for error in (CommandError(['helm'], 'helm not found'),
+                      CommandError(['helm', 'template'], 'render failed', 1)):
+            with self.subTest(error=error), mock.patch.object(app_policy, 'evaluate', side_effect=error):
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    result = app_new.main(['worker', '--env=staging', '--kind=worker', '--image=r/w:1',
+                                           '--root', str(self.tmp)])
+                self.assertEqual(result, 1)
+                self.assertIn('could not validate', err.getvalue())
+                self.assertNotIn('Next: commit', out.getvalue())
+                self.assertTrue((self.tmp / 'apps/worker/staging/helmrelease.yaml').exists())
+                shutil.rmtree(self.tmp / 'apps')
+                (self.tmp / 'clusters/home/app-worker-staging.yaml').unlink()
+
+    def test_policy_opt_out_is_explicit_and_does_not_call_validation(self):
+        with mock.patch.object(app_policy, 'evaluate') as evaluate:
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(self.gen('worker', '--env=staging', '--kind=worker', '--image=r/w:1'), 0)
+        evaluate.assert_not_called()
 
     def test_refuses_unsafe_or_ambiguous_instances(self):
         cases = {

@@ -513,8 +513,9 @@ def check_generated(instance: Path, runner: Runner | None = None) -> int:
     try:
         problems = policy.evaluate(instance, runner)
     except CommandError as error:
-        print(f'[WARN] could not run the app policy ({error}); run make check-apps before committing')
-        return 0
+        print(f'[ERROR] could not validate the app policy ({error})', file=sys.stderr)
+        print('[INFO] Files remain for review. Fix the validation failure and run make check-apps before committing.')
+        return 1
     if problems:
         print('[BAD] the generated instance violates the app contract (generator and policy disagree):')
         for problem in problems:

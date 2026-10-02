@@ -379,6 +379,16 @@ Plan section 8, phase 3. The TypeScript template became a Copier template (app u
 
 Found during the test: `make app-status` showed the instance as public (no sign-in) with its route listed twice while the certificate was issued, because it counted cert-manager's HTTP-01 challenge Ingress; fixed in `f861132`. Adding and removing the app also sent two failure notifications from its ImagePolicy ("no tags in database" before the first scan; "referenced ImageRepository does not exist" during removal); both messages are now excluded from the failures alert. The operator deleted the repository `samclement/swhurl-try-1` and its GHCR package afterwards; both were confirmed gone (GitHub cannot resolve the repository, the package page returns 404).
 
+## Console New app and repository (2 October 2026)
+
+Plan section 8, phase 4 (`7a72d6c`, fix `6546879`). The console's second token (`APP_REPOS_TOKEN`) and a rotated `GITHUB_TOKEN` went in with `29d0860`: the previous `GITHUB_TOKEN` value had been exposed in a chat transcript, was revoked by the operator (GitHub answered 401 for it before the swap), and `make verify-platform` then reported GitHub accepting both new tokens.
+
+- **First run** (`swhurl-try-2`): rendered the template and created the repository, then GitHub refused the first blob (403 "Resource not accessible by personal access token"): the token had Contents read-only. Reads of the new repository worked and the blob was still refused minutes later, so it was the permission, not a delay. The job stopped with nothing else written and no PR; `6546879` makes such a 403 name the permission to check. The operator set Contents and Workflows to read and write (same token value).
+- **Second run** (`swhurl-try-3`, from the deployed console through a port-forward with identity `claude-live-test (port-forward)`): form to open PR in 2 minutes 10 seconds. Rendered 14 files, created `samclement/swhurl-try-3`, pushed `d4ea2ee` on top of GitHub's initial commit, waited for run 1 (success), read `ghcr.io/samclement/swhurl-try-3:1-d4ea2ee@sha256:3e7685350f4d…` from GHCR, ran `app-new --from-repo` in `main` (policy passed) and opened PR #23 (CI passed). The repository's `.copier-answers.yml` records template commit `7cb4a72`.
+- **Merged** (`060d825`): `app-swhurl-try-3-staging` Ready in 15 seconds, `make app-status` running: matches desired and signed-in while the certificate was issued (the `f861132` fix); HTTP 301 to HTTPS, HTTPS (Let's Encrypt YR2) 302 to Google sign-in when signed out. Removed with `make app-remove` (`6c2b66d`): namespace and image automation objects gone. The failures and deploys ntfy topics received nothing during the test (the `1117048` exclusions). `make verify-platform` passed.
+
+Not exercised: a stack other than `typescript`; a public or private exposure from this form. The repositories `samclement/swhurl-try-2` and `samclement/swhurl-try-3` and the package `swhurl-try-3` await the operator's deletion.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

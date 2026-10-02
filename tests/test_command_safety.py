@@ -42,7 +42,7 @@ class CommandSafetyTests(unittest.TestCase):
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
-import base64, json, os, sys
+import base64, datetime, json, os, sys
 from pathlib import Path
 with open(os.environ['CALLS'], 'a') as f:
     f.write(Path(sys.argv[0]).name + '\\n')
@@ -78,6 +78,8 @@ elif any(a.startswith('kustomizations') for a in argv):
                      'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
 elif 'console-github' in argv:
     emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
+elif 'cronjob' in argv and 'console-dashboards' in argv:
+    emit({'spec': {}, 'status': {'lastSuccessfulTime': datetime.datetime.now(datetime.timezone.utc).isoformat()}})
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
         'tag': os.environ['CONSOLE_TAG']}}}}}}}})

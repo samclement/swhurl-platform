@@ -86,3 +86,8 @@ Application, Uvicorn access and action audit logs are one-line JSON. Audits reta
 ## Run it locally
 
 `make console-dev` serves the same pages from your checkout on `http://127.0.0.1:8080` as a fixed identity (`operator@localhost (dev)`), refusing any address but loopback. It reads the cluster **with your kubeconfig**, so its buttons act with your admin rights, and it opens real PRs if `GITHUB_TOKEN` is set in your environment. Code layout: [contributing](contributing.md#operator-tooling).
+
+
+### Automatic app dashboards
+
+The console HelmRelease also runs the minute-by-minute dashboard reconciler described in [app dashboards](apps.md#dashboards). It shares the published operator image through a YAML anchor, but uses a separate `dashboard-sync` ServiceAccount and receives no GitHub tokens. It may list HelmReleases, read only the two existing ClickStack input/connection Secrets, and execute API/MongoDB scripts in observability pods. The web console's account still cannot read Secrets or exec into pods. The reconciler stores no data; dashboards remain in the backed-up ClickStack MongoDB. Jobs retain one success and one failure, stop after 50 seconds, and their stdout is collected by the node log agent. Credentials are reread each run, so rotation needs no restart. Image updates follow the existing console publication workflow.

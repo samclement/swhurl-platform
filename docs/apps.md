@@ -281,7 +281,7 @@ An instance fails fast: if its pods are not Ready within 3 minutes of a change (
 
 ### Dashboards
 
-`make clickstack-dashboards` gives every app in `apps/` a HyperDX dashboard named `App: <app>` (tag `swhurl-app`), with staging and production as separate lines:
+The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX dashboard named `App: <app>` (tag `swhurl-app`), with staging and production as separate lines:
 
 | Row | Web app | Worker |
 | --- | --- | --- |
@@ -289,7 +289,7 @@ An instance fails fast: if its pods are not Ready within 3 minutes of a change (
 | Logs (every app) | Error logs and log lines per minute | the same |
 | Logs | The latest log lines, with their environment | the same |
 
-Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Run it after an app is added or removed: it creates missing dashboards, overwrites ones that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy under another name to keep it) and deletes `swhurl-app` dashboards whose app has left Git. `DRY_RUN=true` lists what it would change. It reads the admin account's access key from MongoDB and never prints it.
+Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Within a minute of Flux adding an app HelmRelease, the job creates its dashboard; first promotion adds production to the same dashboard. This works for console PRs and CLI changes, including auto-merges. Each run overwrites dashboards that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy without the `swhurl-app` tag to keep it). Automatic sync never deletes dashboards. After removal, `make clickstack-dashboards` synchronizes against this checkout and deletes tagged dashboards whose app has left Git; `DRY_RUN=true` previews it. Both paths read the admin account's access key from MongoDB and never print it. Failures exit nonzero and retry on the next minute; `make verify-platform` fails if the job has not succeeded within five minutes. No app deployment waits on ClickStack.
 
 ## Remove an app
 

@@ -1,0 +1,64 @@
+# Dedicated account: no console GitHub tokens and no writes to Kubernetes objects.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard-sync
+  namespace: console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-dashboard-discovery
+rules:
+  - apiGroups: [helm.toolkit.fluxcd.io]
+    resources: [helmreleases]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-dashboard-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-dashboard-discovery
+subjects:
+  - kind: ServiceAccount
+    name: dashboard-sync
+    namespace: console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-dashboard-sync
+  namespace: observability
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [clickstack-runtime-inputs, clickstack-mongodb-hyperdx-hyperdx]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [clickstack-app]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    # kubectl resolves the app Deployment to its current pod, whose name changes.
+    verbs: [create, get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-dashboard-sync
+  namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-dashboard-sync
+subjects:
+  - kind: ServiceAccount
+    name: dashboard-sync
+    namespace: console

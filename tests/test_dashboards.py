@@ -115,3 +115,47 @@ class DefinitionTests(unittest.TestCase):
             (root / app / env / 'helmrelease.yaml').write_text(json.dumps({'spec': {'values': values}}))
         found = dashboards.apps(sorted(p.parent for p in root.glob('*/*/helmrelease.yaml')))
         self.assertEqual(found, [dashboards.App('a', 'web', ('staging', 'prod')), dashboards.App('b', 'worker', ('staging',))])
+
+
+class AutomaticSyncTests(unittest.TestCase):
+    def release(self, name, env, *, kind='web', unit=None):
+        return {'metadata': {'name': name, 'namespace': f'{name}-{env}', 'labels': {
+            'kustomize.toolkit.fluxcd.io/name': unit or f'app-{name}-{env}',
+            'kustomize.toolkit.fluxcd.io/namespace': 'flux-system'}},
+            'spec': {'values': {'service': {}} if kind == 'web' else {}}}
+
+    def test_creation_and_first_promotion_update_the_existing_dashboard(self):
+        staging = self.release('new-app', 'staging')
+        production = self.release('new-app', 'prod')
+        api = HyperDX()
+        runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': [staging]}))
+        self.assertEqual(dashboards.main(['--cluster'], runner, Report(io.StringIO())), 0)
+        self.assertEqual(api.writes(), [('POST', '/dashboards')])
+        api = HyperDX([{**dashboards.dashboard(dashboards.App('new-app', 'web', ('staging',)), 't1', 'l1'), 'id': 'd1'}])
+        runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': [production, staging]}))
+        self.assertEqual(dashboards.main(['--cluster'], runner, Report(io.StringIO())), 0)
+        self.assertEqual(api.writes(), [('PUT', '/dashboards/d1')])
+        self.assertIn("'new-app-prod'", api.calls[-1][2]['tiles'][0]['config']['select'][0]['where'])
+
+    def test_discovery_excludes_shared_services_and_mismatched_names(self):
+        mismatched = self.release('wrong', 'prod', unit='app-real-prod')
+        unowned = self.release('manual', 'prod')
+        unowned['metadata']['labels'] = {}
+        runner = FakeRunner().on(*dashboards.RELEASES, stdout=json.dumps({'items': [
+            self.release('job', 'staging', kind='worker'), self.release('console', 'prod', unit='platform-console'),
+            mismatched, unowned]}))
+        self.assertEqual(dashboards.cluster_apps(runner), [dashboards.App('job', 'worker', ('staging',))])
+
+    def test_empty_discovery_never_deletes_dashboards(self):
+        api = HyperDX([{'id': 'old', 'name': 'App: old', 'tags': [dashboards.TAG]}])
+        runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': []}))
+        self.assertEqual(dashboards.main(['--cluster'], runner, Report(io.StringIO())), 0)
+        self.assertEqual(api.writes(), [])
+
+    def test_discovery_failure_stops_before_api_writes(self):
+        from swhurl.run import CommandError
+        api = HyperDX()
+        runner = api.runner().on(*dashboards.RELEASES, returncode=1, stderr='discovery failed')
+        with self.assertRaises(CommandError):
+            dashboards.main(['--cluster'], runner, Report(io.StringIO()))
+        self.assertEqual(api.calls, [])

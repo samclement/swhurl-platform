@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,6 +56,34 @@ def apps(paths: list[Path] | None = None) -> list[App]:
         entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': []})
         entry['envs'].append(instance.name)
     return [App(name, entry['kind'], tuple(sorted(entry['envs'], key=lambda e: e != 'staging')))
+            for name, entry in sorted(found.items())]
+
+
+RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
+
+
+def cluster_apps(runner: Runner) -> list[App]:
+    """Discover applied app environments, including installs still becoming Ready.
+
+    Match the generated Flux unit, release and namespace together so shared services
+    and manually installed releases never become app dashboards. Discovery failures
+    propagate before any API write; the scheduled sync never prunes dashboards.
+    """
+    found: dict[str, dict] = {}
+    for release in runner.json(RELEASES)['items']:
+        metadata = release['metadata']
+        labels = metadata.get('labels') or {}
+        unit = labels.get('kustomize.toolkit.fluxcd.io/name', '')
+        match = re.fullmatch(r'app-([a-z0-9-]+)-(staging|prod)', unit)
+        if not match or labels.get('kustomize.toolkit.fluxcd.io/namespace') != 'flux-system':
+            continue
+        app, env = match.groups()
+        if metadata['name'] != app or metadata['namespace'] != f'{app}-{env}':
+            continue
+        kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
+        entry = found.setdefault(app, {'kind': kind, 'envs': []})
+        entry['envs'].append(env)
+    return [App(name, entry['kind'], tuple(sorted(set(entry['envs']), key=lambda e: e != 'staging')))
             for name, entry in sorted(found.items())]
 
 
@@ -135,7 +164,7 @@ def sources(api: HyperDX) -> tuple[str, str]:
     return found['trace'], found['log']
 
 
-def sync(runner: Runner, report: Report, wanted_apps: list[App]) -> int:
+def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool = True) -> int:
     report.section('ClickStack app dashboards')
     inputs = clickstack.read_secret(runner, clickstack.INPUTS_SECRET)
     email = inputs.get('CLICKSTACK_ADMIN_EMAIL', '')
@@ -163,7 +192,7 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App]) -> int:
         else:
             api.call('POST', '/dashboards', body)
             report.ok(f"created {body['name']}")
-    for name, stale in sorted(live.items()):
+    for name, stale in sorted(live.items()) if prune else []:
         if runner.dry_run:
             report.info(f'would delete {name} (its app is not in Git)')
         else:
@@ -173,7 +202,11 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App]) -> int:
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, report: Report | None = None) -> int:
-    argparse.ArgumentParser(prog='swhurl clickstack-dashboards', description=__doc__,
-                            formatter_class=argparse.RawDescriptionHelpFormatter).parse_args(argv)
+    parser = argparse.ArgumentParser(prog='swhurl clickstack-dashboards', description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--cluster', action='store_true',
+                        help='discover Flux-managed live app environments; create/update only, never delete dashboards')
+    args = parser.parse_args(argv)
     runner = runner or Runner.from_environment()
-    return sync(runner, report or Report(redact=runner.redact), apps())
+    return sync(runner, report or Report(redact=runner.redact),
+                cluster_apps(runner) if args.cluster else apps(), prune=not args.cluster)

@@ -312,6 +312,24 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
                 report.ok(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 
 
+def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
+    """A successful minute-by-minute sync must be recent, and scheduling enabled."""
+    report.section('App dashboards')
+    now = now or dt.datetime.now(dt.UTC)
+    try:
+        job = runner.json(['kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', '-o', 'json'])
+        last = (job.get('status') or {}).get('lastSuccessfulTime', '')
+        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
+        if job['spec'].get('suspend'):
+            report.bad('dashboard sync is suspended')
+        elif taken is None or now - taken > dt.timedelta(minutes=5):
+            report.bad('dashboard sync has no success in the last 5 minutes; check console-dashboards job logs')
+        else:
+            report.ok('dashboard sync succeeded in the last 5 minutes')
+    except (CommandError, KeyError, ValueError, TypeError):
+        report.bad('cannot read dashboard sync status (console/console-dashboards)')
+
+
 def check_console(runner: Runner, report: Report) -> None:
     """Warn if the console image's inputs changed since it was built.
 
@@ -524,6 +542,7 @@ CHECKS = (
     Check('backups', frozenset({'host'}), check_backups),
     Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
+    Check('dashboards', frozenset({'cluster'}), check_dashboards),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
 )

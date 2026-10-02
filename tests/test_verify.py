@@ -32,6 +32,7 @@ def fresh_backup(hours=1):
 def healthy(**overrides):
     """A FakeRunner answering every verify-platform call for a healthy cluster."""
     responses = {
+        'dashboards': {'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}},
         'version': Result((), 0, '{}'),
         'units': {'items': [
             {'metadata': {'name': 'homelab-b'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
@@ -98,6 +99,7 @@ def healthy(**overrides):
         runner.github.append((args, config))
         return answer('github')(args, config)
     return (runner
+            .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
@@ -153,7 +155,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                          '\n== Push Webhook ==', '\n== Console ==', '\n== Console GitHub Token =='])
+                          '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -352,7 +354,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] * 2)
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] * 2 + ['App dashboards'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, console, console-token',
                       report.lines)
@@ -450,3 +452,16 @@ class VerifyConfigTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DashboardHealthTests(unittest.TestCase):
+    def test_recent_stale_missing_and_suspended(self):
+        now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.UTC)
+        for spec, taken, expected in (({}, now, 0), ({}, now - dt.timedelta(minutes=6), 1),
+                                      ({}, None, 1), ({'suspend': True}, now, 1)):
+            with self.subTest(spec=spec, taken=taken):
+                job = {'spec': spec, 'status': {'lastSuccessfulTime': taken.isoformat()} if taken else {}}
+                out = io.StringIO()
+                report = Report(out)
+                verify.check_dashboards(healthy(dashboards=job), report, now)
+                self.assertEqual(report.exit_code(), expected, out.getvalue())

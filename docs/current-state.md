@@ -439,6 +439,14 @@ Plan item 14, steps 1 to 3; CI and the console publish run passed for each, and 
 - **Secret names** (`7574584`): `hello-ts/staging` Details shows **Provided by the platform** `HOST_IP` (from the pod), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME` and **Your secrets** none. No app in Git had a Secret, so nothing used a reserved name.
 - **New app by scenario** (`8e9ffec`): `/new` and `/new?preset=from-repo` both 200 with the two choices; the swhurl.yaml tab's exposure starts on **As its swhurl.yaml says**. **Not exercised:** opening a PR from that tab.
 
+## Auto-merge, template checks and app dashboards (2 October 2026)
+
+Plan item 14, steps 4 to 6; CI passed for each and `make verify-platform` passed after the last.
+
+- **Auto-merge** (`40d6d17`): two Scale PRs from the live console (through a port-forward, identity `claude-autotest@localhost`): #28 set `hello-ts/staging` CPU request 10m → 15m, #29 set it back. Each was labelled by the console (the existing `GITHUB_TOKEN` may label), merged by `github-actions` after Validate (#28 opened 16:43:21, merged 16:44:32 UTC; #29 in 76 s), branch deleted, and applied by Flux (HelmRelease 15m, then 10m; release v17 Ready, 1/1). Guard: #30, a labelled `console/*` branch changing `docs/plan.md`, was refused ("changes files outside apps/<app>/<env>/ …"; an earlier run also refused it before Validate had passed) and closed. A push to `main` runs the workflow as skipped. **Not exercised:** Promote with the box ticked, a new app merging itself.
+- **check-templates** (`5179aed`): all eight combinations (two stacks × kind × database) pass locally (17 s) and in CI (12 s). Template PRs kotlin #8 and typescript #15 give each combination its own build cache: re-runs took 1 min 20 s to 1 min 32 s per Kotlin job (about 4 min 20 s before, when the Gradle dependency layer rebuilt each time) and 41 to 54 s per TypeScript job; both merged.
+- **Dashboards** (`0b5e92b`): `make clickstack-dashboards` created `App: hello` and `App: hello-ts` (both web); the definitions passed HyperDX's `/api/v2/dashboards/validate` first; a second run reported both up to date. The tiles' SQL returns data for logs (720 lines an hour in each `hello` environment); `hello-ts` had no server spans in that hour, so its trace tiles are empty until it has traffic.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

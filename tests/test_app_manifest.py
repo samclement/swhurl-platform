@@ -34,6 +34,21 @@ class ManifestTests(unittest.TestCase):
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi'})
 
+    def test_a_slow_starter_gets_a_startup_probe(self):
+        self.assertEqual(manifest_defaults({**WEB, 'startupSeconds': 120})['startup_seconds'], 120)
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / 'clusters/home').mkdir(parents=True)
+            manifest = Path(root) / 'swhurl.yaml'
+            manifest.write_text(yaml.safe_dump({**WEB, 'startupSeconds': 120}))
+            args = app_new.parse_args(['kt', '--manifest', str(manifest), '--env', 'staging', '--root', root,
+                                       '--image', 'ghcr.io/me/kt:1-abcdef0@sha256:' + 'a' * 64, '--no-register'])
+            app_new.generate(args, Path(root))
+            release = yaml.safe_load((Path(root) / 'apps/kt/staging/helmrelease.yaml').read_text())
+        probes = release['spec']['values']['controllers']['main']['containers']['main']['probes']
+        self.assertEqual(probes['startup']['spec'], {'httpGet': {'path': '/healthz', 'port': 8080},
+                                                     'periodSeconds': 5, 'failureThreshold': 24})
+        self.assertNotIn('periodSeconds', probes['liveness']['spec'], 'liveness keeps its defaults')
+
     def test_refuses_what_the_platform_cannot_honour(self):
         cases = [
             ({**WEB, 'version': 2}, 'version must be 1'),
@@ -51,6 +66,8 @@ class ManifestTests(unittest.TestCase):
             ({**WEB, 'resources': {'gpu': '1'}}, 'resources may set'),
             ({**WEB, 'resources': {'memory': 64}}, 'quantity string'),
             ({**WEB, 'telemetry': 'datadog'}, 'telemetry must be one of'),
+            ({**WEB, 'startupSeconds': 5}, 'startupSeconds must be between 10 and 600'),
+            ({'version': 1, 'kind': 'worker', 'startupSeconds': 60}, 'kind web only'),
             (['kind', 'web'], 'must be a mapping'),
         ]
         for doc, message in cases:

@@ -596,6 +596,21 @@ class NewRepoRouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
 
+    def test_kotlin_is_a_stack_with_its_own_template(self):
+        runner = repo_runner(tree_fake())
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github,
+                                      app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('name="stack" value="kotlin"', page)
+        self.assertIn('Kotlin on Micronaut', page)
+        self.assertEqual(page.count('<fieldset class="features"'), 2, 'one Features set per stack')
+        c.post('/new/repo', data={'name': 'notes', 'stack': 'kotlin', 'feature-kind': 'web', 'feature-database': 'sqlite'},
+               headers=WHO)
+        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
+        copy = next(c for c in runner.calls if 'copy' in c)
+        self.assertIn('https://github.com/samclement/swhurl-app-template-kotlin.git', copy)
+
     def test_template_questions_are_read_on_first_use_whatever_the_clock(self):
         from unittest import mock
         with mock.patch('swhurl.console.server.time.monotonic', return_value=5.0):  # a host booted 5 s ago

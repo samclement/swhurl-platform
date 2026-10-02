@@ -30,7 +30,13 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 ## Start from the template
 
-New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework. Today there is one, `typescript` ([`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript)). The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
+New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework:
+
+| Stack | Template | Runs as |
+| --- | --- | --- |
+| `typescript` | [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) | Node 24; starts in about a second, about 60 MB of memory; the platform's default resources |
+| `kotlin` | [`samclement/swhurl-app-template-kotlin`](https://github.com/samclement/swhurl-app-template-kotlin) | Kotlin on Micronaut, Java 25 (a `jlink` runtime with the OpenTelemetry agent, about 150 MB image); about 10 s to start, about 200 MB of memory; its `swhurl.yaml` asks for 100m CPU, 192Mi (limit 384Mi) and `startupSeconds: 120` |
+ The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
 
 ```bash
 make app-repo NAME=weather-api                  # STACK=typescript, ANSWERS="kind=worker database=sqlite", DESCRIPTION="..." optional; DRY_RUN=true for the plan
@@ -42,12 +48,12 @@ make app-repo NAME=weather-api                  # STACK=typescript, ANSWERS="kin
 
 It refuses a name that already exists on GitHub, renders the template (`uvx copier`) into a scratch directory, creates the **public** repository with your `gh` login (so the cluster can pull its images without credentials), pushes the first commit over SSH with your usual Git access, waits for the repository's first Container run (checks, image build, smoke test, publish; about two minutes) and reads the image's digest from GHCR anonymously, as the cluster will. The last line it prints adds the app to staging ([below](#add-an-app)). A failed first run stops it with the run's link; fix the app and push, then use the image that run publishes.
 
-**Features** are the stack template's own questions (its `copier.yml`, read from GitHub, so the console and `make app-repo` need no code per stack); unknown questions or choices are refused before anything is created. The `typescript` stack asks:
+**Features** are the stack template's own questions (its `copier.yml`, read from GitHub, so the console and `make app-repo` need no code per stack); unknown questions or choices are refused before anything is created. Both stacks ask:
 
 | Question | Choices | The app gets | On the platform |
 | --- | --- | --- | --- |
 | `kind` | `web` (default), `worker` | An HTTP service with `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
-| `database` | `none` (default), `sqlite` | `node:sqlite` at `DATABASE_PATH`, migrations in `migrations/` applied at startup | The [SQLite capability](#swhurlyaml): a retained volume, one copy at a time, nightly backups, [restore](operations.md#backups-and-recovery) |
+| `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` (`node:sqlite`, or `sqlite-jdbc` in Kotlin), migrations in `migrations/` applied at startup | The [SQLite capability](#swhurlyaml): a retained volume, one copy at a time, nightly backups, [restore](operations.md#backups-and-recovery) |
 
 The answers go into the app's `swhurl.yaml`, so `app-new --from-repo` sets the platform side to match. The rendered app already meets what the platform expects: port 8080 and `GET /healthz` (web), a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. The template's README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one. Each app keeps `.copier-answers.yml`, which records the template version it came from; bringing later template changes to existing apps is phase 7 of the [plan](plan.md) (section 8). Until then only the shared workflow (`app.yml`) and Renovate preset reach existing apps.
 
@@ -96,6 +102,7 @@ The console's **New app** form opens the same change as a pull request ([console
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
 | `--database sqlite` | The SQLite capability: a retained volume (`--database-size`, default 1Gi) at `/data`, the database file at `/data/app.db` passed to the app as `DATABASE_PATH`. Staging and prod each have their own database; **Promote** copies the image, not the data, so run migrations at startup. Backed up daily with the platform's backups and restored with `make restore-sqlite` ([operations](operations.md#backups-and-recovery)) |
+| `--startup-seconds N` | Web only: a startup probe on the health path gives the app up to N seconds (10-600) to answer before liveness checks begin; without it, three failed liveness checks (about 30 s) restart a slow starter |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
@@ -111,6 +118,7 @@ stack: typescript       # which template the app came from (informational)
 kind: web               # required: web or worker
 port: 8080              # web only (default 8080)
 healthPath: /healthz    # web only, required: readiness and liveness
+startupSeconds: 120     # web only, optional (10-600): a startup probe lets a slow starter (a JVM) take this long
 uid: 65532              # the non-root user the image runs as (default 65532)
 telemetry: otlp         # otlp: the app has an OpenTelemetry SDK; none (default)
 autoDeploy: true        # staging deploys each image the app publishes (<run>-<sha> tags)
@@ -123,6 +131,7 @@ exposure: authenticated-web   # optional default: web apps authenticated-web, wo
 | Field | `app-new` option |
 | --- | --- |
 | `kind`, `port`, `healthPath`, `uid` | `--kind`, `--port`, `--health-path`, `--uid` |
+| `startupSeconds` | `--startup-seconds` |
 | `telemetry: otlp` | `--otlp` |
 | `autoDeploy: true` | `--auto-deploy` |
 | `database`, `databaseSize` | `--database`, `--database-size` |

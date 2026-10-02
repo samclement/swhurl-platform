@@ -94,6 +94,8 @@ class DefinitionTests(unittest.TestCase):
             self.assertIn("IN ('web-staging', 'web-prod')", where)
         self.assertIn("ParentSpanId = ''", worker['tiles'][0]['config']['select'][0]['where'])
         self.assertTrue(all(t['x'] + t['w'] <= 24 for t in web['tiles']))
+        self.assertEqual({t['h'] for t in web['tiles'] if t['config']['displayType'] == 'line'}, {dashboards.CHART_HEIGHT})
+        self.assertEqual([t['y'] for t in web['tiles']], [0, 0, 0, 9, 9, 18], 'rows stack without overlapping')
 
     def test_server_defaults_do_not_count_as_a_change(self):
         wanted = dashboards.dashboard(WEB, 't1', 'l1')

@@ -33,6 +33,12 @@ spec:
   providerRef:
     name: ntfy-failures
   eventSeverity: error
+  # Expected for a moment whenever an app with automatic deploys is added (its ImagePolicy runs before the
+  # ImageRepository's first scan) or removed (the ImageRepository goes first). A repository that cannot be
+  # scanned still alerts through its own ImageRepository event.
+  exclusionList:
+    - 'no tags in database'
+    - 'referenced ImageRepository does not exist'
   eventSources:
     - kind: Kustomization
       name: '*'

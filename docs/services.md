@@ -82,7 +82,7 @@ Things now change without you (staging deploys, Renovate merges), so Flux sends 
 | `<Kind> <name>: <reason>` 🚨 | A unit cannot apply or its workloads fail their health check (an app's 3-minute fail-fast included), a Git or Helm source cannot fetch, or image automation cannot scan or push | High |
 | `Staging deploy` 🚀 | Image automation pushed a new app image to staging | Normal |
 
-Tapping a notification opens the console. A unit that keeps failing notifies again on each retry (about every 10 minutes).
+Tapping a notification opens the console. A unit that keeps failing notifies again on each retry (about every 10 minutes). Two image policy messages that are expected for a moment when an automatically deployed app is added or removed ("no tags in database", "referenced ImageRepository does not exist") are filtered out (`exclusionList` in [`alerts.yaml`](../platform/alerts/alerts.yaml)); a repository that cannot be scanned still alerts.
 
 - **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show the topic name in your own terminal with `SOPS_AGE_KEY_FILE=./age.agekey sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml | sed 's|https://ntfy.sh/||; s|?.*||'` (from the repository root; the key file is not in Git).
 - **How:** Flux has no ntfy provider, so the `generic` provider posts each event as JSON and ntfy renders it with the template in the address (`tpl=yes&t=…&m={{.message}}`). Rotate: [operations](operations.md#secrets).

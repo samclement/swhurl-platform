@@ -45,6 +45,12 @@ class RunnerTests(unittest.TestCase):
     def test_unchecked_failure_returns_result(self):
         self.assertEqual(Runner().run(['false'], check=False).returncode, 1)
 
+    def test_started_command_stops_on_interrupt(self):
+        command = Runner().start([sys.executable, '-c', 'import time; time.sleep(30)'])
+        time.sleep(0.05)  # allow the child interpreter to start before sending SIGINT
+        command.interrupt()
+        self.assertNotEqual(command.wait(timeout=2), 0)
+
     def test_dry_run_plans_mutations_but_runs_reads(self):
         echoed = []
         runner = Runner(dry_run=True, echo=echoed.append)

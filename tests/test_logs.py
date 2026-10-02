@@ -41,20 +41,21 @@ class LogsTests(unittest.TestCase):
             config = yaml.safe_load(Path(args[-1].removeprefix('--config=file:')).read_text())
             seen.update(config)
             Path(config['exporters']['file']['path']).write_text(json.dumps(logs.fixture_payload([case])) + '\n')
-            return Result(args, 124)
+            return Result(args)
 
         config = {'processors': {'transform/test': {'log_statements': ['set(body, body)']}, 'batch': {}},
                   'service': {'pipelines': {'logs': {'processors': ['transform/test', 'batch']}}}}
-        runner = FakeRunner().on('timeout', handler=run)
+        runner = FakeRunner().on('/collector', handler=run)
         with mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
             errors = logs.exercise(runner, Path('/collector'), config,
                                    ['--feature-gates=ottl.functions.enableLambda'], [case])
         self.assertEqual(errors, [])
         self.assertEqual(seen['processors'], {'transform/test': config['processors']['transform/test']})
         self.assertIn('--feature-gates=ottl.functions.enableLambda', runner.calls[0])
+        self.assertTrue(runner.started[0].interrupted, 'complete fixture output stops the collector early')
 
     def test_fixture_collector_failure_is_reported(self):
-        runner = FakeRunner().on('timeout', returncode=1)
+        runner = FakeRunner().on('/collector', returncode=1)
         config = {'processors': {'transform/test': {}},
                   'service': {'pipelines': {'logs': {'processors': ['transform/test']}}}}
         with mock.patch.object(logs, 'urlopen', side_effect=URLError('refused')):

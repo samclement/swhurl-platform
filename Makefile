@@ -31,6 +31,10 @@ reconcile: ## UNIT=<name> Fetch Git and reconcile one Flux unit (for example aft
 verify-platform: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
 	@$(SWHURL) verify-platform
 
+.PHONY: verify-logs
+verify-logs: ## Live: summarize fresh log parsing, severity and trace coverage (no bodies; MINUTES=15)
+	@$(SWHURL) verify-logs --minutes $(or $(MINUTES),15)
+
 .PHONY: flux-install
 flux-install: ## Install or upgrade the Flux controllers at the pinned version with the settings in Git (DRY_RUN=true shows the live diff)
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) flux-install
@@ -196,4 +200,3 @@ host-backup-delete: ## Remove the backup timer (backups are kept)
 .PHONY: host-dns-delete
 host-dns-delete: ## Remove the dynamic DNS timer
 	@./host/install-timer.sh dns --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
-

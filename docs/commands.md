@@ -61,7 +61,8 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment, test classes in parallel) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
 | `check-templates` | Render every combination of each stack template's questions; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod ([apps](apps.md#stacks-and-features)) | Local (reads GitHub) |
-| `check-otel` | Render both OTel collectors as Flux would and run that chart's exact `otelcol-k8s` release's `validate` on the config (binary downloaded once per version, SHA-256 checked, cached); fails on config the collector would reject, warns on deprecated component names | Local |
+| `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
+| `verify-logs` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES=15` (1–1440) | Live, read-only |
 | `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |
 | `check-config` | The required Secret files and the `BASE_DOMAIN` and `CERT_ISSUER` settings exist | Local |
 | `check-secrets` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key, so CI cannot run it | Local |

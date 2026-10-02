@@ -59,6 +59,13 @@ class OtelCheckTests(unittest.TestCase):
         runner = FakeRunner().on('/c', 'validate', returncode=1, stderr='Error: references processor "x" which is not configured')
         self.assertIn('not configured', otel.validate(runner, Path('/c'), {}, {}))
 
+    def test_validation_uses_the_deployments_feature_gates(self):
+        runner = FakeRunner().on('/c', 'validate')
+        otel.validate(runner, Path('/c'), {}, {}, ['--feature-gates=ottl.functions.enableLambda', '--unrelated'])
+        args = runner.calls[0]
+        self.assertIn('--feature-gates=ottl.functions.enableLambda', args)
+        self.assertNotIn('--unrelated', args)
+
     def test_deprecated_names_with_hints(self):
         self.assertEqual(otel.deprecated_names(CONFIG, KNOWN),
                          ['receivers kubeletstats (now kubelet_stats)', 'receivers hostmetrics (now host_metrics)'])

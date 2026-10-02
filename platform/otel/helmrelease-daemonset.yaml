@@ -81,6 +81,30 @@ spec:
             - type: remove
               if: 'attributes.level != nil'
               field: attributes.level
+      processors:
+        # Apps log JSON to stdout; when a line carries the trace it belongs to (trace_id and span_id at the
+        # top level as pino writes them, or under mdc as logback writes them), put it on the record so
+        # ClickStack links the log to its trace. Other lines pass unchanged.
+        transform/trace-context:
+          error_mode: ignore
+          log_statements:
+            - context: log
+              conditions:
+                - 'IsString(body) and IsMatch(body, "^\\{")'
+              statements:
+                - set(cache, ParseJSON(body))
+                - set(trace_id.string, cache["trace_id"]) where IsString(cache["trace_id"]) and IsMatch(cache["trace_id"], "^[0-9a-f]{32}$")
+                - set(span_id.string, cache["span_id"]) where IsString(cache["span_id"]) and IsMatch(cache["span_id"], "^[0-9a-f]{16}$")
+                - set(trace_id.string, cache["mdc"]["trace_id"]) where IsMap(cache["mdc"]) and IsString(cache["mdc"]["trace_id"]) and IsMatch(cache["mdc"]["trace_id"], "^[0-9a-f]{32}$")
+                - set(span_id.string, cache["mdc"]["span_id"]) where IsMap(cache["mdc"]) and IsString(cache["mdc"]["span_id"]) and IsMatch(cache["mdc"]["span_id"], "^[0-9a-f]{16}$")
+        # Kubernetes probes call every web app's health path every few seconds; their spans were nearly all
+        # of an app's traces. Drop the spans of requests whose user agent is kube-probe (old and new names).
+        filter/kube-probes:
+          error_mode: ignore
+          traces:
+            span:
+              - 'IsString(attributes["user_agent.original"]) and IsMatch(attributes["user_agent.original"], "^kube-probe/")'
+              - 'IsString(attributes["http.user_agent"]) and IsMatch(attributes["http.user_agent"], "^kube-probe/")'
       exporters:
         otlp_http:
           endpoint: http://clickstack-otel-collector.observability.svc.cluster.local:4318
@@ -95,6 +119,7 @@ spec:
               - file_log/host-timers
             processors:
               - memory_limiter
+              - transform/trace-context
               - k8s_attributes
               - batch
             exporters:
@@ -117,6 +142,7 @@ spec:
               - otlp
             processors:
               - memory_limiter
+              - filter/kube-probes
               - k8s_attributes
               - batch
             exporters:

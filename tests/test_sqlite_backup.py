@@ -30,7 +30,8 @@ def plain(ns='web-prod', name='web'):
 class FakeCluster:
     """kubectl and age for one backup run; records what was applied and run."""
 
-    def __init__(self, deployments, integrity='ok', remote=()):
+    def __init__(self, deployments, integrity='ok', remote=(), size=5):
+        self.size = size
         self.applied, self.uploaded = [], []
         self.runner = FakeRunner()
         self.runner.on('kubectl', 'get', 'deployments', stdout=json.dumps({'items': deployments}))
@@ -52,6 +53,10 @@ class FakeCluster:
             return Result(args, 0, integrity + '\n')
         if command[-1].startswith('SELECT count(*)'):
             return Result(args, 0, '3\n')
+        if command[0] == 'wc':
+            return Result(args, 0, f'{self.size} {command[-1]}\n')
+        if command[0] == 'sha256sum':
+            return Result(args, 0, f'{"ab" * 32}  {command[-1]}\n')
         if command[0] == 'cat':
             return Result(args, 0, 'SQLite format 3\x00...')
         return Result(args, 0)
@@ -87,7 +92,8 @@ class SqliteBackupTests(unittest.TestCase):
         self.assertEqual(spec['containers'][0]['image'], sqlite_backup.IMAGE)
         self.assertIn('@sha256:', sqlite_backup.IMAGE)
         meta = json.loads(archive.with_name('sqlite-20261001T033000Z.json').read_text())
-        self.assertEqual((meta['source'], meta['tables'], meta['integrity_check']), ('notes-staging/notes', 3, 'ok'))
+        self.assertEqual((meta['source'], meta['tables'], meta['integrity_check'], meta['bytes'], meta['plain_sha256']),
+                         ('notes-staging/notes', 3, 'ok', 5, 'ab' * 32))
         self.assertTrue(any(c[:5] == ('kubectl', '-n', 'notes-staging', 'delete', 'pod') for c in cluster.runner.calls))
         self.assertEqual(sorted(cluster.uploaded), ['s3://b/app-sqlite/notes-staging/sqlite-20261001T033000Z.db.age',
                                                     's3://b/app-sqlite/notes-staging/sqlite-20261001T033000Z.json'])
@@ -99,6 +105,14 @@ class SqliteBackupTests(unittest.TestCase):
             sqlite_backup.backup(cluster.runner, self.settings, '', now=NOW, out=lambda s: None)
         self.assertFalse(list(self.dir.rglob('*.age')))
         self.assertTrue(any(c[:5] == ('kubectl', '-n', 'notes-staging', 'delete', 'pod') for c in cluster.runner.calls))
+
+    def test_a_stream_shorter_than_the_database_fails(self):
+        cluster = FakeCluster([deployment()], size=4096)  # the fake's age file is a few bytes
+        out = []
+        with self.assertRaisesRegex(RecoveryError, 'backup failed'):
+            sqlite_backup.backup(cluster.runner, self.settings, '', now=NOW, out=out.append)
+        self.assertTrue(any('stream was cut short' in line for line in out))
+        self.assertFalse(list(self.dir.rglob('*.age')))
 
     def test_dry_run_applies_nothing(self):
         cluster = FakeCluster([deployment()])

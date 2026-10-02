@@ -142,6 +142,22 @@ elif 'secret' in argv:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.calls.exists())
 
+    def test_sqlite_restore_test_dry_run_never_calls_cluster_tools(self):
+        result = subprocess.run(['make', 'live-test-restore-sqlite', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('restore-sqlite brings back one, two', result.stdout)
+        self.assertFalse(self.calls.exists())
+
+    def test_restore_sqlite_refuses_without_exact_confirmation(self):
+        for confirm in ('', 'notes/prod', 'notes-staging'):
+            with self.subTest(confirm=confirm):
+                result = subprocess.run(['make', 'restore-sqlite', 'APP=notes', 'ENV=staging', f'CONFIRM={confirm}'],
+                                        cwd=ROOT, env=self.env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn('CONFIRM=notes/staging', result.stderr)
+                self.assertFalse(self.calls.exists(), 'A refused restore-sqlite called a cluster tool')
+
     def test_reloader_test_dry_run_never_calls_cluster_tools(self):
         result = subprocess.run(['make', 'live-test-reloader', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
                                 capture_output=True, text=True)

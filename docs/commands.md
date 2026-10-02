@@ -46,6 +46,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), prune to 7 daily + 4 weekly (`PRUNE=false` skips), then upload files the bucket lacks to `BACKUP_S3_URI` (empty skips; AWS CLI default credentials or `AWS_PROFILE`) | Cluster (read), local, S3 |
 | `backup-sqlite` † | For each app with a SQLite database (`DATABASE_PATH`): a short-lived pod running as the app's user copies it with `sqlite3 .backup`, checks it (`integrity_check`), and streams it through age to `BACKUP_DIR/sqlite/<namespace>/`; prune to 7 daily + 4 weekly, then upload to `SQLITE_S3_URI<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
+| `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database from its newest backup in `BACKUP_DIR/sqlite/<app>-<env>/` (`BACKUP_FILE`, `AGE_KEY_FILE`): suspends its HelmRelease, stops the app, checks the copy, keeps the replaced files in `before-restore-<UTC>/`, starts the app ([backups](operations.md#backups-and-recovery)) | Cluster |
 
 ## Offline checks
 
@@ -70,6 +71,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `live-test-reloader` † | Prove Reloader's opt-in and namespace scope | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
 | `live-test-restore-mongodb` † | Restore the latest backup into a throwaway namespace and check it (`BACKUP_FILE`, `AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
+| `live-test-restore-sqlite` † | Back up a throwaway app's SQLite database, change it, restore it with `restore-sqlite` and check the rows, the kept files and the resumed HelmRelease (`AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
 
 ## Host
 

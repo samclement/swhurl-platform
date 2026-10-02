@@ -8,7 +8,7 @@
 
 15. **Structured logs across the cluster** (agreed 2 October 2026): done (`cf3df0c`, `498310b`): node-agent JSON/text normalization, event normalization, supported native JSON settings, console JSON logging, actual-collector fixtures and `make verify-logs`. Active services verified; quiet/fallback cases and browser-check limitations recorded in [live evidence](current-state.md#structured-logs-across-the-cluster-2-october-2026). Existing streams only; preserve original lines, schema and historical records ([formats](services.md#structured-logs)).
 
-**Console correctness** (approved 2 October 2026, implementation in progress): scale PRs require manual merge; failed cluster reads propagate and missing health evidence is Unknown (zero replicas is Stopped); promotion carries the reviewed staging image/revision, requires healthy running staging and refuses a changed Git source. Validate, publish, reconcile and record the live checks in [current state](current-state.md).
+**Console correctness** done 2 October 2026 (`b3dd939`, image pin `4119157`): review findings 1–3 fixed; [console behaviour](console.md#use-it), [promotion](apps.md#promote-to-production), and [live evidence and remaining browser checks](current-state.md#console-correctness-2-october-2026).
 
 Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (14 units, all Ready), and re-read that file's "Not exercised" notes.
 

@@ -52,9 +52,9 @@ app-new: ## NAME=<app> ARGS="--env ... --image ..." Generate an app instance (AR
 	$(SWHURL) app-new $(NAME) $(ARGS)
 
 .PHONY: app-promote
-app-promote: ## APP=<app> Copy the staging image (tag and digest) into prod (Git edit; FROM=, TO= override)
+app-promote: ## APP=<app> Copy the staging image (tag and digest) into prod (Git edit; FROM=, TO=; ARGS=--expect-image=...)
 	@[[ -n "$(APP)" ]] || { echo "Usage: make app-promote APP=<app> [FROM=staging TO=prod]" >&2; exit 2; }
-	$(SWHURL) app-promote $(APP) $(if $(FROM),--from $(FROM)) $(if $(TO),--to $(TO))
+	$(SWHURL) app-promote $(APP) $(if $(FROM),--from $(FROM)) $(if $(TO),--to $(TO)) $(ARGS)
 
 .PHONY: app-scale
 app-scale: ## APP= ENV= ARGS="--replicas N --cpu Q --memory Q --memory-limit Q" Change replicas or resources (Git edit)

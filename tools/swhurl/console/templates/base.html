@@ -102,6 +102,9 @@
   .mark.failing { color: var(--bad); } .mark.failing::before { content: "✕"; }
   .mark.suspended { color: var(--warn); } .mark.suspended::before { content: "‖"; }
   .mark.warn { color: var(--warn); } .mark.warn::before { content: "!"; }
+  .mark.unknown { color: var(--warn); } .mark.unknown::before { content: "?"; }
+  .mark.stopped { color: var(--muted); } .mark.stopped::before { content: "■"; }
+  .state.unknown { color: var(--warn); } .state.stopped { color: var(--muted); }
   .state.failing { color: var(--bad); } .state.suspended { color: var(--warn); }
   .crumbs { color: var(--muted); font-size: 13px; margin: 0; }
   .hash { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }

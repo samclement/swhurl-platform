@@ -38,18 +38,19 @@ class Instance:
 
 
 def get(runner: Runner, *args: str) -> dict | None:
-    """``kubectl get ... -o json``, or None if it does not exist."""
-    try:
-        return runner.json(['kubectl', *args, '-o', 'json'])
-    except CommandError:
-        return None
+    """Return None only for an absent object; permission and connection failures propagate."""
+    return runner.json(['kubectl', *args, '-o', 'json', '--ignore-not-found'])
+
+
+def image_reference(image: dict) -> str:
+    text = image.get('repository', '?') + (f":{image['tag']}" if image.get('tag') else '')
+    return text + (f"@{image['digest']}" if image.get('digest') else '')
 
 
 def desired_image(release: dict | None) -> str:
     image = (((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {})
              .get('main', {}).get('containers', {}).get('main', {}).get('image') or {})
-    text = f"{image.get('repository', '?')}:{image.get('tag', '')}"
-    return text + (f"@{image['digest']}" if image.get('digest') else '')
+    return image_reference(image)
 
 
 def running_images(pods: dict | None) -> list[str]:
@@ -109,10 +110,12 @@ class InstanceStatus:
     exposure: str = ''  # private, authenticated-web or public, from the live routes
     environment: dict[str, str] = field(default_factory=dict)  # variables the platform sets, as the HelmRelease sets them
     secret_env: str = ''  # the Secret whose keys become variables (envFrom), if any
+    unit_suspended: bool = False
+    release_suspended: bool = False
 
     @property
     def applied(self) -> bool:
-        return self.desired_revision == self.applied_revision
+        return bool(self.desired_revision) and self.desired_revision == self.applied_revision
 
     @property
     def image_state(self) -> str:
@@ -263,6 +266,8 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         exposure=live_exposure(ingresses),
         environment=release_env(release)[0],
         secret_env=release_env(release)[1],
+        unit_suspended=bool((unit.get('spec') or {}).get('suspend')),
+        release_suspended=bool(((release or {}).get('spec') or {}).get('suspend')),
     )
 
 

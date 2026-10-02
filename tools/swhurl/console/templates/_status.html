@@ -1,4 +1,4 @@
-{# The console's one status vocabulary: Healthy, Updating, Failing, Suspended (cluster.State), each with its
+{# The console's status vocabulary: Healthy, Updating, Failing, Suspended, Unknown, Stopped (cluster.State), each with its
    own mark so meaning does not rest on colour. Import with: {% import "_status.html" as st %} #}
 {% macro mark(key) %}<span class="mark {{ key }}" aria-hidden="true"></span>{% endmacro %}
 {% macro state(s, detail=true) %}{{ mark(s.key) }} <span class="state {{ s.key }}">{{ s.label }}</span>{% if detail and s.detail %} <span class="muted">— {{ s.detail | short }}</span>{% endif %}{% endmacro %}

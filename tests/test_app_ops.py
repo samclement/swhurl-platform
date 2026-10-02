@@ -7,7 +7,7 @@ from unittest import mock
 
 from swhurl import ROOT
 from swhurl.apps import ops as app_ops
-from swhurl.run import FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result
 
 REV = 'main@sha1:abc123'
 DIGEST = 'sha256:' + 'a' * 64
@@ -37,8 +37,10 @@ def cluster(**overrides):
     fake = FakeRunner()
     for kind, value in objects.items():
         def handler(args, _input, value=value):
+            if isinstance(value, Result):
+                return Result(args, value.returncode, value.stdout, value.stderr)
             if value is None:
-                return Result(args, 1, '', 'NotFound')
+                return Result(args, 0, '')
             return Result(args, 0, json.dumps(value))
         fake.on('kubectl', '-n', 'flux-system' if kind in ('kustomization', 'gitrepository') else 'web-prod',
                 'get', kind, handler=handler)
@@ -90,6 +92,24 @@ class StatusTests(unittest.TestCase):
         code, _, err = run(cluster(kustomization=None), 'status', 'web', 'prod')
         self.assertEqual(code, 1)
         self.assertIn('Flux unit app-web-prod not found', err)
+
+    def test_read_failures_are_errors_not_absence(self):
+        for detail in ('Forbidden', 'connection refused', 'missing required command: kubectl'):
+            with self.subTest(detail=detail):
+                runner = FakeRunner().on('kubectl', returncode=1, stderr=detail)
+                code, out, err = run(runner, 'status', 'web', 'prod')
+                self.assertEqual(code, 1)
+                self.assertIn(detail, err)
+                self.assertNotIn('not found', err)
+                self.assertEqual(out, '')
+                with self.assertRaises(CommandError):
+                    app_ops.get(runner, 'get', 'pods')
+
+    def test_secondary_read_failure_does_not_print_partial_success(self):
+        runner = cluster(pods=Result((), 1, '', 'Forbidden'))
+        code, out, err = run(runner, 'status', 'web', 'prod')
+        self.assertEqual((code, out), (1, ''))
+        self.assertIn('Forbidden', err)
 
 
 class ImageStateTests(unittest.TestCase):

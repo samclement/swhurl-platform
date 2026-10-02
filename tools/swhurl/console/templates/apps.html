@@ -15,7 +15,7 @@
       {% elif a.comparison == 'differs' %}<div class="muted hint-line">Staging and prod differ</div>
       {% elif a.comparison == 'same' %}<div class="muted hint-line">Same image in both</div>{% endif %}
       {% if a.comparison in ('ahead', 'differs') %}
-      <form method="post" action="/apps/{{ a.app }}/staging/promote"><button {{ 'disabled' if not github }} onclick="return confirm('Open a PR copying the staging image into {{ a.app }}/prod?')">Promote to prod</button></form>
+      <a class="button" href="/apps/{{ a.app }}/staging">Review promotion</a>
       {% endif %}
     </td>
     {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}

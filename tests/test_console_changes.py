@@ -6,20 +6,25 @@ import json
 import sys
 import tarfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import httpx
 from starlette.testclient import TestClient
 
-from swhurl.apps import new
+from swhurl.apps import new, ops
 from swhurl.console import actions, changes, server
-from swhurl.run import FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result
 
 TOKEN = 'github_pat_fixture_0123456789abcdef'
 HEAD = 'abc1234' + '0' * 33
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com', 'Origin': 'http://testserver'}
 FORM = {'name': 'weather-api', 'env': 'staging', 'image': 'ghcr.io/me/weather:1.0', 'exposure': 'authenticated-web',
         'host': 'weather.homelab.swhurl.com', 'health_path': '/ready', 'kind': '', 'port': ''}
+IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
+REVISION = 'main@sha1:' + HEAD
+PROMOTION = {'image': IMAGE, 'revision': REVISION}
 MAIN = {'README.md': b'# repo\n', 'apps/hello/staging/helmrelease.yaml': b'kind: HelmRelease\n'}
 
 
@@ -390,7 +395,7 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(self.api.requests, [], 'nothing reaches GitHub')
 
     def test_a_new_app_not_yet_applied_waits_for_its_pr(self):
-        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', returncode=1, stderr='NotFound')
+        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
         c, _ = self.client(runner)
         response = c.get('/apps/weather-api/staging', headers=WHO)
         self.assertEqual(response.status_code, 200, 'the open PR on its console/new-weather-api-staging-* branch')
@@ -404,7 +409,7 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertFalse(changes.creates_instance(pr, 'a', 'staging'))
 
     def test_a_new_app_job_without_a_token_still_shows_on_its_page(self):
-        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', returncode=1, stderr='NotFound')
+        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         jobs.submit('new app', 'weather-api/staging', 'sam@swhurl.com', lambda job: None)
         text = TestClient(app_under_test(runner, jobs=jobs)).get('/apps/weather-api/staging', headers=WHO).text
@@ -430,8 +435,29 @@ class NewAppRouteTests(unittest.TestCase):
 
 
 
+def staging_reads(runner):
+    """A healthy, applied staging image for promotion; all reads remain offline."""
+    ready = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
+    objects = {
+        'kustomization': {'spec': {}, 'status': {**ready, 'lastAppliedRevision': REVISION}},
+        'gitrepository': {'status': {'artifact': {'revision': REVISION}}},
+        'helmrelease': {'status': ready, 'spec': {'values': {'controllers': {'main': {
+            'containers': {'main': {'image': new.parse_image(IMAGE)}}}}}}},
+        'pods': {'items': [{'metadata': {'name': 'hello-1'}, 'status': {'containerStatuses': [
+            {'ready': True, 'imageID': IMAGE.split(':2.0')[0] + '@' + IMAGE.split('@')[1]}]}}]},
+        'deploy,statefulset,daemonset': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'hello'},
+                                                  'spec': {'replicas': 1}, 'status': {'readyReplicas': 1}}]},
+        'ingress': {'items': []}, 'certificate': {'items': []},
+    }
+    for kind, obj in objects.items():
+        ns = 'flux-system' if kind in ('kustomization', 'gitrepository') else 'hello-staging'
+        runner.on('kubectl', '-n', ns, 'get', kind, stdout=json.dumps(obj))
+    return runner
+
+
 class ChangeAppRouteTests(unittest.TestCase):
     def client(self, runner, github=True):
+        staging_reads(runner)
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
@@ -445,7 +471,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
              'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
-            ('/apps/hello/staging/promote', {}, ('app-promote', 'hello', '--from=staging', '--to=prod'), 'hello/prod',
+            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', '--from=staging', '--to=prod', f'--expect-image={IMAGE}'), 'hello/prod',
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
@@ -462,10 +488,11 @@ class ChangeAppRouteTests(unittest.TestCase):
                 (payload,) = self.api.sent('POST /pulls')
                 self.assertEqual((payload['head'], payload['title']), (branch, title))
 
-    def test_only_easily_undone_changes_merge_themselves(self):
-        cases = (('/apps/hello/prod/scale', {'replicas': '2'}, True),
-                 ('/apps/hello/staging/promote', {}, False),
-                 ('/apps/hello/staging/promote', {'auto_merge': 'on'}, True),
+    def test_scale_requires_review_and_promotion_auto_merge_is_explicit(self):
+        cases = (('/apps/hello/prod/scale', {'replicas': '2'}, False),
+                 ('/apps/hello/prod/scale', {'replicas': '0', 'auto_merge': 'on'}, False),
+                 ('/apps/hello/staging/promote', PROMOTION, False),
+                 ('/apps/hello/staging/promote', {**PROMOTION, 'auto_merge': 'on'}, True),
                  ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
                  ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
         for path, form, merges in cases:
@@ -487,6 +514,59 @@ class ChangeAppRouteTests(unittest.TestCase):
         c, _ = self.client(runner, github=False)
         self.assertEqual(c.post('/apps/hello/prod/remove', headers=WHO).status_code, 409)
         self.assertEqual(runner.calls, [])
+
+    def test_promotion_refuses_missing_or_stale_review_and_unhealthy_staging(self):
+        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        cases = (({}, good, 'review the image'),
+                 ({**PROMOTION, 'image': IMAGE.replace('2.0', '1.0')}, good, 'changed'),
+                 ({**PROMOTION, 'revision': 'old'}, good, 'changed'),
+                 (PROMOTION, replace(good, release=('False', 'upgrade failed')), 'healthy'),
+                 (PROMOTION, replace(good, running_images=['x@sha256:old']), 'healthy'),
+                 (PROMOTION, replace(good, unit_suspended=True), 'healthy'),
+                 (PROMOTION, replace(good, release_suspended=True), 'healthy'),
+                 (PROMOTION, replace(good, release=None), 'healthy'))
+        for form, status, message in cases:
+            with self.subTest(form=form, status=status):
+                runner = tree_fake()
+                c, jobs = self.client(runner)
+                with mock.patch.object(ops, 'gather_status', return_value=status):
+                    response = c.post('/apps/hello/staging/promote', data=form, headers=WHO)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(message, response.text)
+                self.assertEqual(jobs.recent(), [])
+                self.assertEqual(self.api.requests, [])
+
+    def test_promotion_rechecks_staging_when_the_background_job_starts(self):
+        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(ops, 'gather_status', side_effect=[good, replace(good, desired_image='new')]):
+            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('changed', jobs.get(1).lines[-1])
+        self.assertEqual(self.api.requests, [])
+
+    def test_promotion_read_failure_is_a_502_and_opens_nothing(self):
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(ops, 'gather_status', side_effect=CommandError(['kubectl'], 'Forbidden')):
+            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Forbidden', response.text)
+        self.assertEqual(jobs.recent(), [])
+        self.assertEqual(self.api.requests, [])
+
+    def test_staging_page_submits_the_displayed_image_and_revision(self):
+        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        rows = [server.cluster.AppRow(good.instance, ('True', ''), False, IMAGE, '2.0', IMAGE.split('@')[1]),
+                server.cluster.AppRow(ops.Instance('hello', 'prod'), ('True', ''), False, 'old', '1.0', 'old')]
+        c, _ = self.client(tree_fake())
+        for status, disabled in ((good, False), (replace(good, release=None), True)):
+            with self.subTest(disabled=disabled), mock.patch.object(ops, 'gather_status', return_value=status), \
+                    mock.patch.object(server.cluster, 'apps', return_value=rows):
+                text = c.get('/apps/hello/staging', headers=WHO).text
+            self.assertIn(f'name="image" value="{IMAGE}"', text)
+            self.assertIn(f'name="revision" value="{REVISION}"', text)
+            self.assertIn('<button disabled' if disabled else '<button \n', text)
 
 
 if __name__ == '__main__':

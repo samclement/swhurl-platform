@@ -22,6 +22,11 @@ spec:
     remediation:
       retries: 3
   values:
+    extraArgs: ["--logging-format=json"]
+    webhook:
+      extraArgs: ["--logging-format=json"]
+    cainjector:
+      extraArgs: ["--logging-format=json"]
     crds:
       enabled: true
     startupapicheck:

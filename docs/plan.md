@@ -4,7 +4,7 @@
 
 ## 0. Where this paused and what is left
 
-15. **Structured logs across the cluster** (agreed 2 October 2026): first deploy node-agent JSON/text normalization and event normalization with actual-collector fixtures and `make verify-logs`; then enable supported native JSON settings and the console JSON logger. Existing streams only; preserve original lines, schema and historical records. Verify each active service and record quiet/fallback cases ([formats](services.md#structured-logs)).
+15. **Structured logs across the cluster** (agreed 2 October 2026): phase 1 done (`cf3df0c`, node-agent JSON/text normalization and event normalization, actual-collector fixtures, `make verify-logs`); phase 2 enables supported native JSON settings and the console JSON logger, verifies each active service and records quiet/fallback cases. Existing streams only; preserve original lines, schema and historical records ([formats](services.md#structured-logs)).
 
 Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (14 units, all Ready), and re-read that file's "Not exercised" notes.
 

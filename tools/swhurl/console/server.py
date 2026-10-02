@@ -27,7 +27,7 @@ from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
 from swhurl.apps import contract, ops, repo
-from swhurl.console import actions, changes, cluster, repos
+from swhurl.console import actions, changes, cluster, logconfig, repos
 from swhurl.run import Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -336,5 +336,5 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     import uvicorn
     uvicorn.run(create_app(Runner(), dev_identity=DEV_IDENTITY if args.dev else None),
-                host=args.host, port=args.port, log_level='info')
+                host=args.host, port=args.port, log_level='info', log_config=logconfig.CONFIG)
     return 0

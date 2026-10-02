@@ -131,7 +131,8 @@
         "GitRepository.name": "platform"
       },
       "body": "reconciled",
-      "severityNumber": 9
+      "severityNumber": 9,
+      "timeUnixNano": "1790960400000000000"
     }
   },
   {
@@ -215,9 +216,10 @@
     "expected": {
       "attributes": {
         "log.parser": "klog",
-        "caller": "controller.go:100"
+        "caller": "controller.go:100",
+        "key": "value"
       },
-      "body": "\"reconcile failed\" key=\"value\"",
+      "body": "reconcile failed",
       "severityNumber": 17
     }
   },
@@ -230,9 +232,10 @@
     "expected": {
       "attributes": {
         "log.parser": "klog",
-        "caller": "controller.go:100"
+        "caller": "controller.go:100",
+        "key": "value"
       },
-      "body": "\"reconcile failed\" key=\"value\"",
+      "body": "reconcile failed",
       "severityNumber": 17
     }
   },
@@ -245,9 +248,10 @@
     "expected": {
       "attributes": {
         "log.parser": "klog",
-        "caller": "controller.go:100"
+        "caller": "controller.go:100",
+        "key": "value"
       },
-      "body": "\"reconcile failed\" key=\"value\"",
+      "body": "reconcile failed",
       "severityNumber": 17
     }
   },
@@ -260,9 +264,10 @@
     "expected": {
       "attributes": {
         "log.parser": "klog",
-        "caller": "controller.go:100"
+        "caller": "controller.go:100",
+        "key": "value"
       },
-      "body": "\"reconcile failed\" key=\"value\"",
+      "body": "reconcile failed",
       "severityNumber": 17
     }
   },
@@ -277,7 +282,8 @@
         "log.parser": "json"
       },
       "body": "ready",
-      "severityNumber": 9
+      "severityNumber": 9,
+      "timeUnixNano": "1790960400500000000"
     }
   },
   {
@@ -963,5 +969,70 @@
       "severityNumber": 13
     },
     "pipeline": "events"
+  },
+  {
+    "name": "cert-klog-json-info",
+    "resource": {
+      "k8s.pod.name": "cert-manager-test"
+    },
+    "input": "{\"ts\": 1790960400.5, \"msg\": \"message\", \"v\": 0}",
+    "expected": {
+      "body": "message",
+      "severityNumber": 9,
+      "attributes": {
+        "log.parser": "json"
+      }
+    }
+  },
+  {
+    "name": "cert-klog-json-error",
+    "resource": {
+      "k8s.pod.name": "cert-manager-test"
+    },
+    "input": "{\"ts\": 1790960400.5, \"msg\": \"message\", \"err\": \"example failure\"}",
+    "expected": {
+      "body": "message",
+      "severityNumber": 17,
+      "attributes": {
+        "log.parser": "json"
+      }
+    }
+  },
+  {
+    "name": "existing-parser-attribute",
+    "resource": {
+      "k8s.pod.name": "app-test"
+    },
+    "input": "{\"level\":30,\"msg\":\"message\"}",
+    "attributes": {
+      "log.parser": "upstream-parser"
+    },
+    "expected": {
+      "body": "message",
+      "severityNumber": 9,
+      "attributes": {
+        "log.parser": "upstream-parser"
+      }
+    }
+  },
+  {
+    "name": "native-map-body",
+    "input": {
+      "message": "native message",
+      "status": 200
+    },
+    "record": {
+      "severityNumber": 9,
+      "timeUnixNano": "1790960400000000000"
+    },
+    "expected": {
+      "body": {
+        "message": "native message",
+        "status": 200
+      },
+      "attributes": {
+        "log.parser": "native-otlp"
+      }
+    }
   }
 ]

@@ -27,6 +27,7 @@ spec:
       retries: 3
   values:
     reloader:
+      logFormat: json
       watchGlobally: false
       # Add a namespace here before annotating a workload in it.
       namespaces: [ingress, logging, console]

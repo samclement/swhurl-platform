@@ -515,7 +515,7 @@ The Kotlin template's single Gradle invocation (checks and packaging together) m
 
 ## ClickHouse load: baseline (2 October 2026)
 
-Measured over the preceding 60 minutes (21:18 UTC) with read-only queries on `system.metric_log`, `system.part_log` and the `otel_*` tables, before the telemetry noise work in [plan](plan.md) item 15. A 24-hour history shows the same shape every hour (average 0.12 to 0.35 cores, 10-second peaks 0.3 to 1.8 cores), so the spikes seen in `top` are the normal background merging, not an event.
+Measured over the preceding 60 minutes (21:18 UTC) with read-only queries on `system.metric_log`, `system.part_log` and the `otel_*` tables, before the telemetry noise work in [plan](plan.md) item 17. A 24-hour history shows the same shape every hour (average 0.12 to 0.35 cores, 10-second peaks 0.3 to 1.8 cores), so the spikes seen in `top` are the normal background merging, not an event.
 
 | Measure | Baseline |
 | --- | --- |
@@ -538,3 +538,23 @@ Measured over the preceding 60 minutes (21:18 UTC) with read-only queries on `sy
 | Warn and error from the filtered pods | none in the raw container logs of Keeper or MongoDB over the same period either | none lost |
 
 The part count did not fall: inserts are driven by the collectors' flush cadence, not by volume, so fewer rows cut merge time for logs (-71%) but not the number of merges. That is why steps 2 and 3 target traces and metrics. Server CPU in the 10-minute window was 0.14 cores average and 0.26 peak, too short to compare with the hourly peaks (they recur about hourly); the final comparison uses 60-minute windows.
+
+### Steps 2 and 3, and the final comparison
+
+- **Step 2** (`4074d6a`, HyperDX restarted 21:43 UTC): `OTEL_TRACES_SAMPLER=parentbased_traceidratio`, `OTEL_TRACES_SAMPLER_ARG=0.1` in `hyperdx.config`, and a pod annotation to roll the app (the chart does not restart it when the ConfigMap changes). HyperDX's own spans fell from 12,866 to 1,146 an hour in the first 10 minutes, `otel_traces` new parts from 403 to 60 an hour and its merge time to about 0. `make verify-platform` passed; the dashboard sync kept succeeding.
+- **Step 3** (`008c5d5`, DaemonSet rolled 22:04): hostmetrics 30 s, kubeletstats 60 s. Metric rows per hour fell from 741,000 to 556,000 (-25%): they were only about 17% of the rows. The rest was the cluster collector's `k8s_cluster` receiver (about a third, 10 s from the chart preset) and ClickStack's own scrape of ClickHouse's `:9363` metrics (about half). `6cdfe3f` set `k8s_cluster` to 60 s (22:28).
+- **Tried and reverted** (`cc8e497`, `e8140d8`): the chart's `global.otelCollector.customConfig` to scrape ClickHouse's metrics every 2 minutes. The collector restarted and mounted the file, but the effective config (`/etc/otel/supervisor-data/effective.yaml`) kept `scrape_interval: 30s` and the scrape cadence stayed at 4 distinct seconds a minute: the remote configuration HyperDX pushes over OpAMP wins for any receiver it defines.
+
+Final window: 40 minutes to 23:17 UTC, all changes in place, rates per hour, against the baseline:
+
+| Measure | Baseline | Final |
+| --- | --- | --- |
+| Server CPU, average / 10-second peak | 0.21 / 1.22 cores | 0.22 / 0.46 cores (no hourly peak fell inside this window; earlier hours peaked at 1.0 to 1.8) |
+| Merge-thread seconds | 697 | 715 |
+| New parts, `default.otel_*` (traces, sum, gauge, histogram, logs) | 403, 591, 638, 300, 720 (2,652) | 75, 420, 420, 300, 720 (1,935, -27%) |
+| Merge seconds, same tables | 99, 83, 68, 44, 28 (322) | 1, 237, 45, 154, 55 (492) |
+| Log lines, all / `observability` / `fatal` | 26,352 / 20,319 / 300 | 8,780 / 3,477 / 0 |
+| HyperDX spans | 12,866 | 1,362 |
+| Metric rows | 752,944 | 420,234 |
+
+**Reading it.** Rows and parts fell, CPU did not. Merge seconds in a single window are not comparable: the 26-hour history shows `otel_metrics_sum` merge time rising for three to four hours and then resetting (32, 110, 195 s, then 51, 125, 214, 285 s, then 41 s), which looks like TTL merges, so the baseline hour caught a low point and the final window a rising one. The merges themselves rewrite far more than they receive: the histogram table holds 349,000 rows (2 MiB) and each merge of a roughly 100-row part rewrites about 100,000 rows. One change is not explained by volume: from 21:40 to 21:50 UTC, when HyperDX restarted, `otel_metrics_histogram` went from 10 merges per 50 new parts (10 minutes) to one merge per part, and has stayed there (60 to 300 merges an hour for 300 parts; about +100 s of merge time an hour, around 0.03 cores). The restart is the only event in that bucket; the cause is not established. Server memory and the dashboards were unaffected; `make verify-platform` passed after each step.

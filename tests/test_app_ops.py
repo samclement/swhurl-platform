@@ -192,6 +192,9 @@ class LiveExposureTests(unittest.TestCase):
         self.assertEqual(app_ops.live_exposure([signed_in]), 'authenticated-web')
         self.assertEqual(app_ops.live_exposure([{'metadata': {}}]), 'public')
         self.assertEqual(app_ops.live_exposure([signed_in, {}]), 'public', 'any open route makes it public')
+        solver = {'metadata': {'labels': {'acme.cert-manager.io/http01-solver': 'true'}}}
+        self.assertEqual(app_ops.live_exposure(app_ops.app_routes([signed_in, solver])), 'authenticated-web',
+                         "cert-manager's challenge route is not the app's")
 
 
 class GatherStatusTests(unittest.TestCase):

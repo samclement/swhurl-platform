@@ -132,6 +132,14 @@ EXPOSURE_LABELS = {'private': 'private (no route)', 'authenticated-web': 'signed
                    'public': 'public (no sign-in)'}
 
 
+ACME_SOLVER = 'acme.cert-manager.io/http01-solver'
+
+
+def app_routes(ingresses: list[dict]) -> list[dict]:
+    """The app's own Ingresses: not cert-manager's temporary HTTP-01 challenge routes (no sign-in by design)."""
+    return [i for i in ingresses if ((i.get('metadata') or {}).get('labels') or {}).get(ACME_SOLVER) != 'true']
+
+
 def live_exposure(ingresses: list[dict]) -> str:
     """Who can reach the instance, from its routes: none, all behind sign-in, or open."""
     if not ingresses:
@@ -217,7 +225,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     selector = f'app.kubernetes.io/instance={instance.app}'
     pods = get(runner, '-n', ns, 'get', 'pods', '-l', selector)
     workloads = get(runner, '-n', ns, 'get', WORKLOAD_KINDS, '-l', selector)
-    ingresses = (get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', [])
+    ingresses = app_routes((get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', []))
     certificates = (get(runner, '-n', ns, 'get', 'certificate') or {}).get('items', [])
     return InstanceStatus(
         instance=instance,

@@ -10,11 +10,31 @@ DIGEST = 'sha256:' + 'c' * 64
 SHA = 'abcdef0123456789'
 
 
+COPIER_YML = """_subdirectory: template
+app_name:
+  type: str
+description:
+  type: str
+kind:
+  type: str
+  help: web or worker
+  choices: {web: web, worker: worker}
+  default: web
+database:
+  type: str
+  help: none or sqlite
+  choices: [none, sqlite]
+  default: none
+"""
+
+
 def ghcr(status=None):
     seen = []
 
     def open_(request):
         seen.append(request)
+        if request.full_url.endswith('/contents/copier.yml'):
+            return {}, COPIER_YML.encode()
         if status:
             raise urllib.error.HTTPError(request.full_url, status, 'denied', {}, None)
         if 'token' in request.full_url:
@@ -85,6 +105,25 @@ class AppRepoTests(unittest.TestCase):
             self.create(failed)
         with self.assertRaisesRegex(repo.RepoError, 'is the package private'):
             self.create(Cluster(), opener=ghcr(status=401)[0])
+
+    def test_answers_are_the_templates_own_questions(self):
+        questions = repo.parse_questions(COPIER_YML)
+        self.assertEqual([(q.name, q.choices, q.default) for q in questions],
+                         [('kind', ('web', 'worker'), 'web'), ('database', ('none', 'sqlite'), 'none')])
+        self.assertEqual(repo.parse_answers('kind=worker database=sqlite'), {'kind': 'worker', 'database': 'sqlite'})
+        cluster = Cluster()
+        self.create(cluster, repo.Request('notes', answers={'kind': 'worker', 'database': 'sqlite'}))
+        copy = next(c for c in cluster.runner.calls if 'copy' in c)
+        self.assertEqual([copy[i + 1] for i, a in enumerate(copy) if a == '--data'],
+                         ['app_name=notes', 'database=sqlite', 'kind=worker'])
+        for answers, message in (({'kind': 'cron'}, 'kind must be one of web, worker'),
+                                 ({'colour': 'red'}, "unknown question 'colour'")):
+            cluster = Cluster()
+            with self.subTest(message=message), self.assertRaisesRegex(repo.RepoError, message):
+                self.create(cluster, repo.Request('notes', answers=answers))
+            self.assertEqual(cluster.runner.calls, [], 'refused before anything ran')
+        with self.assertRaisesRegex(repo.RepoError, 'question=choice'):
+            repo.parse_answers('kind')
 
     def test_dry_run_creates_nothing(self):
         cluster = Cluster()

@@ -31,7 +31,7 @@ from typing import Any
 import httpx
 
 from swhurl import platform
-from swhurl.apps import new
+from swhurl.apps import new, repo
 from swhurl.apps.contract import (
     DATABASES,
     ENVIRONMENTS,
@@ -91,14 +91,27 @@ PRESET_LABELS = {NEW_REPO: 'New app and repository', 'swhurl-web': 'Web app from
 """The New app page's tabs: a new repository from a stack (console/repos.py), or an image that already exists."""
 
 
-def new_repo_args(form: Mapping[str, str]) -> tuple[str, str, str, list[str]]:
-    """``(name, stack, description, extra app-new argv)`` from the New app and repository form."""
+def new_repo_args(form: Mapping[str, str], questions: list[repo.Question]) -> tuple[str, str, str, dict[str, str], list[str]]:
+    """``(name, stack, description, template answers, extra app-new argv)`` from the New app and repository form.
+
+    ``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
+    A worker gets no exposure or host: its swhurl.yaml makes it private."""
     name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
     description = ' '.join(form.get('description', '').split())[:200]
     if not NAME_RE.match(name):
         raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
     if stack not in STACKS:
         raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
+    answers = {}
+    for question in questions:
+        value = form.get(f'feature-{question.name}', '').strip() or question.default
+        if value not in question.choices:
+            raise ActionError(f'{question.name} must be one of {", ".join(question.choices)}')
+        answers[question.name] = value
+    if answers.get('kind') == 'worker':
+        if form.get('host', '').strip():
+            raise ActionError('a worker has no web address; leave Host empty')
+        return name, stack, description, answers, []
     extra = []
     exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
     if exposure:
@@ -109,7 +122,7 @@ def new_repo_args(form: Mapping[str, str]) -> tuple[str, str, str, list[str]]:
         if not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', host):
             raise ActionError(f'host {host!r} is not a DNS name')
         extra.append(f'--host={host}')
-    return name, stack, description, extra
+    return name, stack, description, answers, extra
 
 
 def new_repo_body(repo_url: str, template: str, argv: list[str]) -> str:

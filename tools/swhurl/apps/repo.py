@@ -1,6 +1,10 @@
 """Create an app's GitHub repository from a stack's template and wait for its first image.
 
-    make app-repo NAME=<app> [STACK=typescript] [OWNER=samclement] [DESCRIPTION="..."]
+    make app-repo NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite"] [DESCRIPTION="..."]
+
+ANSWERS are the stack template's own questions (its copier.yml, read from GitHub): for the
+typescript stack, kind (web or worker) and database (none or sqlite). Unknown questions and
+choices are refused before anything is created.
 
 1. refuses if OWNER/NAME already exists;
 2. renders the stack's Copier template (uvx copier) into a scratch directory, commits it;
@@ -23,8 +27,10 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, COPIER, STACKS
 from swhurl.apps.new import NAME_RE
@@ -45,12 +51,70 @@ def _open(request: urllib.request.Request) -> tuple[dict, bytes]:
         return dict(reply.headers), reply.read()
 
 
+@dataclass(frozen=True)
+class Question:
+    """One of a stack template's choice questions (copier.yml), offered as a feature."""
+    name: str
+    help: str
+    choices: tuple[str, ...]
+    default: str
+
+
+FIXED_QUESTIONS = ('app_name', 'description')
+"""Asked by the platform itself (the name and description fields), never offered as features."""
+
+
+def parse_questions(text: str) -> list[Question]:
+    """The choice questions in a copier.yml, in file order."""
+    doc = yaml.safe_load(text) or {}
+    questions = []
+    for name, spec in doc.items():
+        if name.startswith('_') or name in FIXED_QUESTIONS or not isinstance(spec, dict) or 'choices' not in spec:
+            continue
+        choices = spec['choices']
+        values = tuple(str(v) for v in (choices.values() if isinstance(choices, dict) else choices))
+        questions.append(Question(name, str(spec.get('help', '')), values, str(spec.get('default', values[0]))))
+    return questions
+
+
+def template_questions(stack: str, opener: Opener | None = None) -> list[Question]:
+    """The stack template's choice questions, read from its copier.yml on GitHub (anonymously; public)."""
+    url = f'https://api.github.com/repos/{STACKS[stack]}/contents/copier.yml'
+    try:
+        _, body = (opener or _open)(urllib.request.Request(url, headers={'Accept': 'application/vnd.github.raw+json',
+                                                              'User-Agent': 'swhurl-app-repo'}))
+    except (urllib.error.URLError, OSError) as error:
+        raise RepoError(f'could not read the {stack} template\'s questions ({STACKS[stack]}/copier.yml): {error}') from None
+    return parse_questions(body.decode())
+
+
+def check_answers(answers: dict[str, str], questions: list[Question]) -> None:
+    by_name = {q.name: q for q in questions}
+    for key, value in answers.items():
+        if key not in by_name:
+            raise RepoError(f'unknown question {key!r}; this stack asks: {", ".join(by_name) or "nothing"}')
+        if value not in by_name[key].choices:
+            raise RepoError(f'{key} must be one of {", ".join(by_name[key].choices)} (got {value!r})')
+
+
+def parse_answers(text: str) -> dict[str, str]:
+    """``"kind=worker database=sqlite"`` as a mapping."""
+    answers = {}
+    for item in text.split():
+        key, sep, value = item.partition('=')
+        if not sep or not key or not value:
+            raise RepoError(f'ANSWERS items must be question=choice, got {item!r}')
+        answers[key] = value
+    return answers
+
+
 @dataclass
 class Request:
     name: str
     stack: str = 'typescript'
     owner: str = APP_OWNER
     description: str = ''
+    answers: dict[str, str] = field(default_factory=dict)
 
     @property
     def repo(self) -> str:
@@ -96,6 +160,8 @@ def copier_command() -> list[str]:
 def render(runner: Runner, req: Request, dest: Path) -> None:
     """Render the stack's template into ``dest`` (Copier records the template commit in .copier-answers.yml)."""
     data = ['--data', f'app_name={req.name}'] + (['--data', f'description={req.description}'] if req.description else [])
+    for key, value in sorted(req.answers.items()):
+        data += ['--data', f'{key}={value}']
     runner.run([*copier_command(), 'copy', '--defaults', '--quiet', *data,
                 f'https://github.com/{STACKS[req.stack]}.git', dest])
 
@@ -126,12 +192,14 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
            sleep: Callable[[float], None] = time.sleep, opener: Opener = _open) -> str:
     """Create the repository; return the image ``REPO:<run>-<sha>@sha256:…`` of its first run."""
     req.check()
+    check_answers(req.answers, template_questions(req.stack, opener))
     if runner.run(['gh', 'repo', 'view', req.repo, '--json', 'name'], check=False).returncode == 0:
         raise RepoError(f'{req.repo} already exists; choose another NAME (or use it with make app-new --from-repo)')
     template = STACKS[req.stack]
     if runner.dry_run:
         out(f'Plan (app-repo {req.repo}):')
-        out(f'  - render {template} ({req.stack}) with app_name={req.name} using uvx {COPIER}')
+        answers = ''.join(f' {k}={v}' for k, v in sorted(req.answers.items()))
+        out(f'  - render {template} ({req.stack}) with app_name={req.name}{answers} using {" ".join(copier_command())}')
         out(f'  - create the public repository {req.repo} and push the first commit over SSH')
         out(f'  - wait for its first {APP_WORKFLOW} run, read the image digest from GHCR, print the app-new line')
         return f'{req.image}:<run>-<sha>@sha256:<digest>'
@@ -165,9 +233,9 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     if len(argv) != 1:
         print(__doc__.split('\n\n')[1], file=sys.stderr)
         return 2
-    req = Request(argv[0], os.environ.get('STACK') or 'typescript', os.environ.get('OWNER') or APP_OWNER,
-                  os.environ.get('DESCRIPTION', ''))
     try:
+        req = Request(argv[0], os.environ.get('STACK') or 'typescript', os.environ.get('OWNER') or APP_OWNER,
+                      os.environ.get('DESCRIPTION', ''), parse_answers(os.environ.get('ANSWERS', '')))
         create(runner or Runner.from_environment(), req)
     except (RepoError, CommandError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)

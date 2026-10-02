@@ -33,7 +33,7 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 New app code starts from a **stack**: a [Copier](https://copier.readthedocs.io/) template repository per language and framework. Today there is one, `typescript` ([`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript)). The console's **New app** (tab **New app and repository**) creates the app's repository, waits for its first image and opens the pull request adding it to staging, all in one job ([console](console.md)). From a terminal, `make app-repo` does the first part and prints the `app-new` line for the second:
 
 ```bash
-make app-repo NAME=weather-api                  # STACK=typescript, DESCRIPTION="..." optional; DRY_RUN=true for the plan
+make app-repo NAME=weather-api                  # STACK=typescript, ANSWERS="kind=worker database=sqlite", DESCRIPTION="..." optional; DRY_RUN=true for the plan
 # [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-typescript
 # [INFO] samclement/weather-api: run 1 in_progress
 # [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
@@ -42,7 +42,14 @@ make app-repo NAME=weather-api                  # STACK=typescript, DESCRIPTION=
 
 It refuses a name that already exists on GitHub, renders the template (`uvx copier`) into a scratch directory, creates the **public** repository with your `gh` login (so the cluster can pull its images without credentials), pushes the first commit over SSH with your usual Git access, waits for the repository's first Container run (checks, image build, smoke test, publish; about two minutes) and reads the image's digest from GHCR anonymously, as the cluster will. The last line it prints adds the app to staging ([below](#add-an-app)). A failed first run stops it with the run's link; fix the app and push, then use the image that run publishes.
 
-The rendered app already meets what the platform expects: port 8080, `GET /healthz`, a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. The template's README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one. Each app keeps `.copier-answers.yml`, which records the template version it came from; bringing later template changes to existing apps is phase 7 of the [plan](plan.md) (section 8). Until then only the shared workflow (`app.yml`) and Renovate preset reach existing apps.
+**Features** are the stack template's own questions (its `copier.yml`, read from GitHub, so the console and `make app-repo` need no code per stack); unknown questions or choices are refused before anything is created. The `typescript` stack asks:
+
+| Question | Choices | The app gets | On the platform |
+| --- | --- | --- | --- |
+| `kind` | `web` (default), `worker` | An HTTP service with `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
+| `database` | `none` (default), `sqlite` | `node:sqlite` at `DATABASE_PATH`, migrations in `migrations/` applied at startup | The [SQLite capability](#swhurlyaml): a retained volume, one copy at a time, nightly backups, [restore](operations.md#backups-and-recovery) |
+
+The answers go into the app's `swhurl.yaml`, so `app-new --from-repo` sets the platform side to match. The rendered app already meets what the platform expects: port 8080 and `GET /healthz` (web), a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. The template's README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one. Each app keeps `.copier-answers.yml`, which records the template version it came from; bringing later template changes to existing apps is phase 7 of the [plan](plan.md) (section 8). Until then only the shared workflow (`app.yml`) and Renovate preset reach existing apps.
 
 ## Add an app
 

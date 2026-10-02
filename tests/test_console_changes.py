@@ -96,16 +96,10 @@ def tree_fake(app_new=APP_NEW_OK, edit=None):
     return runner
 
 
-def setUpModule():
-    """No test here reaches GitHub: the New app page's template questions come from COPIER_YML."""
-    from swhurl.apps import repo
-    global _real_open
-    _real_open, repo._open = repo._open, lambda request: ghcr_opener(request)
-
-
-def tearDownModule():
-    from swhurl.apps import repo
-    repo._open = _real_open
+def app_under_test(runner, **kwargs):
+    """The console app, its template questions read from COPIER_YML: no test here reaches GitHub."""
+    kwargs.setdefault('repo_opener', ghcr_opener)
+    return server.create_app(runner, **kwargs)
 
 
 class FormTests(unittest.TestCase):
@@ -275,7 +269,7 @@ class NewAppRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
-        return TestClient(server.create_app(runner, jobs=jobs, github=github)), jobs
+        return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
     def test_form_opens_a_pr_as_a_job(self):
         runner = tree_fake()
@@ -329,7 +323,7 @@ class NewAppRouteTests(unittest.TestCase):
         c, _ = self.client(tree_fake(), github=False)
         self.assertIn('No GitHub token is configured, so open pull requests are not listed', c.get('/activity', headers=WHO).text)
         api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
-        page = TestClient(server.create_app(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
+        page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
 
     def test_invalid_form_or_missing_token_runs_nothing(self):
@@ -356,7 +350,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         self.api = FakeGitHub()
         github = self.api.github if github else None
-        return TestClient(server.create_app(runner, jobs=jobs, github=github)), jobs
+        return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
     def tool_call(self, runner):
         return next(c for c in runner.calls if c[:3] == (sys.executable, '-m', 'swhurl'))
@@ -556,8 +550,7 @@ class NewRepoRouteTests(unittest.TestCase):
         runner = repo_runner(tree_fake())
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
-        c = TestClient(server.create_app(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config,
-                                         repo_opener=ghcr_opener))
+        c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
         page = c.get('/new', headers=WHO).text
         self.assertIn('class="here" aria-current="page">New app and repository</a>', page)
         self.assertIn('action="/new/repo"', page)
@@ -585,8 +578,7 @@ class NewRepoRouteTests(unittest.TestCase):
     def test_a_worker_with_sqlite_gets_no_route_and_its_answers(self):
         runner = repo_runner(tree_fake())
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
-        c = TestClient(server.create_app(runner, jobs=jobs, github=FakeGitHub().github, app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config,
-                                         repo_opener=ghcr_opener))
+        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
         c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'feature-kind': 'worker',
                                   'feature-database': 'sqlite', 'exposure': 'authenticated-web', 'host': ''}, headers=WHO)
         self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
@@ -607,7 +599,7 @@ class NewRepoRouteTests(unittest.TestCase):
     def test_bad_input_or_a_missing_token_creates_nothing(self):
         runner = repo_runner(tree_fake())
         app_api = FakeAppGitHub()
-        c = TestClient(server.create_app(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github,
+        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github,
                                          app_repos=app_api.config))
         for form, message in (({'name': 'Notes', 'stack': 'typescript'}, 'DNS label'),
                               ({'name': 'notes', 'stack': 'cobol'}, 'stack must be one of'),
@@ -616,7 +608,7 @@ class NewRepoRouteTests(unittest.TestCase):
                 response = c.post('/new/repo', data=form, headers=WHO)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
-        c = TestClient(server.create_app(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github))
+        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github))
         self.assertIn('No token for creating repositories', c.get('/new', headers=WHO).text)
         self.assertEqual(c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript'}, headers=WHO).status_code, 409)
         self.assertEqual((runner.calls, app_api.requests), ([], []))

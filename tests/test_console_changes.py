@@ -596,6 +596,13 @@ class NewRepoRouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
 
+    def test_template_questions_are_read_on_first_use_whatever_the_clock(self):
+        from unittest import mock
+        with mock.patch('swhurl.console.server.time.monotonic', return_value=5.0):  # a host booted 5 s ago
+            page = TestClient(app_under_test(repo_runner(tree_fake()), github=FakeGitHub().github,
+                                             app_repos=FakeAppGitHub().config)).get('/new', headers=WHO).text
+        self.assertIn('name="feature-kind" value="web" checked', page)
+
     def test_bad_input_or_a_missing_token_creates_nothing(self):
         runner = repo_runner(tree_fake())
         app_api = FakeAppGitHub()

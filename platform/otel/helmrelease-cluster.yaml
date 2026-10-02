@@ -46,6 +46,11 @@ spec:
         cpu: 500m
         memory: 512Mi
     config:
+      receivers:
+        # The clusterMetrics preset scrapes every 10 s: about a third of all metric rows (replica sets, pods,
+        # containers), mostly unchanged between scrapes. A minute is plenty for cluster state graphs.
+        k8s_cluster:
+          collection_interval: 60s
       processors:
         transform/events:
           error_mode: silent

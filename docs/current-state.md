@@ -525,3 +525,16 @@ Measured over the preceding 60 minutes (21:18 UTC) with read-only queries on `sy
 | `observability` warn and error lines | 6 warn, 4 error in the hour (must not fall) |
 | HyperDX's own spans per hour | 12,866 (about 610 of them health checks); `otel_traces` holds nothing else of note |
 | Metric rows per hour | about 753,000 (hostmetrics every 10 s, kubeletstats every 20 s) |
+
+### Step 1: log noise (`1fa822d`, rolled out 21:24 UTC)
+
+`make check-otel` passed all 70 node fixtures through the real collector (14 new: seven that must be dropped, six that must be kept, the `[ALERT-TASK]` case); removing the filter from the pipeline made the seven dropped cases fail ("expected the record to be dropped, got 1"). `make verify-platform` passed after the DaemonSet rolled. Measured over 21:27 to 21:37 UTC, against the baseline:
+
+| Measure | Baseline | After |
+| --- | --- | --- |
+| `observability` log lines per hour | 20,319 | 3,462 (-83%); all lines 26,352 to 8,460 (-68%) |
+| Lines labelled `fatal` per hour | 300 | 0 (805 in the 3 hours before the rollout, none since) |
+| `otel_logs` new parts and merge seconds per hour | 720 and 28 s | 714 and 8 s |
+| Warn and error from the filtered pods | none in the raw container logs of Keeper or MongoDB over the same period either | none lost |
+
+The part count did not fall: inserts are driven by the collectors' flush cadence, not by volume, so fewer rows cut merge time for logs (-71%) but not the number of merges. That is why steps 2 and 3 target traces and metrics. Server CPU in the 10-minute window was 0.14 cores average and 0.26 peak, too short to compare with the hourly peaks (they recur about hourly); the final comparison uses 60-minute windows.

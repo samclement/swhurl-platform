@@ -47,6 +47,16 @@ spec:
     hyperdx:
       config:
         FRONTEND_URL: https://clickstack.${BASE_DOMAIN}
+        # HyperDX traces itself: about 12,900 spans an hour, nearly every one a request to its own API or
+        # health path, written as thousands of tiny inserts a day. Keep one trace in ten (the decision is
+        # made per trace, so a kept trace is whole); raise the ratio to look closer at HyperDX itself.
+        OTEL_TRACES_SAMPLER: parentbased_traceidratio
+        OTEL_TRACES_SAMPLER_ARG: "0.1"
+      deployment:
+        # The chart does not restart the app when hyperdx.config changes (no checksum) and Reloader does not
+        # watch observability: change this value with any change to hyperdx.config to roll the pod from Git.
+        podAnnotations:
+          platform.swhurl.com/config-revision: "1"
       ingress:
         enabled: true
         annotations:

@@ -17,6 +17,7 @@ import contextlib
 import json
 import os
 import shlex
+import signal
 import subprocess
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -42,6 +43,46 @@ class CommandError(Exception):
         super().__init__(message)
         self.args_run = tuple(args)
         self.returncode = returncode
+
+
+class RunningCommand:
+    """A quiet external process whose caller controls graceful shutdown."""
+
+    def __init__(self, args: Sequence[str], process: subprocess.Popen):
+        self.args = tuple(args)
+        self.process = process
+
+    def poll(self) -> int | None:
+        return self.process.poll()
+
+    def interrupt(self) -> None:
+        if self.poll() is None:
+            self.process.send_signal(signal.SIGINT)
+
+    def wait(self, timeout: float | None = None) -> int:
+        try:
+            return self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+            raise CommandError(self.args, f'{self.args[0]} did not stop after interrupt') from None
+
+
+class CompletedCommand:
+    """Already-finished command returned by FakeRunner.start."""
+
+    def __init__(self, result: Result):
+        self.result = result
+        self.interrupted = False
+
+    def poll(self) -> int:
+        return self.result.returncode
+
+    def interrupt(self) -> None:
+        self.interrupted = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        return self.result.returncode
 
 
 class Runner:
@@ -91,6 +132,22 @@ class Runner:
             message = f'{self.describe(argv)} exited {result.returncode}' + (f': {detail}' if detail else '')
             raise CommandError(argv, message, result.returncode)
         return result
+
+    def start(self, args: Sequence[str | Path], *, env: Mapping[str, str] | None = None,
+              cwd: Path | None = None) -> RunningCommand:
+        """Start a quiet process for a caller that will stop it and wait explicitly.
+
+        Output is discarded so a long-running parser cannot fill pipes or leak
+        fixture/secret payloads. Failures report the command and exit status.
+        """
+        argv = tuple(str(a) for a in args)
+        try:
+            process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       cwd=cwd or self.cwd,
+                                       env={**os.environ, **self.env, **(env or {})})
+        except FileNotFoundError:
+            raise CommandError(argv, f'missing required command: {argv[0]}') from None
+        return RunningCommand(argv, process)
 
     def output(self, args: Sequence[str | Path], **kwargs: Any) -> str:
         return self.run(args, **kwargs).stdout
@@ -249,6 +306,7 @@ class FakeRunner(Runner):
         self.echoed: list[str] = []
         super().__init__(dry_run=dry_run, echo=self.echoed.append)
         self.calls: list[tuple[str, ...]] = []
+        self.started: list[CompletedCommand] = []
         self.planned: list[tuple[str, ...]] = []
         self._rules: list[tuple[tuple[str, ...], Response]] = []
 
@@ -260,6 +318,13 @@ class FakeRunner(Runner):
     def _plan(self, argv: tuple[str, ...], display: str | None = None) -> None:
         self.planned.append(argv)
         super()._plan(argv, display)
+
+    def start(self, args: Sequence[str | Path], *, env: Mapping[str, str] | None = None,
+              cwd: Path | None = None) -> CompletedCommand:
+        argv = tuple(str(a) for a in args)
+        command = CompletedCommand(self._execute(argv, input=None, env={**self.env, **(env or {})}, cwd=cwd or self.cwd))
+        self.started.append(command)
+        return command
 
     def _attach(self, argv: tuple[str, ...]) -> int:
         return self._execute(argv, input=None, env={}, cwd=None).returncode

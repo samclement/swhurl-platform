@@ -11,7 +11,6 @@ import json
 import socket
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -106,6 +105,23 @@ def check_records(cases: list[dict], found: list[dict]) -> list[str]:
     return errors
 
 
+def _fixtures_complete(cases: list[dict], found: list[dict]) -> bool:
+    """True once the exporter flushed exactly one record for every expected case."""
+    names = []
+    for record in found:
+        attrs = {a['key']: unpack(a['value']) for a in record.get('attributes', [])}
+        names.append(attrs.get('test.case', ''))
+    return len(names) == len(cases) and all(names.count(case['name']) == 1 for case in cases)
+
+
+def _read_records(path: Path) -> list[dict] | None:
+    """Read currently flushed lines; a final partial line is still in flight."""
+    try:
+        return records([json.loads(line) for line in path.read_text().splitlines() if line.strip()])
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], cases: list[dict]) -> list[str]:
     """Run rendered processors against OTLP fixtures and real container framing, isolated from the cluster."""
     names = [n for n in config['service']['pipelines']['logs']['processors'] if n.startswith('transform/')]
@@ -137,12 +153,13 @@ def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], 
         path = tmp / 'config.yaml'
         path.write_text(yaml.safe_dump(runtime))
         gates = [arg for arg in extra_args if arg.startswith('--feature-gates=')]
-        command = ['timeout', '--signal=INT', '8', str(binary), *gates, f'--config=file:{path}']
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(runner.run, command, check=False, secret_output=True)
+        command = [str(binary), *gates, f'--config=file:{path}']
+        process = runner.start(command)
+        deadline = time.monotonic() + 8  # failure guard; successful fixtures stop as soon as they flush
+        try:
             payload = json.dumps(fixture_payload([c for c in cases if not c.get('framing')])).encode()
-            deadline = time.monotonic() + 5
-            while True:
+            accepted_by_collector = False
+            while not accepted_by_collector:
                 try:
                     request = Request(f'http://127.0.0.1:{port}/v1/logs', data=payload,
                                       headers={'Content-Type': 'application/json'})
@@ -150,18 +167,31 @@ def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], 
                         result = json.load(response)
                         if result.get('partialSuccess', {}).get('rejectedLogRecords', 0):
                             return ['collector rejected fixture records']
-                    break
+                    accepted_by_collector = True
                 except (URLError, TimeoutError):
-                    if future.done() or time.monotonic() >= deadline:
+                    if process.poll() is not None or time.monotonic() >= deadline:
                         return ['fixture collector did not accept OTLP input']
                     time.sleep(0.05)
-            result = future.result()
-        if result.returncode not in (0, 124):
-            return ['fixture collector exited unsuccessfully']
-        if not output.exists():
-            return ['fixture collector produced no output']
-        found = records([json.loads(line) for line in output.read_text().splitlines() if line.strip()])
-        return check_records(cases, found)
+            while True:
+                found = _read_records(output)
+                if found is not None and _fixtures_complete(cases, found):
+                    process.interrupt()  # SIGINT lets the collector flush and shut down cleanly
+                    break
+                if process.poll() is not None:
+                    return ['fixture collector stopped before all records were flushed']
+                if time.monotonic() >= deadline:
+                    return ['fixture collector timed out before all records were flushed']
+                time.sleep(0.05)
+            if process.wait(timeout=3) != 0:
+                return ['fixture collector exited unsuccessfully']
+            found = _read_records(output)
+            if found is None:
+                return ['fixture collector output was incomplete']
+            return check_records(cases, found)
+        finally:
+            if process.poll() is None:
+                process.interrupt()
+                process.wait(timeout=3)
 
 
 def check_fixtures(runner: Runner, binary: Path, config: dict, extra_args: list[str], report: Report) -> None:

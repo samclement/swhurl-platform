@@ -38,7 +38,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 ## Commands
 
-- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, `make clickstack-bootstrap` (idempotent), and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
+- Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, `make clickstack-bootstrap` and `make clickstack-dashboards` (idempotent), and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
 - Don't: delete Flux units or namespaces as a reset (there is no teardown), or `kubectl apply` resources that Flux owns.
 - `platform-certs-*`, `app-new`, `app-promote`, `app-scale`, `app-remove` and `console-image` only edit files: commit and push before reconciling. After changing `tools/`, `images/console/` or the lock file, the publish run deploys the console itself with a bot commit to `main` ([console](docs/console.md#deploy-a-new-console)): `git pull --rebase` before the next push; `make console-image` is the manual fallback. `make verify-platform` warns until the new image runs.
 - `host-dns` and `host-backup` install system units with `sudo`: the operator runs them in their own terminal. The units run scripts from this checkout, so only template changes need a reinstall.

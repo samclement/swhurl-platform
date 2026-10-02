@@ -278,9 +278,22 @@ A failing instance also sends a push notification, and each automatic staging de
 
 An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 
+
+### Dashboards
+
+`make clickstack-dashboards` gives every app in `apps/` a HyperDX dashboard named `App: <app>` (tag `swhurl-app`), with staging and production as separate lines:
+
+| Row | Web app | Worker |
+| --- | --- | --- |
+| Traces (needs `--otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans |
+| Logs (every app) | Error logs and log lines per minute | the same |
+| Logs | The latest log lines, with their environment | the same |
+
+Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Run it after an app is added or removed: it creates missing dashboards, overwrites ones that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy under another name to keep it) and deletes `swhurl-app` dashboards whose app has left Git. `DRY_RUN=true` lists what it would change. It reads the admin account's access key from MongoDB and never prints it.
+
 ## Remove an app
 
-`make app-remove APP=<app> ENV=<env>` (or **Uninstall** in the console, as a pull request) deletes the instance's files, its unit file and registration and its Reloader entry; once pushed, Flux uninstalls it. An instance with `--persistence` keeps its namespace and claim on the cluster: deleting that data is a separate, explicit `make destroy-data` ([lifecycle](operations.md#lifecycle)). Removing staging also removes its automatic deploys; the app repository and its images are untouched.
+`make app-remove APP=<app> ENV=<env>` (or **Uninstall** in the console, as a pull request) deletes the instance's files, its unit file and registration and its Reloader entry; once pushed, Flux uninstalls it; `make clickstack-dashboards` then deletes its dashboard once no environment is left. An instance with `--persistence` keeps its namespace and claim on the cluster: deleting that data is a separate, explicit `make destroy-data` ([lifecycle](operations.md#lifecycle)). Removing staging also removes its automatic deploys; the app repository and its images are untouched.
 
 ## The app policy
 

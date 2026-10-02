@@ -44,24 +44,6 @@ spec:
     remediation:
       retries: 3
   values:
-    global:
-      otelCollector:
-        # ClickStack's collector scrapes ClickHouse's own metrics endpoint (and itself) every 30 s and stores
-        # them in ClickHouse: about half of all metric rows, each batch a part to merge. Every 2 minutes is
-        # enough to see load. Merged on top of the collector's built-in config; the list is replaced, so both
-        # targets are repeated (the environment variable is Flux-escaped). The chart rolls the collector when
-        # this changes.
-        customConfig: |
-          receivers:
-            prometheus:
-              config:
-                scrape_configs:
-                  - job_name: otelcol
-                    scrape_interval: 120s
-                    static_configs:
-                      - targets:
-                          - 0.0.0.0:8888
-                          - $${env:CLICKHOUSE_PROMETHEUS_METRICS_ENDPOINT}
     hyperdx:
       config:
         FRONTEND_URL: https://clickstack.${BASE_DOMAIN}

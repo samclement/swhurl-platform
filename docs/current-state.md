@@ -411,6 +411,16 @@ Found on the way: Docker mounts `--tmpfs /tmp` noexec, so the SQLite driver coul
 
 Not working yet: the agent's other JVM metrics (`jvm.memory.*`, `jvm.thread.*`) did not reach ClickStack (container CPU and memory come from the node collector); and no app's logs fill the `TraceId` column (hello-ts: 0 of 24 rows), because the log pipeline does not promote a trace id from the JSON body. Both recorded in the plan.
 
+## Observability fixes (2 October 2026)
+
+Plan item 13. `0712a16`: the node collector's `transform/trace-context` and `filter/kube-probes`, accepted by `make check-otel` (otelcol-k8s 0.161.0); the DaemonSet pod restarted at 15:05:00 with no errors. Template PRs: TypeScript #14 (local resource detectors only), Kotlin #4 (health check without a database query); all four combinations of each passed CI and both merged. `hello-ts` got the same detector line by hand (`e34293b`, deployed as `28-e34293b`).
+
+- **Logs linked to traces:** three requests to `hello-ts` (`/obs-test-1..3`, through a port-forward): each log row in ClickStack had the request's `TraceId` and `SpanId`, and each trace existed. After the new image, a request log and its `GET` span share a trace id. Before: 0 of 24 `hello-ts` log rows in a day had a `TraceId`.
+- **Probe spans dropped:** 318 `kube-probe/1.34` spans from `hello-ts` and `swhurl-try-5` in the 15 minutes before; the last at 15:04:53, none in the 100 seconds after the collector started (probes every 10 s); requests from curl still traced.
+- **No cloud lookups:** the `hello-ts` pod running `28-e34293b` logged no `MetadataLookupWarning` and no error-level lines; its traces keep 13 host, process and container resource attributes.
+
+Still wrong (known, not fixed): the request log above has severity `trace`, guessed from its text.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

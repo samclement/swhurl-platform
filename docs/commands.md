@@ -24,7 +24,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`STACK=typescript` or `kotlin`, `ANSWERS="kind=worker database=sqlite"`, `DESCRIPTION=`), push it, wait for its first image and print the `app-new` line ([start a new app](apps.md#start-a-new-app)) | GitHub |
 | `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy; `--from-repo OWNER/REPO` takes its defaults from the app's [`swhurl.yaml`](apps.md#swhurlyaml) | Git |
 | `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
-| `app-promote APP=` | Copy the staging image (tag and digest) into prod (`FROM=`, `TO=` override); refuses without a digest, a different repository, or no change | Git |
+| `app-promote APP=` | Copy the staging image into prod (`FROM=`, `TO=` override); `ARGS="--expect-image=..."` guards the reviewed image ([promotion](apps.md#promote-to-production)) | Git |
 | `app-status APP= ENV=` | Whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |

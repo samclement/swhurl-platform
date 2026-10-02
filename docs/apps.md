@@ -260,7 +260,15 @@ git commit -am "apps: promote <app> to prod" && git push
 make app-status APP=<app> ENV=prod
 ```
 
-The console's **Promote to prod** (on the staging page) opens the same change as a pull request. Promote refuses an image without a digest, never copies the automatic-deploy markers (production has none), and checks the result against the app policy. The production instance must exist: create it once ([add production](#add-production)).
+The console's **Promote to prod** uses the exact healthy staging image you reviewed; its checks and stale-page behaviour are described in [console promotion](console.md#use-it). It opens the change as a pull request. Promote refuses an image without a digest, never copies the automatic-deploy markers (production has none), and checks the result against the app policy. The production instance must exist: create it once ([add production](#add-production)).
+
+The CLI reads the source image from this checkout; it does not check the live staging workload. Use `make app-status` and try staging first. To refuse a changed source image, pass the full repository, tag (if present) and digest you reviewed:
+
+```bash
+make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
+```
+
+This checks the source before writing production files; a mismatch leaves production unchanged.
 
 ## Operate an instance
 

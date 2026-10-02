@@ -30,6 +30,7 @@ from swhurl.apps.contract import (
     strip_image_markers,
 )
 from swhurl.apps.new import NAME_RE, check_generated, depends_on, dump, ingress_values
+from swhurl.apps.ops import image_reference
 
 PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
 CPU_RE = re.compile(r'^\d+(\.\d+)?m?$')
@@ -70,11 +71,13 @@ def container(release: dict) -> dict:
     return release['spec']['values']['controllers']['main']['containers']['main']
 
 
-def promote(root: Path, app: str, source: str, target: str) -> Path:
+def promote(root: Path, app: str, source: str, target: str, *, expect_image: str | None = None) -> Path:
     if source == target:
         raise EditError('--from and --to must differ')
     src, dst = instance_dir(root, app, source), instance_dir(root, app, target)
     image = container(load_release(src))['image']
+    if expect_image is not None and image_reference(image) != expect_image:
+        raise EditError(f'{app}/{source} image changed since it was reviewed; refresh staging and review it again')
     if not image.get('digest'):
         raise EditError(f'{app}/{source} has no image digest; promote only a digest-pinned image')
     release = load_release(dst)
@@ -226,9 +229,11 @@ def main_promote(argv: list[str] | None = None) -> int:
     p.add_argument('app')
     p.add_argument('--from', dest='source', default='staging', choices=ENVIRONMENTS)
     p.add_argument('--to', dest='target', default='prod', choices=ENVIRONMENTS)
+    p.add_argument('--expect-image', help='refuse if the source no longer names this exact repository, tag and digest')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: promote(args.root.resolve(), args.app, args.source, args.target), True)
+    return run(lambda: promote(args.root.resolve(), args.app, args.source, args.target,
+                               expect_image=args.expect_image), True)
 
 
 def main_scale(argv: list[str] | None = None) -> int:

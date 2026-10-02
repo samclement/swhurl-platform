@@ -61,6 +61,23 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, 'no image digest'):
             edit.promote(self.root, 'hello', 'staging', 'prod')
 
+    def test_promotion_refuses_a_source_that_moved_after_review_without_writing(self):
+        reviewed = edit.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine'))
+        before = self.prod.read_bytes()
+        with self.assertRaisesRegex(edit.EditError, 'changed since it was reviewed'):
+            edit.promote(self.root, 'hello', 'staging', 'prod', expect_image=reviewed)
+        self.assertEqual(self.prod.read_bytes(), before)
+        current = edit.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod', expect_image=current)
+        self.assertIn('tag: 1.28-alpine', self.prod.read_text())
+
+    def test_cli_promotion_checks_the_expected_image(self):
+        before = self.prod.read_bytes()
+        code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--expect-image=x:1'])
+        self.assertEqual(code, 2)
+        self.assertEqual(self.prod.read_bytes(), before)
+
     def test_hand_edited_files_are_refused_not_reformatted(self):
         self.prod.write_text('# tuned by hand\n' + self.prod.read_text())
         before = self.prod.read_text()

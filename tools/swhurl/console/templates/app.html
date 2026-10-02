@@ -19,9 +19,13 @@
 <div class="toolbar">
   {% if status.routes %}<a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>{% endif %}
   {% if i.env == 'staging' and summary and summary.comparison in ('ahead', 'differs') %}
-  <form method="post" action="/apps/{{ i.app }}/staging/promote"><button {{ 'disabled' if not github }}
-    onclick="return confirm('Open a PR copying the staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button>
+  <form method="post" action="/apps/{{ i.app }}/staging/promote">
+    <input type="hidden" name="image" value="{{ status.desired_image }}">
+    <input type="hidden" name="revision" value="{{ status.applied_revision }}">
+    <button {{ 'disabled' if not github or promotion_problem }}
+    onclick="return confirm('Open a PR copying this staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button>
     <label class="check"><input type="checkbox" name="auto_merge"> merge when checks pass</label></form>
+  {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
   <span class="muted">{{ 'Staging is ahead of prod.' if summary.comparison == 'ahead' else 'Staging and prod run different images.' }}</span>
   {% endif %}
   <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>

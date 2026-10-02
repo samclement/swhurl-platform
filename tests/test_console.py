@@ -4,6 +4,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stderr
+from dataclasses import replace
 
 from starlette.testclient import TestClient
 
@@ -134,6 +135,29 @@ class PolishTests(unittest.TestCase):
 
 
 class StateTests(unittest.TestCase):
+    def status(self, **changes):
+        digest = 'sha256:' + 'a' * 64
+        status = cluster.ops.InstanceStatus(cluster.ops.Instance('web', 'staging'), 'r', 'r', ('True', ''),
+                                            ('True', ''), f'x:1@{digest}', [f'x@{digest}'],
+                                            [cluster.ops.Replicas('Deployment/web', 1, 1)], [], [], [])
+        return replace(status, **changes)
+
+    def test_health_requires_release_revision_workloads_and_running_image(self):
+        cases = (({}, 'healthy'), ({'release': None}, 'unknown'),
+                 ({'desired_revision': '', 'applied_revision': ''}, 'unknown'),
+                 ({'replicas': []}, 'unknown'), ({'running_images': []}, 'unknown'),
+                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, None)]}, 'unknown'),
+                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, 1)]}, 'updating'),
+                 ({'replicas': [cluster.ops.Replicas('Deployment/web', 0, 0)], 'running_images': []}, 'stopped'),
+                 ({'unit_suspended': True}, 'suspended'), ({'release_suspended': True}, 'suspended'))
+        for overrides, expected in cases:
+            with self.subTest(overrides=overrides):
+                self.assertEqual(cluster.instance_state(self.status(**overrides), None).key, expected)
+
+    def test_a_ready_unit_with_no_release_is_not_a_healthy_app(self):
+        row = cluster.AppRow(cluster.ops.Instance('web', 'prod'), ('True', ''), False, 'no HelmRelease')
+        self.assertEqual(row.state.key, 'unknown')
+
     def test_one_vocabulary_and_waiting_is_updating_not_failing(self):
         state = cluster.state_of
         self.assertEqual(state(('True', 'Applied')), cluster.State('healthy'))
@@ -173,7 +197,8 @@ class AppSummaryTests(unittest.TestCase):
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
         self.assertIn('Staging and prod differ', text)
-        self.assertIn('action="/apps/web/staging/promote"><button  onclick', text, 'enabled with a token')
+        self.assertIn('href="/apps/web/staging">Review promotion</a>', text)
+        self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
 
     def test_every_page_names_app_instances_the_same_way(self):
         self.assertEqual(cluster.target('app-hello-staging'), ('hello/staging', '/apps/hello/staging'))
@@ -182,6 +207,24 @@ class AppSummaryTests(unittest.TestCase):
 
 
 class AppDetailTests(unittest.TestCase):
+    def test_read_failures_show_an_error_instead_of_not_found(self):
+        for detail in ('Forbidden', 'connection refused'):
+            with self.subTest(detail=detail):
+                runner = FakeRunner().on('kubectl', returncode=1, stderr=detail)
+                response = client(runner).get('/apps/web/prod', headers=WHO)
+                self.assertEqual(response.status_code, 502)
+                self.assertIn(detail, response.text)
+                self.assertNotIn('No such app instance', response.text)
+
+    def test_a_later_read_failure_does_not_show_partial_health(self):
+        runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
+                                  stdout=json.dumps(unit('app-web-prod')))
+                  .on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', returncode=1, stderr='Forbidden'))
+        response = client(runner).get('/apps/web/prod', headers=WHO)
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Forbidden', response.text)
+        self.assertNotIn('<strong>Healthy</strong>', response.text)
+
     def test_shows_gathered_status(self):
         def get(kind, value):
             return (f'kubectl -n {"flux-system" if kind in ("kustomization", "gitrepository") else "web-prod"} get {kind}',
@@ -213,7 +256,7 @@ class AppDetailTests(unittest.TestCase):
 
     def test_unknown_or_invalid_instance_is_404_without_odd_kubectl_calls(self):
         runner = fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'app-nope-prod',
-                           returncode=1, stderr='NotFound')
+                           stdout='')
         self.assertEqual(client(runner).get('/apps/nope/prod', headers=WHO).status_code, 404)
         before = len(runner.calls)
         for path in ('/apps/web/dev', '/apps/Web/prod', '/apps/--all/prod'):

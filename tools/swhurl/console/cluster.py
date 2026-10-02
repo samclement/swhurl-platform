@@ -25,7 +25,7 @@ class ReadError(Exception):
 @dataclass(frozen=True)
 class State:
     """The one status vocabulary every page uses (each shown with its own mark, not colour alone)."""
-    key: str  # healthy, updating, failing or suspended
+    key: str  # healthy, updating, failing, suspended, unknown or stopped
     detail: str = ''
 
     @property
@@ -68,7 +68,10 @@ class AppRow:
 
     @property
     def state(self) -> State:
-        return state_of(self.ready, self.suspended, self.reason)
+        state = state_of(self.ready, self.suspended, self.reason)
+        if state.key == 'healthy' and self.image == 'no HelmRelease':
+            return State('unknown', 'the app release is missing')
+        return state
 
 
 @dataclass(frozen=True)
@@ -246,8 +249,10 @@ def updating(found: list[Unit]) -> list[Problem]:
 
 def instance_state(status: ops.InstanceStatus, row: AppRow | None) -> State:
     """An app instance's state from what its page shows, worst first."""
-    if row and row.suspended:
+    if status.unit_suspended or row and row.suspended:
         return State('suspended', 'Git changes are not applied until its Flux unit is resumed')
+    if status.release_suspended:
+        return State('suspended', 'the Helm release is suspended')
     if status.problems:
         return State('failing', f'{len(status.problems)} pod(s) failing; see below')
     unit = state_of(status.unit, reason=row.reason if row else '')
@@ -257,13 +262,37 @@ def instance_state(status: ops.InstanceStatus, row: AppRow | None) -> State:
         return State('failing', status.release[1])
     if unit.key == 'updating':
         return unit
+    if status.release is None:
+        return State('unknown', 'the app release is missing')
+    if not status.desired_revision or not status.applied_revision:
+        return State('unknown', 'the desired or applied Git revision is missing')
     if not status.applied:
         return State('updating', 'a Git change is not applied yet')
     if status.image_state == 'different':
         return State('updating', 'a new image is rolling out (or failing to)')
     if status.release and status.release[0] != 'True':
         return State('updating', status.release[1])
+    if not status.replicas or any(r.wanted is None for r in status.replicas):
+        return State('unknown', 'workload replica counts are missing')
+    if any(r.ready != r.wanted for r in status.replicas):
+        return State('updating', 'waiting for the requested replicas to be ready')
+    if all(r.wanted == 0 for r in status.replicas):
+        return State('stopped', 'scaled to zero replicas')
+    if status.image_state == 'none':
+        return State('unknown', 'no running image could be observed')
     return State('healthy')
+
+
+def promotion_problem(status: ops.InstanceStatus | None, image: str, revision: str) -> str:
+    """Why a reviewed staging image cannot be promoted, or an empty string."""
+    if status is None:
+        return 'staging no longer exists; refresh the app page'
+    if status.desired_image != image or status.applied_revision != revision:
+        return 'staging changed since this page was loaded; refresh and review it again'
+    state = instance_state(status, None)
+    if state.key != 'healthy' or status.image_state != 'matches':
+        return f'staging must be healthy and running the reviewed digest before promotion ({state.detail or state.label})'
+    return ''
 
 
 @dataclass(frozen=True)

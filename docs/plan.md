@@ -10,7 +10,7 @@
 
 **Console correctness** done 2 October 2026 (`b3dd939`, image pin `4119157`): review findings 1–3 fixed; [console behaviour](console.md#use-it), [promotion](apps.md#promote-to-production), and [live evidence and remaining browser checks](current-state.md#console-correctness-2-october-2026).
 
-**App validation and YAML editing** (agreed 2 October 2026): review finding 4 and finding 5 option 2. Implementation and regression checks in progress; next: `make check`, commit/push, automatic console publication, reconcile and live verification. [Editing boundaries and trade-offs](apps.md#operate-an-instance).
+**App validation and YAML editing** done 2 October 2026 (`6bac215`, image pin `42eebe5`): review finding 4 and finding 5 option 2. Requested validation fails when tools or rendering fail; scale/expose/promote accept handwritten YAML and retain comments and unrelated settings. [Editing boundaries and trade-offs](apps.md#operate-an-instance), [live evidence](current-state.md#app-validation-and-yaml-editing-2-october-2026).
 
 Work paused on 28 September 2026 after PR07b. Everything in the delivery table (section 3) is done except **PR06**, the remainder of **PR08a**, and the **final operator exercise**. Live evidence for each step is in `docs/current-state.md`. Before resuming: pull `main`, run `make check-repo`, `make test`, `make verify-platform` and `flux get kustomizations` (14 units, all Ready), and re-read that file's "Not exercised" notes.
 

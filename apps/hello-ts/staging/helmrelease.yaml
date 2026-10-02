@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/hello-ts
-              tag: 26-01edf61 # {"$imagepolicy": "flux-system:hello-ts-staging:tag"}
-              digest: sha256:8d8ae712eee14cce1d2be70d31994a0546d071a6550d35e782ad49aee778bee8 # {"$imagepolicy": "flux-system:hello-ts-staging:digest"}
+              tag: 27-01edf61 # {"$imagepolicy": "flux-system:hello-ts-staging:tag"}
+              digest: sha256:0d70f3bf097f9213a7ae339066fb5cc5df6b079c3330b9e3748318a11912f709 # {"$imagepolicy": "flux-system:hello-ts-staging:digest"}
             resources:
               requests:
                 cpu: 10m

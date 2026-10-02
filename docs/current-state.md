@@ -389,6 +389,17 @@ Plan section 8, phase 4 (`7a72d6c`, fix `6546879`). The console's second token (
 
 Not exercised: a stack other than `typescript`; a public or private exposure from this form. The operator then deleted the repositories `samclement/swhurl-try-2` and `samclement/swhurl-try-3` and the package `swhurl-try-3`; all three confirmed gone (GitHub cannot resolve either repository; the package page returns 404).
 
+## Template features: worker and SQLite (2 October 2026)
+
+Plan section 8, phase 5. Template PR #13 (merged): Copier questions `kind` (web, worker) and `database` (none, sqlite on `node:sqlite`, migrations at startup); the Template workflow rendered all four combinations and each passed type-check, tests, image build and the smoke test, which now reads `swhurl.yaml` (logs: "smoke test passed (web)", "(web, sqlite)", "(worker)", "(worker, sqlite)"). `hello-ts`, which has no SIGTERM handler or database, built with the changed `app.yml` and deployed to staging. Platform `6bd7c7c`: the console and `make app-repo ANSWERS=` read the questions from the template's `copier.yml`.
+
+- **Console** (`claude-live-test (port-forward)`): the deployed form showed Kind and Database from the template. **web + sqlite** `swhurl-try-4`: 2 minutes 31 seconds to PR #24, whose instance has the retained 1Gi claim, `DATABASE_PATH=/data/app.db`, one replica and Recreate.
+- **CI caught a bug before merge:** the form's question cache treated "never read" as "read at monotonic time 0", so on a host up for under five minutes (a fresh runner) it showed no features; fixed in `0d05cc7` with a test that pins the clock. `b7ddf60` makes the console tests read the questions from a fixture.
+- **Merged** (`3c8fd32`): Ready in 15 seconds, running: matches desired, claim Bound on `local-path-retain`. Through a port-forward to its Service: visits 1, 2, 3; after `rollout restart` (new pod) 4; no ExperimentalWarning in the logs. `backup-sqlite` (scratch `BACKUP_DIR`, no S3 upload) found it and recorded 2 tables, integrity ok, 16384 bytes and the plaintext SHA-256; one more visit made 5; `make restore-sqlite APP=swhurl-try-4 ENV=staging` suspended the HelmRelease, stopped the app, restored and resumed it, and the next visit was 5 again (the post-backup write rolled back): the first restore of a real app instance.
+- **Removed** (`ec7c072`): Helm uninstalled the app; its namespace and claim stay, as for any app with a volume.
+
+Not exercised live: a worker instance (CI smoke tests only).
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

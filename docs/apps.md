@@ -9,7 +9,7 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 | Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to prod** | `make app-promote` | [Promote to production](#promote-to-production) |
-| Add an image that already exists | **New app**, other tabs | `make app-new` | [Add an existing image](#add-an-existing-image) |
+| Add an image that already exists | **New app** → **Deploy an existing image** | `make app-new` | [Add an existing image](#add-an-existing-image) |
 | Choose who can reach it | **Who can reach it** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
@@ -31,7 +31,7 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 From nothing to a running staging app in a few minutes (about three for TypeScript; six or seven for Kotlin, whose first build downloads its dependencies): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** → **New app and repository** (the first tab). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+**In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
@@ -75,7 +75,7 @@ make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env pro
 git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/prod" && git push
 ```
 
-Production requires the digest and never deploys automatically. The console's preset tabs can create production too, but they carry the TypeScript template's defaults: for a Kotlin app, set **Memory request** 192Mi, **Memory limit** 384Mi and **CPU request** 100m under **Advanced**; the start-up allowance is not on the form, so use the command.
+Production requires the digest and never deploys automatically. In the console, create production with **New app** → **Deploy an existing image** → **From the repository's swhurl.yaml**, environment prod: the app's own `swhurl.yaml` supplies its stack's resources and start-up allowance (a Kotlin app's 192Mi, 384Mi, 100m and `startupSeconds`), which the **platform conventions** tabs do not.
 
 ## Add an existing image
 
@@ -83,9 +83,9 @@ For an image that already exists: an app made elsewhere, a public image such as 
 
 | The app | Command | Console |
 | --- | --- | --- |
-| Has a `swhurl.yaml` in its repository | `make app-new NAME=<app> ARGS="--from-repo OWNER/REPO --env staging --image …"` | (not on the form; use the command) |
-| Follows the TypeScript template's conventions | `--preset swhurl-web` or `--preset swhurl-worker` | **Web app** or **Worker** tab |
-| Anything else | every option yourself (table below) | **Other image** tab, with **Advanced** open |
+| Has a `swhurl.yaml` in its repository | `make app-new NAME=<app> ARGS="--from-repo OWNER/REPO --env staging --image …"` | **From the repository's swhurl.yaml** tab |
+| Follows the platform conventions (port 8080, `/healthz`, UID 65532, `OTEL_*`, `<run>-<sha>` tags) | `--preset swhurl-web` or `--preset swhurl-worker` | **Web app, platform conventions** or **Worker, platform conventions** tab |
+| Anything else | every option yourself (table below) | **Custom** tab, with **Advanced** open |
 
 ```bash
 make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \

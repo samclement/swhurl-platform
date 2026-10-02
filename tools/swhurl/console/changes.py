@@ -87,9 +87,14 @@ ADVANCED_GROUPS = (('Runtime', ('kind', 'port', 'health_path', 'uid')),
 """The New app form's Advanced section, in order. Name, environment, image, secret keys, database, exposure and
 host are up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
 NEW_REPO = 'new-repo'
-PRESET_LABELS = {NEW_REPO: 'New app and repository', 'swhurl-web': 'Web app from the swhurl template',
-                 'swhurl-worker': 'Worker from the swhurl template', '': 'Other image'}
-"""The New app page's tabs: a new repository from a stack (console/repos.py), or an image that already exists."""
+FROM_REPO = 'from-repo'
+EXISTING_LABELS = {'swhurl-web': 'Web app, platform conventions', 'swhurl-worker': 'Worker, platform conventions',
+                   FROM_REPO: "From the repository's swhurl.yaml", '': 'Custom'}
+"""How an existing image runs, the second New app scenario's tabs: a preset, the app repository's swhurl.yaml
+(``app-new --from-repo``) or every setting by hand."""
+PRESET_LABELS = {NEW_REPO: 'Start a new app', **EXISTING_LABELS}
+"""Every ``/new?preset=`` value: a new repository from a stack (console/repos.py), or one of EXISTING_LABELS."""
+REPO_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+(@[A-Za-z0-9._/-]+)?')
 
 
 def new_repo_args(form: Mapping[str, str], questions: list[repo.Question]) -> tuple[str, str, str, dict[str, str], list[str]]:
@@ -137,6 +142,8 @@ OTLP_HINT = (f'Tick if the app has an OpenTelemetry SDK. Sets OTEL_EXPORTER_OTLP
 
 def new_app_defaults(preset: str = '') -> dict[str, str]:
     """What app-new uses when a field is left empty, read from its own parser (this image's copy)."""
+    if preset == FROM_REPO:
+        return {}  # the repository's swhurl.yaml decides, read when the PR is made
     parser = new.parser(preset or None)
     return {field: str(parser.get_default(field)) for field, _, _ in NEW_APP_FIELDS
             if parser.get_default(field) is not None and field not in CHECKBOXES}
@@ -144,7 +151,7 @@ def new_app_defaults(preset: str = '') -> dict[str, str]:
 
 def new_app_checked(preset: str = '') -> dict[str, bool]:
     """Whether each checkbox starts ticked (a preset can turn one on)."""
-    parser = new.parser(preset or None)
+    parser = new.parser(None if preset in ('', FROM_REPO) else preset)
     return {field: bool(parser.get_default(field)) for field in CHECKBOXES}
 
 
@@ -174,15 +181,22 @@ def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
     if env not in ENVIRONMENTS:
         raise ActionError(f'env must be one of {", ".join(ENVIRONMENTS)}')
     preset = form.get('preset', '').strip()
-    if preset and preset not in PRESETS:
+    if preset == FROM_REPO:
+        source = form.get('repo', '').strip()
+        if not REPO_RE.fullmatch(source):
+            raise ActionError('repository must be OWNER/REPO or OWNER/REPO@REF, for example samclement/hello-ts')
+        argv = [name, f'--env={env}', f'--from-repo={source}']
+    elif preset and preset not in PRESETS:
         raise ActionError(f'preset must be one of {", ".join(sorted(PRESETS))}')
-    argv = [name, f'--env={env}'] + ([f'--preset={preset}'] if preset else [])
+    else:
+        argv = [name, f'--env={env}'] + ([f'--preset={preset}'] if preset else [])
     for field, flag, label in NEW_APP_FIELDS:
         value = form.get(field, '').strip()
         if field in CHECKBOXES:
             if value not in ('', 'on'):
                 raise ActionError(f'{label} is a checkbox')
-            argv.append(f'--{flag}' if value else f'--no-{flag}')
+            if value or preset != FROM_REPO:  # unticked leaves swhurl.yaml's choice alone
+                argv.append(f'--{flag}' if value else f'--no-{flag}')
             continue
         if not value:
             continue

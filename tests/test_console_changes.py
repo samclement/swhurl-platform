@@ -266,12 +266,16 @@ class OpenPrTests(unittest.TestCase):
         self.assertFalse(seen[0].parent.exists())
         self.assertEqual([r.method for r in api.requests], ['GET', 'GET'])
 
-    def test_refused_app_new_writes_nothing_to_github(self):
-        runner = tree_fake(app_new=Result((), 2, '', '[ERROR] production instances must pin an image digest\n'))
-        api = FakeGitHub()
-        with self.assertRaisesRegex(actions.ActionError, 'refused'):
-            self.open(runner, api)
-        self.assertEqual({r.method for r in api.requests}, {'GET'})
+    def test_refused_or_unvalidated_app_new_writes_nothing_to_github(self):
+        failures = [(2, '[ERROR] production instances must pin an image digest'),
+                    (1, '[ERROR] could not validate the app policy (helm unavailable)')]
+        for code, message in failures:
+            with self.subTest(code=code):
+                runner = tree_fake(app_new=Result((), code, '', message + '\n'))
+                api = FakeGitHub()
+                with self.assertRaisesRegex(actions.ActionError, 'refused'):
+                    self.open(runner, api)
+                self.assertEqual({r.method for r in api.requests}, {'GET'})
 
     def test_app_new_runs_the_trees_tooling(self):
         runner = tree_fake()

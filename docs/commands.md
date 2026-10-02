@@ -34,6 +34,8 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `console-image` | Pin `platform/console` to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run. The publish run does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
 | `console-dev` | The [console](console.md) on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub | Cluster (read) |
 
+App creation and edits fail if requested policy validation cannot run. Scale, expose and promote accept handwritten YAML; see [editing boundaries and formatting trade-offs](apps.md#operate-an-instance).
+
 ## Settings
 
 | Target | Does | Touches |

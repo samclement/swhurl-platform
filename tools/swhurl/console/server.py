@@ -13,6 +13,7 @@ import argparse
 import datetime as dt
 import re
 import sys
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -157,9 +158,26 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=404, error='No such job (jobs are kept in memory only).')
         return page(request, 'job.html', job=found)
 
+    questions_cache: dict[str, tuple[float, list[repo.Question]]] = {}
+
+    def stack_questions(stack: str) -> list[repo.Question]:
+        """The stack template's questions (its copier.yml on GitHub), read at most every 5 minutes."""
+        read_at, found = questions_cache.get(stack, (0.0, []))
+        if time.monotonic() - read_at > 300:
+            found = repo.template_questions(stack, **({'opener': repo_opener} if repo_opener else {}))
+            questions_cache[stack] = (time.monotonic(), found)
+        return found
+
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
+        features, features_error = {}, ''
+        for stack in contract.STACKS:
+            try:
+                features[stack] = stack_questions(stack)
+            except repo.RepoError as problem:
+                features[stack], features_error = [], str(problem)
         return page(request, 'new_repo.html', status_code=status_code, presets=changes.PRESET_LABELS,
+                    features=features, features_error=features_error,
                     preset=changes.NEW_REPO, stacks=contract.STACKS, owner=contract.APP_OWNER,
                     exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
                     github=github, app_repos=app_repos)
@@ -169,10 +187,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if github is None or app_repos is None:
             return new_repo_form(request, 409, 'Both GitHub tokens must be configured (console-github Secret).', form)
         try:
-            name, stack, description, extra = changes.new_repo_args(form)
-        except actions.ActionError as error:
+            questions = stack_questions(form.get('stack', '').strip()) if form.get('stack', '').strip() in contract.STACKS else []
+            name, stack, description, answers, extra = changes.new_repo_args(form, questions)
+        except (actions.ActionError, repo.RepoError) as error:
             return new_repo_form(request, 400, str(error), form)
-        req = repo.Request(name, stack, contract.APP_OWNER, description)
+        req = repo.Request(name, stack, contract.APP_OWNER, description, answers)
 
         def work(job: actions.Job) -> None:
             client = repos.AppRepos(runner, app_repos)

@@ -146,7 +146,8 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
     scratch = Path(tempfile.mkdtemp(prefix='app-repo-'))
     try:
         work = scratch / req.name
-        job.lines.append(f'Rendering {STACKS[req.stack]} ({req.stack}) for {req.name}')
+        chosen = ', '.join(f'{k}={v}' for k, v in sorted(req.answers.items()))
+        job.lines.append(f'Rendering {STACKS[req.stack]} ({req.stack}) for {req.name}' + (f' with {chosen}' if chosen else ''))
         repo.render(runner, req, work)
         files = sorted(p.relative_to(work).as_posix() for p in work.rglob('*') if p.is_file())
         job.lines += [f'A {p}' for p in files]

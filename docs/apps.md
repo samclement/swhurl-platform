@@ -30,13 +30,20 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 ## Start from the template
 
-New app code starts from the GitHub template repository [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) (**Use this template**; keep the repository public so the cluster can pull its images without credentials). It already meets what the platform expects: port 8080, `GET /healthz`, a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, and a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, printing the image with its digest. Its README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one.
+New app code starts from the GitHub template repository [`samclement/swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) (**Use this template**; keep the repository public so the cluster can pull its images without credentials). It already meets what the platform expects: port 8080, `GET /healthz`, a non-root user (UID 65532) that writes only to `/tmp`, an OpenTelemetry SDK, and a workflow that checks every pull request and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`, printing the image with its digest, and a [`swhurl.yaml`](#swhurlyaml) saying what it needs from the platform. Its README is the guide on the app's side. Nothing in an app repository names the cluster: the platform writes the manifests here, and the app repository never needs access to this one.
 
 Template changes do not reach apps already created from it, except the shared Renovate preset; copy other improvements by hand ([plan](plan.md) section 0, item 9).
 
 ## Add an app
 
-An app built from the template needs only a name, its image and who can reach it; the preset fills in the rest:
+An app with a `swhurl.yaml` needs only a name, its image and the environment; the file fills in the rest:
+
+```bash
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging \
+  --image ghcr.io/samclement/weather-api:42-a1b2c3d@sha256:<digest>"
+```
+
+`--from-repo OWNER/REPO[@REF]` reads the file from the repository's default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set (needed for a private repository); `--manifest PATH` reads a local copy. Without a `swhurl.yaml`, a preset fills in the same values:
 
 ```bash
 make app-new NAME=weather-api ARGS="--preset swhurl-web --env staging \
@@ -48,12 +55,12 @@ git commit -m "apps: add weather-api/staging" && git push
 make flux-reconcile && make app-status APP=weather-api ENV=staging   # flux-reconcile waits for the new unit
 ```
 
-| Preset | Fills in | For |
+| Preset (the template's `swhurl.yaml`) | Fills in | For |
 | --- | --- | --- |
 | `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) | A web app or API from the template |
 | `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` | A background worker from the template |
 
-Any flag you give wins over the preset (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
+Any flag you give wins over the preset or `swhurl.yaml` (for example `--exposure public --host weather.example.com`, or `--no-otlp`). The values are the template's conventions, kept in [`contract.py`](../tools/swhurl/apps/contract.py). Without a preset, give every option yourself:
 
 ```bash
 make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \
@@ -76,6 +83,35 @@ The console's **New app** form opens the same change as a pull request ([console
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
 Every instance runs non-root with no service-account token, all capabilities dropped and a read-only root filesystem with a writable `/tmp`. The generator refuses to overwrite an instance, expose a worker, put a public app in the sign-in cookie domain, or ship production without a digest.
+
+## swhurl.yaml
+
+What an app needs from the platform, kept in the app's own repository and read by `app-new --from-repo` and `--manifest`. Each field becomes an `app-new` default; flags given on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
+
+```yaml
+version: 1              # required; this platform reads version 1
+stack: typescript       # which template the app came from (informational)
+kind: web               # required: web or worker
+port: 8080              # web only (default 8080)
+healthPath: /healthz    # web only, required: readiness and liveness
+uid: 65532              # the non-root user the image runs as (default 65532)
+telemetry: otlp         # otlp: the app has an OpenTelemetry SDK; none (default)
+autoDeploy: true        # staging deploys each image the app publishes (<run>-<sha> tags)
+database: sqlite        # optional: the SQLite capability; databaseSize: 1Gi (default)
+secrets: [API_TOKEN]    # optional: environment variable names for an encrypted Secret
+resources: {cpu: 10m, memory: 32Mi, memoryLimit: 128Mi}   # optional
+exposure: authenticated-web   # optional default: web apps authenticated-web, workers private
+```
+
+| Field | `app-new` option |
+| --- | --- |
+| `kind`, `port`, `healthPath`, `uid` | `--kind`, `--port`, `--health-path`, `--uid` |
+| `telemetry: otlp` | `--otlp` |
+| `autoDeploy: true` | `--auto-deploy` |
+| `database`, `databaseSize` | `--database`, `--database-size` |
+| `secrets` | `--secret-keys` |
+| `resources.cpu`, `.memory`, `.memoryLimit` | `--cpu`, `--memory`, `--memory-limit` |
+| `exposure` | `--exposure` |
 
 ## Who can reach it
 

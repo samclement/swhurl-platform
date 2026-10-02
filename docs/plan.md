@@ -4,7 +4,7 @@
 
 ## 0. Where this paused and what is left
 
-16. **Automatic app dashboards** (2 October 2026): implementing scheduled discovery of Flux-managed app environments, dashboard creation and first-promotion updates, isolated ServiceAccount, bounded jobs and freshness verification ([dashboards](apps.md#dashboards)).
+16. **Automatic app dashboards** (2 October 2026): done (`d5c0f87`): scheduled discovery of Flux-managed app environments, dashboard creation and first-promotion updates, isolated ServiceAccount, bounded jobs and freshness verification ([dashboards](apps.md#dashboards), [live evidence](current-state.md#automatic-app-dashboards-2-october-2026)).
 
 15. **Structured logs across the cluster** (agreed 2 October 2026): done (`cf3df0c`, `498310b`): node-agent JSON/text normalization, event normalization, supported native JSON settings, console JSON logging, actual-collector fixtures and `make verify-logs`. Active services verified; quiet/fallback cases and browser-check limitations recorded in [live evidence](current-state.md#structured-logs-across-the-cluster-2-october-2026). Existing streams only; preserve original lines, schema and historical records ([formats](services.md#structured-logs)).
 

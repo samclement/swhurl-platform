@@ -41,6 +41,7 @@ from swhurl.apps.contract import (
     OTLP_PROTOCOL,
     PRESETS,
     STACKS,
+    secret_key_problem,
 )
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
@@ -189,6 +190,8 @@ def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
             raise ActionError(f'{label} must be one line')
         if field in CHOICES and value not in CHOICES[field]:
             raise ActionError(f'{label} must be one of {", ".join(CHOICES[field])}')
+        if field == 'secret_keys' and (problem := secret_key_problem([k.strip() for k in value.split(',') if k.strip()])):
+            raise ActionError(problem)
         argv.append(f'--{flag}={value}')
     return name, env, argv
 

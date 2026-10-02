@@ -4,7 +4,7 @@
 {% macro hint(field) %}
   {% if field == 'image' %}<span class="muted hint">No <code>latest</code>. Production needs a digest (<code>@sha256:…</code>); from the swhurl template, copy the line the image build prints.</span>
   {% elif field == 'host' %}<span class="muted hint">Leave empty for a signed-in app to get the address shown. A public app needs its own host outside {{ domain }}.</span>
-  {% elif field == 'secret_keys' %}<span class="muted hint">Optional. Names only, comma-separated, for example <code>API_TOKEN,DB_URL</code>. The app receives each one as an environment variable. Don't type values here: after the PR opens, you set them in its encrypted file (the PR description says how).</span>
+  {% elif field == 'secret_keys' %}<span class="muted hint">Optional. Names only, comma-separated, for example <code>API_TOKEN,DB_URL</code>. The app receives each one as an environment variable. Don't type values here: after the PR opens, you set them in its encrypted file (the PR description says how). Names the platform sets are refused: <code>HOST_IP</code>, <code>DATABASE_PATH</code> and anything starting <code>OTEL_</code>, <code>SWHURL_</code> or <code>KUBERNETES_</code>.</span>
   {% elif field == 'uid' %}<span class="muted hint">The image's non-root user; it must match the image (nginx-unprivileged is 101) or the pod cannot start.</span>
   {% elif field == 'port' %}<span class="muted hint">The port the app listens on inside the container.</span>
   {% elif field == 'health_path' %}<span class="muted hint">A path that answers 200 when the app is ready; web apps need one.</span>

@@ -107,6 +107,8 @@ class InstanceStatus:
     problems: list[Problem]
     settings: dict[str, str] = field(default_factory=dict)  # replicas, cpu, memory, memory_limit as in Git
     exposure: str = ''  # private, authenticated-web or public, from the live routes
+    environment: dict[str, str] = field(default_factory=dict)  # variables the platform sets, as the HelmRelease sets them
+    secret_env: str = ''  # the Secret whose keys become variables (envFrom), if any
 
     @property
     def applied(self) -> bool:
@@ -214,6 +216,24 @@ def release_settings(release: dict | None) -> dict[str, str]:
     return {k: str(v) for k, v in found.items() if v is not None} if release else {}
 
 
+def release_env(release: dict | None) -> tuple[dict[str, str], str]:
+    """``({name: value}, secret name)``: the variables the HelmRelease sets (a ``valueFrom`` shown by its source)
+    and the Secret whose keys arrive through ``envFrom``. Secret values are never read."""
+    container = (((((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main')
+                  or {}).get('containers') or {}).get('main') or {})
+    env = container.get('env') or {}
+    if isinstance(env, list):  # the chart also takes Kubernetes' own list form
+        env = {e.get('name'): e.get('value', e) for e in env if isinstance(e, dict)}
+    shown = {}
+    for name, value in env.items():
+        if isinstance(value, dict):
+            ref = (value.get('valueFrom') or {}).get('fieldRef') or {}
+            value = f"from the pod ({ref['fieldPath']})" if ref.get('fieldPath') else 'from a reference'
+        shown[str(name)] = str(value)
+    secrets = [(f.get('secretRef') or {}).get('name') for f in container.get('envFrom') or [] if isinstance(f, dict)]
+    return shown, next((s for s in secrets if s), '')
+
+
 def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     """Read the instance from the cluster; None if its Flux unit does not exist."""
     ns = instance.namespace
@@ -241,6 +261,8 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         problems=problems(pods, instance, release_settings(release)),
         settings=release_settings(release),
         exposure=live_exposure(ingresses),
+        environment=release_env(release)[0],
+        secret_env=release_env(release)[1],
     )
 
 
@@ -265,6 +287,10 @@ def status_lines(found: InstanceStatus) -> list[str]:
     lines.append(f'Exposure   {EXPOSURE_LABELS.get(found.exposure, found.exposure)}')
     lines += [f'Route      https://{host}' for host in found.routes]
     lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
+    if found.environment:
+        lines.append(f"Env        set by the platform: {', '.join(found.environment)}")
+    if found.secret_env:
+        lines.append(f'Secrets    every key of Secret {found.secret_env} (values not shown)')
     if found.problems:
         lines.append('Problems')
         for p in found.problems:

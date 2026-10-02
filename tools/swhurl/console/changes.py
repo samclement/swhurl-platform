@@ -32,7 +32,16 @@ import httpx
 
 from swhurl import platform
 from swhurl.apps import new
-from swhurl.apps.contract import DATABASES, ENVIRONMENTS, EXPOSURES, OTLP_ENDPOINT, OTLP_HOST_IP, OTLP_PROTOCOL, PRESETS
+from swhurl.apps.contract import (
+    DATABASES,
+    ENVIRONMENTS,
+    EXPOSURES,
+    OTLP_ENDPOINT,
+    OTLP_HOST_IP,
+    OTLP_PROTOCOL,
+    PRESETS,
+    STACKS,
+)
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -76,8 +85,37 @@ ADVANCED_GROUPS = (('Runtime', ('kind', 'port', 'health_path', 'uid')),
                    ('Telemetry and TLS', ('otlp', 'issuer')))
 """The New app form's Advanced section, in order. Name, environment, image, secret keys, database, exposure and
 host are up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
-PRESET_LABELS = {'swhurl-web': 'Web app from the swhurl template', 'swhurl-worker': 'Worker from the swhurl template',
-                 '': 'Other image'}
+NEW_REPO = 'new-repo'
+PRESET_LABELS = {NEW_REPO: 'New app and repository', 'swhurl-web': 'Web app from the swhurl template',
+                 'swhurl-worker': 'Worker from the swhurl template', '': 'Other image'}
+"""The New app page's tabs: a new repository from a stack (console/repos.py), or an image that already exists."""
+
+
+def new_repo_args(form: Mapping[str, str]) -> tuple[str, str, str, list[str]]:
+    """``(name, stack, description, extra app-new argv)`` from the New app and repository form."""
+    name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
+    description = ' '.join(form.get('description', '').split())[:200]
+    if not NAME_RE.match(name):
+        raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
+    if stack not in STACKS:
+        raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
+    extra = []
+    exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
+    if exposure:
+        if exposure not in EXPOSURES:
+            raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+        extra.append(f'--exposure={exposure}')
+    if host:
+        if not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', host):
+            raise ActionError(f'host {host!r} is not a DNS name')
+        extra.append(f'--host={host}')
+    return name, stack, description, extra
+
+
+def new_repo_body(repo_url: str, template: str, argv: list[str]) -> str:
+    name = argv[0]
+    return (f'The console created {repo_url} from [{template}](https://github.com/{template}) and waited for its first '
+            f'image.\n\n' + new_app_body(name, 'staging', argv))
 OTLP_HINT = (f'Tick if the app has an OpenTelemetry SDK. Sets OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} '
              f'({OTLP_HOST_IP} is the node IP), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and OTEL_SERVICE_NAME=<name>; '
              'no key needed. Logs on stdout reach ClickStack either way.')

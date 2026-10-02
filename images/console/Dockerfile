@@ -32,8 +32,10 @@ COPY pyproject.toml uv.lock ./
 RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --frozen --no-cache --no-install-project
 
 FROM docker.io/library/python:3.12-alpine@sha256:4c47124a8391cb7a9f571164147d154777cf012a4ece5f86097130d7a4478111
-# No git or curl: PRs go through GitHub's API from Python (tools/swhurl/console/changes.py).
-# The base image's ca-certificates serve kubectl and helm.
+# No curl: PRs and new repositories go through GitHub's API from Python (tools/swhurl/console/changes.py,
+# repos.py). git only for Copier, which clones a stack's template to render a new app repository.
+# The base image's ca-certificates serve kubectl, helm and git.
+RUN apk add --no-cache git
 COPY --from=tools /out/ /usr/local/bin/
 COPY --from=deps /app/.venv /app/.venv
 COPY tools/ /app/tools/

@@ -25,8 +25,8 @@ from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from swhurl.apps import contract, ops
-from swhurl.console import actions, changes, cluster
+from swhurl.apps import contract, ops, repo
+from swhurl.console import actions, changes, cluster, repos
 from swhurl.run import Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -66,10 +66,12 @@ class RequireIdentity(BaseHTTPMiddleware):
 
 
 def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None,
-               github: changes.GitHub | None = None) -> Starlette:
-    """``github`` defaults to the token in the environment (none: the new-app form says so)."""
+               github: changes.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
+               repo_opener: repo.Opener | None = None) -> Starlette:
+    """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
     jobs = jobs or actions.Jobs(runner)
     github = github or changes.github_from_env(runner)
+    app_repos = app_repos or repos.token_from_env(runner)
 
     def page(request: Request, name: str, status_code: int = 200, **context) -> Response:
         context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
@@ -155,11 +157,48 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=404, error='No such job (jobs are kept in memory only).')
         return page(request, 'job.html', job=found)
 
+    def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
+        form = form or {}
+        return page(request, 'new_repo.html', status_code=status_code, presets=changes.PRESET_LABELS,
+                    preset=changes.NEW_REPO, stacks=contract.STACKS, owner=contract.APP_OWNER,
+                    exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
+                    github=github, app_repos=app_repos)
+
+    async def new_repo(request: Request) -> Response:
+        form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
+        if github is None or app_repos is None:
+            return new_repo_form(request, 409, 'Both GitHub tokens must be configured (console-github Secret).', form)
+        try:
+            name, stack, description, extra = changes.new_repo_args(form)
+        except actions.ActionError as error:
+            return new_repo_form(request, 400, str(error), form)
+        req = repo.Request(name, stack, contract.APP_OWNER, description)
+
+        def work(job: actions.Job) -> None:
+            client = repos.AppRepos(runner, app_repos)
+            try:
+                image = repos.create_app_repo(runner, client, job, req, **({'opener': repo_opener} if repo_opener else {}))
+            finally:
+                client.close()
+            argv = [name, f'--from-repo={req.repo}', '--env=staging', f'--image={image}', *extra]
+            job.link = changes.open_pr(
+                runner, github, job, slug=f'new-{name}-staging', title=f'apps: add {name}/staging',
+                body=changes.new_repo_body(f'https://github.com/{req.repo}', contract.STACKS[stack], argv),
+                change=lambda clone: changes.run_app_new(runner, job, clone, argv))
+        try:
+            job = jobs.submit('new app and repository', f'{name}/staging', request.state.identity, work)
+        except actions.ActionError as error:
+            return new_repo_form(request, 409, str(error), form)
+        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+
     def new_app_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
-        preset = form.get('preset', request.query_params.get('preset', 'swhurl-web'))
+        # A returned /new form is always an existing-image tab; a plain GET starts on the new repository tab.
+        preset = form.get('preset', 'swhurl-web') if form else request.query_params.get('preset', changes.NEW_REPO)
         if preset not in changes.PRESET_LABELS:
-            preset = 'swhurl-web'
+            preset = changes.NEW_REPO
+        if preset == changes.NEW_REPO:
+            return new_repo_form(request, status_code, error)
         checked = {f: bool(form.get(f)) for f in changes.CHECKBOXES} if form else changes.new_app_checked(preset)
         advanced = [f for _, group in changes.ADVANCED_GROUPS for f in group]
         return page(request, 'new.html', status_code=status_code, fields=changes.NEW_APP_FIELDS,
@@ -244,7 +283,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
-                Route('/new', new_app, methods=['GET', 'POST']),
+                Route('/new', new_app, methods=['GET', 'POST']), Route('/new/repo', new_repo, methods=['POST']),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])
 

@@ -40,10 +40,12 @@ Rotate the ClickStack ingestion key ([what it is](services.md#clickstack-and-ote
 3. `make clickstack-bootstrap` writes the new key into the team.
 4. `make verify-platform` compares the live Secret with the team key by bytes; check the collector logs show no HTTP 401. If the collector pods did not restart, restart them with the `kubectl` command above.
 
-Replace the console's GitHub token (before it expires; `make verify-platform` warns 14 days ahead):
+Replace one of the console's two GitHub tokens ([what each is for](console.md#github-tokens)) before it expires; `make verify-platform` warns 14 days ahead:
 
-1. On GitHub: Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only `samclement/swhurl-platform`; permissions: Contents and Pull requests, read and write; the longest expiry offered.
-2. In your own terminal: `sops platform/console/secret.sops.yaml` and replace the `GITHUB_TOKEN` value. Never paste the token anywhere else.
+1. On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate, resource owner `samclement`, the longest expiry offered:
+   - `GITHUB_TOKEN` (name `swhurl-console`): repository access only `samclement/swhurl-platform`; Contents and Pull requests, read and write.
+   - `APP_REPOS_TOKEN` (name `swhurl-console-app-repos`): **All repositories** (GitHub requires it to create repositories); Administration, Contents and Workflows read and write, Actions read-only.
+2. In your own terminal, from the repository root, set the value without echoing it (replace `KEY` with `GITHUB_TOKEN` or `APP_REPOS_TOKEN`, then paste the token): `read -rs T && SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["KEY"]' "\"$T\""; unset T`. Never paste the token anywhere else.
 3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
 Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub rejects nothing in between, but Flux ignores pushes until both sides match, so do it in one go:

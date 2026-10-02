@@ -88,6 +88,18 @@ def image_digest(image: str, tag: str, opener: Opener = _open) -> str:
     return digest
 
 
+def copier_command() -> list[str]:
+    """Copier from the environment when installed (the console image), else through uvx (an operator's machine)."""
+    return ['copier'] if shutil.which('copier') else ['uvx', COPIER]
+
+
+def render(runner: Runner, req: Request, dest: Path) -> None:
+    """Render the stack's template into ``dest`` (Copier records the template commit in .copier-answers.yml)."""
+    data = ['--data', f'app_name={req.name}'] + (['--data', f'description={req.description}'] if req.description else [])
+    runner.run([*copier_command(), 'copy', '--defaults', '--quiet', *data,
+                f'https://github.com/{STACKS[req.stack]}.git', dest])
+
+
 def wait_for_first_run(runner: Runner, req: Request, *, out: Callable[[str], None],
                        sleep: Callable[[float], None], attempts: int = 120) -> dict:
     """The first completed Container run on main (about 10 minutes at most)."""
@@ -127,10 +139,7 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
     scratch = Path(tempfile.mkdtemp(prefix='app-repo-'))
     try:
         work = scratch / req.name
-        data = ['--data', f'app_name={req.name}'] + (['--data', f'description={req.description}']
-                                                      if req.description else [])
-        runner.run(['uvx', COPIER, 'copy', '--defaults', '--quiet', *data,
-                    f'https://github.com/{template}.git', work])
+        render(runner, req, work)
         git = ['git', '-C', work]
         runner.run([*git, 'init', '--quiet', '--initial-branch=main'])
         runner.run([*git, 'add', '--all'])

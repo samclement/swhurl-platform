@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% import "_status.html" as st %}
+{% block title %}{{ label }}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
+{% block main %}
+<p class="crumbs"><a href="/apps">Apps</a> › {{ label.split('/')[0] }}</p>
+<h1>{{ label }}</h1>
+<p class="verdict">{{ st.mark('updating') }} <strong>Not created yet</strong> <span class="muted">— waiting for its pull request</span></p>
+<p class="lead">The console opened a pull request that adds {{ label }}. The app exists once you merge it: Flux applies the change within seconds and this page then shows the app. It refreshes every 10 seconds.</p>
+{% if prs %}
+<h2>Pull request</h2>
+<ul class="items">
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
+</ul>
+{% elif prs_error %}<p class="muted">{{ prs_error }}</p>{% endif %}
+{% if jobs %}
+<h2>Jobs</h2>
+<ul class="items">
+  {% for j in jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">#{{ j.id }} {{ j.action }}</a> <span class="muted">{{ j.state }}{% if j.state == 'failed' %}: its output says why{% endif %}</span>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</li>{% endfor %}
+</ul>
+{% endif %}
+<p><a href="/activity">All activity</a></p>
+{% endblock %}

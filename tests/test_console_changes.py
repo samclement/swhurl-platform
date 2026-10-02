@@ -326,6 +326,28 @@ class NewAppRouteTests(unittest.TestCase):
         page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
 
+    def test_a_new_app_not_yet_applied_waits_for_its_pr(self):
+        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', returncode=1, stderr='NotFound')
+        c, _ = self.client(runner)
+        response = c.get('/apps/weather-api/staging', headers=WHO)
+        self.assertEqual(response.status_code, 200, 'the open PR on its console/new-weather-api-staging-* branch')
+        self.assertIn('Not created yet', response.text)
+        self.assertIn('href="https://github.com/x/pull/7"', response.text)
+        self.assertEqual(c.get('/apps/weather/staging', headers=WHO).status_code, 404, 'another app\'s PR does not count')
+        c, _ = self.client(runner, github=False)
+        self.assertEqual(c.get('/apps/weather-api/staging', headers=WHO).status_code, 404, 'neither a PR nor a job')
+        pr = changes.PullRequest(1, 't', 'u', 'console/new-a-staging-staging-abc1234', '2026-10-02')
+        self.assertTrue(changes.creates_instance(pr, 'a-staging', 'staging'))
+        self.assertFalse(changes.creates_instance(pr, 'a', 'staging'))
+
+    def test_a_new_app_job_without_a_token_still_shows_on_its_page(self):
+        runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', returncode=1, stderr='NotFound')
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        jobs.submit('new app', 'weather-api/staging', 'sam@swhurl.com', lambda job: None)
+        text = TestClient(app_under_test(runner, jobs=jobs)).get('/apps/weather-api/staging', headers=WHO).text
+        self.assertIn('Not created yet', text)
+        self.assertIn('href="/jobs/1"', text)
+
     def test_invalid_form_or_missing_token_runs_nothing(self):
         runner = tree_fake()
         c, _ = self.client(runner)

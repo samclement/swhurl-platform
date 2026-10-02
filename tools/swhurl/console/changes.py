@@ -261,6 +261,12 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
             for p in pulls if p['head']['ref'].startswith(BRANCH_PREFIX)]
 
 
+def creates_instance(pr: PullRequest, app: str, env: str) -> bool:
+    """Whether ``pr`` is a console New app PR for ``<app>/<env>`` (branch ``console/new-<app>-<env>-<sha7>``)."""
+    rest = pr.branch.removeprefix(f'{BRANCH_PREFIX}new-{app}-{env}-')
+    return rest != pr.branch and re.fullmatch('[0-9a-f]{7}', rest) is not None
+
+
 def snapshot(root: Path) -> dict[str, tuple[str, str]]:
     """``{path: (mode, sha256)}`` for every file under ``root``."""
     files = {}

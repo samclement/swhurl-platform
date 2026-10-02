@@ -111,6 +111,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def app(request: Request) -> Response:
         found = cluster.instance(request.path_params['app'], request.path_params['env'])
         status = ops.gather_status(runner, found) if found else None
+        if status is None and found:
+            # Created here but not applied yet: say so instead of "no such app" (its links appear at once).
+            label = f'{found.app}/{found.env}'
+            pending = [j for j in jobs.recent() if j.unit == label and j.action.startswith('new app')]
+            prs, prs_error = open_prs()
+            prs = [pr for pr in prs if changes.creates_instance(pr, found.app, found.env)]
+            if pending or prs:
+                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error)
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)

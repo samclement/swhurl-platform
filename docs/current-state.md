@@ -425,6 +425,12 @@ Still wrong (known, not fixed): the request log above has severity `trace`, gues
 
 The operator deleted the repositories and packages `swhurl-try-4` and `swhurl-try-5`; `make destroy-data` then deleted both claims and their volumes (`pvc-6c37f25d…`, `pvc-95176ef0…`) and the two namespaces were deleted. No `swhurl-try-*` namespace or volume remains.
 
+## Dependency update PRs (2 October 2026)
+
+- **OpenTelemetry collector chart 0.175.0** (#22): chart templates only (same collector 0.161.0); after a rebase onto the log and probe processors `make check-otel` accepted both configs. Merged; both HelmReleases Ready at 0.175.0, collector pods not restarted (unchanged rendered config); in the next 3 minutes 1,490 log rows (35 linked to traces) and no probe spans; `make verify-platform` passed.
+- **TypeScript 7 in `hello-ts`** (#6): the template has run TypeScript 7 since the operator merged it (template #9); `hello-ts` CI passed, the merge deployed `29-843055a` to staging (running: matches desired) and it answered `/` and `/healthz`.
+- **Kotlin template**: template PR #7 first (the Kotlin standard library and `kotlin-reflect` take the Kotlin plugin's version instead of `kotlinVersion` from `gradle.properties.jinja`, which Renovate cannot see, and a regex manager in the preset updates `micronautVersion`), then KSP 2.3.12, Gradle 9.8.0, Shadow 9.6.1 and Kotlin 2.4.20. A bug in the merge script let three of them merge without waiting for CI on the updated branch; every resulting `main` run, the last with all updates together, passed all four combinations.
+
 ## Still to verify before live changes
 
 - A restore on a separate machine.

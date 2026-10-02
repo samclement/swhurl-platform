@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: swhurl-try-3-staging
-  labels:
-    platform.swhurl.com/managed: 'true'
-    platform.swhurl.com/app: swhurl-try-3
-    platform.swhurl.com/environment: staging
-    platform.swhurl.com/exposure: authenticated-web

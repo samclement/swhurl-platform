@@ -235,6 +235,7 @@ class GitHubAPI:
 
     def __init__(self, runner: Runner, github: GitHub):
         self.runner = runner
+        runner.add_secret(github.token)
         self.client = httpx.Client(
             base_url=f'{github.api}/repos/{github.repo}', transport=github.transport, timeout=60,
             follow_redirects=True,  # the tarball redirects to codeload; httpx drops Authorization across hosts
@@ -265,6 +266,10 @@ class PullRequest:
     url: str
     branch: str
     opened: str  # YYYY-MM-DD
+    body: str = ''
+    labels: tuple[str, ...] = ()
+    progress: str = 'Awaiting review'
+    checks_url: str = ''
 
 
 def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
@@ -275,8 +280,39 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
         pulls = api.json('GET', '/pulls?state=open&sort=created&direction=desc&per_page=50')
     finally:
         api.client.close()
-    return [PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10])
-            for p in pulls if p['head']['ref'].startswith(BRANCH_PREFIX)]
+    out = []
+    for p in pulls:
+        if not p['head']['ref'].startswith(BRANCH_PREFIX):
+            continue
+        labels = tuple(label['name'] for label in p.get('labels', []))
+        progress, checks_url = 'Awaiting setup or manual review', p['html_url'] + '/checks'
+        if 'promotion-review-required' in labels:
+            progress = 'Review required: merge verification failed'
+        elif AUTO_MERGE_LABEL in labels and p['head'].get('sha'):
+            api = GitHubAPI(runner, github)
+            try:
+                runs = api.json('GET', f"/actions/runs?head_sha={p['head']['sha']}&event=pull_request&per_page=30")
+                checks = [r for r in runs.get('workflow_runs', [])
+                          if r.get('name') == 'Validate' and r.get('head_sha') == p['head']['sha']]
+                latest = checks[0] if checks else {}
+                checks_url = latest.get('html_url', checks_url)
+                if latest.get('conclusion') == 'success':
+                    progress = 'Checks passed; awaiting merge verification'
+                elif latest.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required'):
+                    progress = 'Failed validation; unmerged'
+                else:
+                    progress = 'Checks running' if latest.get('status') == 'in_progress' else 'Checks pending'
+                details = api.json('GET', f"/pulls/{p['number']}")
+                if details.get('mergeable_state') == 'dirty':
+                    progress = 'Merge conflict; review required'
+            except ActionError:
+                progress = 'Merge requested; check progress on GitHub'
+            finally:
+                api.client.close()
+        out.append(PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10],
+                               p.get('body') or '', labels, progress, checks_url))
+    return out
+
 
 
 def creates_instance(pr: PullRequest, app: str, env: str) -> bool:
@@ -303,8 +339,9 @@ def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
     return top.rename(workdir / 'repo')
 
 
-def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str,
-            change: Callable[[Path], None], auto_merge: bool = False) -> str:
+def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str | Callable[[Path], str],
+            change: Callable[[Path], None], auto_merge: bool | Callable[[], bool] = False,
+            verify: Callable[[], None] | None = None) -> str:
     """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL.
 
     With ``auto_merge`` the PR is labelled to merge itself once Validate passes, unless it adds or changes an
@@ -319,6 +356,8 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         tree = download(api, head, workdir)
         before = snapshot(tree)
         change(tree)
+        body = body(tree) if callable(body) else body
+        auto_merge = auto_merge() if callable(auto_merge) else auto_merge
         after = snapshot(tree)
         changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p))
         if not changed:
@@ -327,6 +366,8 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         if auto_merge and any(p.endswith('.sops.yaml') for p in changed):
             auto_merge = False
             job.lines.append('Not merging automatically: set the Secret values on the branch first, then merge it yourself')
+        if verify:
+            verify()
         if runner.dry_run:
             job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
             return ''

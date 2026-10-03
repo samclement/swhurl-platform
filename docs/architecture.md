@@ -213,4 +213,4 @@ flowchart LR
   cm -- hello-tls --> ingress
 ```
 
-App creation through the commands and console deploys staging. Production is created through [promotion](apps.md#promote-to-production); later promotions update only its image. Each environment retains its own Flux unit, settings, storage and credentials. Custom deployments remain reviewed Git edits.
+App creation through the commands and console deploys staging. Production is created through [promotion](apps.md#promote-to-production); later promotions update only its image. Console promotions go through the [review and merge gate](console.md#auto-merge), which validates the latest merge result before pushing it to `main`. Each environment retains its own Flux unit, settings, storage and credentials. Custom deployments remain reviewed Git edits.

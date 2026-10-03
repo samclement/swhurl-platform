@@ -5,16 +5,20 @@ import io
 import json
 import sys
 import tarfile
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 import httpx
+import yaml
 from starlette.testclient import TestClient
 
-from swhurl.apps import new, ops
+from swhurl import ROOT
+from swhurl.apps import new, ops, promotion
 from swhurl.console import actions, changes, server
+from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result
 
 TOKEN = 'github_pat_fixture_0123456789abcdef'
@@ -24,8 +28,26 @@ FORM = {'name': 'weather-api', 'env': 'staging', 'image': 'ghcr.io/me/weather:1.
         'host': 'weather.homelab.swhurl.com', 'health_path': '/ready', 'kind': '', 'port': ''}
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
 REVISION = 'main@sha1:' + HEAD
-PROMOTION = {'image': IMAGE, 'revision': REVISION}
-MAIN = {'README.md': b'# repo\n', 'apps/hello/staging/helmrelease.yaml': b'kind: HelmRelease\n'}
+MAIN = {'README.md': b'# repo\n'}
+for env in ('staging', 'prod'):
+    for path in (ROOT / 'apps/hello' / env).glob('*.yaml'):
+        MAIN[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    rel = f'apps/hello/{env}/helmrelease.yaml'
+    doc = yaml.safe_load(MAIN[rel])
+    doc['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(
+        IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
+    MAIN[rel] = yaml.safe_dump(doc, sort_keys=False).encode()
+for rel in ('clusters/home/app-hello-staging.yaml', 'clusters/home/app-hello-prod.yaml'):
+    MAIN[rel] = (ROOT / rel).read_bytes()
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    for rel, data in MAIN.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(data)
+    PROMOTION = {'image': IMAGE, 'revision': REVISION,
+                 'configuration': promotion.fingerprint(root, 'hello', 'staging'),
+                 'target': promotion.fingerprint(root, 'hello', 'prod')}
+
 
 
 class FakeGitHub:
@@ -476,7 +498,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
              'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
-            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}'), 'hello/prod',
+            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}', f'--expect-config={PROMOTION["configuration"]}'), 'hello/prod',
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
@@ -493,11 +515,11 @@ class ChangeAppRouteTests(unittest.TestCase):
                 (payload,) = self.api.sent('POST /pulls')
                 self.assertEqual((payload['head'], payload['title']), (branch, title))
 
-    def test_scale_requires_review_and_promotion_auto_merge_is_explicit(self):
+    def test_scale_requires_review_and_promotion_auto_merge_is_default(self):
         cases = (('/apps/hello/prod/scale', {'replicas': '2'}, False),
                  ('/apps/hello/prod/scale', {'replicas': '0', 'auto_merge': 'on'}, False),
-                 ('/apps/hello/staging/promote', PROMOTION, False),
-                 ('/apps/hello/staging/promote', {**PROMOTION, 'auto_merge': 'on'}, True),
+                 ('/apps/hello/staging/promote', PROMOTION, True),
+                 ('/apps/hello/staging/promote', {**PROMOTION, 'hold': 'on'}, False),
                  ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
                  ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
         for path, form, merges in cases:
@@ -539,7 +561,7 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn(message, response.text)
                 self.assertEqual(jobs.recent(), [])
-                self.assertEqual(self.api.requests, [])
+                self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_promotion_rechecks_staging_when_the_background_job_starts(self):
         good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
@@ -549,7 +571,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(jobs.get(1).state, 'failed')
         self.assertIn('changed', jobs.get(1).lines[-1])
-        self.assertEqual(self.api.requests, [])
+        self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_promotion_read_failure_is_a_502_and_opens_nothing(self):
         c, jobs = self.client(tree_fake())
@@ -558,20 +580,100 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertIn('Forbidden', response.text)
         self.assertEqual(jobs.recent(), [])
-        self.assertEqual(self.api.requests, [])
+        self.assertEqual(self.api.sent('POST /pulls'), [])
 
-    def test_staging_page_submits_the_displayed_image_and_revision(self):
+    def test_review_page_submits_the_displayed_image_revision_and_configuration(self):
         good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
-        rows = [server.cluster.AppRow(good.instance, ('True', ''), False, IMAGE, '2.0', IMAGE.split('@')[1]),
-                server.cluster.AppRow(ops.Instance('hello', 'prod'), ('True', ''), False, 'old', '1.0', 'old')]
         c, _ = self.client(tree_fake())
-        for status, disabled in ((good, False), (replace(good, release=None), True)):
-            with self.subTest(disabled=disabled), mock.patch.object(ops, 'gather_status', return_value=status), \
-                    mock.patch.object(server.cluster, 'apps', return_value=rows):
-                text = c.get('/apps/hello/staging', headers=WHO).text
-            self.assertIn(f'name="image" value="{IMAGE}"', text)
-            self.assertIn(f'name="revision" value="{REVISION}"', text)
-            self.assertIn('<button disabled' if disabled else '<button \n', text)
+        with mock.patch.object(ops, 'gather_status', return_value=good):
+            response = c.get('/apps/hello/staging/promotion', headers=WHO)
+        self.assertEqual(response.status_code, 200, response.text)
+        for name, value in PROMOTION.items():
+            self.assertIn(f'name="{name}" value="{value}"', response.text)
+        self.assertIn('Hold for manual review', response.text)
+        with mock.patch.object(ops, 'gather_status', return_value=replace(good, release=None)):
+            response = c.get('/apps/hello/staging/promotion', headers=WHO)
+        self.assertEqual(response.status_code, 409)
+        self.assertNotIn('action="/apps/hello/staging/promote"', response.text)
+
+    def test_duplicate_click_and_restart_recover_the_existing_pr(self):
+        pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',
+                                 'console/promote-hello-staging-abcdef0', '2026-10-03',
+                                 '<!-- swhurl-promotion ' + json.dumps({'image': IMAGE}) + ' -->')
+        runner = tree_fake()
+        c, jobs = self.client(runner)
+        with mock.patch.object(changes, 'console_prs', return_value=[pr]):
+            for _ in range(2):
+                self.assertEqual(c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO).status_code, 200)
+            self.assertEqual(jobs.get(2).link, pr.url)
+            fresh, fresh_jobs = self.client(tree_fake())
+            response = fresh.get('/apps/hello/staging/promotion', headers=WHO)
+            self.assertIn(pr.url, response.text)
+            self.assertIn('Hold PR', response.text)
+            self.assertEqual(fresh_jobs.recent(), [])
+        self.assertFalse(any(c[:3] == (sys.executable, '-m', 'swhurl') for c in runner.calls))
+        self.assertEqual(self.api.sent('POST /pulls'), [])
+
+    def test_existing_pr_requires_explicit_replacement_for_another_image(self):
+        pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',
+                                 'console/promote-hello-staging-abcdef0', '2026-10-03',
+                                 '<!-- swhurl-promotion ' + json.dumps({'image': 'older'}) + ' -->')
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(changes, 'console_prs', return_value=[pr]):
+            response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Close it explicitly', response.text)
+        self.assertEqual(jobs.recent(), [])
+
+    def test_configuration_or_destination_movement_opens_nothing(self):
+        for field in ('configuration', 'target'):
+            c, jobs = self.client(tree_fake())
+            response = c.post('/apps/hello/staging/promote', data={**PROMOTION, field: 'stale'}, headers=WHO)
+            self.assertEqual(response.status_code, 200)  # redirect to the failed job page
+            self.assertEqual(jobs.get(1).state, 'failed')
+            self.assertIn('changed since review', jobs.get(1).lines[-1])
+            self.assertEqual(self.api.sent('POST /pulls'), [])
+
+    def test_staging_movement_after_generation_still_opens_nothing(self):
+        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(ops, 'gather_status', side_effect=[good, good, replace(good, desired_image='new')]):
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        self.assertEqual(jobs.get(1).state, 'failed')
+        self.assertIn('changed', jobs.get(1).lines[-1])
+        self.assertEqual(self.api.sent('POST /git/refs'), [])
+
+
+class PromotionControlTests(unittest.TestCase):
+    def client(self, setup=False, labels=('auto-merge',)):
+        requests = []
+        pr = {'state': 'open', 'base': {'ref': 'main'},
+              'head': {'ref': 'console/promote-hello-staging-abcdef0',
+                       'repo': {'full_name': 'samclement/swhurl-platform'}},
+              'labels': [{'name': label} for label in labels],
+              'body': '<!-- swhurl-promotion ' + json.dumps({'app': 'hello', 'image': IMAGE, 'setup': setup}) + ' -->'}
+
+        def reply(request):
+            requests.append(request)
+            return httpx.Response(200, json=pr if request.method == 'GET' else {})
+        github = changes.GitHub('samclement/swhurl-platform', TOKEN, transport=httpx.MockTransport(reply))
+        return FakeRunner(), github, requests
+
+    def test_hold_removes_only_the_auto_merge_label_and_resume_requests_rechecks(self):
+        runner, github, requests = self.client()
+        console_promotion.control(runner, github, 7, 'hold')
+        self.assertEqual([(r.method, r.url.path.split('/issues/')[-1]) for r in requests if r.method != 'GET'],
+                         [('DELETE', '7/labels/auto-merge')])
+        runner, github, requests = self.client(labels=())
+        console_promotion.control(runner, github, 7, 'resume')
+        self.assertEqual(json.loads(requests[-1].content), {'labels': ['auto-merge']})
+
+    def test_setup_and_failed_merge_checks_cannot_be_resumed(self):
+        for setup, labels in [(True, ()), (False, ('promotion-review-required',))]:
+            runner, github, requests = self.client(setup=setup, labels=labels)
+            with self.assertRaises(actions.ActionError):
+                console_promotion.control(runner, github, 7, 'resume')
+            self.assertTrue(all(r.method == 'GET' for r in requests))
 
 
 if __name__ == '__main__':

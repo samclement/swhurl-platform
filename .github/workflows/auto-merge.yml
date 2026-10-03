@@ -1,10 +1,6 @@
 name: Auto-merge
 
-# Merges a console pull request labelled `auto-merge` once Validate has passed on its current commit.
-# The console labels only changes that are easy to undo (docs/console.md#auto-merge); this workflow checks
-# again that the PR is the console's (a console/* branch in this repository), touches only app files and
-# adds no encrypted file. Merges made with GITHUB_TOKEN start no workflows; Flux's webhook still sees the push.
-
+# Trusted main tooling checks the actual app diff and merge result, then fast-forwards main.
 on:
   workflow_run:
     workflows: [Validate]
@@ -16,40 +12,73 @@ permissions:
   contents: write
   pull-requests: write
   actions: read
+  issues: write
 
 concurrency:
-  group: auto-merge-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  group: console-auto-merge
+  cancel-in-progress: false
 
 jobs:
   merge:
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
-       && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'console/'))
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+       && ((github.event.workflow_run.event == 'pull_request' && startsWith(github.event.workflow_run.head_branch, 'console/'))
+           || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')))
       || (github.event_name == 'pull_request' && github.event.label.name == 'auto-merge'
           && startsWith(github.event.pull_request.head.ref, 'console/'))
     steps:
-      - name: Merge if it qualifies
+      - name: Checkout trusted main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.10.9'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.34.4'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.19.0'
+
+      - name: Install validation dependencies and flux-schema
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --upgrade 'pip>=25.1'
+          python3 -m pip install --group check
+          curl -fsSLo "$RUNNER_TEMP/flux-schema.tar.gz" \
+            https://github.com/fluxcd/flux-schema/releases/download/v0.9.0/flux-schema_0.9.0_linux_amd64.tar.gz
+          echo "104b764a53bcec30ec856a6a3efaecd13abf606099f0b057932027d755313cdb  $RUNNER_TEMP/flux-schema.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Cache checksum-verified OTel collectors
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/swhurl-platform/otelcol
+          key: otelcol-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('platform/otel/helmrelease-*.yaml') }}
+          restore-keys: |
+            otelcol-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Merge eligible console PRs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          skip() { echo "Not merging #${PR}: $1"; exit 0; }
-          [ -n "$PR" ] || skip 'no pull request in this repository'
-          pr=$(gh pr view "$PR" --json state,isCrossRepository,headRefName,headRefOid,labels)
-          [ "$(jq -r .state <<<"$pr")" = OPEN ] || skip 'not open'
-          [ "$(jq -r .isCrossRepository <<<"$pr")" = false ] || skip 'from another repository'
-          [[ "$(jq -r .headRefName <<<"$pr")" == console/* ]] || skip 'not a console branch'
-          jq -e '.labels | map(.name) | index("auto-merge")' <<<"$pr" >/dev/null || skip 'no auto-merge label'
-          [ "$(jq -r .headRefOid <<<"$pr")" = "$SHA" ] || skip 'the branch has moved on since this commit'
-          passed=$(gh run list --workflow validate.yml --commit "$SHA" --event pull_request --status success --json databaseId --jq length)
-          [ "$passed" -gt 0 ] || skip 'Validate has not passed on this commit yet'
-          files=$(gh pr diff "$PR" --name-only)
-          echo "$files"
-          ! grep -q '\.sops\.yaml$' <<<"$files" || skip 'it changes an encrypted file'
-          ! grep -qvE '^(apps/[a-z0-9-]+/(staging|prod)/|clusters/home/app-[a-z0-9-]+\.yaml$|clusters/home/kustomization\.yaml$)' <<<"$files" \
-            || skip 'it changes files outside apps/<app>/<env>/ and the app units in clusters/home/'
-          gh pr merge "$PR" --merge --delete-branch --match-head-commit "$SHA"
+          REQUIRE_HELM: '1'
+        run: PYTHONPATH=tools uv run --frozen python -m swhurl console-merge

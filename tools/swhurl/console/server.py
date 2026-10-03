@@ -26,8 +26,9 @@ from starlette.responses import PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from swhurl.apps import contract, ops, repo
-from swhurl.console import actions, changes, cluster, logconfig, repos
+from swhurl.apps import contract, new, ops, repo
+from swhurl.apps.yaml_file import EditError
+from swhurl.console import actions, changes, cluster, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -117,8 +118,12 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             pending = [j for j in jobs.recent() if j.unit == label and j.action.startswith('new app')]
             prs, prs_error = open_prs()
             prs = [pr for pr in prs if changes.creates_instance(pr, found.app, found.env)]
-            if pending or prs:
-                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error)
+            prs += [pr for pr in open_prs()[0] if found.env == 'prod' and promotion.matching(pr, found.app)]
+            in_git = False
+            if not pending and not prs and github:
+                in_git = promotion.main_tree(runner, github, lambda root: (root / 'apps' / found.app / found.env).exists())
+            if pending or prs or in_git:
+                return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=in_git)
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
@@ -131,7 +136,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def app(request: Request) -> Response:
         try:
             return read_app(request)
-        except (CommandError, cluster.ReadError) as error:
+        except (CommandError, cluster.ReadError, actions.ActionError, EditError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
 
     def platform(request: Request) -> Response:
@@ -270,6 +275,37 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return new_app_form(request, 409, str(error), form)
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
+    def review_promotion(request: Request) -> Response:
+        app = request.path_params['app']
+        found = cluster.instance(app, 'staging')
+        if found is None or github is None:
+            return page(request, 'error.html', status_code=409, error='Staging and a GitHub token are required.')
+        try:
+            existing = [pr for pr in changes.console_prs(runner, github) if promotion.matching(pr, app)]
+            if existing:
+                return page(request, 'promotion.html', review={'app': app}, prs=existing)
+            status = ops.gather_status(runner, found)
+            if status is None:
+                raise actions.ActionError('staging is missing; deploy staging before promoting')
+            reviewed = promotion.main_tree(runner, github, lambda root: promotion.review(root, app, status))
+            return page(request, 'promotion.html', review=reviewed, prs=existing)
+        except (EditError, new.GenerationError, actions.ActionError) as error:
+            return page(request, 'error.html', status_code=409, error=str(error))
+        except (CommandError, cluster.ReadError) as error:
+            return page(request, 'error.html', status_code=502, error=str(error))
+
+    async def control_promotion(request: Request) -> Response:
+        if github is None:
+            return page(request, 'error.html', status_code=409, error='No GitHub token is configured.')
+        number, action = request.path_params['number'], request.path_params['action']
+        def work(job):
+            job.link = promotion.control(runner, github, number, action)
+        try:
+            job = jobs.submit(action + ' promotion PR', f'PR #{number}', request.state.identity, work)
+        except actions.ActionError as error:
+            return page(request, 'error.html', status_code=409, error=str(error))
+        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+
     async def change_app(request: Request) -> Response:
         """Promote, scale, change access to or remove an instance: a PR made by the clone's app-* command."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
@@ -284,11 +320,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 if env != 'staging':
                     raise actions.ActionError('promote from the staging instance')
                 image, revision = form.get('image', ''), form.get('revision', '')
-                if not image or not revision:
+                if form.get('host'):
+                    changes.expose_args({'exposure': 'public', 'host': form['host']})
+                if not image or not revision or not form.get('configuration') or not form.get('target'):
                     raise actions.ActionError('refresh the staging app page and review the image before promotion')
-                problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
-                if problem:
-                    raise actions.ActionError(problem)
+                previous = promotion.existing(runner, github, app, image)
+                if not previous:
+                    problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
+                    if problem:
+                        raise actions.ActionError(problem)
                 command, argv, target = 'app-promote', [app, f'--expect-image={image}'], f'{app}/prod'
                 title = f'apps: promote {app}/staging to {app}/prod'
                 make = f'make app-promote APP={app} ARGS="--expect-image={image}"'
@@ -301,22 +341,28 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
                 title, make = f'apps: remove {app}/{env}', f'make app-remove APP={app} ENV={env}'
-        except actions.ActionError as error:
+        except (actions.ActionError, EditError, new.GenerationError) as error:
             return page(request, 'error.html', status_code=400, error=str(error))
         except CommandError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
 
         def work(job: actions.Job) -> None:
             if change == 'promote':
+                previous = promotion.existing(runner, github, app, image)
+                if previous:
+                    job.link = previous.url
+                    job.lines.append('Reusing the existing promotion pull request')
+                    return
                 problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
                 if problem:
                     raise actions.ActionError(problem)
+                job.link = promotion.open_pr(runner, github, job, app, form)
+                return
             job.link = changes.open_pr(
                 runner, github, job, slug=f'{change}-{app}-{env}', title=title,
                 body=f'Generated by the console with:\n\n    {make}',
                 change=lambda clone: changes.run_tool(runner, job, clone, command, argv),
-                # Promotion merges automatically only when explicitly requested. Scale always waits for review.
-                auto_merge=change == 'promote' and form.get('auto_merge') == 'on')
+                auto_merge=False)
         try:
             job = jobs.submit(change, target, request.state.identity, work)
         except actions.ActionError as error:
@@ -334,6 +380,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app),
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
+                Route('/apps/{app}/staging/promotion', review_promotion),
+                Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
                 Route('/new', new_app, methods=['GET', 'POST']), Route('/new/repo', new_repo, methods=['POST']),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],

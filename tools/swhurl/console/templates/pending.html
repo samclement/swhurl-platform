@@ -5,12 +5,12 @@
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › {{ label.split('/')[0] }}</p>
 <h1>{{ label }}</h1>
-<p class="verdict">{{ st.mark('updating') }} <strong>Not created yet</strong> <span class="muted">— waiting for its pull request</span></p>
-<p class="lead">The console opened a pull request that adds {{ label }}. The app exists once you merge it: Flux applies the change within seconds and this page then shows the app. It refreshes every 10 seconds.</p>
+<p class="verdict">{{ st.mark('updating') }} <strong>{{ 'Deployment pending' if in_git else 'Not created yet' }}</strong> <span class="muted">— {{ 'waiting for Flux to apply Git' if in_git else 'waiting for its pull request' }}</span></p>
+<p class="lead">The app appears once its pull request is merged and Flux applies it. Eligible PRs merge automatically after checks; setup and held PRs need review. If it is already in Git, check its Flux unit for deployment progress. It refreshes every 10 seconds.</p>
 {% if prs %}
 <h2>Pull request</h2>
 <ul class="items">
-  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ pr.progress }}</span> <a href="{{ pr.checks_url or pr.url }}">Checks</a> <span class="muted">opened {{ pr.opened }}</span></li>{% endfor %}
 </ul>
 {% elif prs_error %}<p class="muted">{{ prs_error }}</p>{% endif %}
 {% if jobs %}

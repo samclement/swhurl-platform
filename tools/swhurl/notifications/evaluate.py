@@ -1,31 +1,16 @@
-"""Minute-by-minute Helm lifecycle and Kubernetes health notifications.
-
-ConfigMap state is a delivery outbox and incident history, not desired Git state.
-Delivery is at least once: a crash after ntfy accepts a message but before the
-checkpoint may repeat it. No Kubernetes mutation except this one ConfigMap.
-"""
+"""Discover app targets and evaluate lifecycle events and health incidents."""
 from __future__ import annotations
 
-import argparse
 import copy
 import datetime as dt
-import json
-import logging
-import logging.config
-import os
 import re
-from collections.abc import Callable
-from urllib.parse import urlsplit
-
-import httpx
 
 from swhurl.apps import ops
-from swhurl.console.logconfig import CONFIG
-from swhurl.run import CommandError, Runner
+from swhurl.run import Runner
 from swhurl.verify import ready_condition
 
-STATE_NAME = 'notification-state'
-STATE_NAMESPACE = 'console'
+from .state import empty_state
+
 APP_PATH = re.compile(r'^\./(?:tests/fixtures/apps/)?apps/([a-z][a-z0-9-]*)/(staging|prod)$')
 GRACE = 300
 CONSOLE_GRACE = 600
@@ -39,44 +24,9 @@ FAILURES = {'InstallFailed', 'UpgradeFailed', 'RollbackFailed', 'UninstallFailed
             'BuildFailed', 'ValidationFailed', 'ArtifactFailed', 'PruneFailed'}
 
 
-class NotificationError(Exception):
-    pass
-
 
 def timestamp(value: str | None) -> float:
     return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() if value else 0
-
-
-def empty_state(now: float) -> dict:
-    return {'version': 1, 'started': now, 'last_success': 0, 'instances': {}, 'seen': {}, 'pending': [],
-            'monitor': {}}
-
-
-def read_state(runner: Runner) -> dict | None:
-    doc = runner.json(['kubectl', '-n', STATE_NAMESPACE, 'get', 'configmap', STATE_NAME, '-o', 'json'])
-    raw = (doc.get('data') or {}).get('state.json')
-    if not raw:
-        return None
-    try:
-        state = json.loads(raw)
-        if (state['version'] != 1 or not isinstance(state['instances'], dict)
-                or not isinstance(state['seen'], dict) or not isinstance(state['pending'], list)
-                or not isinstance(state['monitor'], dict)):
-            raise ValueError
-        float(state['started'])
-        float(state['last_success'])
-        return state
-    except (ValueError, KeyError, TypeError):
-        raise NotificationError('notification state is invalid; refusing to reset incident or delivery history') from None
-
-
-def save_state(runner: Runner, state: dict) -> None:
-    raw = json.dumps(state, separators=(',', ':'))
-    if len(raw.encode()) > MAX_STATE_BYTES:
-        raise NotificationError('notification state exceeds its bounded size; delivery stopped without discarding history')
-    runner.run(['kubectl', '-n', STATE_NAMESPACE, 'patch', 'configmap', STATE_NAME,
-                '--type=merge', '--patch-file=/dev/stdin', '--field-manager=notification-check'],
-               input=json.dumps({'data': {'state.json': raw}}), mutating=True)
 
 
 def snapshot(runner: Runner) -> dict:
@@ -330,89 +280,3 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str) -> dict:
     return state
 
 
-def publish(url: str, notification: dict) -> None:
-    parts = urlsplit(url)
-    topic = parts.path.strip('/')
-    if (parts.scheme != 'https' or not parts.netloc or not topic or '/' in topic
-            or parts.query or parts.fragment or parts.username or parts.password):
-        raise NotificationError('ntfy destination must be an HTTPS topic URL without a query or fragment')
-    payload = {k: v for k, v in notification.items() if k in {'title', 'message', 'priority', 'tags', 'click'}}
-    payload['topic'] = topic
-    try:
-        response = httpx.post(f'{parts.scheme}://{parts.netloc}', json=payload, timeout=10)
-        response.raise_for_status()
-    except httpx.HTTPError:
-        # HTTP exceptions can include the topic URL or response body. Never surface either.
-        raise NotificationError('ntfy delivery failed; notification remains pending') from None
-
-
-def deliver(runner: Runner, state: dict, sender: Callable[[dict], None], now: float) -> None:
-    save_state(runner, state)  # durable outbox before any network side effect
-    while state['pending']:
-        notice = state['pending'][0]
-        sender(notice)
-        state['seen'][notice['key']] = now + HISTORY
-        state['pending'].pop(0)
-        save_state(runner, state)
-        logging.getLogger(__name__).info('Notification delivered: %s', notice['title'])
-
-
-def check(runner: Runner, *, now: float, base: str, sender: Callable[[dict], None] | None = None) -> dict:
-    previous = read_state(runner)
-    try:
-        data = snapshot(runner)
-        state = evaluate(previous, data, now, base)
-    except (CommandError, KeyError, TypeError, ValueError) as error:
-        # Successful state read is required to preserve incident clocks and the pending outbox.
-        state = copy.deepcopy(previous) if previous is not None else empty_state(now)
-        incident(state, state['monitor'], 'cannot read cluster health', title='notification monitor',
-                 detail='Kubernetes snapshot failed; app health is unknown', grace=GRACE,
-                 now=now, click=f'{base}/platform')
-        for entry in state['instances'].values():
-            entry['incident'].pop('healthy_since', None)
-        if not runner.dry_run:
-            deliver(runner, state, sender, now)
-        raise NotificationError(f'Kubernetes snapshot failed ({type(error).__name__}); no recovery inferred') from None
-    if not runner.dry_run:
-        if sender is None:
-            raise NotificationError('notification sender is required outside dry run')
-        deliver(runner, state, sender, now)
-    return state
-
-
-def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--dry-run', action='store_true', help='Read and evaluate without posting or saving state')
-    args = parser.parse_args(argv)
-    runner = runner or Runner.from_environment()
-    runner.dry_run |= args.dry_run
-    logging.config.dictConfig(CONFIG)
-    now = dt.datetime.now(dt.UTC).timestamp()
-    base = os.environ.get('CONSOLE_URL', '').rstrip('/')
-    if not base:
-        from swhurl.platform import base_domain
-        base = f'https://console.{base_domain()}'
-
-    def sender(notice: dict) -> None:
-        variable = 'NTFY_FAILURES_URL' if notice['priority'] >= 4 else 'NTFY_DEPLOYS_URL'
-        url = os.environ.get(variable, '')
-        runner.add_secret(url)
-        if not url:
-            raise NotificationError(f'{variable} is missing; notification remains pending')
-        publish(url, notice)
-
-    try:
-        if not runner.dry_run:
-            for variable in ('NTFY_FAILURES_URL', 'NTFY_DEPLOYS_URL'):
-                if not os.environ.get(variable):
-                    raise NotificationError(f'{variable} is missing; checker cannot deliver notifications')
-        state = check(runner, now=now, base=base, sender=sender)
-        logging.getLogger(__name__).info('Notification check completed: %d instances, %d pending, dry_run=%s',
-                                        len(state['instances']), len(state['pending']), runner.dry_run)
-        if runner.dry_run:
-            for notice in state['pending']:
-                logging.getLogger(__name__).info('Would notify: %s (priority %s)', notice['title'], notice['priority'])
-        return 0
-    except (NotificationError, CommandError) as error:
-        logging.getLogger(__name__).error('%s', runner.redact(str(error)))
-        return 1

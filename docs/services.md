@@ -127,7 +127,7 @@ The console's title is `console`. A successful Git revert or promotion of an old
 
 ### Current notification behavior
 
-**Checker:** [`notifications.py`](../tools/swhurl/notifications.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads application Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap.
+**Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads application Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap.
 
 ```mermaid
 flowchart LR

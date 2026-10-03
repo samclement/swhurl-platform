@@ -7,6 +7,7 @@ from unittest import mock
 from test_app_repo import COPIER_YML
 
 from swhurl.apps import repo, templates_check
+from swhurl.apps.contract import STACK_REVISIONS
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -32,7 +33,7 @@ def template_runner(manifest):
             (dest / 'swhurl.yaml').write_text(text)
         return Result(args, 0, '', '')
 
-    return runner.on('git', 'clone', handler=clone).on('copier', 'copy', handler=copier)
+    return runner.on('git', 'clone', handler=clone).on('git', 'fetch').on('git', 'checkout').on('copier', 'copy', handler=copier)
 
 
 def run(runner, problems=lambda path: []):
@@ -53,6 +54,8 @@ class CheckTemplatesTests(unittest.TestCase):
             self.assertIn(f'[OK] typescript {combo}: staging and prod pass the app policy', out)
         renders = [c for c in runner.calls if c[:2] == ('copier', 'copy')]
         self.assertEqual(len(renders), 4)
+        self.assertTrue(all(c[c.index('--vcs-ref') + 1] == STACK_REVISIONS['typescript'] for c in renders))
+        self.assertIn(('git', 'fetch', '--quiet', '--depth', '1', 'origin', STACK_REVISIONS['typescript']), runner.calls)
         self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'clone')][0][-2],
                          'https://github.com/samclement/t.git', 'one clone, rendered locally four times')
 

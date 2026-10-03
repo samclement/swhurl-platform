@@ -740,7 +740,7 @@ database:
 
 
 def ghcr_opener(request):
-    if request.full_url.endswith('/contents/copier.yml'):
+    if '/contents/copier.yml?ref=' in request.full_url:
         return {}, COPIER_YML.encode()
     if 'token' in request.full_url:
         return {}, json.dumps({'token': 'anon'}).encode()

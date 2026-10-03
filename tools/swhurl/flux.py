@@ -71,15 +71,24 @@ def state(unit: dict, revision: str) -> str:
 
 def wait(runner: Runner, report: Report, timeout: float, interval: float = 2,
          clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> int:
-    source = runner.json(['kubectl', '-n', 'flux-system', 'get', 'gitrepositories.source.toolkit.fluxcd.io', SOURCE,
-                          '-o', 'json'])
-    revision = ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
+    def source_revision() -> str:
+        source = runner.json(['kubectl', '-n', 'flux-system', 'get', 'gitrepositories.source.toolkit.fluxcd.io',
+                              SOURCE, '-o', 'json'])
+        return ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
+
+    revision = source_revision()
     if not revision:
         report.bad(f'GitRepository {SOURCE} has no artifact yet')
         return report.exit_code()
     report.section(f'Flux units at {revision}')
     start, seen = clock(), set()
     while True:
+        # A commit can land while we wait (the console publish bot pushes after every tools/ change); units
+        # then move on to it and never report the old revision, so every unit must reach the newest one.
+        latest = source_revision()
+        if latest and latest != revision:
+            report.info(f'source moved to {latest}; waiting for every unit at that')
+            revision, seen = latest, set()
         units = runner.json(['kubectl', '-n', 'flux-system', 'get', KUSTOMIZATIONS, '-o', 'json'])['items']
         states = {u['metadata']['name']: (state(u, revision), u) for u in units}
         for name, (current, unit) in sorted(states.items()):

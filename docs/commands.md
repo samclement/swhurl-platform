@@ -6,7 +6,7 @@ Every `make` target, grouped by task. **Cluster** means the target reads or chan
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, then wait until every unit is Ready at that revision (`swhurl flux-wait`: stops at the first unit that fails, skips suspended ones) | Cluster |
+| `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, then wait until every unit is Ready at that revision, or at a newer one if a commit lands meanwhile (`swhurl flux-wait`: stops at the first unit that fails, skips suspended ones) | Cluster |
 | `install` † | `check-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
 | `verify-platform` | Every Flux unit Ready, HTTP→HTTPS redirect, ingestion key matches ClickStack (bytes, never printed), ClickStack registration closed, retention settings, no ClickHouse merge failed in the last hour, newest backup locally and in S3 younger than `BACKUP_MAX_AGE_HOURS` (26), dashboard sync succeeded within five minutes, console image built from the current tooling (warns otherwise), GitHub accepts the console's token and it does not expire within 14 days (warns) | Cluster (read), S3 (list) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |

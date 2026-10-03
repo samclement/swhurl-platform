@@ -660,3 +660,9 @@ Not exercised yet: first production on the cluster, the new console confirmation
 - Follow-up `62fd518` adds the final state, finish time and PR link to the `done` event and updates the page in place. Completion no longer reloads the page. `make check` passed (453 tests and eight template combinations); Validate `37129163573` and publish `37129195987` passed.
 - Publish deployed `src-4d4742644ea3464b` in bot commit `d4566c9`. `make flux-reconcile` applied `d4566c90317283937cfb1a5977635bc507bd2846`; all 23 units became Ready. `make verify-platform` passed, as did `make app-status APP=hello ENV=staging`. Anonymous HTTP returned 301 to HTTPS and anonymous HTTPS returned 302 to sign-in.
 - The signed-in browser check of completion without reload, scroll/selection retention and reconnect behavior remains open.
+
+### First build of a new TypeScript app (3 October 2026)
+
+- Measured on `swhurl-try-6` (before): the first build took 145 s (37 s from job start to first step, `Build the image` 49 s against 9 to 14 s warm); warm builds took 54 to 73 s. The cause of the 37 s start was not found and did not recur.
+- Template `v0.1.3` (PR #22; catalogue pin `7971009`) makes every build read a shared registry cache, `ghcr.io/samclement/swhurl-app-template-typescript-cache:<kind>-<database>`, written by the template's own runs on `main` (public, since a package pushed from a public repository's workflow is). An app no longer writes its own Actions cache: exporting every layer took 29 s of a 37 s first build. A missing cache is a warning, and writing it needs a GHCR login before the build.
+- Measured on the throwaway `swhurl-try-7` with an empty Actions cache: 71 s end to end (`Build the image` 16 s, smoke test 12 s, push 5 s), every dependency layer `CACHED`. Not measured: the whole console flow after this change, Kotlin (no cache for it yet), and what a changed `package-lock.json` costs (dependency layers miss until the template's next push to `main`).

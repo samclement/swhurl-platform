@@ -455,11 +455,11 @@ plus `DRY_RUN=true` variants from `.github/workflows/validate.yml` when `Makefil
 
 Section 0 now describes state; [services.md](services.md#notification-expectations) records the console-image coupling and the two ntfy Secrets.
 
-### R2. Split `tools/swhurl/notifications.py` into a package (offline)
+### R2. Split `tools/swhurl/notifications.py` into a package (offline; done in `c695daa`)
 
 Goal: separate state, evaluation and delivery. Behaviour and every test stay unchanged.
 
-1. Baseline: `PYTHONPATH=tools uv run --frozen python -m unittest tests.test_notifications 2>&1 | tail -4` must pass; note the test count.
+1. Baseline: `PYTHONPATH=tools uv run --frozen python -m unittest tests.test_notifications 2>&1 | tail -4` must pass; baseline: 25 tests.
 2. `git mv tools/swhurl/notifications.py tools/swhurl/notifications/__init__.py`, then create these files by **moving** code, not rewriting it:
    - `state.py`: `STATE_NAME`, `STATE_NAMESPACE`, `MAX_STATE_BYTES`, `empty_state`, `read_state`, `save_state`.
    - `evaluate.py`: `APP_PATH`, `GRACE`, `CONSOLE_GRACE`, `RECOVERY`, `REMINDER`, `HISTORY`, `SUCCESS`, `FAILURES`, `timestamp`, `snapshot`, `object_key`, `targets`, `enqueue`, `link`, `incident`, `health`, `evaluate`.
@@ -471,7 +471,7 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 6. `make notifications-check` (read-only, needs `export KUBECONFIG=$HOME/.kube/config`) logs `Notification check completed` and exits 0.
 7. Commit: `Split notification checker into state, evaluation and delivery modules`.
 
-### R3. Drive ntfy destination checks from one table (offline)
+### R3. Drive ntfy destination checks from one table (offline; done in `61346e6`)
 
 1. In `tools/swhurl/secrets_check.py`, next to `NOTIFICATION_SECRET`, add:
    ```python
@@ -485,7 +485,7 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 4. `make check-secrets` (needs the age key; prints no values) ends with `[OK] ntfy destinations match`.
 5. Commit: `Drive ntfy destination checks from one table`.
 
-### R4. Select failure Alert sources by label (live; get operator confirmation before changing anything under `flux-system`)
+### R4. Select failure Alert sources by label (live; done in `953bfcd`, evidence `cb0afea`; get operator confirmation before changing anything under `flux-system`)
 
 1. Confirm `eventSources[].matchLabels` exists in `notification.toolkit.fluxcd.io/v1beta3` for `FLUX_VERSION` in `tools/swhurl/flux.py` (<https://fluxcd.io/flux/components/notification/alerts/>). If not, stop and report; the fallback is to keep the explicit list.
 2. Add `labels: {platform.swhurl.com/alert: failures}` under `metadata:` of every unit in `clusters/home/infra.yaml`, `clusters/home/platform.yaml` (**not** `platform-console`) and `clusters/home/flux-system/kustomizations.yaml`.
@@ -496,7 +496,7 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 7. `make verify-platform` passes; `kubectl -n flux-system get alert failures -o jsonpath='{.spec.eventSources}'` shows the label selector. Record dated evidence in [current-state.md](current-state.md).
 8. Commit: `Select failure alert sources by label`.
 
-### H1. Heartbeat command (offline; after R2)
+### H1. Heartbeat command (offline; done 3 October 2026)
 
 1. Create `tools/swhurl/notifications/heartbeat.py` with the pure function from the design above (no I/O) and `main(argv=None, runner=None)` with `--dry-run` (reads and decides, sends and saves nothing) and `--max-age` (default `10m`). Call `kubectl` only through `Runner`; read the Secret as described and send with `delivery.publish`.
 2. Register `'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main', 'Alert if the notification checker is stale (host timer)')` in `tools/swhurl/__main__.py`.
@@ -517,7 +517,7 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 
 1. Push H1 and H2. **Hand the operator** `make host-heartbeat` to run in their own terminal (needs `sudo`; `!` has no terminal), then verify `systemctl status swhurl-notification-heartbeat.timer` is active.
 2. Run `make notifications-heartbeat ARGS=--dry-run`: expect fresh and no send.
-3. Exercise the alert without touching Flux-owned resources: `uv run python -m swhurl notifications-heartbeat --max-age 1s` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push). Wait for a successful checker Job, then run the normal command; it should post one `recovered`.
+3. Exercise the alert without touching Flux-owned resources: `make notifications-heartbeat ARGS="--max-age 1s"` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push). Wait for a successful checker Job, then run `make notifications-heartbeat`; it should post one `recovered`.
 4. Record dated evidence in [current-state.md](current-state.md), including that the failure messages arrived (the operator confirms on the phone).
 5. Commit: `Record notification heartbeat live evidence`.
 

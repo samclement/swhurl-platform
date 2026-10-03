@@ -13,6 +13,8 @@ COMMANDS = {
     # command: (module, function, summary)
     'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
     'notifications-check': ('swhurl.notifications', 'main', 'Evaluate lifecycle/health notifications (--dry-run reads only)'),
+    'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main',
+                                 'Alert if the notification checker is stale (host timer)'),
     'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),
     'check-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
     'check-config': ('swhurl.verify', 'verify_config', 'Check required Secret files and settings exist (no cluster)'),

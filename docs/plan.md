@@ -4,7 +4,9 @@
 
 ## 0. Where this paused and what is left
 
-**Standard notifications — implemented (3 October 2026):** [contract and behavior](services.md#notification-expectations). Dedicated Kubernetes checker for staging, production and console lifecycle, prolonged health, stalled deployment, grouped incidents and recovery; app-specific ClickStack rules remain the operator's. Event/incident/delivery/RBAC tests and full validation pass. Live verification and remaining lifecycle exercises are recorded in [current state](current-state.md#standard-notification-implementation-3-october-2026). Remaining acceptance checks: live fixture uninstall/rollback and timed unhealthy/recovery delivery; these are separate follow-up exercises. New-component coverage: bounded ConfigMap/history and Job retention; existing ntfy credentials copied with hash consistency checks; JSON logs via OTel; freshness in `verify-platform`; transient state needs no backup; Secret refresh on every Job; fail-closed state/network behavior; pinned console image/chart handles upgrades; docs and read-only operator preview included. Follow-ups outside this change: failed/stale backups, external availability, certificate expiry/renewal failure, disk pressure and independent monitoring of the notification checker.
+**Standard notifications (3 October 2026):** [contract and behavior](services.md#notification-expectations), live evidence in [current state](current-state.md#standard-notification-implementation-3-october-2026). A Kubernetes checker covers staging, production and console; Flux's failures Alert covers infrastructure. Open: live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; the structural refactors and independent heartbeat in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026); failed/stale backups, external availability, certificate expiry/renewal failure and disk pressure alerts.
+
+19. **Notification boundary refactors and heartbeat** (3 October 2026): contract and design decided; R1 done, R2–R4 and H1–H4 not started. Step-by-step tasks in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026), in order; R4 and H3 need the user.
 
 18. **Predictable app deployment and promotion — implemented and exercised 3 October 2026:** [section 9](#9-predictable-app-deployment-and-promotion), with [live evidence](current-state.md#successful-reviewed-promotion-and-fixed-template-checks-3-october-2026). Staging-only creation, first-production conversion, frozen reviewed images, automatic merge, manual hold/resume, pinned template revisions and reviewed Copier updates are deployed. Web promotion #34 and private SQLite worker promotions #35–36 passed; duplicate submissions reused PRs; failed gates wrote/merged nothing; both worker databases kept their independent claims and rows through the image update. **Operator check still open:** real Google signed-in browser review/submission (automated UI proof used the explicit local dev identity). **Optional cleanup:** `samclement/swhurl-try-6` repository and package, staging/prod instances and retained volumes; deletion needs confirmation, and repository/package deletion belongs to the operator. Restoring these particular proof volumes is unexercised; the same SQLite restore shape has prior live evidence. `hello` retirement and `hello-ts` migration remain optional.
 
@@ -404,3 +406,127 @@ If a template repository must be created for proof, name it `swhurl-try-<n>` and
 ### Disposable promotion proof checklist (3 October 2026)
 
 `swhurl-try-6` is a TypeScript private worker with SQLite, used to prove first production, an image update and independent databases. **Covered:** each environment has a separate retained 1Gi claim (one event per minute, no TTL; keep only for proof), generated health/policy checks, pinned image/chart, existing OTel collection, normal nightly SQLite backup discovery, canonical app documentation and terminal test steps. **Not applicable:** no login, Secret or Reloader registration; no new platform service or major upgrade. **Covered:** failed commands/checks stop publication/merge through the existing tested operator and Container workflow. **Deferred:** restore of these particular proof volumes and their removal; SQLite restore is already exercised on the same generated shape, and deleting live data/namespaces requires operator confirmation. Repository and package deletion remain operator actions. These proof leftovers are tracked in section 0.
+
+## 11. Notification boundary refactors and heartbeat (3 October 2026)
+
+Follow-ups from the review of the notification commits (`10d8bac`..`3810e4c`). Decisions first, then tasks a cheaper model can execute.
+
+### Decisions (approved by the operator, 3 October 2026)
+
+| Topic | Decision | Reason |
+| --- | --- | --- |
+| Who notifies about what | The checker owns app and console lifecycle and health. Flux's `failures` Alert owns infrastructure units and sources. ClickStack rules own app-specific signals. No event is sent by two of them. | Duplicate incident messages were the reason the app Alerts were removed. |
+| Failure Alert sources | Selected by label `platform.swhurl.com/alert: failures` on each infrastructure/platform Flux unit (not by a list in `alerts.yaml`). App units and `platform-console` are never labelled. | A new unit is covered where it is defined; new apps are excluded by default. |
+| Checker placement | Stays in the `platform-console` HelmRelease and shares the console image. Not moved to its own unit. | Moving it would not remove the image coupling and risks losing incident state. |
+| Checker self-monitoring | An independent host timer, the **heartbeat**, watches the CronJob and sends to the failures ntfy topic. | It still runs when the console image, the publish pipeline or the in-cluster scheduler is broken. |
+| ntfy destinations | Stay in two Secrets (Flux provider, checker), kept equal by `make check-secrets`. The heartbeat reads the checker's Secret at run time and keeps no copy. | Merging the Secrets is a separate decision; a third copy is avoided. |
+
+Known limits to keep documented: the heartbeat cannot report when the node or the Kubernetes API is down (it logs the error and retries); the checker's failure also silences the console's own lifecycle messages until the heartbeat fires (up to 10 minutes plus one timer interval).
+
+### Heartbeat design
+
+```mermaid
+flowchart LR
+    timer[systemd timer, every 5 min] --> hb[make notifications-heartbeat]
+    hb -->|get cronjob console-notifications| k8s[Kubernetes API]
+    hb -->|get Secret notification-ntfy| k8s
+    hb -->|stale, reminder or recovery| ntfy[ntfy failures topic]
+    hb --> flag[(~/.local/state/swhurl-platform/notification-heartbeat.json)]
+```
+
+- **Stale** means the CronJob is missing, suspended, or `status.lastSuccessfulTime` is older than 10 minutes (the `verify-platform` check uses 5; the longer limit avoids two messages for one blip). Pure function `heartbeat_action(cronjob, state, now, max_age)` returns `none`, `alert`, `remind` (hourly while stale) or `recover`; recovery is sent only if an alert was sent.
+- **Messages:** `notification checker stale` (priority high) with the reason and `make verify-platform`; `notification checker recovered` (normal). No Secret values anywhere.
+- **State:** `{"alerting_since": <epoch or null>, "last_alert": <epoch or null>}`. Losing the file repeats at most one alert.
+- **Cluster unreachable:** log `cannot read notification checker`, leave state unchanged, exit 1. No alert is possible.
+- **Credentials:** `kubectl -n console get secret notification-ntfy -o jsonpath='{.data.NTFY_FAILURES_URL}'`, base64-decoded in memory, registered with `runner.add_secret`, never logged. Reuse the checker's validated `publish` in `swhurl.notifications.delivery`.
+- **New-component checklist:** retention: a few-byte flag file and a log rotated at 5 MiB by the unit; credentials: none new; logs: `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` is read by the OTel DaemonSet glob; health: new `verify-platform` host check; backups: not needed; restarts: not applicable (fresh process per run); failure behaviour: tested with `FakeRunner`, unit exits non-zero on failure; upgrades: no image or chart; docs: [services.md](services.md#alerts), [commands.md](commands.md), [operations.md](operations.md).
+
+### Rules for every task
+
+Run tasks **in order, one commit each**; do not combine. Each task ends with:
+
+```bash
+make check && for f in host/*.sh tests/fixtures/*.sh; do bash -n "$f"; done
+```
+
+plus `DRY_RUN=true` variants from `.github/workflows/validate.yml` when `Makefile` or `host/` changed. Stage files by name (no `git add -A`), commit with the given message plus the standard co-author line, push, confirm CI is green. If what you see does not match a step's expected result, stop and report; do not improvise. Changes under `tools/` trigger a publish run and a bot commit: `git pull --rebase` before the next push.
+
+### R1. Docs: state and coupling — done 3 October 2026
+
+Section 0 now describes state; [services.md](services.md#notification-expectations) records the console-image coupling and the two ntfy Secrets.
+
+### R2. Split `tools/swhurl/notifications.py` into a package (offline)
+
+Goal: separate state, evaluation and delivery. Behaviour and every test stay unchanged.
+
+1. Baseline: `uv run python -m unittest tests.test_notifications 2>&1 | tail -4` must pass; note the test count.
+2. `git mv tools/swhurl/notifications.py tools/swhurl/notifications/__init__.py`, then create these files by **moving** code, not rewriting it:
+   - `state.py`: `STATE_NAME`, `STATE_NAMESPACE`, `MAX_STATE_BYTES`, `empty_state`, `read_state`, `save_state`.
+   - `evaluate.py`: `APP_PATH`, `GRACE`, `CONSOLE_GRACE`, `RECOVERY`, `REMINDER`, `HISTORY`, `SUCCESS`, `FAILURES`, `timestamp`, `snapshot`, `object_key`, `targets`, `enqueue`, `link`, `incident`, `health`, `evaluate`.
+   - `delivery.py`: `NotificationError`, `publish`, `deliver`.
+   - `__init__.py`: keeps `check` and `main` and imports, by explicit name (no `import *`), every name `tests/test_notifications.py` uses through `n.`. Keep `import httpx` there: the test patches `n.httpx.post`.
+3. If `state.py` or `evaluate.py` raise `NotificationError`, import it from `delivery.py`; if that makes an import cycle, move it to `errors.py` and import from there everywhere.
+4. `tools/swhurl/__main__.py` names `'swhurl.notifications'`, `'main'`: leave it.
+5. Expect: `tests/test_notifications.py` needs no edit and passes with the baseline test count. If a test needs editing, stop.
+6. `make notifications-check` (read-only, needs `export KUBECONFIG=$HOME/.kube/config`) logs `Notification check completed` and exits 0.
+7. Commit: `Split notification checker into state, evaluation and delivery modules`.
+
+### R3. Drive ntfy destination checks from one table (offline)
+
+1. In `tools/swhurl/secrets_check.py`, next to `NOTIFICATION_SECRET`, add:
+   ```python
+   NTFY_DESTINATIONS = {  # channel: (provider Secret file, provider key, checker key)
+       'failures': ('platform/alerts/secret-failures.sops.yaml', 'address', 'NTFY_FAILURES_URL'),
+       'deploys': ('platform/alerts/secret-deploys.sops.yaml', 'address', 'NTFY_DEPLOYS_URL'),
+   }
+   ```
+2. Use it in `notification_destination_problem` and in the loop in `main()` in place of the hard-coded strings. Move the `urlsplit`/`urlunsplit`/sha256 lines into `destination_hash(raw: bytes) -> str` (query and fragment removed before hashing).
+3. Output lines and hashing stay identical; `tests/test_secrets_check.py` passes unchanged.
+4. `make check-secrets` (needs the age key; prints no values) ends with `[OK] ntfy destinations match`.
+5. Commit: `Drive ntfy destination checks from one table`.
+
+### R4. Select failure Alert sources by label (live; touches `flux-system`: ask the user before step 6)
+
+1. Confirm `eventSources[].matchLabels` exists in `notification.toolkit.fluxcd.io/v1beta3` for `FLUX_VERSION` in `tools/swhurl/flux.py` (<https://fluxcd.io/flux/components/notification/alerts/>). If not, stop and report; the fallback is to keep the explicit list.
+2. Add `labels: {platform.swhurl.com/alert: failures}` under `metadata:` of every unit in `clusters/home/infra.yaml`, `clusters/home/platform.yaml` (**not** `platform-console`) and `clusters/home/flux-system/kustomizations.yaml`.
+3. In `platform/alerts/alerts.yaml` replace the 14 `kind: Kustomization` entries with one entry with `name: '*'` and `matchLabels: {platform.swhurl.com/alert: failures}`; keep the other source kinds; update the header comment to say selection is by label.
+4. Update `tests/test_notifications.py::test_source_alert_does_not_duplicate_app_console_or_pin_notifications`: the Alert has exactly that selector; every unit in the three files above except `platform-console` carries the label; `platform-console` and all `clusters/home/app-*.yaml` units do not.
+5. Replace the "explicit unit list" wording (`grep -rn "explicit unit list" docs`) in [services.md](services.md#notification-expectations).
+6. **Ask the user**, then commit and push. The root units in `flux-system/kustomizations.yaml` are not reconciled by Flux: run `make flux-bootstrap`, then `make flux-reconcile`.
+7. `make verify-platform` passes; `kubectl -n flux-system get alert failures -o jsonpath='{.spec.eventSources}'` shows the label selector. Record dated evidence in [current-state.md](current-state.md).
+8. Commit: `Select failure alert sources by label`.
+
+### H1. Heartbeat command (offline; after R2)
+
+1. Create `tools/swhurl/notifications/heartbeat.py` with the pure function from the design above (no I/O) and `main(argv=None, runner=None)` with `--dry-run` (reads and decides, sends and saves nothing) and `--max-age` (default `10m`). Call `kubectl` only through `Runner`; read the Secret as described and send with `delivery.publish`.
+2. Register `'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main', 'Alert if the notification checker is stale (host timer)')` in `tools/swhurl/__main__.py`.
+3. Add `tests/test_notification_heartbeat.py` using `FakeRunner`: fresh → `none`; missing, suspended and older than 10 minutes → `alert`; still stale 30 minutes later → `none`, after 60 minutes → `remind`; fresh after alert → `recover`; fresh without prior alert → `none`; unreadable cluster leaves state unchanged and exits 1; no Secret value appears in output or errors (assert on a sentinel URL).
+4. Add Makefile target `notifications-heartbeat` (`## Live: alert if the notification checker is stale (--dry-run previews)`), mirroring `notifications-check`; add a row to [commands.md](commands.md).
+5. Check: `make check`; `make notifications-heartbeat ARGS=--dry-run` prints `fresh`/`would notify` and exits 0 (adapt the target to pass `ARGS` like `notifications-check` passes `--dry-run`).
+6. Commit: `Add notification checker heartbeat command`.
+
+### H2. Heartbeat host timer files (offline; needs H1)
+
+1. Add `host/templates/systemd/notification-heartbeat.service.tmpl` and `.timer.tmpl`, copying `backup-mongodb.*.tmpl`: first line `# Managed template for the notification checker heartbeat (make host-heartbeat)`; `ExecStart=/usr/bin/make notifications-heartbeat`; log `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` with the same 5 MiB rotation line (keep the `$$` and `%%` escapes); timer `OnBootSec=5min`, `OnUnitActiveSec=5min`.
+2. In `host/install-timer.sh` add the name `heartbeat` (usage text, the argument `case`, and the `UNIT=swhurl-notification-heartbeat TEMPLATE=notification-heartbeat WHAT="make notifications-heartbeat, every 5 minutes"` line).
+3. Add Makefile targets `host-heartbeat` and `host-heartbeat-delete` after the backup ones, same shape. Add them to [commands.md](commands.md) (marked † like the others).
+4. `bash -n host/install-timer.sh`; `make host-heartbeat DRY_RUN=true` prints the plan and `Dry run: nothing changed.`. Add the same dry run to `.github/workflows/validate.yml` where `host-backup` is dry-run, and grep `tests/` for `host-backup` to extend any test that enumerates host targets.
+5. Commit: `Add host timer for the notification heartbeat`.
+
+### H3. Install and exercise the heartbeat (live; the operator runs `sudo`)
+
+1. Push H1 and H2. **Hand the operator** `make host-heartbeat` to run in their own terminal (needs `sudo`; `!` has no terminal), then verify `systemctl status swhurl-notification-heartbeat.timer` is active.
+2. Run `make notifications-heartbeat ARGS=--dry-run`: expect fresh and no send.
+3. Exercise the alert without touching Flux-owned resources: `uv run python -m swhurl notifications-heartbeat --max-age 1s` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push), then the normal command posts one `recovered`.
+4. Record dated evidence in [current-state.md](current-state.md), including that the failure messages arrived (the operator confirms on the phone).
+5. Commit: `Record notification heartbeat live evidence`.
+
+### H4. Heartbeat health check and docs (offline)
+
+1. Read `check_backups` in `tools/swhurl/verify.py` first. Add `check_notification_heartbeat` in the same style with scope `{'host'}`: the timer is active and the service's last run succeeded within 15 minutes (`systemctl show`); register it in `CHECKS`; add tests like the backup check's.
+2. Document the heartbeat in [services.md](services.md#alerts) (what it watches, the two limits above, where the flag file and log are) and [operations.md](operations.md) (install, status, remove, where the log is). Remove "independent monitoring of the notification checker" from the open follow-ups in section 0 and in services.md.
+3. Commit: `Verify and document the notification heartbeat`.
+
+### Commit discipline for future notification work
+
+One commit per boundary: checker code, alert wiring, app-tooling cleanup, docs. Write the contract and design before implementing it; record live evidence only for what is deployed.

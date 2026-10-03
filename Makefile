@@ -206,6 +206,14 @@ host-backup: ## Install or update the daily backup-mongodb systemd timer (upload
 host-backup-delete: ## Remove the backup timer (backups are kept)
 	@./host/install-timer.sh backup --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
 
+.PHONY: host-heartbeat
+host-heartbeat: ## Install or update the five-minute notification heartbeat systemd timer (needs sudo)
+	@./host/install-timer.sh heartbeat $(if $(filter true,$(DRY_RUN)),--dry-run)
+
+.PHONY: host-heartbeat-delete
+host-heartbeat-delete: ## Remove the notification heartbeat timer
+	@./host/install-timer.sh heartbeat --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
+
 .PHONY: host-dns-delete
 host-dns-delete: ## Remove the dynamic DNS timer
 	@./host/install-timer.sh dns --delete $(if $(filter true,$(DRY_RUN)),--dry-run)

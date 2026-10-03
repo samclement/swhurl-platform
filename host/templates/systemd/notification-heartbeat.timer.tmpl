@@ -1,0 +1,11 @@
+# Managed template for the notification checker heartbeat (make host-heartbeat)
+[Unit]
+Description=Check notification checker freshness every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

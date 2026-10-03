@@ -1,0 +1,22 @@
+# Managed template for the notification checker heartbeat (make host-heartbeat)
+[Unit]
+Description=Notification checker heartbeat
+Wants=network-online.target
+After=network-online.target k3s.service
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+Environment=HOME=__RUN_HOME__
+Environment=KUBECONFIG=__RUN_HOME__/.kube/config
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Keep at most two files of about 5 MiB: rotate before each run once the log
+# passes 5 MiB (+ = as root, since the directory is root's; $$ and %% are
+# systemd escapes for $ and %).
+ExecStartPre=+/bin/sh -c 'f=/var/log/swhurl-platform/swhurl-notification-heartbeat.log; if [ "$$(stat -c %%s "$$f" 2>/dev/null || echo 0)" -gt 5242880 ]; then mv -f "$$f" "$$f.1"; fi'
+ExecStart=/usr/bin/make notifications-heartbeat
+# Output goes to a file the OTel DaemonSet reads; the journal keeps start,
+# finish and failure lines.
+StandardOutput=append:/var/log/swhurl-platform/swhurl-notification-heartbeat.log
+StandardError=append:/var/log/swhurl-platform/swhurl-notification-heartbeat.log

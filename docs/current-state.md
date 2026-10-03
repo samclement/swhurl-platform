@@ -578,3 +578,8 @@ Approved plan section 9, phases 1–2: `3455292`, console pin `6aa39a6`. `app-ne
 `make check` passed (401 tests), shell syntax and all CI dry runs passed; GitHub Validate `37092963414` passed every job. Publish `37092990123` deployed `src-deeee76b01214af2`. After pulling the bot pin and reconciling, all 20 units were Ready, `make verify-platform` passed, and `make app-status` passed for the five existing instances (`hello`, `hello-ts`, and staging-only `test-2`): Ready releases, 1/1 replicas, matching digests and Ready TLS. No app instance or data was changed. An earlier verification ran during the publish-triggered reconciliation and saw dependency waits; the settled recheck passed.
 
 Not exercised yet: first production on the cluster, the new console confirmation and merge gate (phase 3), or a real signed-in browser promotion. Existing app images and data remain unchanged.
+
+### Promotion review deployment (3 October 2026)
+
+- Commit `96deedc` passed Validate run `37095480207`; publish run `37095510061` pinned console image `src-5afce159c49768c5` in `8c96a4e`. Reconciled and `make verify-platform` passed. Local Chromium tested first-production, later-image and same-image review screens at 1280 and 390 px without overflow; anonymous HTTP redirected 301 and HTTPS redirected 302. Real signed-in proof is pending.
+- Live console-generated PR #33 froze hello-ts staging build 31. Its Validate passed, but merge run `37095697270` refused it before any push: fetching main and the PR together made `FETCH_HEAD` resolve main. Fetches are now separate, with a regression assertion. The failed PR retained its image and was labelled `promotion-review-required`; production remained build 29. A fresh review is required after this tooling fix.

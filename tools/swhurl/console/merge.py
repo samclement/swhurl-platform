@@ -119,7 +119,8 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str) -> None:
     if not runs or runs[0].get('status') != 'completed' or runs[0].get('conclusion') != 'success':
         raise Hold('Validate has not passed on the current PR head')
     files = runner.output(['gh', 'pr', 'diff', str(number), '--repo', repo, '--name-only']).splitlines()
-    runner.run(['git', 'fetch', 'origin', 'main', f'pull/{number}/head'], cwd=root)
+    runner.run(['git', 'fetch', 'origin', 'main'], cwd=root)
+    runner.run(['git', 'fetch', 'origin', f'pull/{number}/head'], cwd=root)
     base_sha = runner.output(['git', 'rev-parse', 'origin/main'], cwd=root).strip()
     if runner.output(['git', 'rev-parse', 'FETCH_HEAD'], cwd=root).strip() != sha:
         raise Hold('PR head changed during fetch')

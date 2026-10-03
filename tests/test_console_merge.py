@@ -80,6 +80,8 @@ class MergeTests(unittest.TestCase):
     def test_validated_image_update_pushes_the_checked_merge(self):
         runner = self.runner()
         self.check(runner)
+        self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'fetch')],
+                         [('git', 'fetch', 'origin', 'main'), ('git', 'fetch', 'origin', 'pull/7/head')])
         self.assertEqual(self.pushes(runner)[0], ('git', 'push', 'origin', 'HEAD:refs/heads/main'))
         self.assertLess(runner.calls.index(('make', 'check')), runner.calls.index(self.pushes(runner)[0]))
 

@@ -6,7 +6,7 @@
 
 **Standard notifications (3 October 2026):** [contract and behavior](services.md#notification-expectations), live evidence in [current state](current-state.md#notification-boundaries-and-heartbeat-3-october-2026). A Kubernetes checker covers staging, production and console; Flux's failures Alert covers infrastructure; a host heartbeat checks the checker. Open: live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; failed/stale backups, external availability, certificate expiry/renewal failure and disk pressure alerts.
 
-20. **Live job output on the console — implemented offline 3 October 2026:** [section 12](#12-live-job-output-on-the-console) replaces the job page's 2 second reload with an SSE stream. L1–L2 are complete; L3 needs the published image and a live browser check.
+20. **Live job output on the console — deployed 3 October 2026:** [section 12](#12-live-job-output-on-the-console) replaces the job page's 2 second reload with an SSE stream. L1–L2 and cluster verification are complete; the signed-in browser and proxy-buffering check remains.
 19. **Notification boundary refactors and heartbeat — implemented and exercised 3 October 2026:** R1–R4 and H1–H4 done. The H3 timer and service are healthy, and the operator confirmed receipt of both stale and recovery test notifications. Live evidence is in [current state](current-state.md#notification-boundaries-and-heartbeat-3-october-2026); step-by-step tasks are in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026).
 
 18. **Predictable app deployment and promotion — implemented and exercised 3 October 2026:** [section 9](#9-predictable-app-deployment-and-promotion), with [live evidence](current-state.md#successful-reviewed-promotion-and-fixed-template-checks-3-october-2026). Staging-only creation, first-production conversion, frozen reviewed images, automatic merge, manual hold/resume, pinned template revisions and reviewed Copier updates are deployed. Web promotion #34 and private SQLite worker promotions #35–36 passed; duplicate submissions reused PRs; failed gates wrote/merged nothing; both worker databases kept their independent claims and rows through the image update. **Operator check still open:** real Google signed-in browser review/submission (automated UI proof used the explicit local dev identity). **Optional cleanup:** `samclement/swhurl-try-6` repository and package, staging/prod instances and retained volumes; deletion needs confirmation, and repository/package deletion belongs to the operator. Restoring these particular proof volumes is unexercised; the same SQLite restore shape has prior live evidence. `hello` retirement and `hello-ts` migration remain optional.
@@ -603,10 +603,10 @@ data: {"state": "succeeded"}
 
 **L2. Docs (offline; implemented 3 October 2026).** `docs/console.md` now describes live output, the 2 second no-JavaScript fallback and in-memory job lifetime. `docs/architecture.md` does not describe the job page.
 
-**L3. Live check (needs the new console image running; `make verify-platform` stops warning).**
+**L3. Live check (image deployed and cluster verified; signed-in browser check open).**
 1. Hand the operator a "Test it yourself" block: open a unit page, press **Reconcile** on a harmless unit (for example `infra-base`), and watch the job page: lines appear one by one, scroll and text selection are kept, and the page reloads once at the end to show the final state and finish time. Also open the job page again after it finished (no stream), and reload mid-job (resumes without duplicate lines).
 2. Check buffering: lines must arrive as they are produced, not in a burst at the end. If they arrive in bursts, look at Traefik and the ForwardAuth middleware (response buffering) before changing code.
-3. Record dated evidence in [current-state.md](current-state.md). Commit: `Record console job streaming live evidence`.
+3. Deployment and cluster evidence is recorded in [current-state.md](current-state.md). After the browser check, append its result there.
 
 ### Out of scope
 

@@ -258,7 +258,7 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
             raise EditError(str(error)) from None
         dst = work / 'apps' / app / 'prod'
         generated_ns = json.loads(json.dumps(YamlFile(dst / 'namespace.yaml').data))
-        source_ns = YamlFile(root / 'apps' / app / 'staging/namespace.yaml').data
+        source_ns = json.loads(json.dumps(YamlFile(root / 'apps' / app / 'staging/namespace.yaml').data))
         generated_ns['metadata']['labels'] = {**source_ns['metadata'].get('labels', {}),
                                                **generated_ns['metadata']['labels']}
         generated_ns['metadata']['annotations'] = {**source_ns['metadata'].get('annotations', {}),

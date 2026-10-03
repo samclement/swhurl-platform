@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: cluster-sources
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   interval: 10m
   sourceRef:
@@ -21,6 +23,8 @@ kind: Kustomization
 metadata:
   name: cluster-stack
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: cluster-sources

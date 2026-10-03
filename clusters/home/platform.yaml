@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: platform-oauth2-proxy
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -32,6 +34,8 @@ kind: Kustomization
 metadata:
   name: platform-clickstack-operators
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -52,6 +56,8 @@ kind: Kustomization
 metadata:
   name: platform-clickstack
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -85,6 +91,8 @@ kind: Kustomization
 metadata:
   name: platform-otel
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -109,6 +117,8 @@ kind: Kustomization
 metadata:
   name: platform-reloader
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -162,6 +172,8 @@ kind: Kustomization
 metadata:
   name: platform-flux-webhook
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -193,6 +205,8 @@ kind: Kustomization
 metadata:
   name: platform-image-automation
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -218,6 +232,8 @@ kind: Kustomization
 metadata:
   name: platform-alerts
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base

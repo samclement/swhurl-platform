@@ -353,13 +353,21 @@ class WiringTests(unittest.TestCase):
         alerts = [d for d in yaml.safe_load_all((ROOT / 'platform/alerts/alerts.yaml').read_text())
                   if d['kind'] == 'Alert']
         self.assertEqual([d['metadata']['name'] for d in alerts], ['failures'])
-        selected = {s['name'] for s in alerts[0]['spec']['eventSources'] if s['kind'] == 'Kustomization'}
-        expected = set()
+        sources = alerts[0]['spec']['eventSources']
+        kustomizations = [s for s in sources if s['kind'] == 'Kustomization']
+        self.assertEqual(kustomizations, [{'kind': 'Kustomization', 'name': '*',
+                         'matchLabels': {'platform.swhurl.com/alert': 'failures'}}])
         for file in ('clusters/home/infra.yaml', 'clusters/home/platform.yaml',
                      'clusters/home/flux-system/kustomizations.yaml'):
-            expected.update(d['metadata']['name'] for d in yaml.safe_load_all((ROOT/file).read_text()))
-        expected.remove('platform-console')
-        self.assertEqual(selected, expected)
+            for unit in yaml.safe_load_all((ROOT/file).read_text()):
+                labels = unit['metadata'].get('labels', {})
+                if unit['metadata']['name'] == 'platform-console':
+                    self.assertNotIn('platform.swhurl.com/alert', labels)
+                else:
+                    self.assertEqual(labels.get('platform.swhurl.com/alert'), 'failures')
+        for file in (ROOT/'clusters/home').glob('app-*.yaml'):
+            for unit in yaml.safe_load_all(file.read_text()):
+                self.assertNotIn('platform.swhurl.com/alert', unit['metadata'].get('labels', {}))
         for path in (ROOT / 'apps').glob('*/prod/kustomization.yaml'):
             self.assertNotIn('production-alert.yaml', yaml.safe_load(path.read_text())['resources'])
 

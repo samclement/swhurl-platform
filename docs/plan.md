@@ -485,14 +485,14 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 4. `make check-secrets` (needs the age key; prints no values) ends with `[OK] ntfy destinations match`.
 5. Commit: `Drive ntfy destination checks from one table`.
 
-### R4. Select failure Alert sources by label (live; touches `flux-system`: ask the user before step 6)
+### R4. Select failure Alert sources by label (live; get operator confirmation before changing anything under `flux-system`)
 
 1. Confirm `eventSources[].matchLabels` exists in `notification.toolkit.fluxcd.io/v1beta3` for `FLUX_VERSION` in `tools/swhurl/flux.py` (<https://fluxcd.io/flux/components/notification/alerts/>). If not, stop and report; the fallback is to keep the explicit list.
 2. Add `labels: {platform.swhurl.com/alert: failures}` under `metadata:` of every unit in `clusters/home/infra.yaml`, `clusters/home/platform.yaml` (**not** `platform-console`) and `clusters/home/flux-system/kustomizations.yaml`.
 3. In `platform/alerts/alerts.yaml` replace the 14 `kind: Kustomization` entries with one entry with `name: '*'` and `matchLabels: {platform.swhurl.com/alert: failures}`; keep the other source kinds; update the header comment to say selection is by label.
 4. Update `tests/test_notifications.py::test_source_alert_does_not_duplicate_app_console_or_pin_notifications`: the Alert has exactly that selector; every unit in the three files above except `platform-console` carries the label; `platform-console` and all `clusters/home/app-*.yaml` units do not.
 5. Replace the "explicit unit list" wording (`grep -rn "explicit unit list" docs`) in [services.md](services.md#notification-expectations).
-6. **Ask the user**, then commit and push. The root units in `flux-system/kustomizations.yaml` are not reconciled by Flux: run `make flux-bootstrap`, then `make flux-reconcile`.
+6. After the operator confirms before step 2, commit and push. The root units in `flux-system/kustomizations.yaml` are not reconciled by Flux: run `make flux-bootstrap`, then `make flux-reconcile`.
 7. `make verify-platform` passes; `kubectl -n flux-system get alert failures -o jsonpath='{.spec.eventSources}'` shows the label selector. Record dated evidence in [current-state.md](current-state.md).
 8. Commit: `Select failure alert sources by label`.
 
@@ -517,7 +517,7 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 
 1. Push H1 and H2. **Hand the operator** `make host-heartbeat` to run in their own terminal (needs `sudo`; `!` has no terminal), then verify `systemctl status swhurl-notification-heartbeat.timer` is active.
 2. Run `make notifications-heartbeat ARGS=--dry-run`: expect fresh and no send.
-3. Exercise the alert without touching Flux-owned resources: `uv run python -m swhurl notifications-heartbeat --max-age 1s` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push), then the normal command posts one `recovered`.
+3. Exercise the alert without touching Flux-owned resources: `uv run python -m swhurl notifications-heartbeat --max-age 1s` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push). Wait for a successful checker Job, then run the normal command; it should post one `recovered`.
 4. Record dated evidence in [current-state.md](current-state.md), including that the failure messages arrived (the operator confirms on the phone).
 5. Commit: `Record notification heartbeat live evidence`.
 

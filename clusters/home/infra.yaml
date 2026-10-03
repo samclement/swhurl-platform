@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: infra-base
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   interval: 10m
   sourceRef:
@@ -21,6 +23,8 @@ kind: Kustomization
 metadata:
   name: infra-cert-manager
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-base
@@ -42,6 +46,8 @@ kind: Kustomization
 metadata:
   name: infra-issuers
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   dependsOn:
     - name: infra-cert-manager
@@ -62,6 +68,8 @@ kind: Kustomization
 metadata:
   name: infra-traefik
   namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
 spec:
   interval: 10m
   sourceRef:

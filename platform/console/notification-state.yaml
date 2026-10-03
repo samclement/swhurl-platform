@@ -5,3 +5,5 @@ kind: ConfigMap
 metadata:
   name: notification-state
   namespace: console
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge

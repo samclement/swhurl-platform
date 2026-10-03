@@ -1,7 +1,6 @@
 # Infrastructure/source failures use Flux's generic ntfy provider (docs/services.md#alerts).
-# App and console lifecycle/health belong to the notification checker: naming their
-# units here too would duplicate its incident messages. Infrastructure unit coverage
-# is checked against the repository in tests/test_notifications.py.
+# Kustomization sources carry platform.swhurl.com/alert=failures labels; app and console
+# units are excluded so the notification checker owns their lifecycle and health.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Provider
 metadata:
@@ -40,33 +39,9 @@ spec:
     - 'referenced ImageRepository does not exist'
   eventSources:
     - kind: Kustomization
-      name: cluster-sources
-    - kind: Kustomization
-      name: cluster-stack
-    - kind: Kustomization
-      name: infra-base
-    - kind: Kustomization
-      name: infra-traefik
-    - kind: Kustomization
-      name: infra-cert-manager
-    - kind: Kustomization
-      name: infra-issuers
-    - kind: Kustomization
-      name: platform-oauth2-proxy
-    - kind: Kustomization
-      name: platform-clickstack-operators
-    - kind: Kustomization
-      name: platform-clickstack
-    - kind: Kustomization
-      name: platform-otel
-    - kind: Kustomization
-      name: platform-reloader
-    - kind: Kustomization
-      name: platform-flux-webhook
-    - kind: Kustomization
-      name: platform-image-automation
-    - kind: Kustomization
-      name: platform-alerts
+      name: '*'
+      matchLabels:
+        platform.swhurl.com/alert: failures
     - kind: GitRepository
       name: '*'
     - kind: HelmRepository

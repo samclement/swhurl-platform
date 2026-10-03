@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-2-prod
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-2
+    platform.swhurl.com/environment: prod
+    platform.swhurl.com/exposure: authenticated-web

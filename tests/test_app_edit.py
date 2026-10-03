@@ -11,7 +11,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import contract, edit, new, policy
+from swhurl.apps import contract, edit, new, ops, policy
 from swhurl.run import CommandError
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
@@ -64,13 +64,14 @@ class EditTests(unittest.TestCase):
             edit.promote(self.root, 'hello', 'staging', 'prod')
 
     def test_promotion_refuses_a_source_that_moved_after_review_without_writing(self):
-        reviewed = edit.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine'))
+        reviewed = ops.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
+            edit.container(edit.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
         before = self.prod.read_bytes()
         with self.assertRaisesRegex(edit.EditError, 'changed since it was reviewed'):
             edit.promote(self.root, 'hello', 'staging', 'prod', expect_image=reviewed)
         self.assertEqual(self.prod.read_bytes(), before)
-        current = edit.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        current = ops.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod', expect_image=current)
         self.assertIn('tag: 1.28-alpine', self.prod.read_text())
 
@@ -110,10 +111,11 @@ class EditTests(unittest.TestCase):
     def test_promote_preserves_target_quotes_and_manual_comments(self):
         text = self.prod.read_text().replace('tag: 1.27-alpine', 'tag: "1.27-alpine"  # release approved')
         self.prod.write_text('# production settings\n' + text)
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', "tag: '1.28-alpine'"))
+        old_digest = edit.container(edit.load_release(self.staging.parent))['image']['digest']
+        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', "tag: '1.28-alpine'").replace(old_digest, NEW_DIGEST))
         before = self.prod.read_text()
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
-        self.assertEqual(self.prod.read_text(), before.replace('"1.27-alpine"', '"1.28-alpine"'))
+        self.assertEqual(self.prod.read_text(), before.replace('"1.27-alpine"', '"1.28-alpine"').replace(old_digest, NEW_DIGEST))
 
     def test_scale_refuses_invalid_or_shared_target_without_writing(self):
         original = self.prod.read_text()
@@ -150,7 +152,8 @@ class EditTests(unittest.TestCase):
         self.assertIn('replicas: 2', text)
         self.assertEqual(contract.strip_image_markers(text)[1], 'hello-staging')
         before = self.prod.read_text()
-        self.staging.write_text(text.replace('tag: 1.27-alpine', 'tag: 1.28-alpine'))
+        self.staging.write_text(text.replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
+            edit.container(edit.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertIn('tag: 1.28-alpine\n', self.prod.read_text(), 'production gets the tag, never the markers')
         self.assertNotIn('imagepolicy', self.prod.read_text())

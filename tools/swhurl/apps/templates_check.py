@@ -18,8 +18,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl.apps import new, policy, repo
+from swhurl.apps import new, policy, promotion, repo
 from swhurl.apps.contract import MANIFEST_FILE, STACKS
+from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
@@ -38,8 +39,13 @@ def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
     """``app-new --manifest`` into ``root`` without its own policy run; returns (exit code, its output)."""
     out = StringIO()
     with redirect_stdout(out), redirect_stderr(out):
-        code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', env,
-                         '--image', IMAGE, '--no-policy-check'])
+        if env == 'staging':
+            code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', env,
+                             '--image', IMAGE, '--no-policy-check'])
+        else:
+            source, _ = promotion.read(root, NAME)
+            promotion.create(root, NAME, source)
+            code = 0
     return code, out.getvalue()
 
 
@@ -86,7 +92,7 @@ def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS) -> in
             for answers in combinations(questions):
                 try:
                     ok = check_combination(runner, report, template, stack, answers, work)
-                except CommandError as error:
+                except (CommandError, EditError) as error:
                     report.bad(f'{stack} {answers}: {error}')
                     ok = False
                 failed += not ok

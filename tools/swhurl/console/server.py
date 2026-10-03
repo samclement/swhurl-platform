@@ -289,7 +289,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
                 if problem:
                     raise actions.ActionError(problem)
-                command, argv, target = 'app-promote', [app, '--from=staging', '--to=prod', f'--expect-image={image}'], f'{app}/prod'
+                command, argv, target = 'app-promote', [app, f'--expect-image={image}'], f'{app}/prod'
                 title = f'apps: promote {app}/staging to {app}/prod'
                 make = f'make app-promote APP={app} ARGS="--expect-image={image}"'
             elif change == 'scale':

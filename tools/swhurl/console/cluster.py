@@ -5,7 +5,7 @@ import io
 import re
 from dataclasses import dataclass
 
-from swhurl.apps import ops
+from swhurl.apps import ops, promotion
 from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
 from swhurl.flux import WAITING_REASONS
@@ -285,14 +285,7 @@ def instance_state(status: ops.InstanceStatus, row: AppRow | None) -> State:
 
 def promotion_problem(status: ops.InstanceStatus | None, image: str, revision: str) -> str:
     """Why a reviewed staging image cannot be promoted, or an empty string."""
-    if status is None:
-        return 'staging no longer exists; refresh the app page'
-    if status.desired_image != image or status.applied_revision != revision:
-        return 'staging changed since this page was loaded; refresh and review it again'
-    state = instance_state(status, None)
-    if state.key != 'healthy' or status.image_state != 'matches':
-        return f'staging must be healthy and running the reviewed digest before promotion ({state.detail or state.label})'
-    return ''
+    return promotion.source_problem(status, image, revision)
 
 
 @dataclass(frozen=True)

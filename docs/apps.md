@@ -68,19 +68,11 @@ Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tm
 **How templates are tested.** Two halves, so neither grows with the other:
 
 - **The template's own CI** (its Template workflow) renders combinations of its questions and, for each, type-checks, tests, builds the image and smoke-tests it. Today it builds every combination (four per stack). From a third question on, list the defaults, each non-default choice on its own and all non-defaults together, instead of every combination: that grows with the number of choices rather than doubling with each question. Each combination keeps its own image build cache.
-- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into a staging and a prod instance with `app-new --manifest`; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing, takes about 20 seconds for both stacks, and catches a template declaring something the platform refuses before anyone creates an app from it.
+- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into staging with `app-new --manifest`, then production through the promotion conversion; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing, takes about 20 seconds for both stacks, and catches a template declaring something the platform refuses before anyone creates an app from it.
 
 ### Add production
 
-Production is created once, with the image staging runs, and changes only through a promote afterwards. Use the app's `swhurl.yaml` (`--from-repo`), so production gets the same resources, probes and database as staging:
-
-```bash
-make app-status APP=weather-api ENV=staging    # the Image line: REPO:TAG@sha256:…
-make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env prod --image <that image>"
-git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/prod" && git push
-```
-
-Production requires the digest and never deploys automatically. In the console, create production with **New app** → **Deploy an existing image** → **From the repository's swhurl.yaml**, environment prod: the app's own `swhurl.yaml` supplies its stack's resources (a Kotlin app's 192Mi, 384Mi and 100m), which the **platform conventions** tabs do not.
+Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. Both creation routes deploy staging only; `app-new --env prod` is refused. Existing production instances keep working, and production-only apps need staging before using promotion. Custom deployments remain a reviewed Git route.
 
 ## Add an existing image
 
@@ -109,11 +101,12 @@ make flux-reconcile && make app-status APP=hello ENV=staging   # flux-reconcile 
 
 ### What the generator writes
 
-`make app-new` ([`new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists every option) writes `apps/<app>/<env>/` and `clusters/home/app-<app>-<env>.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and checks the result against [the app policy](#the-app-policy) before exiting (a missing tool or failed render makes the command fail; `--no-policy-check` explicitly skips validation). The output is plain YAML; edit it like any manifest afterwards. The console's New app pull requests run this same command in a copy of `main`.
+`make app-new` ([`new.py`](../tools/swhurl/apps/new.py); `make app-new NAME=x ARGS=--help` lists every option) writes `apps/<app>/staging/` and `clusters/home/app-<app>-staging.yaml`, registers the unit in `clusters/home/kustomization.yaml` (files under `apps` deploy nothing until then), and checks the result against [the app policy](#the-app-policy) before exiting (a missing tool or failed render makes the command fail; `--no-policy-check` explicitly skips validation). The output is plain YAML; edit it like any manifest afterwards. The console's New app pull requests run this same command in a copy of `main`.
 
 | Option | Rules |
 | --- | --- |
 | `--from-repo`, `--manifest`, `--preset` | Where the defaults come from (one of them, or none) |
+| `--env` | `staging` (default); production is created by promotion |
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `repo:tag`, `repo@sha256:…` or both; no `latest`; **production requires a digest** |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
@@ -250,23 +243,31 @@ Renovate merges only when it runs, so a passing update can wait hours; tick "run
 
 ## Promote to production
 
-Production never changes on its own. When staging runs what you want, copy its image to production:
+Try staging, then run **in your own terminal**:
 
 ```bash
-make app-promote APP=<app>        # staging's tag and digest into prod, nothing else; FROM=/TO= override
-git commit -am "apps: promote <app> to prod" && git push
+make app-promote APP=<app>
+make check
+git add apps/<app> clusters/home platform/reloader
+git commit -m "apps: promote <app> to prod"
+git push
+make flux-reconcile
 make app-status APP=<app> ENV=prod
 ```
 
-The console's **Promote to prod** uses the exact healthy staging image you reviewed; its checks and stale-page behaviour are described in [console promotion](console.md#use-it). It opens the change as a pull request. Promote refuses an image without a digest, never copies the automatic-deploy markers (production has none), and checks the result against the app policy. The production instance must exist: create it once ([add production](#add-production)).
+`app-promote` always means staging → production. The CLI checks live staging readiness and that it runs the digest in this checkout. First promotion derives production from supported staging settings, generates and policy-checks it in scratch space, then writes the complete Git edit. Later promotions change only production's image tag/digest, preserving its settings and comments. Equal digests are the same image regardless of tag: no files change. Different repositories require a reviewed Git edit. An older known build is labelled a rollback; database migrations are not reversed.
 
-The CLI reads the source image from this checkout; it does not check the live staging workload. Use `make app-status` and try staging first. To refuse a changed source image, pass the full repository, tag (if present) and digest you reviewed:
+First production supports the current app-template chart, one Deployment controller/container, a standard web or private worker, probes, resources, security settings, command/arguments, telemetry, the main HTTP service/route, platform-managed retained storage and the app Secret. Compatible handwritten settings are preserved. Extra controllers, containers, resources, chart value sources, external volume bindings, ambiguous anchors and staging-specific references are refused with an explanation. Later image edits need an unambiguous main image mapping and passing policy; they do not convert custom configuration.
+
+Production gets independent, initially empty storage. Startup applies database migrations normally. Staging data, PV bindings and credential values are never copied. App Secret keys create new encrypted `REPLACE_ME` stubs; set production values with `sops apps/<app>/prod/secret.sops.yaml` and review the Reloader registration before merging. A public app needs a distinct production host (`ARGS="--host=app.example.com"`); signed-in apps use the generated production address. Custom deployments remain explicit Git edits. Later runtime configuration changes also use Git; the [environment drift policy](#the-app-policy) still applies.
+
+To guard the exact image reviewed, use:
 
 ```bash
 make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
 ```
 
-This checks the source before writing production files; a mismatch leaves production unchanged.
+A mismatch or unhealthy staging refuses before production edits. The console's image promotion still requires an existing target until [plan phase 3](plan.md#9-predictable-app-deployment-and-promotion) lands.
 
 ## Operate an instance
 
@@ -278,7 +279,7 @@ make app-check APP=hello ENV=prod      # the app policy, offline
 make app-scale APP=hello ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
 ```
 
-The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). `app-scale`, `app-expose` and `app-promote` accept handwritten YAML using the app-template structure. They retain comments (including Flux image automation markers), quotation styles, key order, flow collections and consistent indentation. For example, scaling `memory: "128Mi" # measured limit` to 256Mi keeps the quotes and comment. Promotion changes only the target image tag/digest. Exposure edits the main host, TLS host, sign-in middleware, Namespace label and required Flux dependencies; it keeps other annotations, middleware, paths, TLS secret names and extra dependencies.
+The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). `app-scale`, `app-expose` and `app-promote` accept handwritten YAML using the app-template structure. They retain comments (including Flux image automation markers), quotation styles, key order, flow collections and consistent indentation. For example, scaling `memory: "128Mi" # measured limit` to 256Mi keeps the quotes and comment. Later promotion changes only the target image tag/digest; first promotion has the [supported conversion boundary](#promote-to-production). Exposure edits the main host, TLS host, sign-in middleware, Namespace label and required Flux dependencies; it keeps other annotations, middleware, paths, TLS secret names and extra dependencies.
 
 The editor uses a pinned [ruamel.yaml](https://yaml.dev/doc/ruamel.yaml/detail/) dependency rather than a text-replacement parser. **Trade-off:** it preserves YAML presentation, not every byte; inconsistent indentation and unusual spacing can be normalized. Each file must contain one mapping document, without duplicate keys. A changed mapping that uses an anchor or merge is refused rather than changing shared settings unexpectedly. Exposure requires one main host and matching TLS entry; making an instance private refuses additional routes that would still expose it. Such custom structures need a manual edit and `make check-apps`. `app-remove` deletes and unregisters the instance; it does not rewrite its YAML.
 

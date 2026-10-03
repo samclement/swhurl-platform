@@ -22,9 +22,9 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | Target | Does | Touches |
 | --- | --- | --- |
 | `app-repo NAME=<app>` † | Create the app's public GitHub repository from a stack's Copier template (`STACK=typescript` or `kotlin`, `ANSWERS="kind=worker database=sqlite"`, `DESCRIPTION=`), push it, wait for its first image and print the `app-new` line ([start a new app](apps.md#start-a-new-app)) | GitHub |
-| `app-new NAME=<app> ARGS="..."` | Generate an app instance and check it against the app policy; `--from-repo OWNER/REPO` takes its defaults from the app's [`swhurl.yaml`](apps.md#swhurlyaml) | Git |
+| `app-new NAME=<app> ARGS="..."` | Generate a staging app instance and check it against the app policy; `--from-repo OWNER/REPO` takes its defaults from the app's [`swhurl.yaml`](apps.md#swhurlyaml) | Git |
 | `app-expose APP= ENV= ARGS="--exposure ... [--host H]"` | Change who can reach an instance: `private` (removes the route), `authenticated-web` (Google sign-in; keeps or derives the host) or `public` (needs `--host` outside `homelab.swhurl.com`); updates the route, the Namespace label and the unit's dependencies | Git |
-| `app-promote APP=` | Copy the staging image into prod (`FROM=`, `TO=` override); `ARGS="--expect-image=..."` guards the reviewed image ([promotion](apps.md#promote-to-production)) | Git |
+| `app-promote APP=` | Create production from staging, or update its image; staging → production only; `ARGS="--expect-image=..."` guards the reviewed image ([promotion](apps.md#promote-to-production)) | Git |
 | `app-status APP= ENV=` | Whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
@@ -34,7 +34,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `console-image` | Pin `platform/console` to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run. The publish run does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
 | `console-dev` | The [console](console.md) on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub | Cluster (read) |
 
-App creation and edits fail if requested policy validation cannot run. Scale, expose and promote accept handwritten YAML; see [editing boundaries and formatting trade-offs](apps.md#operate-an-instance).
+App creation/editing and template checks use `uv` with locked dependencies. App creation and edits fail if requested policy validation cannot run. Scale, expose and promote accept handwritten YAML; see [editing boundaries and formatting trade-offs](apps.md#operate-an-instance).
 
 ## Settings
 

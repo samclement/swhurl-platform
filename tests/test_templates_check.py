@@ -68,7 +68,7 @@ class CheckTemplatesTests(unittest.TestCase):
                 self.assertIn(expected, out)
         code, out = run(template_runner(lambda a: WEB), problems=lambda path: ['no-root: runs as root'])
         self.assertEqual(code, 1)
-        self.assertIn('staging: no-root: runs as root', out)
+        self.assertIn('production policy refused: no-root: runs as root', out)
 
     def test_combinations_cover_every_choice(self):
         questions = repo.parse_questions(COPIER_YML)

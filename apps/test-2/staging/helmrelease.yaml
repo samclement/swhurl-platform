@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/test-2
-              tag: 1-e6a9dab # {"$imagepolicy": "flux-system:test-2-staging:tag"}
-              digest: sha256:66b6ac3a6f999fce843e4253d207e846a17e91f429c193e387d7d3493b3e05fd # {"$imagepolicy": "flux-system:test-2-staging:digest"}
+              tag: 3-34da132 # {"$imagepolicy": "flux-system:test-2-staging:tag"}
+              digest: sha256:2f0de5eaafb21f7e308c5c5dc4f86f6383497e5388781bae87c7c99420b9bc5f # {"$imagepolicy": "flux-system:test-2-staging:digest"}
             resources:
               requests:
                 cpu: 10m

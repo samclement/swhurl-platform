@@ -100,6 +100,10 @@ def healthy(**overrides):
         runner.github.append((args, config))
         return answer('github')(args, config)
     return (runner
+            .on('systemctl', 'is-active', stdout='active\n')
+            .on('systemctl', 'show', stdout=(
+                'Result=success\nExecMainStatus=0\nExecMainExitTimestamp='
+                + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n'))
             .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
             .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', handler=answer('notifications'))
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
@@ -157,7 +161,8 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                          '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Console ==', '\n== Console GitHub Token =='])
+                      '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
+                      '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -359,7 +364,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):
@@ -468,3 +473,34 @@ class DashboardHealthTests(unittest.TestCase):
                 report = Report(out)
                 verify.check_dashboards(healthy(dashboards=job), report, now)
                 self.assertEqual(report.exit_code(), expected, out.getvalue())
+
+
+class NotificationHeartbeatHostVerifyTests(unittest.TestCase):
+    def verify(self, *, age=60, timer='active', result='success', status='0', timestamp=True):
+        now = dt.datetime.now(dt.UTC)
+        exit_time = (dt.datetime.fromtimestamp(now.timestamp()-age).astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z')
+                     if timestamp else '')
+        details = (f'Result={result}\nExecMainStatus={status}\n'
+                   f'ExecMainExitTimestamp={exit_time}\n')
+        runner = FakeRunner().on('systemctl', 'is-active', stdout=timer+'\n').on(
+            'systemctl', 'show', stdout=details)
+        out = io.StringIO()
+        report = Report(out)
+        verify.check_notification_heartbeat(runner, report, now)
+        return report.exit_code(), out.getvalue()
+
+    def test_active_timer_and_recent_success_pass(self):
+        code, output = self.verify()
+        self.assertEqual(code, 0, output)
+        self.assertIn('succeeded within 15 minutes', output)
+
+    def test_inactive_timer_failed_run_missing_timestamp_and_stale_run_fail(self):
+        for options in ({'timer': 'inactive'}, {'result': 'exit-code'}, {'status': '1'},
+                        {'timestamp': False}, {'age': 16*60}):
+            with self.subTest(options=options):
+                code, output = self.verify(**options)
+                self.assertEqual(code, 1, output)
+
+    def test_check_is_registered_as_host_scoped(self):
+        check = next(c for c in verify.CHECKS if c.name == 'notification-heartbeat')
+        self.assertEqual(check.needs, frozenset({'host'}))

@@ -12,6 +12,7 @@ import binascii
 import datetime as dt
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -348,6 +349,41 @@ def check_notifications(runner: Runner, report: Report, now: dt.datetime | None 
         report.bad('cannot read notification checker status (console/console-notifications)')
 
 
+def check_notification_heartbeat(runner: Runner, report: Report,
+                                 now: dt.datetime | None = None) -> None:
+    """The host timer is active and its last heartbeat service run succeeded within 15 minutes."""
+    report.section('Notification heartbeat')
+    now = now or dt.datetime.now(dt.UTC)
+    timer = 'swhurl-notification-heartbeat.timer'
+    service = 'swhurl-notification-heartbeat.service'
+    try:
+        active = runner.output(['systemctl', 'is-active', timer], check=False).strip()
+        details = runner.output(['systemctl', 'show', service, '--property=Result', '--property=ExecMainStatus',
+                                 '--property=ExecMainExitTimestamp'])
+    except CommandError:
+        report.bad('cannot read host notification heartbeat timer/service status')
+        return
+    if active != 'active':
+        report.bad(f'{timer} is not active')
+    props = dict(line.split('=', 1) for line in details.splitlines() if '=' in line)
+    if props.get('Result') != 'success' or props.get('ExecMainStatus') != '0':
+        report.bad(f'{service} has not completed successfully')
+        return
+    raw_timestamp = props.get('ExecMainExitTimestamp', '')
+    try:
+        # systemctl renders this timestamp in the host's local timezone and abbreviation.
+        parsed = time.strptime(raw_timestamp, '%a %Y-%m-%d %H:%M:%S %Z')
+        taken = time.mktime(parsed)
+    except (TypeError, ValueError, OverflowError):
+        report.bad(f'{service} has an invalid successful run timestamp')
+        return
+    age = now.timestamp() - taken
+    if age < -60 or age > 15 * 60:
+        report.bad(f'{service} last succeeded {age / 60:.1f} minutes ago; check the host timer and log')
+    elif active == 'active':
+        report.ok('host notification heartbeat timer is active and its service succeeded within 15 minutes')
+
+
 def check_console(runner: Runner, report: Report) -> None:
     """Warn if the console image's inputs changed since it was built.
 
@@ -563,6 +599,7 @@ CHECKS = (
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
     Check('dashboards', frozenset({'cluster'}), check_dashboards),
     Check('notifications', frozenset({'cluster'}), check_notifications),
+    Check('notification-heartbeat', frozenset({'host'}), check_notification_heartbeat),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
 )

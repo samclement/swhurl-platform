@@ -106,6 +106,25 @@ For each PR: read the chart's release notes and compare its `appVersion` (`helm 
 
 Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both [`validate.yml`](../.github/workflows/validate.yml) and the console image ([`images/console/Dockerfile`](../images/console/Dockerfile)), with `sops` pinned in the image only. Bump a version in both places, with its SHA-256 in the Dockerfile, and push: the publish run builds and deploys the new console ([console](console.md#deploy-a-new-console)). Flux's controllers are installed by `make flux-install`, at `FLUX_VERSION` in [`tools/swhurl/flux.py`](../tools/swhurl/flux.py) and with the patches in [`clusters/home/flux-system/install`](../clusters/home/flux-system/install/kustomization.yaml) (the upstream manifests themselves are not in Git). To upgrade Flux: bump `FLUX_VERSION`, install that `flux` CLI locally, run `make flux-install DRY_RUN=true` to see the live diff, then `make flux-install`, and push the change (it is under `tools/`, so the publish run also deploys a matching console). Don't run plain `flux install`: it drops the patches, and `make verify-platform` then warns.
 
+## Notification checker heartbeat
+
+The host timer checks the in-cluster `console-notifications` CronJob every five minutes. It posts a high-priority alert when the Job is missing, suspended or has not succeeded for 10 minutes, reminds once an hour while stale, and sends a normal-priority recovery after the checker succeeds again. The service uses the user's kubeconfig and reads the existing ntfy failure destination from `console/notification-ntfy` for each post; it stores only incident timestamps in `~/.local/state/swhurl-platform/notification-heartbeat.json` (directory mode 0700, file mode 0600). Its log is `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` and is collected by ClickStack.
+
+The heartbeat runs outside the console image, publish workflow and Kubernetes scheduler. It still needs this host, the Kubernetes API, the Secret and ntfy to work. It cannot notify while the host or API is down. It alerts after 10 minutes without a successful checker Job plus up to one five-minute timer interval and one second. On this host, `make verify-platform` checks that the timer is active and the service's last run succeeded within 15 minutes.
+
+Run installation and removal in your own terminal; both commands need `sudo`:
+
+```bash
+make host-heartbeat
+systemctl status swhurl-notification-heartbeat.timer
+systemctl status swhurl-notification-heartbeat.service
+make notifications-heartbeat ARGS=--dry-run
+tail -n 100 /var/log/swhurl-platform/swhurl-notification-heartbeat.log
+make host-heartbeat-delete
+```
+
+Removal leaves the incident file and log in place. `make notifications-heartbeat ARGS="--max-age 1s"` deliberately sends a real stale message; after a successful checker Job, `make notifications-heartbeat` sends recovery.
+
 ## Backups and recovery
 
 | Data | Class | Where it survives |

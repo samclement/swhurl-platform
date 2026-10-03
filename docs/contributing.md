@@ -25,7 +25,7 @@ CI also runs every `DRY_RUN=true` target and `REQUIRE_HELM=1` so Helm-based test
 
 ## Operator tooling
 
-All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that, and `make` stays the operator interface. Choose the language by what the code does:
+All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl) (live tests in `swhurl/livetests/`), run as `python3 -m swhurl <command>` with `tools/` on `PYTHONPATH`; the Makefile's `$(SWHURL)` does that. App creation/editing and template checks use `uv run --frozen` for the locked YAML dependencies, and `make` stays the operator interface. Choose the language by what the code does:
 
 - **Python** for anything that parses JSON or YAML or edits structured files, makes a safety decision or refusal, handles or compares Secret values, polls or cleans up after failure, or produces a pass/fail verdict.
 - **Bash** for short linear glue, a streaming pipe nothing inspects, code that runs where Python dependencies are not guaranteed (the host timer installer, [`host/install-timer.sh`](../host/install-timer.sh), and its systemd unit templates), and command lists that double as documentation (`tests/fixtures/apps.sh`). Kept bash uses `set -Eeuo pipefail`, has a dry-run path where it changes anything, and passes `make check-lint`; when it grows real logic, the logic moves to `swhurl` and the script calls it.

@@ -1,8 +1,8 @@
 """Generate one app instance: namespace, app-template HelmRelease, Flux unit.
 
-    make app-new NAME=<app> ARGS="--env staging|prod --image IMAGE [options]"
+    make app-new NAME=<app> ARGS="--env staging --image IMAGE [options]"
     make app-new NAME=<app> ARGS="--from-repo OWNER/REPO[@REF] --env staging --image IMAGE"
-    python3 -m swhurl app-new NAME --env staging|prod --image IMAGE [options]
+    python3 -m swhurl app-new NAME --env staging --image IMAGE [options]
 
 --from-repo reads the app's swhurl.yaml from GitHub (GITHUB_TOKEN if set, for private
 repositories) and --manifest from a file; its fields become the defaults, as a preset's do.
@@ -10,7 +10,7 @@ repositories) and --manifest from a file; its fields become the defaults, as a p
 Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
 worker, to put a public app inside the shared sign-in cookie domain, and to
-deploy production without an image digest. Secret stubs are SOPS-encrypted
+create production directly (use app-promote). Secret stubs are SOPS-encrypted
 before this script returns, so plaintext never reaches Git.
 
 The output is ordinary YAML: edit it by hand afterwards. `make check-apps`
@@ -243,7 +243,7 @@ def dump(docs) -> str:
     return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
 
 
-def generate(args, root: Path) -> list[Path]:
+def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     resolve(args)
     validate(args)
     namespace = f'{args.name}-{args.env}'
@@ -317,7 +317,7 @@ def generate(args, root: Path) -> list[Path]:
             path.write_text(text)
             written.append(path)
         if args.secret_keys:
-            written.append(write_encrypted_secret(instance, f'{args.name}-secret', namespace, args.secret_keys))
+            written.append(write_encrypted_secret(instance, f'{args.name}-secret', namespace, args.secret_keys, runner=runner))
     except Exception:
         for path in written:
             path.unlink(missing_ok=True)
@@ -330,13 +330,13 @@ def generate(args, root: Path) -> list[Path]:
     return written
 
 
-def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str]) -> Path:
+def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str], *, runner: Runner | None = None) -> Path:
     path = instance / 'secret.sops.yaml'
     secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': name, 'namespace': namespace},
               'type': 'Opaque', 'stringData': {k: 'REPLACE_ME' for k in keys}}
     path.write_text(dump([secret]))
     try:
-        Runner().run(['sops', '--encrypt', '--in-place', str(path)])
+        (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(path)])
     except CommandError as error:
         path.unlink(missing_ok=True)
         raise GenerationError(f'could not SOPS-encrypt {path} (is there a .sops.yaml rule?): {error}') from error
@@ -417,7 +417,7 @@ def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.
     source.add_argument('--from-repo', metavar='OWNER/REPO[@REF]',
                         help=f"defaults from the app repository's {MANIFEST_FILE} on GitHub")
     source.add_argument('--manifest', type=Path, metavar='PATH', help=f'defaults from a local {MANIFEST_FILE}')
-    p.add_argument('--env', required=True, choices=ENVIRONMENTS)
+    p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
@@ -484,6 +484,8 @@ def main(argv=None, opener: Opener = _open) -> int:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 2
     try:
+        if args.env != 'staging':
+            raise GenerationError('app-new creates staging only; create production with make app-promote APP=' + args.name)
         written = generate(args, args.root.resolve())
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)

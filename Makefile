@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 # Operator interface. Recipes stay aliases and plain sequencing; logic lives in
 # tools/swhurl (see docs/contributing.md). `## text` after a target is its help line.
 SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
+SWHURL_APPS := PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl
 DRY_RUN ?= false
 INSTALL_STEPS = $(if $(SKIP_VERIFY),flux-reconcile,check-config flux-reconcile verify-platform)
 
@@ -49,27 +50,27 @@ flux-bootstrap: ## Apply the root units and sources (Flux must already be instal
 .PHONY: app-new
 app-new: ## NAME=<app> ARGS="--env ... --image ..." Generate an app instance (ARGS=--help for options)
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
-	$(SWHURL) app-new $(NAME) $(ARGS)
+	$(SWHURL_APPS) app-new $(NAME) $(ARGS)
 
 .PHONY: app-promote
-app-promote: ## APP=<app> Copy the staging image (tag and digest) into prod (Git edit; FROM=, TO=; ARGS=--expect-image=...)
-	@[[ -n "$(APP)" ]] || { echo "Usage: make app-promote APP=<app> [FROM=staging TO=prod]" >&2; exit 2; }
-	$(SWHURL) app-promote $(APP) $(if $(FROM),--from $(FROM)) $(if $(TO),--to $(TO)) $(ARGS)
+app-promote: ## APP=<app> Create production from staging or update its image (Git edit; ARGS=--expect-image=... or --host=...)
+	@[[ -n "$(APP)" ]] || { echo "Usage: make app-promote APP=<app>" >&2; exit 2; }
+	$(SWHURL_APPS) app-promote $(APP) $(ARGS)
 
 .PHONY: app-scale
 app-scale: ## APP= ENV= ARGS="--replicas N --cpu Q --memory Q --memory-limit Q" Change replicas or resources (Git edit)
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-scale APP=<app> ENV=<env> ARGS='--replicas 2'" >&2; exit 2; }
-	$(SWHURL) app-scale $(APP) $(ENV) $(ARGS)
+	$(SWHURL_APPS) app-scale $(APP) $(ENV) $(ARGS)
 
 .PHONY: app-expose
 app-expose: ## APP= ENV= ARGS="--exposure private|authenticated-web|public [--host H]" Change who can reach an instance (Git edit)
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-expose APP=<app> ENV=<env> ARGS='--exposure public --host app.example.com'" >&2; exit 2; }
-	$(SWHURL) app-expose $(APP) $(ENV) $(ARGS)
+	$(SWHURL_APPS) app-expose $(APP) $(ENV) $(ARGS)
 
 .PHONY: app-remove
 app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git edit; Flux uninstalls on push)
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }
-	$(SWHURL) app-remove $(APP) $(ENV)
+	$(SWHURL_APPS) app-remove $(APP) $(ENV)
 
 .PHONY: app-repo
 app-repo: ## NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite"] [DESCRIPTION=] Create the app's GitHub repository from a template; wait for its first image
@@ -142,7 +143,7 @@ check-apps: ## Render every app instance and check the app contract
 
 .PHONY: check-templates
 check-templates: ## Render every stack template combination; each swhurl.yaml must pass app-new and the app policy (needs network)
-	$(SWHURL) check-templates
+	$(SWHURL_APPS) check-templates
 
 .PHONY: check-otel
 check-otel: ## Render the OTel collectors and validate their config with that exact otelcol-k8s release (warns on deprecated names)

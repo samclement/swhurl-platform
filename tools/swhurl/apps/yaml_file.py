@@ -71,6 +71,6 @@ def mapping(parent: dict, key: str, *, create: bool = False) -> dict:
     value = parent.get(key)
     if not isinstance(value, dict):
         raise EditError(f'{key}: expected a YAML mapping; edit this custom structure by hand')
-    if isinstance(value, CommentedMap) and (value.merge or value.yaml_anchor()):
+    if isinstance(value, CommentedMap) and (value.merge or getattr(value.yaml_anchor(), 'value', None)):
         raise EditError(f'{key}: uses a YAML anchor or merge; edit shared settings by hand')
     return value

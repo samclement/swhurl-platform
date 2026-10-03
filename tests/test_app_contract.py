@@ -13,7 +13,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import contract
+from swhurl.apps import contract, promotion
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.run import CommandError, FakeRunner, Result
@@ -148,9 +148,11 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
 
     def test_auto_deploy_watches_the_image_and_marks_staging_only(self):
-        for env in ('staging', 'prod'):
-            self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', env, '--image', TEMPLATE_IMAGE,
-                                           '--root', str(self.tmp), '--no-policy-check']), 0)
+        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', TEMPLATE_IMAGE,
+                                       '--root', str(self.tmp), '--no-policy-check']), 0)
+        with mock.patch.object(app_policy, 'evaluate', return_value=[]):
+            source, _ = promotion.read(self.tmp, 'w')
+            promotion.create(self.tmp, 'w', source)
         staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
         repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
         self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),

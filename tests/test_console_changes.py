@@ -334,9 +334,10 @@ class NewAppRouteTests(unittest.TestCase):
         job = jobs.get(1)
         self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'weather-api/staging'))
         self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
-        c.post('/new', data={**FORM, 'env': 'prod', 'image': 'ghcr.io/me/weather:1.0@sha256:' + 'a' * 64}, headers=WHO)
-        self.assertEqual((jobs.get(2).state, len(self.api.sent('POST /pulls'))), ('succeeded', 2))
-        self.assertEqual(len(self.api.sent('POST /issues/7/labels')), 1, 'production is merged by a person')
+        rejected = c.post('/new', data={**FORM, 'env': 'prod', 'image': 'ghcr.io/me/weather:1.0@sha256:' + 'a' * 64}, headers=WHO)
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIsNone(jobs.get(2))
+        self.assertEqual(len(self.api.sent('POST /pulls')), 1, 'forged production submissions open no PR')
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
 
     def test_every_field_is_on_the_form_once_and_a_bad_form_keeps_advanced_open(self):
@@ -475,7 +476,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
              'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
-            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', '--from=staging', '--to=prod', f'--expect-image={IMAGE}'), 'hello/prod',
+            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}'), 'hello/prod',
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),

@@ -34,7 +34,6 @@ from swhurl import platform
 from swhurl.apps import new, repo
 from swhurl.apps.contract import (
     DATABASES,
-    ENVIRONMENTS,
     EXPOSURES,
     OTLP_ENDPOINT,
     OTLP_HOST_IP,
@@ -73,7 +72,7 @@ NEW_APP_FIELDS = (
     ('otlp', 'otlp', 'Sends OpenTelemetry'),
     ('issuer', 'issuer', 'Certificate issuer'),
 )
-CHOICES = {'env': ENVIRONMENTS, 'kind': ('web', 'worker'), 'exposure': EXPOSURES, 'database': DATABASES,
+CHOICES = {'env': ('staging',), 'kind': ('web', 'worker'), 'exposure': EXPOSURES, 'database': DATABASES,
            'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
 CHECKBOXES = {'otlp'}
 """On/off fields: always sent explicitly (``--<flag>`` or ``--no-<flag>``), so a preset's default can be turned off."""
@@ -177,11 +176,11 @@ def github_from_env(runner: Runner, env: Mapping[str, str] | None = None) -> Git
 
 def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
     """``(name, env, app-new argv)`` from the form. Values go as ``--flag=value`` so none can become an option."""
-    name, env = form.get('name', '').strip(), form.get('env', '').strip()
+    name, env = form.get('name', '').strip(), form.get('env', 'staging').strip()
     if not NAME_RE.match(name):
         raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
-    if env not in ENVIRONMENTS:
-        raise ActionError(f'env must be one of {", ".join(ENVIRONMENTS)}')
+    if env != 'staging':
+        raise ActionError('env must be staging; create production with Promote to production')
     preset = form.get('preset', '').strip()
     if preset == FROM_REPO:
         source = form.get('repo', '').strip()

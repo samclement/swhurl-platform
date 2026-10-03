@@ -22,7 +22,7 @@ COMMANDS = {
     'app': ('swhurl.apps.ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
     'app-new': ('swhurl.apps.new', 'main', 'Generate an app instance'),
     'app-repo': ('swhurl.apps.repo', 'main', 'Create an app repository from a stack template; wait for its first image'),
-    'app-promote': ('swhurl.apps.edit', 'main_promote', 'Copy an app image (tag and digest) between environments (Git edit)'),
+    'app-promote': ('swhurl.apps.edit', 'main_promote', 'Create production from staging or update its image (Git edit)'),
     'app-scale': ('swhurl.apps.edit', 'main_scale', 'Change replicas or resources of an app instance (Git edit)'),
     'app-expose': ('swhurl.apps.edit', 'main_expose', 'Change who can reach an app instance: private, signed-in or public (Git edit)'),
     'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),

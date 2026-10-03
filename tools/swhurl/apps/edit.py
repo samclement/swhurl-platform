@@ -1,6 +1,6 @@
 """Edit generated app instances (Git edits only, like app-new): promote, scale, remove.
 
-    app-promote APP [--from staging] [--to prod]   copy the image (tag and digest) between environments
+    app-promote APP   create production from staging or update its image
     app-scale APP ENV [--replicas N] [--cpu Q] [--memory Q] [--memory-limit Q]
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from swhurl import ROOT
+from swhurl.apps import ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     ENVIRONMENTS,
@@ -26,8 +27,8 @@ from swhurl.apps.contract import (
     in_cookie_domain,
 )
 from swhurl.apps.new import NAME_RE, check_generated, depends_on, ingress_values
-from swhurl.apps.ops import image_reference
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
+from swhurl.run import CommandError, Runner
 
 PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
 CPU_RE = re.compile(r'^\d+(\.\d+)?m?$')
@@ -60,26 +61,36 @@ def container(release: dict) -> dict:
     return mapping(mapping(controller(release), 'containers'), 'main')
 
 
-def promote(root: Path, app: str, source: str, target: str, *, expect_image: str | None = None) -> Path:
-    if source == target:
-        raise EditError('--from and --to must differ')
-    src, dst = instance_dir(root, app, source), instance_dir(root, app, target)
-    image = mapping(container(load_release(src)), 'image')
-    if expect_image is not None and image_reference(image) != expect_image:
-        raise EditError(f'{app}/{source} image changed since it was reviewed; refresh staging and review it again')
-    if not image.get('digest'):
-        raise EditError(f'{app}/{source} has no image digest; promote only a digest-pinned image')
-    document = YamlFile(dst / 'helmrelease.yaml')
+def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
+            expect_image: str | None = None, expect_config: str | None = None,
+            host: str | None = None, runner=None) -> Path:
+    if (source, target) != ('staging', 'prod'):
+        raise EditError('promotion must differ between environments and always goes staging → prod')
+    src, dst = promotion.read(root, app)
+    decision = promotion.decide(src, dst)
+    if expect_image is not None and decision.image != expect_image:
+        raise EditError(f'{app}/staging image changed since it was reviewed; refresh staging and review it again')
+    if expect_config is not None and promotion.fingerprint(root, app, 'staging') != expect_config:
+        raise EditError('staging configuration changed since it was reviewed; refresh and review it again')
+    if decision.outcome == 'same':
+        raise EditError(f'{app}/prod already runs this digest; same image in both')
+    if decision.outcome == 'create':
+        result = promotion.create(root, app, src, host=host, runner=runner)
+        print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
+        if container(src).get('envFrom'):
+            print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
+        return result
+    if host:
+        raise EditError('--host applies only to first production; change existing routes with app-expose')
+    document = YamlFile(root / 'apps' / app / 'prod/helmrelease.yaml')
     current = mapping(container(document.data), 'image')
-    if current.get('repository') != image.get('repository'):
-        raise EditError(f'{app}/{target} uses {current.get("repository")}, not {image.get("repository")}; '
-                        'change the repository by hand')
-    if (current.get('tag'), current.get('digest')) == (image.get('tag'), image['digest']):
-        raise EditError(f'{app}/{target} already runs {image.get("tag")}@{image["digest"]}')
+    image = promotion.image_of(src)
     current.update({k: str(image[k]) for k in ('tag', 'digest') if k in image})
+    if 'tag' not in image:
+        current.pop('tag', None)
     document.save()
-    print(f'[OK] {app}/{target}: image {image.get("tag")}@{image["digest"][:19]}… (from {source})')
-    return dst
+    print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
+    return root / 'apps' / app / 'prod'
 
 
 def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: str | None = None,
@@ -252,16 +263,37 @@ def run(action, check_dir: bool) -> int:
     return 0
 
 
-def main_promote(argv: list[str] | None = None) -> int:
+def main_promote(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-promote', description='Copy an app image (tag and digest) between environments')
     p.add_argument('app')
-    p.add_argument('--from', dest='source', default='staging', choices=ENVIRONMENTS)
-    p.add_argument('--to', dest='target', default='prod', choices=ENVIRONMENTS)
     p.add_argument('--expect-image', help='refuse if the source no longer names this exact repository, tag and digest')
+    p.add_argument('--expect-config', help='refuse if the reviewed staging configuration hash changed')
+    p.add_argument('--host', help='distinct production hostname for first public promotion')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: promote(args.root.resolve(), args.app, args.source, args.target,
-                               expect_image=args.expect_image), True)
+    runner = runner or Runner()
+
+    def change():
+        root = args.root.resolve()
+        source, target = promotion.read(root, args.app)
+        decision = promotion.decide(source, target)
+        if args.expect_image and args.expect_image != decision.image:
+            raise EditError('staging image changed since it was reviewed; refresh and review it again')
+        if decision.outcome == 'same':
+            raise EditError('production already runs this digest; same image in both')
+        status = ops.gather_status(runner, ops.Instance(args.app, 'staging'))
+        problem = promotion.source_problem(status, decision.image, status.applied_revision if status else '')
+        if problem:
+            raise EditError(problem)
+        return promote(root, args.app, expect_image=args.expect_image,
+                       expect_config=args.expect_config, host=args.host, runner=runner)
+
+    try:
+        return run(change, True)
+    except CommandError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 1
+
 
 
 def main_scale(argv: list[str] | None = None) -> int:

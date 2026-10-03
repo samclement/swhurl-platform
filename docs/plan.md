@@ -543,7 +543,7 @@ The job page (`/jobs/<id>`) streams output with Server-Sent Events (SSE) while a
 | Transport | SSE (`EventSource`) over a plain GET | Data flows one way; the browser reconnects and resumes by itself; no new dependency; passes oauth2-proxy ForwardAuth as an ordinary GET. WebSocket (two-way channel nobody needs), htmx (new dependency) and `fetch` polling (still a poll) were not chosen |
 | Producer side | `actions.py` is unchanged; the stream reads `job.lines` and `job.finished` every `STREAM_POLL` with `asyncio.sleep` | `job.lines.append` is called from `actions.py`, `changes.py`, `repos.py` and `server.py`, so a notify hook would touch all of them; an async sleep holds no thread per open page |
 | End of stream | `job.finished is not None`, read before the lines | `Jobs._run` sets it after the final state and lines, so nothing is missed |
-| After the end | The client reloads once on `done` | The normal template renders the final badge, finish time and PR link |
+| After the end | The client updates the state mark, finish time and PR link from `done`, then closes EventSource | Keeps scroll and text selection without duplicating page rendering |
 | Line rendering | The server escapes each line with `short_hashes` and sends HTML; the client uses `insertAdjacentHTML` | Same output as the first render; safe because `short_hashes` escapes first |
 
 ### Contract: `GET /jobs/{id:int}/events`
@@ -559,18 +559,18 @@ event: line
 data: {"html": "[INFO] reconciling <span class=\"hash\" title=\"…\">1edf37052ebd…</span>"}
 
 event: done
-data: {"state": "succeeded"}
+data: {"state": "succeeded", "finished": "12:34:56", "link": ""}
 
 : keep-alive
 ```
 
-- `id` is the number of lines delivered so far, so `Last-Event-ID: 3` resumes at line 4. `done` is last (`state` is `succeeded` or `failed`) and the stream then ends. `: keep-alive` is sent after `KEEPALIVE` seconds with nothing to send.
+- `id` is the number of lines delivered so far, so `Last-Event-ID: 3` resumes at line 4. `done` is last and includes `state` (`succeeded` or `failed`), `finished` time and the optional final `link`; the stream then ends. `: keep-alive` is sent after `KEEPALIVE` seconds with nothing to send.
 - `STREAM_POLL = 0.25` and `KEEPALIVE = 15.0` are module constants in `server.py`; tests patch them.
 - Each loop reads `finished` before `job.lines[sent:]`; do not reorder them. Starlette cancels the generator on disconnect, so `CancelledError` is not caught.
-- The page ([`job.html`](../tools/swhurl/console/templates/job.html)) opens `EventSource('/jobs/<id>/events?after=<lines rendered>')` only for a running job, removes the `waiting for output…` placeholder on the first line, reloads on `done`, and reloads after 2 seconds if the connection closes. A `<noscript>` meta refresh keeps the old behaviour.
+- The page ([`job.html`](../tools/swhurl/console/templates/job.html)) opens `EventSource('/jobs/<id>/events?after=<lines rendered>')` only for a running job and removes the `waiting for output…` placeholder on the first line. On `done`, it updates the status mark, state, finish time and optional PR link in place, then closes the stream without reloading. EventSource reconnects automatically after a transient error. A `<noscript>` meta refresh keeps the old behaviour.
 
 ### Status
 
-L1 (route, page, tests, `06f552a`) and L2 (docs) are done; deployment and cluster evidence are in [current-state.md](current-state.md). **Open (L3):** the signed-in browser check. Press **Reconcile** on a harmless unit (for example `infra-base`) and confirm lines appear one by one (not in a burst at the end, which would point at Traefik or ForwardAuth response buffering), scroll and selection are kept, the page reloads once at the end, a finished job opens without a stream, and a mid-job reload resumes without duplicate lines. Then append the result to `current-state.md`.
+L1 (route, page, tests, `06f552a`) and L2 (docs) are done; deployment and cluster evidence are in [current-state.md](current-state.md). **Open (L3):** confirm in a signed-in browser that lines arrive one by one (not in a burst at the end, which would point at Traefik or ForwardAuth response buffering), scroll and selection are kept, final status and finish time update without a reload, a finished job opens without a stream, and a mid-job reload resumes without duplicate lines. Then append the result to `current-state.md`.
 
 Out of scope: live updates on cluster pages (needs a Kubernetes watch), the pending-app page, streaming across console replicas or restarts, and a notify hook in `actions.py`.

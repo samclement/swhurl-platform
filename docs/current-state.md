@@ -653,4 +653,10 @@ Not exercised yet: first production on the cluster, the new console confirmation
 
 - Commit `06f552a` adds `GET /jobs/<id>/events`, reconnect offsets, escaped/shortened output, completion events and a no-JavaScript refresh fallback. `make check` passed (453 tests and eight template combinations); the shell syntax loop passed. Validate `37116629680` and publish `37116691007` passed. Publish deployed `src-ed23097b51859746` in bot commit `1fffec2`.
 - `make flux-reconcile` applied `1fffec2462c9ba99988eef50e871c47723038af1`; all 23 units became Ready. `make verify-platform` passed, including the current console tooling image check, and `make app-status APP=hello ENV=staging` reported Ready, 1/1 replicas and the applied Git revision. Anonymous HTTP returned 301 to HTTPS; anonymous HTTPS returned 302 to sign-in.
-- A real signed-in browser check of incremental delivery, reconnect behavior and proxy buffering remains open. The implementation and offline race test show the intended behavior; the browser check will confirm what Traefik and ForwardAuth deliver live.
+- The operator confirmed that SSE output was working in the signed-in browser; the end-of-stream page reload prompted the follow-up below. Reconnect behavior and proxy buffering remain to be checked after that update.
+
+### In-place job completion (3 October 2026)
+
+- Follow-up `62fd518` adds the final state, finish time and PR link to the `done` event and updates the page in place. Completion no longer reloads the page. `make check` passed (453 tests and eight template combinations); Validate `37129163573` and publish `37129195987` passed.
+- Publish deployed `src-4d4742644ea3464b` in bot commit `d4566c9`. `make flux-reconcile` applied `d4566c90317283937cfb1a5977635bc507bd2846`; all 23 units became Ready. `make verify-platform` passed, as did `make app-status APP=hello ENV=staging`. Anonymous HTTP returned 301 to HTTPS and anonymous HTTPS returned 302 to sign-in.
+- The signed-in browser check of completion without reload, scroll/selection retention and reconnect behavior remains open.

@@ -15,6 +15,7 @@ from swhurl.apps import contract, edit, new, ops, policy
 from swhurl.run import CommandError
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
+SAMPLE_REPO = ROOT / 'tests/fixtures/app-edit-repo'
 
 
 def changed_lines(before: str, after: str) -> list[str]:
@@ -29,7 +30,7 @@ class EditTests(unittest.TestCase):
         self.root = Path(tmp.name)
         for rel in ('apps/hello', 'clusters/home/kustomization.yaml', 'clusters/home/app-hello-staging.yaml',
                     'clusters/home/app-hello-prod.yaml', 'platform/reloader/helmrelease.yaml'):
-            src, dst = ROOT / rel, self.root / rel
+            src, dst = SAMPLE_REPO / rel, self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
         self.staging = self.root / 'apps/hello/staging/helmrelease.yaml'

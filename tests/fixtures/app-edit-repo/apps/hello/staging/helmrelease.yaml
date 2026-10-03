@@ -1,0 +1,106 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hello
+  namespace: hello-staging
+spec:
+  interval: 30m
+  timeout: 3m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 1
+  upgrade:
+    remediation:
+      retries: 1
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        replicas: 1
+        containers:
+          main:
+            image:
+              repository: docker.io/nginxinc/nginx-unprivileged
+              tag: 1.27-alpine
+              digest: sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+                  periodSeconds: 5
+                  failureThreshold: 24
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080
+    ingress:
+      main:
+        className: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
+        hosts:
+        - host: staging-hello.homelab.swhurl.com
+          paths:
+          - path: /
+            service:
+              identifier: main
+              port: http
+        tls:
+        - hosts:
+          - staging-hello.homelab.swhurl.com
+          secretName: hello-tls

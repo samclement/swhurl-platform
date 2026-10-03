@@ -62,7 +62,7 @@ flowchart LR
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `platform-alerts` | ntfy Providers and Alerts for failures and staging deploys, with their SOPS Secrets (`platform/alerts`) | infra-base | SOPS |
-| `platform-image-automation` | The write `GitRepository` (SSH, deploy key), its SOPS Secret and the `ImageUpdateAutomation` that pushes staging image pins (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its own staging unit | infra-base | SOPS |
+| `platform-image-automation` | The write `GitRepository` (SSH, deploy key) and its SOPS Secret (`platform/image-automation`); each app's `ImageRepository`, `ImagePolicy` and app-named `ImageUpdateAutomation` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver`, its token Secret, Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-console` | The web console, its RBAC (read, plus patch on Flux units), NetworkPolicy and GitHub token Secret (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |

@@ -58,7 +58,8 @@ def healthy(**overrides):
         'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
                                  'spec': {'template': {'spec': {'containers': [
                                      {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
-        'automation': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}},
+        'automations': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
+            'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}}]},
         'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}},
@@ -123,7 +124,7 @@ def healthy(**overrides):
             .on('kubectl', '-n', 'flux-system', 'get', 'alerts.notification.toolkit.fluxcd.io', handler=answer('alerts'))
             .on('kubectl', '-n', 'flux-system', 'get', 'providers.notification.toolkit.fluxcd.io', handler=answer('providers'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imageupdateautomations.image.toolkit.fluxcd.io',
-                handler=answer('automation'))
+                '-l', 'platform.swhurl.com/app', '-o', 'json', handler=answer('automations'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
             .on('curl', handler=github))
 
@@ -298,9 +299,10 @@ class ConsoleTokenTests(unittest.TestCase):
 
     def test_image_automation_problems(self):
         cases = {
-            'missing': ({'automation': Result((), 1, '', 'NotFound')}, '[WARN] ImageUpdateAutomation flux-system/apps-staging not found'),
-            'failing': ({'automation': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'push denied'}]}}},
-                        '[BAD] ImageUpdateAutomation apps-staging is not Ready: push denied'),
+            'missing': ({'automations': {'items': []}}, '[BAD] ImageUpdateAutomation w-staging is missing'),
+            'failing': ({'automations': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
+                'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'push denied'}]}}]}},
+                        '[BAD] ImageUpdateAutomation w-staging is not Ready: push denied'),
             'policy': ({'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
                 'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]}}]}},
                        '[BAD] ImagePolicy w-staging is not Ready: no tags match'),

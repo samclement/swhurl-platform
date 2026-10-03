@@ -132,7 +132,7 @@ def auto_deploys(args) -> bool:
 
 
 def image_automation(args) -> list[dict]:
-    """The ImageRepository and ImagePolicy Flux uses to find newer images of this app (flux-system)."""
+    """App-scoped Flux image resources, including its own Git writer for named deploy events."""
     repository = parse_image(args.image)['repository']
     labels = {MANAGED: 'true', APP: args.name}
     return [
@@ -147,6 +147,18 @@ def image_automation(args) -> list[dict]:
                   # Tags are immutable, so re-reading the current tag's digest hourly is plenty; a new
                   # tag's digest is read when the repository scan finds it. Always requires an interval.
                   'digestReflectionPolicy': 'Always', 'interval': '1h'}},
+        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageUpdateAutomation',
+         'metadata': {'name': f'{args.name}-staging', 'namespace': 'flux-system', 'labels': labels},
+         'spec': {'interval': '1m', 'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform-write'},
+                  'git': {'checkout': {'ref': {'branch': 'main'}},
+                          'commit': {'author': {'name': 'fluxcdbot',
+                                                'email': 'fluxcdbot@users.noreply.github.com'},
+                                     'messageTemplate': f'deploy: staging image for {args.name}\n'
+                                                        '{{ range .Changed.Changes }}\n'
+                                                        '- {{ .OldValue }} -> {{ .NewValue }}\n'
+                                                        '{{- end }}'},
+                          'push': {'branch': 'main'}},
+                  'update': {'path': f'./apps/{args.name}/staging', 'strategy': 'Setters'}}},
     ]
 
 
@@ -297,6 +309,8 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
         files[instance / IMAGE_AUTOMATION_FILE] = dump(image_automation(args))
 
     depends = depends_on(args.exposure)
+    if auto_deploys(args):
+        depends.append('platform-image-automation')
     spec = {
         'dependsOn': [{'name': d} for d in depends],
         'interval': '10m',

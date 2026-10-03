@@ -20,6 +20,40 @@ class Decision:
     rollback: bool = False
 
 
+def production_alert(app: str) -> dict:
+    """Notify once when this app's production HelmRelease completes an install or upgrade."""
+    return {
+        'apiVersion': 'notification.toolkit.fluxcd.io/v1beta3',
+        'kind': 'Alert',
+        'metadata': {'name': f'app-{app}-production', 'namespace': 'flux-system'},
+        'spec': {
+            'providerRef': {'name': 'ntfy-deploys'},
+            'eventSeverity': 'info',
+            'eventSources': [{'kind': 'HelmRelease', 'name': app, 'namespace': f'{app}-prod'}],
+            'inclusionList': ['.*succeeded.*'],
+        },
+    }
+
+
+def ensure_production_alert(root: Path, app: str) -> None:
+    """Register the per-app alert in its production instance so app removal prunes it."""
+    from swhurl.apps.new import dump
+
+    instance = root / 'apps' / app / 'prod'
+    alert_path = instance / 'production-alert.yaml'
+    kustomization = YamlFile(instance / 'kustomization.yaml')
+    resources = kustomization.data.get('resources')
+    if not isinstance(resources, list):
+        raise EditError('production kustomization needs a resources list for its promotion alert')
+    if alert_path.exists():
+        if 'production-alert.yaml' not in resources:
+            raise EditError('production alert exists but is not registered in the kustomization')
+        return
+    alert_path.write_text(dump([production_alert(app)]))
+    resources.append('production-alert.yaml')
+    kustomization.save()
+
+
 def image_of(release: dict) -> dict:
     values = mapping(mapping(release, 'spec'), 'values')
     controller = mapping(mapping(values, 'controllers'), 'main')
@@ -282,6 +316,8 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         if f'{app}-staging' in json.dumps(release) or contract.default_host(app, 'staging') in json.dumps(release):
             raise EditError('staging-specific reference remains in deployment settings; edit custom production in Git')
         (dst / 'helmrelease.yaml').write_text(new.dump([release]))
+        # Keep the success alert with the production instance so it is installed and pruned with it.
+        ensure_production_alert(work, app)
         problems = policy.evaluate(dst, runner)
         if problems:
             raise EditError('production policy refused: ' + '; '.join(problems))
@@ -290,7 +326,7 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
                 or (root / 'apps' / app / 'prod').exists()
                 or (root / 'clusters/home' / f'app-{app}-prod.yaml').exists()):
             raise EditError('configuration changed while preparing production; refresh and review it again')
-        files = [*written, work / 'clusters/home/kustomization.yaml']
+        files = [*written, dst / 'production-alert.yaml', work / 'clusters/home/kustomization.yaml']
         reloader = work / 'platform/reloader/helmrelease.yaml'
         if args.secret_keys and reloader.exists():
             files.append(reloader)

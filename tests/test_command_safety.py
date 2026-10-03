@@ -59,7 +59,7 @@ elif Path(sys.argv[0]).name == 'gh':
     emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
            'last_response': {'code': 200}}])
 elif any(a.startswith('imageupdateautomations') for a in argv):
-    emit({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}})
+    emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database

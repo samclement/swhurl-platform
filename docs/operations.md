@@ -150,18 +150,38 @@ Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that
 
 **App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count, the archive's checksum and the plaintext's size and SHA-256 (measured in the pod); an archive smaller than the plaintext means the stream was cut short, and the run fails. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old.
 
-Restore an app's database from its newest local backup (or `BACKUP_FILE=`; on another machine, first copy one from `s3://…/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/`):
+Restore an app's database from its newest local backup. On another machine, copy both the chosen archive and its matching `.json` metadata file from `s3://swhurl-platform-backups-110927251694/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/` first:
 
 ```bash
-make restore-sqlite APP=notes ENV=prod DRY_RUN=true          # checks the backup, prints the plan
-make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod    # the app is down for about a minute
+export BACKUP_DIR="$HOME/restore-backups"
+mkdir -p "$BACKUP_DIR/sqlite/notes-prod"
+aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/
+ARCHIVE=sqlite-YYYYMMDDTHHMMSSZ  # choose the same timestamped base name from the listing
+aws s3 cp "s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/$ARCHIVE.db.age" "$BACKUP_DIR/sqlite/notes-prod/"
+aws s3 cp "s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/$ARCHIVE.json" "$BACKUP_DIR/sqlite/notes-prod/"
+make restore-sqlite APP=notes ENV=prod BACKUP_DIR="$BACKUP_DIR" DRY_RUN=true
+make restore-sqlite APP=notes ENV=prod BACKUP_DIR="$BACKUP_DIR" CONFIRM=notes/prod  # the app is down for about a minute
 ```
 
 It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app.
 
 **Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.
 
-**Recovering on a new machine** needs Git (GitHub), the age private key (its off-host copy), the newest archive and metadata from S3 (`aws s3 cp s3://…/clickstack-mongodb/<name> .`), and read access to that bucket. Follow [bootstrap](bootstrap.md) to step 4, restore MongoDB as below, then run `make clickstack-bootstrap` and `make verify-platform`. The Google OAuth client and every other credential come from SOPS.
+**Recovering on a new machine** needs Git (GitHub), `kubectl`, `flux`, `helm`, `sops`, `age`, Python 3.11+ with PyYAML, AWS CLI v2, the age private key and read access to the backup bucket. Find the key through your own recovery notes or the person responsible for its encrypted off-host copy; put it at `age.agekey` in the repository root and set `SOPS_AGE_KEY_FILE=./age.agekey`. Do not copy the key into Git. Follow [bootstrap](bootstrap.md) through Flux setup, then list the MongoDB backups and copy both the chosen archive and its matching metadata file into a private working directory:
+
+```bash
+aws s3 ls s3://swhurl-platform-backups-110927251694/clickstack-mongodb/
+export BACKUP_DIR="$HOME/restore-backups"
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+ARCHIVE=clickstack-mongodb-YYYYMMDDTHHMMSSZ  # choose the same timestamped base name from the listing
+aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.archive.gz.age" "$BACKUP_DIR/"
+aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.json" "$BACKUP_DIR/"
+export BACKUP_FILE="$BACKUP_DIR/$ARCHIVE.archive.gz.age"
+export AGE_KEY_FILE="$PWD/age.agekey"
+```
+
+Replace `YYYYMMDDTHHMMSSZ` with the same timestamp shown by `aws s3 ls`. Point `KUBECONFIG` at the cluster being recovered before running any `kubectl`, `flux` or `make` target that uses the cluster. Follow the restore commands below; compare `mongorestore`'s counts with the copied `.json` metadata. Then run `make clickstack-bootstrap` and `make verify-platform`. The Google OAuth client and every other credential come from SOPS.
 
 The restore test passes only if the checksum, collection counts and restored ingestion key (against the Git Secret) all match; it never touches live workloads.
 
@@ -170,12 +190,13 @@ Without a backup, a fresh install needs only `make clickstack-bootstrap`: it reg
 Restore into the running service. MongoDB requires a login, so the connection string goes into a private file in the pod (never a command line) while the archive streams on stdin:
 
 ```bash
+kubectl config current-context   # confirm this is the cluster being recovered
 kubectl -n observability scale deploy/clickstack-app --replicas=0
 kubectl -n observability wait --for=delete pod -l app=clickstack --timeout=120s   # HyperDX takes ~40 s to stop
 kubectl -n observability get secret clickstack-mongodb-hyperdx-hyperdx -o jsonpath='{.data.connectionString\.standard}' \
   | base64 -d | python3 -c 'import json,sys; print("uri: " + json.dumps(sys.stdin.read()))' \
   | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- sh -c 'umask 077; cat > /tmp/login.yaml'
-age -d -i age.agekey <archive> | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- \
+age -d -i age.agekey "$BACKUP_FILE" | kubectl -n observability exec -i clickstack-mongodb-0 -c mongod -- \
   mongorestore --config=/tmp/login.yaml --archive --gzip --drop
 kubectl -n observability exec clickstack-mongodb-0 -c mongod -- rm -f /tmp/login.yaml
 kubectl -n observability scale deploy/clickstack-app --replicas=1

@@ -197,7 +197,7 @@ class AppSummaryTests(unittest.TestCase):
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
         self.assertIn('Staging and prod differ', text)
-        self.assertIn('href="/apps/web/staging">Review promotion</a>', text)
+        self.assertIn('href="/apps/web/staging/promotion">Review promotion</a>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
 
     def test_every_page_names_app_instances_the_same_way(self):

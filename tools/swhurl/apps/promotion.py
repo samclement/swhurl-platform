@@ -111,7 +111,7 @@ def ordinary(value, where: str = 'staging') -> None:
             ordinary(child, where)
 
 
-def first_args(root: Path, app: str, source: dict, *, host: str | None = None):
+def first_args(root: Path, app: str, source: dict, *, host: str | None = None, preview: bool = False):
     """Validate the conversion boundary and build generator inputs without decrypting Secrets."""
     from swhurl.apps import new
 
@@ -140,6 +140,13 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None):
     only(pod, {'automountServiceAccountToken', 'securityContext', 'labels', 'annotations'}, 'defaultPodOptions')
     instance = root / 'apps' / app / 'staging'
     namespace = YamlFile(instance / 'namespace.yaml').data
+    ordinary(namespace, 'namespace')
+    only(namespace, {'apiVersion', 'kind', 'metadata'}, 'namespace')
+    only(mapping(namespace, 'metadata'), {'name', 'labels', 'annotations'}, 'namespace.metadata')
+    if (namespace['metadata'].get('name') != f'{app}-staging'
+            or source.get('metadata', {}).get('name') != app
+            or source.get('metadata', {}).get('namespace') != f'{app}-staging'):
+        raise EditError('first promotion requires the app staging namespace and release identity')
     exposure = namespace.get('metadata', {}).get('labels', {}).get(contract.EXPOSURE)
     if exposure not in contract.EXPOSURES:
         raise EditError('staging namespace needs a supported exposure label')
@@ -164,7 +171,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None):
             raise EditError('first promotion needs one host with matching TLS')
         if exposure == 'authenticated-web' and hosts[0].get('host') != contract.default_host(app, 'staging'):
             raise EditError('custom authenticated host: use the generated staging host before first promotion')
-        if exposure == 'public' and (not host or host == hosts[0].get('host')):
+        if exposure == 'public' and not (preview and not host) and (not host or host == hosts[0].get('host')):
             raise EditError('first public promotion needs a distinct production --host')
     elif values.get('ingress'):
         raise EditError('private staging must have no ingress')
@@ -210,7 +217,12 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None):
     if 'data' in persistence:
         args.persistence = persistence['data']['size']
     new.resolve(args)
-    new.validate(args)
+    if preview and exposure == 'public' and not host:
+        args.host = route['hosts'][0]['host']
+        new.validate(args)
+        args.host = None
+    else:
+        new.validate(args)
     return args
 
 
@@ -245,6 +257,15 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         except new.GenerationError as error:
             raise EditError(str(error)) from None
         dst = work / 'apps' / app / 'prod'
+        generated_ns = json.loads(json.dumps(YamlFile(dst / 'namespace.yaml').data))
+        source_ns = YamlFile(root / 'apps' / app / 'staging/namespace.yaml').data
+        generated_ns['metadata']['labels'] = {**source_ns['metadata'].get('labels', {}),
+                                               **generated_ns['metadata']['labels']}
+        generated_ns['metadata']['annotations'] = {**source_ns['metadata'].get('annotations', {}),
+                                                   **generated_ns['metadata'].get('annotations', {})}
+        if not generated_ns['metadata']['annotations']:
+            generated_ns['metadata'].pop('annotations')
+        (dst / 'namespace.yaml').write_text(new.dump([generated_ns]))
         # Strip staging-only automation comments, then retain the effective reviewed release settings.
         release = json.loads(json.dumps(source))
         release['metadata']['namespace'] = f'{app}-prod'

@@ -347,10 +347,19 @@ def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list
 
 
 def register(root: Path, filename: str) -> None:
-    path = root / 'clusters/home/kustomization.yaml'
-    text = path.read_text()
-    if f'- {filename}' not in text:
-        path.write_text(text.rstrip('\n') + f'\n  - {filename}\n')
+    from swhurl.apps.yaml_file import EditError, YamlFile
+
+    try:
+        document = YamlFile(root / 'clusters/home/kustomization.yaml')
+        resources = document.data.get('resources')
+        if not isinstance(resources, list) or getattr(resources.yaml_anchor(), 'value', None):
+            raise EditError('unit registration needs an ordinary resources list')
+        if filename not in resources:
+            resources.append(filename)
+            resources.fa.set_block_style()
+            document.save()
+    except EditError as error:
+        raise GenerationError(str(error)) from None
 
 
 def watch_namespace(root: Path, namespace: str) -> None:

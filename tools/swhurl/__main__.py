@@ -11,6 +11,7 @@ import sys
 
 COMMANDS = {
     # command: (module, function, summary)
+    'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
     'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),
     'check-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
     'check-config': ('swhurl.verify', 'verify_config', 'Check required Secret files and settings exist (no cluster)'),

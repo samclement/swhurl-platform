@@ -8,7 +8,7 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 | --- | --- | --- | --- |
 | Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
-| Promote to production | **Promote to prod** | `make app-promote` | [Promote to production](#promote-to-production) |
+| Promote to production | **Promote to production** | `make app-promote` | [Promote to production](#promote-to-production) |
 | Add an image that already exists | **New app** → **Deploy an existing image** | `make app-new` | [Add an existing image](#add-an-existing-image) |
 | Choose who can reach it | **Who can reach it** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
@@ -267,7 +267,7 @@ To guard the exact image reviewed, use:
 make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
 ```
 
-A mismatch or unhealthy staging refuses before production edits. The console's image promotion still requires an existing target until [plan phase 3](plan.md#9-predictable-app-deployment-and-promotion) lands.
+A mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Apps or staging shows the exact image, destination and first-production changes, then **Promote to production** creates the PR. Eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused; a replacement image requires explicitly closing the old PR. See [merge controls and pending changes](console.md#auto-merge).
 
 ## Operate an instance
 

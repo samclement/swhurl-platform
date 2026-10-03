@@ -8,7 +8,8 @@
 <h2>Pull requests waiting for you</h2>
 {% if prs %}
 <ul class="items">
-  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">opened {{ pr.opened }} · <code>{{ pr.branch }}</code></span></li>{% endfor %}
+  {% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ pr.progress }}</span> <a href="{{ pr.checks_url or pr.url }}">Checks</a> <span class="muted">opened {{ pr.opened }} · <code>{{ pr.branch }}</code></span>
+{% if pr.branch.startswith('console/promote-') %}<form method="post" action="/promotion-prs/{{ pr.number }}/hold"><button>Hold PR</button></form><form method="post" action="/promotion-prs/{{ pr.number }}/resume"><button>Request auto-merge</button></form>{% endif %}</li>{% endfor %}
 </ul>
 {% elif prs_error %}<p class="muted">{{ prs_error }}</p>
 {% else %}<p class="muted">None open.</p>{% endif %}
@@ -21,7 +22,7 @@
   {% for j in jobs %}
   <tr>
     <td><a href="/jobs/{{ j.id }}">#{{ j.id }}</a></td>
-    {% set label, link = target(j.unit) %}<td>{{ j.action }} <a href="{{ link }}">{{ label }}</a>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</td>
+    {% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<td>{{ j.action }} <a href="{{ link }}">{{ label }}</a>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</td>
     <td>{{ j.identity }}</td>
     <td class="mono">{{ j.started.strftime('%H:%M:%S') }}</td>
     <td>{{ st.job(j) }} {{ j.state }}</td>

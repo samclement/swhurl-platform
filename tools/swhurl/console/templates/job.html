@@ -3,7 +3,7 @@
 {% block title %}Job {{ job.id }}{% endblock %}
 {% block head %}{% if job.state == 'running' %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
 {% block main %}
-{% set label, link = target(job.unit) %}
+{% set label, link = (job.unit, job.link or '/activity') if job.unit.startswith('PR #') else target(job.unit) %}
 <p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
   · {{ st.job(job) }} <span class="state {{ {'succeeded': 'healthy', 'failed': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>

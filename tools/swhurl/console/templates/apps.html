@@ -14,8 +14,8 @@
       {% if a.comparison == 'ahead' %}<div class="warn hint-line">Staging is ahead of prod</div>
       {% elif a.comparison == 'differs' %}<div class="muted hint-line">Staging and prod differ</div>
       {% elif a.comparison == 'same' %}<div class="muted hint-line">Same image in both</div>{% endif %}
-      {% if a.comparison in ('ahead', 'differs') %}
-      <a class="button" href="/apps/{{ a.app }}/staging">Review promotion</a>
+      {% if 'staging' in a.envs and a.comparison != 'same' %}
+      <a class="button" href="/apps/{{ a.app }}/staging/promotion">Review promotion</a>
       {% endif %}
     </td>
     {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}

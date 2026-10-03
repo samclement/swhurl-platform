@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Promote {{ review.app }}{% endblock %}
+{% block main %}
+<p class="crumbs"><a href="/apps">Apps</a> › <a href="/apps/{{ review.app }}/staging">{{ review.app }}/staging</a> › Promotion</p>
+<h1>Promote to production</h1>
+{% if prs %}
+<p class="lead">A promotion pull request is already open. Its reviewed image stays pinned when staging advances. Close it on GitHub before creating a replacement.</p>
+<ul class="items">{% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ pr.progress }}</span> <a href="{{ pr.checks_url or pr.url }}">Checks</a>
+<form method="post" action="/promotion-prs/{{ pr.number }}/hold"><button>Hold PR</button></form>
+<form method="post" action="/promotion-prs/{{ pr.number }}/resume"><button>Request auto-merge</button></form></li>{% endfor %}</ul>
+{% elif review.outcome == 'same' %}<p class="lead">Same image in both. No promotion is needed.</p>
+{% else %}
+<p class="lead">{{ 'Create ' if review.outcome == 'create' else 'Update ' }}{{ review.app }}/prod with the staging image you reviewed.</p>
+<dl class="promotion-review">
+<dt>Reviewed image</dt><dd class="mono">{{ review.image | short }}</dd>
+{% if review.previous %}<dt>Current production</dt><dd class="mono">{{ review.previous | short }}</dd>{% endif %}
+{% if review.address %}<dt>Production address</dt><dd>{{ review.address }}</dd>{% endif %}
+{% if review.outcome == 'create' %}<dt>Settings</dt><dd>Reviewed staging runtime settings and resources, with production routing and independent storage.</dd>
+{% if review.storage %}<dt>Storage</dt><dd>New retained {{ review.storage }} volume, initially empty. No staging data is copied; database migrations run at startup.</dd>{% endif %}
+{% else %}<dt>Settings</dt><dd>Only the image changes. Production settings, data and credentials stay owned by production.</dd>{% endif %}
+</dl>
+{% if review.rollback %}<p class="warn">This promotes an older build: an image rollback. Database migrations are not reversed.</p>{% endif %}
+{% if review.secrets %}<p class="warn">Production needs its own values for {{ review.secrets | join(', ') }}. The PR creates encrypted placeholders; set the values with SOPS on its branch before merging.</p>{% endif %}
+<form class="wizard promotion-form" method="post" action="/apps/{{ review.app }}/staging/promote">
+{% for name in ('image', 'revision', 'configuration', 'target') %}<input type="hidden" name="{{ name }}" value="{{ review[name] }}">{% endfor %}
+{% if review.needs_host %}<div class="field"><label for="host">Production public hostname</label><input id="host" name="host" required placeholder="app.example.com"><span class="muted hint">A distinct host outside the shared sign-in domain. Review DNS and TLS before manually merging this PR.</span></div>{% endif %}
+{% if review.setup %}<p class="muted">This PR needs setup and manual review.</p>
+{% else %}<label class="check"><input type="checkbox" name="hold"> Hold for manual review</label><p class="muted">Otherwise, eligible PRs merge automatically after validation. Production is deployed when Flux applies the merge and reports Ready.</p>{% endif %}
+<button class="primary">Promote to production</button>
+</form>
+{% endif %}
+<p><a href="/apps/{{ review.app }}/staging">Back to staging</a></p>
+{% endblock %}

@@ -18,16 +18,11 @@
 
 <div class="toolbar">
   {% if status.routes %}<a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>{% endif %}
-  {% if i.env == 'staging' and summary and summary.comparison in ('ahead', 'differs') %}
-  <form method="post" action="/apps/{{ i.app }}/staging/promote">
-    <input type="hidden" name="image" value="{{ status.desired_image }}">
-    <input type="hidden" name="revision" value="{{ status.applied_revision }}">
-    <button {{ 'disabled' if not github or promotion_problem }}
-    onclick="return confirm('Open a PR copying this staging image (tag and digest) into {{ i.app }}/prod?')">Promote to prod</button>
-    <label class="check"><input type="checkbox" name="auto_merge"> merge when checks pass</label></form>
+  {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
+  <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
   {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
-  <span class="muted">{{ 'Staging is ahead of prod.' if summary.comparison == 'ahead' else 'Staging and prod run different images.' }}</span>
-  {% endif %}
+  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="muted">Same image in both</span>
+  {% elif i.env == 'prod' and summary and 'staging' not in summary.envs %}<span class="muted">Promotion requires a staging instance.</span>{% endif %}
   <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
 </div>
 
@@ -76,7 +71,7 @@
 </details>
 
 <h2>Change</h2>
-<p class="muted">Each opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; nothing changes until you merge it.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
+<p class="muted">Each opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
 <details class="section disclose">
   <summary><strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">

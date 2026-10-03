@@ -14,7 +14,7 @@ export KUBECONFIG=$HOME/.kube/config
 kubectl -n kube-system get deploy traefik metrics-server
 ```
 
-Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML. `aws` for the DNS updater.
+Local tools: `kubectl`, `flux`, `helm`, `sops`, `age`, `curl`, Python 3.11+ with PyYAML, and AWS CLI v2 (`aws`) for DNS and S3 backups. Install these from their official package sources before continuing; the commands below assume they are on `PATH`.
 
 Point your router at the node: external `80 → 31514` and `443 → 30313` (Traefik NodePorts pinned in [`infra/traefik/helmchartconfig.yaml`](../infra/traefik/helmchartconfig.yaml)).
 
@@ -33,7 +33,9 @@ Records come from `DYNAMIC_DNS_RECORDS` in [`host/dns.env`](../host/dns.env), wh
 
 Non-secret cluster settings are in [`configmap-platform-settings.yaml`](../clusters/home/flux-system/sources/configmap-platform-settings.yaml): `CERT_ISSUER` (`letsencrypt-prod` or `letsencrypt-staging`) and `BASE_DOMAIN` (parent domain of every platform host and the sign-in cookie; see [settings](services.md#settings)).
 
-Secrets are SOPS-encrypted files beside the service that uses them, encrypted to the age key in [`.sops.yaml`](../.sops.yaml). You need that private key (`age.agekey`, git-ignored; an encrypted backup exists off-host). To start with a new key instead, generate one with `age-keygen -o age.agekey`, put its public key (`age-keygen -y age.agekey`) in `.sops.yaml`, and re-create every Secret.
+Secrets are SOPS-encrypted files beside the service that uses them, encrypted to the age key in [`.sops.yaml`](../.sops.yaml). You need that private key (`age.agekey`, git-ignored; an encrypted backup exists off-host). If you do not have a copy, consult your own recovery notes or ask the person responsible for the encrypted off-host backup; never commit the key. To start with a new key instead, generate one with `age-keygen -o age.agekey`, put its public key (`age-keygen -y age.agekey`) in `.sops.yaml`, and re-create every Secret.
+
+For a rebuild, keep `CERT_ISSUER` set to `selfsigned` or `letsencrypt-staging` while checking DNS and ingress. Switch to `letsencrypt-prod` only once the hostnames and validation path are ready. Let's Encrypt currently limits issuance to 5 certificates per exact set of names in 7 days and 50 certificates per registered domain in 7 days; recreating the platform can request certificates for multiple hosts. See the [current rate limits](https://letsencrypt.org/docs/rate-limits/) before production issuance. The staging CA is intended for testing and its certificates are not trusted by browsers.
 
 Set the platform Secrets ([conventions](operations.md#secrets)):
 

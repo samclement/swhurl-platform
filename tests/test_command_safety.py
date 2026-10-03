@@ -39,7 +39,7 @@ class CommandSafetyTests(unittest.TestCase):
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
-        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh'):
+        for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
 import base64, datetime, json, os, sys
@@ -53,6 +53,12 @@ def emit(obj):
 if Path(sys.argv[0]).name == 'curl':
     sys.stdin.read()
     print('HTTP/2 200')
+elif Path(sys.argv[0]).name == 'systemctl':
+    if argv[0] == 'is-active':
+        print('active')
+    elif argv[0] == 'show':
+        timestamp = datetime.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z')
+        print('Result=success\\nExecMainStatus=0\\nExecMainExitTimestamp=' + timestamp)
 elif Path(sys.argv[0]).name == 'aws':
     emit(['clickstack-mongodb/clickstack-mongodb-' + os.environ['STAMP'] + '.archive.gz.age'])
 elif Path(sys.argv[0]).name == 'gh':

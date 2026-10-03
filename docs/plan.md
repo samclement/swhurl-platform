@@ -4,9 +4,9 @@
 
 ## 0. Where this paused and what is left
 
-**Standard notifications (3 October 2026):** [contract and behavior](services.md#notification-expectations), live evidence in [current state](current-state.md#standard-notification-implementation-3-october-2026). A Kubernetes checker covers staging, production and console; Flux's failures Alert covers infrastructure. Open: live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; the structural refactors and independent heartbeat in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026); failed/stale backups, external availability, certificate expiry/renewal failure and disk pressure alerts.
+**Standard notifications (3 October 2026):** [contract and behavior](services.md#notification-expectations), live evidence in [current state](current-state.md#standard-notification-implementation-3-october-2026). A Kubernetes checker covers staging, production and console; Flux's failures Alert covers infrastructure; a host heartbeat checks the checker. Open: live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; H3 heartbeat service success and live stale/recovery receipt; failed/stale backups, external availability, certificate expiry/renewal failure and disk pressure alerts.
 
-19. **Notification boundary refactors and heartbeat** (3 October 2026): contract and design decided; R1 done, R2–R4 and H1–H4 not started. Step-by-step tasks in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026), in order; R4 and H3 need the user.
+19. **Notification boundary refactors and heartbeat** (3 October 2026): contract and design decided; R1–R4 and H1–H2 done, H3 timer installed but the first service runs failed because systemd PATH omitted `~/.local/bin` (where this host's `uv` is installed); after the PATH fix is pushed, reinstall the unit and exercise stale/recovery delivery. H4 verification and documentation done. Step-by-step tasks in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026), in order. The operator runs the sudo installation in their terminal.
 
 18. **Predictable app deployment and promotion — implemented and exercised 3 October 2026:** [section 9](#9-predictable-app-deployment-and-promotion), with [live evidence](current-state.md#successful-reviewed-promotion-and-fixed-template-checks-3-october-2026). Staging-only creation, first-production conversion, frozen reviewed images, automatic merge, manual hold/resume, pinned template revisions and reviewed Copier updates are deployed. Web promotion #34 and private SQLite worker promotions #35–36 passed; duplicate submissions reused PRs; failed gates wrote/merged nothing; both worker databases kept their independent claims and rows through the image update. **Operator check still open:** real Google signed-in browser review/submission (automated UI proof used the explicit local dev identity). **Optional cleanup:** `samclement/swhurl-try-6` repository and package, staging/prod instances and retained volumes; deletion needs confirmation, and repository/package deletion belongs to the operator. Restoring these particular proof volumes is unexercised; the same SQLite restore shape has prior live evidence. `hello` retirement and `hello-ts` migration remain optional.
 
@@ -421,7 +421,7 @@ Follow-ups from the review of the notification commits (`10d8bac`..`3810e4c`). D
 | Checker self-monitoring | An independent host timer, the **heartbeat**, watches the CronJob and sends to the failures ntfy topic. | It still runs when the console image, the publish pipeline or the in-cluster scheduler is broken. |
 | ntfy destinations | Stay in two Secrets (Flux provider, checker), kept equal by `make check-secrets`. The heartbeat reads the checker's Secret at run time and keeps no copy. | Merging the Secrets is a separate decision; a third copy is avoided. |
 
-Known limits to keep documented: the heartbeat cannot report when the node or the Kubernetes API is down (it logs the error and retries); the checker's failure also silences the console's own lifecycle messages until the heartbeat fires (up to 10 minutes plus one timer interval).
+Known limits to keep documented: the heartbeat cannot report when the node or the Kubernetes API is down (it logs the error and retries); the checker's failure also silences the console's own lifecycle messages until the heartbeat fires (up to 10 minutes plus one five-minute timer interval and one second of scheduling tolerance).
 
 ### Heartbeat design
 
@@ -438,7 +438,7 @@ flowchart LR
 - **Messages:** `notification checker stale` (priority high) with the reason and `make verify-platform`; `notification checker recovered` (normal). No Secret values anywhere.
 - **State:** `{"alerting_since": <epoch or null>, "last_alert": <epoch or null>}`. Losing the file repeats at most one alert.
 - **Cluster unreachable:** log `cannot read notification checker`, leave state unchanged, exit 1. No alert is possible.
-- **Credentials:** `kubectl -n console get secret notification-ntfy -o jsonpath='{.data.NTFY_FAILURES_URL}'`, base64-decoded in memory, registered with `runner.add_secret`, never logged. Reuse the checker's validated `publish` in `swhurl.notifications.delivery`.
+- **Credentials:** read `NTFY_FAILURES_URL` from `console/notification-ntfy` as JSON, base64-decode in memory, register with `runner.add_secret`, never log. Reuse the checker's validated `publish` in `swhurl.notifications.delivery`.
 - **New-component checklist:** retention: a few-byte flag file and a log rotated at 5 MiB by the unit; credentials: none new; logs: `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` is read by the OTel DaemonSet glob; health: new `verify-platform` host check; backups: not needed; restarts: not applicable (fresh process per run); failure behaviour: tested with `FakeRunner`, unit exits non-zero on failure; upgrades: no image or chart; docs: [services.md](services.md#alerts), [commands.md](commands.md), [operations.md](operations.md).
 
 ### Rules for every task
@@ -515,13 +515,13 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 
 ### H3. Install and exercise the heartbeat (live; the operator runs `sudo`)
 
-1. Push H1 and H2. **Hand the operator** `make host-heartbeat` to run in their own terminal (needs `sudo`; `!` has no terminal), then verify `systemctl status swhurl-notification-heartbeat.timer` is active.
+1. Push H1 and H2. **Hand the operator** `make host-heartbeat` to run in their own terminal (needs `sudo`; `!` has no terminal), then verify `systemctl status swhurl-notification-heartbeat.timer` is active. The timer is installed; first service runs failed because its fixed systemd PATH omitted this host's `~/.local/bin/uv`. After merging the PATH fix, reinstall with `make host-heartbeat` and verify the service succeeds.
 2. Run `make notifications-heartbeat ARGS=--dry-run`: expect fresh and no send.
 3. Exercise the alert without touching Flux-owned resources: `make notifications-heartbeat ARGS="--max-age 1s"` posts one `stale` notice to the failures topic (confirm with the operator first, it is a real push). Wait for a successful checker Job, then run `make notifications-heartbeat`; it should post one `recovered`.
 4. Record dated evidence in [current-state.md](current-state.md), including that the failure messages arrived (the operator confirms on the phone).
 5. Commit: `Record notification heartbeat live evidence`.
 
-### H4. Heartbeat health check and docs (offline)
+### H4. Heartbeat health check and docs (offline; done 3 October 2026)
 
 1. Read `check_backups` in `tools/swhurl/verify.py` first. Add `check_notification_heartbeat` in the same style with scope `{'host'}`: the timer is active and the service's last run succeeded within 15 minutes (`systemctl show`); register it in `CHECKS`; add tests like the backup check's.
 2. Document the heartbeat in [services.md](services.md#alerts) (what it watches, the two limits above, where the flag file and log are) and [operations.md](operations.md) (install, status, remove, where the log is). Remove "independent monitoring of the notification checker" from the open follow-ups in section 0 and in services.md.

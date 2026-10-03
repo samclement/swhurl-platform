@@ -109,6 +109,28 @@ Restarts a workload when a Secret it names changes, so rotations need no manual 
 
 ## Alerts
 
+### Notification expectations
+
+The target contract below applies to every managed app environment (staging and production) and the console. It is the intended behavior, **not yet the live implementation**; [current filters and gaps](#current-notification-behavior) follow below. Application error rates, latency, business events and other app-specific alerts belong to the operator's ClickStack rules.
+
+| Event | Send when | Message and priority |
+| --- | --- | --- |
+| Deployed | Helm install/upgrade completes successfully with its readiness checks passing; not when a pin is pushed to Git | `<app>/<env> deployed`, image/version and console link; normal |
+| Rolled back | Flux reports a successful Helm rollback after a failed upgrade | `<app>/<env> rolled back`, restored revision and failed action context; high because the requested deployment failed |
+| Uninstalled | Helm reports successful uninstall; submitting or merging the removal PR is insufficient | `<app>/<env> uninstalled`; normal. Say when storage is retained; uninstall never means data was deleted |
+| Deployment/removal failed | Helm reports a failed action, or Flux reports a terminal apply failure | `<app>/<env> deployment failed` or `uninstall failed`, useful reason and link; high. Group retries of the same failed action |
+| Unhealthy too long | A desired workload remains below its desired Ready replicas continuously for 5 minutes; console allowance 10 minutes | `<app>/<env> unhealthy for …`, replica counts, failure reason and link; high. The allowance includes startup/rollout time, rather than being added after it |
+| Deployment stalled | The requested revision/image remains unapplied beyond the same allowance, even if the old workload remains healthy | `<app>/<env> deployment stalled`, desired/running revision and blocking dependency; high |
+| Recovered | An alerted unhealthy/stalled incident clears and remains healthy/current for 2 minutes | `<app>/<env> recovered`, incident duration and running version; normal. Send only after an incident was actually notified |
+
+A successful Git revert or promotion of an older digest is a Helm upgrade and receives a deployment notification showing that image. Distinguishing that as a manual rollback is optional; the initial rollback contract covers Flux's explicit Helm rollback event. A rollout success says Kubernetes readiness passed, not that all application functions work.
+
+**Noise rules:** identify every app notification by app **and environment**, and the console by `console`. Send one notification per completed lifecycle action or incident, with an hourly reminder for an unresolved incident. Do not announce Git pin pushes, no-op reconciliation, Helm tests or routine pod restarts. Do not report deliberately scaled-to-zero workloads as unhealthy. Suspension suppresses stalled-Git-deployment alerts, but does not hide an unhealthy workload that is still expected to run. Removal clears workload-health tracking and retains enough lifecycle context to report the eventual uninstall. Missing/unreadable health data is unknown, never recovery; prolonged monitor failure needs its own alert. Combine related deployment-failure/rollback/health messages when they describe the same incident.
+
+**Implementation boundary:** lifecycle messages should use Flux events, with alert ownership that survives app removal. Prolonged health and incident recovery require evaluation over time; the open choice is a platform Kubernetes health checker versus ClickStack rules over the collected cluster metrics. Implementation and its acceptance checks are tracked in [plan section 0](plan.md#0-where-this-paused-and-what-is-left).
+
+### Current notification behavior
+
 For example, a `hello-ts-staging` 🚀 notification means Flux pushed the new staging image pin to `main`; the pod may still be updating. A `hello-ts` 🚀 notification means a production Helm action emitted a message containing `succeeded`. Notifications are driven by Flux events, not by Git commits alone or by application logs.
 
 | Notification | Exact event filter | What it establishes | Priority |

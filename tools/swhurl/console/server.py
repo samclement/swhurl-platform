@@ -10,7 +10,9 @@ names this host), so another site cannot submit one with the sign-in cookie.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import datetime as dt
+import json
 import re
 import sys
 import time
@@ -22,7 +24,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse, Response
+from starlette.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
@@ -39,6 +41,8 @@ TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / 'templates')
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
 HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
+STREAM_POLL = 0.25
+KEEPALIVE = 15.0
 
 
 def short_hashes(text: object) -> Markup:
@@ -178,6 +182,46 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if found is None:
             return page(request, 'error.html', status_code=404, error='No such job (jobs are kept in memory only).')
         return page(request, 'job.html', job=found)
+
+    async def job_events(request: Request) -> Response:
+        found = jobs.get(request.path_params['id'])
+        if found is None:
+            return PlainTextResponse('No such job.\n', status_code=404)
+
+        # EventSource supplies Last-Event-ID on reconnect. The query is the
+        # initial page's already-rendered line count.
+        raw = request.headers.get('last-event-id')
+        if raw is None:
+            raw = request.query_params.get('after', '0')
+        try:
+            sent = max(0, int(raw))
+        except (TypeError, ValueError):
+            sent = 0
+        sent = min(sent, len(found.lines))
+
+        async def stream():
+            nonlocal sent
+            last_activity = time.monotonic()
+            while True:
+                finished = found.finished is not None
+                new = found.lines[sent:]
+                for line in new:
+                    sent += 1
+                    body = json.dumps({'html': str(short_hashes(line))}, ensure_ascii=False)
+                    yield f'id: {sent}\nevent: line\ndata: {body}\n\n'
+                    last_activity = time.monotonic()
+                if finished and not new:
+                    body = json.dumps({'state': found.state})
+                    yield f'event: done\ndata: {body}\n\n'
+                    return
+                idle = time.monotonic() - last_activity
+                if idle >= KEEPALIVE:
+                    yield ': keep-alive\n\n'
+                    last_activity = time.monotonic()
+                await asyncio.sleep(min(STREAM_POLL, max(0.001, KEEPALIVE - (time.monotonic() - last_activity))))
+
+        return StreamingResponse(stream(), media_type='text/event-stream',
+                                 headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     questions_cache: dict[str, tuple[float, list[repo.Question]]] = {}
 
@@ -385,6 +429,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/apps/{app}/staging/promotion', review_promotion),
                 Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
+                Route('/jobs/{id:int}/events', job_events),
                 Route('/new', new_app, methods=['GET', 'POST']), Route('/new/repo', new_repo, methods=['POST']),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])

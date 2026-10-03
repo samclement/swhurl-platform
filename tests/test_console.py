@@ -2,9 +2,11 @@
 import datetime as dt
 import io
 import json
+import threading
 import unittest
 from contextlib import redirect_stderr
 from dataclasses import replace
+from unittest import mock
 
 from starlette.testclient import TestClient
 
@@ -483,11 +485,67 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(c.post('/units/infra-base/reconcile', headers={'Origin': 'http://testserver'}).status_code, 401)
         self.assertEqual(runner.calls, [])
 
-    def test_running_job_page_refreshes(self):
+    def test_running_job_page_uses_eventsource_and_noscript_refresh(self):
         c, jobs, _ = operate(fake())
         jobs._jobs[7] = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now())
-        self.assertIn('http-equiv="refresh"', c.get('/jobs/7', headers=WHO).text)
+        page = c.get('/jobs/7', headers=WHO).text
+        self.assertIn("new EventSource('/jobs/7/events?after=0')", page)
+        self.assertIn('<noscript><meta http-equiv="refresh" content="2"></noscript>', page)
+        self.assertIn('output updates live', page)
+        jobs._jobs[7].state, jobs._jobs[7].finished = 'succeeded', jobs.now()
+        finished = c.get('/jobs/7', headers=WHO).text
+        self.assertNotIn('EventSource', finished)
+        self.assertNotIn('http-equiv="refresh"', finished)
         self.assertEqual(c.get('/jobs/8', headers=WHO).status_code, 404)
+
+    def test_job_events_stream_escaped_lines_and_completion(self):
+        c, jobs, _ = operate(fake())
+        job = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now(),
+                          lines=['a', '<b>'], state='succeeded', finished=jobs.now())
+        jobs._jobs[7] = job
+        with mock.patch.object(server, 'STREAM_POLL', 0.01):
+            response = c.get('/jobs/7/events', headers=WHO)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/event-stream', response.headers['content-type'])
+        self.assertEqual(response.headers['x-accel-buffering'], 'no')
+        self.assertIn('id: 1\nevent: line\ndata: {"html": "a"}', response.text)
+        self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;"}', response.text)
+        self.assertIn('event: done\ndata: {"state": "succeeded"}', response.text)
+
+    def test_job_events_resume_from_header_or_query_and_clamp_positions(self):
+        c, jobs, _ = operate(fake())
+        jobs._jobs[7] = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now(),
+                                    lines=['first', 'second'], state='succeeded', finished=jobs.now())
+        cases = [('/jobs/7/events?after=1', {}, 'second', 'not first'),
+                 ('/jobs/7/events?after=0', {'Last-Event-ID': '1'}, 'second', 'not first'),
+                 ('/jobs/7/events?after=1', {'Last-Event-ID': 'x'}, 'first', None),
+                 ('/jobs/7/events?after=-5', {}, 'first', None),
+                 ('/jobs/7/events?after=99', {}, None, 'first')]
+        for path, headers, present, absent in cases:
+            with self.subTest(path=path, headers=headers):
+                body = c.get(path, headers={**WHO, **headers}).text
+                if present:
+                    self.assertIn(present, body)
+                if absent:
+                    self.assertNotIn(absent, body)
+        self.assertEqual(c.get('/jobs/99/events', headers=WHO).status_code, 404)
+        self.assertEqual(c.get('/jobs/7/events').status_code, 401)
+
+    def test_job_events_shorten_hashes_and_do_not_lose_final_line(self):
+        c, jobs, _ = operate(fake())
+        job = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now(),
+                          lines=['commit 1234567890abcdef1234567890abcdef12345678'])
+        jobs._jobs[7] = job
+        timer = threading.Timer(0.03, lambda: (job.lines.append('last line'), setattr(job, 'state', 'succeeded'),
+                                               setattr(job, 'finished', jobs.now())))
+        timer.start()
+        with mock.patch.object(server, 'STREAM_POLL', 0.005):
+            body = c.get('/jobs/7/events', headers=WHO).text
+        timer.join()
+        self.assertIn('1234567890abcdef1234567890abcdef12345678', body)
+        self.assertIn('1234567890ab…', body)
+        self.assertIn('last line', body)
+        self.assertIn('event: done', body)
 
     def test_running_job_shows_in_the_header_and_activity(self):
         c, jobs, _ = operate(fake())

@@ -6,6 +6,6 @@ metadata:
 spec:
   interval: 1m
   ref:
-    branch: main
+    branch: drill/recovery
   # Update this URL for your canonical remote
   url: https://github.com/samclement/swhurl-platform

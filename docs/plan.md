@@ -459,7 +459,7 @@ Section 0 now describes state; [services.md](services.md#notification-expectatio
 
 Goal: separate state, evaluation and delivery. Behaviour and every test stay unchanged.
 
-1. Baseline: `uv run python -m unittest tests.test_notifications 2>&1 | tail -4` must pass; note the test count.
+1. Baseline: `PYTHONPATH=tools uv run --frozen python -m unittest tests.test_notifications 2>&1 | tail -4` must pass; note the test count.
 2. `git mv tools/swhurl/notifications.py tools/swhurl/notifications/__init__.py`, then create these files by **moving** code, not rewriting it:
    - `state.py`: `STATE_NAME`, `STATE_NAMESPACE`, `MAX_STATE_BYTES`, `empty_state`, `read_state`, `save_state`.
    - `evaluate.py`: `APP_PATH`, `GRACE`, `CONSOLE_GRACE`, `RECOVERY`, `REMINDER`, `HISTORY`, `SUCCESS`, `FAILURES`, `timestamp`, `snapshot`, `object_key`, `targets`, `enqueue`, `link`, `incident`, `health`, `evaluate`.

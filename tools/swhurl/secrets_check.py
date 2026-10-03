@@ -21,6 +21,7 @@ import hashlib
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
@@ -45,6 +46,17 @@ def looks_double_encoded(raw: bytes) -> bool:
 
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret.sops.yaml')
+NOTIFICATION_SECRET = 'platform/console/notification-secret.sops.yaml'
+
+
+def notification_destination_problem(copies: dict[str, str]) -> str | None:
+    for channel in ('failures', 'deploys'):
+        source, checker = f'source-{channel}', f'checker-{channel}'
+        if source not in copies or checker not in copies:
+            return f'ntfy {channel} destination is missing from its source or checker Secret'
+        if copies[source] != copies[checker]:
+            return f'ntfy {channel} destination differs between platform/alerts and {NOTIFICATION_SECRET}'
+    return None
 
 
 def ingestion_key_problem(copies: dict[str, str]) -> str | None:
@@ -64,6 +76,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     runner = runner or Runner(cwd=ROOT, env={'SOPS_AGE_KEY_FILE': key_file})
     errors = warnings = 0
     ingestion: dict[str, str] = {}
+    destinations: dict[str, str] = {}
     for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
@@ -81,6 +94,13 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 raw = base64.b64decode(value) if field == 'data' else str(value).encode()
                 if key == INGESTION_KEY and not fixture:
                     ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
+                for channel in ('failures', 'deploys'):
+                    source = str(rel) == f'platform/alerts/secret-{channel}.sops.yaml' and key == 'address'
+                    checker = str(rel) == NOTIFICATION_SECRET and key == f'NTFY_{channel.upper()}_URL'
+                    if source or checker:
+                        parts = urlsplit(raw.decode())
+                        url = urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
+                        destinations[f'{"source" if source else "checker"}-{channel}'] = hashlib.sha256(url.encode()).hexdigest()
                 where = f'{rel}: {field}.{key}'
                 if not raw:
                     print(f'  [ERROR] {where}: empty')
@@ -97,5 +117,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         errors += 1
     else:
         print(f'[OK] {INGESTION_KEY} is identical in {" and ".join(INGESTION_FILES)}')
+    problem = notification_destination_problem(destinations)
+    if problem:
+        print(f'[ERROR] {problem}')
+        errors += 1
+    else:
+        print('[OK] ntfy destinations match the notification checker copies (compared by hashes)')
     print(f'\n{errors} error(s), {warnings} warning(s).')
     return 1 if errors else 0

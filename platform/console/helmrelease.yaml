@@ -111,6 +111,37 @@ spec:
               readOnlyRootFilesystem: true
               capabilities:
                 drop: [ALL]
+      notifications:
+        type: cronjob
+        serviceAccount:
+          name: notification-check
+        cronjob:
+          schedule: "* * * * *"
+          concurrencyPolicy: Forbid
+          startingDeadlineSeconds: 30
+          successfulJobsHistory: 1
+          failedJobsHistory: 1
+          backoffLimit: 0
+        containers:
+          main:
+            image: *operator-image
+            command: [timeout, "50", python, -m, swhurl, notifications-check]
+            env:
+              CONSOLE_URL: https://console.${BASE_DOMAIN}
+            envFrom:
+              - secretRef:
+                  name: notification-ntfy
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
     persistence:
       tmp:
         type: emptyDir

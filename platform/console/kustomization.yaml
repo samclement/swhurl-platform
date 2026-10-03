@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
   - rbac.yaml
   - dashboard-rbac.yaml
+  - notification-rbac.yaml
+  - notification-state.yaml
+  - notification-secret.sops.yaml
   - networkpolicy.yaml
   - secret.sops.yaml
   - helmrelease.yaml

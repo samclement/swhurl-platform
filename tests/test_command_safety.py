@@ -65,7 +65,7 @@ elif any(a.startswith('imagepolicies') for a in argv):
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
 elif any(a.startswith('alerts.notification') for a in argv):
-    emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]})
+    emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]})
 elif any(a.startswith('providers.notification') for a in argv):
     emit({'items': [{'metadata': {'name': 'p'}}]})
 elif any(a.startswith('receivers') for a in argv):
@@ -78,7 +78,7 @@ elif any(a.startswith('kustomizations') for a in argv):
                      'status': {'conditions': [{'type': 'Ready', 'status': ready, 'message': 'fixture'}]}}]})
 elif 'console-github' in argv:
     emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
-elif 'cronjob' in argv and 'console-dashboards' in argv:
+elif 'cronjob' in argv and any(n in argv for n in ('console-dashboards', 'console-notifications')):
     emit({'spec': {}, 'status': {'lastSuccessfulTime': datetime.datetime.now(datetime.timezone.utc).isoformat()}})
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {

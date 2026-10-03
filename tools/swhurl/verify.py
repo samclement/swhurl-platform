@@ -330,6 +330,24 @@ def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = N
         report.bad('cannot read dashboard sync status (console/console-dashboards)')
 
 
+def check_notifications(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
+    """A recent successful check proves the snapshot/outbox pass finished, not subscriber delivery."""
+    report.section('Notifications')
+    now = now or dt.datetime.now(dt.UTC)
+    try:
+        job = runner.json(['kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', '-o', 'json'])
+        last = (job.get('status') or {}).get('lastSuccessfulTime', '')
+        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
+        if job['spec'].get('suspend'):
+            report.bad('notification checker is suspended')
+        elif taken is None or now - taken > dt.timedelta(minutes=5):
+            report.bad('notification checker has no success in the last 5 minutes; check console-notifications job logs')
+        else:
+            report.ok('notification checker succeeded in the last 5 minutes')
+    except (CommandError, KeyError, ValueError, TypeError):
+        report.bad('cannot read notification checker status (console/console-notifications)')
+
+
 def check_console(runner: Runner, report: Report) -> None:
     """Warn if the console image's inputs changed since it was built.
 
@@ -430,7 +448,7 @@ def check_image_automation(runner: Runner, report: Report) -> None:
             report.bad(f'ImagePolicy {name} is not Ready: {message}')
 
 
-ALERTS = ('failures', 'staging-deploys')  # platform/alerts/alerts.yaml
+ALERTS = ('failures',)  # platform/alerts/alerts.yaml
 
 
 def check_alerts(runner: Runner, report: Report) -> None:
@@ -544,6 +562,7 @@ CHECKS = (
     Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
     Check('dashboards', frozenset({'cluster'}), check_dashboards),
+    Check('notifications', frozenset({'cluster'}), check_notifications),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
 )

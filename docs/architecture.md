@@ -61,10 +61,10 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
-| `platform-alerts` | ntfy Providers and Alerts for failures and staging deploys, with their SOPS Secrets (`platform/alerts`) | infra-base | SOPS |
+| `platform-alerts` | ntfy Providers and the infrastructure/source failure Alert, with their SOPS Secrets (`platform/alerts`) | infra-base | SOPS |
 | `platform-image-automation` | The write `GitRepository` (SSH, deploy key) and its SOPS Secret (`platform/image-automation`); each app's `ImageRepository`, `ImagePolicy` and app-named `ImageUpdateAutomation` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver`, its token Secret, Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
-| `platform-console` | The web console, its RBAC (read, plus patch on Flux units), NetworkPolicy and GitHub token Secret (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
+| `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
@@ -146,6 +146,7 @@ flowchart TB
   route53[Route53 DNS]
   google[Google OIDC]
   le["Let's Encrypt (ACME)"]
+  ntfy[ntfy push notifications]
   platform[[Swhurl platform<br/>k3s + Flux + shared services]]
 
   operator -- commit manifests --> github
@@ -166,6 +167,7 @@ flowchart TB
   git[GitRepository swhurl-platform]
   google[Google OIDC]
   le["Let's Encrypt (ACME)"]
+  ntfy[ntfy push notifications]
 
   subgraph cluster[k3s cluster]
     subgraph edge[Edge]
@@ -182,6 +184,7 @@ flowchart TB
     flux[Flux controllers<br/>flux-system, applies everything here]
     reloader[Reloader<br/>platform-system]
     console[Console<br/>console, read-only]
+    notifications[Lifecycle and health checker<br/>console, own ConfigMap state]
     app[hello, app-template<br/>hello-staging, hello-prod]
   end
 
@@ -191,6 +194,10 @@ flowchart TB
   traefik -- route --> app
   traefik -- route --> console
   console -- reads Flux, workloads --> flux
+  flux -- release Events --> notifications
+  app -- health and running image --> notifications
+  notifications -- JSON publish --> ntfy
+  notifications -- JSON logs --> otelds
   cm -- ACME HTTP-01 --> le
   cm -- TLS Secrets --> traefik
   app -- logs --> otelds

@@ -32,6 +32,7 @@ def fresh_backup(hours=1):
 def healthy(**overrides):
     """A FakeRunner answering every verify-platform call for a healthy cluster."""
     responses = {
+        'notifications': {'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}},
         'dashboards': {'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}},
         'version': Result((), 0, '{}'),
         'units': {'items': [
@@ -62,8 +63,7 @@ def healthy(**overrides):
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}}]},
         'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
-        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}},
-                             {'metadata': {'name': 'staging-deploys'}, 'spec': {'providerRef': {'name': 'ntfy-deploys'}}}]},
+        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         'hooks': [{'active': True, 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
@@ -101,6 +101,7 @@ def healthy(**overrides):
         return answer('github')(args, config)
     return (runner
             .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
+            .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', handler=answer('notifications'))
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
@@ -156,7 +157,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                          '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Console ==', '\n== Console GitHub Token =='])
+                          '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
         self.assertNoKeys(text)
@@ -356,7 +357,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] * 2 + ['App dashboards'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, console, console-token',
                       report.lines)

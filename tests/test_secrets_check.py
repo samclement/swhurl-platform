@@ -4,6 +4,15 @@ import unittest
 
 
 class SecretsCheckTests(unittest.TestCase):
+    def test_notification_destinations_match_without_reporting_values(self):
+        from swhurl.secrets_check import notification_destination_problem
+        copies = {'source-failures': 'a', 'checker-failures': 'a', 'source-deploys': 'b', 'checker-deploys': 'b'}
+        self.assertIsNone(notification_destination_problem(copies))
+        copies['checker-failures'] = 'private-fingerprint'
+        error = notification_destination_problem(copies)
+        self.assertIn('differs', error)
+        self.assertNotIn('private-fingerprint', error)
+        self.assertIn('missing', notification_destination_problem({}))
     def test_secrets_check_flags_double_encoding(self):
         from swhurl import secrets_check as module
         uuid = b'0f8fad5b-d9cb-469f-a165-70867728950e'

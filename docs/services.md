@@ -109,19 +109,45 @@ Restarts a workload when a Secret it names changes, so rotations need no manual 
 
 ## Alerts
 
-Things now change without you (staging deploys, Renovate merges), so Flux sends a push notification to the [ntfy](https://ntfy.sh) app:
+For example, a `hello-ts-staging` 🚀 notification means Flux pushed the new staging image pin to `main`; the pod may still be updating. A `hello-ts` 🚀 notification means a production Helm action emitted a message containing `succeeded`. Notifications are driven by Flux events, not by Git commits alone or by application logs.
 
-| Notification | When | Priority |
-| --- | --- | --- |
-| `<Kind> <name>: <reason>` 🚨 | A unit cannot apply or its workloads fail their health check (an app's 3-minute fail-fast included), a Git or Helm source cannot fetch, or image automation cannot scan or push | High |
-| `<app>-staging` 🚀 | This app's image automation pushed a new image to staging | Normal |
-| `<app>` 🚀 | The app's production HelmRelease installed or upgraded successfully after a promotion | Normal |
+| Notification | Exact event filter | What it establishes | Priority |
+| --- | --- | --- | --- |
+| `<Kind> <name>: <reason>` 🚨 | `failures`: severity `error` from any `Kustomization`, `GitRepository`, `HelmRepository`, `ImageRepository`, `ImagePolicy` or `ImageUpdateAutomation` in `flux-system`, except messages matching `no tags in database` or `referenced ImageRepository does not exist` | Flux reported an apply/health-check, fetch, image scan/policy or automation failure. HelmRelease failures reach this alert indirectly when the owning Kustomization reports unhealthy resources | High |
+| `<app>-staging` 🚀 | `staging-deploys`: any `ImageUpdateAutomation` in `flux-system`, message matching `.*pushed commit.*` | The automation pushed its image change to Git. It does **not** establish that staging is Ready. Manual staging edits and initial app creation do not produce this event | Normal |
+| `<app>` 🚀 | `app-<app>-production`: that app's HelmRelease in `<app>-prod`, message matching `.*succeeded.*` | A Helm action succeeded. Includes first install and upgrades caused by promotion, configuration or chart changes; the filter also admits successful rollback, uninstall and test messages while the Alert exists. It does **not** specifically establish that the promoted image is running | Normal |
 
-Tapping a notification opens the console. App notifications use the app's Flux object name in the title. Production success alerts are attached to each production app and fire only for a successful Helm install or upgrade, not routine no-op reconciliations. A unit that keeps failing notifies again on each retry (about every 10 minutes). Two image policy messages that are expected for a moment when an automatically deployed app is added or removed ("no tags in database", "referenced ImageRepository does not exist") are filtered out (`exclusionList` in [`alerts.yaml`](../platform/alerts/alerts.yaml)); a repository that cannot be scanned still alerts.
+The manifests are [shared alerts](../platform/alerts/alerts.yaml) and each production app's `production-alert.yaml` (for example [hello](../apps/hello/prod/production-alert.yaml)). The success alerts use `eventSeverity: info`, which [Flux defines as including errors](https://fluxcd.io/flux/components/notification/alerts/#event-severity); their message regex is the actual restriction. Production alerts have no exclusions for rollback, uninstall or tests. Routine no-op reconciliations do not match the success filters. There is no general recovery notification when a failing unit becomes Ready again.
+
+```mermaid
+flowchart LR
+    image[New app image] --> automation[Flux image automation]
+    automation -->|push image pin| git[Git main]
+    automation -->|pushed commit event| ntfy[ntfy push notification]
+    git --> reconcile[Flux applies manifests]
+    reconcile --> helm[Helm install or upgrade]
+    helm -->|production succeeded event| ntfy
+    reconcile -->|Kustomization error event| ntfy
+```
+
+**Timing and delivery.** An alert is dispatched when notification-controller receives a matching event. There is no fixed delay from a push or PR merge to a notification. Staging image scans and automation run every minute; Git fetch, dependencies and rollout happen afterwards. The app Kustomization health timeout is 3 minutes; `platform-console` uses 10 minutes and the console HelmRelease uses Helm's default 5-minute action timeout. Flux can report a failure earlier. Kustomizations reconcile every 10 minutes, but retries, health waits and new revisions affect when another error event occurs. [Duplicate events are rate limited](https://fluxcd.io/flux/components/notification/events/#rate-limiting) by object, message and metadata for 5 minutes (the controller's default, with no local override); this is not a guaranteed notification every 10 minutes. Delivery also depends on the controller, ntfy and the subscriber being available. Tapping a notification opens the console, which may itself be unavailable during a console failure.
+
+**Console coverage and gaps.**
+
+| Console event | Push notification today |
+| --- | --- |
+| Validate or Publish console image workflow fails before pinning an image | None from Flux: the desired cluster state has not changed. Check GitHub Actions or GitHub's own workflow subscriptions |
+| Image published or bot pin commit pushed | None: this workflow is not ImageUpdateAutomation |
+| Console Helm install/upgrade succeeds; new image becomes Ready | None: there is no Alert selecting `HelmRelease console/console` for success |
+| Console apply or rollout fails | Shared failure alert when `Kustomization platform-console` emits an error; no direct console HelmRelease error alert. This can wait for health checks and retries |
+| HTTP 5xx, failed console action/job, GitHub/API error, expired token, dashboard-sync job failure | No dedicated push alert. Errors/status are visible in the console, logs or verification commands; `/healthz` only returns `ok`, so readiness does not check these dependencies |
+| Whole host/cluster, notification-controller, public route or sign-in unavailable | No independent external availability alert; Flux notification delivery requires the cluster to be working |
+
+The console's [deployment checks](console.md#deploy-a-new-console) establish the running version. Closing the deployment gap needs a console HelmRelease success/error Alert; closing HTTP/job and availability gaps needs separate monitoring of those signals. Restricting production success notifications to install/upgrade would prevent a rollback from looking like a successful promotion. Remaining work is tracked in [plan section 0](plan.md#0-where-this-paused-and-what-is-left).
 
 - **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show the topic name in your own terminal with `SOPS_AGE_KEY_FILE=./age.agekey sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml | sed 's|https://ntfy.sh/||; s|?.*||'` (from the repository root; the key file is not in Git).
 - **How:** Flux has no ntfy provider, so the `generic` provider posts each event as JSON and ntfy renders it with the template in the address (`tpl=yes&t=…&m={{.message}}`). Rotate: [operations](operations.md#secrets).
-- `make verify-platform` checks both alerts exist and point at existing providers; Flux reports no delivery status for them.
+- `make verify-platform` checks the two shared alerts exist and point at existing providers. It does not validate their filters, check every production Alert, or prove delivery. Flux Alerts report no delivery status. Post-change production notification delivery remains [unobserved](current-state.md#app-named-promotion-notifications-3-october-2026).
 
 ## Push webhook
 

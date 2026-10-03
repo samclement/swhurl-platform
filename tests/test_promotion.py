@@ -100,12 +100,7 @@ class FirstProductionTests(unittest.TestCase):
                 production = promotion.YamlFile(dst / 'helmrelease.yaml').data
                 self.assertEqual(promotion.image_of(production), promotion.image_of(source))
                 self.assertEqual(production['metadata']['namespace'], 'example-prod')
-                alert = promotion.YamlFile(dst / 'production-alert.yaml').data
-                self.assertEqual(alert['metadata'], {'name': 'app-example-production', 'namespace': 'flux-system'})
-                self.assertEqual(alert['spec']['eventSources'], [
-                    {'kind': 'HelmRelease', 'name': 'example', 'namespace': 'example-prod'}])
-                self.assertIn('production-alert.yaml',
-                              promotion.YamlFile(dst / 'kustomization.yaml').data['resources'])
+                self.assertFalse((dst / 'production-alert.yaml').exists())
                 namespace = promotion.YamlFile(dst / 'namespace.yaml').data['metadata']
                 self.assertEqual(namespace['labels']['platform.swhurl.com/promotion-test'], 'true')
                 self.assertEqual(namespace['annotations']['custom'], '3')

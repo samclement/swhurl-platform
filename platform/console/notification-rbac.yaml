@@ -1,0 +1,62 @@
+# No Secrets, exec, GitHub token or workload mutations. Only its own state may be patched.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-check
+  namespace: console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-notification-read
+rules:
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [list]
+  - apiGroups: [helm.toolkit.fluxcd.io]
+    resources: [helmreleases]
+    verbs: [list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-notification-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-notification-read
+subjects:
+  - kind: ServiceAccount
+    name: notification-check
+    namespace: console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-notification-state
+  namespace: console
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [notification-state]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-notification-state
+  namespace: console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-notification-state
+subjects:
+  - kind: ServiceAccount
+    name: notification-check
+    namespace: console

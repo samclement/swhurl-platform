@@ -1,7 +1,7 @@
-# Push notifications to the ntfy app (docs/services.md#alerts). Flux has no ntfy provider, so the
-# generic provider posts each event as JSON and ntfy renders it with the template in the address
-# (secret-*.sops.yaml). Every unit and source lives in flux-system, and a unit turns red when a
-# release in it fails, so these sources cover every app and platform component.
+# Infrastructure/source failures use Flux's generic ntfy provider (docs/services.md#alerts).
+# App and console lifecycle/health belong to the notification checker: naming their
+# units here too would duplicate its incident messages. Infrastructure unit coverage
+# is checked against the repository in tests/test_notifications.py.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Provider
 metadata:
@@ -22,8 +22,7 @@ spec:
   secretRef:
     name: ntfy-deploys
 ---
-# Failures: a unit that cannot apply or whose workloads fail their health check (an app's 3-minute
-# fail-fast included), a source that cannot fetch, and image automation that cannot scan or push.
+# Infrastructure apply/health failures, source fetch failures and image automation errors.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Alert
 metadata:
@@ -41,7 +40,33 @@ spec:
     - 'referenced ImageRepository does not exist'
   eventSources:
     - kind: Kustomization
-      name: '*'
+      name: cluster-sources
+    - kind: Kustomization
+      name: cluster-stack
+    - kind: Kustomization
+      name: infra-base
+    - kind: Kustomization
+      name: infra-traefik
+    - kind: Kustomization
+      name: infra-cert-manager
+    - kind: Kustomization
+      name: infra-issuers
+    - kind: Kustomization
+      name: platform-oauth2-proxy
+    - kind: Kustomization
+      name: platform-clickstack-operators
+    - kind: Kustomization
+      name: platform-clickstack
+    - kind: Kustomization
+      name: platform-otel
+    - kind: Kustomization
+      name: platform-reloader
+    - kind: Kustomization
+      name: platform-flux-webhook
+    - kind: Kustomization
+      name: platform-image-automation
+    - kind: Kustomization
+      name: platform-alerts
     - kind: GitRepository
       name: '*'
     - kind: HelmRepository
@@ -52,19 +77,3 @@ spec:
       name: '*'
     - kind: ImageUpdateAutomation
       name: '*'
----
-# Staging deploys: each commit image automation pushes (a new app image going to staging).
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
-kind: Alert
-metadata:
-  name: staging-deploys
-  namespace: flux-system
-spec:
-  providerRef:
-    name: ntfy-deploys
-  eventSeverity: info
-  eventSources:
-    - kind: ImageUpdateAutomation
-      name: '*'
-  inclusionList:
-    - '.*pushed commit.*'

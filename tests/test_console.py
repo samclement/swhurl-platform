@@ -44,8 +44,9 @@ CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
               json.dumps({'items': []}),
           'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
           'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': [
-              {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]}),
+              {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]}),
           'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': [{'metadata': {'name': 'p'}}]})}
+CHECKS['kubectl -n console get cronjob console-notifications'] = CHECKS['kubectl -n console get cronjob console-dashboards']
 """Answers for the cluster-only platform checks (Overview and Platform run them)."""
 
 
@@ -327,6 +328,7 @@ class PlatformTests(unittest.TestCase):
     def test_runs_only_cluster_checks_and_says_what_it_skipped(self):
         traefik = {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}
         runner = fake(**{'kubectl -n console get cronjob console-dashboards': CHECKS['kubectl -n console get cronjob console-dashboards'],
+                         'kubectl -n console get cronjob console-notifications': CHECKS['kubectl -n console get cronjob console-notifications'],
                          'kubectl get --raw=/version': '{}',
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
                          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':

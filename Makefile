@@ -32,6 +32,10 @@ reconcile: ## UNIT=<name> Fetch Git and reconcile one Flux unit (for example aft
 verify-platform: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
 	@$(SWHURL) verify-platform
 
+.PHONY: notifications-check
+notifications-check: ## Live: preview lifecycle/health notifications without sending or saving (read-only)
+	@$(SWHURL_APPS) notifications-check --dry-run
+
 .PHONY: verify-logs
 verify-logs: ## Live: summarize fresh log parsing, severity and trace coverage (no bodies; MINUTES=15)
 	@$(SWHURL) verify-logs --minutes $(or $(MINUTES),15)

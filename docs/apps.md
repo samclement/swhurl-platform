@@ -29,7 +29,7 @@ All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080
 
 ## Start a new app
 
-From nothing to a running staging app in a few minutes (about three for TypeScript; six or seven for Kotlin, whose first build downloads its dependencies): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
+From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
 
 **In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 

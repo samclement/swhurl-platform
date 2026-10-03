@@ -146,6 +146,17 @@ class RunningImagesTests(unittest.TestCase):
         return {'spec': {'containers': [{'name': name, 'image': spec_image}]},
                 'status': {'containerStatuses': [{'name': name, 'imageID': image_id}]}}
 
+    def test_sidecars_and_other_controllers_do_not_mask_the_main_image_rollout(self):
+        main = self.pod(f'ghcr.io/x/app@{DIGEST}', 'pulled')
+        main['spec']['containers'].append({'name': 'sidecar', 'image': 'ghcr.io/x/helper@sha256:' + 'f' * 64})
+        main['status']['containerStatuses'].append({'name': 'sidecar', 'imageID': 'helper-pulled'})
+        other = self.pod('ghcr.io/x/cache@sha256:' + 'e' * 64, 'cache-pulled')
+        other['metadata'] = {'labels': {'app.kubernetes.io/controller': 'cache'}}
+        self.assertEqual(app_ops.running_images({'items': [main, other]}), [f'ghcr.io/x/app@{DIGEST}'])
+        old = self.pod('ghcr.io/x/app@sha256:' + '0' * 64, 'old-main')
+        self.assertEqual(len(app_ops.running_images({'items': [main, other, old]})), 2,
+                         'old main pods still prevent a matching-image verdict during rollout')
+
     def test_a_pinned_digest_is_what_runs_even_when_the_node_names_another(self):
         index = 'sha256:' + '1' * 64
         alias = 'sha256:' + '0' * 64  # the same content, first pulled under another index digest

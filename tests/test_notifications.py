@@ -339,6 +339,7 @@ class WiringTests(unittest.TestCase):
     def test_state_not_owned_by_flux_and_account_has_only_named_state_writes(self):
         state = yaml.safe_load((ROOT / 'platform/console/notification-state.yaml').read_text())
         self.assertNotIn('data', state)
+        self.assertEqual(state['metadata']['annotations']['kustomize.toolkit.fluxcd.io/ssa'], 'Merge')
         docs = list(yaml.safe_load_all((ROOT / 'platform/console/notification-rbac.yaml').read_text()))
         cluster = next(d for d in docs if d['kind'] == 'ClusterRole')
         for rule in cluster['rules']:

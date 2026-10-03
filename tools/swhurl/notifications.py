@@ -53,8 +53,7 @@ def empty_state(now: float) -> dict:
 
 
 def read_state(runner: Runner) -> dict | None:
-    doc = runner.json(['kubectl', '-n', STATE_NAMESPACE, 'get', 'configmap', STATE_NAME, '-o', 'json',
-                       '--request-timeout=8s'])
+    doc = runner.json(['kubectl', '-n', STATE_NAMESPACE, 'get', 'configmap', STATE_NAME, '-o', 'json'])
     raw = (doc.get('data') or {}).get('state.json')
     if not raw:
         return None
@@ -76,7 +75,7 @@ def save_state(runner: Runner, state: dict) -> None:
     if len(raw.encode()) > MAX_STATE_BYTES:
         raise NotificationError('notification state exceeds its bounded size; delivery stopped without discarding history')
     runner.run(['kubectl', '-n', STATE_NAMESPACE, 'patch', 'configmap', STATE_NAME,
-                '--type=merge', '--patch-file=/dev/stdin', '--request-timeout=8s'],
+                '--type=merge', '--patch-file=/dev/stdin', '--field-manager=notification-check'],
                input=json.dumps({'data': {'state.json': raw}}), mutating=True)
 
 
@@ -88,7 +87,7 @@ def snapshot(runner: Runner) -> dict:
         'pods': ['get', 'pods', '--all-namespaces'],
         'events': ['get', 'events', '--all-namespaces'],
     }
-    return {key: runner.json(['kubectl', *args, '-o', 'json', '--request-timeout=8s'])['items']
+    return {key: runner.json(['kubectl', *args, '-o', 'json'])['items']
             for key, args in commands.items()}
 
 

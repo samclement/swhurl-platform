@@ -505,9 +505,9 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 5. Check: `make check`; `make notifications-heartbeat ARGS=--dry-run` prints `fresh`/`would notify` and exits 0 (adapt the target to pass `ARGS` like `notifications-check` passes `--dry-run`).
 6. Commit: `Add notification checker heartbeat command`.
 
-### H2. Heartbeat host timer files (offline; needs H1)
+### H2. Heartbeat host timer files (offline; done 3 October 2026)
 
-1. Add `host/templates/systemd/notification-heartbeat.service.tmpl` and `.timer.tmpl`, copying `backup-mongodb.*.tmpl`: first line `# Managed template for the notification checker heartbeat (make host-heartbeat)`; `ExecStart=/usr/bin/make notifications-heartbeat`; log `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` with the same 5 MiB rotation line (keep the `$$` and `%%` escapes); timer `OnBootSec=5min`, `OnUnitActiveSec=5min`.
+1. Add `host/templates/systemd/notification-heartbeat.service.tmpl` and `.timer.tmpl`, copying `backup-mongodb.*.tmpl`: first line `# Managed template for the notification checker heartbeat (make host-heartbeat)`; `ExecStart=/usr/bin/make notifications-heartbeat`; log `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` with the same 5 MiB rotation line (keep the `$$` and `%%` escapes); timer `OnBootSec=5min`, `OnUnitActiveSec=5min`, `AccuracySec=1s` so the stale alert and 15-minute host check have a bounded schedule.
 2. In `host/install-timer.sh` add the name `heartbeat` (usage text, the argument `case`, and the `UNIT=swhurl-notification-heartbeat TEMPLATE=notification-heartbeat WHAT="make notifications-heartbeat, every 5 minutes"` line).
 3. Add Makefile targets `host-heartbeat` and `host-heartbeat-delete` after the backup ones, same shape. Add them to [commands.md](commands.md) (marked † like the others).
 4. `bash -n host/install-timer.sh`; `make host-heartbeat DRY_RUN=true` prints the plan and `Dry run: nothing changed.`. Add the same dry run to `.github/workflows/validate.yml` where `host-backup` is dry-run, and grep `tests/` for `host-backup` to extend any test that enumerates host targets.

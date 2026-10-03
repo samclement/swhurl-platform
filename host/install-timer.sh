@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install or remove a host systemd timer: dns (Route 53 dynamic DNS, every 10
-# minutes) or backup (MongoDB backup to S3, daily). Both are system units under
+# minutes), backup (MongoDB backup to S3, daily) or heartbeat (checker freshness,
+# every 5 minutes). These are system units under
 # /etc/systemd/system that run a script from this checkout as the invoking user,
 # append their output to /var/log/swhurl-platform/<unit>.log (read by the OTel
 # DaemonSet) and rotate it at 5 MiB.
@@ -11,7 +12,7 @@ readonly LOG_DIR=/var/log/swhurl-platform
 readonly UNIT_DIR=/etc/systemd/system
 readonly MARKER="Managed template for"
 
-usage() { echo "Usage: ./host/install-timer.sh dns|backup [--dry-run] [--delete]"; }
+usage() { echo "Usage: ./host/install-timer.sh dns|backup|heartbeat [--dry-run] [--delete]"; }
 info() { printf '[HOST][INFO] %s\n' "$*"; }
 die() { printf '[HOST][ERROR] %s\n' "$*" >&2; exit 1; }
 as_root() { if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
@@ -19,7 +20,7 @@ as_root() { if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
 NAME="" DRY_RUN=false DELETE=false
 for arg in "$@"; do
   case "$arg" in
-    dns|backup) NAME="$arg" ;;
+    dns|backup|heartbeat) NAME="$arg" ;;
     --dry-run) DRY_RUN=true ;;
     --delete) DELETE=true ;;
     -h|--help) usage; exit 0 ;;
@@ -29,6 +30,7 @@ done
 case "$NAME" in
   dns) UNIT=aws-dns-updater TEMPLATE=dynamic-dns WHAT="dynamic DNS for the records in host/dns.env, every 10 minutes" ;;
   backup) UNIT=swhurl-backup-mongodb TEMPLATE=backup-mongodb WHAT="make backup-mongodb, daily at 03:30" ;;
+  heartbeat) UNIT=swhurl-notification-heartbeat TEMPLATE=notification-heartbeat WHAT="make notifications-heartbeat, every 5 minutes" ;;
   *) usage >&2; exit 2 ;;
 esac
 

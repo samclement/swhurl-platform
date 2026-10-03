@@ -1,0 +1,15 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: app-test-2-production
+  namespace: flux-system
+spec:
+  providerRef:
+    name: ntfy-deploys
+  eventSeverity: info
+  eventSources:
+  - kind: HelmRelease
+    name: test-2
+    namespace: test-2-prod
+  inclusionList:
+  - .*succeeded.*

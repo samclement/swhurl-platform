@@ -492,6 +492,7 @@ class ActionTests(unittest.TestCase):
         self.assertIn("new EventSource('/jobs/7/events?after=0')", page)
         self.assertIn('<noscript><meta http-equiv="refresh" content="2"></noscript>', page)
         self.assertIn('output updates live', page)
+        self.assertNotIn('location.reload()', page)
         jobs._jobs[7].state, jobs._jobs[7].finished = 'succeeded', jobs.now()
         finished = c.get('/jobs/7', headers=WHO).text
         self.assertNotIn('EventSource', finished)
@@ -501,7 +502,8 @@ class ActionTests(unittest.TestCase):
     def test_job_events_stream_escaped_lines_and_completion(self):
         c, jobs, _ = operate(fake())
         job = actions.Job(7, 'resume', 'infra-base', 'sam@swhurl.com', jobs.now(),
-                          lines=['a', '<b>'], state='succeeded', finished=jobs.now())
+                          lines=['a', '<b>'], state='succeeded', finished=jobs.now(),
+                          link='https://github.com/samclement/swhurl-platform/pull/42')
         jobs._jobs[7] = job
         with mock.patch.object(server, 'STREAM_POLL', 0.01):
             response = c.get('/jobs/7/events', headers=WHO)
@@ -510,7 +512,11 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(response.headers['x-accel-buffering'], 'no')
         self.assertIn('id: 1\nevent: line\ndata: {"html": "a"}', response.text)
         self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;"}', response.text)
-        self.assertIn('event: done\ndata: {"state": "succeeded"}', response.text)
+        done = response.text.split('event: done\ndata: ', 1)[1].split('\n', 1)[0]
+        payload = json.loads(done)
+        self.assertEqual(payload['state'], 'succeeded')
+        self.assertRegex(payload['finished'], r'^\d{2}:\d{2}:\d{2}$')
+        self.assertEqual(payload['link'], 'https://github.com/samclement/swhurl-platform/pull/42')
 
     def test_job_events_resume_from_header_or_query_and_clamp_positions(self):
         c, jobs, _ = operate(fake())

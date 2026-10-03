@@ -211,7 +211,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     yield f'id: {sent}\nevent: line\ndata: {body}\n\n'
                     last_activity = time.monotonic()
                 if finished and not new:
-                    body = json.dumps({'state': found.state})
+                    body = json.dumps({'state': found.state,
+                                       'finished': found.finished.strftime('%H:%M:%S'), 'link': found.link})
                     yield f'event: done\ndata: {body}\n\n'
                     return
                 idle = time.monotonic() - last_activity

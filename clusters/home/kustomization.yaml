@@ -8,5 +8,4 @@ resources:
   - app-hello-ts-staging.yaml
   - app-hello-ts-prod.yaml
   - app-test-2-staging.yaml
-  - app-swhurl-try-6-prod.yaml
   - app-test-2-prod.yaml

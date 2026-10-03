@@ -45,17 +45,20 @@ class StateTests(unittest.TestCase):
 
 
 class WaitTests(unittest.TestCase):
-    def run_wait(self, *polls, timeout=60):
-        """Each poll is the list of units one `kubectl get` returns; the last repeats."""
-        answers = list(polls)
+    def run_wait(self, *polls, timeout=60, revisions=(REV,)):
+        """Each poll is the list of units one `kubectl get` returns; the last repeats (revisions likewise)."""
+        answers, sources = list(polls), list(revisions)
+
+        def source(argv, _input):
+            revision = sources.pop(0) if len(sources) > 1 else sources[0]
+            return Result(argv, 0, json.dumps({'status': {'artifact': {'revision': revision}}}))
 
         def kustomizations(argv, _input):
             items = answers.pop(0) if len(answers) > 1 else answers[0]
             return Result(argv, 0, json.dumps({'items': items}))
 
         runner = (FakeRunner()
-                  .on('kubectl', '-n', 'flux-system', 'get', 'gitrepositories.source.toolkit.fluxcd.io',
-                      stdout=json.dumps({'status': {'artifact': {'revision': REV}}}))
+                  .on('kubectl', '-n', 'flux-system', 'get', 'gitrepositories.source.toolkit.fluxcd.io', handler=source)
                   .on('kubectl', '-n', 'flux-system', 'get', flux.KUSTOMIZATIONS, handler=kustomizations))
         now = [0.0]
         out = io.StringIO()
@@ -69,6 +72,14 @@ class WaitTests(unittest.TestCase):
         self.assertEqual(out.count('[OK] a'), 1)
         self.assertIn('[OK] b (5s)', out)
         self.assertEqual(sum(flux.KUSTOMIZATIONS in c for c in runner.calls), 2)
+
+    def test_follows_a_commit_that_lands_while_waiting(self):
+        newer = 'main@sha1:newer'
+        code, out, _ = self.run_wait([unit('a'), unit('b', applied='main@sha1:old')], [unit('a', applied=newer), unit('b', applied=newer)],
+                                     revisions=(REV, REV, newer))
+        self.assertEqual(code, 0, out)
+        self.assertIn(f'source moved to {newer}', out)
+        self.assertIn('[OK] b (5s)', out)
 
     def test_stops_at_the_first_failure_with_its_message(self):
         failed = unit('b', ready='False', applied='old', attempted=REV, reason='BuildFailed', message='kustomize build')

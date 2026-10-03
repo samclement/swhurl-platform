@@ -300,6 +300,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         number, action = request.path_params['number'], request.path_params['action']
         def work(job):
             job.link = promotion.control(runner, github, number, action)
+            job.lines.append('PR held for manual review.' if action == 'hold' else
+                             'Automatic merge requested; validation and merge verification still apply.')
         try:
             job = jobs.submit(action + ' promotion PR', f'PR #{number}', request.state.identity, work)
         except actions.ActionError as error:

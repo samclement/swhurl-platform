@@ -54,7 +54,7 @@ def desired_image(release: dict | None) -> str:
 
 
 def running_images(pods: dict | None) -> list[str]:
-    """The image each started container runs, as ``repository@digest``.
+    """The main controller/container image each started pod runs, as ``repository@digest``.
 
     When the pod's spec pins the image by digest, that digest is what runs: a pull by digest
     guarantees the content. The node's ``imageID`` can name a different digest for the same
@@ -64,8 +64,12 @@ def running_images(pods: dict | None) -> list[str]:
     """
     ids = set()
     for pod in (pods or {}).get('items', []):
+        if (pod.get('metadata', {}).get('labels') or {}).get('app.kubernetes.io/controller', 'main') != 'main':
+            continue
         spec = {c.get('name'): c.get('image', '') for c in (pod.get('spec') or {}).get('containers') or []}
         for status in (pod.get('status') or {}).get('containerStatuses') or []:
+            if status.get('name', 'main') != 'main':
+                continue
             if not status.get('imageID'):
                 continue  # not pulled yet: nothing is running
             pinned = spec.get(status.get('name'), '')

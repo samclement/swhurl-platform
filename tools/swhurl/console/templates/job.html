@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 {% import "_status.html" as st %}
 {% block title %}Job {{ job.id }}{% endblock %}
-{% block head %}{% if job.state == 'running' %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
+{% block head %}{% if job.state == 'running' %}<noscript><meta http-equiv="refresh" content="2"></noscript>{% endif %}{% endblock %}
 {% block main %}
 {% set label, link = (job.unit, job.link or '/activity') if job.unit.startswith('PR #') else target(job.unit) %}
 <p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
   · {{ st.job(job) }} <span class="state {{ {'succeeded': 'healthy', 'failed': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
-<p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }}{% else %}; this page refreshes every 2 seconds{% endif %}.</p>
+<p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }}{% else %}; output updates live{% endif %}.</p>
 {% if job.link %}<p><a href="{{ job.link }}">{{ job.link }}</a></p>{% endif %}
-<pre>{% for line in job.lines %}{{ line | short }}
-{% else %}waiting for output…{% endfor %}</pre>
+<pre id="log">{% for line in job.lines %}{{ line | short }}
+{% else %}<span id="empty">waiting for output…</span>{% endfor %}</pre>
 <p><a href="{{ link }}">Back to {{ label }}</a> · <a href="/activity">All activity</a></p>
+{% if job.state == 'running' %}<script>
+  const out = document.querySelector('#log');
+  const es = new EventSource('/jobs/{{ job.id }}/events?after={{ job.lines | length }}');
+  es.addEventListener('line', e => {
+    document.querySelector('#empty')?.remove();
+    out.insertAdjacentHTML('beforeend', JSON.parse(e.data).html + '\n');
+  });
+  es.addEventListener('done', () => { es.close(); location.reload(); });
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => location.reload(), 2000);
+  };
+</script>{% endif %}
 {% endblock %}

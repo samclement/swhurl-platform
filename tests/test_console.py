@@ -40,8 +40,8 @@ CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
               'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}}),
           'kubectl get --raw=/version': '{}',
           'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
-          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
-              json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
+          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':
+              json.dumps({'items': []}),
           'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
           'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': [
               {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures', 'staging-deploys')]}),
@@ -329,8 +329,8 @@ class PlatformTests(unittest.TestCase):
         runner = fake(**{'kubectl -n console get cronjob console-dashboards': CHECKS['kubectl -n console get cronjob console-dashboards'],
                          'kubectl get --raw=/version': '{}',
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
-                         'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io apps-staging -o json':
-                             json.dumps({'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}),
+                         'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':
+                             json.dumps({'items': []}),
                          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})

@@ -82,6 +82,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         return result
     if host:
         raise EditError('--host applies only to first production; change existing routes with app-expose')
+    promotion.ensure_production_alert(root, app)
     document = YamlFile(root / 'apps' / app / 'prod/helmrelease.yaml')
     current = mapping(container(document.data), 'image')
     image = promotion.image_of(src)

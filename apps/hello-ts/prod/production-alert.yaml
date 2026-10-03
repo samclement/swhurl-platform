@@ -1,0 +1,15 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: app-hello-ts-production
+  namespace: flux-system
+spec:
+  providerRef:
+    name: ntfy-deploys
+  eventSeverity: info
+  eventSources:
+  - kind: HelmRelease
+    name: hello-ts
+    namespace: hello-ts-prod
+  inclusionList:
+  - .*succeeded.*

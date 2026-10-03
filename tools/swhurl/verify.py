@@ -399,28 +399,29 @@ def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> Non
 
 
 def check_image_automation(runner: Runner, report: Report) -> None:
-    """Automatic staging deploys: the ImageUpdateAutomation is Ready and each app's ImagePolicy found an image."""
+    """Automatic staging deploys: every app ImagePolicy and its named writer are Ready."""
     report.section('Image Automation')
     base = ['kubectl', '-n', 'flux-system', 'get']
     try:
-        automation = runner.json([*base, 'imageupdateautomations.image.toolkit.fluxcd.io', 'apps-staging', '-o', 'json'])
-        status, message = ready_condition(automation)
-    except (CommandError, TypeError):
-        report.warn('ImageUpdateAutomation flux-system/apps-staging not found: staging images are not deployed '
-                    'automatically (make flux-install, make reconcile UNIT=platform-image-automation)')
-        return
-    if status == 'True':
-        pushed = (automation.get('status') or {}).get('lastPushTime')
-        report.ok('ImageUpdateAutomation apps-staging is Ready' + (f'; last pushed {pushed}' if pushed else ''))
-    else:
-        report.bad(f'ImageUpdateAutomation apps-staging is not Ready: {message}')
-    try:
         policies = runner.json([*base, 'imagepolicies.image.toolkit.fluxcd.io', '-l', APP_LABEL, '-o', 'json'])['items']
+        automations = runner.json([*base, 'imageupdateautomations.image.toolkit.fluxcd.io', '-l', APP_LABEL,
+                                   '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read the apps\' ImagePolicies')
+        report.bad('could not read the apps\' ImagePolicies or ImageUpdateAutomations')
         return
+    by_name = {a['metadata']['name']: a for a in automations}
     for policy in sorted(policies, key=lambda p: p['metadata']['name']):
         name = policy['metadata']['name']
+        automation = by_name.get(name)
+        if automation is None:
+            report.bad(f'ImageUpdateAutomation {name} is missing: staging image updates are not automatic')
+        else:
+            status, message = ready_condition(automation)
+            if status == 'True':
+                pushed = (automation.get('status') or {}).get('lastPushTime')
+                report.ok(f'ImageUpdateAutomation {name} is Ready' + (f'; last pushed {pushed}' if pushed else ''))
+            else:
+                report.bad(f'ImageUpdateAutomation {name} is not Ready: {message}')
         status, message = ready_condition(policy)
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
         if status == 'True':

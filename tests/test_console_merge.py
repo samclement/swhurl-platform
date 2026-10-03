@@ -123,7 +123,8 @@ class MergeTests(unittest.TestCase):
         (self.root / 'clusters/home/kustomization.yaml').write_text('resources:\n- app-example-staging.yaml\n')
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'
-        self.files = sorted(['apps/example/prod/' + name for name in ('namespace.yaml', 'helmrelease.yaml', 'kustomization.yaml')]
+        self.files = sorted(['apps/example/prod/' + name for name in ('namespace.yaml', 'helmrelease.yaml',
+                                                                       'kustomization.yaml', 'production-alert.yaml')]
                             + ['clusters/home/app-example-prod.yaml', 'clusters/home/kustomization.yaml'])
         runner = self.runner()
         self.check(runner)

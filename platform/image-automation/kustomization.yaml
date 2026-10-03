@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - secret.sops.yaml
   - gitrepository.yaml
-  - imageupdateautomation.yaml

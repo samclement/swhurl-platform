@@ -214,7 +214,7 @@ An instance runs the image named by `repository`, `tag` and `digest` in its Helm
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
   → image-reflector-controller sees the new tag (checks every minute)
   → ImagePolicy <app>-staging picks the highest <run> and its digest
-  → image-automation-controller commits the new tag and digest to apps/<app>/staging as fluxcdbot
+  → the app-named image-automation-controller commits the new tag and digest to apps/<app>/staging as fluxcdbot
   → push webhook → Flux applies → helm-controller rolls the Deployment
 ```
 
@@ -293,7 +293,7 @@ The editor uses a pinned [ruamel.yaml](https://yaml.dev/doc/ruamel.yaml/detail/)
 
 Generation and scale/expose/promotion validate the resulting files against the app policy. A policy violation, missing tool or failed render returns nonzero. Files already written remain locally for review; fix the failure and run `make check-apps` before committing. The console uses the same commands and opens no PR when they fail. Only generation offers the explicit `--no-policy-check` opt-out.
 
-A failing instance also sends a push notification, and each automatic staging deploy announces itself ([alerts](services.md#alerts)). When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise `--memory-limit`), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
+A failing instance sends a push notification, each automatic staging deploy announces itself, and successful production Helm installs or upgrades send a promotion notification ([alerts](services.md#alerts)). When a pod fails, `make app-status` and the app page name the usual cause and the fix: out of memory (raise `--memory-limit`), an image the node cannot pull (missing tag, or a private GHCR package), a missing Secret value, a crash loop (`make app-logs APP= ENV= PREVIOUS=true` shows the crashed container's output; usually the wrong port or a write outside `/tmp`), or a failing readiness check (the app must answer its health path on its port).
 
 An instance fails fast: if its pods are not Ready within 3 minutes of a change (`FAIL_AFTER` in [`contract.py`](../tools/swhurl/apps/contract.py): the unit's `timeout` and the HelmRelease's `timeout`), its unit turns red and `make flux-reconcile` reports it; Helm then retries once and stops. `make app-status` lists failing containers. After fixing the cause, push, or run `make app-reconcile`. An app that genuinely needs longer to start (a large image, a slow first migration) can raise both timeouts in its own files.
 

@@ -258,8 +258,8 @@ def exposure_of(instance: Path) -> str | None:
 def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
-        if path.name.endswith('.sops.yaml') or path.name == IMAGE_AUTOMATION_FILE:
-            continue  # automatic deploys exist in staging only
+        if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml'}:
+            continue  # automatic deploys and production-only promotion alerts are environment-specific
         for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)

@@ -96,7 +96,8 @@ class GeneratorTests(unittest.TestCase):
                          ['helmrelease.yaml', 'kustomization.yaml', 'namespace.yaml'])
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-x-staging.yaml').read_text())
         self.assertEqual(unit['metadata']['name'], 'app-x-staging')
-        self.assertEqual({d['name'] for d in unit['spec']['dependsOn']}, {'infra-base', 'platform-oauth2-proxy'})
+        self.assertEqual({d['name'] for d in unit['spec']['dependsOn']},
+                         {'infra-base', 'platform-oauth2-proxy'})
         self.assertNotIn('deletionPolicy', unit['spec'], 'app units must keep MirrorPrune')
         self.assertIn('- app-x-staging.yaml', (self.tmp / 'clusters/home/kustomization.yaml').read_text())
         self.assertEqual(self.gen('x', *WEB), 2, 'overwrite must be refused')
@@ -154,13 +155,20 @@ class GeneratorTests(unittest.TestCase):
             source, _ = promotion.read(self.tmp, 'w')
             promotion.create(self.tmp, 'w', source)
         staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
-        repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
+        repository, image_policy, automation = yaml.safe_load_all(
+            (staging / contract.IMAGE_AUTOMATION_FILE).read_text())
         self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),
                          ('ImageRepository', 'flux-system', 'ghcr.io/samclement/w'))
         self.assertEqual(image_policy['metadata']['name'], 'w-staging')
         self.assertEqual(image_policy['spec']['digestReflectionPolicy'], 'Always')
         self.assertIn('interval', image_policy['spec'], 'Flux rejects Always without an interval')
         self.assertEqual(image_policy['spec']['filterTags']['extract'], '$run')
+        self.assertEqual((automation['kind'], automation['metadata']['name']),
+                         ('ImageUpdateAutomation', 'w-staging'))
+        self.assertEqual(automation['spec']['update']['path'], './apps/w/staging')
+        self.assertIn('w', automation['spec']['git']['commit']['messageTemplate'])
+        unit = yaml.safe_load((self.tmp / 'clusters/home/app-w-staging.yaml').read_text())
+        self.assertIn({'name': 'platform-image-automation'}, unit['spec']['dependsOn'])
         text = (staging / 'helmrelease.yaml').read_text()
         self.assertIn('tag: 12-abcdef0 # {"$imagepolicy": "flux-system:w-staging:tag"}', text)
         self.assertIn(' # {"$imagepolicy": "flux-system:w-staging:digest"}', text)

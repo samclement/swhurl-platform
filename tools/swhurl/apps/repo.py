@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, COPIER, STACKS
+from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, COPIER, STACK_REVISIONS, STACKS
 from swhurl.apps.new import NAME_RE
 from swhurl.run import CommandError, Runner
 
@@ -79,7 +79,7 @@ def parse_questions(text: str) -> list[Question]:
 
 def template_questions(stack: str, opener: Opener | None = None) -> list[Question]:
     """The stack template's choice questions, read from its copier.yml on GitHub (anonymously; public)."""
-    url = f'https://api.github.com/repos/{STACKS[stack]}/contents/copier.yml'
+    url = f'https://api.github.com/repos/{STACKS[stack]}/contents/copier.yml?ref={STACK_REVISIONS[stack]}'
     try:
         _, body = (opener or _open)(urllib.request.Request(url, headers={'Accept': 'application/vnd.github.raw+json',
                                                               'User-Agent': 'swhurl-app-repo'}))
@@ -162,7 +162,7 @@ def render(runner: Runner, req: Request, dest: Path) -> None:
     data = ['--data', f'app_name={req.name}'] + (['--data', f'description={req.description}'] if req.description else [])
     for key, value in sorted(req.answers.items()):
         data += ['--data', f'{key}={value}']
-    runner.run([*copier_command(), 'copy', '--defaults', '--quiet', *data,
+    runner.run([*copier_command(), 'copy', '--defaults', '--quiet', '--vcs-ref', STACK_REVISIONS[req.stack], *data,
                 f'https://github.com/{STACKS[req.stack]}.git', dest])
 
 

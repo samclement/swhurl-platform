@@ -4,6 +4,7 @@ import unittest
 import urllib.error
 
 from swhurl.apps import repo
+from swhurl.apps.contract import STACK_REVISIONS
 from swhurl.run import FakeRunner, Result
 
 DIGEST = 'sha256:' + 'c' * 64
@@ -33,7 +34,7 @@ def ghcr(status=None):
 
     def open_(request):
         seen.append(request)
-        if request.full_url.endswith('/contents/copier.yml'):
+        if '/contents/copier.yml?ref=' in request.full_url:
             return {}, COPIER_YML.encode()
         if status:
             raise urllib.error.HTTPError(request.full_url, status, 'denied', {}, None)
@@ -78,6 +79,8 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'gh repo create', 'push'])
         copy = next(c for c in cluster.runner.calls if 'copy' in c)
         self.assertIn('app_name=notes', copy)
+        self.assertEqual(copy[copy.index('--vcs-ref') + 1], STACK_REVISIONS['typescript'])
+        self.assertTrue(any(r.full_url.endswith('?ref=' + STACK_REVISIONS['typescript']) for r in seen))
         self.assertIn('description=Take notes', copy)
         self.assertIn('https://github.com/samclement/swhurl-app-template-typescript.git', copy)
         push = next(c for c in cluster.runner.calls if 'push' in c)

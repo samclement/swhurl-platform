@@ -167,6 +167,11 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
 # new repository; the template's own CI renders it and runs the shared app checks on the result.
 STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
+# Questions, rendering and contract checks use the same reviewed catalogue commit.
+STACK_REVISIONS = {
+    'typescript': '443924f1d067707b44a52f4bcd370fee92cfa7a9',
+    'kotlin': '8504a48dd5ce7b21d977812e49bc54e6187df1d6',
+}
 STACK_DESCRIPTIONS = {
     'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
     'kotlin': 'Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, '

@@ -19,7 +19,7 @@ from io import StringIO
 from pathlib import Path
 
 from swhurl.apps import new, policy, promotion, repo
-from swhurl.apps.contract import MANIFEST_FILE, STACKS
+from swhurl.apps.contract import MANIFEST_FILE, STACK_REVISIONS, STACKS
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -58,7 +58,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     (root / 'clusters/home').mkdir(parents=True)
     (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
     data = ['--data', f'app_name={NAME}'] + [arg for k, v in sorted(answers.items()) for arg in ('--data', f'{k}={v}')]
-    runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', *data, str(template), str(rendered)])
+    runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', '--vcs-ref', STACK_REVISIONS[stack], *data, str(template), str(rendered)])
     manifest = rendered / MANIFEST_FILE
     if runner.dry_run:
         return True
@@ -88,6 +88,8 @@ def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS) -> in
         for stack, source in stacks.items():
             template = work / f'template-{stack}'
             runner.run(['git', 'clone', '--quiet', '--depth', '1', f'https://github.com/{source}.git', str(template)])
+            runner.run(['git', 'fetch', '--quiet', '--depth', '1', 'origin', STACK_REVISIONS[stack]], cwd=template)
+            runner.run(['git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], cwd=template)
             questions = [] if runner.dry_run else repo.parse_questions((template / 'copier.yml').read_text())
             for answers in combinations(questions):
                 try:

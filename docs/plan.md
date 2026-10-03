@@ -6,7 +6,7 @@
 
 **Standard notifications (3 October 2026):** [contract and behavior](services.md#notification-expectations), live evidence in [current state](current-state.md#notification-boundaries-and-heartbeat-3-october-2026). A Kubernetes checker covers staging, production and console; Flux's failures Alert covers infrastructure; a host heartbeat checks the checker. Open: live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; failed/stale backups, external availability, certificate expiry/renewal failure and disk pressure alerts.
 
-20. **Live job output on the console — deployed 3 October 2026:** [section 12](#12-live-job-output-on-the-console) replaces the job page's 2 second reload with an SSE stream. L1–L2 and cluster verification are complete; the signed-in browser and proxy-buffering check remains.
+20. **Live job output on the console — deployed 3 October 2026:** [section 12](#12-live-job-output-on-the-console-deployed-3-october-2026) replaces the job page's 2 second reload with an SSE stream. L1–L2 and cluster verification are complete; the signed-in browser and proxy-buffering check remains.
 19. **Notification boundary refactors and heartbeat — implemented and exercised 3 October 2026:** R1–R4 and H1–H4 done. The H3 timer and service are healthy, and the operator confirmed receipt of both stale and recovery test notifications. Live evidence is in [current state](current-state.md#notification-boundaries-and-heartbeat-3-october-2026); step-by-step tasks are in [section 11](#11-notification-boundary-refactors-and-heartbeat-3-october-2026).
 
 18. **Predictable app deployment and promotion — implemented and exercised 3 October 2026:** [section 9](#9-predictable-app-deployment-and-promotion), with [live evidence](current-state.md#successful-reviewed-promotion-and-fixed-template-checks-3-october-2026). Staging-only creation, first-production conversion, frozen reviewed images, automatic merge, manual hold/resume, pinned template revisions and reviewed Copier updates are deployed. Web promotion #34 and private SQLite worker promotions #35–36 passed; duplicate submissions reused PRs; failed gates wrote/merged nothing; both worker databases kept their independent claims and rows through the image update. **Operator check still open:** real Google signed-in browser review/submission (automated UI proof used the explicit local dev identity). **Optional cleanup:** `samclement/swhurl-try-6` repository and package, staging/prod instances and retained volumes; deletion needs confirmation, and repository/package deletion belongs to the operator. Restoring these particular proof volumes is unexercised; the same SQLite restore shape has prior live evidence. `hello` retirement and `hello-ts` migration remain optional.
@@ -532,30 +532,26 @@ Goal: separate state, evaluation and delivery. Behaviour and every test stay unc
 
 One commit per boundary: checker code, alert wiring, app-tooling cleanup, docs. Write the contract and design before implementing it; record live evidence only for what is deployed.
 
-## 12. Live job output on the console
+## 12. Live job output on the console (deployed 3 October 2026)
 
-The job page (`/jobs/<id>`) reloads itself every 2 seconds while a job runs (`<meta http-equiv="refresh">` in `tools/swhurl/console/templates/job.html`). Replace that with a Server-Sent Events (SSE) stream so lines appear as they are produced, without a reload. Scope: **only the job page**. The pending-app page (10 s meta refresh) and the cluster pages stay as they are.
+The job page (`/jobs/<id>`) streams output with Server-Sent Events (SSE) while a job runs; without JavaScript it reloads every 2 seconds. Scope is the job page only: the pending-app page (10 s meta refresh) and the cluster pages are unchanged. User-facing behaviour is in [console](console.md); this section keeps the design and contract.
 
 ### Decisions
 
 | Topic | Decision | Reason |
 | --- | --- | --- |
-| Transport | SSE (`EventSource`) over plain HTTP GET | Data flows one way; the browser reconnects and resumes by itself; no new dependency; passes the existing oauth2-proxy ForwardAuth as an ordinary GET |
-| Not chosen | WebSocket (two-way channel nobody needs), htmx (new JS dependency), `fetch` polling (still a poll) | |
-| Producer side | **No change to `actions.py`.** The stream reads `job.lines` and `job.finished`, sleeping `STREAM_POLL` between checks | `job.lines.append` is called from `actions.py`, `changes.py`, `repos.py` and `server.py`; adding a notify to each is invasive. Reading a list length is safe across threads |
-| Waiting | `await asyncio.sleep(STREAM_POLL)` in an async generator | Never blocks a thread per open page |
-| End of stream | `job.finished is not None` (set by `Jobs._run` after the final state and lines) | Reading `finished` first, then the lines, guarantees nothing is missed |
-| Page after the end | Client calls `location.reload()` on `done` | The normal template then renders the final badge, finish time and PR link; no duplicated rendering logic |
-| Line rendering | Server escapes each line with `short_hashes` and sends HTML; client uses `insertAdjacentHTML` | Same output as the initial render (escaped, SHAs shortened). Safe because `short_hashes` escapes first |
-| No JavaScript | `<noscript><meta http-equiv="refresh" content="2"></noscript>` keeps today's behaviour | |
+| Transport | SSE (`EventSource`) over a plain GET | Data flows one way; the browser reconnects and resumes by itself; no new dependency; passes oauth2-proxy ForwardAuth as an ordinary GET. WebSocket (two-way channel nobody needs), htmx (new dependency) and `fetch` polling (still a poll) were not chosen |
+| Producer side | `actions.py` is unchanged; the stream reads `job.lines` and `job.finished` every `STREAM_POLL` with `asyncio.sleep` | `job.lines.append` is called from `actions.py`, `changes.py`, `repos.py` and `server.py`, so a notify hook would touch all of them; an async sleep holds no thread per open page |
+| End of stream | `job.finished is not None`, read before the lines | `Jobs._run` sets it after the final state and lines, so nothing is missed |
+| After the end | The client reloads once on `done` | The normal template renders the final badge, finish time and PR link |
+| Line rendering | The server escapes each line with `short_hashes` and sends HTML; the client uses `insertAdjacentHTML` | Same output as the first render; safe because `short_hashes` escapes first |
 
 ### Contract: `GET /jobs/{id:int}/events`
 
-- Route in `create_app` next to `Route('/jobs/{id:int}', job)`. Auth is the existing `RequireIdentity` middleware (GET needs no Origin check).
-- Unknown job: `404`, `text/plain` (not an event stream, so `EventSource` fails instead of retrying forever).
-- Success: `200`, `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
-- **Start position:** the number of lines the client already has. If `Last-Event-ID` is present, use it when it is a non-negative integer and otherwise use `0`; only when it is absent use the `after` query parameter (invalid or absent means `0`). Clamp to `len(job.lines)`.
-- **Events** (each ends with a blank line; `data` is one line of JSON, so a line containing `\n` cannot break the framing):
+- Auth is the `RequireIdentity` middleware (a GET needs no Origin check). An unknown job gets `404` as `text/plain`, so `EventSource` fails instead of retrying forever.
+- Success is `200` with `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
+- **Start position** is the number of lines the client already has: `Last-Event-ID` if present (a non-negative integer, else `0`), otherwise the `after` query parameter (invalid or absent means `0`), clamped to `len(job.lines)`.
+- **Events** end with a blank line; `data` is one line of JSON so a line containing `\n` cannot break the framing:
 
 ```
 id: 3
@@ -568,46 +564,13 @@ data: {"state": "succeeded"}
 : keep-alive
 ```
 
-- `id` is the 1-based number of lines delivered so far, so a reconnect with `Last-Event-ID: 3` resumes at line 4.
-- `done` is the last event; the generator then returns. `state` is `job.state` (`succeeded` or `failed`).
-- A comment line `: keep-alive` is sent after `KEEPALIVE` seconds (15) with nothing else to send.
-- Module constants in `server.py`: `STREAM_POLL = 0.25`, `KEEPALIVE = 15.0`. Tests patch them.
-- The generator body, in order each loop: `finished = job.finished is not None`; `new = job.lines[sent:]`; yield each new line; if `finished` and `new` is empty, yield `done` and return; else sleep (or keep-alive when idle long enough). Do not reorder the first two statements.
-- Disconnects: Starlette cancels the generator; do not catch `CancelledError`.
+- `id` is the number of lines delivered so far, so `Last-Event-ID: 3` resumes at line 4. `done` is last (`state` is `succeeded` or `failed`) and the stream then ends. `: keep-alive` is sent after `KEEPALIVE` seconds with nothing to send.
+- `STREAM_POLL = 0.25` and `KEEPALIVE = 15.0` are module constants in `server.py`; tests patch them.
+- Each loop reads `finished` before `job.lines[sent:]`; do not reorder them. Starlette cancels the generator on disconnect, so `CancelledError` is not caught.
+- The page ([`job.html`](../tools/swhurl/console/templates/job.html)) opens `EventSource('/jobs/<id>/events?after=<lines rendered>')` only for a running job, removes the `waiting for output…` placeholder on the first line, reloads on `done`, and reloads after 2 seconds if the connection closes. A `<noscript>` meta refresh keeps the old behaviour.
 
-### Page change (`job.html`)
+### Status
 
-- Remove the unconditional meta refresh. Inside `{% if job.state == 'running' %}`: add the `<noscript>` meta above, and at the end of `main` a script:
-  - `const out = document.querySelector('pre'); const es = new EventSource('/jobs/{{ job.id }}/events?after={{ job.lines | length }}');`
-  - `es.addEventListener('line', e => { out.insertAdjacentHTML('beforeend', JSON.parse(e.data).html + '\n'); })` (first remove the placeholder text `waiting for output…` on the first line event; give the `<pre>` an `id="log"` and keep the placeholder in its own `<span id="empty">`).
-  - `es.addEventListener('done', () => { es.close(); location.reload(); })`
-  - `es.onerror = () => { if (es.readyState === EventSource.CLOSED) setTimeout(() => location.reload(), 2000); }` (while `CONNECTING` the browser retries by itself).
-- Replace "this page refreshes every 2 seconds" with "output updates live".
-- Existing script style: see `new.html` (inline `<script>`; the console sets no Content-Security-Policy).
+L1 (route, page, tests, `06f552a`) and L2 (docs) are done; deployment and cluster evidence are in [current-state.md](current-state.md). **Open (L3):** the signed-in browser check. Press **Reconcile** on a harmless unit (for example `infra-base`) and confirm lines appear one by one (not in a burst at the end, which would point at Traefik or ForwardAuth response buffering), scroll and selection are kept, the page reloads once at the end, a finished job opens without a stream, and a mid-job reload resumes without duplicate lines. Then append the result to `current-state.md`.
 
-### Tasks (run in order, one commit each; see "Rules for every task" in section 11)
-
-**L1. Stream route and page (offline; implemented 3 October 2026).**
-1. Read `tools/swhurl/console/server.py` (`job`, `short_hashes`, `create_app`'s route list), `actions.py` (`Job`, `Jobs._run`) and `tests/test_console.py` around `test_running_job_page_refreshes` first.
-2. Add `STREAM_POLL`, `KEEPALIVE`, the `events` handler (async generator in a `StreamingResponse`) and the route. Add `import asyncio`, `import json`; `StreamingResponse` from `starlette.responses`.
-3. Edit `job.html` as above.
-4. Tests in `tests/test_console.py` (patch `server.STREAM_POLL` to `0.01` with `mock.patch.object`; a finished job makes `c.get(...)` return the whole stream):
-   - 404 for an unknown job, and 401 without the identity header.
-   - Finished job with lines `['a', '<b>']`: body has `id: 1`, `id: 2`, `&lt;b&gt;`, then `event: done` with `"state": "succeeded"`.
-   - `Last-Event-ID: 1` and `?after=1` each skip line 1; header wins over query; `Last-Event-ID: x` and `after=-5` start at 0; `after=99` is clamped (only `done`).
-   - A 40-hex SHA in a line arrives shortened with the `title=` span.
-   - Running job completed by a `threading.Timer(0.05, …)` that appends a line, then sets `state` and `finished`: the stream returns both the line and `done` (no line lost).
-   - Response headers include `text/event-stream` and `X-Accel-Buffering: no`.
-   - Replace `test_running_job_page_refreshes`: a running job page contains `EventSource`, `/jobs/7/events?after=0` and the `<noscript>` meta, and no meta refresh outside `<noscript>`; a finished job page contains neither.
-5. Validate (`make check`, bash syntax loop). Commit: `Stream job output to the console with SSE`. Push; the publish run deploys a new console with a bot commit, so `git pull --rebase` before the next push.
-
-**L2. Docs (offline; implemented 3 October 2026).** `docs/console.md` now describes live output, the 2 second no-JavaScript fallback and in-memory job lifetime. `docs/architecture.md` does not describe the job page.
-
-**L3. Live check (image deployed and cluster verified; signed-in browser check open).**
-1. Hand the operator a "Test it yourself" block: open a unit page, press **Reconcile** on a harmless unit (for example `infra-base`), and watch the job page: lines appear one by one, scroll and text selection are kept, and the page reloads once at the end to show the final state and finish time. Also open the job page again after it finished (no stream), and reload mid-job (resumes without duplicate lines).
-2. Check buffering: lines must arrive as they are produced, not in a burst at the end. If they arrive in bursts, look at Traefik and the ForwardAuth middleware (response buffering) before changing code.
-3. Deployment and cluster evidence is recorded in [current-state.md](current-state.md). After the browser check, append its result there.
-
-### Out of scope
-
-Live updates on cluster pages (needs a Kubernetes watch), the pending-app page, streaming across console replicas or restarts, and a notify hook in `actions.py`.
+Out of scope: live updates on cluster pages (needs a Kubernetes watch), the pending-app page, streaming across console replicas or restarts, and a notify hook in `actions.py`.

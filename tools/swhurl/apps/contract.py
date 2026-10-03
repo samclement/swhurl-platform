@@ -22,6 +22,12 @@ DEFAULT_DATABASE_SIZE = '1Gi'
 # How long an instance may take to become Ready before its unit and HelmRelease report failure
 # (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
 FAIL_AFTER = '3m'
+# Every web app may take this long to first answer its health path before liveness checks begin (a
+# startup probe, every STARTUP_PERIOD seconds). One allowance for all: a fast app is Ready as soon as it
+# answers, and a JVM on a busy node needs most of it. It must leave Helm time to pull the image within
+# FAIL_AFTER; the templates' smoke tests wait as long.
+STARTUP_SECONDS = 120
+STARTUP_PERIOD = 5
 
 COOKIE_DOMAIN = base_domain()
 """Every host under this domain receives the shared sign-in cookie."""
@@ -83,9 +89,6 @@ def secret_key_problem(keys: list[str]) -> str:
 # explicitly still win. Name, environment, image and host are per instance and never in the file.
 MANIFEST_FILE = 'swhurl.yaml'
 MANIFEST_VERSION = 1
-STARTUP_SECONDS = (10, 600)
-"""Bounds for startupSeconds: how long a slow starter (a JVM) may take to answer its health path first."""
-STARTUP_PERIOD = 5
 KINDS = ('web', 'worker')
 TELEMETRY = ('otlp', 'none')
 
@@ -104,7 +107,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'startupSeconds'}
+               'secrets', 'resources', 'exposure', 'autoDeploy'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -132,13 +135,8 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         defaults['health_path'] = field('healthPath', str)
         if not defaults['health_path']:
             raise fail('healthPath is required for kind web (the app\'s readiness endpoint)')
-        startup = field('startupSeconds', int)
-        if startup is not None:
-            if not STARTUP_SECONDS[0] <= startup <= STARTUP_SECONDS[1]:
-                raise fail(f'startupSeconds must be between {STARTUP_SECONDS[0]} and {STARTUP_SECONDS[1]}')
-            defaults['startup_seconds'] = startup
-    elif any(doc.get(k) is not None for k in ('port', 'healthPath', 'startupSeconds')):
-        raise fail('port, healthPath and startupSeconds apply to kind web only')
+    elif any(doc.get(k) is not None for k in ('port', 'healthPath')):
+        raise fail('port and healthPath apply to kind web only')
     if field('database', str, DATABASES):
         defaults['database'] = doc['database']
         if field('databaseSize', str):

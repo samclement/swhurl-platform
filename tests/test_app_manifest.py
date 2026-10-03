@@ -34,12 +34,15 @@ class ManifestTests(unittest.TestCase):
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi'})
 
-    def test_a_slow_starter_gets_a_startup_probe(self):
-        self.assertEqual(manifest_defaults({**WEB, 'startupSeconds': 120})['startup_seconds'], 120)
+    def test_every_web_app_gets_the_same_startup_allowance(self):
+        with self.assertRaisesRegex(ManifestError, 'unknown field.*startupSeconds'):
+            manifest_defaults({**WEB, 'startupSeconds': 120})
+        fail_after = int(contract.FAIL_AFTER.removesuffix('m')) * 60
+        self.assertLessEqual(contract.STARTUP_SECONDS, fail_after - 60, 'Helm needs time to pull the image too')
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / 'clusters/home').mkdir(parents=True)
             manifest = Path(root) / 'swhurl.yaml'
-            manifest.write_text(yaml.safe_dump({**WEB, 'startupSeconds': 120}))
+            manifest.write_text(yaml.safe_dump(WEB))
             args = app_new.parse_args(['kt', '--manifest', str(manifest), '--env', 'staging', '--root', root,
                                        '--image', 'ghcr.io/me/kt:1-abcdef0@sha256:' + 'a' * 64, '--no-register'])
             app_new.generate(args, Path(root))
@@ -69,8 +72,6 @@ class ManifestTests(unittest.TestCase):
             ({**WEB, 'resources': {'gpu': '1'}}, 'resources may set'),
             ({**WEB, 'resources': {'memory': 64}}, 'quantity string'),
             ({**WEB, 'telemetry': 'datadog'}, 'telemetry must be one of'),
-            ({**WEB, 'startupSeconds': 5}, 'startupSeconds must be between 10 and 600'),
-            ({'version': 1, 'kind': 'worker', 'startupSeconds': 60}, 'kind web only'),
             (['kind', 'web'], 'must be a mapping'),
         ]
         for doc, message in cases:

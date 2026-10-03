@@ -197,6 +197,7 @@ class ClickStackRenderTests(unittest.TestCase):
 
     def test_only_the_flux_webhook_route_skips_sign_in(self):
         """Raw platform Ingresses need sign-in, except GitHub's webhook to Flux's receiver (chart Ingresses: other tests)."""
+        active_units = {unit['metadata']['name'] for _, unit in platform.flux_unit_documents()}
         unauthenticated = []
         for _, unit in platform.flux_unit_documents():
             if not unit['spec']['path'].startswith('./platform/'):
@@ -205,6 +206,9 @@ class ClickStackRenderTests(unittest.TestCase):
                 for doc in yaml.safe_load_all(path.read_text()):
                     if doc and doc.get('kind') == 'Ingress' and 'router.middlewares' not in str(doc['metadata']):
                         unauthenticated.append(doc)
+        if 'platform-flux-webhook' not in active_units:
+            self.assertEqual(unauthenticated, [])
+            return
         self.assertEqual([d['metadata']['name'] for d in unauthenticated], ['flux-webhook'])
         paths = [p for rule in unauthenticated[0]['spec']['rules'] for p in rule['http']['paths']]
         self.assertEqual([(p['path'], p['backend']['service']['name']) for p in paths], [('/hook/', 'webhook-receiver')])

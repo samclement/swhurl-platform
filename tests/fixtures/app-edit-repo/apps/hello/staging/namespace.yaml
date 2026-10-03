@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-staging
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: hello
+    platform.swhurl.com/environment: staging
+    platform.swhurl.com/exposure: authenticated-web

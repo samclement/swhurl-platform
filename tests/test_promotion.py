@@ -88,6 +88,11 @@ class FirstProductionTests(unittest.TestCase):
                 doc = promotion.YamlFile(self.root / 'apps/example/staging/helmrelease.yaml')
                 doc.data['spec']['values'] = values
                 doc.save()
+                from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+                namespace = promotion.YamlFile(self.root / 'apps/example/staging/namespace.yaml')
+                namespace.data['metadata']['labels']['platform.swhurl.com/promotion-test'] = DoubleQuotedScalarString('true')
+                namespace.data['metadata'].setdefault('annotations', {})['custom'] = DoubleQuotedScalarString('3')
+                namespace.save()
                 runner = FakeRunner()
                 with mock.patch.object(policy, 'evaluate', return_value=[]) as evaluate:
                     dst = promotion.create(self.root, 'example', source, runner=runner)
@@ -95,6 +100,9 @@ class FirstProductionTests(unittest.TestCase):
                 production = promotion.YamlFile(dst / 'helmrelease.yaml').data
                 self.assertEqual(promotion.image_of(production), promotion.image_of(source))
                 self.assertEqual(production['metadata']['namespace'], 'example-prod')
+                namespace = promotion.YamlFile(dst / 'namespace.yaml').data['metadata']
+                self.assertEqual(namespace['labels']['platform.swhurl.com/promotion-test'], 'true')
+                self.assertEqual(namespace['annotations']['custom'], '3')
                 self.assertEqual(production['spec']['values']['controllers']['main'], values['controllers']['main'])
                 if kind == 'web':
                     self.assertEqual(production['spec']['values']['ingress']['main']['hosts'][0]['host'],

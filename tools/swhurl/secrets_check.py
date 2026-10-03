@@ -47,10 +47,20 @@ def looks_double_encoded(raw: bytes) -> bool:
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret.sops.yaml')
 NOTIFICATION_SECRET = 'platform/console/notification-secret.sops.yaml'
+NTFY_DESTINATIONS = {  # channel: (provider Secret file, provider key, checker key)
+    'failures': ('platform/alerts/secret-failures.sops.yaml', 'address', 'NTFY_FAILURES_URL'),
+    'deploys': ('platform/alerts/secret-deploys.sops.yaml', 'address', 'NTFY_DEPLOYS_URL'),
+}
+
+
+def destination_hash(raw: bytes) -> str:
+    parts = urlsplit(raw.decode())
+    normalized = urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 def notification_destination_problem(copies: dict[str, str]) -> str | None:
-    for channel in ('failures', 'deploys'):
+    for channel in NTFY_DESTINATIONS:
         source, checker = f'source-{channel}', f'checker-{channel}'
         if source not in copies or checker not in copies:
             return f'ntfy {channel} destination is missing from its source or checker Secret'
@@ -94,13 +104,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 raw = base64.b64decode(value) if field == 'data' else str(value).encode()
                 if key == INGESTION_KEY and not fixture:
                     ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
-                for channel in ('failures', 'deploys'):
-                    source = str(rel) == f'platform/alerts/secret-{channel}.sops.yaml' and key == 'address'
-                    checker = str(rel) == NOTIFICATION_SECRET and key == f'NTFY_{channel.upper()}_URL'
+                for channel, (provider_file, provider_key, checker_key) in NTFY_DESTINATIONS.items():
+                    source = str(rel) == provider_file and key == provider_key
+                    checker = str(rel) == NOTIFICATION_SECRET and key == checker_key
                     if source or checker:
-                        parts = urlsplit(raw.decode())
-                        url = urlunsplit((parts.scheme, parts.netloc, parts.path, '', ''))
-                        destinations[f'{"source" if source else "checker"}-{channel}'] = hashlib.sha256(url.encode()).hexdigest()
+                        destinations[f'{"source" if source else "checker"}-{channel}'] = destination_hash(raw)
                 where = f'{rel}: {field}.{key}'
                 if not raw:
                     print(f'  [ERROR] {where}: empty')

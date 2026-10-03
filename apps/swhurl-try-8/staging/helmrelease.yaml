@@ -1,0 +1,113 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: swhurl-try-8
+  namespace: swhurl-try-8-staging
+spec:
+  interval: 30m
+  timeout: 3m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 1
+  upgrade:
+    remediation:
+      retries: 1
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/swhurl-try-8
+              tag: 1-65b96c3 # {"$imagepolicy": "flux-system:swhurl-try-8-staging:tag"}
+              digest: sha256:10e1a79d206b2b63258a7599a4e84c18d83f176f9132934012a45ba5f130992a # {"$imagepolicy": "flux-system:swhurl-try-8-staging:digest"}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            env:
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: swhurl-try-8
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+                  periodSeconds: 5
+                  failureThreshold: 24
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080
+    ingress:
+      main:
+        className: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
+        hosts:
+        - host: staging-swhurl-try-8.homelab.swhurl.com
+          paths:
+          - path: /
+            service:
+              identifier: main
+              port: http
+        tls:
+        - hosts:
+          - staging-swhurl-try-8.homelab.swhurl.com
+          secretName: swhurl-try-8-tls

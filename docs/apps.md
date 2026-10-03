@@ -80,7 +80,7 @@ make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env pro
 git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/prod" && git push
 ```
 
-Production requires the digest and never deploys automatically. In the console, create production with **New app** → **Deploy an existing image** → **From the repository's swhurl.yaml**, environment prod: the app's own `swhurl.yaml` supplies its stack's resources and start-up allowance (a Kotlin app's 192Mi, 384Mi, 100m and `startupSeconds`), which the **platform conventions** tabs do not.
+Production requires the digest and never deploys automatically. In the console, create production with **New app** → **Deploy an existing image** → **From the repository's swhurl.yaml**, environment prod: the app's own `swhurl.yaml` supplies its stack's resources (a Kotlin app's 192Mi, 384Mi and 100m), which the **platform conventions** tabs do not.
 
 ## Add an existing image
 
@@ -121,11 +121,10 @@ make flux-reconcile && make app-status APP=hello ENV=staging   # flux-reconcile 
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
-| `--startup-seconds N` | Web only: a startup probe gives the app up to N seconds (10-600) to first answer its health path before liveness checks begin; without it, three failed liveness checks (about 30 s) restart a slow starter |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
 
-Every instance runs non-root with no service-account token, all capabilities dropped and a read-only root filesystem with a writable `/tmp`. The generator refuses to overwrite an instance, expose a worker, put a public app in the sign-in cookie domain, or ship production without a digest.
+Every instance runs non-root with no service-account token, all capabilities dropped and a read-only root filesystem with a writable `/tmp`. Every web app gets the same start-up allowance: a startup probe gives it up to 120 s to first answer its health path before liveness checks begin. A fast app is Ready as soon as it answers; a JVM on a busy node needs most of it. The allowance is fixed rather than per app so that it stays a minute inside Helm's 3-minute wait (time to pull the image), and the templates' smoke tests wait just as long. The generator refuses to overwrite an instance, expose a worker, put a public app in the sign-in cookie domain, or ship production without a digest.
 
 ## swhurl.yaml
 
@@ -137,7 +136,6 @@ stack: kotlin           # which template the app came from (informational)
 kind: web               # required: web or worker            --kind
 port: 8080              # web only (default 8080)            --port
 healthPath: /healthz    # web only, required                 --health-path
-startupSeconds: 120     # web only, optional (10-600)         --startup-seconds
 uid: 65532              # default 65532                      --uid
 telemetry: otlp         # otlp or none (default)             --otlp
 autoDeploy: true        # staging follows new images         --auto-deploy

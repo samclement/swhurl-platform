@@ -76,6 +76,15 @@ spec:
                   httpGet:
                     path: /
                     port: 8080
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+                  periodSeconds: 5
+                  failureThreshold: 24
         annotations:
           secret.reloader.stakater.com/reload: smoke-web-secret
     persistence:

@@ -4,6 +4,8 @@
 
 ## 0. Where this paused and what is left
 
+18. **Predictable app deployment and promotion** (planned 3 October 2026): implementation outline in [section 9](#9-predictable-app-deployment-and-promotion), awaiting approval. First promotion creates production from reviewed staging settings; later promotions copy the reviewed image. Both use **Promote to production**, with eligible PRs merging automatically. Start with the shared promotion model, then Git edits, then the console and merge workflow. Template test scaling and updates follow. Retiring `hello` is optional and requires confirmation before live removal.
+
 16. **Automatic app dashboards** (2 October 2026): done (`d5c0f87`): scheduled discovery of Flux-managed app environments, dashboard creation and first-promotion updates, isolated ServiceAccount, bounded jobs and freshness verification ([dashboards](apps.md#dashboards), [live evidence](current-state.md#automatic-app-dashboards-2-october-2026)).
 
 15. **Structured logs across the cluster** (agreed 2 October 2026): done (`cf3df0c`, `498310b`): node-agent JSON/text normalization, event normalization, supported native JSON settings, console JSON logging, actual-collector fixtures and `make verify-logs`. Active services verified; quiet/fallback cases and browser-check limitations recorded in [live evidence](current-state.md#structured-logs-across-the-cluster-2-october-2026). Existing streams only; preserve original lines, schema and historical records ([formats](services.md#structured-logs)).
@@ -283,7 +285,101 @@ flowchart LR
 - more than two stacks;
 - users other than you.
 
-## 9. References
+## 9. Predictable app deployment and promotion
+
+3 October 2026 · Proposed implementation outline; no app migration or live removal authorised by this plan.
+
+### Operator experience
+
+For example, `weather-api` deploys automatically to staging. Open its staging page, try the app, then press **Promote to production**. The confirmation shows the exact image, the production address and whether this creates production or updates it. The platform opens a PR, merges it when checks pass, and shows production becoming Ready. The next staging image uses the same button.
+
+Both **Start a new app** and **Deploy an existing image** lead to that workflow. The operator does not need to create production separately or choose a different promotion command for a template app.
+
+```mermaid
+flowchart LR
+  source["New app or existing image"] --> staging["Staging deployed and reviewed"]
+  staging --> button["Promote to production"]
+  button --> pr["PR: create production or update its image"]
+  pr --> checks["Validate current PR commit"]
+  checks --> merge["Eligible PR merges automatically"]
+  merge --> git["Platform main"]
+  git --> flux["Flux applies production"]
+  flux --> ready["Console shows production Ready"]
+```
+
+### Design choice and boundaries
+
+**Decision:** use the deployment generator and app policy for standard web apps and workers, regardless of the language or origin of their image. Keep app-code templates optional. Existing custom deployment files remain a reviewed route for workload shapes the generator cannot express; shared infrastructure retains its existing Flux units.
+
+**Checked assumptions:** `app-new` already supports existing images ([apps](apps.md#add-an-existing-image)); staging HelmRelease values contain the effective deployment settings; `app-promote` currently requires a target; console actions use Git PRs; the [merge workflow](../.github/workflows/auto-merge.yml) already validates the PR head and excludes encrypted files. **Assumed:** this remains a single-operator platform with public app images and existing GitHub credentials. No new controller, credential or cluster service is needed.
+
+| Approach | Predictability and consistency | Implementation cost |
+| --- | --- | --- |
+| Fetch the app repository's latest `swhurl.yaml` for first promotion | Familiar generation path, but defaults can differ from reviewed staging and some images have no source manifest | Small initially; needs source discovery, version pinning and another route for existing images |
+| Derive first production from validated staging files | Uses the settings actually reviewed; works for template apps and existing images | Explicit environment conversion and supported-shape checks |
+| Store an app definition and regenerate both environments from it | Can give creation, editing and promotion one source of configuration | Larger migration; must resolve ownership of manual edits and environment overrides |
+
+**Recommendation:** derive first production from validated staging files through a shared internal model. Keep Git deployment files authoritative; do not add a second stored definition in this change. The cost is a bounded conversion layer, with clear refusals for unsupported shapes. Revisit a stored definition if repeated read/edit/generate conversions become the dominant maintenance cost.
+
+### Behaviour by scenario
+
+| Situation | Console action and result |
+| --- | --- |
+| Healthy, digest-pinned staging; no production | **Promote to production** creates the production instance from reviewed staging settings |
+| Healthy staging; production has a different digest | The same button updates production's image, preserving its settings |
+| Both environments have the same digest | Show **Same image in both**; no image promotion needed |
+| Staging tag changes but the digest stays the same | Treat it as the same deployed image; do not encourage a redundant rollout |
+| Production has a newer build number, or tags cannot be ordered | Offer the same promotion when digests differ; confirmation identifies a rollback when ordering is known, otherwise simply shows the two images |
+| Staging is unhealthy, suspended, unpinned or still applying Git | Show the reason promotion is unavailable and the action needed to review it again |
+| Production is still reconciling a previous promotion | Show its deployment progress; do not open another promotion for the same reviewed image |
+| A promotion PR is already open | Link to it; repeated clicks reuse it. A different reviewed image requires an explicit replacement rather than silently changing the existing PR |
+| Production exists in Git but is absent from the cluster | Treat this as deployment pending or failed; never generate another production instance based only on live absence |
+| Production exists without staging | Show production normally; explain that promotion requires a staging instance |
+| First production needs secrets or a custom public host | Collect or link to the required setup, retain the reviewed image and explain why auto-merge is unavailable until setup is complete |
+
+Auto-merge is the default for eligible promotions; remove the existing per-click opt-in checkbox. Keep a clear PR link and a way to hold the PR for manual review. CI failure, merge conflict or missing setup leaves the PR visible with its reason. A successfully created PR is not reported as a completed production deployment.
+
+### Implementation phases
+
+Each phase ends with [the repository's required validation](contributing.md#validation). Behaviour changes also commit and push, wait for the published console where applicable, reconcile, verify the affected apps and platform, and record dated evidence in [current state](current-state.md). Update section 0 after each phase. Update the canonical [app](apps.md), [console](console.md), [command](commands.md) and [architecture](architecture.md) pages with the behaviour they own, rather than duplicating instructions here.
+
+1. **Shared promotion model and scenario tests.** Add focused operator modules under `tools/swhurl/apps/` for reading supported instance configuration, deciding the promotion outcome and preparing Git edits. Separate source readiness, Git target existence, image comparison and PR/deployment progress. The CLI and console use the same decisions; templates render a view model rather than embedding decision rules. Keep external commands behind `Runner` and exercise failure paths with `FakeRunner`.
+
+   **Acceptance:** table-driven cases cover the scenarios above, including legacy nginx, template web/worker apps, SQLite, secret references and unsupported custom YAML. Decide target existence from the downloaded Git tree, not a cached UI row. A refusal writes no partial production instance and opens no PR.
+
+2. **First promotion and later image updates.** Extend `app-promote` to create a missing production target or update an existing one. Reuse generation helpers for namespace, Flux unit, registration and policy; do not duplicate their definitions. Convert namespace and environment labels, generated authenticated hosts and environment-specific references by meaning, not global text replacement. Keep resources, probes, security settings, command and telemetry from reviewed staging. Remove staging image automation resources and markers from production. Preserve existing production configuration on later promotions; document supported YAML boundaries.
+
+   First production gets its own retained volume and empty database. Its database migrations run through normal application startup. No data, PV binding or staging credential value is copied. Production secret stubs are encrypted for the destination using the established generation path; they require setup and manual review, including any Reloader registration. Private workers require no route. A custom public hostname needs an explicit production hostname; do not infer one or reuse staging's host.
+
+   **Acceptance:** first promotion generates a complete policy-compliant instance; later promotion changes only the image pin and preserves manual comments/settings. Compare the reviewed image and effective source configuration with the fresh Git tree before generating first production. Staging movement before PR creation requires a refresh; after creation the PR keeps the reviewed digest. Secret values never appear in output. Existing production data and credentials retain their current ownership.
+
+3. **One button and automatic merging.** Use the promotion model on Apps and the staging page. Show an action for staging-only apps as well as apps with different environment digests. Apps opens the review/confirmation for the exact staging deployment. Include first-production changes, destination address and any setup requirement. Keep health and stale-review checks when submitting and when the job starts.
+
+   Update PR eligibility and the merge workflow together. Eligible first-production PRs and image-only updates merge by default after Validate passes on the current head. First-production PRs changing encrypted files or requiring setup remain manual. Retain the workflow's branch, repository, file and head checks; do not widen it to infrastructure or unrelated edits. Check eligibility from the actual diff. Handle a duplicate click, an open PR, a merge conflict and a console restart by recovering state from GitHub and Flux, not only in-memory jobs. Account for unrelated automated commits to `main`; define and test whether a relevant target/configuration change requires regeneration and new validation before merging.
+
+   **Acceptance:** real browser checks show the same promotion path for a new staging-only app and a newer staging image. The Activity/app pages distinguish creating PR, checks running, awaiting setup/review, merging, deploying, Ready and failed. Verify HTTP/HTTPS and signed-in/signed-out entry points. Prove a failed command or check cannot merge or deploy.
+
+4. **Reproducible checks and bounded test cost.** Pin catalogue templates to explicit revisions and use those revisions consistently for questions, rendering and contract checks; deliberate updates test the proposed pin. Keep platform checks free of language builds. Test resource/host/replica values in generator and policy tests rather than multiplying language build matrices.
+
+   Keep exhaustive platform rendering while cheap and measure its duration as choices grow. For expensive template builds, retain defaults, every non-default choice alone and the supported all-enabled case, plus targeted interactions that share behaviour. Reject unsupported combinations explicitly. SQLite tests must demonstrate writes, migrations and persistence, not just process startup. Add shared conformance assertions for the image contract where they reduce duplication; each stack still runs its own build and necessary runtime checks. Use broader scheduled coverage only when the measured cost justifies it. A passing sampled matrix does not claim every combination was tested.
+
+   **Acceptance:** template checks use fixed revisions; changing a pin is reviewable. Document representative cold/warm timings, which combinations run on PRs and which run elsewhere. A third stack requires catalogue entries, its template/build checks and conformance evidence, without language build dependencies in platform tooling.
+
+5. **Template updates and optional app cleanup.** Continue [catalogue phase 7](#8-new-app-from-a-catalogue): try template-update PRs on an app with user edits and prove that conflicts are visible and updates run app checks before publishing. Keep platform-owned features such as routing, volume provisioning and backup wiring in the platform; language-specific database and SDK behaviour stays in templates/apps.
+
+   Keep `hello` until the consistent promotion workflow is proven. It is already a useful existing-image example; removing it is not needed to make promotion consistent. If retirement is preferred, audit its live storage, links, probes and fixture dependencies; prepare replacements for references and tests, then request confirmation before uninstalling its live namespaces or deleting data. Fixtures may retain nginx as an independent compatibility case. Do not migrate or remove `hello-ts` merely because it predates Copier.
+
+   **Acceptance:** an update PR preserves app edits or identifies a real conflict. Optional retirement leaves no broken links or verification dependencies, follows GitOps removal, and records live evidence after approval.
+
+### Live proof and operator handoff
+
+Exercise first production, then publish a newer staging image and exercise later promotion. Cover one web app, one worker and SQLite persistence, using existing app images/fixtures where possible. Prove an unchanged digest is a no-op, stale review refuses, duplicate clicks reuse the PR, CI failure stays unmerged, and secret setup prevents auto-merge. Browser proof must use a real signed-in session; hand-set identity headers do not establish that sign-in works.
+
+If a template repository must be created for proof, name it `swhurl-try-<n>` and list the repository and package for the operator to delete afterwards. Obtain confirmation before deleting live namespaces/data or performing other confirm-first actions from `AGENTS.md`. Any interactive login or `sudo` command is labelled **run in your own terminal**; noninteractive operator commands are labelled **run with `!`**. The final handoff gives the production URL and a short **Test it yourself** sequence.
+
+**Delivery priority:** phases 1–3 deliver the requested promotion experience; phases 4–5 address growth and ongoing maintenance. A new language, a general app controller, new databases, cluster infrastructure through the app generator and deleting live apps are not prerequisites for promotion.
+
+## 10. References
 
 - [Flux pruning and deletion](https://fluxcd.io/flux/components/kustomize/kustomizations/)
 - [Flux HelmChart reconcile strategies](https://fluxcd.io/flux/components/source/helmcharts/)

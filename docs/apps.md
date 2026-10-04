@@ -63,8 +63,9 @@ sequenceDiagram
   Flux->>Cluster: Apply app unit and its manifests
   Cluster->>CM: Ingress appears with issuer annotation and TLS Secret name
   CM->>Cluster: HTTP-01 challenge, then certificate and TLS Secret
-  Dash->>Cluster: Every minute discover live app HelmReleases
-  Dash->>Cluster: Create or update App: weather-api in HyperDX
+  Dash->>Cluster: Every minute list HelmRelease records created by app Flux units
+  Dash->>Dash: Group matching records by app and environment
+  Dash->>Dash: Create or update the App weather-api dashboard in HyperDX
 ```
 
 The console job creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. The console waits up to ten minutes for that workflow to finish, then reads the image digest and uses it in the platform change. If this first build fails or times out, the app repository remains and no platform PR is opened; fix/push the app and add its published image through **Deploy an existing image**.
@@ -75,7 +76,7 @@ After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from
 
 **Certificates are requested only for a web app with a route** (`authenticated-web` or `public`). The generated Ingress names a TLS Secret and carries the selected ClusterIssuer annotation. The default is `letsencrypt-prod`, even for the staging environment; `letsencrypt-staging` and `selfsigned` can be selected. Once Flux/Helm has created the Ingress, cert-manager notices it and asynchronously performs the issuer's flow. For Let's Encrypt that is HTTP-01 through Traefik; on success cert-manager stores the certificate in the named Secret, which Traefik uses for HTTPS. The app Helm readiness does not wait for certificate issuance, so the app can become Ready while TLS is still pending. Private web apps and workers have no route and therefore request no certificate.
 
-**The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute, discovers Flux-managed live app environments, and creates or updates `App: <name>` in HyperDX when the staging HelmRelease is visible. It uses ClickStack's API and database; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
+**The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute. It lists Kubernetes HelmRelease records, keeps the ones registered by an `app-<name>-<env>` Flux unit whose app name and namespace match the release, then groups staging and production records by app. As soon as Flux has created the staging HelmRelease, the job creates or updates `App: <name>` in HyperDX. It does not wait for the release or pods to become Ready. It uses ClickStack's API; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
 
 Once staging is deployed, later pushes to the app repository's `main` publish images. For template apps with `autoDeploy: true`, Flux image automation notices the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
 
@@ -356,8 +357,9 @@ sequenceDiagram
     Prod->>CM: New Ingress requests TLS certificate
     CM->>Prod: HTTP-01 through Traefik and certificate saved in prod TLS Secret
   end
-  Dash->>Prod: Once a minute discover prod HelmRelease
-  Dash->>Dash: Update existing App dashboard with production line
+  Dash->>Prod: Every minute list HelmRelease records created by app Flux units
+  Dash->>Dash: Group matching staging and production records by app
+  Dash->>Dash: Create or update App dashboard with production line
 ```
 
 The review captures the staging image, applied revision, staging configuration hash and production configuration hash. The console checks again at submission, when the job starts, and after preparing the change; it refuses if staging stopped being healthy/current or either reviewed configuration changed. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back.
@@ -368,7 +370,7 @@ First promotion with a Secret stub or a public production host is not auto-merge
 
 After merge, the platform push webhook starts Flux's fetch/reconcile chain (the `GitRepository` polls every minute if the webhook is missed). For first production, Flux creates the new `app-<app>-prod` unit, which waits for `infra-base` and `platform-oauth2-proxy` when the app is signed in. It applies the production Namespace and HelmRelease, then Helm creates the production Deployment and, for web apps, Service; routed apps also get an Ingress. The storage claim is provisioned independently when configured. A routed first production Ingress causes cert-manager to request a certificate asynchronously: the issuer is copied from staging (default `letsencrypt-prod`), HTTP-01 uses Traefik for Let's Encrypt, and the resulting TLS Secret is used by Traefik. Certificate issuance does not hold the app Helm readiness check open. Private apps/workers have no Ingress and request no certificate.
 
-The dashboard CronJob runs each minute. When the production HelmRelease becomes visible, it creates or updates `App: <app>` in HyperDX to include production as another environment line; it does not create a second dashboard or add dashboard files to the PR. It is independent of the app rollout. Details are in [Dashboards](#dashboards).
+The dashboard CronJob runs each minute. It sees the production HelmRelease once the production Flux unit has created it, then creates or updates the same `App: <app>` dashboard to include production as another environment line; it does not create a second dashboard or add dashboard files to the PR. It does not wait for production pods to become Ready and is independent of the app rollout. Details are in [Dashboards](#dashboards).
 
 On **later promotions**, production already exists, so the reviewed PR changes only the image tag/digest in `apps/<app>/prod/helmrelease.yaml`. Production's runtime settings, host, Secret, storage, unit and Reloader registration remain as they were. No new certificate or other infrastructure is requested. The image-only PR auto-merges after `Validate` and the trusted merge gate unless held for review; Flux then rolls out the pinned image. Promotion does not run the app repository's build workflow and does not invoke the app's image automation. The image has already been built and deployed to staging before it is selected.
 
@@ -403,7 +405,9 @@ The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX da
 | Logs (every app) | Error logs and log lines per minute | the same |
 | Logs | The latest log lines, with their environment | the same |
 
-Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Within a minute of Flux adding an app HelmRelease, the job creates its dashboard; first promotion adds production to the same dashboard. This works for console PRs and CLI changes, including auto-merges. Each run overwrites dashboards that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy without the `swhurl-app` tag to keep it). Automatic sync never deletes dashboards. After removal, `make clickstack-dashboards` synchronizes against this checkout and deletes tagged dashboards whose app has left Git; `DRY_RUN=true` previews it. Both paths read the admin account's access key from MongoDB and never print it. Failures exit nonzero and retry on the next minute; `make verify-platform` fails if the job has not succeeded within five minutes. No app deployment waits on ClickStack.
+The in-cluster `console-dashboards` CronJob runs every minute. It asks Kubernetes for HelmRelease records in all namespaces, then keeps only records whose Flux labels identify an `app-<name>-<env>` unit in `flux-system` and whose release name and namespace match that app and environment. This excludes shared services and manually installed releases. It does not check readiness, so discovery starts as soon as the app Flux unit creates the HelmRelease, even while Helm is still installing it. The job groups discovered environments by app and creates or updates one HyperDX dashboard named `App: <app>`; first promotion adds a production line to the dashboard created for staging. The API call is to HyperDX; dashboards are not Kubernetes resources or Git files. This works for console PRs and CLI changes, including auto-merges.
+
+Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Each run overwrites dashboards that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy without the `swhurl-app` tag to keep it). Automatic sync never deletes dashboards. After removal, `make clickstack-dashboards` synchronizes against this checkout and deletes tagged dashboards whose app has left Git; `DRY_RUN=true` previews it. Both paths read the admin account's access key from MongoDB and never print it. Failures exit nonzero and retry on the next minute; `make verify-platform` fails if the job has not succeeded within five minutes. No app deployment waits on ClickStack.
 
 ## Remove an app
 

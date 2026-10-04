@@ -33,6 +33,51 @@ From nothing to a running staging app in a few minutes (about two for TypeScript
 
 **In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 
+### What happens, and when
+
+For example, starting `weather-api` from the TypeScript template creates `samclement/weather-api`, waits for its first published image, and proposes `weather-api/staging` in this platform repository. The timeline is:
+
+```mermaid
+sequenceDiagram
+  actor Operator
+  participant Console
+  participant App as App GitHub repo
+  participant Actions as App Container workflow
+  participant Platform as swhurl-platform
+  participant Validate as Validate workflow
+  participant Flux
+  participant Cluster
+  participant CM as cert-manager
+  participant Dash as dashboard sync
+
+  Operator->>Console: Submit Start a new app
+  Console->>App: Create public repo from selected stack; push rendered files to main
+  App->>Actions: GitHub push event starts first checks/build/smoke/publish run
+  Actions-->>Console: Run succeeds; console reads published image digest
+  Console->>Platform: Create console/new-weather-api-staging-<sha> branch and PR
+  Platform->>Validate: PR event runs Validate
+  Validate-->>Platform: Checks pass
+  Platform->>Platform: Auto-merge gate verifies PR and fast-forwards main
+  Platform->>Flux: GitHub push webhook for main (otherwise 1-minute source poll)
+  Flux->>Cluster: Apply app unit and its manifests
+  Cluster->>CM: Ingress appears with issuer annotation and TLS Secret name
+  CM->>Cluster: HTTP-01 challenge, then certificate and TLS Secret
+  Dash->>Cluster: Every minute discover live app HelmReleases
+  Dash->>Cluster: Create or update App: weather-api in HyperDX
+```
+
+The console job creates a **public** app repository because the cluster pulls its image without registry credentials. Its first commit starts the app repository's normal push workflow; this is a GitHub Actions push trigger, not a platform webhook. The console waits up to ten minutes for that workflow to finish, then reads the image digest and uses it in the platform change. If this first build fails or times out, the app repository remains and no platform PR is opened; fix/push the app and add its published image through **Deploy an existing image**.
+
+The platform PR is opened only after that image exists. It runs the platform `Validate` pull-request workflow. A regular generated app PR is labeled for auto-merge and merges itself after validation and the trusted merge gate checks the current merge result. If the generated change includes an encrypted Secret stub, auto-merge is disabled because its values still need setting; set them on the PR branch and merge it yourself. Until merge, neither the namespace nor any app resources are created on the cluster. Platform PR branch pushes are filtered out by the Flux Receiver; the merge push to `main` is what invokes it. Without a successful webhook delivery, Flux's `GitRepository` still polls `main` every minute.
+
+After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from the newly registered unit file. It waits for `infra-base`, and also `platform-oauth2-proxy` for authenticated web exposure. The unit applies the namespace, HelmRelease and optional encrypted Secret. The chart creates the Deployment and Service for a web app; authenticated or public web exposure also creates an Ingress. Worker apps have no Service or Ingress. SQLite/database answers add a retained PVC and mount; secret answers add the SOPS Secret and register the namespace with Reloader. With automatic deploy enabled, the staging unit also creates this app's Flux `ImageRepository`, `ImagePolicy` and `ImageUpdateAutomation` in `flux-system`, so later published images can update the staging image pin in platform Git. These resources are app-scoped; the shared cluster services already exist.
+
+**Certificates are requested only for a web app with a route** (`authenticated-web` or `public`). The generated Ingress names a TLS Secret and carries the selected ClusterIssuer annotation. The default is `letsencrypt-prod`, even for the staging environment; `letsencrypt-staging` and `selfsigned` can be selected. Once Flux/Helm has created the Ingress, cert-manager notices it and asynchronously performs the issuer's flow. For Let's Encrypt that is HTTP-01 through Traefik; on success cert-manager stores the certificate in the named Secret, which Traefik uses for HTTPS. The app Helm readiness does not wait for certificate issuance, so the app can become Ready while TLS is still pending. Private web apps and workers have no route and therefore request no certificate.
+
+**The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute, discovers Flux-managed live app environments, and creates or updates `App: <name>` in HyperDX when the staging HelmRelease is visible. It uses ClickStack's API and database; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
+
+Once staging is deployed, later pushes to the app repository's `main` publish images. For template apps with `autoDeploy: true`, Flux image automation notices the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
+
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
 ```bash
@@ -276,6 +321,55 @@ make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha2
 ```
 
 A mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Apps or staging shows the exact image, destination and first-production changes, then **Promote to production** creates the PR. Eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused; a replacement image requires explicitly closing the old PR. See [merge controls and pending changes](console.md#auto-merge).
+
+### Console promotion: what happens, and when
+
+For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page reads live staging health and compares the staging and production configuration in GitHub `main`. Submitting **Promote to production** rechecks that review, prepares the Git change with `main`'s own `app-promote` command, and opens a PR. The job finishing means the PR exists; it does not mean production has deployed.
+
+```mermaid
+sequenceDiagram
+  actor Operator
+  participant Console
+  participant Cluster
+  participant Platform as swhurl-platform
+  participant Validate as Validate workflow
+  participant Flux
+  participant Prod as Production namespace
+  participant CM as cert-manager
+  participant Dash as dashboard sync
+
+  Operator->>Console: Review promotion for app
+  Console->>Cluster: Check staging unit, HelmRelease, replicas and running digest
+  Console->>Platform: Read staging/prod config and production existence from main
+  Console-->>Operator: Show exact image, changes and destination
+  Operator->>Console: Promote to production
+  Console->>Cluster: Recheck staging before preparing PR
+  Console->>Platform: Run app-promote in a fresh main checkout; open console/promote PR
+  Platform->>Validate: PR event runs Validate
+  Validate-->>Platform: Checks pass
+  Platform->>Platform: Trusted merge gate verifies exact promotion and current main
+  Note over Operator,Platform: Eligible PR auto-merges; setup PR waits for operator edits and merge
+  Platform->>Flux: Merge push to main invokes Receiver (or source poll)
+  Flux->>Prod: First promotion creates prod unit; later promotion updates only image pin
+  opt First production and app has a route
+    Prod->>CM: New Ingress requests TLS certificate
+    CM->>Prod: HTTP-01 through Traefik; certificate saved in prod TLS Secret
+  end
+  Dash->>Prod: Once a minute discover prod HelmRelease
+  Dash->>Dash: Update existing App dashboard with production line
+```
+
+The review captures the staging image, applied revision, staging configuration hash and production configuration hash. The console checks again at submission, when the job starts, and after preparing the change; it refuses if staging stopped being healthy/current or either reviewed configuration changed. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back.
+
+On **first promotion**, `app-promote` derives a production environment from the supported staging settings and adds `apps/<app>/prod/`, `clusters/home/app-<app>-prod.yaml` and the production unit registration. If the app has Secret keys, it creates a separate encrypted production Secret with `REPLACE_ME` values; SQLite/persistent storage gets a separate retained claim that starts empty. Staging data and credential values are never copied. A secret-bearing PR also adds the production namespace to Reloader's watch list. A public app must have a distinct production hostname; signed-in apps get the generated production host. The staging environment and production environment are separate namespaces, so the same Secret/PVC names resolve to independent resources.
+
+First promotion with a Secret stub or a public production host is not auto-merged. For a Secret, set the production values on the PR branch with `sops apps/<app>/prod/secret.sops.yaml`; review that file and the Reloader registration, then merge the PR yourself. For a public app, review the chosen distinct host and merge the PR yourself. A first promotion with no such setup can auto-merge after validation unless **Hold for manual review** was selected. For an eligible auto-merge, the trusted merge gate independently regenerates first production from the reviewed staging configuration and refuses extra or changed files.
+
+After merge, the platform push webhook starts Flux's fetch/reconcile chain (the `GitRepository` polls every minute if the webhook is missed). For first production, Flux creates the new `app-<app>-prod` unit, which waits for `infra-base` and `platform-oauth2-proxy` when the app is signed in. It applies the production Namespace and HelmRelease, then Helm creates the production Deployment and, for web apps, Service; routed apps also get an Ingress. The storage claim is provisioned independently when configured. A routed first production Ingress causes cert-manager to request a certificate asynchronously: the issuer is copied from staging (default `letsencrypt-prod`), HTTP-01 uses Traefik for Let's Encrypt, and the resulting TLS Secret is used by Traefik. Certificate issuance does not hold the app Helm readiness check open. Private apps/workers have no Ingress and request no certificate.
+
+The dashboard CronJob runs each minute. When the production HelmRelease becomes visible, it creates or updates `App: <app>` in HyperDX to include production as another environment line; it does not create a second dashboard or add dashboard files to the PR. It is independent of the app rollout. Details are in [Dashboards](#dashboards).
+
+On **later promotions**, production already exists, so the reviewed PR changes only the image tag/digest in `apps/<app>/prod/helmrelease.yaml`. Production's runtime settings, host, Secret, storage, unit and Reloader registration remain as they were. No new certificate or other infrastructure is requested. The image-only PR auto-merges after `Validate` and the trusted merge gate unless held for review; Flux then rolls out the pinned image. Promotion does not run the app repository's build workflow and does not invoke the app's image automation. The image has already been built and deployed to staging before it is selected.
 
 ## Operate an instance
 

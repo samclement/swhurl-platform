@@ -41,7 +41,7 @@ For example, starting `weather-api` from the TypeScript template creates `samcle
 sequenceDiagram
   actor Operator
   participant Console
-  participant App as App GitHub repo
+  participant AppRepo as App GitHub repo
   participant Actions as App Container workflow
   participant Platform as swhurl-platform
   participant Validate as Validate workflow
@@ -51,9 +51,10 @@ sequenceDiagram
   participant Dash as dashboard sync
 
   Operator->>Console: Submit Start a new app
-  Console->>App: Create public repo from selected stack; push rendered files to main
-  App->>Actions: GitHub push event starts first checks/build/smoke/publish run
-  Actions-->>Console: Run succeeds; console reads published image digest
+  Console->>AppRepo: Create public repo from selected stack
+  Console->>AppRepo: Push rendered files to main
+  AppRepo->>Actions: Push event starts first checks build smoke and publish run
+  Actions-->>Console: Run succeeds and console reads published image digest
   Console->>Platform: Create console/new-weather-api-staging-<sha> branch and PR
   Platform->>Validate: PR event runs Validate
   Validate-->>Platform: Checks pass

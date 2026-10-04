@@ -345,16 +345,16 @@ sequenceDiagram
   Console-->>Operator: Show exact image, changes and destination
   Operator->>Console: Promote to production
   Console->>Cluster: Recheck staging before preparing PR
-  Console->>Platform: Run app-promote in a fresh main checkout; open console/promote PR
+  Console->>Platform: Run app-promote in a fresh main checkout and open console/promote PR
   Platform->>Validate: PR event runs Validate
   Validate-->>Platform: Checks pass
   Platform->>Platform: Trusted merge gate verifies exact promotion and current main
-  Note over Operator,Platform: Eligible PR auto-merges; setup PR waits for operator edits and merge
+  Note over Operator,Platform: Eligible PR auto-merges and setup PR waits for operator edits and merge
   Platform->>Flux: Merge push to main invokes Receiver (or source poll)
-  Flux->>Prod: First promotion creates prod unit; later promotion updates only image pin
+  Flux->>Prod: First promotion creates prod unit and later promotion updates only image pin
   opt First production and app has a route
     Prod->>CM: New Ingress requests TLS certificate
-    CM->>Prod: HTTP-01 through Traefik; certificate saved in prod TLS Secret
+    CM->>Prod: HTTP-01 through Traefik and certificate saved in prod TLS Secret
   end
   Dash->>Prod: Once a minute discover prod HelmRelease
   Dash->>Dash: Update existing App dashboard with production line

@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--in-progress-offline-stage-1-5-october-2026); Stage 0 provider choice approved 5 October; offline Stage 1 prototype is in progress; no credentials or live integrations): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
+9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--in-progress-stage-2a-planning-5-october-2026); Stage 0 provider, pilot data, spend and retention choices approved; offline Stage 1 is complete; state-store selection and credential provisioning remain gated): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
 
 ### Delivered
 
@@ -447,7 +447,7 @@ A throwaway k3d cluster on this host, built by following the docs from a clean s
 
 Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the live cluster, a write-only backup IAM user (separate follow-up in section 0), automating the drill, and a second permanent cluster.
 
-## 14. AI incident review and fix PRs — in progress (offline Stage 1, 5 October 2026)
+## 14. AI incident review and fix PRs — in progress (Stage 2a planning, 5 October 2026)
 
 **Goal.** Periodically identify actionable application failures from logs, metrics and traces; send a concise, evidence-linked root-cause analysis; and, when the evidence supports a code change, open a tested draft pull request against that app's repository. The system never merges or deploys its own fix. GitHub review, CI and the existing GitOps path remain the gates to production.
 
@@ -515,30 +515,30 @@ Consequences to preserve: a quiet sweep never calls the model; the model never c
 
 **Stage 0 — Confirm provider and data handling before credentials are provisioned.**
 
-**Approved by the operator, 5 October 2026: option A (OpenAI API key + Codex CLI), as a two-step approval.** No account, key or Secret exists yet; creating any of them is a separate confirm-first action.
+**Approved by the operator, 5 October 2026: option A (OpenAI API key + Codex CLI), as a two-step approval.** No account, key or Secret exists yet; creating any of them is a separate confirm-first action. The operator subsequently confirmed the `hello-ts` pilot and its generic service-name issue, the proposed spend limits and compact-metadata retention.
 
 | Item | Approved value |
 | --- | --- |
 | Provider and agent | OpenAI API project with Codex CLI (`codex exec`); alternatives considered: provider-neutral API (B), local model (C), no provider (D) |
 | Step 1 (stage 2) | Redacted evidence bundles only. No source code leaves the host. |
 | Step 2 (stage 3) | Sharing source with the provider needs a separate operator approval after the stage 2 gate passes. |
-| Per-run cap | $0.50 and 5 minutes (proposed; operator may adjust at account creation) |
-| Monthly cap | $20 hard cap on a dedicated OpenAI project; the job refuses to run at 80% |
+| Per-run cap | $0.50 and 5 minutes |
+| Monthly cap | $20 hard cap on a dedicated OpenAI project; the job refuses new runs at 80% ($16) |
 | Model and CLI | Pinned when stage 2 starts; versions recorded in every run report |
 | Fields sent | message, level, timestamp, service, exception type, top 10 stack frames, route path (no query string), image revision. Excluded: request and response bodies, headers, user identifiers, query strings, anything redaction flags. |
 | Provider data use | API terms with training disabled, confirmed in the project settings before the first run |
 
-Assumptions still to confirm with the operator before credentials: the pilot apps carry no real user data; ClickStack log bodies hold no personal data beyond what redaction removes.
+**Operator-confirmed 5 October 2026:** the `hello-ts` pilot carries no real user data, and redaction removes personal data from the selected telemetry. The incident class is the default service name falling back to `swhurl-app` when `OTEL_SERVICE_NAME` is absent. The live signal and actual provider project setting for training-disabled API data use must still be verified before the first request. No source code may be sent to the provider without the separate Stage 3 approval.
 
 **Claims to verify, not facts.** (1) That the pre-filter and field limits keep bundles small was a design goal and is measured at the stage 2a gate (a week of live sweeps). (2) Option A is the lowest-effort route to a repo-aware coding agent, not the only one: B or C could reach stage 3 with another agent harness, and whether Codex can use a non-OpenAI endpoint is unchecked. (3) Redaction is tested only on synthetic fixtures until the 2a privacy review.
 
-0. Done 5 October 2026: the `decision-brief` was presented and option A approved (table above). Remaining Stage 0 items 1 to 4 are open.
-1. Choose the initial app repository and one failure class with a deterministic signal and existing tests (for example a repeated exception caused by a recent app change). Avoid broad “fix any error” scope.
-2. Confirm the model provider may receive the selected, redacted telemetry and source code, and set a per-run and monthly usage limit. Pick and pin a Codex CLI release and model; record the versions in each run report.
-3. Create a dedicated OpenAI API project/service identity for the worker, or another supported unattended Codex credential. The initial path is API-key login: the job passes the key from its SOPS-mounted Secret to `codex login --with-api-key` over stdin, then runs `codex exec` with an ephemeral `CODEX_HOME`; discard the auth state and workspace when the Job exits. Do not use a developer's interactive ChatGPT login. Never bake the credential into the image or pass it in argv. The agent can read its own inference credential while executing shell commands, so grant no other provider, GitHub, AWS or Kubernetes credentials to that process. See [Codex authentication](https://developers.openai.com/codex/auth) for supported unattended credentials and billing behavior.
-4. Define retention: persist only incident fingerprint, timestamps, model/CLI version, status, notification/PR links and check result. Do not persist raw prompts/evidence unless separately justified and time-bounded.
+0. Done 5 October 2026: the `decision-brief` was presented and option A approved.
+1. Done 5 October 2026: approved pilot `samclement/hello-ts`, incident class `OTEL_SERVICE_NAME` fallback to `swhurl-app`, and the no-real-user-data/redaction assumptions. The deterministic live signal remains to be confirmed during 2a validation.
+2. Done for Stage 2 telemetry and budget 5 October 2026: provider may receive only the selected redacted evidence bundle; per-run cap is $0.50/5 minutes and monthly hard cap is $20 with runs refused at $16. Source-code sharing remains unapproved for Stage 3. Pin the Codex CLI/model and confirm the project data-use setting before any provider request.
+3. Pending separate confirmation: create a dedicated OpenAI API project/service identity and provision its key. If later approved, pass it from a SOPS Secret to `codex login --with-api-key` over stdin, run `codex exec` with an ephemeral `CODEX_HOME`, and discard auth state and workspace when the Job exits. Do not use a developer's interactive ChatGPT login. Never bake the credential into the image or pass it in argv. The agent can read its own inference credential while executing shell commands, so grant no other provider, GitHub, AWS or Kubernetes credentials to that process. See [Codex authentication](https://developers.openai.com/codex/auth) for supported unattended credentials and billing behavior.
+4. Done 5 October 2026: persist only incident fingerprint, timestamps, model/CLI version, status, notification/PR links and check result. Do not persist raw prompts/evidence.
 
-**Gate:** written allowlist for telemetry fields, repositories and incident types; a documented monthly spend cap; no live credentials have been created yet. Any decision to change provider, share unredacted production data or broaden repository scope is a fresh review.
+**Gate:** written allowlist for telemetry fields, repositories and incident types; documented spend cap and retention; no live credentials have been created yet. These decisions are approved. Credential provisioning, provider project data-use verification, and any change to provider, unredacted data or repository scope remain separate gates.
 
 **Stage 1 — Offline evidence and policy prototype (complete; current evidence in [current state](current-state.md#offline-ai-incident-review-prototype-5-october-2026)).**
 
@@ -552,7 +552,7 @@ Implementation entry point: `make incident-review-dry-run` validates the checked
 
 **Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, pre-filter decisions (including "quiet window means no model call"), schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
 
-Stage 1 gate passed offline on 5 October 2026: tests cover injected model responses, evidence validation, no-change suppression, patch validation before the GitHub seam and the draft PR result contract. Stage 2 remains gated on the open Stage 0 privacy, credential, retention and cost decisions above.
+Stage 1 gate passed offline on 5 October 2026: tests cover injected model responses, evidence validation, no-change suppression, patch validation before the GitHub seam and the draft PR result contract. Stage 2a preparation is gated on choosing the state store and separately approving credential provisioning; source-code sharing remains a later Stage 3 approval.
 
 **Stage 2 — Read-only signal collection and analysis notification (2a sweep, 2b coverage review, 2c alert trigger).**
 

@@ -9,13 +9,14 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 ### Open work
 
 1. **PR06 — GHCR publishing and Renovate** (section 4). Chart update PRs and the console image are done. Left: public or private images for apps (everything is public meanwhile) and which app repository goes first.
-2. **PR08a gate** (section 5): restore on a separate machine from S3 using only the docs. Follow-ups: a write-only IAM user for backups instead of `sam`; possibly a Kubernetes CronJob with a published backup image once PR06's GHCR half is done.
+2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: a write-only IAM user for backups instead of `sam`; possibly a Kubernetes CronJob with a published backup image once PR06's GHCR half is done.
 3. **Final operator exercise** (section 6), using only the docs.
 4. **Operator browser checks:** a real Google-signed-in session for (a) reviewing and submitting a promotion (automated UI proof used the local dev identity) and (b) the live job-output stream, including that Traefik and ForwardAuth do not buffer it ([section 12](#12-live-job-output-on-the-console-deployed-3-october-2026)). Also confirm the console's `GITHUB_TOKEN` is limited to this repository.
 5. **Notification gaps** ([contract](services.md#notification-expectations)): live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; alerts for failed or stale backups, external availability, certificate expiry or renewal failure and disk pressure.
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
+9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--designed-5-october-2026-not-started); designed 5 October 2026, not started): bounded analysis of recurring ClickStack signals, notifications with evidence-backed diagnosis, and draft PRs from an isolated Codex CLI worker. Human review and merge remain required.
 
 ### Delivered
 
@@ -366,3 +367,230 @@ data: {"state": "succeeded", "finished": "12:34:56", "link": ""}
 Route, page, tests (`06f552a`, final-state update `62fd518`) and docs are done; deployment and cluster evidence are in [current-state.md](current-state.md). **Open:** confirm in a signed-in browser that lines arrive one by one (a burst at the end would point at Traefik or ForwardAuth response buffering), scroll and selection are kept, the final status and finish time update without a reload, a finished job opens without a stream, and a mid-job reload resumes without duplicate lines. Then append the result to `current-state.md`.
 
 Out of scope: live updates on cluster pages (needs a Kubernetes watch), the pending-app page, streaming across console replicas or restarts, and a notify hook in `actions.py`.
+
+## 13. Recovery drill (PR08a gate and fresh bootstrap) — designed 3 October 2026, not started
+
+**Goal.** Prove that a stranger holding only the repository, the age key's off-host copy and read access to the S3 bucket can rebuild the platform on a **different machine** from the docs, and get the data back. This closes PR08a, the "fresh bootstrap on a real new host" item and the Let's Encrypt rebuild question in section 0. Success is a dated record in `current-state.md` plus docs fixed wherever the drill stumbled.
+
+**Why it is risky, and the rule that follows.** A cluster built from `main` is a second copy of the live platform. Left alone it would: push commits to `main` (`platform-image-automation` holds the write key), open PRs and post to the real ntfy topic (`platform-console`, `platform-alerts`), and start the console's dashboard and notification jobs with real tokens. **The drill cluster must therefore never follow `main`.** It follows a branch `drill/recovery` in which those units are removed (the 28 September k3d rehearsal did the same with `rehearsal/bootstrap`; [evidence](current-state.md#bootstrap-rehearsal)). The host timers (`make host-dns`, `host-backup`, `host-heartbeat`) are never installed on the drill machine; DNS and the router are never touched.
+
+### Decisions to take first (operator; ask, do not assume)
+
+| Question | Options | Recommendation |
+| --- | --- | --- |
+| Where does the drill run? | (a) a throwaway cloud VM; (b) a VM or spare machine on the LAN; (c) another k3d on this host (already done, and not a separate machine, so it cannot count) | (a) or (b), whichever you can delete afterwards; a fresh OS install is what makes "using only the docs" honest |
+| How does it read S3? | A read-only IAM user limited to `s3://swhurl-platform-backups-110927251694/` for the drill, deleted after; or copy two backup files by hand | A temporary read-only user; never copy the `sam` credentials to another machine |
+| Which certificates? | `selfsigned` only. Let's Encrypt needs public DNS pointing at the drill machine, which would disturb live routing | `selfsigned`; the Let's Encrypt rate-limit question is answered on paper (task D1), not by issuing |
+
+Record the answers at the top of the evidence entry. Stop and ask if any is unanswered.
+
+### Tasks (run in order; one commit per task; D2 and D4 involve the operator)
+
+**D1. Walk the docs as a stranger (offline).**
+1. Read `docs/bootstrap.md` and `docs/operations.md` (Backups and recovery). List every command, tool, version, file and credential a reader needs, in order. Check each exists: `make` targets (`grep -n '^name:' Makefile`), scripts, file paths, tools named without an install line (`aws`, `age`, `sops`, `flux`, `helm`, `uv`, `kubectl`), and the Python version.
+2. Check what a new machine lacks: the bucket name and region (hard-coded in operations.md), where the age key's off-host copy lives (the docs say "location kept outside Git"; say how to ask yourself for it, not where it is), `age.agekey` placement, and the `sops-age` Secret step.
+3. Check the SQLite path: a fresh cluster creates empty claims, so `make restore-sqlite` needs the app running first and the backup files copied to `BACKUP_DIR/sqlite/<app>-<env>/`. Confirm the docs say so in order and that `restore-sqlite --dry-run` works against a copied file.
+4. Answer the Let's Encrypt rebuild question in `operations.md`: the limits that matter (duplicate certificate: 5 per week for the same hostnames; 50 certificates per registered domain per week), what a rebuild issues (the four platform and app hostnames), and the rule: use `selfsigned` or `letsencrypt-staging` while iterating, and switch to `letsencrypt-prod` once. Check the numbers against Let's Encrypt's current rate-limit page before writing them.
+5. Fix every gap in the canonical page (bootstrap.md for building, operations.md for data), not in a new page. Keep a list of what you could not verify offline.
+6. Validate: `make check`. Commit: `Close recovery documentation gaps found by a dry read`.
+
+**D2. Prepare the drill branch and machine (operator + model).**
+1. Model: create `drill/recovery` from `main`. In it, remove from `clusters/home/kustomization.yaml` and the unit files: `platform-image-automation`, `platform-console`, `platform-alerts`, `platform-flux-webhook`, and every `app-*` unit except one SQLite app chosen for the data check. Set the Git source in `clusters/home/flux-system/sources/` to the branch. Set every certificate to `selfsigned` (`make platform-certs-*` edits files only) and remove the Let's Encrypt issuers if they would be requested. Run `make check-repo` on the branch; fix only what the removals break. **Push only the branch, never `main`.**
+2. Operator (own terminal): provision the machine, install k3s per `docs/bootstrap.md` step 1, create the temporary read-only IAM user, bring the age key from its off-host copy, and install the tools the docs list. Note anything the docs did not tell you.
+3. Hand the operator the list of what to copy over (nothing else): the repository clone URL and branch, the age key, and the temporary AWS profile.
+
+**D3. Rebuild from the docs (operator, model watching and noting).** Follow `bootstrap.md` literally on the drill machine, steps 1, 3 (no new Secrets), 4, 5 and 6, with these differences: no DNS step, no router step, `drill/recovery` as the source. Time each step. At every stumble, write down the exact command and message, then fix the docs afterwards (D5). Expected: units Ready in dependency order within about 10 minutes of the first image pulls; `make install` fails on the ingestion key until the restore (as documented).
+
+**D4. Restore the data (operator + model).**
+1. MongoDB: copy the newest `clickstack-mongodb/` archive and its `.json` from S3, then follow the restore commands in `operations.md`. The restored document count must equal the metadata's. Run `make clickstack-bootstrap` and `make verify-platform`.
+2. SQLite: copy one app's newest backup from `app-sqlite/<app>-<env>/`, run `make restore-sqlite APP= ENV= DRY_RUN=true`, then with `CONFIRM=<app>/<env>`. Check the row counts against the backup's metadata; the app must start on the restored data.
+3. Pass criteria: MongoDB count and ingestion key match; SQLite checksum, table count and `integrity_check` pass; `verify-platform` passes except checks that need public DNS or the units removed from the branch (list which ones failed and why); Traefik answers on the drill machine with the self-signed certificate; HyperDX shows current logs after the collectors reconnect.
+4. Stop conditions: any step wants a real token, the live `main`, the live DNS or the live ntfy topic; any command would delete data on the live cluster. Stop and report. The drill never uses the live `KUBECONFIG`: check `kubectl config current-context` before every command.
+
+**D5. Record, fix, tear down.**
+1. Fix every doc gap D3 and D4 found, again in the canonical page. Commit: `Fix recovery documentation after the drill`.
+2. Record dated evidence in `current-state.md`: the decisions above, timings per step, the pass-criteria results, and what was **not** exercised (Let's Encrypt issuance, public DNS and router forwarding, a first login without a backup, the Google OAuth redirect on a new hostname).
+3. Update section 0: mark PR08a and the fresh-bootstrap item done or partial exactly as proven, and update the delivery table in section 3. If something failed, leave the item open and list what is left.
+4. Operator: delete the drill machine, the IAM user and the `drill/recovery` branch. List them in the evidence entry so nothing is left running.
+5. Commit: `Record the recovery drill`.
+
+### Track A: what can be proven on this host (do this before the separate machine)
+
+A throwaway k3d cluster on this host, built by following the docs from a clean shell, proves the docs and the data restore. It does **not** prove a bare-host install, independent credentials or the public side (DNS, router, Let's Encrypt), so when Track A passes, mark PR08a **partial** in section 0 and keep D2 to D5 above as the remaining separate-machine gate. D1 is shared by both tracks and runs first.
+
+**Guardrails (check at the start of every task and before every `kubectl`/`flux`/`helm` command).**
+- The drill uses its own kubeconfig, `export KUBECONFIG=$DRILL/kubeconfig` where `DRILL=$CLAUDE_JOB_DIR/tmp/drill` (create it). `kubectl config current-context` must print `k3d-drill`, never the live k3s context. If it does not, stop.
+- Never run `make flux-bootstrap`, `make flux-install`, `make host-*`, `make backup-*`, `make destroy-data` or any `make` target that reads `$HOME/.kube/config` unless `KUBECONFIG` is exported to the drill file in the same command. `git push` only the `drill/recovery` branch; never `main`.
+- The drill must not follow `main` (see the rule above): confirm in the drill Git source that the branch is `drill/recovery`.
+- Read S3 only with `aws s3 cp` (and `ls`); never `rm`, `sync --delete` or `mv`. Copy backups to `$DRILL/backups/`, never into `~/.local/state/swhurl-platform/backups`.
+- The age key is read from the repo copy (`age.agekey`, git-ignored). Never print it or any Secret value; compare by counts and checksums.
+- Resources first: the live stack already uses about 11 GiB of 31 GiB RAM and the drill adds ClickStack. Run `free -g` and `df -h /`; stop if available memory is under 12 GiB or free disk under 40 GiB.
+
+**A1. D1 (shared).** Do D1 as written. Commit as described.
+
+**A2. Drill branch (offline).** Do D2 step 1 on `drill/recovery`, keeping one SQLite app (pick from `ls apps/`; prefer the one with the most recent backup in S3: `aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/ --recursive | tail`). Verify before pushing the branch: `grep -rn "platform-image-automation\|platform-console\|platform-alerts\|platform-flux-webhook" clusters/` shows nothing on the branch; `make check-repo` passes; `git diff main --stat` lists only deletions and the source/issuer edits. Push with `git push -u origin drill/recovery`.
+
+**A3. Build the cluster (operator terminal for `sudo`).** Follow `docs/bootstrap.md` step 1 and 4 with k3d in place of the k3s installer, as the 28 September rehearsal did ([evidence](current-state.md#bootstrap-rehearsal)): rootful Podman, API bound to `127.0.0.1`, cluster name `drill`, k3s image at the live version (`kubectl version` on the live cluster shows it; do not guess). Hand the operator the exact commands, labelled "run in your own terminal" where they need `sudo`. Then, in the drill kubeconfig only: `make flux-install`, create the `sops-age` Secret from `age.agekey`, `make flux-bootstrap`, `make install`. Expected: all remaining units Ready in dependency order (about 3 minutes in the rehearsal, longer for cold image pulls); `make install` ends with the documented failures on the ingestion key and the MongoDB volume's reclaim policy. Record any other failure verbatim.
+
+**A4. Restore MongoDB.** `aws s3 cp` the newest archive and its `.json` metadata from `clickstack-mongodb/` into `$DRILL/backups/`. Follow the restore commands in `operations.md` against the drill cluster. Pass: `mongorestore`'s document count equals the metadata's; `make clickstack-bootstrap` succeeds; `make verify-platform` passes except for checks the branch cannot satisfy (list each failed check with the reason: removed units, no public DNS, no S3 backup timer on the drill host, host-only checks).
+
+**A5. Restore one SQLite app.** Copy that app's newest backup and metadata from `app-sqlite/<app>-<env>/` to `$DRILL/backups/sqlite/<app>-<env>/` and run with `BACKUP_DIR=$DRILL/backups`: `make restore-sqlite APP=<app> ENV=<env> DRY_RUN=true`, then with `CONFIRM=<app>/<env>`. Pass: checksum, table count and `integrity_check` match the metadata, and the app's pod is Ready on the restored data (compare a row count with the metadata).
+
+**A6. Record and tear down.**
+1. `k3d cluster delete drill` (names the drill cluster only; check the name first with `k3d cluster list`), delete `$DRILL`, and delete the remote branch (`git push origin --delete drill/recovery`) after confirming with the operator.
+2. Evidence in `current-state.md`: date, k3s and Flux versions, per-step timings, pass results from A3 to A5, the failed `verify-platform` checks with reasons, the doc fixes made, and the **not exercised** list (bare-host install, independent credentials, Let's Encrypt, DNS and router, first login without a backup, Google OAuth redirect on a new host).
+3. Section 0: PR08a stays **partial** (docs and data restore proven on this host; separate-machine gate open); update the delivery row in section 3 and the "not yet exercised" list to match. Commit: `Record the recovery drill on this host`.
+
+**Verification the cheaper model must run before reporting:** `kubectl --kubeconfig $DRILL/kubeconfig config current-context` is `k3d-drill`; the live cluster still shows all Flux units Ready (`KUBECONFIG=$HOME/.kube/config flux get kustomizations`) and `git log origin/main` has no commit from this work except the documentation commits; `aws s3 ls` of the bucket shows no new or removed objects; `k3d cluster list` shows no leftover drill cluster.
+
+### Out of scope
+
+Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the live cluster, a write-only backup IAM user (separate follow-up in section 0), automating the drill, and a second permanent cluster.
+
+## 14. AI incident review and fix PRs — designed 5 October 2026, not started
+
+**Goal.** Periodically identify actionable application failures from logs, metrics and traces; send a concise, evidence-linked root-cause analysis; and, when the evidence supports a code change, open a tested draft pull request against that app's repository. The system never merges or deploys its own fix. GitHub review, CI and the existing GitOps path remain the gates to production.
+
+**Starting choice.** Use the Codex CLI (`codex exec`) in a disposable worker for the first coding pilot. This feature needs an agent that can inspect a repository, edit it, and run that repository's checks. Keep the analyzer behind a small internal interface so a later phase can use direct provider API calls (for example OpenRouter) for structured triage or replace the coding worker without changing evidence collection, incident state or PR policy. Do not build a general-purpose agent framework or allow model-selected arbitrary tools in the first version.
+
+**Existing boundaries to preserve.** The notification checker in `console-notifications` remains a deterministic lifecycle/health checker: it has no application log access or GitHub credential. The new reviewer is a separate capability with its own Flux unit, namespace, service accounts, state and SOPS Secrets. It has no Kubernetes write access. Only the collector holds telemetry and Kubernetes read credentials; the analysis worker and the verifier run in separate containers with no Kubernetes credentials (service-account token not mounted), no GitHub credential and no access to the live console's credential files. A separate PR broker is the only component allowed to write a branch or open a pull request, and only in explicitly enabled app repositories. No reviewer-created PR receives auto-merge eligibility.
+
+### Flow and data contract
+
+```mermaid
+flowchart LR
+    signal[Bounded ClickStack query or alert] --> collect[Evidence collector]
+    collect -->|redacted evidence bundle| review[Analysis worker: Codex CLI, disposable workspace]
+    review -->|diagnosis and candidate patch| gate[Orchestrator: schema and path policy]
+    gate -->|patch| verify[Verifier: clean checkout, no model key]
+    verify -->|check report| gate
+    gate -->|incident summary| notify[ntfy with query links]
+    gate -->|validated patch artifact| broker[PR broker with app-scoped GitHub App]
+    broker -->|draft PR only| repo[Enabled app repository]
+    repo -->|human review and CI| merge[Existing GitOps deployment path]
+```
+
+The collector, not the model, defines the incident scope and query limits. A run starts from an alert or a deterministic rule over a bounded recent window; it does not ask the model to browse all telemetry. The evidence bundle contains the app/repository identity, incident fingerprint, time window, a small set of redacted representative log records, metric changes, trace/query identifiers, recent deployment/image revisions and links that open the corresponding ClickStack queries. It excludes Secret values, credentials, unbounded raw dumps and unrelated tenants/apps. Logs and trace fields are untrusted data, never instructions.
+
+The model returns an explicit diagnosis record: summary, likely cause, confidence, evidence references, unresolved questions, proposed files, proposed tests, and whether it recommends no change. No-change and low-confidence results are valid outcomes. The model cannot widen the app or time scope, access credentials, choose a GitHub destination, merge, deploy, or alter platform/cluster configuration. If the analysis does not cite evidence from the bundle, suppress PR creation and report the missing evidence.
+
+### Stages and acceptance gates
+
+**Stage 0 — Confirm provider and data handling before credentials are provisioned.**
+
+0. Present the Codex-first choice, the provider data-sharing question and the spend cap to the operator as a `decision-brief` and record the approval here before any credential exists (the choice is costly to reverse once telemetry and source leave the host).
+1. Choose the initial app repository and one failure class with a deterministic signal and existing tests (for example a repeated exception caused by a recent app change). Avoid broad “fix any error” scope.
+2. Confirm the model provider may receive the selected, redacted telemetry and source code, and set a per-run and monthly usage limit. Pick and pin a Codex CLI release and model; record the versions in each run report.
+3. Create a dedicated OpenAI API project/service identity for the worker, or another supported unattended Codex credential. The initial path is API-key login: the job passes the key from its SOPS-mounted Secret to `codex login --with-api-key` over stdin, then runs `codex exec` with an ephemeral `CODEX_HOME`; discard the auth state and workspace when the Job exits. Do not use a developer's interactive ChatGPT login. Never bake the credential into the image or pass it in argv. The agent can read its own inference credential while executing shell commands, so grant no other provider, GitHub, AWS or Kubernetes credentials to that process. See [Codex authentication](https://developers.openai.com/codex/auth) for supported unattended credentials and billing behavior.
+4. Define retention: persist only incident fingerprint, timestamps, model/CLI version, status, notification/PR links and check result. Do not persist raw prompts/evidence unless separately justified and time-bounded.
+
+**Gate:** written allowlist for telemetry fields, repositories and incident types; a documented monthly spend cap; no live credentials have been created yet. Any decision to change provider, share unredacted production data or broaden repository scope is a fresh review.
+
+**Stage 1 — Offline evidence and policy prototype.**
+
+1. Add a `tools/swhurl/incident_review/` package for deterministic query construction, redaction, incident fingerprints, structured result validation and PR policy. All external commands go through `Runner`; model and GitHub calls have fakeable adapters.
+2. Add checked-in fixtures for representative logs, metrics, traces, malformed/provider responses, secret-like values, prompt-injection strings in log bodies, duplicate incidents and missing evidence. Tests must prove limits and redaction before the model is introduced.
+3. Add a dry-run command that consumes fixture evidence and emits a redacted report plus a proposed patch artifact. It must not query a live cluster, contact a provider, write GitHub or notify.
+4. Define static PR policy: allowed repository from a checked-in allowlist; allowed paths; maximum changed files/lines; no secrets, workflow permission changes, deployment manifests or platform files; reject symlinks, binary files and edits outside the checkout. Require the candidate diff to apply cleanly to the exact recorded base revision.
+
+Implementation entry point: `make incident-review-dry-run` validates the checked-in synthetic fixture and prints a redacted report with a proposed patch artifact. The current policy pilot is `samclement/hello-ts`; it permits `src/`, `tests/` and `README.md`, with at most five files and 200 changed lines. This is an offline fixture prototype; it does not query telemetry or contact a model, GitHub or ntfy. Run the unit cases with `make test`.
+
+**Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
+
+**Stage 2 — Read-only signal collection and analysis notification.**
+
+1. Deploy a separate scheduled reviewer CronJob and bounded RBAC in a dedicated namespace, as two containers with separate credentials. The **collector** reads preconfigured ClickStack/ClickHouse telemetry through a read-only account and app/revision metadata; it cannot read Kubernetes Secrets or execute in pods, and it never receives the model key. The **analysis worker** gets only the evidence bundle and the model key, with `automountServiceAccountToken: false` and no ClickHouse credential. Prefer fixed parameterized queries and strict time/row/byte limits.
+2. Query at a modest interval (start at 10 minutes) for only allowlisted signals. Use the existing app-specific ClickStack rules where practical; do not duplicate the lifecycle messages already owned by `console-notifications` or infrastructure failures owned by Flux Alerts.
+3. Save compact state in a reviewer-owned ConfigMap or other explicitly selected small state store: fingerprint, first/last seen, last analysis, cooldown, delivery status and related PR number. Enforce a size ceiling and fail closed on corrupt state. Use `Forbid` concurrency, a hard job timeout and bounded retries; report a missing or stale reviewer job through the [heartbeat](#heartbeat-design) from section 11 rather than a new mechanism.
+4. Run Codex in analysis-only mode (`--sandbox read-only`; it needs no writes) over the evidence bundle. Send ntfy only after validating the structured response; include severity, likely cause, confidence, key evidence, time range, query links and whether a code fix was attempted. Deduplicate and rate-limit repeated analysis notifications. On provider/query failure, report the reviewer failure through its heartbeat path rather than fabricating an RCA.
+
+**Gate:** a live, signed-off privacy review confirms the actual fields sent to the provider; repeated synthetic incidents group correctly; model output cannot trigger writes; notifications link to the matching evidence; provider outage and stale-job behavior are visible; cost and latency are measured for at least one week; ClickHouse and node CPU with the reviewer running are compared over at least a day with a pre-change baseline (see open work 6), and the reviewer runs with resource limits and low priority.
+
+**Stage 3 — Isolated patch and test worker; no PR creation.**
+
+1. For a high-confidence diagnosis in the chosen incident class, fetch the exact allowlisted app repository/ref into a fresh workspace. Pin dependencies or use the app's locked build environment. Do not mount a writable host path or reuse workspaces between incidents.
+2. Run `codex exec` with a task containing the diagnosis, evidence references and app-specific instructions. Give it workspace-write access only to the checkout; bound CPU, memory, time, file changes, tool calls and output. Do not expose Kubernetes credentials, provider administration keys, the PR broker token, or any live application Secret. Restrict outbound network by hostname, not IP: NetworkPolicy on k3s cannot filter by FQDN, so route egress through a hostname-allowlisting proxy (the model endpoint and the app's package registries) or pre-fetch locked dependencies and give the build no network. Choose the mechanism at the start of this stage; do not start the stage without one.
+3. The worker may run only the repository's declared validation commands, and its own runs are advisory because they execute model-authored code in the process that holds the model key. The orchestrator, not Codex, decides which checks run and interprets exit codes. The worker returns a patch and report; the **verifier** (a separate container with no model key and only dependency-fetch network) reapplies the patch to a clean checkout and runs the required checks, and only its result counts.
+4. Send the analysis and proposed diff summary in the notification, but do not publish a branch or PR yet. A human manually applies/reviews a few candidate fixes to assess whether the diagnosis and test approach are useful.
+
+**Gate:** at least five consecutive candidate runs for the pilot class produce no out-of-policy file changes or credential access, and the human reviewer judges the evidence and patch quality acceptable. Track false diagnoses, useful fixes, check pass rate, runtime and cost; stop if the worker repeatedly makes broad or speculative edits.
+
+**Stage 4 — Draft PR broker for one repository.**
+
+1. Add a separate broker job/service that accepts only a validated patch artifact plus repository, base SHA, incident fingerprint and check report. It revalidates the allowlist, path/size policy, base SHA and patch digest; it does not accept model-authored repository URLs, branch names or API calls.
+2. Give the broker a GitHub App installation credential restricted to the single pilot app repository with only branch-content write and pull-request creation permissions. The worker never receives this credential. Do not reuse the console's `GITHUB_TOKEN` or `APP_REPOS_TOKEN`.
+3. Broker creates a uniquely named branch and a **draft** PR, never pushes `main`, enables auto-merge, or edits the platform repository. PR body includes incident/time window, diagnosis confidence, evidence/query links, exact base image/revision, change summary and independently rerun checks. Add an `ai-generated` marker and the incident fingerprint for dedupe.
+4. If an open PR already exists for that fingerprint/repository, update neither automatically nor silently: attach the new evidence to the existing incident record and notify with the existing PR link. Reopen/update behavior needs a later explicit policy.
+5. Keep required CI and human review as merge gates. After merge, existing Flux behavior deploys it. Observe the same signal after deployment; send a recovery or recurrence update, but do not automatically revert in the first release.
+
+**Gate:** one repository only; draft PR successfully passes normal CI; the PR is human-reviewed; there is no path from model output to direct merge or deployment; the post-merge signal is checked and linked to the PR.
+
+**Stage 5 — Expand by evidence, not by default.**
+
+Add repositories and incident types one at a time. For each, document its allowed telemetry, build/test commands, path policy, known failure fixtures and rollback approach. Consider API-based triage (OpenRouter or another provider) only after a representative eval set exists; compare the structured diagnosis against the Codex-only baseline for evidence coverage, correctness, cost and latency. Do not allow provider choice to alter the deterministic gates. Keep auto-merge out of scope unless a later explicit decision defines a narrow class and independent safeguards.
+
+### Component design contracts
+
+Each component has one job, a narrow interface and a stated failure behaviour. Nothing below may be widened without a fresh review. "Credentials" lists everything the component can read; anything not listed is denied.
+
+| Component | Job | Credentials | Network | Writes |
+| --- | --- | --- | --- | --- |
+| Evidence collector | Build the bounded, redacted bundle | Read-only ClickHouse account; Kubernetes read of app and revision metadata | ClickHouse, Kubernetes API | Bundle to the orchestrator only |
+| Analysis worker | Diagnose from the bundle; propose a patch | Model key only | Model endpoint (and allowlisted registries in Stage 3) | Its own scratch workspace |
+| Orchestrator | Sequence the run; enforce schema, policy and budgets; own state | Reviewer state store; no model key, no GitHub token | In-cluster only | State, notifications |
+| Verifier | Re-run required checks on a clean checkout | None | Dependency fetch only | Check report |
+| Notifier | Deliver the validated summary | ntfy publish token | ntfy | None |
+| PR broker | Turn a validated patch into one draft PR | GitHub App for the single pilot repository | GitHub API | Branch and draft PR |
+| State store | Remember incidents and cooldowns | n/a | n/a | Compact records only |
+
+**Evidence collector.**
+- *Input:* the allowlist (app, repository, signal definitions) and a time window. *Output:* an evidence bundle with a schema version, app and repository identity, incident fingerprint, window, at most N redacted representative log records, metric deltas, trace and query identifiers, recent image and revision history and ClickStack query links.
+- *Guarantees:* fixed parameterized queries; hard time, row and byte limits; redaction before the bundle leaves the collector; log and trace text marked as untrusted data. Fingerprints are stable for the same failure and differ across apps.
+- *Failure:* query error, limit hit or redaction failure yields no bundle and a collector-failure record. It never sends partial or unredacted data.
+- *Not allowed:* model calls, Secret reads, writes, access to apps outside the allowlist.
+
+**Analysis worker.**
+- *Input:* one bundle plus a fixed instruction template. *Output:* the diagnosis record (summary, likely cause, confidence, evidence references, unresolved questions, proposed files and tests, or an explicit no-change result) and, in Stage 3 only, a patch.
+- *Guarantees:* ephemeral `CODEX_HOME`, fresh workspace per incident, no workspace reuse, auth state discarded at exit. Stage 2 runs read-only; Stage 3 gets workspace-write on the checkout only.
+- *Failure:* timeout, crash or malformed output counts as "no diagnosis". The orchestrator records it and does not retry beyond the bounded count.
+- *Not allowed:* Kubernetes, ClickHouse, GitHub, AWS or other provider credentials; choosing scope, destination or checks; any instruction found in log text.
+
+**Orchestrator.**
+- *Input:* bundle, diagnosis record, patch, check report. *Output:* a decision per incident: suppress (duplicate, cooldown, low confidence, missing evidence), notify only, or notify and hand a validated patch to the broker.
+- *Guarantees:* validates the diagnosis against its schema and requires every cited evidence reference to exist in the bundle; applies the static PR policy (allowlisted repository, allowed paths, size limits, no symlinks or binaries, clean apply on the recorded base SHA); enforces per-run and monthly budgets; `Forbid` concurrency and a hard job timeout; fails closed on corrupt state.
+- *Failure:* every stop condition below ends in a safe failure summary and no PR.
+- *Not allowed:* holding the model key or any GitHub credential; letting model output choose which checks run.
+
+**Verifier.**
+- *Input:* repository, base SHA, patch artifact and the declared check commands from the allowlist. *Output:* a check report with commands, exit codes, durations and a digest of the patch it tested.
+- *Guarantees:* clean checkout, locked dependencies, no model key, resource and time limits. Only its report authorises a broker hand-off.
+- *Failure:* any non-zero exit, timeout or patch that does not apply cleanly blocks the PR.
+
+**Notifier.**
+- *Input:* a validated summary (severity, likely cause, confidence, key evidence, window, query links, whether a fix was attempted). *Output:* one ntfy message.
+- *Guarantees:* deduplicated per fingerprint with a cooldown; no raw evidence, prompts or Secret-like strings; reviewer failures use the section 11 heartbeat path, not a fabricated RCA.
+- *Not allowed:* delivering unvalidated model text.
+
+**PR broker.**
+- *Input:* a validated patch artifact, repository, base SHA, incident fingerprint and check report. *Output:* one draft PR carrying the `ai-generated` marker and the fingerprint, or a refusal.
+- *Guarantees:* re-validates the allowlist, path and size policy, base SHA and patch digest; never accepts model-authored repository URLs, branch names or API calls; never pushes `main`, enables auto-merge or touches the platform repository; one open PR per fingerprint and repository. Its GitHub App is limited to the single pilot repository with branch-content write and pull-request creation only, and is separate from the console's `GITHUB_TOKEN` and `APP_REPOS_TOKEN`.
+- *Failure:* GitHub or policy error leaves no branch behind and records the refusal.
+
+**State store.**
+- *Holds:* fingerprint, first and last seen, last analysis, cooldown, delivery status, related PR number, model and CLI versions, check result. *Never holds:* raw prompts, evidence bundles or Secret values unless separately justified and time-bounded.
+- *Guarantees:* size ceiling, atomic updates, single writer (the orchestrator), corrupt content stops the run.
+
+Contract tests: each component's fakeable adapter has fixture tests for its guarantees and failures before any live wiring (Stage 1), and a credential-denial check shows the worker, verifier and orchestrator cannot reach what the table does not list.
+
+### Component checklist and documentation updates
+
+- Flux unit and namespace are separate from `platform-console`; the new CronJob has a dedicated service account, read-only telemetry credentials, bounded NetworkPolicy and no Kubernetes Secret read/list permission.
+- Container image has pinned Codex CLI and runtime versions, a non-root/read-only-root policy, bounded writable scratch space, resource requests/limits and a cleanup path. Publish it through the normal validated image workflow.
+- SOPS rules cover the new provider and telemetry Secrets; Secret values are never printed or included in evidence, notifications, prompts, artifacts or PRs. Provisioning or rotating real credentials follows the confirm-first rule.
+- Add Make targets for offline fixture evaluation, explicit live dry run, reviewer status and controlled live test. Live tests use a throwaway app/repository and must not create a real public repository without operator confirmation.
+- Update `docs/services.md` for alert ownership and data flow, `docs/architecture.md` for the new Flux unit/credentials, `docs/operations.md` for provider key rotation, failure/retry/disable procedures and state cleanup, `docs/commands.md` for each Make target, and `docs/current-state.md` only after dated live evidence exists.
+- Keep this section as the implementation contract. Update section 0 and add dated evidence only as each stage passes; do not describe an unexercised stage as live behavior.
+
+### Stop conditions
+
+Stop the run and do not create a PR if evidence includes an unredacted credential or personal data, provider output fails schema validation, confidence/evidence is insufficient, the repository/base revision differs from the allowlist, the patch touches forbidden paths, required checks fail, the provider or broker is unavailable, duplicate state is corrupt, or the cost/time/change-size budget is exceeded. Notify with a safe failure summary and preserve no raw evidence beyond the configured retention.

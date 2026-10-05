@@ -698,4 +698,10 @@ Not exercised yet: first production on the cluster, the new console confirmation
 
 - Commit `d976f37` adds structured Codex output validation, the diagnosis schema, exact 64 KB streamed query-response bounds and row limits, plus an applicability check for the candidate patch against `hello-ts` base `5c2abb6`. `make check` passed (473 tests, app policy, all eight template combinations, OTel validation, repo checks and lint); `make incident-review-dry-run` reported zero external calls. GitHub Validate run `37257044596` passed.
 - Publish run `37257089017` succeeded and created bot pin commit `a5b8957` for console image `src-783cba31fd67860d`. `make flux-reconcile` applied revision `a5b8957e7cd331f29d2117a7b3b533e52db9f696`; all 23 Flux units became Ready. `make verify-platform` passed, including current console image and backup checks. `make app-status APP=hello-ts ENV=staging` confirmed the desired image running, 1/1 replicas Ready, and signed-in HTTPS route/TLS ready.
-- Stage 1 remains offline and incomplete. Fakeable model and GitHub adapter interfaces are still pending; no provider credential, model request, telemetry query or GitHub write was used.
+- The change remained offline: no provider credential, model request, telemetry query or GitHub write was used. Adapter contracts and the completed offline gate are recorded below.
+
+### Offline incident review adapter contracts (5 October 2026)
+
+- `ModelAdapter` and `GitHubAdapter` protocols now define injected diagnosis, patch proposal and draft-PR operations. Validation wrappers reject unsupported diagnoses, no-change patch requests, policy-invalid patches and malformed PR references before accepting results. Unit tests use local fakes to exercise these boundaries; no network adapters or external calls were added.
+- `make check` passed with 475 tests, all eight template combinations, OTel fixtures, app policy, repo checks and lint. `make incident-review-dry-run` still reports zero external calls and emits the bounded fixture report.
+- Offline Stage 1 is complete. Stage 2 remains gated by the Stage 0 privacy, credential, retention and cost decisions; no credentials were created and no provider request or GitHub write was made.

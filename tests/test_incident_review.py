@@ -20,6 +20,12 @@ from swhurl.incident_review import (
     validate_diagnosis,
     validate_patch,
 )
+from swhurl.incident_review.adapters import (
+    DraftPullRequest,
+    open_draft_pull_request,
+    request_diagnosis,
+    request_patch,
+)
 from swhurl.run import FakeRunner
 
 FIXTURE = Path(__file__).parent / "fixtures/incident-review/candidate.json"
@@ -169,6 +175,62 @@ class IncidentReviewTests(unittest.TestCase):
         fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())
         rows = coverage_report(fixture["findings"], fixture["alert_rules"])
         self.assertEqual([row["coverage"] for row in rows], ["covered", "alert-gap"])
+
+    def test_model_adapter_is_injected_and_outputs_are_validated(self):
+        class FakeModel:
+            def __init__(self):
+                self.calls = []
+
+            def diagnose(self, evidence):
+                self.calls.append(("diagnose", evidence))
+                return self.raw_diagnosis
+
+            def propose_patch(self, evidence, diagnosis):
+                self.calls.append(("patch", evidence, diagnosis))
+                return self.raw_patch
+
+        model = FakeModel()
+        model.raw_diagnosis = self.raw["diagnosis"]
+        model.raw_patch = self.patch
+        diagnosis = request_diagnosis(model, self.bundle)
+        patch = request_patch(model, self.bundle, diagnosis)
+        self.assertEqual([call[0] for call in model.calls], ["diagnose", "patch"])
+        self.assertEqual(patch["base_revision"], self.bundle["base_revision"])
+
+        model.raw_diagnosis = dict(self.raw["diagnosis"], evidence_refs=["logs[99]"])
+        with self.assertRaisesRegex(PolicyError, "missing evidence"):
+            request_diagnosis(model, self.bundle)
+        model.raw_diagnosis = dict(self.raw["diagnosis"], recommend_no_change=True)
+        no_change = request_diagnosis(model, self.bundle)
+        calls_before = len(model.calls)
+        with self.assertRaisesRegex(PolicyError, "no change"):
+            request_patch(model, self.bundle, no_change)
+        self.assertEqual(len(model.calls), calls_before)
+
+    def test_github_adapter_receives_only_validated_draft_patch(self):
+        class FakeGitHub:
+            def __init__(self):
+                self.calls = []
+
+            def create_draft_pull_request(self, **kwargs):
+                self.calls.append(kwargs)
+                return DraftPullRequest(number=42, url="https://github.com/samclement/hello-ts/pull/42")
+
+        adapter = FakeGitHub()
+        result = open_draft_pull_request(adapter, self.patch, title="Fix service name", body="Evidence-backed fix.")
+        self.assertEqual(result.number, 42)
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(adapter.calls[0]["repository"], "samclement/hello-ts")
+        self.assertEqual(adapter.calls[0]["base_revision"], self.bundle["base_revision"])
+
+        invalid = dict(self.patch, files=[{"path": "../outside", "diff": "bad"}])
+        with self.assertRaises(PolicyError):
+            open_draft_pull_request(adapter, invalid, title="Unsafe", body="Must not be sent.")
+        self.assertEqual(len(adapter.calls), 1)
+
+        with self.assertRaisesRegex(PolicyError, "title"):
+            open_draft_pull_request(adapter, self.patch, title=" ", body="Body")
+        self.assertEqual(len(adapter.calls), 1)
 
 
 if __name__ == "__main__":

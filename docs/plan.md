@@ -1,6 +1,6 @@
 # Swhurl Platform — plan
 
-Started 27 September 2026 · last tidied 3 October 2026. Older work is summarised with its decisions and commits; what was run live is in [current state](current-state.md), and the earlier full text of this file is in Git history (for example `d4566c9`). Recent work (sections 9, 11 and 12) keeps its full contract.
+Started 27 September 2026 · last tidied 5 October 2026. Older work is summarised with its decisions and commits; what was run live is in [current state](current-state.md), and the earlier full text of this file is in Git history (for example `d4566c9`). Recent work (sections 9, 11, 12 and 14) keeps its full contract.
 
 ## 0. Where this paused and what is left
 
@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--designed-5-october-2026-not-started); designed 5 October 2026, not started; Stage 0 provider choice approved 5 October, no credentials created): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
+9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--designed-5-october-2026-not-started); Stage 0 provider choice approved 5 October; offline Stage 1 prototype is in progress; no credentials or live integrations): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
 
 ### Delivered
 
@@ -540,7 +540,7 @@ Assumptions still to confirm with the operator before credentials: the pilot app
 
 **Gate:** written allowlist for telemetry fields, repositories and incident types; a documented monthly spend cap; no live credentials have been created yet. Any decision to change provider, share unredacted production data or broaden repository scope is a fresh review.
 
-**Stage 1 — Offline evidence and policy prototype.**
+**Stage 1 — Offline evidence and policy prototype (in progress; current evidence in [current state](current-state.md#offline-ai-incident-review-prototype-5-october-2026)).**
 
 1. Add a `tools/swhurl/incident_review/` package for deterministic query construction, redaction, incident fingerprints, structured result validation and PR policy. All external commands go through `Runner`; model and GitHub calls have fakeable adapters.
 2. Add checked-in fixtures for representative logs, metrics, traces, malformed/provider responses, secret-like values, prompt-injection strings in log bodies, duplicate incidents and missing evidence. Tests must prove limits and redaction before the model is introduced.
@@ -548,7 +548,7 @@ Assumptions still to confirm with the operator before credentials: the pilot app
 4. Model the pre-filter and the coverage report offline: fixtures for a new fingerprint, a baseline error-rate change, a missing expected signal, a repeat inside the cooldown and a quiet window (must produce no model call), plus a coverage-report fixture that lists sweep findings without a matching alert rule.
 5. Define static PR policy: allowed repository from a checked-in allowlist; allowed paths; maximum changed files/lines; no secrets, workflow permission changes, deployment manifests or platform files; reject symlinks, binary files and edits outside the checkout. Require the candidate diff to apply cleanly to the exact recorded base revision.
 
-Implementation entry point: `make incident-review-dry-run` validates the checked-in synthetic fixture and prints a redacted report with a proposed patch artifact. The current policy pilot is `samclement/hello-ts`; it permits `src/`, `tests/` and `README.md`, with at most five files and 200 changed lines. This is an offline fixture prototype; it does not query telemetry or contact a model, GitHub or ntfy. Run the unit cases with `make test`.
+Implementation entry point: `make incident-review-dry-run` validates the checked-in synthetic fixtures and prints a redacted report, deterministic pre-filter decisions, alert-gap coverage and a proposed patch artifact. The current policy pilot is `samclement/hello-ts`; it permits `src/`, `tests/` and `README.md`, with at most five files and 200 changed lines. This is an offline fixture prototype; it does not query telemetry or contact a model, GitHub or ntfy. Fixed query templates now bound time windows to 24 hours, and refusal fixtures cover malformed diagnoses and missing evidence. Redacted evidence bundles fail closed above 64 KB. The exact-base apply checker requires a clean checkout at the recorded SHA and uses `git apply --check` through `Runner`; it has fake-runner policy coverage, but has not yet been exercised against the pilot repository's real base. Remaining Stage 1 work includes provider-envelope failures, the real-base apply proof, and an explicit query response byte-limit policy and fixture. Run the unit cases with `make test`.
 
 **Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, pre-filter decisions (including "quiet window means no model call"), schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
 

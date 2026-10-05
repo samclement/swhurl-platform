@@ -1,0 +1,14 @@
+{
+  "prefilter_cases": [
+    {"finding": {"fingerprint": "new", "error_count": 1, "baseline_count": 1}, "state": {"seen": []}},
+    {"finding": {"fingerprint": "rate", "error_count": 12, "baseline_count": 2}, "state": {"seen": ["rate"]}},
+    {"finding": {"fingerprint": "missing", "missing_expected_signal": true}, "state": {"seen": ["missing"]}},
+    {"finding": {"fingerprint": "repeat", "inside_cooldown": true}, "state": {"seen": ["repeat"]}},
+    {"finding": {"fingerprint": "quiet"}, "state": {"seen": ["quiet"]}}
+  ],
+  "findings": [
+    {"fingerprint": "fp-a", "app": "hello-ts", "signal": "errors"},
+    {"fingerprint": "fp-b", "app": "hello-ts", "signal": "missing-heartbeat"}
+  ],
+  "alert_rules": [{"app": "hello-ts", "signal": "errors"}]
+}

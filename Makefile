@@ -41,7 +41,7 @@ notifications-heartbeat: ## Live: alert if the notification checker is stale (AR
 	@$(SWHURL_APPS) notifications-heartbeat $(ARGS)
 
 .PHONY: incident-review-dry-run
-incident-review-dry-run: ## Offline: validate and redact the checked-in incident review fixture; no external calls
+incident-review-dry-run: ## Offline: exercise incident evidence, pre-filter, coverage and patch policy fixtures; no external calls
 	@$(SWHURL) incident-review-dry-run $(ARGS)
 
 .PHONY: verify-logs

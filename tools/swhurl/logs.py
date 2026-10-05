@@ -12,7 +12,7 @@ import socket
 import tempfile
 import time
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import yaml
@@ -129,6 +129,21 @@ def _read_records(path: Path) -> list[dict] | None:
         return None
 
 
+def _wait_for_otlp_receiver(port: int, process, deadline: float) -> bool:
+    """Probe readiness with safe GETs so fixture POSTs are never replayed."""
+    url = f'http://127.0.0.1:{port}/'
+    while process.poll() is None and time.monotonic() < deadline:
+        try:
+            with urlopen(Request(url), timeout=0.2):
+                return True
+        except HTTPError:
+            # OTLP receivers commonly return 404 at `/`; that still proves the listener is ready.
+            return True
+        except (URLError, TimeoutError):
+            time.sleep(0.05)
+    return False
+
+
 def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], cases: list[dict]) -> list[str]:
     """Run rendered processors against OTLP fixtures and real container framing, isolated from the cluster."""
     names = [n for n in config['service']['pipelines']['logs']['processors'] if n.startswith(('transform/', 'filter/'))]
@@ -165,20 +180,19 @@ def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], 
         deadline = time.monotonic() + 8  # failure guard; successful fixtures stop as soon as they flush
         try:
             payload = json.dumps(fixture_payload([c for c in cases if not c.get('framing')])).encode()
-            accepted_by_collector = False
-            while not accepted_by_collector:
-                try:
-                    request = Request(f'http://127.0.0.1:{port}/v1/logs', data=payload,
-                                      headers={'Content-Type': 'application/json'})
-                    with urlopen(request, timeout=1) as response:
-                        result = json.load(response)
-                        if result.get('partialSuccess', {}).get('rejectedLogRecords', 0):
-                            return ['collector rejected fixture records']
-                    accepted_by_collector = True
-                except (URLError, TimeoutError):
-                    if process.poll() is not None or time.monotonic() >= deadline:
-                        return ['fixture collector did not accept OTLP input']
-                    time.sleep(0.05)
+            if not _wait_for_otlp_receiver(port, process, deadline):
+                return ['fixture collector did not become ready for OTLP input']
+            request = Request(f'http://127.0.0.1:{port}/v1/logs', data=payload,
+                              headers={'Content-Type': 'application/json'})
+            try:
+                with urlopen(request, timeout=min(5, max(0.2, deadline - time.monotonic()))) as response:
+                    result = json.load(response)
+            except (URLError, TimeoutError, json.JSONDecodeError):
+                # The collector may have accepted the batch before the response failed. Retrying this
+                # non-idempotent POST would duplicate every record and hide the actual fixture result.
+                return ['fixture collector response failed after the single OTLP submission']
+            if result.get('partialSuccess', {}).get('rejectedLogRecords', 0):
+                return ['collector rejected fixture records']
             while True:
                 found = _read_records(output)
                 if found is not None and _fixtures_complete(cases, found):

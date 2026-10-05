@@ -66,7 +66,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
 | `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
 | `notifications-heartbeat` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |
-| `incident-review-dry-run` | Validate and redact checked-in incident review evidence and candidate patch fixtures; no cluster, provider, GitHub or notification calls | Local fixtures only |
+| `incident-review-dry-run` | Validate and redact checked-in incident evidence, run deterministic pre-filter and alert-coverage fixtures, and validate a candidate patch; no cluster, provider, GitHub or notification calls | Local fixtures only |
 | `verify-logs` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES=15` (1–1440) | Live, read-only |
 | `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |
 | `check-config` | The required Secret files and the `BASE_DOMAIN` and `CERT_ISSUER` settings exist | Local |

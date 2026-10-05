@@ -5,7 +5,19 @@ import json
 import unittest
 from pathlib import Path
 
-from swhurl.incident_review import PolicyError, evidence_bundle, fingerprint, redact, validate_diagnosis, validate_patch
+from swhurl.incident_review import (
+    PolicyError,
+    check_patch_applies,
+    coverage_report,
+    evidence_bundle,
+    fingerprint,
+    prefilter,
+    redact,
+    telemetry_query,
+    validate_diagnosis,
+    validate_patch,
+)
+from swhurl.run import FakeRunner
 
 FIXTURE = Path(__file__).parent / "fixtures/incident-review/candidate.json"
 
@@ -34,6 +46,12 @@ class IncidentReviewTests(unittest.TestCase):
         self.assertEqual(self.bundle["logs"][0]["api_key"], "<redacted>")
         self.assertIn("<redacted>", self.bundle["logs"][1]["body"])
 
+    def test_evidence_bundle_fails_closed_above_byte_limit(self):
+        evidence = dict(self.raw["evidence"], logs=[{"body": "x" * 2000, "detail": "y" * 2000}
+                                                    for _ in range(20)])
+        with self.assertRaisesRegex(PolicyError, "byte limit"):
+            evidence_bundle(evidence)
+
     def test_fingerprint_is_stable_and_incident_scoped(self):
         self.assertEqual(fingerprint(self.bundle), self.bundle["fingerprint"])
         changed = dict(self.bundle, incident_type="different")
@@ -55,7 +73,10 @@ class IncidentReviewTests(unittest.TestCase):
 
     def test_refuses_forbidden_paths_traversal_symlink_and_secret_assignments(self):
         for path, diff in ((".github/workflows/ci.yml", "+safe"), ("../escape.ts", "+safe"),
-                           ("src/server.ts", "+password: leaked")):
+                           ("src/server.ts", "+password: leaked"),
+                           ("src/server.ts", "--- a/src/server.ts\n+++ b/src/server.ts\n"
+                                               "@@ -1 +1 @@\n-safe\n+safe\n"
+                                               "--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n")):
             with self.subTest(path=path), self.assertRaises(PolicyError):
                 candidate = dict(self.patch, files=[{"path": path, "diff": diff}])
                 validate_patch(candidate, repository="samclement/hello-ts",
@@ -65,9 +86,65 @@ class IncidentReviewTests(unittest.TestCase):
         candidate = dict(self.patch, files=[{"path": f"src/{n}.ts", "diff": "+x\n"} for n in range(6)])
         with self.assertRaisesRegex(PolicyError, "file count"):
             validate_patch(candidate, repository="samclement/hello-ts", base_revision=self.bundle["base_revision"])
-        candidate = dict(self.patch, files=[{"path": "src/a.ts", "diff": "+x\n" * 201}])
+        candidate = dict(self.patch, files=[{"path": "src/a.ts",
+                                             "diff": "--- a/src/a.ts\n+++ b/src/a.ts\n" + "+x\n" * 201}])
         with self.assertRaisesRegex(PolicyError, "changed-line"):
             validate_patch(candidate, repository="samclement/hello-ts", base_revision=self.bundle["base_revision"])
+
+    def test_patch_apply_check_requires_clean_exact_base(self):
+        patch = validate_patch(self.patch, repository=self.bundle["repository"],
+                               base_revision=self.bundle["base_revision"])
+        clean = FakeRunner().on("git", "status", "--porcelain").on(
+            "git", "rev-parse", "HEAD", stdout=self.bundle["base_revision"] + "\n").on(
+            "git", "apply", "--check", "-")
+        check_patch_applies(patch, Path("/fixture"), runner=clean)
+        self.assertEqual(len(clean.calls), 3)
+
+        dirty = FakeRunner().on("git", "status", "--porcelain", stdout=" M src/server.ts\n")
+        with self.assertRaisesRegex(PolicyError, "must be clean"):
+            check_patch_applies(patch, Path("/fixture"), runner=dirty)
+        wrong_base = FakeRunner().on("git", "status", "--porcelain").on(
+            "git", "rev-parse", "HEAD", stdout="f" * 40)
+        with self.assertRaisesRegex(PolicyError, "exact recorded base"):
+            check_patch_applies(patch, Path("/fixture"), runner=wrong_base)
+        rejected = FakeRunner().on("git", "status", "--porcelain").on(
+            "git", "rev-parse", "HEAD", stdout=self.bundle["base_revision"]).on(
+            "git", "apply", "--check", "-", returncode=1)
+        with self.assertRaisesRegex(PolicyError, "does not apply"):
+            check_patch_applies(patch, Path("/fixture"), runner=rejected)
+
+    def test_queries_keep_values_out_of_sql(self):
+        query, params = telemetry_query("errors", app="hello-ts' OR 1=1", start="2026-10-05T00:00:00Z",
+                                        end="2026-10-05T01:00:00Z")
+        self.assertNotIn("hello-ts", query)
+        self.assertEqual(params["app"], "hello-ts' OR 1=1")
+        with self.assertRaises(PolicyError):
+            telemetry_query("arbitrary", app="x", start="x", end="y")
+        for start, end in (("bad", "2026-10-05T01:00:00Z"),
+                           ("2026-10-05T00:00:00", "2026-10-05T01:00:00Z"),
+                           ("2026-10-05T00:00:00Z", "2026-10-06T01:00:00Z"),
+                           ("2026-10-05T01:00:00Z", "2026-10-05T00:00:00Z")):
+            with self.subTest(start=start, end=end), self.assertRaises(PolicyError):
+                telemetry_query("logs", app="hello-ts", start=start, end=end)
+
+    def test_malformed_and_missing_evidence_responses_are_refused(self):
+        fixture = json.loads((FIXTURE.parent / "refusals.json").read_text())
+        for response in fixture["diagnoses"]:
+            with self.subTest(response=response), self.assertRaises(PolicyError):
+                validate_diagnosis(response, self.bundle)
+
+    def test_prefilter_firing_and_suppression_cases(self):
+        fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())
+        actual = [prefilter(case["finding"], case["state"]) for case in fixture["prefilter_cases"]]
+        self.assertEqual([row["reason"] for row in actual], ["new-fingerprint", "error-rate-change",
+                                                             "missing-expected-signal", "repeat-inside-cooldown",
+                                                             "quiet-window"])
+        self.assertEqual([row["model_call"] for row in actual], [True, True, True, False, False])
+
+    def test_coverage_report_lists_alert_gaps(self):
+        fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())
+        rows = coverage_report(fixture["findings"], fixture["alert_rules"])
+        self.assertEqual([row["coverage"] for row in rows], ["covered", "alert-gap"])
 
 
 if __name__ == "__main__":

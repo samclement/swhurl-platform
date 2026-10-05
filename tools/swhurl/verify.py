@@ -308,7 +308,7 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
                 report.bad(f'{db.name}: no SQLite backup in {where} (run: make backup-sqlite)')
             elif now - taken > limit:
                 report.bad(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
-                           'check: systemctl status swhurl-backup-mongodb')
+                           'check: systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')
             else:
                 report.ok(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
 

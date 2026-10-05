@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--designed-5-october-2026-not-started); designed 5 October 2026, not started): bounded analysis of recurring ClickStack signals, notifications with evidence-backed diagnosis, and draft PRs from an isolated Codex CLI worker. Human review and merge remain required.
+9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--designed-5-october-2026-not-started); designed 5 October 2026, not started): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
 
 ### Delivered
 
@@ -453,13 +453,15 @@ Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the 
 
 **Starting choice.** Use the Codex CLI (`codex exec`) in a disposable worker for the first coding pilot. This feature needs an agent that can inspect a repository, edit it, and run that repository's checks. Keep the analyzer behind a small internal interface so a later phase can use direct provider API calls (for example OpenRouter) for structured triage or replace the coding worker without changing evidence collection, incident state or PR policy. Do not build a general-purpose agent framework or allow model-selected arbitrary tools in the first version.
 
+**Design revision (5 October 2026, operator-directed).** The first draft said a run starts "from an alert or a deterministic rule" without choosing. Decision: **a scheduled sweep is the primary trigger; ClickStack alerts are added later as a low-latency accelerator and never replace the sweep.** Reason: an alert exists only for failures someone predicted, silent failures (a crash before logging, a stopped job, traffic dropping to zero) emit nothing to alert on, new apps start with no rules, and a broken alert path is invisible. The sweep is how unknown gaps are found, and its findings tell the operator which alert rules to write. See [Trigger strategy](#trigger-strategy-and-ai-boundary).
+
 **Existing boundaries to preserve.** The notification checker in `console-notifications` remains a deterministic lifecycle/health checker: it has no application log access or GitHub credential. The new reviewer is a separate capability with its own Flux unit, namespace, service accounts, state and SOPS Secrets. It has no Kubernetes write access. Only the collector holds telemetry and Kubernetes read credentials; the analysis worker and the verifier run in separate containers with no Kubernetes credentials (service-account token not mounted), no GitHub credential and no access to the live console's credential files. A separate PR broker is the only component allowed to write a branch or open a pull request, and only in explicitly enabled app repositories. No reviewer-created PR receives auto-merge eligibility.
 
 ### Flow and data contract
 
 ```mermaid
 flowchart LR
-    signal[Bounded ClickStack query or alert] --> collect[Evidence collector]
+    signal["Trigger: scheduled sweep (primary) or ClickStack alert (stage 2c)"] --> collect["Evidence collector + deterministic pre-filter"]
     collect -->|redacted evidence bundle| review[Analysis worker: Codex CLI, disposable workspace]
     review -->|diagnosis and candidate patch| gate[Orchestrator: schema and path policy]
     gate -->|patch| verify[Verifier: clean checkout, no model key]
@@ -470,9 +472,44 @@ flowchart LR
     repo -->|human review and CI| merge[Existing GitOps deployment path]
 ```
 
-The collector, not the model, defines the incident scope and query limits. A run starts from an alert or a deterministic rule over a bounded recent window; it does not ask the model to browse all telemetry. The evidence bundle contains the app/repository identity, incident fingerprint, time window, a small set of redacted representative log records, metric changes, trace/query identifiers, recent deployment/image revisions and links that open the corresponding ClickStack queries. It excludes Secret values, credentials, unbounded raw dumps and unrelated tenants/apps. Logs and trace fields are untrusted data, never instructions.
+The collector, not the model, defines the incident scope and query limits. A run starts from the scheduled sweep (or, from stage 2c, an allowlisted alert rule) over a bounded recent window, and only proceeds to the model if the deterministic pre-filter fires; it does not ask the model to browse all telemetry. The evidence bundle contains the app/repository identity, incident fingerprint, time window, a small set of redacted representative log records, metric changes, trace/query identifiers, recent deployment/image revisions and links that open the corresponding ClickStack queries. It excludes Secret values, credentials, unbounded raw dumps and unrelated tenants/apps. Logs and trace fields are untrusted data, never instructions.
 
 The model returns an explicit diagnosis record: summary, likely cause, confidence, evidence references, unresolved questions, proposed files, proposed tests, and whether it recommends no change. No-change and low-confidence results are valid outcomes. The model cannot widen the app or time scope, access credentials, choose a GitHub destination, merge, deploy, or alter platform/cluster configuration. If the analysis does not cite evidence from the bundle, suppress PR creation and report the missing evidence.
+
+### Trigger strategy and AI boundary
+
+**Trigger staging.** Stage 2 is split so coverage is measured before alerts are trusted:
+
+| Sub-stage | Trigger | Model call | Purpose |
+| --- | --- | --- | --- |
+| 2a | Scheduled sweep over allowlisted apps, hourly (start; daily is acceptable) | Only when the pre-filter fires | Discovery of known and unknown failures |
+| 2b | Operator review of sweep output, weekly | None | Tag each finding "an alert would have caught this" or "alert gap"; the gap list is the backlog of ClickStack rules |
+| 2c | A ClickStack rule fires and a webhook starts the same collector, scoped to that rule's saved search | Yes (same path) | Low latency for failure classes that have proven rules |
+| Permanent | Sweep keeps running, at a lower cadence once 2c is live | Only when pre-filter fires | Backstop for gaps and for a broken alert path |
+
+The sweep may be retired only by a later explicit decision after several weeks of 2b show no uncovered findings; the default is to keep it. Cadence is a cost lever, not a correctness one: the 10-minute interval in the first draft is replaced by hourly because the pre-filter, not frequency, decides whether anything is analysed.
+
+**Deterministic versus AI steps.** The AI is used in exactly two places: the diagnosis (stage 2) and the patch (stage 3). Everything else, including deciding whether to look at all, is deterministic code.
+
+| Step | Owner |
+| --- | --- |
+| Sweep schedule, `Forbid` concurrency, timeout | Deterministic (CronJob) |
+| Telemetry queries (fixed, parameterized, time/row/byte limits) | Deterministic (collector) |
+| Pre-filter: new fingerprint, error-rate change against baseline, missing expected signal, cooldown, dedupe | Deterministic (collector and state) |
+| Fingerprinting, redaction, bundle assembly | Deterministic (collector) |
+| **Diagnosis** (summary, likely cause, confidence, evidence references, or no-change) | **AI** (Codex, read-only, bundle only) |
+| Diagnosis validation (schema, every cited reference exists, confidence threshold) | Deterministic (orchestrator) |
+| Notification text and delivery, dedupe and rate limit | Deterministic (notifier, from validated fields) |
+| Coverage review (2b): computing "sweep finding with no matching alert" | Deterministic report; the decision to write a rule is the operator's |
+| Alert rule evaluation and webhook (2c) | Deterministic (ClickStack) |
+| **Patch authoring** (stage 3) | **AI** (Codex, workspace-write on a fresh checkout) |
+| Which checks run, exit-code interpretation, verification on a clean checkout | Deterministic (orchestrator, verifier) |
+| Patch policy, base SHA and digest checks, draft PR creation | Deterministic (orchestrator, broker) |
+| Budgets, stop conditions, corrupt-state handling | Deterministic (orchestrator) |
+| Review, merge, deploy | Human, CI, Flux; never the AI |
+| Post-merge recurrence check | Deterministic (same query and fingerprint) |
+
+Consequences to preserve: a quiet sweep never calls the model; the model never chooses scope, window, repository, branch name, checks or destination; malformed, uncited or low-confidence output is suppressed by validation. Possible later AI uses (batch triage of low-signal findings, drafting a candidate ClickStack rule from a gap) are out of scope until an eval set exists (stage 5), and a human would still approve any rule.
 
 ### Stages and acceptance gates
 
@@ -491,20 +528,31 @@ The model returns an explicit diagnosis record: summary, likely cause, confidenc
 1. Add a `tools/swhurl/incident_review/` package for deterministic query construction, redaction, incident fingerprints, structured result validation and PR policy. All external commands go through `Runner`; model and GitHub calls have fakeable adapters.
 2. Add checked-in fixtures for representative logs, metrics, traces, malformed/provider responses, secret-like values, prompt-injection strings in log bodies, duplicate incidents and missing evidence. Tests must prove limits and redaction before the model is introduced.
 3. Add a dry-run command that consumes fixture evidence and emits a redacted report plus a proposed patch artifact. It must not query a live cluster, contact a provider, write GitHub or notify.
-4. Define static PR policy: allowed repository from a checked-in allowlist; allowed paths; maximum changed files/lines; no secrets, workflow permission changes, deployment manifests or platform files; reject symlinks, binary files and edits outside the checkout. Require the candidate diff to apply cleanly to the exact recorded base revision.
+4. Model the pre-filter and the coverage report offline: fixtures for a new fingerprint, a baseline error-rate change, a missing expected signal, a repeat inside the cooldown and a quiet window (must produce no model call), plus a coverage-report fixture that lists sweep findings without a matching alert rule.
+5. Define static PR policy: allowed repository from a checked-in allowlist; allowed paths; maximum changed files/lines; no secrets, workflow permission changes, deployment manifests or platform files; reject symlinks, binary files and edits outside the checkout. Require the candidate diff to apply cleanly to the exact recorded base revision.
 
 Implementation entry point: `make incident-review-dry-run` validates the checked-in synthetic fixture and prints a redacted report with a proposed patch artifact. The current policy pilot is `samclement/hello-ts`; it permits `src/`, `tests/` and `README.md`, with at most five files and 200 changed lines. This is an offline fixture prototype; it does not query telemetry or contact a model, GitHub or ntfy. Run the unit cases with `make test`.
 
-**Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
+**Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, pre-filter decisions (including "quiet window means no model call"), schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
 
-**Stage 2 — Read-only signal collection and analysis notification.**
+**Stage 2 — Read-only signal collection and analysis notification (2a sweep, 2b coverage review, 2c alert trigger).**
+
+*2a — scheduled sweep.*
 
 1. Deploy a separate scheduled reviewer CronJob and bounded RBAC in a dedicated namespace, as two containers with separate credentials. The **collector** reads preconfigured ClickStack/ClickHouse telemetry through a read-only account and app/revision metadata; it cannot read Kubernetes Secrets or execute in pods, and it never receives the model key. The **analysis worker** gets only the evidence bundle and the model key, with `automountServiceAccountToken: false` and no ClickHouse credential. Prefer fixed parameterized queries and strict time/row/byte limits.
-2. Query at a modest interval (start at 10 minutes) for only allowlisted signals. Use the existing app-specific ClickStack rules where practical; do not duplicate the lifecycle messages already owned by `console-notifications` or infrastructure failures owned by Flux Alerts.
-3. Save compact state in a reviewer-owned ConfigMap or other explicitly selected small state store: fingerprint, first/last seen, last analysis, cooldown, delivery status and related PR number. Enforce a size ceiling and fail closed on corrupt state. Use `Forbid` concurrency, a hard job timeout and bounded retries; report a missing or stale reviewer job through the [heartbeat](#heartbeat-design) from section 11 rather than a new mechanism.
-4. Run Codex in analysis-only mode (`--sandbox read-only`; it needs no writes) over the evidence bundle. Send ntfy only after validating the structured response; include severity, likely cause, confidence, key evidence, time range, query links and whether a code fix was attempted. Deduplicate and rate-limit repeated analysis notifications. On provider/query failure, report the reviewer failure through its heartbeat path rather than fabricating an RCA.
+2. Run hourly (a modest start; the pre-filter, not the cadence, bounds cost) over only allowlisted apps and signals. The collector evaluates the deterministic pre-filter and emits a bundle only when it fires; a quiet run ends with no model call and a record of "swept, nothing to analyse". Do not duplicate the lifecycle messages owned by `console-notifications` or infrastructure failures owned by Flux Alerts.
+3. Save compact state in a reviewer-owned ConfigMap or other explicitly selected small state store: fingerprint, first/last seen, last analysis, cooldown, delivery status, related PR number, per-signal baselines (rolling counts only) and sweep coverage tags. Enforce a size ceiling and fail closed on corrupt state. Use `Forbid` concurrency, a hard job timeout and bounded retries; report a missing or stale reviewer job through the [heartbeat](#heartbeat-design) from section 11 rather than a new mechanism.
+4. Run Codex in analysis-only mode (`--sandbox read-only`; it needs no writes) over the evidence bundle. Send ntfy only after validating the structured response; include severity, likely cause, confidence, key evidence, time range, query links, the trigger (sweep or alert rule) and whether a code fix was attempted. Deduplicate and rate-limit repeated analysis notifications. On provider/query failure, report the reviewer failure through its heartbeat path rather than fabricating an RCA.
 
-**Gate:** a live, signed-off privacy review confirms the actual fields sent to the provider; repeated synthetic incidents group correctly; model output cannot trigger writes; notifications link to the matching evidence; provider outage and stale-job behavior are visible; cost and latency are measured for at least one week; ClickHouse and node CPU with the reviewer running are compared over at least a day with a pre-change baseline (see open work 6), and the reviewer runs with resource limits and low priority.
+*2b — coverage review.* Each sweep writes a compact coverage line per finding: fingerprint, app, signal and whether an existing ClickStack rule matches it. The operator reviews these weekly and tags each "covered" or "alert gap". No model is involved. Every gap becomes either a new ClickStack rule (operator-written, per [services](services.md#alerts): app-specific alerts belong to the operator's ClickStack rules) or an explicit "not worth alerting" note.
+
+*2c — alert trigger (starts only after 2a passes its gate and at least one proven rule exists).* A ClickStack rule's webhook starts the same collector, scoped to that rule's saved search. First verify, and record here, that HyperDX webhooks can reach an in-cluster receiver and what they carry; if they cannot, run the rule check from the sweep instead. The receiver accepts only an allowlisted rule identifier and a time window; payload text is never passed to the model or used to choose scope. Alert-triggered runs use the same pre-filter (for dedupe and cooldown), validation, notifier and state. Add a dead-man check: the sweep reports when errors exist but no alert-triggered run happened for N days.
+
+**Gate (2a):** a live, signed-off privacy review confirms the actual fields sent to the provider; repeated synthetic incidents group correctly; a quiet window makes no model call; model output cannot trigger writes; notifications link to the matching evidence; provider outage and stale-job behavior are visible; cost and latency are measured for at least one week; ClickHouse and node CPU with the reviewer running are compared over at least a day with a pre-change baseline (see open work 6), and the reviewer runs with resource limits and low priority.
+
+**Gate (2b):** at least four weekly reviews completed; the alert-gap count and its disposition (rule written or declined) are recorded in `docs/current-state.md`.
+
+**Gate (2c):** an alert-triggered run for a proven rule matches the sweep's diagnosis for the same incident; the dead-man check is exercised; the sweep still runs.
 
 **Stage 3 — Isolated patch and test worker; no PR creation.**
 
@@ -527,7 +575,7 @@ Implementation entry point: `make incident-review-dry-run` validates the checked
 
 **Stage 5 — Expand by evidence, not by default.**
 
-Add repositories and incident types one at a time. For each, document its allowed telemetry, build/test commands, path policy, known failure fixtures and rollback approach. Consider API-based triage (OpenRouter or another provider) only after a representative eval set exists; compare the structured diagnosis against the Codex-only baseline for evidence coverage, correctness, cost and latency. Do not allow provider choice to alter the deterministic gates. Keep auto-merge out of scope unless a later explicit decision defines a narrow class and independent safeguards.
+Add repositories and incident types one at a time (and, per type, whether it earns an alert rule from 2b). For each, document its allowed telemetry, build/test commands, path policy, known failure fixtures and rollback approach. Consider API-based triage (OpenRouter or another provider) only after a representative eval set exists; compare the structured diagnosis against the Codex-only baseline for evidence coverage, correctness, cost and latency. Do not allow provider choice to alter the deterministic gates. Keep auto-merge out of scope unless a later explicit decision defines a narrow class and independent safeguards.
 
 ### Component design contracts
 
@@ -535,16 +583,18 @@ Each component has one job, a narrow interface and a stated failure behaviour. N
 
 | Component | Job | Credentials | Network | Writes |
 | --- | --- | --- | --- | --- |
-| Evidence collector | Build the bounded, redacted bundle | Read-only ClickHouse account; Kubernetes read of app and revision metadata | ClickHouse, Kubernetes API | Bundle to the orchestrator only |
+| Evidence collector | Run the deterministic pre-filter; build the bounded, redacted bundle | Read-only ClickHouse account; Kubernetes read of app and revision metadata | ClickHouse, Kubernetes API | Bundle to the orchestrator only |
 | Analysis worker | Diagnose from the bundle; propose a patch | Model key only | Model endpoint (and allowlisted registries in Stage 3) | Its own scratch workspace |
 | Orchestrator | Sequence the run; enforce schema, policy and budgets; own state | Reviewer state store; no model key, no GitHub token | In-cluster only | State, notifications |
 | Verifier | Re-run required checks on a clean checkout | None | Dependency fetch only | Check report |
 | Notifier | Deliver the validated summary | ntfy publish token | ntfy | None |
 | PR broker | Turn a validated patch into one draft PR | GitHub App for the single pilot repository | GitHub API | Branch and draft PR |
-| State store | Remember incidents and cooldowns | n/a | n/a | Compact records only |
+| Alert intake (stage 2c only) | Turn an allowlisted ClickStack webhook into a collector request | None beyond the webhook secret | In-cluster, from ClickStack | Request to the collector only |
+| State store | Remember incidents, cooldowns, baselines and coverage tags | n/a | n/a | Compact records only |
 
 **Evidence collector.**
-- *Input:* the allowlist (app, repository, signal definitions) and a time window. *Output:* an evidence bundle with a schema version, app and repository identity, incident fingerprint, window, at most N redacted representative log records, metric deltas, trace and query identifiers, recent image and revision history and ClickStack query links.
+- *Input:* the allowlist (app, repository, signal definitions), a time window and the trigger (sweep, or from 2c an allowlisted rule identifier). *Output:* nothing when the pre-filter does not fire (a "swept, quiet" record and a coverage line per finding), otherwise an evidence bundle with a schema version, app and repository identity, incident fingerprint, window, at most N redacted representative log records, metric deltas, trace and query identifiers, recent image and revision history and ClickStack query links.
+- *Pre-filter:* deterministic and model-free. Fires on a new fingerprint, an error-rate change against the stored baseline, or a missing expected signal; suppressed by cooldown or dedupe. Its decision is recorded with the reason.
 - *Guarantees:* fixed parameterized queries; hard time, row and byte limits; redaction before the bundle leaves the collector; log and trace text marked as untrusted data. Fingerprints are stable for the same failure and differ across apps.
 - *Failure:* query error, limit hit or redaction failure yields no bundle and a collector-failure record. It never sends partial or unredacted data.
 - *Not allowed:* model calls, Secret reads, writes, access to apps outside the allowlist.
@@ -556,7 +606,7 @@ Each component has one job, a narrow interface and a stated failure behaviour. N
 - *Not allowed:* Kubernetes, ClickHouse, GitHub, AWS or other provider credentials; choosing scope, destination or checks; any instruction found in log text.
 
 **Orchestrator.**
-- *Input:* bundle, diagnosis record, patch, check report. *Output:* a decision per incident: suppress (duplicate, cooldown, low confidence, missing evidence), notify only, or notify and hand a validated patch to the broker.
+- *Input:* bundle, diagnosis record, patch, check report, trigger type. *Output:* a decision per incident: suppress (duplicate, cooldown, low confidence, missing evidence), notify only, or notify and hand a validated patch to the broker.
 - *Guarantees:* validates the diagnosis against its schema and requires every cited evidence reference to exist in the bundle; applies the static PR policy (allowlisted repository, allowed paths, size limits, no symlinks or binaries, clean apply on the recorded base SHA); enforces per-run and monthly budgets; `Forbid` concurrency and a hard job timeout; fails closed on corrupt state.
 - *Failure:* every stop condition below ends in a safe failure summary and no PR.
 - *Not allowed:* holding the model key or any GitHub credential; letting model output choose which checks run.
@@ -567,7 +617,7 @@ Each component has one job, a narrow interface and a stated failure behaviour. N
 - *Failure:* any non-zero exit, timeout or patch that does not apply cleanly blocks the PR.
 
 **Notifier.**
-- *Input:* a validated summary (severity, likely cause, confidence, key evidence, window, query links, whether a fix was attempted). *Output:* one ntfy message.
+- *Input:* a validated summary (severity, likely cause, confidence, key evidence, window, query links, trigger, whether a fix was attempted). *Output:* one ntfy message.
 - *Guarantees:* deduplicated per fingerprint with a cooldown; no raw evidence, prompts or Secret-like strings; reviewer failures use the section 11 heartbeat path, not a fabricated RCA.
 - *Not allowed:* delivering unvalidated model text.
 
@@ -576,11 +626,17 @@ Each component has one job, a narrow interface and a stated failure behaviour. N
 - *Guarantees:* re-validates the allowlist, path and size policy, base SHA and patch digest; never accepts model-authored repository URLs, branch names or API calls; never pushes `main`, enables auto-merge or touches the platform repository; one open PR per fingerprint and repository. Its GitHub App is limited to the single pilot repository with branch-content write and pull-request creation only, and is separate from the console's `GITHUB_TOKEN` and `APP_REPOS_TOKEN`.
 - *Failure:* GitHub or policy error leaves no branch behind and records the refusal.
 
+**Alert intake (stage 2c only; not built before the 2a gate).**
+- *Input:* a ClickStack webhook. *Output:* one collector request carrying only an allowlisted rule identifier and a time window.
+- *Guarantees:* authenticates the webhook; rejects unknown rule identifiers; discards the payload body, so alert text never reaches the model or chooses scope; rate-limited.
+- *Failure:* malformed or unknown requests are dropped and counted; the sweep still covers the incident.
+- *Not allowed:* model calls, ClickHouse or Kubernetes access, any write beyond the collector request.
+
 **State store.**
-- *Holds:* fingerprint, first and last seen, last analysis, cooldown, delivery status, related PR number, model and CLI versions, check result. *Never holds:* raw prompts, evidence bundles or Secret values unless separately justified and time-bounded.
+- *Holds:* fingerprint, first and last seen, last analysis, cooldown, delivery status, related PR number, rolling per-signal baselines, sweep coverage tags (covered or alert gap), model and CLI versions, check result. *Never holds:* raw prompts, evidence bundles or Secret values unless separately justified and time-bounded.
 - *Guarantees:* size ceiling, atomic updates, single writer (the orchestrator), corrupt content stops the run.
 
-Contract tests: each component's fakeable adapter has fixture tests for its guarantees and failures before any live wiring (Stage 1), and a credential-denial check shows the worker, verifier and orchestrator cannot reach what the table does not list.
+Contract tests: the pre-filter has a fixture for each firing and suppressing case (quiet window means no model call); each component's fakeable adapter has fixture tests for its guarantees and failures before any live wiring (Stage 1), and a credential-denial check shows the worker, verifier and orchestrator cannot reach what the table does not list.
 
 ### Component checklist and documentation updates
 
@@ -593,4 +649,4 @@ Contract tests: each component's fakeable adapter has fixture tests for its guar
 
 ### Stop conditions
 
-Stop the run and do not create a PR if evidence includes an unredacted credential or personal data, provider output fails schema validation, confidence/evidence is insufficient, the repository/base revision differs from the allowlist, the patch touches forbidden paths, required checks fail, the provider or broker is unavailable, duplicate state is corrupt, or the cost/time/change-size budget is exceeded. Notify with a safe failure summary and preserve no raw evidence beyond the configured retention.
+A quiet pre-filter is not a stop condition: it ends the run normally with no model call. Stop the run and do not create a PR if evidence includes an unredacted credential or personal data, provider output fails schema validation, confidence/evidence is insufficient, the repository/base revision differs from the allowlist, the patch touches forbidden paths, required checks fail, the provider or broker is unavailable, duplicate state is corrupt, or the cost/time/change-size budget is exceeded. Notify with a safe failure summary and preserve no raw evidence beyond the configured retention.

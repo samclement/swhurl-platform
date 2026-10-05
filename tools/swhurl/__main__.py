@@ -13,6 +13,7 @@ COMMANDS = {
     # command: (module, function, summary)
     'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
     'notifications-check': ('swhurl.notifications', 'main', 'Evaluate lifecycle/health notifications (--dry-run reads only)'),
+    'incident-review-dry-run': ('swhurl.incident_review', 'main', 'Offline incident evidence and candidate patch policy dry run'),
     'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main',
                                  'Alert if the notification checker is stale (host timer)'),
     'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),

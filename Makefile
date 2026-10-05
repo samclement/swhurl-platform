@@ -40,6 +40,10 @@ notifications-check: ## Live: preview lifecycle/health notifications without sen
 notifications-heartbeat: ## Live: alert if the notification checker is stale (ARGS=--dry-run previews)
 	@$(SWHURL_APPS) notifications-heartbeat $(ARGS)
 
+.PHONY: incident-review-dry-run
+incident-review-dry-run: ## Offline: validate and redact the checked-in incident review fixture; no external calls
+	@$(SWHURL) incident-review-dry-run $(ARGS)
+
 .PHONY: verify-logs
 verify-logs: ## Live: summarize fresh log parsing, severity and trace coverage (no bodies; MINUTES=15)
 	@$(SWHURL) verify-logs --minutes $(or $(MINUTES),15)

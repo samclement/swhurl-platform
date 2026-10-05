@@ -9,9 +9,12 @@ from swhurl.incident_review import (
     PolicyError,
     check_patch_applies,
     coverage_report,
+    decode_codex_output,
     evidence_bundle,
     fingerprint,
     prefilter,
+    query_result_settings,
+    read_bounded_response,
     redact,
     telemetry_query,
     validate_diagnosis,
@@ -34,6 +37,8 @@ class IncidentReviewTests(unittest.TestCase):
                                base_revision=self.bundle["base_revision"])
         self.assertEqual(diagnosis["confidence"], 0.86)
         self.assertEqual(patch["changed_lines"], 2)
+        schema = json.loads((Path(__file__).parents[1] / "tools/swhurl/incident_review/diagnosis.schema.json").read_text())
+        self.assertEqual(set(schema["required"]), set(diagnosis))
 
     def test_redacts_sensitive_fields_tokens_and_bounds_records(self):
         cleaned = redact({"password": "do-not-show", "message": "token=abc123 Bearer eyJsecret",
@@ -126,6 +131,25 @@ class IncidentReviewTests(unittest.TestCase):
                            ("2026-10-05T01:00:00Z", "2026-10-05T00:00:00Z")):
             with self.subTest(start=start, end=end), self.assertRaises(PolicyError):
                 telemetry_query("logs", app="hello-ts", start=start, end=end)
+        self.assertEqual(query_result_settings(), {"max_result_bytes": 64_000, "max_result_rows": 20})
+
+    def test_query_response_stream_is_strictly_byte_bounded(self):
+        self.assertEqual(read_bounded_response([b"first", b"second"]), b"firstsecond")
+        self.assertEqual(len(read_bounded_response([b"x" * 64_000])), 64_000)
+        with self.assertRaisesRegex(PolicyError, "byte limit"):
+            read_bounded_response([b"x" * 63_999, b"yz"])
+        with self.assertRaisesRegex(PolicyError, "yield bytes"):
+            read_bounded_response(["text"])
+
+    def test_codex_cli_output_envelope_fails_closed(self):
+        fixture = json.loads((FIXTURE.parent / "codex-output.json").read_text())
+        for case in fixture["refusals"]:
+            with self.subTest(case=case), self.assertRaises(PolicyError):
+                decode_codex_output(case["returncode"], case["last_message"])
+        diagnosis = decode_codex_output(0, json.dumps(self.raw["diagnosis"]))
+        self.assertEqual(validate_diagnosis(diagnosis, self.bundle)["confidence"], 0.86)
+        with self.assertRaisesRegex(PolicyError, "byte limit"):
+            decode_codex_output(0, json.dumps({"output": "x" * 64_000}))
 
     def test_malformed_and_missing_evidence_responses_are_refused(self):
         fixture = json.loads((FIXTURE.parent / "refusals.json").read_text())

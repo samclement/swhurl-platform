@@ -1,0 +1,8 @@
+{
+  "refusals": [
+    {"name": "nonzero exit", "returncode": 1, "last_message": ""},
+    {"name": "empty final message", "returncode": 0, "last_message": "  "},
+    {"name": "malformed JSON", "returncode": 0, "last_message": "{not-json"},
+    {"name": "non-object JSON", "returncode": 0, "last_message": "[]"}
+  ]
+}

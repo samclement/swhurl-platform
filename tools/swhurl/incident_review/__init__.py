@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,9 @@ from swhurl.run import Runner
 MAX_RECORDS = 20
 MAX_TEXT = 2000
 MAX_BUNDLE_BYTES = 64_000
+MAX_QUERY_RESPONSE_BYTES = 64_000
+MAX_AGENT_OUTPUT_BYTES = 64_000
+MAX_QUERY_ROWS = 20
 MAX_PATCH_BYTES = 32_000
 MAX_FILES = 5
 MAX_CHANGED_LINES = 200
@@ -38,6 +42,40 @@ class PolicyError(ValueError):
     """Input is malformed or violates the static review policy."""
 
 
+def query_result_settings() -> dict[str, int]:
+    """Return ClickHouse's best-effort result limits; stream reads enforce the hard byte cap."""
+    return {"max_result_bytes": MAX_QUERY_RESPONSE_BYTES, "max_result_rows": MAX_QUERY_ROWS}
+
+
+def read_bounded_response(chunks: Iterable[bytes]) -> bytes:
+    """Collect a query response stream, refusing oversized or malformed chunks."""
+    body = bytearray()
+    for chunk in chunks:
+        if not isinstance(chunk, bytes):
+            raise PolicyError("query response stream must yield bytes")
+        if len(body) + len(chunk) > MAX_QUERY_RESPONSE_BYTES:
+            raise PolicyError("query response exceeds byte limit")
+        body.extend(chunk)
+    return bytes(body)
+
+
+def decode_codex_output(returncode: int, last_message: str) -> dict[str, Any]:
+    """Decode Codex CLI's schema-constrained --output-last-message artifact."""
+    if not isinstance(returncode, int) or isinstance(returncode, bool) or returncode != 0:
+        raise PolicyError("Codex CLI exited unsuccessfully")
+    if not isinstance(last_message, str) or not last_message.strip():
+        raise PolicyError("Codex CLI returned no final message")
+    if len(last_message.encode()) > MAX_AGENT_OUTPUT_BYTES:
+        raise PolicyError("Codex CLI final message exceeds byte limit")
+    try:
+        response = json.loads(last_message)
+    except json.JSONDecodeError as error:
+        raise PolicyError("Codex CLI final message is not valid JSON") from error
+    if not isinstance(response, dict):
+        raise PolicyError("Codex CLI final message must be a JSON object")
+    return response
+
+
 def telemetry_query(signal: str, *, app: str, start: str, end: str) -> tuple[str, dict[str, str]]:
     """Build a fixed ClickHouse query; caller values are always parameters."""
     if signal not in {"errors", "logs", "traces"}:
@@ -54,9 +92,9 @@ def telemetry_query(signal: str, *, app: str, start: str, end: str) -> tuple[str
     if end_at <= start_at or (end_at - start_at).total_seconds() > MAX_QUERY_WINDOW_HOURS * 3600:
         raise PolicyError("query window must be positive and at most 24 hours")
     query = {
-        "errors": "SELECT service, exception_type, count() AS value FROM otel_logs WHERE app = {app:String} AND Timestamp >= {start:DateTime64} AND Timestamp < {end:DateTime64} AND SeverityText IN ('ERROR','FATAL') GROUP BY service, exception_type ORDER BY value DESC LIMIT 20",
-        "logs": "SELECT Timestamp, service, SeverityText, Body FROM otel_logs WHERE app = {app:String} AND Timestamp >= {start:DateTime64} AND Timestamp < {end:DateTime64} ORDER BY Timestamp DESC LIMIT 20",
-        "traces": "SELECT Timestamp, TraceId, SpanId, ServiceName, SpanName, StatusCode FROM otel_traces WHERE app = {app:String} AND Timestamp >= {start:DateTime64} AND Timestamp < {end:DateTime64} AND StatusCode = 'Error' ORDER BY Timestamp DESC LIMIT 20",
+        "errors": f"SELECT service, exception_type, count() AS value FROM otel_logs WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} AND SeverityText IN ('ERROR','FATAL') GROUP BY service, exception_type ORDER BY value DESC LIMIT {MAX_QUERY_ROWS}",
+        "logs": f"SELECT Timestamp, service, SeverityText, Body FROM otel_logs WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} ORDER BY Timestamp DESC LIMIT {MAX_QUERY_ROWS}",
+        "traces": f"SELECT Timestamp, TraceId, SpanId, ServiceName, SpanName, StatusCode FROM otel_traces WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} AND StatusCode = 'Error' ORDER BY Timestamp DESC LIMIT {MAX_QUERY_ROWS}",
     }[signal]
     return query, {"app": app, "start": start, "end": end}
 
@@ -236,7 +274,10 @@ def dry_run(argv: list[str] | None = None) -> int:
         report = {"mode": "offline-fixture-dry-run", "fingerprint": bundle["fingerprint"],
                   "evidence": bundle, "diagnosis": diagnosis,
                   "proposed_patch": patch, "prefilter": decisions,
-                  "coverage": coverage, "external_calls": 0}
+                  "coverage": coverage,
+                  "query_limits": {"server_settings": query_result_settings(),
+                                   "response_bytes": MAX_QUERY_RESPONSE_BYTES},
+                  "external_calls": 0}
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
     except (OSError, json.JSONDecodeError, KeyError, PolicyError) as error:

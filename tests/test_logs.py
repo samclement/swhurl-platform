@@ -61,7 +61,8 @@ class LogsTests(unittest.TestCase):
 
         config = {'processors': {'transform/a': {}, 'filter/platform-noise': {}, 'k8s_attributes': {}, 'batch': {}},
                   'service': {'pipelines': {'logs': {'processors': ['transform/a', 'filter/platform-noise', 'k8s_attributes', 'batch']}}}}
-        with mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
+        with mock.patch.object(logs, '_wait_for_otlp_receiver', return_value=True), \
+                mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
             self.assertEqual(logs.exercise(FakeRunner().on('/collector', handler=run), Path('/collector'), config, [], [case]), [])
         self.assertEqual(seen['processors'], ['transform/a', 'filter/platform-noise'])
 
@@ -79,13 +80,38 @@ class LogsTests(unittest.TestCase):
         config = {'processors': {'transform/test': {'log_statements': ['set(body, body)']}, 'batch': {}},
                   'service': {'pipelines': {'logs': {'processors': ['transform/test', 'batch']}}}}
         runner = FakeRunner().on('/collector', handler=run)
-        with mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
+        with mock.patch.object(logs, '_wait_for_otlp_receiver', return_value=True), \
+                mock.patch.object(logs, 'urlopen', return_value=io.BytesIO(b'{}')):
             errors = logs.exercise(runner, Path('/collector'), config,
                                    ['--feature-gates=ottl.functions.enableLambda'], [case])
         self.assertEqual(errors, [])
         self.assertEqual(seen['processors'], {'transform/test': config['processors']['transform/test']})
         self.assertIn('--feature-gates=ottl.functions.enableLambda', runner.calls[0])
         self.assertTrue(runner.started[0].interrupted, 'complete fixture output stops the collector early')
+
+    def test_ambiguous_post_failure_is_not_retried(self):
+        calls = []
+        case = {'name': 'fixture', 'input': 'message', 'expected': {'body': 'message'}}
+
+        def run(args, _):
+            config = yaml.safe_load(Path(args[-1].removeprefix('--config=file:')).read_text())
+            Path(config['exporters']['file']['path']).write_text(json.dumps(logs.fixture_payload([case])) + '\n')
+            return Result(args)
+
+        def request(req, timeout):
+            calls.append(req.get_method())
+            if req.get_method() == 'POST':
+                raise URLError(TimeoutError('response timed out after acceptance'))
+            return io.BytesIO(b'{}')
+
+        config = {'processors': {'transform/test': {}},
+                  'service': {'pipelines': {'logs': {'processors': ['transform/test']}}}}
+        runner = FakeRunner().on('/collector', handler=run)
+        with mock.patch.object(logs, '_wait_for_otlp_receiver', return_value=True), \
+                mock.patch.object(logs, 'urlopen', side_effect=request):
+            errors = logs.exercise(runner, Path('/collector'), config, [], [case])
+        self.assertEqual(calls, ['POST'])
+        self.assertEqual(errors, ['fixture collector response failed after the single OTLP submission'])
 
     def test_fixture_collector_failure_is_reported(self):
         runner = FakeRunner().on('/collector', returncode=1)

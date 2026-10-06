@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--in-progress-stage-2a-planning-5-october-2026); Stage 0 provider, pilot data, spend and retention choices approved; offline Stage 1 is complete; state-store selection and credential provisioning remain gated): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
+9. **AI incident review and fix PRs** ([section 14](#14-ai-incident-review-and-fix-prs--in-progress-stage-2a-planning-6-october-2026); Stage 0 provider, pilot data, spend and retention choices approved; offline Stage 1 is complete; ConfigMap state and a one-pod layout selected, credential provisioning authorized, no key in the repo or cluster; Stage 2a has an ordered task list and eight open operator decisions, including a pilot incident class that does not currently occur): scheduled sweep (primary trigger) of allowlisted apps with a deterministic pre-filter, AI diagnosis only when the pre-filter fires, evidence-backed notifications, and draft PRs from an isolated Codex CLI worker. ClickStack alerts become a faster trigger later, after sweep findings show which rules are missing; the sweep stays as the backstop. Human review and merge remain required.
 
 ### Delivered
 
@@ -447,34 +447,76 @@ A throwaway k3d cluster on this host, built by following the docs from a clean s
 
 Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the live cluster, a write-only backup IAM user (separate follow-up in section 0), automating the drill, and a second permanent cluster.
 
-## 14. AI incident review and fix PRs — in progress (Stage 2a planning, 5 October 2026)
+## 14. AI incident review and fix PRs — in progress (Stage 2a planning, 6 October 2026)
 
 **Goal.** Periodically identify actionable application failures from logs, metrics and traces; send a concise, evidence-linked root-cause analysis; and, when the evidence supports a code change, open a tested draft pull request against that app's repository. The system never merges or deploys its own fix. GitHub review, CI and the existing GitOps path remain the gates to production.
 
-**Starting choice.** Use the Codex CLI (`codex exec`) in a disposable worker for the first coding pilot. This feature needs an agent that can inspect a repository, edit it, and run that repository's checks. Keep the analyzer behind a small internal interface so a later phase can use direct provider API calls (for example OpenRouter) for structured triage or replace the coding worker without changing evidence collection, incident state or PR policy. Do not build a general-purpose agent framework or allow model-selected arbitrary tools in the first version.
+**Starting choice.** Use the Codex CLI (`codex exec`) in a disposable worker for the first coding pilot. Keep the analyzer behind a small internal interface (`ModelAdapter`) so a later phase can use direct provider API calls or replace the coding worker without changing evidence collection, incident state or PR policy. Do not build a general-purpose agent framework or allow model-selected arbitrary tools in the first version.
 
-**Design revision (5 October 2026, operator-directed).** The first draft said a run starts "from an alert or a deterministic rule" without choosing. Decision: **a scheduled sweep is the primary trigger; ClickStack alerts are added later as a low-latency accelerator and never replace the sweep.** Reason: an alert exists only for failures someone predicted, silent failures (a crash before logging, a stopped job, traffic dropping to zero) emit nothing to alert on, new apps start with no rules, and a broken alert path is invisible. The sweep is how unknown gaps are found, and its findings tell the operator which alert rules to write. See [Trigger strategy](#trigger-strategy-and-ai-boundary).
+**Trigger decision (5 October 2026, operator-directed).** A scheduled sweep is the primary trigger; ClickStack alerts are added later as a low-latency accelerator and never replace the sweep. Reason: an alert exists only for failures someone predicted, silent failures emit nothing to alert on, new apps start with no rules, and a broken alert path is invisible. See [Trigger strategy](#trigger-strategy-and-ai-boundary).
 
-**Existing boundaries to preserve.** The notification checker in `console-notifications` remains a deterministic lifecycle/health checker: it has no application log access or GitHub credential. The new reviewer is a separate capability with its own Flux unit, namespace, service accounts, state and SOPS Secrets. It has no Kubernetes write access. Only the collector holds telemetry and Kubernetes read credentials; the analysis worker and the verifier run in separate containers with no Kubernetes credentials (service-account token not mounted), no GitHub credential and no access to the live console's credential files. A separate PR broker is the only component allowed to write a branch or open a pull request, and only in explicitly enabled app repositories. No reviewer-created PR receives auto-merge eligibility.
+**Existing boundaries to preserve.** The notification checker in `console-notifications` remains a deterministic lifecycle/health checker with no application log access or GitHub credential. The reviewer is a separate capability with its own Flux unit, namespace, service account, state and SOPS Secrets. It has no Kubernetes write access except `patch` on its own state ConfigMap. The analysis worker and the verifier hold no Kubernetes, ClickHouse, ntfy or GitHub credential. A separate PR broker (Stage 4) is the only component allowed to write a branch or open a pull request, and only in explicitly enabled app repositories. No reviewer-created PR receives auto-merge eligibility.
 
-### Flow and data contract
+**How to use this section.** Work the [Stage 2a tasks](#stage-2a-tasks) in order, one commit per task. Every name, path, limit and schema an implementer needs is in [Runtime layout](#runtime-layout-stage-2a), [Data contracts](#data-contracts) and [Component design contracts](#component-design-contracts); where this section and the Stage 1 code disagree, this section is the target and the task list says which task closes the gap. Do not choose a value this section leaves to the operator: stop and ask ([open decisions](#open-decisions-operator-ask-do-not-assume)).
+
+### Flow
 
 ```mermaid
 flowchart LR
-    signal["Trigger: scheduled sweep (primary) or ClickStack alert (stage 2c)"] --> collect["Evidence collector + deterministic pre-filter"]
-    collect -->|redacted evidence bundle| review[Analysis worker: Codex CLI, disposable workspace]
-    review -->|diagnosis and candidate patch| gate[Orchestrator: schema and path policy]
-    gate -->|patch| verify[Verifier: clean checkout, no model key]
+    signal["Trigger: scheduled sweep (primary) or ClickStack alert (stage 2c)"] --> collect["Collector + deterministic pre-filter"]
+    collect -->|collect report| gate[Orchestrator: schema, policy, budgets, state]
+    collect -->|redacted bundle, only when the pre-filter fires| review[Analysis worker: Codex CLI]
+    review -->|diagnosis and, in stage 3, candidate patch| gate
+    gate -->|patch, stage 3| verify[Verifier: clean checkout, no model key]
     verify -->|check report| gate
-    gate -->|incident summary| notify[ntfy with query links]
-    gate -->|validated patch artifact| broker[PR broker with app-scoped GitHub App]
+    gate -->|validated summary| notify[Notifier: ntfy]
+    gate -->|validated patch artifact, stage 4| broker[PR broker]
     broker -->|draft PR only| repo[Enabled app repository]
     repo -->|human review and CI| merge[Existing GitOps deployment path]
 ```
 
-The collector, not the model, defines the incident scope and query limits. A run starts from the scheduled sweep (or, from stage 2c, an allowlisted alert rule) over a bounded recent window, and only proceeds to the model if the deterministic pre-filter fires; it does not ask the model to browse all telemetry. The evidence bundle contains the app/repository identity, incident fingerprint, time window, a small set of redacted representative log records, metric changes, trace/query identifiers, recent deployment/image revisions and links that open the corresponding ClickStack queries. It excludes Secret values, credentials, unbounded raw dumps and unrelated tenants/apps. Logs and trace fields are untrusted data, never instructions.
+The collector, not the model, defines the incident scope and query limits. A run covers a bounded recent window and proceeds to the model only if the deterministic pre-filter fires. Logs and trace fields are untrusted data, never instructions. The model cannot widen the app or time scope, access credentials, choose a GitHub destination, merge, deploy, or alter platform or cluster configuration. No-change and low-confidence results are valid outcomes.
 
-The model returns an explicit diagnosis record: summary, likely cause, confidence, evidence references, unresolved questions, proposed files, proposed tests, and whether it recommends no change. No-change and low-confidence results are valid outcomes. The model cannot widen the app or time scope, access credentials, choose a GitHub destination, merge, deploy, or alter platform/cluster configuration. If the analysis does not cite evidence from the bundle, suppress PR creation and report the missing evidence.
+### Runtime layout (Stage 2a)
+
+Confirmed by the operator on 6 October 2026: **one pod, three containers run in sequence.** Isolation between containers is by credential and volume mount, not by network: service-account tokens and NetworkPolicy apply to a whole pod, so the pod's egress is the union of what its containers need.
+
+| Name | Value |
+| --- | --- |
+| Flux unit | `platform-incident-review` in `clusters/home/platform.yaml`, path `platform/incident-review`, labelled `platform.swhurl.com/alert: failures`, no `postBuild` substitution unless a value needs it |
+| Namespace | `incident-review` |
+| Workload | CronJob `incident-review`, plain manifest or the bjw-s `app-template` chart as `platform/console/helmrelease.yaml` uses; hourly at a fixed minute, `concurrencyPolicy: Forbid`, `backoffLimit: 0`, `activeDeadlineSeconds: 600`, one successful and one failed Job kept, `suspend: true` until task 10 |
+| Service account | `incident-review`, `automountServiceAccountToken: false` on the pod; a projected token volume is mounted only into `collect` and `decide` |
+| State | ConfigMap `incident-review-state`, key `state.json`, annotation `kustomize.toolkit.fluxcd.io/ssa: Merge` (same shape as `platform/console/notification-state.yaml`) |
+| Secrets (all SOPS, in `platform/incident-review/`) | `incident-review-openai` (`OPENAI_API_KEY`, file `secret.sops.yaml`); `incident-review-clickhouse` (`CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, file `secret-clickhouse.sops.yaml`); `incident-review-ntfy` (`NTFY_REVIEW_URL`, file `secret-ntfy.sops.yaml`). Each is encoded once with `stringData`. |
+
+| Container (order) | Image | Command | Mounts and credentials | Time limit |
+| --- | --- | --- | --- | --- |
+| `collect` (init 1) | console operator image | `timeout 120 python -m swhurl incident-review-collect` | Kubernetes token (read state, read HelmReleases); `incident-review-clickhouse`; writes `/work/collect` and `/work/bundle` | 120 s |
+| `analyse` (init 2) | new worker image `images/incident-review-worker` | wrapper script around `timeout 300 codex exec` | `incident-review-openai` as the file `/run/secrets/openai/OPENAI_API_KEY`; `/work/bundle` read-only; writes `/work/diagnosis`; no token, no other Secret | 300 s (the approved per-run cap) |
+| `decide` (main) | console operator image | `timeout 60 python -m swhurl incident-review-decide` | Kubernetes token (get and patch state); `incident-review-ntfy`; `/work/collect`, `/work/bundle`, `/work/diagnosis` read-only | 60 s |
+
+- `/work/collect`, `/work/bundle` and `/work/diagnosis` are three separate `emptyDir` volumes with a size limit. Nothing else is shared.
+- All containers: non-root, `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, all capabilities dropped, resource requests and a memory limit. `analyse` gets a bounded `emptyDir` for `CODEX_HOME` and scratch.
+- **Exit codes.** `collect` and `analyse` exit 0 for every handled outcome and record it in their status file; they exit non-zero only on a crash. `decide` is the only container that turns an outcome into a notification, a state change and the Job's exit code. A quiet sweep is exit 0.
+- **RBAC** (pattern: `platform/console/notification-rbac.yaml`): a namespaced Role with `get` and `patch` on ConfigMap `incident-review-state` only; a ClusterRole with `list` on `helmreleases.helm.toolkit.fluxcd.io` only (image tag and digest of the allowlisted app). No Secrets, no `pods/exec`, no workload verbs.
+- **NetworkPolicy** selects the reviewer's pods only (never `podSelector: {}`). Egress: cluster DNS; `clickstack-clickhouse-clickhouse-headless.observability.svc` port 8123; the Kubernetes API; TCP 443 to addresses outside the cluster (OpenAI and ntfy). No ingress. This is the repository's first egress policy: prove on the live cluster that it is enforced and that probes, DNS and the API still work before relying on it. Hostname filtering is not possible on k3s; see open decision 5.
+- **Images.** `collect` and `decide` reuse the console operator image, as the dashboard and notification jobs do. `tools/swhurl/images.py` pins only `platform/console/helmrelease.yaml` today; extend its pin step to the reviewer manifest so both units move together. The worker image contains only the pinned Codex CLI, the wrapper script, the prompt template and `diagnosis.schema.json`; it has no `kubectl`, no `swhurl` package and no Git credentials.
+
+### Open decisions (operator; ask, do not assume)
+
+Recommended defaults are given so the offline tasks can proceed; none is approved until the operator says so, and the live tasks must not start with any of 1 to 4 open.
+
+| # | Decision | Recommended default | Why it is the operator's |
+| --- | --- | --- | --- |
+| 1 | ClickHouse account for the collector | Reuse the existing `app` user (live grants on 6 October 2026: `SHOW` on everything, `SELECT` on `default.*` and `system.*`; password is `CLICKHOUSE_APP_PASSWORD` in `observability/clickstack-runtime-inputs`), copied into `incident-review-clickhouse` and kept equal by `make check-secrets` | A dedicated user is narrower (no `system.*`) but needs a ClickStack chart change that is not yet investigated; the copy is a second place to rotate |
+| 2 | ntfy destination | A new topic for diagnoses, in `incident-review-ntfy` only | Section 11 avoided a third copy of the failures destination; a new topic needs one more subscription. Reusing `failures` instead means adding the copy to `NTFY_DESTINATIONS` in `secrets_check.py` |
+| 3 | Pilot incident class | Keep `hello-ts`, but choose a class that can be produced on demand | The approved class (service name falling back to `swhurl-app`) does not occur: `hello-ts` sets `OTEL_SERVICE_NAME: hello-ts`, ClickHouse held no `swhurl-app` service in the last 7 days, and `hello-ts` has sent no logs or spans since 3 October (metrics continue). Options: induce the fallback on staging through a reviewed app change, or pilot on error logs from a deliberately failing staging route |
+| 4 | Extra state fields | Approve rolling hourly counts, cooldown timestamps, coverage tags and a monthly spend counter | The 5 October retention approval lists fingerprint, timestamps, model/CLI version, status, links and check result only. The additions are numbers and enums, never log text |
+| 5 | Model-endpoint egress in 2a | Accept TCP 443 to any external address for the pod | The bundle is redacted and no source code is present in 2a. A hostname-allowlisting proxy is the alternative and is already required before Stage 3 |
+| 6 | Diagnosis alongside a ClickStack alert (from 2c) | Allow both: the rule reports detection, the reviewer sends one `diagnosis` follow-up | Section 11 says no event is sent by two senders; this needs an explicit exception or the reviewer must stay silent for rule-covered incidents |
+| 7 | Thresholds in the allowlist (`defaults` below) and the model identifier | The values shown in [Allowlist](#allowlist) | They set cost and noise |
+| 8 | Broker credential (Stage 4, not needed for 2a) | A fine-grained token limited to the pilot repository (Contents and Pull requests: write), reusing the console's `GitHubAPI` client and the `verify-platform` expiry check | A GitHub App is narrower to revoke but adds token-minting code and a new credential type |
 
 ### Trigger strategy and AI boundary
 
@@ -482,40 +524,157 @@ The model returns an explicit diagnosis record: summary, likely cause, confidenc
 
 | Sub-stage | Trigger | Model call | Purpose |
 | --- | --- | --- | --- |
-| 2a | Scheduled sweep over allowlisted apps, hourly (start; daily is acceptable) | Only when the pre-filter fires | Discovery of known and unknown failures |
-| 2b | Operator review of sweep output, weekly | None | Tag each finding "an alert would have caught this" or "alert gap"; the gap list is the backlog of ClickStack rules |
-| 2c | A ClickStack rule fires and a webhook starts the same collector, scoped to that rule's saved search | Yes (same path) | Low latency for failure classes that have proven rules |
-| Permanent | Sweep keeps running, at a lower cadence once 2c is live | Only when pre-filter fires | Backstop for gaps and for a broken alert path |
+| 2a | Scheduled sweep over allowlisted apps, hourly | Only when the pre-filter fires; at most one per run | Discovery of known and unknown failures |
+| 2b | Operator review of sweep output, weekly | None | Tag each finding "covered" or "alert gap"; the gap list is the backlog of ClickStack rules |
+| 2c | A ClickStack rule fires and the next collector run is scoped to that rule | Yes (same path) | Low latency for failure classes that have proven rules |
+| Permanent | Sweep keeps running, at a lower cadence once 2c is live | Only when the pre-filter fires | Backstop for gaps and for a broken alert path |
 
-The sweep may be retired only by a later explicit decision after several weeks of 2b show no uncovered findings; the default is to keep it. Cadence is a cost lever, not a correctness one: the 10-minute interval in the first draft is replaced by hourly because the pre-filter, not frequency, decides whether anything is analysed.
+The sweep may be retired only by a later explicit decision after several weeks of 2b show no uncovered findings; the default is to keep it. Cadence is a cost lever, not a correctness one: the pre-filter, not frequency, decides whether anything is analysed.
 
 **Deterministic versus AI steps.** The AI is used in exactly two places: the diagnosis (stage 2) and the patch (stage 3). Everything else, including deciding whether to look at all, is deterministic code.
 
 | Step | Owner |
 | --- | --- |
-| Sweep schedule, `Forbid` concurrency, timeout | Deterministic (CronJob) |
+| Sweep schedule, `Forbid` concurrency, timeouts | Deterministic (CronJob) |
 | Telemetry queries (fixed, parameterized, time/row/byte limits) | Deterministic (collector) |
-| Pre-filter: new fingerprint, error-rate change against baseline, missing expected signal, cooldown, dedupe | Deterministic (collector and state) |
+| Pre-filter: new fingerprint, error-rate change against baseline, missing expected signal, cooldown, dedupe | Deterministic (collector, reading state) |
 | Fingerprinting, redaction, bundle assembly | Deterministic (collector) |
-| **Diagnosis** (summary, likely cause, confidence, evidence references, or no-change) | **AI** (Codex, read-only, bundle only) |
+| **Diagnosis** (summary, likely cause, confidence, evidence references, or no-change) | **AI** (Codex, read-only sandbox, bundle only) |
 | Diagnosis validation (schema, every cited reference exists, confidence threshold) | Deterministic (orchestrator) |
-| Notification text and delivery, dedupe and rate limit | Deterministic (notifier, from validated fields) |
-| Coverage review (2b): computing "sweep finding with no matching alert" | Deterministic report; the decision to write a rule is the operator's |
+| Notification text, delivery, dedupe and rate limit | Deterministic (notifier, from validated fields) |
+| Coverage (2b): "sweep finding with no matching alert rule" | Deterministic report; writing a rule is the operator's decision |
 | Alert rule evaluation and webhook (2c) | Deterministic (ClickStack) |
 | **Patch authoring** (stage 3) | **AI** (Codex, workspace-write on a fresh checkout) |
 | Which checks run, exit-code interpretation, verification on a clean checkout | Deterministic (orchestrator, verifier) |
 | Patch policy, base SHA and digest checks, draft PR creation | Deterministic (orchestrator, broker) |
-| Budgets, stop conditions, corrupt-state handling | Deterministic (orchestrator) |
+| Budgets, stop conditions, corrupt-state handling, state writes | Deterministic (orchestrator) |
 | Review, merge, deploy | Human, CI, Flux; never the AI |
 | Post-merge recurrence check | Deterministic (same query and fingerprint) |
 
-Consequences to preserve: a quiet sweep never calls the model; the model never chooses scope, window, repository, branch name, checks or destination; malformed, uncited or low-confidence output is suppressed by validation. Possible later AI uses (batch triage of low-signal findings, drafting a candidate ClickStack rule from a gap) are out of scope until an eval set exists (stage 5), and a human would still approve any rule.
+Consequences to preserve: a quiet sweep never calls the model; the model never chooses scope, window, repository, branch name, checks or destination; malformed, uncited or low-confidence output is suppressed by validation. Other AI uses (batch triage, drafting a candidate ClickStack rule) are out of scope until an eval set exists (stage 5).
+
+### Data contracts
+
+All files are UTF-8 JSON with a top-level `"version": 1`. A reader that sees another version, a missing required field or an unknown `status` refuses the run with reason `contract`.
+
+#### Allowlist
+
+One checked-in file, `tools/swhurl/incident_review/allowlist.yaml`, replaces the constants in `incident_review/__init__.py` (`ALLOWED_REPOSITORIES`, `ALLOWED_PATHS`, the limits). It ships in the operator image. Changing it is a reviewed commit; nothing at run time can extend it.
+
+```yaml
+version: 1
+model: ""                     # open decision 7; recorded with the CLI version in every run
+defaults:                     # open decision 7
+  confidence_min: 0.7         # below this: suppress, no notification
+  cooldown_hours: 24          # no second model call for the same fingerprint inside this
+  max_analyses_per_day: 4     # across all apps
+  baseline_hours: 24          # rolling window of hourly counts kept per app/env/signal
+  rate_ratio: 2               # fires when count > ratio * mean(baseline) ...
+  rate_min_count: 5           # ... and count >= this
+  incident_retention_days: 30 # incidents not seen for this long are pruned from state
+  run_cost_cents: 50          # charged per model call when the CLI reports no usage
+  monthly_refuse_cents: 1600  # approved: refuse new model calls at $16 of the $20 cap
+apps:
+  - app: hello-ts
+    repository: samclement/hello-ts
+    environments: [staging]   # namespace is <app>-<env>
+    expected_service: hello-ts
+    signals: [error-logs, error-spans, unexpected-service, missing-telemetry]
+    severity: {error-logs: default, error-spans: default, unexpected-service: low, missing-telemetry: high}
+    patch_paths: [src/, tests/, README.md]   # stage 3
+    checks: []                               # stage 3: the only commands the verifier may run
+alert_rules: []               # 2b: {app, signal, rule} entries the operator has written in ClickStack
+```
+
+#### Signals and queries
+
+Queries go to ClickHouse over HTTP (`httpx`, already a dependency) as the account in `incident-review-clickhouse`, with every caller value passed as a query parameter, `max_result_rows` 20, `max_result_bytes` 64,000 and the streamed 64,000-byte reader from Stage 1 as the hard cap. The window is the previous full hour unless the trigger says otherwise, and never more than 24 hours. Scope is always the namespace, because a wrong service name is itself a failure. Column names below were read from the live schema on 6 October 2026; the Stage 1 `telemetry_query` uses columns (`app`, `service`, `exception_type`) that do not exist and is replaced in task 3.
+
+| Signal | Table and predicate (all also filter `ResourceAttributes['k8s.namespace.name'] = {namespace}` and the window) | Count | Fingerprint key |
+| --- | --- | --- | --- |
+| `error-logs` | `default.otel_logs` where `lower(SeverityText) IN ('error','fatal') OR SeverityNumber >= 17` (live rows carry `error` with number 0 as well as 17) | rows | `ServiceName` plus `LogAttributes['exception.type']` when present, else the first 80 characters of `Body` with digits and hex runs replaced by `#` |
+| `error-spans` | `default.otel_traces` where `StatusCode = 'Error'` | rows | `ServiceName` plus `SpanName` |
+| `unexpected-service` | `default.otel_logs` and `default.otel_traces` where `ServiceName` is non-empty and differs from `expected_service` (pod logs without a service name are normal and ignored) | rows | the unexpected `ServiceName` |
+| `missing-telemetry` | `default.otel_metrics_sum` (`TimeUnix`, `ServiceName = expected_service`) | points | the literal `no-metrics` |
+
+Pre-filter rules, evaluated per finding in this order; the first match is the recorded reason:
+
+1. `repeat-inside-cooldown`: the fingerprint exists in state and `now < cooldown_until`. Does not fire.
+2. `missing-expected-signal`: signal `missing-telemetry` counts 0 and the baseline mean is above 0. Fires.
+3. `error-rate-change`: `count > rate_ratio * mean(baseline)` and `count >= rate_min_count`. Fires.
+4. `new-fingerprint`: the fingerprint is not in state and `count > 0`. Fires.
+5. `quiet-window`: anything else. Does not fire.
+
+If several findings fire, the collector builds a bundle for one: highest severity, then highest count, then lowest fingerprint. The others stay `fired-deferred` in the report and are reconsidered next sweep. If `max_analyses_per_day` or the monthly refusal threshold is reached, no bundle is written and the report says `budget`.
+
+**Fingerprint.** The first 24 hex characters of SHA-256 over the compact, key-sorted JSON of `{repository, app, env, signal, key}`. It never includes the time window: the Stage 1 `fingerprint()` hashes `window_start` and `window_end`, which makes every sweep a new incident, and is corrected in task 2.
+
+#### Handoff files
+
+| File | Writer | Fields |
+| --- | --- | --- |
+| `/work/collect/report.json` | `collect` | `status` (`quiet`, `fired`, `budget`, `failed`), `reason` (a [failure reason](#failure-reasons) or null), `trigger` (`sweep`, later `rule:<id>`), `window` (`start`, `end`, ISO-8601 with zone), `findings` (list of `fingerprint`, `app`, `env`, `signal`, `key`, `count`, `baseline_mean`, `decision`, `reason`, `coverage` as `covered` or `alert-gap`), `counts` (per `app/env/signal`, this window's count for the baseline) |
+| `/work/bundle/bundle.json` | `collect`, only when `status` is `fired` | `fingerprint`, `repository`, `app`, `env`, `signal`, `window`, `image` (`tag`, `digest` from the HelmRelease), `logs`, `metrics`, `traces` (each at most 20 redacted records restricted to the approved fields in Stage 0), `links` (ClickStack query links). At most 64,000 bytes after redaction. `base_revision` is not part of the 2a bundle: no source is touched before Stage 3, where the verifier resolves the image tag's short SHA to a full commit. |
+| `/work/diagnosis/status.json` | `analyse` | `status` (`skipped` when there is no bundle, `ok`, `timeout`, `error`), `cli`, `model`, `seconds`, `usage` (token counts if the CLI reports them, else null) |
+| `/work/diagnosis/diagnosis.json` | `analyse`, only when `status` is `ok` | The Codex final message, constrained by `diagnosis.schema.json`; at most 64,000 bytes. Evidence references are strings of the form `logs[0]`, `metrics[2]`, `traces[1]` indexing the bundle lists. |
+
+#### State
+
+`incident-review-state`, key `state.json`, at most 64,000 bytes (Kubernetes allows more; the ceiling keeps the state compact by design):
+
+```json
+{"version": 1,
+ "last_sweep": 0, "last_result": "quiet",
+ "incidents": {"<fingerprint>": {"app": "", "env": "", "signal": "", "first_seen": 0, "last_seen": 0,
+   "last_analysis": 0, "cooldown_until": 0, "status": "", "coverage": "alert-gap",
+   "cli": "", "model": "", "notified": 0, "pr": null, "check": null}},
+ "baselines": {"<app>/<env>/<signal>": [0]},
+ "spend": {"month": "2026-10", "cents": 0, "analyses": 0, "day": "2026-10-06", "analyses_today": 0},
+ "seen": {}, "pending": []}
+```
+
+- `status` is one of `seen`, `analysed`, `suppressed-low-confidence`, `suppressed-uncited`, `no-change`, `no-diagnosis`, `notified`.
+- `baselines` keep the last `baseline_hours` counts; `seen` and `pending` are the dedupe map and durable outbox with the same meaning as in `notifications/state.py` and `delivery.py`.
+- Before each save: drop incidents whose `last_seen` is older than `incident_retention_days`, reset `spend` when the month or day changes, then check the size. Over the ceiling after pruning is `state-size`, a failure.
+- **Single writer:** only `decide` writes. `collect` reads state for the pre-filter and never patches it. `Forbid` concurrency makes a write conflict impossible in normal operation, so writes use the same merge patch as the notification checker (field manager `incident-review`), with no resource-version check.
+- An unreadable or invalid `state.json` is `state-corrupt`: stop, do not reset. An absent key on first run means empty state.
+- Never holds prompts, bundles, log text or Secret values.
+
+#### Notification
+
+Sent with `notifications.delivery.publish` through the outbox, to `NTFY_REVIEW_URL`. At most one diagnosis message per fingerprint per cooldown.
+
+| Field | Source |
+| --- | --- |
+| Title | `<app>/<env> diagnosis` |
+| Priority and tags | `severity` for the signal in the allowlist; tag `incident-review` |
+| Message | Validated `summary` and `likely_cause`, `confidence` as a percentage, signal, count against baseline, window, trigger, up to three cited evidence lines (already redacted, 200 characters each), "code fix attempted: no" in Stage 2 |
+| Click | The first ClickStack link in the bundle |
+
+The ClickStack link format is not yet known: task 3 records one hand-made HyperDX search URL for a namespace and window and derives the template from it; until then the message carries the signal, namespace and window as text and no `click`.
+
+#### Failure reasons
+
+A fixed vocabulary; no free text from telemetry, the provider or exceptions reaches a notification or a log line.
+
+| Reason | Raised by | Meaning |
+| --- | --- | --- |
+| `query` | collect | ClickHouse unreachable, error, or a limit was hit; no partial bundle |
+| `redaction` | collect | A record could not be reduced to the approved fields |
+| `state-corrupt`, `state-size` | collect, decide | See State |
+| `contract` | any | A handoff file is missing, malformed or the wrong version |
+| `provider` | analyse | `codex` exited non-zero or produced no final message |
+| `timeout` | analyse | The 300-second cap was reached |
+| `schema` | decide | The diagnosis failed `validate_diagnosis` (shape, bounds or an uncited reference) |
+| `delivery` | decide | ntfy rejected the message; it stays in the outbox |
+
+**One failure path.** For any reason above, `decide` records `last_result: failed`, queues one `incident review failed: <reason>` message (high priority, deduplicated per reason for 24 hours, no evidence) and exits 1. `schema` and `provider` also set the incident's status and cooldown so a bad response is not retried every hour. Budget refusal is not a failure: one `incident review paused: budget` message per month, exit 0. When `decide` cannot run at all (image pull, crash in an earlier container, API down), nothing is sent from the pod and the **heartbeat** reports the stale CronJob. This replaces the earlier wording that sent failures only through the heartbeat.
 
 ### Stages and acceptance gates
 
-**Stage 0 — Confirm provider and data handling before credentials are provisioned.**
+**Stage 0 — Provider and data handling (approved).**
 
-**Approved by the operator, 5 October 2026: option A (OpenAI API key + Codex CLI), as a two-step approval.** No account, key or Secret exists yet; creating any of them is a separate confirm-first action. The operator subsequently confirmed the `hello-ts` pilot and its generic service-name issue, the proposed spend limits and compact-metadata retention.
+Approved by the operator on 5 October 2026: option A (OpenAI API key and Codex CLI), as a two-step approval, with the `hello-ts` pilot, the spend limits and compact-metadata retention. On 6 October they selected ConfigMap state, authorized provisioning a dedicated OpenAI project credential and confirmed the one-pod layout. No reviewer Secret exists in Git or the cluster.
 
 | Item | Approved value |
 | --- | --- |
@@ -524,148 +683,143 @@ Consequences to preserve: a quiet sweep never calls the model; the model never c
 | Step 2 (stage 3) | Sharing source with the provider needs a separate operator approval after the stage 2 gate passes. |
 | Per-run cap | $0.50 and 5 minutes |
 | Monthly cap | $20 hard cap on a dedicated OpenAI project; the job refuses new runs at 80% ($16) |
-| Model and CLI | Pinned when stage 2 starts; versions recorded in every run report |
+| Model and CLI | Pinned in task 6; versions recorded in every run report |
 | Fields sent | message, level, timestamp, service, exception type, top 10 stack frames, route path (no query string), image revision. Excluded: request and response bodies, headers, user identifiers, query strings, anything redaction flags. |
 | Provider data use | API terms with training disabled, confirmed in the project settings before the first run |
+| Retention | Incident fingerprint, timestamps, model/CLI version, status, notification/PR links and check result; no prompts or raw evidence (extension: open decision 4) |
 
-**Operator-confirmed 5 October 2026:** the `hello-ts` pilot carries no real user data, and redaction removes personal data from the selected telemetry. The incident class is the default service name falling back to `swhurl-app` when `OTEL_SERVICE_NAME` is absent. The live signal and actual provider project setting for training-disabled API data use must still be verified before the first request. No source code may be sent to the provider without the separate Stage 3 approval.
+- **Spend enforcement.** The $20 hard cap is set on the OpenAI project by the operator. The reviewer's own counter adds the cost computed from the CLI's reported token usage, or `run_cost_cents` when the CLI reports none, and refuses at `monthly_refuse_cents`. The 5-minute cap is the `timeout` on `analyse`.
+- **Key handling.** The worker reads the key file, passes it to `codex login --with-api-key` on stdin, runs `codex exec` with `CODEX_HOME` on its scratch volume and exits; the pod's volumes are discarded with it. Never a developer's interactive login, never in the image, never in argv or the environment of another container. The agent can read its own inference credential, which is why that container holds nothing else. See [Codex authentication](https://developers.openai.com/codex/auth).
+- **Claims to verify, not facts.** (1) That the pre-filter and field limits keep bundles small is measured at the 2a gate. (2) Option A is the lowest-effort route to a repo-aware coding agent, not the only one; whether Codex can use a non-OpenAI endpoint is unchecked. (3) Redaction is tested only on synthetic fixtures until the 2a privacy review. (4) The Codex flags named here (`--sandbox read-only`, `--output-schema`, `--output-last-message`, `login --with-api-key`) come from documentation and one blog post; task 6 confirms each against `codex exec --help` of the pinned version and records the result.
 
-**Claims to verify, not facts.** (1) That the pre-filter and field limits keep bundles small was a design goal and is measured at the stage 2a gate (a week of live sweeps). (2) Option A is the lowest-effort route to a repo-aware coding agent, not the only one: B or C could reach stage 3 with another agent harness, and whether Codex can use a non-OpenAI endpoint is unchecked. (3) Redaction is tested only on synthetic fixtures until the 2a privacy review.
+**Gate:** passed for data, spend and retention. Still required before the first provider request: open decisions 1 to 4, the project's data-use setting verified, and the CLI and model pinned. Any change to provider, unredacted data or repository scope is a separate approval.
 
-0. Done 5 October 2026: the `decision-brief` was presented and option A approved.
-1. Done 5 October 2026: approved pilot `samclement/hello-ts`, incident class `OTEL_SERVICE_NAME` fallback to `swhurl-app`, and the no-real-user-data/redaction assumptions. The deterministic live signal remains to be confirmed during 2a validation.
-2. Done for Stage 2 telemetry and budget 5 October 2026: provider may receive only the selected redacted evidence bundle; per-run cap is $0.50/5 minutes and monthly hard cap is $20 with runs refused at $16. Source-code sharing remains unapproved for Stage 3. Pin the Codex CLI/model and confirm the project data-use setting before any provider request.
-3. Pending separate confirmation: create a dedicated OpenAI API project/service identity and provision its key. If later approved, pass it from a SOPS Secret to `codex login --with-api-key` over stdin, run `codex exec` with an ephemeral `CODEX_HOME`, and discard auth state and workspace when the Job exits. Do not use a developer's interactive ChatGPT login. Never bake the credential into the image or pass it in argv. The agent can read its own inference credential while executing shell commands, so grant no other provider, GitHub, AWS or Kubernetes credentials to that process. See [Codex authentication](https://developers.openai.com/codex/auth) for supported unattended credentials and billing behavior.
-4. Done 5 October 2026: persist only incident fingerprint, timestamps, model/CLI version, status, notification/PR links and check result. Do not persist raw prompts/evidence.
+**Stage 1 — Offline evidence and policy prototype (complete; evidence in [current state](current-state.md#offline-ai-incident-review-prototype-5-october-2026)).**
 
-**Gate:** written allowlist for telemetry fields, repositories and incident types; documented spend cap and retention; no live credentials have been created yet. These decisions are approved. Credential provisioning, provider project data-use verification, and any change to provider, unredacted data or repository scope remain separate gates.
+Delivered in `tools/swhurl/incident_review/`: redaction, bounded query-response reading, Codex output decoding, `validate_diagnosis`, `validate_patch` (repository, paths, five files, 200 changed lines, no manifests, lockfiles, symlinks or binaries), `check_patch_applies` against the exact base revision, the injectable `ModelAdapter` and `GitHubAdapter` protocols with validation wrappers, fixtures under `tests/fixtures/incident-review/` and `make incident-review-dry-run` (no external calls). The gate passed offline on 5 October 2026.
 
-**Stage 1 — Offline evidence and policy prototype (complete; current evidence in [current state](current-state.md#offline-ai-incident-review-prototype-5-october-2026)).**
+Gaps between that prototype and this contract, each closed by a 2a task: the fingerprint includes the window (task 2); the pre-filter takes precomputed `inside_cooldown` and `baseline_count` flags instead of reading state (task 2); queries use non-existent columns and there is no metrics query (task 3); the allowlist is Python constants (task 1); the bundle has no version, links or image fields and requires `base_revision` (task 3).
 
-1. Add a `tools/swhurl/incident_review/` package for deterministic query construction, redaction, incident fingerprints, structured result validation and PR policy. All external commands go through `Runner`; model and GitHub calls have fakeable adapters.
-2. Add checked-in fixtures for representative logs, metrics, traces, malformed/provider responses, secret-like values, prompt-injection strings in log bodies, duplicate incidents and missing evidence. Tests must prove limits and redaction before the model is introduced.
-3. Add a dry-run command that consumes fixture evidence and emits a redacted report plus a proposed patch artifact. It must not query a live cluster, contact a provider, write GitHub or notify.
-4. Model the pre-filter and the coverage report offline: fixtures for a new fingerprint, a baseline error-rate change, a missing expected signal, a repeat inside the cooldown and a quiet window (must produce no model call), plus a coverage-report fixture that lists sweep findings without a matching alert rule.
-5. Define static PR policy: allowed repository from a checked-in allowlist; allowed paths; maximum changed files/lines; no secrets, workflow permission changes, deployment manifests or platform files; reject symlinks, binary files and edits outside the checkout. Require the candidate diff to apply cleanly to the exact recorded base revision.
+**Stage 2 — Read-only signal collection and analysis notification.**
 
-Implementation entry point: `make incident-review-dry-run` validates the checked-in synthetic fixtures and prints a redacted report, deterministic pre-filter decisions, alert-gap coverage, query limits and a proposed patch artifact. The current policy pilot is `samclement/hello-ts`; it permits `src/`, `tests/` and `README.md`, with at most five files and 200 changed lines. This is an offline fixture prototype; it does not query telemetry or contact a model, GitHub or ntfy. Fixed query templates bound time windows to 24 hours and rows to 20. The redacted bundle and final Codex message each fail closed above 64 KB; malformed CLI result envelopes and diagnoses have refusal fixtures. The ClickHouse `max_result_bytes` setting is best-effort and may exceed its threshold by one result block ([ClickHouse settings](https://clickhouse.com/docs/reference/settings/session-settings/max-result)); the response stream reader enforces the 64 KB hard cap and refuses partial results. The exact-base apply checker requires a clean checkout at the recorded SHA and checks the unified patch with `git apply --check` through `Runner`. Its fixture patch now targets real `hello-ts` revision `5c2abb6b47158f2409e6bcf8c7fe94f579984b5e` and has been checked against a clean checkout at that exact revision. `codex exec --output-schema ... --output-last-message ...` is the planned structured output path ([OpenAI Docs](https://developers.openai.com/blog/eval-skills)); `--json` remains a separate JSONL event stream. `ModelAdapter` and `GitHubAdapter` are injectable protocols with validation wrappers, exercised through local fakes. The GitHub seam accepts only an allowlisted, statically validated patch and exposes draft PR creation only. No network adapter, API key, provider request or GitHub write is part of Stage 1. Run the unit cases with `make test`.
+#### Stage 2a tasks
 
-**Gate:** deterministic fixture tests demonstrate redaction, stable dedupe, bounded inputs, pre-filter decisions (including "quiet window means no model call"), schema refusal and path-policy refusal. No provider credential or live API request is needed for this gate.
+One commit per task, each with its documentation, `make check` before the commit, and no live credential or cluster change before task 8. Tasks 1 to 7 are offline and need no operator action beyond the open decisions they name.
 
-Stage 1 gate passed offline on 5 October 2026: tests cover injected model responses, evidence validation, no-change suppression, patch validation before the GitHub seam and the draft PR result contract. Stage 2a preparation is gated on choosing the state store and separately approving credential provisioning; source-code sharing remains a later Stage 3 approval.
+| # | Task | Touches | Done when |
+| --- | --- | --- | --- |
+| 1 | Allowlist file and loader with strict validation (unknown keys, apps or signals are refused); remove the constants it replaces | `incident_review/allowlist.yaml`, new `allowlist.py`, tests | Loader tests cover every refusal; `make incident-review-dry-run` output is unchanged apart from the source of its limits |
+| 2 | State module and pre-filter: the [State](#state) schema, pruning, size ceiling, corrupt-state refusal; fingerprint without the window; pre-filter reading state and the allowlist defaults. Generalise the ConfigMap read and merge-patch in `notifications/state.py` into a helper taking name, namespace, key, size and field manager, and use it from both | `incident_review/state.py`, `notifications/state.py`, fixtures, tests | A fixture per pre-filter rule, including two sweeps of one failure producing one fingerprint and one model call; existing notification tests pass unchanged |
+| 3 | Collector: the four signal queries, a ClickHouse HTTP adapter behind a protocol with a fake, bundle and report writers, HelmRelease image lookup through `Runner`, link template | `incident_review/collect.py`, fixtures, tests | Fake-backed tests for each signal, each failure reason the collector raises, the 64,000-byte and 20-row limits, redaction to the approved fields and "quiet writes no bundle" |
+| 4 | Decide step: decision function, message rendering, outbox delivery through `notifications.delivery`, failure path, budget accounting | `incident_review/decide.py`, tests | A table-driven test maps every combination of report status, diagnosis status and validation result to one decision, one state change and one exit code |
+| 5 | Commands and dry run: `incident-review-collect` and `incident-review-decide` in `tools/swhurl/__main__.py`; `make incident-review-dry-run` runs collect, a fake analyse and decide over fixtures in a temporary `/work` with no external calls | `__main__.py`, `Makefile`, `docs/commands.md` | The dry run prints the report, decision and rendered message and still reports zero external calls |
+| 6 | Worker image: pinned Codex CLI (version and SHA-256, like the `tools` stage of `images/console/Dockerfile`), wrapper script (bash, `set -euo pipefail`), prompt template; a publish job modelled on `publish-console.yml`; record the verified flags and how the CLI reports usage | `images/incident-review-worker/`, `.github/workflows/`, `images.py` pin for the reviewer manifest | The image builds in CI; the wrapper, given no bundle, writes `skipped` and never starts `codex`; given a bundle and a stub `codex` on `PATH`, it writes `ok`, `timeout` or `error` correctly and exits 0 |
+| 7 | Heartbeat and health: turn the `CRONJOB_NAME`, `CRONJOB_NAMESPACE` and maximum-age constants in `notifications/heartbeat.py` into a table with a second row (`incident-review/incident-review`, stale after 130 minutes), keep per-job state in the existing file (read the old shape as the first row), and add a `verify-platform` check | `heartbeat.py`, `verify.py`, tests, `docs/operations.md` | `heartbeat_action` stays pure and its tests gain the second job; the host timer needs no reinstall because only Python changed |
+| 8 | **Operator.** Close open decisions 1 to 4 and 7; create the OpenAI project, set the $20 cap, confirm training is disabled; create the three SOPS Secrets | `platform/incident-review/*.sops.yaml` | `make check-secrets` passes; the plan records the project's data-use setting and date |
+| 9 | Manifests: namespace, unit, CronJob (`suspend: true`), RBAC, NetworkPolicy, state ConfigMap; manifest-policy tests that the token and each Secret are mounted only where the layout table says | `platform/incident-review/`, `clusters/home/platform.yaml`, `tests/test_manifest_policy.py`, `docs/architecture.md`, `docs/services.md` | `make check`, reconcile, `make verify-platform`; the `new-component-checklist` skill has been worked through |
+| 10 | Collect-only week start: unsuspend with `analyse` forced to `skipped` (an environment switch on the CronJob); add `make incident-review-status` (state summary, no log text) and `make incident-review-bundle` (the operator prints one bundle locally for the privacy review) | manifests, `Makefile`, `docs/commands.md`, `docs/operations.md` | Sweeps record `quiet`; an induced failure for the chosen pilot class records `fired` with the expected fingerprint on two consecutive sweeps; the operator signs off the fields in a real bundle |
+| 11 | Enable analysis: remove the switch; induce the pilot failure; exercise a provider outage (wrong endpoint or revoked key) and a stale job | manifests, `docs/current-state.md` | One diagnosis notification with working evidence; `incident review failed: provider` received once; the heartbeat's stale and recovery messages received |
 
-**Stage 2 — Read-only signal collection and analysis notification (2a sweep, 2b coverage review, 2c alert trigger).**
+**Gate (2a):** a signed-off privacy review of the fields actually sent; repeated synthetic incidents group to one fingerprint; a quiet window makes no model call; model output cannot trigger writes; notifications link to matching evidence; provider outage and stale-job behaviour are visible; cost and latency measured for at least one week; ClickHouse and node CPU compared over at least a day with a pre-change baseline (section 0, open work 6); the reviewer runs with resource limits. A PriorityClass is not required: none exists in this repository and the Job's requests are small.
 
-*2a — scheduled sweep.*
+*2b — coverage review.* Each sweep's findings carry `coverage`, computed from `alert_rules` in the allowlist. The operator reads them weekly with `make incident-review-status` and, for each `alert-gap`, either writes a ClickStack rule and adds it to `alert_rules` (a commit) or records "not worth alerting" in `docs/current-state.md`. The reviewer never reads ClickStack's rule store and nobody edits the state ConfigMap by hand.
 
-1. Deploy a separate scheduled reviewer CronJob and bounded RBAC in a dedicated namespace, as two containers with separate credentials. The **collector** reads preconfigured ClickStack/ClickHouse telemetry through a read-only account and app/revision metadata; it cannot read Kubernetes Secrets or execute in pods, and it never receives the model key. The **analysis worker** gets only the evidence bundle and the model key, with `automountServiceAccountToken: false` and no ClickHouse credential. Prefer fixed parameterized queries and strict time/row/byte limits.
-2. Run hourly (a modest start; the pre-filter, not the cadence, bounds cost) over only allowlisted apps and signals. The collector evaluates the deterministic pre-filter and emits a bundle only when it fires; a quiet run ends with no model call and a record of "swept, nothing to analyse". Do not duplicate the lifecycle messages owned by `console-notifications` or infrastructure failures owned by Flux Alerts.
-3. Save compact state in a reviewer-owned ConfigMap or other explicitly selected small state store: fingerprint, first/last seen, last analysis, cooldown, delivery status, related PR number, per-signal baselines (rolling counts only) and sweep coverage tags. Enforce a size ceiling and fail closed on corrupt state. Use `Forbid` concurrency, a hard job timeout and bounded retries; report a missing or stale reviewer job through the [heartbeat](#heartbeat-design) from section 11 rather than a new mechanism.
-4. Run Codex in analysis-only mode (`--sandbox read-only`; it needs no writes) over the evidence bundle. Send ntfy only after validating the structured response; include severity, likely cause, confidence, key evidence, time range, query links, the trigger (sweep or alert rule) and whether a code fix was attempted. Deduplicate and rate-limit repeated analysis notifications. On provider/query failure, report the reviewer failure through its heartbeat path rather than fabricating an RCA.
+**Gate (2b):** at least four weekly reviews completed; the alert-gap count and its disposition recorded in `docs/current-state.md`.
 
-*2b — coverage review.* Each sweep writes a compact coverage line per finding: fingerprint, app, signal and whether an existing ClickStack rule matches it. The operator reviews these weekly and tags each "covered" or "alert gap". No model is involved. Every gap becomes either a new ClickStack rule (operator-written, per [services](services.md#alerts): app-specific alerts belong to the operator's ClickStack rules) or an explicit "not worth alerting" note.
-
-*2c — alert trigger (starts only after 2a passes its gate and at least one proven rule exists).* A ClickStack rule's webhook starts the same collector, scoped to that rule's saved search. First verify, and record here, that HyperDX webhooks can reach an in-cluster receiver and what they carry; if they cannot, run the rule check from the sweep instead. The receiver accepts only an allowlisted rule identifier and a time window; payload text is never passed to the model or used to choose scope. Alert-triggered runs use the same pre-filter (for dedupe and cooldown), validation, notifier and state. Add a dead-man check: the sweep reports when errors exist but no alert-triggered run happened for N days.
-
-**Gate (2a):** a live, signed-off privacy review confirms the actual fields sent to the provider; repeated synthetic incidents group correctly; a quiet window makes no model call; model output cannot trigger writes; notifications link to the matching evidence; provider outage and stale-job behavior are visible; cost and latency are measured for at least one week; ClickHouse and node CPU with the reviewer running are compared over at least a day with a pre-change baseline (see open work 6), and the reviewer runs with resource limits and low priority.
-
-**Gate (2b):** at least four weekly reviews completed; the alert-gap count and its disposition (rule written or declined) are recorded in `docs/current-state.md`.
+*2c — alert trigger (starts only after the 2a gate and at least one proven rule).* First verify, and record here, that HyperDX webhooks can reach an in-cluster receiver and what they carry. The reviewer has no right to create Jobs, so a webhook cannot start a run directly. Design to confirm at that point, with a `decision-brief`: a small alert-intake receiver (Secret and pod-selected NetworkPolicy as in `platform/flux-webhook`) that records only an allowlisted rule identifier and a time window as a pending request, and a more frequent collector schedule that is a no-op unless a request is pending; or no receiver at all and the rule's saved search evaluated by the sweep. Payload text is never passed to the model or used to choose scope. Alert-triggered runs use the same pre-filter, validation, notifier and state. Add a dead-man check: the sweep reports when errors exist but no alert-triggered run happened for N days.
 
 **Gate (2c):** an alert-triggered run for a proven rule matches the sweep's diagnosis for the same incident; the dead-man check is exercised; the sweep still runs.
 
-**Stage 3 — Isolated patch and test worker; no PR creation.**
+**Stage 3 — Isolated patch and test worker; no PR creation.** Needs the separate source-sharing approval and its own task list, written when 2a passes.
 
-1. For a high-confidence diagnosis in the chosen incident class, fetch the exact allowlisted app repository/ref into a fresh workspace. Pin dependencies or use the app's locked build environment. Do not mount a writable host path or reuse workspaces between incidents.
-2. Run `codex exec` with a task containing the diagnosis, evidence references and app-specific instructions. Give it workspace-write access only to the checkout; bound CPU, memory, time, file changes, tool calls and output. Do not expose Kubernetes credentials, provider administration keys, the PR broker token, or any live application Secret. Restrict outbound network by hostname, not IP: NetworkPolicy on k3s cannot filter by FQDN, so route egress through a hostname-allowlisting proxy (the model endpoint and the app's package registries) or pre-fetch locked dependencies and give the build no network. Choose the mechanism at the start of this stage; do not start the stage without one.
-3. The worker may run only the repository's declared validation commands, and its own runs are advisory because they execute model-authored code in the process that holds the model key. The orchestrator, not Codex, decides which checks run and interprets exit codes. The worker returns a patch and report; the **verifier** (a separate container with no model key and only dependency-fetch network) reapplies the patch to a clean checkout and runs the required checks, and only its result counts.
-4. Send the analysis and proposed diff summary in the notification, but do not publish a branch or PR yet. A human manually applies/reviews a few candidate fixes to assess whether the diagnosis and test approach are useful.
+1. For a high-confidence diagnosis in the chosen incident class, fetch the exact allowlisted repository at the commit of the running image into a fresh workspace. Pin dependencies or use the app's locked build environment. No writable host path, no workspace reuse.
+2. Run `codex exec` with a task containing the diagnosis, evidence references and app-specific instructions, with workspace-write access to the checkout only; bound CPU, memory, time, file changes, tool calls and output. No Kubernetes credentials, provider administration keys, broker token or live application Secret. Restrict outbound network by hostname through an allowlisting proxy (model endpoint and package registries) or pre-fetch locked dependencies and give the build no network. Choose the mechanism at the start of this stage; do not start without one.
+3. The worker's own check runs are advisory, because they execute model-authored code beside the model key. The orchestrator decides which checks run (`checks` in the allowlist). The **verifier**, a separate pod with no model key and only dependency-fetch network, reapplies the patch to a clean checkout and runs them; only its report counts.
+4. Send the analysis and a diff summary in the notification; publish no branch or PR. A human applies and reviews a few candidates.
 
-**Gate:** at least five consecutive candidate runs for the pilot class produce no out-of-policy file changes or credential access, and the human reviewer judges the evidence and patch quality acceptable. Track false diagnoses, useful fixes, check pass rate, runtime and cost; stop if the worker repeatedly makes broad or speculative edits.
+The patch artifact is the Stage 1 shape: `{repository, base_revision, files: [{path, diff}]}`, validated by `validate_patch`. Its **digest** is the SHA-256 of the compact, key-sorted JSON of that object; the verifier's report and the broker both carry and compare it.
+
+**Gate:** at least five consecutive candidate runs for the pilot class with no out-of-policy file change or credential access, and the human reviewer judges evidence and patch quality acceptable. Track false diagnoses, useful fixes, check pass rate, runtime and cost; stop if the worker repeatedly makes broad or speculative edits.
 
 **Stage 4 — Draft PR broker for one repository.**
 
-1. Add a separate broker job/service that accepts only a validated patch artifact plus repository, base SHA, incident fingerprint and check report. It revalidates the allowlist, path/size policy, base SHA and patch digest; it does not accept model-authored repository URLs, branch names or API calls.
-2. Give the broker a GitHub App installation credential restricted to the single pilot app repository with only branch-content write and pull-request creation permissions. The worker never receives this credential. Do not reuse the console's `GITHUB_TOKEN` or `APP_REPOS_TOKEN`.
-3. Broker creates a uniquely named branch and a **draft** PR, never pushes `main`, enables auto-merge, or edits the platform repository. PR body includes incident/time window, diagnosis confidence, evidence/query links, exact base image/revision, change summary and independently rerun checks. Add an `ai-generated` marker and the incident fingerprint for dedupe.
-4. If an open PR already exists for that fingerprint/repository, update neither automatically nor silently: attach the new evidence to the existing incident record and notify with the existing PR link. Reopen/update behavior needs a later explicit policy.
-5. Keep required CI and human review as merge gates. After merge, existing Flux behavior deploys it. Observe the same signal after deployment; send a recovery or recurrence update, but do not automatically revert in the first release.
+1. A separate broker job accepts only a validated patch artifact plus repository, base SHA, incident fingerprint and check report. It revalidates the allowlist, path and size policy, base SHA and patch digest; it accepts no model-authored repository URL, branch name or API call.
+2. The broker's credential is limited to the single pilot repository with branch-content write and pull-request creation only (open decision 8). The worker never receives it. Do not reuse the console's `GITHUB_TOKEN` or `APP_REPOS_TOKEN`. Reuse the console's `GitHubAPI` client and `open_pr` flow in `tools/swhurl/console/changes.py`; GitHub's API takes file contents, not diffs, so the broker applies the patch to a clean checkout at the base SHA and submits the resulting files. `GitHubAdapter.create_draft_pull_request` keeps its signature and the implementation does the apply.
+3. The broker creates a uniquely named branch and a **draft** PR; it never pushes `main`, enables auto-merge or edits the platform repository. The PR body carries the incident and window, diagnosis confidence, evidence links, exact base image and revision, change summary and the verifier's checks, with an `ai-generated` marker and the fingerprint.
+4. If an open PR already exists for that fingerprint and repository, do not update it: attach the new evidence to the incident record and notify with the existing PR link.
+5. Required CI and human review remain the merge gates; Flux deploys after merge. Observe the same signal afterwards and send a recovery or recurrence update; no automatic revert.
 
-**Gate:** one repository only; draft PR successfully passes normal CI; the PR is human-reviewed; there is no path from model output to direct merge or deployment; the post-merge signal is checked and linked to the PR.
+**Gate:** one repository only; the draft PR passes normal CI and is human-reviewed; there is no path from model output to merge or deployment; the post-merge signal is checked and linked to the PR.
 
-**Stage 5 — Expand by evidence, not by default.**
-
-Add repositories and incident types one at a time (and, per type, whether it earns an alert rule from 2b). For each, document its allowed telemetry, build/test commands, path policy, known failure fixtures and rollback approach. Consider API-based triage (OpenRouter or another provider) only after a representative eval set exists; compare the structured diagnosis against the Codex-only baseline for evidence coverage, correctness, cost and latency. Do not allow provider choice to alter the deterministic gates. Keep auto-merge out of scope unless a later explicit decision defines a narrow class and independent safeguards.
+**Stage 5 — Expand by evidence, not by default.** Add repositories and incident types one at a time, each with its allowlist entry, check commands, failure fixtures and rollback approach. Consider API-based triage only after a representative eval set exists; provider choice must not alter the deterministic gates. Auto-merge stays out of scope unless a later explicit decision defines a narrow class and independent safeguards.
 
 ### Component design contracts
 
-Each component has one job, a narrow interface and a stated failure behaviour. Nothing below may be widened without a fresh review. "Credentials" lists everything the component can read; anything not listed is denied.
+Each component has one job, a narrow interface and a stated failure behaviour. Nothing below may be widened without a fresh review. "Credentials" lists everything the component can read; anything not listed is denied. In Stage 2a the first four rows are the three containers of one pod (orchestrator and notifier are both `decide`), so "Network" is what the component uses, while the enforced limit is the pod's policy in [Runtime layout](#runtime-layout-stage-2a).
 
-| Component | Job | Credentials | Network | Writes |
-| --- | --- | --- | --- | --- |
-| Evidence collector | Run the deterministic pre-filter; build the bounded, redacted bundle | Read-only ClickHouse account; Kubernetes read of app and revision metadata | ClickHouse, Kubernetes API | Bundle to the orchestrator only |
-| Analysis worker | Diagnose from the bundle; propose a patch | Model key only | Model endpoint (and allowlisted registries in Stage 3) | Its own scratch workspace |
-| Orchestrator | Sequence the run; enforce schema, policy and budgets; own state | Reviewer state store; no model key, no GitHub token | In-cluster only | State, notifications |
-| Verifier | Re-run required checks on a clean checkout | None | Dependency fetch only | Check report |
-| Notifier | Deliver the validated summary | ntfy publish token | ntfy | None |
-| PR broker | Turn a validated patch into one draft PR | GitHub App for the single pilot repository | GitHub API | Branch and draft PR |
-| Alert intake (stage 2c only) | Turn an allowlisted ClickStack webhook into a collector request | None beyond the webhook secret | In-cluster, from ClickStack | Request to the collector only |
-| State store | Remember incidents, cooldowns, baselines and coverage tags | n/a | n/a | Compact records only |
+| Component | Runs as | Job | Credentials | Network it uses | Writes |
+| --- | --- | --- | --- | --- | --- |
+| Evidence collector | `collect` | Run the pre-filter; build the bounded, redacted bundle | ClickHouse read-only account; Kubernetes token (get state, list HelmReleases) | ClickHouse, Kubernetes API | `/work/collect`, `/work/bundle` |
+| Analysis worker | `analyse` | Diagnose from the bundle; in Stage 3, propose a patch | Model key only | Model endpoint | `/work/diagnosis`, its scratch |
+| Orchestrator | `decide` | Validate, decide, enforce budgets, own state | Kubernetes token (get and patch state) | Kubernetes API | State |
+| Notifier | `decide` | Deliver the validated summary or failure message | ntfy destination URL | ntfy | None |
+| Verifier (Stage 3) | Separate pod | Re-run required checks on a clean checkout | None | Dependency fetch only | Check report |
+| PR broker (Stage 4) | Separate job | Turn a validated patch into one draft PR | GitHub credential for the single pilot repository | GitHub API | Branch and draft PR |
+| Alert intake (2c) | To be designed | Turn an allowlisted ClickStack webhook into a pending request | Webhook secret only | In-cluster, from ClickStack | Pending request only |
+| State store | ConfigMap | Remember incidents, cooldowns, baselines, coverage and spend | n/a | n/a | n/a |
 
 **Evidence collector.**
-- *Input:* the allowlist (app, repository, signal definitions), a time window and the trigger (sweep, or from 2c an allowlisted rule identifier). *Output:* nothing when the pre-filter does not fire (a "swept, quiet" record and a coverage line per finding), otherwise an evidence bundle with a schema version, app and repository identity, incident fingerprint, window, at most N redacted representative log records, metric deltas, trace and query identifiers, recent image and revision history and ClickStack query links.
-- *Pre-filter:* deterministic and model-free. Fires on a new fingerprint, an error-rate change against the stored baseline, or a missing expected signal; suppressed by cooldown or dedupe. Its decision is recorded with the reason.
-- *Guarantees:* fixed parameterized queries; hard time, row and byte limits; redaction before the bundle leaves the collector; log and trace text marked as untrusted data. Fingerprints are stable for the same failure and differ across apps.
-- *Failure:* query error, limit hit or redaction failure yields no bundle and a collector-failure record. It never sends partial or unredacted data.
-- *Not allowed:* model calls, Secret reads, writes, access to apps outside the allowlist.
+- *Input:* the allowlist, state (read-only), the window and the trigger. *Output:* always `report.json`; `bundle.json` only when a finding fires and budget allows.
+- *Guarantees:* fixed parameterized queries; hard time, row and byte limits; redaction before anything is written to `/work/bundle`; only the approved fields; fingerprints stable for the same failure and different across apps, environments and signals.
+- *Failure:* a query error, limit hit or redaction failure yields `status: failed` with a reason and no bundle. Never partial or unredacted data.
+- *Not allowed:* model calls, Secret reads, any Kubernetes write, apps or namespaces outside the allowlist.
 
 **Analysis worker.**
-- *Input:* one bundle plus a fixed instruction template. *Output:* the diagnosis record (summary, likely cause, confidence, evidence references, unresolved questions, proposed files and tests, or an explicit no-change result) and, in Stage 3 only, a patch.
-- *Guarantees:* ephemeral `CODEX_HOME`, fresh workspace per incident, no workspace reuse, auth state discarded at exit. Stage 2 runs read-only; Stage 3 gets workspace-write on the checkout only.
-- *Failure:* timeout, crash or malformed output counts as "no diagnosis". The orchestrator records it and does not retry beyond the bounded count.
-- *Not allowed:* Kubernetes, ClickHouse, GitHub, AWS or other provider credentials; choosing scope, destination or checks; any instruction found in log text.
+- *Input:* `bundle.json` and a fixed prompt template baked into the image. *Output:* `status.json` and, when `ok`, `diagnosis.json`.
+- *Guarantees:* no bundle means `skipped` and `codex` is never started; `--sandbox read-only` in Stage 2; `CODEX_HOME` and scratch on a pod-lifetime volume; one attempt, no retry.
+- *Failure:* timeout, non-zero exit or missing output is `timeout` or `error`; the container still exits 0.
+- *Not allowed:* Kubernetes, ClickHouse, ntfy, GitHub, AWS or other provider credentials; choosing scope, destination or checks; acting on any instruction found in log text.
 
 **Orchestrator.**
-- *Input:* bundle, diagnosis record, patch, check report, trigger type. *Output:* a decision per incident: suppress (duplicate, cooldown, low confidence, missing evidence), notify only, or notify and hand a validated patch to the broker.
-- *Guarantees:* validates the diagnosis against its schema and requires every cited evidence reference to exist in the bundle; applies the static PR policy (allowlisted repository, allowed paths, size limits, no symlinks or binaries, clean apply on the recorded base SHA); enforces per-run and monthly budgets; `Forbid` concurrency and a hard job timeout; fails closed on corrupt state.
-- *Failure:* every stop condition below ends in a safe failure summary and no PR.
-- *Not allowed:* holding the model key or any GitHub credential; letting model output choose which checks run.
+- *Input:* the three handoff directories and state. *Output:* per run, exactly one of: record quiet; suppress (cooldown, low confidence, uncited, no-change recorded without a message unless the allowlist later says otherwise); notify; fail. From Stage 3, also hand a validated patch to the verifier and, from Stage 4, to the broker.
+- *Guarantees:* `validate_diagnosis` against the bundle (every cited reference exists); `confidence >= confidence_min`; budgets; state pruning and ceiling; outbox checkpointed before any network call (at-least-once delivery, as the notification checker).
+- *Failure:* the [one failure path](#failure-reasons).
+- *Not allowed:* the model key, the ClickHouse credential, any GitHub credential; letting model output choose which checks run or where anything is sent.
 
-**Verifier.**
-- *Input:* repository, base SHA, patch artifact and the declared check commands from the allowlist. *Output:* a check report with commands, exit codes, durations and a digest of the patch it tested.
+**Notifier.**
+- *Input:* a decision with validated fields, or a failure reason. *Output:* one ntfy message built as in [Notification](#notification).
+- *Guarantees:* deduplicated per fingerprint within the cooldown and per failure reason within 24 hours; no prompts, Secret-like strings or unvalidated model text; evidence lines only from the redacted bundle.
+- *Failure:* `delivery`; the message stays pending and the next run retries it.
+
+**Verifier (Stage 3).**
+- *Input:* repository, base SHA, patch artifact and `checks` from the allowlist. *Output:* a check report with commands, exit codes, durations and the patch digest.
 - *Guarantees:* clean checkout, locked dependencies, no model key, resource and time limits. Only its report authorises a broker hand-off.
 - *Failure:* any non-zero exit, timeout or patch that does not apply cleanly blocks the PR.
 
-**Notifier.**
-- *Input:* a validated summary (severity, likely cause, confidence, key evidence, window, query links, trigger, whether a fix was attempted). *Output:* one ntfy message.
-- *Guarantees:* deduplicated per fingerprint with a cooldown; no raw evidence, prompts or Secret-like strings; reviewer failures use the section 11 heartbeat path, not a fabricated RCA.
-- *Not allowed:* delivering unvalidated model text.
+**PR broker (Stage 4).**
+- *Input:* a validated patch artifact, repository, base SHA, fingerprint and check report. *Output:* one draft PR carrying the `ai-generated` marker and the fingerprint, or a refusal.
+- *Guarantees:* revalidates everything it receives; never pushes `main`, enables auto-merge or touches the platform repository; one open PR per fingerprint and repository.
+- *Failure:* a GitHub or policy error leaves no branch behind and records the refusal.
 
-**PR broker.**
-- *Input:* a validated patch artifact, repository, base SHA, incident fingerprint and check report. *Output:* one draft PR carrying the `ai-generated` marker and the fingerprint, or a refusal.
-- *Guarantees:* re-validates the allowlist, path and size policy, base SHA and patch digest; never accepts model-authored repository URLs, branch names or API calls; never pushes `main`, enables auto-merge or touches the platform repository; one open PR per fingerprint and repository. Its GitHub App is limited to the single pilot repository with branch-content write and pull-request creation only, and is separate from the console's `GITHUB_TOKEN` and `APP_REPOS_TOKEN`.
-- *Failure:* GitHub or policy error leaves no branch behind and records the refusal.
-
-**Alert intake (stage 2c only; not built before the 2a gate).**
-- *Input:* a ClickStack webhook. *Output:* one collector request carrying only an allowlisted rule identifier and a time window.
-- *Guarantees:* authenticates the webhook; rejects unknown rule identifiers; discards the payload body, so alert text never reaches the model or chooses scope; rate-limited.
+**Alert intake (2c; not built before the 2a gate).**
+- *Input:* a ClickStack webhook. *Output:* one pending request carrying only an allowlisted rule identifier and a time window.
+- *Guarantees:* authenticates the webhook; rejects unknown rule identifiers; discards the payload body; rate-limited.
 - *Failure:* malformed or unknown requests are dropped and counted; the sweep still covers the incident.
-- *Not allowed:* model calls, ClickHouse or Kubernetes access, any write beyond the collector request.
+- *Not allowed:* model calls, ClickHouse access, starting workloads.
 
-**State store.**
-- *Holds:* fingerprint, first and last seen, last analysis, cooldown, delivery status, related PR number, rolling per-signal baselines, sweep coverage tags (covered or alert gap), model and CLI versions, check result. *Never holds:* raw prompts, evidence bundles or Secret values unless separately justified and time-bounded.
-- *Guarantees:* size ceiling, atomic updates, single writer (the orchestrator), corrupt content stops the run.
+**State store.** As specified in [State](#state): one writer, a size ceiling, pruning, and a stop on corrupt content.
 
-Contract tests: the pre-filter has a fixture for each firing and suppressing case (quiet window means no model call); each component's fakeable adapter has fixture tests for its guarantees and failures before any live wiring (Stage 1), and a credential-denial check shows the worker, verifier and orchestrator cannot reach what the table does not list.
+**Contract tests.** A fixture for each pre-filter rule (quiet window means no model call); fake-backed tests for each component's guarantees and failures before any live wiring; manifest-policy tests that the service-account token, each Secret and each `/work` volume are mounted only where the layout table says; a live check in task 11 that the `analyse` container has no token file and cannot read the ClickHouse or ntfy Secret.
 
 ### Component checklist and documentation updates
 
-- Flux unit and namespace are separate from `platform-console`; the new CronJob has a dedicated service account, read-only telemetry credentials, bounded NetworkPolicy and no Kubernetes Secret read/list permission.
-- Container image has pinned Codex CLI and runtime versions, a non-root/read-only-root policy, bounded writable scratch space, resource requests/limits and a cleanup path. Publish it through the normal validated image workflow.
-- SOPS rules cover the new provider and telemetry Secrets; Secret values are never printed or included in evidence, notifications, prompts, artifacts or PRs. Provisioning or rotating real credentials follows the confirm-first rule.
-- Add Make targets for offline fixture evaluation, explicit live dry run, reviewer status and controlled live test. Live tests use a throwaway app/repository and must not create a real public repository without operator confirmation.
-- Update `docs/services.md` for alert ownership and data flow, `docs/architecture.md` for the new Flux unit/credentials, `docs/operations.md` for provider key rotation, failure/retry/disable procedures and state cleanup, `docs/commands.md` for each Make target, and `docs/current-state.md` only after dated live evidence exists.
-- Keep this section as the implementation contract. Update section 0 and add dated evidence only as each stage passes; do not describe an unexercised stage as live behavior.
+- Work through the `new-component-checklist` skill in task 9 (retention, credentials, logs reaching ClickStack, `verify-platform` coverage, backups: the state ConfigMap is disposable and not backed up).
+- SOPS rules already cover `platform/**/*.sops.yaml`. Secret values are never printed or included in evidence, notifications, prompts, artifacts or PRs. Provisioning or rotating real credentials follows the confirm-first rule.
+- Reloader does not watch `incident-review`; a CronJob reads its Secrets afresh each run, so none is needed.
+- Make targets: `incident-review-dry-run` (offline, exists), `incident-review-status` and `incident-review-bundle` (task 10). A controlled live test uses the pilot app's staging environment; it creates no repository.
+- Documentation, each in the task that changes the behaviour: `docs/services.md` (alert ownership, data flow, the new sender), `docs/architecture.md` (unit, credentials), `docs/operations.md` (key rotation, disable by `suspend`, failure reasons, state reset), `docs/commands.md` (each target), and `docs/current-state.md` only after dated live evidence exists.
+- Keep this section as the implementation contract. Update section 0 and add dated evidence only as each stage passes; do not describe an unexercised stage as live behaviour.
 
 ### Stop conditions
 
-A quiet pre-filter is not a stop condition: it ends the run normally with no model call. Stop the run and do not create a PR if evidence includes an unredacted credential or personal data, provider output fails schema validation, confidence/evidence is insufficient, the repository/base revision differs from the allowlist, the patch touches forbidden paths, required checks fail, the provider or broker is unavailable, duplicate state is corrupt, or the cost/time/change-size budget is exceeded. Notify with a safe failure summary and preserve no raw evidence beyond the configured retention.
+A quiet pre-filter is not a stop condition: it ends the run normally with no model call. Stop the run, send nothing derived from model output and create no PR if: evidence cannot be reduced to the approved fields; the diagnosis fails schema, citation or confidence validation; state is corrupt or over its ceiling; a budget is exhausted; the provider is unavailable or times out; and, from Stage 3, the repository or base revision differs from the allowlist, the patch touches forbidden paths or exceeds its size limits, required checks fail, or the broker is unavailable. Each maps to one [failure reason](#failure-reasons) or a recorded suppression, and no raw evidence outlives the pod.

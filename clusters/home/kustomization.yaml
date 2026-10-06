@@ -11,3 +11,4 @@ resources:
   - app-test-2-prod.yaml
   - app-test-3-staging.yaml
   - app-test-3-prod.yaml
+  - app-test-4-staging.yaml

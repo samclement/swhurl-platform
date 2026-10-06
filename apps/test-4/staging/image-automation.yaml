@@ -1,0 +1,65 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: test-4
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-4
+spec:
+  image: ghcr.io/samclement/test-4
+  interval: 1m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: test-4-staging
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-4
+spec:
+  imageRepositoryRef:
+    name: test-4
+  filterTags:
+    pattern: ^(?P<run>[0-9]+)-[0-9a-f]{7,40}$
+    extract: $run
+  policy:
+    numerical:
+      order: asc
+  digestReflectionPolicy: Always
+  interval: 1h
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: test-4-staging
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: test-4
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform-write
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: fluxcdbot
+        email: fluxcdbot@users.noreply.github.com
+      messageTemplate: 'deploy: staging image for test-4
+
+        {{ range .Changed.Changes }}
+
+        - {{ .OldValue }} -> {{ .NewValue }}
+
+        {{- end }}'
+    push:
+      branch: main
+  update:
+    path: ./apps/test-4/staging
+    strategy: Setters

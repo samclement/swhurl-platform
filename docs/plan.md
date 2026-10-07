@@ -600,12 +600,12 @@ Queries go to ClickHouse over HTTP (`httpx`, already a dependency) as the accoun
 Pre-filter rules, evaluated per finding in this order; the first match is the recorded reason:
 
 1. `repeat-inside-cooldown`: the fingerprint exists in state and `now < cooldown_until`. Does not fire.
-2. `missing-expected-signal`: signal `missing-telemetry` counts 0 and the baseline mean is above 0. Fires.
+2. `missing-expected-signal`: signal `missing-telemetry` counts 0 and the baseline mean is above 0. Fires. This signal counts healthy points, so it is the only rule (after cooldown) that applies to it; any other `missing-telemetry` result is `quiet-window`.
 3. `error-rate-change`: `count > rate_ratio * mean(baseline)` and `count >= rate_min_count`. Fires.
 4. `new-fingerprint`: the fingerprint is not in state and `count > 0`. Fires.
 5. `quiet-window`: anything else. Does not fire.
 
-If several findings fire, the collector builds a bundle for one: highest severity, then highest count, then lowest fingerprint. The others stay `fired-deferred` in the report and are reconsidered next sweep. If `max_analyses_per_day` or the monthly refusal threshold is reached, no bundle is written and the report says `budget`.
+If several findings fire, the collector builds a bundle for one: highest severity, then highest count, then lowest fingerprint. The others stay `fired-deferred` in the report and are reconsidered next sweep. If `max_analyses_per_day` or the monthly refusal threshold is reached, no bundle is written and the report says `budget` with `budget` set to `daily` or `monthly`; only `monthly` produces a message.
 
 **Fingerprint.** The first 24 hex characters of SHA-256 over the compact, key-sorted JSON of `{repository, app, env, signal, key}`. It never includes the time window: the Stage 1 `fingerprint()` hashes `window_start` and `window_end`, which makes every sweep a new incident, and is corrected in task 2.
 
@@ -637,7 +637,7 @@ If several findings fire, the collector builds a bundle for one: highest severit
 - `baselines` keep the last `baseline_hours` counts; `seen` and `pending` are the dedupe map and durable outbox with the same meaning as in `notifications/state.py` and `delivery.py`.
 - Before each save: drop incidents whose `last_seen` is older than `incident_retention_days`, reset `spend` when the month or day changes, then check the size. Over the ceiling after pruning is `state-size`, a failure.
 - **Single writer:** only `decide` writes. `collect` reads state for the pre-filter and never patches it. `Forbid` concurrency makes a write conflict impossible in normal operation, so writes use the same merge patch as the notification checker (field manager `incident-review`), with no resource-version check.
-- An unreadable or invalid `state.json` is `state-corrupt`: stop, do not reset. An absent key on first run means empty state.
+- An invalid `state.json` is `state-corrupt`: stop, do not reset. A ConfigMap that cannot be read or patched is `state-unavailable`. An absent key on first run means empty state.
 - Never holds prompts, bundles, log text or Secret values.
 
 #### Notification
@@ -661,7 +661,7 @@ A fixed vocabulary; no free text from telemetry, the provider or exceptions reac
 | --- | --- | --- |
 | `query` | collect | ClickHouse unreachable, error, or a limit was hit; no partial bundle |
 | `redaction` | collect | A record could not be reduced to the approved fields |
-| `state-corrupt`, `state-size` | collect, decide | See State |
+| `state-unavailable`, `state-corrupt`, `state-size` | collect, decide | The ConfigMap cannot be read or patched; its content is invalid; it is over the ceiling after pruning. See State |
 | `contract` | any | A handoff file is missing, malformed or the wrong version |
 | `provider` | analyse | `codex` exited non-zero or produced no final message |
 | `timeout` | analyse | The 300-second cap was reached |
@@ -709,7 +709,7 @@ One commit per task, each with its documentation, `make check` before the commit
 | # | Task | Touches | Done when |
 | --- | --- | --- | --- |
 | 1 | **Done 7 October 2026.** Allowlist file and loader with strict validation (unknown keys, apps or signals are refused); remove the constants it replaces (byte, file and line limits stay in code) | `incident_review/allowlist.yaml`, new `allowlist.py`, tests | Loader tests cover every refusal; `make incident-review-dry-run` output is unchanged apart from the source of its limits |
-| 2 | State module and pre-filter: the [State](#state) schema, pruning, size ceiling, corrupt-state refusal; fingerprint without the window; pre-filter reading state and the allowlist defaults. Generalise the ConfigMap read and merge-patch in `notifications/state.py` into a helper taking name, namespace, key, size and field manager, and use it from both | `incident_review/state.py`, `notifications/state.py`, fixtures, tests | A fixture per pre-filter rule, including two sweeps of one failure producing one fingerprint and one model call; existing notification tests pass unchanged |
+| 2 | **Done 7 October 2026** (`tools/swhurl/statestore.py` is the shared helper). State module and pre-filter: the [State](#state) schema, pruning, size ceiling, corrupt-state refusal; fingerprint without the window; pre-filter reading state and the allowlist defaults. Generalise the ConfigMap read and merge-patch in `notifications/state.py` into a helper taking name, namespace, key, size and field manager, and use it from both | `incident_review/state.py`, `notifications/state.py`, fixtures, tests | A fixture per pre-filter rule, including two sweeps of one failure producing one fingerprint and one model call; existing notification tests pass unchanged |
 | 3 | Collector: the four signal queries, a ClickHouse HTTP adapter behind a protocol with a fake, bundle and report writers, HelmRelease image lookup through `Runner`, link template | `incident_review/collect.py`, fixtures, tests | Fake-backed tests for each signal, each failure reason the collector raises, the 64,000-byte and 20-row limits, redaction to the approved fields and "quiet writes no bundle" |
 | 4 | Decide step: decision function, message rendering, outbox delivery through `notifications.delivery`, failure path, budget accounting | `incident_review/decide.py`, tests | A table-driven test maps every combination of report status, diagnosis status and validation result to one decision, one state change and one exit code |
 | 5 | Commands and dry run: `incident-review-collect` and `incident-review-decide` in `tools/swhurl/__main__.py`; `make incident-review-dry-run` runs collect, a fake analyse and decide over fixtures in a temporary `/work` with no external calls | `__main__.py`, `Makefile`, `docs/commands.md` | The dry run prints the report, decision and rendered message and still reports zero external calls |

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from swhurl.incident_review import (
     PolicyError,
+    allowlist,
     check_patch_applies,
     coverage_report,
     decode_codex_output,
@@ -42,7 +43,7 @@ class IncidentReviewTests(unittest.TestCase):
         patch = validate_patch(self.patch, repository=self.bundle["repository"],
                                base_revision=self.bundle["base_revision"])
         self.assertEqual(diagnosis["confidence"], 0.86)
-        self.assertEqual(patch["changed_lines"], 2)
+        self.assertEqual(patch["changed_lines"], 5)
         schema = json.loads((Path(__file__).parents[1] / "tools/swhurl/incident_review/diagnosis.schema.json").read_text())
         self.assertEqual(set(schema["required"]), set(diagnosis))
 
@@ -55,7 +56,7 @@ class IncidentReviewTests(unittest.TestCase):
         self.assertNotIn("eyJsecret", rendered)
         self.assertEqual(len(cleaned["items"]), 20)
         self.assertEqual(self.bundle["logs"][0]["api_key"], "<redacted>")
-        self.assertIn("<redacted>", self.bundle["logs"][1]["body"])
+        self.assertIn("<redacted>", self.bundle["logs"][1]["message"])
 
     def test_evidence_bundle_fails_closed_above_byte_limit(self):
         evidence = dict(self.raw["evidence"], logs=[{"body": "x" * 2000, "detail": "y" * 2000}
@@ -65,8 +66,23 @@ class IncidentReviewTests(unittest.TestCase):
 
     def test_fingerprint_is_stable_and_incident_scoped(self):
         self.assertEqual(fingerprint(self.bundle), self.bundle["fingerprint"])
-        changed = dict(self.bundle, incident_type="different")
-        self.assertNotEqual(fingerprint(changed), self.bundle["fingerprint"])
+        later = dict(self.raw["evidence"], window={"start": "2026-10-07T03:00:00+00:00",
+                                                   "end": "2026-10-07T04:00:00+00:00"})
+        self.assertEqual(evidence_bundle(later)["fingerprint"], self.bundle["fingerprint"])
+        for field, value in (("signal", "error-spans"), ("key", "hello-ts TypeError"), ("env", "prod")):
+            with self.subTest(field=field):
+                self.assertNotEqual(fingerprint(dict(self.bundle, **{field: value})), self.bundle["fingerprint"])
+
+    def test_bundle_refuses_unknown_scope_version_and_mismatched_fingerprint(self):
+        for change, pattern in (({"version": 2}, "version"), ({"env": "prod"}, "not allowlisted"),
+                                ({"signal": "all-logs"}, "not allowlisted"), ({"app": "other"}, "not allowlisted"),
+                                ({"repository": "attacker/repo"}, "not allowlisted"), ({"key": ""}, "key"),
+                                ({"window": {"start": "x"}}, "window"), ({"fingerprint": "0" * 24}, "fingerprint"),
+                                ({"base_revision": "abc"}, "full commit SHA"), ({"extra": 1}, "required fields")):
+            with self.subTest(change=change), self.assertRaisesRegex(PolicyError, pattern):
+                evidence_bundle(dict(self.raw["evidence"], **change))
+        without_base = {k: v for k, v in self.raw["evidence"].items() if k != "base_revision"}
+        self.assertNotIn("base_revision", evidence_bundle(without_base))
 
     def test_refuses_missing_or_out_of_bundle_evidence(self):
         result = dict(self.raw["diagnosis"], evidence_refs=["logs[99]"])
@@ -165,11 +181,16 @@ class IncidentReviewTests(unittest.TestCase):
 
     def test_prefilter_firing_and_suppression_cases(self):
         fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())
-        actual = [prefilter(case["finding"], case["state"]) for case in fixture["prefilter_cases"]]
-        self.assertEqual([row["reason"] for row in actual], ["new-fingerprint", "error-rate-change",
-                                                             "missing-expected-signal", "repeat-inside-cooldown",
-                                                             "quiet-window"])
-        self.assertEqual([row["model_call"] for row in actual], [True, True, True, False, False])
+        defaults = allowlist.current().defaults
+        for case in fixture["prefilter_cases"]:
+            with self.subTest(case=case["name"]):
+                decision = prefilter(case["finding"], case["state"], defaults, fixture["now"])
+                self.assertEqual(decision["reason"], case["expect"])
+                self.assertEqual(decision["fire"], case["expect"] in ("new-fingerprint", "error-rate-change",
+                                                                      "missing-expected-signal"))
+        for finding in ({"count": 1}, {"fingerprint": "x", "count": -1}, {"fingerprint": "x", "count": True}):
+            with self.subTest(finding=finding), self.assertRaises(PolicyError):
+                prefilter(finding, {"incidents": {}}, defaults, fixture["now"])
 
     def test_coverage_report_lists_alert_gaps(self):
         fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())
@@ -217,7 +238,7 @@ class IncidentReviewTests(unittest.TestCase):
                 return DraftPullRequest(number=42, url="https://github.com/samclement/hello-ts/pull/42")
 
         adapter = FakeGitHub()
-        result = open_draft_pull_request(adapter, self.patch, title="Fix service name", body="Evidence-backed fix.")
+        result = open_draft_pull_request(adapter, self.patch, title="Reject negative repeat counts", body="Evidence-backed fix.")
         self.assertEqual(result.number, 42)
         self.assertEqual(len(adapter.calls), 1)
         self.assertEqual(adapter.calls[0]["repository"], "samclement/hello-ts")

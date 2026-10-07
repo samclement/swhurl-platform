@@ -30,14 +30,16 @@ def publish(url: str, notification: dict) -> None:
         raise NotificationError('ntfy delivery failed; notification remains pending') from None
 
 
-def deliver(runner: Runner, state: dict, sender: Callable[[dict], None], now: float) -> None:
-    save_state(runner, state)  # durable outbox before any network side effect
+def deliver(runner: Runner, state: dict, sender: Callable[[dict], None], now: float, *,
+            save: Callable[[Runner, dict], None] = save_state, history: float = HISTORY) -> None:
+    """Post every pending notice in order. ``save`` checkpoints the caller's own state store."""
+    save(runner, state)  # durable outbox before any network side effect
     while state['pending']:
         notice = state['pending'][0]
         sender(notice)
-        state['seen'][notice['key']] = now + HISTORY
+        state['seen'][notice['key']] = now + notice.get('history', history)
         state['pending'].pop(0)
-        save_state(runner, state)
+        save(runner, state)
         logging.getLogger(__name__).info('Notification delivered: %s', notice['title'])
 
 

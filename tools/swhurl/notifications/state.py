@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from swhurl import statestore
 from swhurl.run import Runner
 
 from .errors import NotificationError
@@ -17,8 +18,7 @@ def empty_state(now: float) -> dict:
 
 
 def read_state(runner: Runner) -> dict | None:
-    doc = runner.json(['kubectl', '-n', STATE_NAMESPACE, 'get', 'configmap', STATE_NAME, '-o', 'json'])
-    raw = (doc.get('data') or {}).get('state.json')
+    raw = statestore.read_key(runner, namespace=STATE_NAMESPACE, name=STATE_NAME, key='state.json')
     if not raw:
         return None
     try:
@@ -38,8 +38,7 @@ def save_state(runner: Runner, state: dict) -> None:
     raw = json.dumps(state, separators=(',', ':'))
     if len(raw.encode()) > MAX_STATE_BYTES:
         raise NotificationError('notification state exceeds its bounded size; delivery stopped without discarding history')
-    runner.run(['kubectl', '-n', STATE_NAMESPACE, 'patch', 'configmap', STATE_NAME,
-                '--type=merge', '--patch-file=/dev/stdin', '--field-manager=notification-check'],
-               input=json.dumps({'data': {'state.json': raw}}), mutating=True)
+    statestore.write_key(runner, namespace=STATE_NAMESPACE, name=STATE_NAME, key='state.json', raw=raw,
+                         field_manager='notification-check')
 
 

@@ -1,14 +1,179 @@
 {
-  "prefilter_cases": [
-    {"finding": {"fingerprint": "new", "error_count": 1, "baseline_count": 1}, "state": {"seen": []}},
-    {"finding": {"fingerprint": "rate", "error_count": 12, "baseline_count": 2}, "state": {"seen": ["rate"]}},
-    {"finding": {"fingerprint": "missing", "missing_expected_signal": true}, "state": {"seen": ["missing"]}},
-    {"finding": {"fingerprint": "repeat", "inside_cooldown": true}, "state": {"seen": ["repeat"]}},
-    {"finding": {"fingerprint": "quiet"}, "state": {"seen": ["quiet"]}}
-  ],
-  "findings": [
-    {"fingerprint": "fp-a", "app": "hello-ts", "signal": "errors"},
-    {"fingerprint": "fp-b", "app": "hello-ts", "signal": "missing-heartbeat"}
-  ],
-  "alert_rules": [{"app": "hello-ts", "signal": "errors"}]
+ "now": 1791342000,
+ "prefilter_cases": [
+  {
+   "name": "new fingerprint",
+   "expect": "new-fingerprint",
+   "finding": {
+    "fingerprint": "new",
+    "signal": "error-logs",
+    "count": 1,
+    "baseline_mean": 1
+   },
+   "state": {
+    "incidents": {}
+   }
+  },
+  {
+   "name": "rate change on a known incident outside cooldown",
+   "expect": "error-rate-change",
+   "finding": {
+    "fingerprint": "rate",
+    "signal": "error-logs",
+    "count": 12,
+    "baseline_mean": 2
+   },
+   "state": {
+    "incidents": {
+     "rate": {
+      "app": "hello-ts",
+      "env": "staging",
+      "signal": "error-logs",
+      "first_seen": 1791252000,
+      "last_seen": 1791338400,
+      "last_analysis": 1791252000,
+      "cooldown_until": 1791341999,
+      "status": "notified",
+      "coverage": "alert-gap",
+      "cli": "",
+      "model": "",
+      "notified": 1791252000,
+      "pr": null,
+      "check": null
+     }
+    }
+   }
+  },
+  {
+   "name": "metrics stopped",
+   "expect": "missing-expected-signal",
+   "finding": {
+    "fingerprint": "missing",
+    "signal": "missing-telemetry",
+    "count": 0,
+    "baseline_mean": 2520
+   },
+   "state": {
+    "incidents": {}
+   }
+  },
+  {
+   "name": "repeat inside cooldown",
+   "expect": "repeat-inside-cooldown",
+   "finding": {
+    "fingerprint": "repeat",
+    "signal": "error-logs",
+    "count": 50,
+    "baseline_mean": 0
+   },
+   "state": {
+    "incidents": {
+     "repeat": {
+      "app": "hello-ts",
+      "env": "staging",
+      "signal": "error-logs",
+      "first_seen": 1791252000,
+      "last_seen": 1791338400,
+      "last_analysis": 1791252000,
+      "cooldown_until": 1791345600,
+      "status": "notified",
+      "coverage": "alert-gap",
+      "cli": "",
+      "model": "",
+      "notified": 1791252000,
+      "pr": null,
+      "check": null
+     }
+    }
+   }
+  },
+  {
+   "name": "known and steady",
+   "expect": "quiet-window",
+   "finding": {
+    "fingerprint": "quiet",
+    "signal": "error-logs",
+    "count": 3,
+    "baseline_mean": 3
+   },
+   "state": {
+    "incidents": {
+     "quiet": {
+      "app": "hello-ts",
+      "env": "staging",
+      "signal": "error-logs",
+      "first_seen": 1791252000,
+      "last_seen": 1791338400,
+      "last_analysis": 1791252000,
+      "cooldown_until": 1791341999,
+      "status": "notified",
+      "coverage": "alert-gap",
+      "cli": "",
+      "model": "",
+      "notified": 1791252000,
+      "pr": null,
+      "check": null
+     }
+    }
+   }
+  },
+  {
+   "name": "healthy metrics are not a finding",
+   "expect": "quiet-window",
+   "finding": {
+    "fingerprint": "healthy",
+    "signal": "missing-telemetry",
+    "count": 2520,
+    "baseline_mean": 2520
+   },
+   "state": {
+    "incidents": {}
+   }
+  },
+  {
+   "name": "no metrics and no baseline yet",
+   "expect": "quiet-window",
+   "finding": {
+    "fingerprint": "cold",
+    "signal": "missing-telemetry",
+    "count": 0,
+    "baseline_mean": 0
+   },
+   "state": {
+    "incidents": {}
+   }
+  },
+  {
+   "name": "many errors but below the rate floor",
+   "expect": "new-fingerprint",
+   "finding": {
+    "fingerprint": "floor",
+    "signal": "error-spans",
+    "count": 4,
+    "baseline_mean": 0
+   },
+   "state": {
+    "incidents": {}
+   }
+  }
+ ],
+ "findings": [
+  {
+   "fingerprint": "fp-a",
+   "app": "hello-ts",
+   "signal": "error-logs"
+  },
+  {
+   "fingerprint": "fp-b",
+   "app": "hello-ts",
+   "signal": "missing-telemetry"
+  }
+ ],
+ "alert_rules": [
+  {
+   "app": "hello-ts",
+   "signal": "error-logs",
+   "rule": "hello-ts errors"
+  }
+ ]
 }

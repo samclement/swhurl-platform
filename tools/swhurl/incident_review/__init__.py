@@ -96,24 +96,34 @@ def telemetry_query(signal: str, *, app: str, start: str, end: str) -> tuple[str
     return query, {"app": app, "start": start, "end": end}
 
 
-def prefilter(finding: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    """Decide deterministically whether a finding may proceed to analysis."""
-    fingerprint_value = finding.get("fingerprint")
+FIRING = ("missing-expected-signal", "error-rate-change", "new-fingerprint")
+
+
+def prefilter(finding: dict[str, Any], state: dict[str, Any], defaults: dict[str, Any], now: float) -> dict[str, Any]:
+    """Decide deterministically, from state alone, whether a finding may proceed to analysis.
+
+    The first matching rule is the recorded reason. ``missing-telemetry`` counts healthy
+    points, so only its absence can fire; every other signal counts failures.
+    """
+    fingerprint_value, count = finding.get("fingerprint"), finding.get("count")
     if not isinstance(fingerprint_value, str) or not fingerprint_value:
         raise PolicyError("finding needs a fingerprint")
-    seen = fingerprint_value in state.get("seen", [])
-    if seen and finding.get("inside_cooldown"):
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise PolicyError("finding needs a non-negative count")
+    known = state["incidents"].get(fingerprint_value)
+    mean = finding.get("baseline_mean", 0)
+    absence = finding.get("signal") == "missing-telemetry"
+    if known and now < known["cooldown_until"]:
         reason = "repeat-inside-cooldown"
-    elif finding.get("missing_expected_signal"):
-        reason = "missing-expected-signal"
-    elif finding.get("error_count", 0) > finding.get("baseline_count", 0) * finding.get("threshold_ratio", 2):
+    elif absence:
+        reason = "missing-expected-signal" if count == 0 and mean > 0 else "quiet-window"
+    elif count > defaults["rate_ratio"] * mean and count >= defaults["rate_min_count"]:
         reason = "error-rate-change"
-    elif fingerprint_value not in state.get("seen", []):
+    elif not known and count > 0:
         reason = "new-fingerprint"
     else:
         reason = "quiet-window"
-    return {"fire": reason in {"missing-expected-signal", "error-rate-change", "new-fingerprint"},
-            "reason": reason, "model_call": reason in {"missing-expected-signal", "error-rate-change", "new-fingerprint"}}
+    return {"fire": reason in FIRING, "reason": reason}
 
 
 def coverage_report(findings: list[dict[str, Any]], alert_rules: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -138,30 +148,46 @@ def redact(value: Any, *, key: str = "") -> Any:
     return value
 
 
+BUNDLE_FIELDS = {"version", "repository", "app", "env", "signal", "key", "window", "image",
+                 "logs", "metrics", "traces", "links"}
+
+
 def evidence_bundle(raw: dict[str, Any]) -> dict[str, Any]:
-    required = {"repository", "app", "base_revision", "incident_type", "window_start", "window_end",
-                "logs", "metrics", "traces"}
-    if not isinstance(raw, dict) or not required <= raw.keys():
+    """Validate, bound and redact a version 1 bundle; ``base_revision`` joins it in Stage 3."""
+    if not isinstance(raw, dict) or not BUNDLE_FIELDS <= raw.keys() <= BUNDLE_FIELDS | {"base_revision", "fingerprint"}:
         raise PolicyError("evidence bundle is missing required fields")
-    allowlist.current().repository(raw["repository"])
-    if not isinstance(raw["base_revision"], str) or not re.fullmatch(r"[0-9a-f]{40}", raw["base_revision"]):
+    if raw["version"] != 1 or isinstance(raw["version"], bool):
+        raise PolicyError("evidence bundle version must be 1")
+    app = allowlist.current().repository(raw["repository"])
+    if raw["app"] != app.app or raw["env"] not in app.environments or raw["signal"] not in app.signals:
+        raise PolicyError("evidence bundle app, environment or signal is not allowlisted")
+    if not isinstance(raw["key"], str) or not raw["key"] or len(raw["key"]) > 300:
+        raise PolicyError("evidence bundle key must be a bounded non-empty string")
+    for name, fields in (("window", {"start", "end"}), ("image", {"tag", "digest"})):
+        if (not isinstance(raw[name], dict) or set(raw[name]) != fields
+                or not all(isinstance(v, str) and len(v) <= 200 for v in raw[name].values())):
+            raise PolicyError(f"evidence bundle {name} is malformed")
+    if "base_revision" in raw and (not isinstance(raw["base_revision"], str)
+                                   or not re.fullmatch(r"[0-9a-f]{40}", raw["base_revision"])):
         raise PolicyError("evidence base_revision must be a full commit SHA")
-    if not all(isinstance(raw[k], list) for k in ("logs", "metrics", "traces")):
+    if not all(isinstance(raw[k], list) for k in ("logs", "metrics", "traces", "links")):
         raise PolicyError("evidence records must be lists")
-    bounded = dict(raw)
-    for key in ("logs", "metrics", "traces"):
+    bounded = {k: v for k, v in raw.items() if k != "fingerprint"}
+    for key in ("logs", "metrics", "traces", "links"):
         bounded[key] = raw[key][:MAX_RECORDS]
     cleaned = redact(bounded)
+    cleaned["fingerprint"] = fingerprint(cleaned)
+    if raw.get("fingerprint", cleaned["fingerprint"]) != cleaned["fingerprint"]:
+        raise PolicyError("evidence bundle fingerprint does not match its identity")
     if len(json.dumps(cleaned, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_BUNDLE_BYTES:
         raise PolicyError("redacted evidence bundle exceeds byte limit")
-    cleaned["fingerprint"] = fingerprint(cleaned)
     return cleaned
 
 
-def fingerprint(bundle: dict[str, Any]) -> str:
-    identity = {key: bundle.get(key) for key in
-                ("repository", "app", "incident_type", "window_start", "window_end")}
-    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
+def fingerprint(identity: dict[str, Any]) -> str:
+    """Stable for one failure of one app environment; the time window is never part of it."""
+    fields = {key: identity[key] for key in ("repository", "app", "env", "signal", "key")}
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
 def validate_diagnosis(result: Any, bundle: dict[str, Any]) -> dict[str, Any]:
@@ -264,7 +290,9 @@ def dry_run(argv: list[str] | None = None) -> int:
         patch = validate_patch(raw["patch"], repository=bundle["repository"],
                                base_revision=bundle["base_revision"])
         cases = json.loads((ROOT / "tests/fixtures/incident-review/prefilter.json").read_text())
-        decisions = [prefilter(case["finding"], case["state"]) for case in cases["prefilter_cases"]]
+        defaults = allowlist.current().defaults
+        decisions = [prefilter(case["finding"], case["state"], defaults, cases["now"])
+                     for case in cases["prefilter_cases"]]
         coverage = coverage_report(cases["findings"], cases["alert_rules"])
         report = {"mode": "offline-fixture-dry-run", "fingerprint": bundle["fingerprint"],
                   "evidence": bundle, "diagnosis": diagnosis,

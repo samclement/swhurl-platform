@@ -1,0 +1,122 @@
+{
+ "now": 1791342000,
+ "state": null,
+ "releases": {
+  "items": [
+   {
+    "metadata": {
+     "namespace": "hello-ts-staging",
+     "name": "hello-ts"
+    },
+    "spec": {
+     "values": {
+      "controllers": {
+       "main": {
+        "containers": {
+         "main": {
+          "image": {
+           "repository": "ghcr.io/samclement/hello-ts",
+           "tag": "35-54d7918",
+           "digest": "sha256:1f8ff9184bb7e40eccf6d188af60b99260ae545b66de1e090c337b142b30eb19"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   {
+    "metadata": {
+     "namespace": "flux-system",
+     "name": "no-image"
+    },
+    "spec": {}
+   }
+  ]
+ },
+ "telemetry": {
+  "error-logs": [
+   {
+    "service": "hello-ts",
+    "exception_type": "RangeError",
+    "body_prefix": "",
+    "value": "6"
+   }
+  ],
+  "error-spans": [
+   {
+    "service": "hello-ts",
+    "span": "GET",
+    "value": 6
+   }
+  ],
+  "unexpected-service:0": [],
+  "unexpected-service:1": [],
+  "missing-telemetry": [
+   {
+    "value": 336
+   }
+  ],
+  "log-sample:error-logs": [
+   {
+    "timestamp": "2026-10-07 02:07:04.109116616",
+    "level": "error",
+    "service": "hello-ts",
+    "message": "request failed",
+    "exception_type": "RangeError",
+    "stack": "RangeError: Invalid count value: -1\n    at String.repeat (<anonymous>)\n    at handle (file:///app/dist/server.js:21:31)\n    at frame0 (node:internal/frame:0:1)\n    at frame1 (node:internal/frame:1:1)\n    at frame2 (node:internal/frame:2:1)\n    at frame3 (node:internal/frame:3:1)\n    at frame4 (node:internal/frame:4:1)\n    at frame5 (node:internal/frame:5:1)\n    at frame6 (node:internal/frame:6:1)\n    at frame7 (node:internal/frame:7:1)\n    at frame8 (node:internal/frame:8:1)\n    at frame9 (node:internal/frame:9:1)\n    at frame10 (node:internal/frame:10:1)\n    at frame11 (node:internal/frame:11:1)\n",
+    "path": "/repeat"
+   },
+   {
+    "timestamp": "2026-10-07 02:07:03.000000000",
+    "level": "error",
+    "service": "hello-ts",
+    "message": "request failed token=abc123",
+    "exception_type": "RangeError",
+    "stack": "RangeError: Invalid count value: -1\n    at String.repeat (<anonymous>)\n    at handle (file:///app/dist/server.js:21:31)\n    at frame0 (node:internal/frame:0:1)\n    at frame1 (node:internal/frame:1:1)\n    at frame2 (node:internal/frame:2:1)\n    at frame3 (node:internal/frame:3:1)\n    at frame4 (node:internal/frame:4:1)\n    at frame5 (node:internal/frame:5:1)\n    at frame6 (node:internal/frame:6:1)\n    at frame7 (node:internal/frame:7:1)\n    at frame8 (node:internal/frame:8:1)\n    at frame9 (node:internal/frame:9:1)\n    at frame10 (node:internal/frame:10:1)\n    at frame11 (node:internal/frame:11:1)\n",
+    "path": "/repeat?times=-1&token=abc123"
+   }
+  ],
+  "trace-sample:error-logs": [
+   {
+    "timestamp": "2026-10-07 02:07:04.108000000",
+    "trace_id": "b5054dd9503caf4a5dc1f771baf4d36e",
+    "span_id": "19c3cd594014b893",
+    "service": "hello-ts",
+    "span": "GET",
+    "status": "Error",
+    "http_status": "500",
+    "route": ""
+   }
+  ]
+ },
+ "analysis": {
+  "status": {
+   "version": 1,
+   "status": "ok",
+   "cli": "fixture-cli",
+   "model": "fixture-model",
+   "seconds": 12,
+   "usage": null
+  },
+  "diagnosis": {
+   "summary": "GET /repeat answers 500 when times is negative.",
+   "likely_cause": "The handler passes a negative count to String.repeat, which throws RangeError.",
+   "confidence": 0.86,
+   "evidence_refs": [
+    "logs[0]",
+    "metrics[0]",
+    "traces[0]"
+   ],
+   "unresolved_questions": [],
+   "proposed_files": [
+    "src/server.ts"
+   ],
+   "proposed_tests": [
+    "GET /repeat?times=-1 returns 400."
+   ],
+   "recommend_no_change": false
+  }
+ }
+}

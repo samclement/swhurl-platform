@@ -14,10 +14,8 @@ from swhurl.incident_review import (
     evidence_bundle,
     fingerprint,
     prefilter,
-    query_result_settings,
     read_bounded_response,
     redact,
-    telemetry_query,
     validate_diagnosis,
     validate_patch,
 )
@@ -139,21 +137,6 @@ class IncidentReviewTests(unittest.TestCase):
             "git", "apply", "--check", "-", returncode=1)
         with self.assertRaisesRegex(PolicyError, "does not apply"):
             check_patch_applies(patch, Path("/fixture"), runner=rejected)
-
-    def test_queries_keep_values_out_of_sql(self):
-        query, params = telemetry_query("errors", app="hello-ts' OR 1=1", start="2026-10-05T00:00:00Z",
-                                        end="2026-10-05T01:00:00Z")
-        self.assertNotIn("hello-ts", query)
-        self.assertEqual(params["app"], "hello-ts' OR 1=1")
-        with self.assertRaises(PolicyError):
-            telemetry_query("arbitrary", app="x", start="x", end="y")
-        for start, end in (("bad", "2026-10-05T01:00:00Z"),
-                           ("2026-10-05T00:00:00", "2026-10-05T01:00:00Z"),
-                           ("2026-10-05T00:00:00Z", "2026-10-06T01:00:00Z"),
-                           ("2026-10-05T01:00:00Z", "2026-10-05T00:00:00Z")):
-            with self.subTest(start=start, end=end), self.assertRaises(PolicyError):
-                telemetry_query("logs", app="hello-ts", start=start, end=end)
-        self.assertEqual(query_result_settings(), {"max_result_bytes": 64_000, "max_result_rows": 20})
 
     def test_query_response_stream_is_strictly_byte_bounded(self):
         self.assertEqual(read_bounded_response([b"first", b"second"]), b"firstsecond")

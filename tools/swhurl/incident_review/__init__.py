@@ -11,7 +11,6 @@ import json
 import re
 import sys
 from collections.abc import Iterable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,6 @@ MAX_QUERY_ROWS = 20
 MAX_PATCH_BYTES = 32_000
 MAX_FILES = 5
 MAX_CHANGED_LINES = 200
-MAX_QUERY_WINDOW_HOURS = 24
 SAFE_PATH = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
 SECRET_FIELD = re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization|cookie)")
 SECRET_VALUE = re.compile(
@@ -71,29 +69,6 @@ def decode_codex_output(returncode: int, last_message: str) -> dict[str, Any]:
     if not isinstance(response, dict):
         raise PolicyError("Codex CLI final message must be a JSON object")
     return response
-
-
-def telemetry_query(signal: str, *, app: str, start: str, end: str) -> tuple[str, dict[str, str]]:
-    """Build a fixed ClickHouse query; caller values are always parameters."""
-    if signal not in {"errors", "logs", "traces"}:
-        raise PolicyError("signal is not allowlisted")
-    if not isinstance(app, str) or not app or len(app) > 128:
-        raise PolicyError("app must be a bounded non-empty string")
-    try:
-        start_at = datetime.fromisoformat(start.replace("Z", "+00:00"))
-        end_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
-    except (AttributeError, TypeError, ValueError) as error:
-        raise PolicyError("query window must use ISO-8601 timestamps") from error
-    if start_at.tzinfo is None or end_at.tzinfo is None:
-        raise PolicyError("query timestamps must include a timezone")
-    if end_at <= start_at or (end_at - start_at).total_seconds() > MAX_QUERY_WINDOW_HOURS * 3600:
-        raise PolicyError("query window must be positive and at most 24 hours")
-    query = {
-        "errors": f"SELECT service, exception_type, count() AS value FROM otel_logs WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} AND SeverityText IN ('ERROR','FATAL') GROUP BY service, exception_type ORDER BY value DESC LIMIT {MAX_QUERY_ROWS}",
-        "logs": f"SELECT Timestamp, service, SeverityText, Body FROM otel_logs WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} ORDER BY Timestamp DESC LIMIT {MAX_QUERY_ROWS}",
-        "traces": f"SELECT Timestamp, TraceId, SpanId, ServiceName, SpanName, StatusCode FROM otel_traces WHERE app = {{app:String}} AND Timestamp >= {{start:DateTime64}} AND Timestamp < {{end:DateTime64}} AND StatusCode = 'Error' ORDER BY Timestamp DESC LIMIT {MAX_QUERY_ROWS}",
-    }[signal]
-    return query, {"app": app, "start": start, "end": end}
 
 
 FIRING = ("missing-expected-signal", "error-rate-change", "new-fingerprint")

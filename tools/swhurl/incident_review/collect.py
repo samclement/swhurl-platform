@@ -215,10 +215,9 @@ def approved_trace(row: dict[str, Any]) -> dict[str, Any]:
     return {name: row[name][:200] for name in TRACE_FIELDS}
 
 
-def release_images(runner: Runner) -> dict[tuple[str, str], dict[str, str]]:
-    """Image tag and digest of every HelmRelease, by (namespace, name)."""
+def release_images_from(doc: Any) -> dict[tuple[str, str], dict[str, str]]:
+    """Image tag and digest of every HelmRelease in a ``kubectl get -o json`` list, by (namespace, name)."""
     try:
-        doc = runner.json(RELEASES)
         found = {}
         for item in doc['items']:
             image = (((((item.get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main') or {})
@@ -226,7 +225,14 @@ def release_images(runner: Runner) -> dict[tuple[str, str], dict[str, str]]:
             found[(item['metadata']['namespace'], item['metadata']['name'])] = {
                 'tag': str(image.get('tag') or '')[:200], 'digest': str(image.get('digest') or '')[:200]}
         return found
-    except (CommandError, AttributeError, KeyError, TypeError, ValueError):
+    except (AttributeError, KeyError, TypeError):
+        raise ReviewFailure('query') from None
+
+
+def release_images(runner: Runner) -> dict[tuple[str, str], dict[str, str]]:
+    try:
+        return release_images_from(runner.json(RELEASES))
+    except (CommandError, ValueError):
         raise ReviewFailure('query') from None
 
 

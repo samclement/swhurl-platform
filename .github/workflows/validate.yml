@@ -164,6 +164,37 @@ jobs:
       - name: Check app instances against policy
         run: make check-apps
 
+  worker-image:
+    name: Build and smoke-test the incident review worker image
+    needs: changes
+    if: needs.changes.outputs.app_instance_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the image (not published)
+        run: docker build -f images/incident-review-worker/Dockerfile -t incident-review-worker .
+
+      # Run it the way the cluster does: read-only root, no capabilities, UID 65532, a tmpfs scratch.
+      - name: Smoke test
+        run: |
+          set -Eeuo pipefail
+          work=$(mktemp -d)
+          mkdir -p "$work/bundle" "$work/diagnosis"
+          chmod -R 0777 "$work"
+          run() {
+            docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges --user 65532:65532 \
+              --tmpfs /scratch -v "$work:/work" "$@" incident-review-worker
+            cat "$work/diagnosis/status.json"
+          }
+          run | grep -q '"status":"skipped"'
+          echo '{"version":1}' > "$work/bundle/bundle.json"
+          run -e INCIDENT_REVIEW_MODE=collect-only | grep -q '"status":"disabled"'
+          run -e CODEX_MODEL=fixture | grep -q '"status":"error"'
+          docker run --rm --entrypoint sh incident-review-worker -c \
+            '! command -v kubectl && ! command -v git && ! command -v python3 && codex --version'
+
   templates:
     name: Check every app template combination
     needs: changes

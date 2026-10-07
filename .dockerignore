@@ -3,5 +3,7 @@
 !pyproject.toml
 !uv.lock
 !tools/
+!images/incident-review-worker/analyse.sh
+!images/incident-review-worker/prompt.md
 !clusters/home/flux-system/sources/configmap-platform-settings.yaml
 **/__pycache__

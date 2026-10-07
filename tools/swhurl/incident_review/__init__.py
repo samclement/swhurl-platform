@@ -18,6 +18,9 @@ from typing import Any
 from swhurl import ROOT
 from swhurl.run import Runner
 
+from . import allowlist
+from .errors import PolicyError as PolicyError
+
 MAX_RECORDS = 20
 MAX_TEXT = 2000
 MAX_BUNDLE_BYTES = 64_000
@@ -28,18 +31,12 @@ MAX_PATCH_BYTES = 32_000
 MAX_FILES = 5
 MAX_CHANGED_LINES = 200
 MAX_QUERY_WINDOW_HOURS = 24
-ALLOWED_REPOSITORIES = {"samclement/hello-ts"}
-ALLOWED_PATHS = ("src/", "tests/", "README.md")
-FORBIDDEN_PARTS = {".github/workflows/", "apps/", "clusters/", "platform/", "infra/"}
+SAFE_PATH = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
 SECRET_FIELD = re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization|cookie)")
 SECRET_VALUE = re.compile(
     r"(?i)bearer\s+[A-Za-z0-9._~+/-]+=*|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,})\b|"
     r"\b(?:password|secret|token|api[_-]?key)(\s*[=:]\s*)[^\s,;]+"
 )
-
-
-class PolicyError(ValueError):
-    """Input is malformed or violates the static review policy."""
 
 
 def query_result_settings() -> dict[str, int]:
@@ -146,8 +143,7 @@ def evidence_bundle(raw: dict[str, Any]) -> dict[str, Any]:
                 "logs", "metrics", "traces"}
     if not isinstance(raw, dict) or not required <= raw.keys():
         raise PolicyError("evidence bundle is missing required fields")
-    if raw["repository"] not in ALLOWED_REPOSITORIES:
-        raise PolicyError("repository is not allowlisted")
+    allowlist.current().repository(raw["repository"])
     if not isinstance(raw["base_revision"], str) or not re.fullmatch(r"[0-9a-f]{40}", raw["base_revision"]):
         raise PolicyError("evidence base_revision must be a full commit SHA")
     if not all(isinstance(raw[k], list) for k in ("logs", "metrics", "traces")):
@@ -194,8 +190,7 @@ def validate_diagnosis(result: Any, bundle: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_patch(patch: dict[str, Any], *, repository: str, base_revision: str) -> dict[str, Any]:
-    if repository not in ALLOWED_REPOSITORIES:
-        raise PolicyError("repository is not allowlisted")
+    allowed_paths = allowlist.current().repository(repository).patch_paths
     if not isinstance(patch, dict) or patch.get("repository") != repository:
         raise PolicyError("patch repository mismatch")
     if patch.get("base_revision") != base_revision or not re.fullmatch(r"[0-9a-f]{40}", base_revision):
@@ -209,12 +204,12 @@ def validate_patch(patch: dict[str, Any], *, repository: str, base_revision: str
         if not isinstance(item, dict) or set(item) != {"path", "diff"}:
             raise PolicyError("patch file entry schema mismatch")
         path, diff = item["path"], item["diff"]
-        if (not isinstance(path, str) or
-                not re.fullmatch(r"(?:src|tests)/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*|README\.md", path)):
+        if not isinstance(path, str) or not SAFE_PATH.fullmatch(path) or ".." in path.split("/"):
             raise PolicyError("unsafe patch path")
-        if path in seen or not any(path == allowed or path.startswith(allowed) for allowed in ALLOWED_PATHS):
+        if path in seen or not any(path == allowed or (allowed.endswith("/") and path.startswith(allowed))
+                                   for allowed in allowed_paths):
             raise PolicyError("patch path is not allowlisted")
-        if any(path.startswith(prefix) for prefix in FORBIDDEN_PARTS):
+        if any(path.startswith(prefix) for prefix in allowlist.FORBIDDEN_PARTS):
             raise PolicyError("patch touches forbidden paths")
         if path.endswith((".yaml", ".yml", ".json", ".lock")) or Path(path).is_symlink():
             raise PolicyError("manifest, lockfile or symlink edits are forbidden")

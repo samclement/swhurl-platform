@@ -123,5 +123,68 @@ class HeartbeatCommandTests(unittest.TestCase):
         self.assertFalse(self.state_path.exists())
 
 
+class WatchedJobsTests(unittest.TestCase):
+    """A second watched CronJob gets its own maximum age, messages and incident flag."""
+
+    REVIEW = h.Watched('incident review', 'incident-review', 'incident-review', 130 * 60)
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.state_path = Path(self.temp.name) / 'notification-heartbeat.json'
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def run_main(self, *, checker, review, review_error=None):
+        runner = runner_for(checker)
+
+        def review_result(args, _input):
+            if review_error:
+                return Result(args, 1, '', review_error)
+            return Result(args, 0, json.dumps(review))
+
+        runner.on('kubectl', '-n', 'incident-review', 'get', 'cronjob', 'incident-review', handler=review_result)
+        output = io.StringIO()
+        with mock.patch.object(h, 'publish') as send, contextlib.redirect_stdout(output):
+            code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.REVIEW))
+        return code, [call.args[1]['title'] for call in send.call_args_list], output.getvalue()
+
+    def test_only_the_first_job_is_watched_until_the_reviewer_is_deployed(self):
+        self.assertEqual([(job.namespace, job.name, job.max_age) for job in h.WATCHED],
+                         [('console', 'console-notifications', 600)])
+
+    def test_each_job_uses_its_own_maximum_age_and_flag(self):
+        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=129 * 60))
+        self.assertEqual((code, titles, self.state_path.exists()), (0, [], False))
+        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=131 * 60))
+        self.assertEqual((code, titles), (0, ['incident review stale']))
+        self.assertEqual(json.loads(self.state_path.read_text()),
+                         {'alerting_since': None, 'last_alert': None,
+                          'others': {'incident-review/incident-review': {'alerting_since': NOW, 'last_alert': NOW}}})
+        code, titles, _ = self.run_main(checker=cronjob(age=601), review=cronjob(age=131 * 60))
+        self.assertEqual(titles, ['notification checker stale'])
+        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=60))
+        self.assertEqual(sorted(titles), ['incident review recovered', 'notification checker recovered'])
+        self.assertEqual(json.loads(self.state_path.read_text())['others']['incident-review/incident-review'],
+                         {'alerting_since': None, 'last_alert': None})
+
+    def test_one_unreadable_job_does_not_hide_the_other(self):
+        code, titles, output = self.run_main(checker=cronjob(age=601), review=None, review_error='API unavailable')
+        self.assertEqual((code, titles), (1, ['notification checker stale']))
+        self.assertIn('cannot read incident review', output)
+
+    def test_state_written_before_there_were_other_jobs_still_reads(self):
+        self.state_path.write_text('{"alerting_since":12,"last_alert":13}\n')
+        self.assertEqual(h.read_state(self.state_path), {'console/console-notifications':
+                                                         {'alerting_since': 12, 'last_alert': 13}})
+        for bad in ('{"alerting_since":12,"last_alert":13,"others":[]}',
+                    '{"alerting_since":null,"last_alert":null,"others":{"a/b":{"alerting_since":1}}}',
+                    '{"alerting_since":null,"last_alert":null,"others":{"console/console-notifications":'
+                    '{"alerting_since":null,"last_alert":null}}}'):
+            self.state_path.write_text(bad)
+            with self.assertRaises(NotificationError):
+                h.read_state(self.state_path)
+
+
 if __name__ == '__main__':
     unittest.main()

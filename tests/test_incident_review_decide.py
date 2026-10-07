@@ -205,5 +205,32 @@ class DecideRunTests(unittest.TestCase):
         self.assertEqual((code, len(saved[0]['pending'])), (1, 1))
 
 
+class DryRunTests(unittest.TestCase):
+    def test_dry_run_covers_the_whole_pipeline_without_external_calls(self):
+        import contextlib
+        import io
+
+        from swhurl.incident_review import dryrun
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(dryrun.main([]), 0)
+        report = json.loads(out.getvalue())
+        self.assertEqual((report['external_calls'], report['report']['status'], report['decision']['reason']),
+                         (0, 'fired', 'notified'))
+        self.assertEqual([m['title'] for m in report['messages']], ['hello-ts/staging diagnosis'])
+        self.assertEqual(report['proposed_patch']['files'], ['src/server.ts'])
+        self.assertLess(report['state_bytes'], 64_000)
+
+    def test_quiet_fixture_skips_analysis_and_sends_nothing(self):
+        from swhurl.incident_review import dryrun
+        fixture = copy.deepcopy(FIXTURE)
+        fixture['telemetry'].update({'error-logs': [], 'error-spans': []})
+        with tempfile.TemporaryDirectory() as tmp:
+            result = dryrun.sweep(fixture, Path(tmp))
+            self.assertEqual(json.loads((Path(tmp) / 'diagnosis/status.json').read_text())['status'], 'skipped')
+            self.assertFalse((Path(tmp) / 'bundle/bundle.json').exists())
+        self.assertEqual((result['decision']['result'], result['bundle'], result['messages']), ('quiet', None, []))
+
+
 if __name__ == '__main__':
     unittest.main()

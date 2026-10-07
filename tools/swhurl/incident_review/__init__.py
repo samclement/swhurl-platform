@@ -1,20 +1,18 @@
-"""Offline evidence and candidate patch policy for AI incident review.
+"""Deterministic policy for AI incident review: redaction, bounds, validation and patch rules.
 
-This prototype intentionally has no telemetry, model, notification or GitHub
-adapter. Its dry run reads only checked-in fixtures.
+Nothing here talks to telemetry, a model, ntfy or GitHub. The steps that do are
+``collect`` and ``decide``; ``dryrun`` runs them over checked-in fixtures
+(docs/plan.md section 14).
 """
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import re
-import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from swhurl import ROOT
 from swhurl.run import Runner
 
 from . import allowlist
@@ -252,36 +250,3 @@ def check_patch_applies(patch: dict[str, Any], checkout: Path, *, runner: Runner
     result = runner.run(["git", "apply", "--check", "-"], input=combined, cwd=checkout, check=False)
     if result.returncode:
         raise PolicyError("candidate patch does not apply cleanly to the recorded base")
-
-
-def dry_run(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline incident review fixture dry run")
-    parser.add_argument("--fixture", default=str(ROOT / "tests/fixtures/incident-review/candidate.json"))
-    args = parser.parse_args(argv)
-    try:
-        raw = json.loads(Path(args.fixture).read_text())
-        bundle = evidence_bundle(raw["evidence"])
-        diagnosis = validate_diagnosis(raw["diagnosis"], bundle)
-        patch = validate_patch(raw["patch"], repository=bundle["repository"],
-                               base_revision=bundle["base_revision"])
-        cases = json.loads((ROOT / "tests/fixtures/incident-review/prefilter.json").read_text())
-        defaults = allowlist.current().defaults
-        decisions = [prefilter(case["finding"], case["state"], defaults, cases["now"])
-                     for case in cases["prefilter_cases"]]
-        coverage = coverage_report(cases["findings"], cases["alert_rules"])
-        report = {"mode": "offline-fixture-dry-run", "fingerprint": bundle["fingerprint"],
-                  "evidence": bundle, "diagnosis": diagnosis,
-                  "proposed_patch": patch, "prefilter": decisions,
-                  "coverage": coverage,
-                  "query_limits": {"server_settings": query_result_settings(),
-                                   "response_bytes": MAX_QUERY_RESPONSE_BYTES},
-                  "external_calls": 0}
-        print(json.dumps(report, indent=2, sort_keys=True))
-        return 0
-    except (OSError, json.JSONDecodeError, KeyError, PolicyError) as error:
-        print(f"incident review refused: {error}", file=sys.stderr)
-        return 1
-
-
-def main(argv: list[str] | None = None) -> int:
-    return dry_run(argv)

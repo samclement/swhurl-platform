@@ -13,7 +13,12 @@ COMMANDS = {
     # command: (module, function, summary)
     'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
     'notifications-check': ('swhurl.notifications', 'main', 'Evaluate lifecycle/health notifications (--dry-run reads only)'),
-    'incident-review-dry-run': ('swhurl.incident_review', 'main', 'Offline incident evidence and candidate patch policy dry run'),
+    'incident-review-dry-run': ('swhurl.incident_review.dryrun', 'main',
+                                'Offline: run collect, a fixture analysis and decide over checked-in fixtures'),
+    'incident-review-collect': ('swhurl.incident_review.collect', 'main',
+                                'Reviewer pod: query telemetry, pre-filter, write the report and bundle'),
+    'incident-review-decide': ('swhurl.incident_review.decide', 'main',
+                               'Reviewer pod: validate the diagnosis, update state, notify'),
     'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main',
                                  'Alert if the notification checker is stale (host timer)'),
     'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),

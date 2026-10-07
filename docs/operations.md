@@ -110,6 +110,8 @@ Renovate does not see the tool versions: `kubectl` and `helm` are pinned in both
 
 The host timer checks the in-cluster `console-notifications` CronJob every five minutes. It posts a high-priority alert when the Job is missing, suspended or has not succeeded for 10 minutes, reminds once an hour while stale, and sends a normal-priority recovery after the checker succeeds again. The service uses the user's kubeconfig and reads the existing ntfy failure destination from `console/notification-ntfy` for each post; it stores only incident timestamps in `~/.local/state/swhurl-platform/notification-heartbeat.json` (directory mode 0700, file mode 0600). Its log is `/var/log/swhurl-platform/swhurl-notification-heartbeat.log` and is collected by ClickStack.
 
+The jobs it watches are the `WATCHED` table in `tools/swhurl/notifications/heartbeat.py`, each with its own maximum age; today that is the notification checker alone. Add a row only after the new CronJob is deployed and unsuspended, because a missing or suspended job is reported as stale. The timer runs the code in this checkout, so a new row takes effect on the next run without reinstalling.
+
 The heartbeat runs outside the console image, publish workflow and Kubernetes scheduler. It still needs this host, the Kubernetes API, the Secret and ntfy to work. It cannot notify while the host or API is down. It alerts after 10 minutes without a successful checker Job plus up to one five-minute timer interval and one second. On this host, `make verify-platform` checks that the timer is active and the service's last run succeeded within 15 minutes.
 
 Run installation and removal in your own terminal; both commands need `sudo`:

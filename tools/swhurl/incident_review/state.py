@@ -23,7 +23,7 @@ FIELD_MANAGER = 'incident-review'
 MAX_STATE_BYTES = 64_000
 STATUSES = frozenset({'seen', 'analysed', 'suppressed-low-confidence', 'suppressed-uncited', 'no-change',
                       'no-diagnosis', 'notified'})
-RESULTS = frozenset({'', 'quiet', 'analysed', 'budget', 'failed'})
+RESULTS = frozenset({'', 'quiet', 'collect-only', 'analysed', 'budget', 'failed'})
 INCIDENT_FIELDS = {'app': str, 'env': str, 'signal': str, 'first_seen': float, 'last_seen': float,
                    'last_analysis': float, 'cooldown_until': float, 'status': str, 'coverage': str,
                    'cli': str, 'model': str, 'notified': float}

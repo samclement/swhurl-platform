@@ -55,8 +55,8 @@ spec:
           collect:
             image: &operator-image
               repository: ghcr.io/samclement/swhurl-console
-              tag: src-9a5e0afc56d60f0d # image: console
-              digest: sha256:50b3a7791e2320742cfd2c688d3e53e050c15453984da2a34feac544ad373c6c # image: console
+              tag: src-19643ebdaf883d8b # image: console
+              digest: sha256:95d0cafdc6eaec1596f65eca364e3f8d337cc5e15f55c043beaf535f7c6e41c3 # image: console
             command: [timeout, "120", python, -m, swhurl, incident-review-collect]
             envFrom:
               - secretRef:

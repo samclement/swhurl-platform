@@ -2,7 +2,7 @@
 # go (docs/plan.md section 14, "Allowlist"). Changing this file is a reviewed commit: nothing
 # at run time can extend it, and the loader refuses any key, app or signal it does not know.
 version: 1
-model: ""                     # set when the Codex CLI is pinned; recorded with every analysis
+model: gpt-6-luna             # also CODEX_MODEL on the analyse container; recorded with every analysis
 defaults:
   confidence_min: 0.7         # below this the diagnosis is recorded and no message is sent
   cooldown_hours: 24          # no second model call for the same fingerprint inside this

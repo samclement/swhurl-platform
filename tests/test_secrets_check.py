@@ -30,6 +30,16 @@ class SecretsCheckTests(unittest.TestCase):
         self.assertIn('exactly', ingestion_key_problem({}))
         self.assertIn('exactly', ingestion_key_problem({clickstack: 'a', otel: 'a', 'platform/x.sops.yaml': 'a'}))
 
+    def test_reviewer_clickhouse_copy_must_equal_its_source(self):
+        from swhurl.secrets_check import CLICKHOUSE_COPIES, clickhouse_copy_problem
+        source, copy = (path for path, _ in CLICKHOUSE_COPIES)
+        self.assertIsNone(clickhouse_copy_problem({source: 'a', copy: 'a'}))
+        self.assertIsNone(clickhouse_copy_problem({source: 'a'}))
+        error = clickhouse_copy_problem({source: 'a', copy: 'private-fingerprint'})
+        self.assertIn('differs', error)
+        self.assertNotIn('private-fingerprint', error)
+        self.assertIn('missing', clickhouse_copy_problem({copy: 'a'}))
+
 
 if __name__ == '__main__':
     unittest.main()

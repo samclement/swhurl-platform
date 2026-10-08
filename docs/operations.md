@@ -131,7 +131,7 @@ Removal leaves the incident file and log in place. `make notifications-heartbeat
 
 The [incident reviewer](services.md#incident-reviewer) is the CronJob `incident-review/incident-review`.
 
-- **See what it knows:** the state is `kubectl -n incident-review get configmap incident-review-state -o jsonpath='{.data.state\.json}'` (incident fingerprints, statuses, hourly counts, spend and pending messages; no log text).
+- **See what it knows:** `make incident-review-status` (last sweep, hourly counts, incidents, spend, pending messages; no log text). `make incident-review-bundle` prints the evidence it would send for the last full hour, without sending it.
 - **Stop it:** set `suspend: true` under `cronjob:` in [`platform/incident-review/helmrelease.yaml`](../platform/incident-review/helmrelease.yaml), commit and push. To keep sweeping without model calls, set `INCIDENT_REVIEW_MODE: collect-only` on the `analyse` container instead.
 - **Model key:** create or rotate it in the provider's project, then `sops platform/incident-review/secret.sops.yaml`, set `OPENAI_API_KEY`, commit and push. The next Job reads it; nothing restarts. The project's own spend cap is set at the provider and is the hard limit; the reviewer's counter (`monthly_refuse_cents`) stops earlier.
 - **ClickHouse password:** it is a copy. After rotating `CLICKHOUSE_APP_PASSWORD` in `platform/clickstack/secret.sops.yaml`, set the same value in `platform/incident-review/secret-clickhouse.sops.yaml`; `make check-secrets` fails while they differ.

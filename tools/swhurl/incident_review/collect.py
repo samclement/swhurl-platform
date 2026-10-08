@@ -330,6 +330,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, *,
     parser.add_argument('--work', type=Path, default=Path('/work'))
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s %(message)s')
+    logging.getLogger('httpx').setLevel(logging.WARNING)  # its INFO lines repeat every request URL
     runner = runner or Runner.from_environment()
     now = now if now is not None else time.time()
     try:

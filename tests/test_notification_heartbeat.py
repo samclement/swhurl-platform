@@ -81,7 +81,7 @@ class HeartbeatCommandTests(unittest.TestCase):
     def run_main(self, runner, *args):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = h.main(list(args), runner, now=NOW, state_path=self.state_path)
+            result = h.main(list(args), runner, now=NOW, state_path=self.state_path, watched=h.WATCHED[:1])
         return result, output.getvalue()
 
     def test_dry_run_does_not_read_secret_post_or_save(self):
@@ -149,9 +149,10 @@ class WatchedJobsTests(unittest.TestCase):
             code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.REVIEW))
         return code, [call.args[1]['title'] for call in send.call_args_list], output.getvalue()
 
-    def test_only_the_first_job_is_watched_until_the_reviewer_is_deployed(self):
+    def test_watched_jobs(self):
         self.assertEqual([(job.namespace, job.name, job.max_age) for job in h.WATCHED],
-                         [('console', 'console-notifications', 600)])
+                         [('console', 'console-notifications', 600), ('incident-review', 'incident-review', 7800)])
+        self.assertEqual(self.REVIEW, h.WATCHED[1])
 
     def test_each_job_uses_its_own_maximum_age_and_flag(self):
         code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=129 * 60))

@@ -123,8 +123,12 @@ class DecideTests(unittest.TestCase):
         outcome, current = apply(report=later, bundle=None, analysis=None, diagnosis=None, current=current,
                                  now=NOW + 3600)
         self.assertEqual(outcome['exit'], 0)
+        self.assertEqual(current['baselines']['hello-ts/staging/error-logs'], [6], 'the same window counts once')
+        next_hour = {**later, 'window': {'start': '2026-10-07T03:00:00+00:00', 'end': '2026-10-07T04:00:00+00:00'}}
+        _, current = apply(report=next_hour, bundle=None, analysis=None, diagnosis=None, current=current,
+                           now=NOW + 3700)
         self.assertEqual(current['baselines']['hello-ts/staging/error-logs'], [6, 6])
-        self.assertEqual(current['incidents'][FINGERPRINT]['last_seen'], NOW + 3600)
+        self.assertEqual(current['incidents'][FINGERPRINT]['last_seen'], NOW + 3700)
         self.assertEqual(len(current['incidents']), 1)
 
     def test_failure_and_diagnosis_messages_are_deduplicated(self):

@@ -39,6 +39,9 @@ CONSOLE_TOKEN_KEY = 'GITHUB_TOKEN'
 APP_REPOS_TOKEN_KEY = 'APP_REPOS_TOKEN'
 # What the console image is built from (images/console/Dockerfile); publish-console.yml hashes the same paths.
 CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
+# The incident reviewer's analysis worker: the same list as publish-incident-review-worker.yml.
+WORKER_IMAGE_INPUTS = ('images/incident-review-worker', '.dockerignore',
+                       'tools/swhurl/incident_review/diagnosis.schema.json')
 
 # Labels and annotations under the platform's domain.
 LABEL_DOMAIN = 'platform.swhurl.com'

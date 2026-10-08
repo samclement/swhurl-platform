@@ -95,8 +95,12 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
 .PHONY: console-image
-console-image: ## Pin platform/console to the image published for this commit (src-<hash> tag and digest; Git edit)
+console-image: ## Pin platform/console (and the incident reviewer's operator image) to the image published for this commit (Git edit)
 	$(SWHURL) console-image
+
+.PHONY: incident-review-image
+incident-review-image: ## Pin the incident reviewer to the worker image published for this commit (src-<hash> tag and digest; Git edit)
+	$(SWHURL) worker-image
 
 .PHONY: console-dev
 console-dev: ## Read-only web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)

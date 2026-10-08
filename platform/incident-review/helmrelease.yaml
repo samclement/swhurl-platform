@@ -1,0 +1,166 @@
+# The incident reviewer (docs/plan.md section 14, "Runtime layout"): one pod, three containers
+# in sequence. collect and decide run the console operator image; analyse runs the worker image.
+# The publish workflows pin the lines marked "# image: console" and "# image: worker"
+# (tools/swhurl/images.py); by hand: make console-image or make incident-review-image.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: incident-review
+  namespace: incident-review
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # No container gets the ServiceAccount token by default; the "token" volume below mounts
+    # it into collect and decide only. analyse holds the model key and nothing else.
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        type: cronjob
+        forceRename: incident-review
+        serviceAccount:
+          name: incident-review
+        cronjob:
+          # Suspended until the collect-only week starts (plan section 14, task 10).
+          suspend: true
+          schedule: "17 * * * *"
+          concurrencyPolicy: Forbid
+          startingDeadlineSeconds: 300
+          activeDeadlineSeconds: 600
+          successfulJobsHistory: 1
+          failedJobsHistory: 1
+          backoffLimit: 0
+        initContainers:
+          collect:
+            image: &operator-image
+              repository: ghcr.io/samclement/swhurl-console
+              tag: src-9bca39997a6d05a4 # image: console
+              digest: sha256:1535d44f4a4137ef87e927e48292c5c4ea7b9948b05a5776bce6670f9e0d7368 # image: console
+            command: [timeout, "120", python, -m, swhurl, incident-review-collect]
+            envFrom:
+              - secretRef:
+                  name: incident-review-clickhouse
+            resources: &small
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 192Mi
+            securityContext: &locked
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+          analyse:
+            dependsOn: collect
+            image:
+              repository: ghcr.io/samclement/swhurl-incident-review-worker
+              tag: src-4e5792f7af1c810f # image: worker
+              digest: sha256:0000000000000000000000000000000000000000000000000000000000000000 # image: worker
+            env:
+              CODEX_MODEL: gpt-6-luna   # the same value as allowlist.yaml (a test compares them)
+              ANALYSE_SECONDS: "300"
+              # Remove to let analyse call the model (task 11); with it, a bundle is recorded and not sent.
+              INCIDENT_REVIEW_MODE: collect-only
+            resources:
+              requests:
+                cpu: 10m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+            securityContext: *locked
+        containers:
+          main:
+            image: *operator-image
+            command: [timeout, "60", python, -m, swhurl, incident-review-decide]
+            envFrom:
+              - secretRef:
+                  name: incident-review-ntfy
+            resources: *small
+            securityContext: *locked
+    persistence:
+      # The three handoff directories: each has one writer; later steps read only.
+      collect:
+        type: emptyDir
+        sizeLimit: 1Mi
+        advancedMounts:
+          main:
+            collect: [{path: /work/collect}]
+            main: [{path: /work/collect, readOnly: true}]
+      bundle:
+        type: emptyDir
+        sizeLimit: 1Mi
+        advancedMounts:
+          main:
+            collect: [{path: /work/bundle}]
+            analyse: [{path: /work/bundle, readOnly: true}]
+            main: [{path: /work/bundle, readOnly: true}]
+      diagnosis:
+        type: emptyDir
+        sizeLimit: 1Mi
+        advancedMounts:
+          main:
+            analyse: [{path: /work/diagnosis}]
+            main: [{path: /work/diagnosis, readOnly: true}]
+      # CODEX_HOME and the CLI's workspace; discarded with the pod.
+      scratch:
+        type: emptyDir
+        sizeLimit: 64Mi
+        advancedMounts:
+          main:
+            analyse: [{path: /scratch}]
+      tmp:
+        type: emptyDir
+        sizeLimit: 16Mi
+        advancedMounts:
+          main:
+            collect: [{path: /tmp}]
+            main: [{path: /tmp}]
+      openai:
+        type: secret
+        name: incident-review-openai
+        advancedMounts:
+          main:
+            analyse: [{path: /run/secrets/openai, readOnly: true}]
+      token:
+        type: custom
+        volumeSpec:
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {fieldPath: metadata.namespace}
+        advancedMounts:
+          main:
+            collect: [{path: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}]
+            main: [{path: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}]

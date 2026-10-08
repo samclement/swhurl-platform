@@ -53,6 +53,8 @@ COMMANDS = {
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
     'console-image': ('swhurl.images', 'main', 'Pin the console HelmRelease to the image published for this checkout (Git edit)'),
+    'worker-image': ('swhurl.images', 'worker_main',
+                     'Pin the incident reviewer to the worker image published for this commit (Git edit)'),
     'prune-backups': ('swhurl.retention', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 

@@ -100,7 +100,7 @@ class DecideTests(unittest.TestCase):
         notice = current['pending'][0]
         self.assertEqual((notice['key'], notice['priority'], notice['history']),
                          (f'diagnosis:{FINGERPRINT}', 3, 86400))
-        for expected in ('GET /repeat answers 500', 'Confidence: 86%', 'Signal: error-logs, 6 in the window',
+        for expected in ('GET /repeat answers 500', 'Confidence: 86%', "Signal: error logs 'hello-ts RangeError': 6 in the hour (hourly average 0.0), above the usual rate",
                          'Evidence: error RangeError: request failed', 'Evidence: span GET Error 500',
                          'Image: 35-54d7918', 'Code fix attempted: no', 'trigger: sweep'):
             self.assertIn(expected, notice['message'])

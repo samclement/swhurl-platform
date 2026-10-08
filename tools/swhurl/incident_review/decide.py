@@ -19,7 +19,15 @@ from swhurl.notifications.delivery import deliver, publish
 from swhurl.notifications.errors import NotificationError
 from swhurl.run import Runner
 
-from . import MAX_AGENT_OUTPUT_BYTES, allowlist, decode_codex_output, evidence_bundle, state, validate_diagnosis
+from . import (
+    MAX_AGENT_OUTPUT_BYTES,
+    allowlist,
+    decode_codex_output,
+    describe_finding,
+    evidence_bundle,
+    state,
+    validate_diagnosis,
+)
 from .allowlist import Allowlist
 from .errors import REASONS, PolicyError, ReviewFailure
 
@@ -103,8 +111,7 @@ def diagnosis_notice(allow: Allowlist, finding: dict, bundle: dict, diagnosis: d
     app = allow.app(finding['app'])
     lines = [diagnosis['summary'][:FIELD_TEXT], f"Likely cause: {diagnosis['likely_cause'][:FIELD_TEXT]}",
              f"Confidence: {round(diagnosis['confidence'] * 100)}%",
-             f"Signal: {finding['signal']}, {finding['count']} in the window against a baseline of "
-             f"{finding['baseline_mean']} ({finding['reason']})",
+             f"Signal: {describe_finding(finding)}",
              f"Window: {bundle['window']['start']} to {bundle['window']['end']} (trigger: {trigger})",
              f"Image: {bundle['image']['tag'] or 'unknown'}"]
     lines += [f'Evidence: {evidence_line(ref, bundle)}' for ref in diagnosis['evidence_refs'][:EVIDENCE_LINES]]

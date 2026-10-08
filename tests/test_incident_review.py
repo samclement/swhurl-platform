@@ -11,6 +11,7 @@ from swhurl.incident_review import (
     check_patch_applies,
     coverage_report,
     decode_codex_output,
+    describe_finding,
     evidence_bundle,
     fingerprint,
     prefilter,
@@ -174,6 +175,17 @@ class IncidentReviewTests(unittest.TestCase):
         for finding in ({"count": 1}, {"fingerprint": "x", "count": -1}, {"fingerprint": "x", "count": True}):
             with self.subTest(finding=finding), self.assertRaises(PolicyError):
                 prefilter(finding, {"incidents": {}}, defaults, fixture["now"])
+
+    def test_findings_are_described_without_ambiguity(self):
+        metrics = {"signal": "missing-telemetry", "key": "no-metrics", "count": 1260, "baseline_mean": 1260.0,
+                   "reason": "quiet-window"}
+        self.assertEqual(describe_finding(metrics),
+                         "metrics: 1260 metric points arrived (hourly average 1260.0), nothing unusual")
+        self.assertEqual(describe_finding({**metrics, "count": 0, "reason": "missing-expected-signal"}),
+                         "metrics: no metric points arrived (hourly average 1260.0), metrics stopped")
+        self.assertEqual(describe_finding({"signal": "unexpected-service", "key": "swhurl-app", "count": 3,
+                                           "baseline_mean": 0.0, "reason": "new-fingerprint"}),
+                         "unexpected service name 'swhurl-app': 3 in the hour (hourly average 0.0), a new failure")
 
     def test_coverage_report_lists_alert_gaps(self):
         fixture = json.loads((FIXTURE.parent / "prefilter.json").read_text())

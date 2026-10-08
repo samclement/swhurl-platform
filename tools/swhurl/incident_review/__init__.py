@@ -70,6 +70,24 @@ def decode_codex_output(returncode: int, last_message: str) -> dict[str, Any]:
 
 
 FIRING = ("missing-expected-signal", "error-rate-change", "new-fingerprint")
+SIGNAL_LABELS = {"error-logs": "error logs", "error-spans": "error spans",
+                 "unexpected-service": "unexpected service name", "missing-telemetry": "metrics"}
+REASON_LABELS = {"new-fingerprint": "a new failure", "error-rate-change": "above the usual rate",
+                 "missing-expected-signal": "metrics stopped", "repeat-inside-cooldown": "already analysed recently",
+                 "quiet-window": "nothing unusual"}
+
+
+def describe_finding(finding: dict[str, Any]) -> str:
+    """One finding in plain words. ``missing-telemetry`` counts healthy metric points, so a
+    high number is good and zero is the failure; every other signal counts failures."""
+    signal, count, mean = finding["signal"], finding["count"], finding["baseline_mean"]
+    label = SIGNAL_LABELS.get(signal, signal)
+    if signal == "missing-telemetry":
+        amount = "no metric points arrived" if count == 0 else f"{count} metric points arrived"
+        return f"{label}: {amount} (hourly average {mean}), {REASON_LABELS.get(finding['reason'], finding['reason'])}"
+    return (f"{label} {finding['key']!r}: {count} in the hour (hourly average {mean}), "
+            f"{REASON_LABELS.get(finding['reason'], finding['reason'])}")
+
 
 
 def prefilter(finding: dict[str, Any], state: dict[str, Any], defaults: dict[str, Any], now: float) -> dict[str, Any]:

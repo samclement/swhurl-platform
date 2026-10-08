@@ -31,7 +31,7 @@ SPEND_FIELDS = {'month': str, 'cents': int, 'analyses': int, 'day': str, 'analys
 
 
 def empty_state() -> dict:
-    return {'version': 1, 'last_sweep': 0, 'last_result': '', 'incidents': {}, 'baselines': {},
+    return {'version': 1, 'last_sweep': 0, 'last_result': '', 'last_window': '', 'incidents': {}, 'baselines': {},
             'spend': {'month': '', 'cents': 0, 'analyses': 0, 'day': '', 'analyses_today': 0},
             'seen': {}, 'pending': []}
 
@@ -53,7 +53,8 @@ def validate(state: Any) -> dict:
     try:
         if not isinstance(state, dict) or set(state) != set(empty_state()) or state['version'] != 1:
             raise ValueError
-        if not _number(state['last_sweep']) or state['last_result'] not in RESULTS:
+        if (not _number(state['last_sweep']) or state['last_result'] not in RESULTS
+                or not isinstance(state['last_window'], str) or len(state['last_window']) > 40):
             raise ValueError
         for fingerprint, incident in state['incidents'].items():
             if (not isinstance(fingerprint, str) or not isinstance(incident, dict)
@@ -87,7 +88,10 @@ def read_state(runner: Runner) -> dict:
     if raw is None:
         return empty_state()
     try:
-        return validate(json.loads(raw))
+        doc = json.loads(raw)
+        if isinstance(doc, dict):
+            doc.setdefault('last_window', '')  # states saved before the field existed
+        return validate(doc)
     except json.JSONDecodeError:
         raise ReviewFailure('state-corrupt') from None
 

@@ -33,6 +33,11 @@ class StateTests(unittest.TestCase):
             runner = FakeRunner().on(*GET, stdout=json.dumps(doc))
             self.assertEqual(state.read_state(runner), state.empty_state())
 
+    def test_state_saved_before_last_window_existed_still_reads(self):
+        old = {k: v for k, v in state.empty_state().items() if k != 'last_window'}
+        runner = FakeRunner().on(*GET, stdout=json.dumps({'data': {'state.json': json.dumps(old)}}))
+        self.assertEqual(state.read_state(runner), state.empty_state())
+
     def test_corrupt_or_unreadable_state_stops_and_is_never_reset(self):
         good = state.empty_state()
         bad = [

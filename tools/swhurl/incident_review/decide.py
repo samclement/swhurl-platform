@@ -150,8 +150,12 @@ def decide(*, allow: Allowlist, current: dict, report: Any, bundle: Any, analysi
         report = check_report(report)
         if report['status'] == 'failed':
             return fail(report['reason'])
-        for key, count in report['counts'].items():
-            current['baselines'].setdefault(key, []).append(count)
+        # One count per window: a second run over the same hour (a manual Job, a missed schedule
+        # caught up) must not weigh that hour twice in the baseline.
+        if report['window']['start'] != current['last_window']:
+            for key, count in report['counts'].items():
+                current['baselines'].setdefault(key, []).append(count)
+            current['last_window'] = str(report['window']['start'])[:40]
         for finding in report['findings']:
             if finding['fingerprint'] in current['incidents'] and (finding['count'] > 0
                                                                    or finding['decision'] != 'quiet'):

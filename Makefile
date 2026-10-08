@@ -98,6 +98,14 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 console-image: ## Pin platform/console (and the incident reviewer's operator image) to the image published for this commit (Git edit)
 	$(SWHURL) console-image
 
+.PHONY: incident-review-status
+incident-review-status: ## Live: summarise the incident reviewer's state: last sweep, hourly counts, incidents, spend (read-only)
+	@$(SWHURL_APPS) incident-review-status
+
+.PHONY: incident-review-bundle
+incident-review-bundle: ## Live: print the evidence bundle the reviewer would send for one hour (ARGS="--hours-ago 2 --summary"; read-only)
+	@$(SWHURL_APPS) incident-review-bundle $(ARGS)
+
 .PHONY: incident-review-image
 incident-review-image: ## Pin the incident reviewer to the worker image published for this commit (src-<hash> tag and digest; Git edit)
 	$(SWHURL) worker-image

@@ -78,7 +78,7 @@ spec:
             image:
               repository: ghcr.io/samclement/swhurl-incident-review-worker
               tag: src-4e5792f7af1c810f # image: worker
-              digest: sha256:0000000000000000000000000000000000000000000000000000000000000000 # image: worker
+              digest: sha256:46ebff5e081169ec5bcaeb7b85344253012e73702befa65385fbf66e913f3c77 # image: worker
             env:
               CODEX_MODEL: gpt-6-luna   # the same value as allowlist.yaml (a test compares them)
               ANALYSE_SECONDS: "300"

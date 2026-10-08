@@ -44,6 +44,10 @@ def when(epoch: float) -> str:
     return dt.datetime.fromtimestamp(epoch, dt.UTC).strftime('%Y-%m-%d %H:%M') if epoch else 'never'
 
 
+def clock(epoch: float) -> str:
+    return dt.datetime.fromtimestamp(epoch, dt.UTC).strftime('%H:%M')
+
+
 def status_main(argv: list[str] | None = None, runner: Runner | None = None, *, now: float | None = None) -> int:
     parser = argparse.ArgumentParser(prog='swhurl incident-review-status',
                                      description='Summarise the incident reviewer state (read-only; no log text)')
@@ -81,7 +85,8 @@ def bundle_main(argv: list[str] | None = None, runner: Runner | None = None, *, 
     if not 0 <= args.hours_ago <= 23:
         parser.error('--hours-ago must be between 0 and 23')
     runner = runner or Runner.from_environment()
-    now = (now if now is not None else time.time()) - args.hours_ago * 3600
+    real_now = now if now is not None else time.time()
+    now = real_now - args.hours_ago * 3600
     try:
         report, bundle = collect.collect(allow=allowlist.current(), current=state.empty_state(),
                                          telemetry=ClickHouseExec(runner), images=collect.release_images(runner),
@@ -94,7 +99,13 @@ def bundle_main(argv: list[str] | None = None, runner: Runner | None = None, *, 
         print(f"[INFO] {finding['app']}/{finding['env']} {finding['signal']} {finding['key']!r}: {finding['count']} "
               f"({finding['decision']}, {finding['reason']})", file=sys.stderr)
     if bundle is None:
-        print('[INFO] nothing fired in this window, so no bundle would be sent; try --hours-ago', file=sys.stderr)
+        latest = collect.window(real_now)
+        print(f'[INFO] nothing fired between {clock(collect.window(now)[0])} and {clock(collect.window(now)[1])} UTC, '
+              'so no bundle would be sent for that hour', file=sys.stderr)
+        print(f'[INFO] only complete hours can be previewed: the current hour ({clock(latest[1])} to '
+              f'{clock(latest[1] + 3600)} UTC) becomes available at {clock(latest[1] + 3600)} UTC', file=sys.stderr)
+        print(f'[INFO] --hours-ago N looks N hours before the latest complete hour ({clock(latest[0])} to '
+              f'{clock(latest[1])} UTC); N can be 0 to 23', file=sys.stderr)
         return 0
     if args.summary:
         size = len(json.dumps(bundle, separators=(',', ':'), ensure_ascii=False).encode())

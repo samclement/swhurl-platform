@@ -84,7 +84,9 @@ class BundleTests(unittest.TestCase):
         quiet = {**FIXTURE['telemetry'], 'error-logs': [], 'error-spans': []}
         code, out, err = run(inspect.bundle_main, ['--hours-ago', '2'], self.runner(quiet))
         self.assertEqual((code, out), (0, ''))
-        self.assertIn('nothing fired', err)
+        self.assertIn('nothing fired between 00:00 and 01:00 UTC', err)
+        self.assertIn('the current hour (03:00 to 04:00 UTC) becomes available at 04:00 UTC', err)
+        self.assertIn('the latest complete hour (02:00 to 03:00 UTC); N can be 0 to 23', err)
         broken = FakeRunner().on(*EXEC, returncode=1).on(*collect.RELEASES, stdout=json.dumps(FIXTURE['releases']))
         code, _, err = run(inspect.bundle_main, [], broken)
         self.assertEqual((code, err.strip()), (1, '[ERROR] collection failed: query'))

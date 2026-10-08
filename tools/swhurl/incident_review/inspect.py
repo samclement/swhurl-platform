@@ -17,7 +17,7 @@ from typing import Any
 from swhurl import clickstack
 from swhurl.run import CommandError, Runner
 
-from . import MAX_QUERY_RESPONSE_BYTES, MAX_QUERY_ROWS, allowlist, collect, state
+from . import MAX_QUERY_RESPONSE_BYTES, MAX_QUERY_ROWS, SIGNAL_LABELS, allowlist, collect, describe_finding, state
 from .errors import PolicyError, ReviewFailure
 
 
@@ -44,6 +44,10 @@ def when(epoch: float) -> str:
     return dt.datetime.fromtimestamp(epoch, dt.UTC).strftime('%Y-%m-%d %H:%M') if epoch else 'never'
 
 
+OUTCOMES = {'fired': 'would be analysed', 'fired-deferred': 'would wait for the next sweep',
+            'quiet': 'not analysed'}
+
+
 def clock(epoch: float) -> str:
     return dt.datetime.fromtimestamp(epoch, dt.UTC).strftime('%H:%M')
 
@@ -65,9 +69,11 @@ def status_main(argv: list[str] | None = None, runner: Runner | None = None, *, 
     print(f"Spend {spend['month'] or '-'}: {spend['cents']} of {defaults['monthly_refuse_cents']} cents, "
           f"{spend['analyses']} analyses ({spend['analyses_today']} of {defaults['max_analyses_per_day']} today)")
     print(f"Pending messages: {len(current['pending'])}")
-    print('Counts per hour, newest last:')
+    print('Counts per hour, newest last (failures, except metrics: points that arrived, where 0 is the failure):')
     for key, counts in sorted(current['baselines'].items()):
-        print(f"  {key}: {' '.join(str(c) for c in counts[-8:])} (mean {state.baseline_mean(current, key):.1f})")
+        scope, _, signal = key.rpartition('/')
+        print(f"  {scope} {SIGNAL_LABELS.get(signal, signal)}: {' '.join(str(c) for c in counts[-8:])} "
+              f"(mean {state.baseline_mean(current, key):.1f})")
     print(f"Incidents: {len(current['incidents'])}")
     for fingerprint, item in sorted(current['incidents'].items(), key=lambda pair: -pair[1]['last_seen']):
         cooling = 'cooling down' if item['cooldown_until'] > now else 'may be analysed again'
@@ -95,9 +101,11 @@ def bundle_main(argv: list[str] | None = None, runner: Runner | None = None, *, 
         print(f'[ERROR] collection failed: {error}', file=sys.stderr)
         return 1
     print(f"[INFO] window {report['window']['start']} to {report['window']['end']}: {report['status']}", file=sys.stderr)
+    print('[INFO] this preview starts from an empty state, so every hourly average shows 0.0; the reviewer '
+          'itself compares against its saved counts (make incident-review-status)', file=sys.stderr)
     for finding in report['findings']:
-        print(f"[INFO] {finding['app']}/{finding['env']} {finding['signal']} {finding['key']!r}: {finding['count']} "
-              f"({finding['decision']}, {finding['reason']})", file=sys.stderr)
+        print(f"[INFO] {finding['app']}/{finding['env']} {describe_finding(finding)}: {OUTCOMES[finding['decision']]}",
+              file=sys.stderr)
     if bundle is None:
         latest = collect.window(real_now)
         print(f'[INFO] nothing fired between {clock(collect.window(now)[0])} and {clock(collect.window(now)[1])} UTC, '

@@ -37,7 +37,7 @@ class StatusTests(unittest.TestCase):
         code, out, _ = run(inspect.status_main, [], runner)
         self.assertEqual(code, 0)
         for expected in ('result: analysed', 'Spend 2026-10: 50 of 1600 cents, 1 analyses (1 of 4 today)',
-                         'hello-ts/staging/error-logs: 0 0 6 (mean 2.0)',
+                         'hello-ts/staging error logs: 0 0 6 (mean 2.0)', 'except metrics: points that arrived',
                          '3a7a05c6d917bdc6f74b4f0d hello-ts/staging error-logs: notified, alert-gap', 'cooling down'):
             self.assertIn(expected, out)
         self.assertEqual(runner.calls, [GET])
@@ -65,7 +65,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(summary['logs'], {'records': 2, 'fields': sorted(collect.LOG_FIELDS)})
         self.assertLess(summary['bytes'], 64_000)
         self.assertNotIn('request failed', out)
-        self.assertIn("hello-ts/staging error-logs 'hello-ts RangeError': 6 (fired, error-rate-change)", err)
+        self.assertIn("hello-ts/staging error logs 'hello-ts RangeError': 6 in the hour (hourly average 0.0), "
+                      "above the usual rate: would be analysed", err)
+        self.assertIn("hello-ts/staging error spans 'hello-ts GET': 6 in the hour (hourly average 0.0), "
+                      "above the usual rate: would wait for the next sweep", err)
+        self.assertIn('hello-ts/staging metrics: 336 metric points arrived (hourly average 0.0), nothing unusual: '
+                      'not analysed', err)
+        self.assertNotIn('no-metrics', err)
         for call in runner.calls:
             self.assertNotIn('patch', call)
             if call[:4] == EXEC:

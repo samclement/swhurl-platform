@@ -127,6 +127,19 @@ make host-heartbeat-delete
 
 Removal leaves the incident file and log in place. `make notifications-heartbeat ARGS="--max-age 1s"` deliberately sends a real stale message; after a successful checker Job, `make notifications-heartbeat` sends recovery.
 
+## Incident reviewer
+
+The [incident reviewer](services.md#incident-reviewer) is the CronJob `incident-review/incident-review`.
+
+- **See what it knows:** the state is `kubectl -n incident-review get configmap incident-review-state -o jsonpath='{.data.state\.json}'` (incident fingerprints, statuses, hourly counts, spend and pending messages; no log text).
+- **Stop it:** set `suspend: true` under `cronjob:` in [`platform/incident-review/helmrelease.yaml`](../platform/incident-review/helmrelease.yaml), commit and push. To keep sweeping without model calls, set `INCIDENT_REVIEW_MODE: collect-only` on the `analyse` container instead.
+- **Model key:** create or rotate it in the provider's project, then `sops platform/incident-review/secret.sops.yaml`, set `OPENAI_API_KEY`, commit and push. The next Job reads it; nothing restarts. The project's own spend cap is set at the provider and is the hard limit; the reviewer's counter (`monthly_refuse_cents`) stops earlier.
+- **ClickHouse password:** it is a copy. After rotating `CLICKHOUSE_APP_PASSWORD` in `platform/clickstack/secret.sops.yaml`, set the same value in `platform/incident-review/secret-clickhouse.sops.yaml`; `make check-secrets` fails while they differ.
+- **ntfy topic:** read it with `sops decrypt platform/incident-review/secret-ntfy.sops.yaml` and subscribe once per device. The topic name is the credential.
+- **A failure message** names one reason: `query` (ClickHouse or the HelmRelease list), `redaction`, `state-unavailable`, `state-corrupt`, `state-size`, `contract` (a handoff file is missing or malformed), `provider`, `timeout`, `schema` (the model's answer was refused) or `delivery`. Read the Job's pod logs for which step reported it.
+- **Reset state** (after `state-corrupt` or `state-size`): `kubectl -n incident-review patch configmap incident-review-state --type=merge -p '{"data":{"state.json":""}}'`. This forgets incidents and baselines and restarts the month's spend count, so one diagnosis per live incident may repeat.
+- **Images:** the publish workflows pin both images in the HelmRelease. By hand: `make console-image` for the `collect` and `decide` image, `make incident-review-image` for the worker.
+
 ## Backups and recovery
 
 | Data | Class | Where it survives |

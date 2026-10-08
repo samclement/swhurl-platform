@@ -15,6 +15,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
+| [Incident reviewer](#incident-reviewer) | `platform-incident-review` · [`platform/incident-review`](../platform/incident-review) | `incident-review` | — | app-template; the console image and a worker image from this repo |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | Flux notification Providers and Alerts, to ntfy.sh |
 | [Push webhook](#push-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (Flux `Receiver`) |
 
@@ -154,6 +155,27 @@ Pending messages are checkpointed before posting and removed only after ntfy acc
 
 - **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show the topic name in your own terminal with `SOPS_AGE_KEY_FILE=./age.agekey sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-failures.sops.yaml | sed 's|https://ntfy.sh/||; s|?.*||'` (from the repository root; the key file is not in Git).
 - **Native Flux provider:** it posts event JSON through a generic provider and ntfy renders it with the template in the address. The checker uses [ntfy's JSON publish API](https://docs.ntfy.sh/publish/#publish-as-json) directly so lifecycle titles differ by action and identify the environment. Tapping opens the relevant app page, Activity for uninstall, or Platform for console/monitor failures.
+
+## Incident reviewer
+
+An hourly CronJob that looks for application failures in ClickStack telemetry and, when a deterministic pre-filter fires, asks a model for a diagnosis and sends it to ntfy. It never changes the cluster or a repository. The design, data contracts and remaining stages are in [plan section 14](plan.md#runtime-layout-stage-2a); what has run live is in [current state](current-state.md). The CronJob is **suspended** and in collect-only mode until the plan's tasks 10 and 11.
+
+```mermaid
+flowchart LR
+    cron[CronJob incident-review, hourly] --> collect[collect: fixed ClickHouse queries, pre-filter, redacted bundle]
+    collect -->|bundle, only when a finding fires| analyse[analyse: Codex CLI, model key only]
+    collect -->|report| decide[decide: validate, state, notify]
+    analyse -->|diagnosis| decide
+    decide -->|incidents, baselines, spend, outbox| state[incident-review-state ConfigMap]
+    decide -->|diagnosis or failure reason| ntfy[ntfy diagnoses topic]
+```
+
+- **What it watches:** only the apps, environments and signals in [`allowlist.yaml`](../tools/swhurl/incident_review/allowlist.yaml) (today `hello-ts` staging: error logs, error spans, an unexpected service name, metrics stopping). The same file holds the thresholds, the model and the monthly refusal limit.
+- **Credentials, one per container:** `collect` has the read-only ClickHouse `app` account (`incident-review-clickhouse`, a copy of `CLICKHOUSE_APP_PASSWORD` kept equal by `make check-secrets`) and the ServiceAccount token; `analyse` has only the model key (`incident-review-openai`, mounted as a file); `decide` has the ntfy destination (`incident-review-ntfy`) and the token. The token can read and patch the state ConfigMap and list HelmReleases, nothing else.
+- **What leaves the cluster:** to the model provider, a bundle of at most 20 log and 20 span records reduced to message, level, timestamp, service, exception type, ten stack frames, path without query string, and the image tag; to ntfy, a summary built from the validated diagnosis. No source code, headers, bodies or user identifiers.
+- **Messages:** `<app>/<env> diagnosis` (at most one per incident per 24 hours), `incident review failed` naming one fixed reason word (once per reason per 24 hours), and `incident review paused: budget` once a month. They go to their own topic, not the failures or deploys topics. The reviewer does not send lifecycle or health messages; those stay with the [notification checker](#alerts).
+- **Network:** a NetworkPolicy admits nothing in and allows out only DNS, ClickHouse on 8123, the Kubernetes API, and TCP 443 outside the cluster. Hostnames cannot be filtered on k3s, so the model endpoint and ntfy are not told apart from other external HTTPS.
+- **Logs:** each container logs one status line per run to stdout, which the OTel DaemonSet collects; the Codex CLI's own output is discarded so that bundle or model text never reaches the log.
 
 ## Push webhook
 

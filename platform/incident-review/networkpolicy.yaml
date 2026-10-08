@@ -1,0 +1,50 @@
+# What the reviewer pod may reach, and nothing may reach it. NetworkPolicy applies to the whole
+# pod, so this is the union of its three containers' needs: isolation between them is by
+# credential and volume mount (helmrelease.yaml), not by network. Hostnames cannot be filtered
+# on k3s, so the model endpoint and ntfy are "TCP 443 outside the cluster" (plan section 14,
+# decision 5). The API server is the node's own address on 6443, which differs per host, so
+# 6443 is open to any address outside the pod and Service ranges.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: incident-review
+  namespace: incident-review
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: incident-review
+      app.kubernetes.io/name: incident-review
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clickhouse-server
+      ports:
+        - {protocol: TCP, port: 8123}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.42.0.0/16, 10.43.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 6443}
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32   # the kubernetes Service, before it is translated to the node
+      ports:
+        - {protocol: TCP, port: 443}

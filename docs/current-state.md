@@ -789,3 +789,13 @@ Commit `c7f2bf5` added the `app-images` Receiver, its token, `make app-hooks`, t
   From published image to the pin commit took about 3 seconds with both intervals at one hour, so the scan, the policy and the automation all ran from the event. The 43 seconds between the pin and the pod were the app unit waiting behind the console image deploy (`2604f98`, 14:37:17) that this change's own publish run pushed 21 seconds earlier.
 - `make verify-platform` passed with four `[OK]` lines under Image Webhooks; `make app-status APP=hello-ts ENV=staging` showed `36-6ec5f63` desired and running.
 - Not exercised: the webhook created by `make app-repo` and by the console's **Start a new app** on a new repository (offline tests only; the console path also needs the Webhooks permission on `APP_REPOS_TOKEN`), and a token rotation followed by `make app-hooks`.
+
+## Platform-generated apps only, phases A to C (9 October 2026)
+
+Plan section 0, item 10. Commits `13c761c` (console and generator) and `2cbdd9f` (tests' own sample instance).
+
+- Console image `src-79e05525c678bf77` rolled out. From inside the pod, `GET /new` and `GET /new?preset=swhurl-web` returned the **Start a new app** form with no existing-image text, and `POST /new` returned 405. From outside, `http://console.homelab.swhurl.com/new` returned 301 to https and https returned 302 to Google sign-in.
+- In this checkout `make app-new NAME=zzz ARGS="--env staging --image docker.io/library/nginx:1.27 --kind worker"` and the same name with `--from-repo samclement/hello-ts` and its image were both refused with "--from-repo samclement/zzz is required"; nothing was written.
+- `make verify-platform` passed after the rollout.
+- With `apps/hello` and its two unit files moved aside, `make test`, `make check-repo` and `make check-apps` passed; the tree was restored.
+- Not exercised: a new app through the console or `make app-repo` after this change (no repository was created), and a signed-in browser view of the new page.

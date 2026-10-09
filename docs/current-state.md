@@ -808,3 +808,12 @@ Commit `131818a`, after the operator's "yes, retire hello".
 - The node collector restarted at 16:34:54 UTC with the nginx parsers removed and logged no errors; `make check-otel` passed its log fixtures through the real collector.
 - `make check-apps` passed for the 10 remaining instances with the new `platform-image` rule; `make verify-platform` passed (one expected warning until the publish run deploys the console image built from this commit); `make app-status APP=hello-ts ENV=staging` showed "running: matches desired".
 - Not exercised: the `platform-image` rule refusing a real hand-committed instance in CI or the console's merge gate (unit tests only).
+
+### Incident reviewer namespace removed and existing-image wording cleaned (9 October 2026)
+
+Commit `048dabf`, after the operator's "Remove reviewer namespace".
+
+- Before removal, `incident-review` held only the default `kube-root-ca.crt` ConfigMap and `default` ServiceAccount. The commit removed it from `infra/base/namespaces.yaml`; `make flux-reconcile` passed and `kubectl get ns incident-review` returned NotFound.
+- A repository scan found no other reviewer manifest, Secret, workflow, ClickStack, OpenTelemetry or certificate configuration. Docs and `app-new` messages no longer point at the removed **Deploy an existing image** route; the throwaway live tests remain the one place nginx and BusyBox images are deployed (operator decision).
+- `make check` passed before the commit; `make verify-platform` passed (63 OK, one expected warning until the publish run deploys the console image built from this commit).
+- Not done (operator's): revoking the unused OpenAI key and project, deleting the `swhurl-incident-review-worker` GHCR package and the diagnoses ntfy subscription.

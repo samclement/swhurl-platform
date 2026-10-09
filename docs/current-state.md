@@ -765,3 +765,8 @@ Not exercised yet: first production on the cluster, the new console confirmation
 
 - Commit `77f3b3b` removed the reviewer manifests and tooling and emptied its Flux unit. The operator ran `make check` before committing, then reported that `make flux-reconcile`, `make verify-platform`, and `make app-status APP=hello-ts ENV=staging` passed.
 - Read-only cluster queries returned no reviewer HelmRelease, CronJob, state ConfigMap, three Secrets, NetworkPolicy, namespaced Role or RoleBinding, or cluster Role or RoleBinding. The `platform-incident-review` Flux inventory was empty. The empty Flux unit and `incident-review` namespace remained for separate cleanup.
+
+### Incident reviewer rollback, empty unit removal (9 October 2026)
+
+- Commit `b6debf6` removed the empty `platform-incident-review` Flux unit. The operator reported that `make flux-reconcile`, `make verify-platform`, and `make app-status APP=hello-ts ENV=staging` passed after the push.
+- A read-only query returned no `flux-system/platform-incident-review` Kustomization; `kubectl get namespace incident-review -o name` returned `namespace/incident-review`. Namespace deletion, provider key revocation, worker package deletion and ntfy subscription removal remain separate decisions.

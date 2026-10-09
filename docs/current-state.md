@@ -817,3 +817,13 @@ Commit `048dabf`, after the operator's "Remove reviewer namespace".
 - A repository scan found no other reviewer manifest, Secret, workflow, ClickStack, OpenTelemetry or certificate configuration. Docs and `app-new` messages no longer point at the removed **Deploy an existing image** route; the throwaway live tests remain the one place nginx and BusyBox images are deployed (operator decision).
 - `make check` passed before the commit; `make verify-platform` passed (63 OK, one expected warning until the publish run deploys the console image built from this commit).
 - Not done (operator's): revoking the unused OpenAI key and project, deleting the `swhurl-incident-review-worker` GHCR package and the diagnoses ntfy subscription.
+
+## Dashboards deleted with their app (9 October 2026)
+
+`6f49dfe`, image pin `b0dfdb8` (`src-41a13ff3969a30e0`): the `console-dashboards` job deletes a tagged dashboard named exactly `App: <app>` once the app has no HelmRelease on the cluster ([rules](apps.md#dashboards)).
+
+- `make check` passed (469 tests); GitHub Validate and Publish succeeded; all Flux units Ready; `make verify-platform` passed with the new image running.
+- Before the change, a Git dry run listed two orphans, `App: swhurl-try-6` and `App: swhurl-try-8`. After the new image ran, both were gone and `DRY_RUN=true make clickstack-dashboards` listed only the four apps as up to date. The deleting run's own log was not captured (the CronJob keeps one job).
+- Probe through HyperDX's API with three empty dashboards: `App: swhurl-try-prune` (tagged) was deleted by the next scheduled runs within 100 seconds; `App: test-2 (copy)` (tagged) stayed, with `[INFO] left App: test-2 (copy): tagged swhurl-app but not named for an app` in the job log; `App: swhurl-try-keep` (untagged) stayed. The two survivors were then deleted by id. The four app dashboards were untouched throughout.
+- Offline only (`FakeRunner`): removing one environment updates without deleting; no app release found deletes nothing; dry run writes nothing.
+- Not exercised: a real `make app-remove` or console **Uninstall** followed by the automatic deletion; removing the last app on the cluster.

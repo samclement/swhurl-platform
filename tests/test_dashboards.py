@@ -146,6 +146,39 @@ class AutomaticSyncTests(unittest.TestCase):
             mismatched, unowned]}))
         self.assertEqual(dashboards.cluster_apps(runner), [dashboards.App('job', 'worker', ('staging',))])
 
+    def cluster(self, live, releases, dry_run=False):
+        api, out = HyperDX(live), io.StringIO()
+        runner = api.runner(dry_run).on(*dashboards.RELEASES, stdout=json.dumps({'items': releases}))
+        code = dashboards.main(['--cluster'], runner, Report(out, redact=runner.redact))
+        return code, api, out.getvalue()
+
+    def live(self, name, *envs, id):
+        return {**dashboards.dashboard(dashboards.App(name, 'web', envs), 't1', 'l1'), 'id': id}
+
+    def test_removed_app_loses_its_dashboard_and_others_are_untouched(self):
+        code, api, out = self.cluster([self.live('kept', 'staging', id='d1'), self.live('gone', 'staging', 'prod', id='d2')],
+                                      [self.release('kept', 'staging')])
+        self.assertEqual((code, api.writes()), (0, [('DELETE', '/dashboards/d2')]), out)
+        self.assertIn('[OK] deleted App: gone (its app has no HelmRelease on the cluster)', out)
+
+    def test_removing_one_environment_updates_and_never_deletes(self):
+        code, api, out = self.cluster([self.live('app', 'staging', 'prod', id='d1')], [self.release('app', 'staging')])
+        self.assertEqual((code, api.writes()), (0, [('PUT', '/dashboards/d1')]), out)
+        self.assertNotIn("'app-prod'", json.dumps(api.calls[-1][2]))
+
+    def test_scheduled_sync_deletes_only_tagged_dashboards_named_for_an_app(self):
+        copy = {'id': 'c1', 'name': 'App: kept (copy)', 'tags': [dashboards.TAG], 'tiles': []}
+        by_hand = {'id': 'h1', 'name': 'App: gone', 'tags': [], 'tiles': []}
+        code, api, out = self.cluster([self.live('kept', 'staging', id='d1'), copy, by_hand], [self.release('kept', 'staging')])
+        self.assertEqual((code, api.writes()), (0, []), out)
+        self.assertIn('left App: kept (copy): tagged swhurl-app but not named for an app', out)
+
+    def test_scheduled_dry_run_lists_the_deletion_and_writes_nothing(self):
+        code, api, out = self.cluster([self.live('kept', 'staging', id='d1'), self.live('gone', 'staging', id='d2')],
+                                      [self.release('kept', 'staging')], dry_run=True)
+        self.assertEqual((code, api.writes()), (0, []), out)
+        self.assertIn('would delete App: gone (its app has no HelmRelease on the cluster)', out)
+
     def test_empty_discovery_never_deletes_dashboards(self):
         api = HyperDX([{'id': 'old', 'name': 'App: old', 'tags': [dashboards.TAG]}])
         runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': []}))

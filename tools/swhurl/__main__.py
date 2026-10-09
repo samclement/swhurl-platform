@@ -40,7 +40,7 @@ COMMANDS = {
     'live-test-reloader': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),
     'live-test-app-template': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
-    'clickstack-dashboards': ('swhurl.dashboards', 'main', 'Live: create or update a ClickStack dashboard per app in Git; delete those of removed apps'),
+    'clickstack-dashboards': ('swhurl.dashboards', 'main', 'Live: create or update a ClickStack dashboard per app in Git; delete those of removed apps (--cluster: per app on the cluster)'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'backup-sqlite': ('swhurl.sqlite_backup', 'backup_sqlite', 'Encrypted backup of every app SQLite database, then prune and copy to S3'),
     'restore-sqlite': ('swhurl.sqlite_restore', 'main', 'Restore one app SQLite database from its backup (stops the app meanwhile)'),

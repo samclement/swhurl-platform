@@ -252,27 +252,3 @@ spec:
   prune: true
   wait: true
   timeout: 10m
----
-# Empty retirement unit for the incident reviewer. Keep it until Flux prunes its
-# former resources; removing this Orphan unit first would leave them unmanaged.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: platform-incident-review
-  namespace: flux-system
-  labels:
-    platform.swhurl.com/alert: failures
-spec:
-  dependsOn:
-    - name: infra-base
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: swhurl-platform
-  path: ./platform/incident-review
-  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
-  # Removing a resource from Git still prunes it (prune: true).
-  deletionPolicy: Orphan
-  prune: true
-  wait: true
-  timeout: 10m

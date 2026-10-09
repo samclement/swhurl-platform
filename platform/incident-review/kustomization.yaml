@@ -1,5 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-# Keep the unit until Flux has pruned its inventory; removing this Orphan unit first
-# would leave the reviewer resources running without Git ownership.
-resources: []

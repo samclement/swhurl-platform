@@ -63,7 +63,7 @@ flowchart LR
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `platform-alerts` | ntfy Providers and the infrastructure/source failure Alert, with their SOPS Secrets (`platform/alerts`) | infra-base | SOPS |
 | `platform-image-automation` | The write `GitRepository` (SSH, deploy key) and its SOPS Secret (`platform/image-automation`); each app's `ImageRepository`, `ImagePolicy` and app-named `ImageUpdateAutomation` belong to its staging unit | infra-base | SOPS |
-| `platform-flux-webhook` | GitHub push `Receiver`, its token Secret, Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
+| `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
 

@@ -82,12 +82,13 @@ A commit that changes none of the image's inputs has the same hash: nothing to d
 
 ## GitHub tokens
 
-Two fine-grained tokens in [`platform/console/secret.sops.yaml`](../platform/console/secret.sops.yaml), both owned by you, so everything they do appears as you:
+Two fine-grained tokens in [`platform/console/secret.sops.yaml`](../platform/console/secret.sops.yaml), both owned by you, so everything they do appears as you, and one value that is not a GitHub credential:
 
 | Key | Covers | Permissions | Used for |
 | --- | --- | --- | --- |
 | `GITHUB_TOKEN` | `samclement/swhurl-platform` only | Contents, Pull requests: read and write | Every PR the console opens here |
-| `APP_REPOS_TOKEN` | All repositories (GitHub lets a token create repositories only then) | Administration, Contents, Workflows: read and write; Actions: read | **Start a new app** only; without it that form is off |
+| `APP_REPOS_TOKEN` | All repositories (GitHub lets a token create repositories only then) | Administration, Contents, Workflows, Webhooks: read and write; Actions: read | **Start a new app** only; without it that form is off |
+| `IMAGE_WEBHOOK_TOKEN` | Flux's `app-images` receiver | None on GitHub: it signs [image webhook](services.md#image-webhook) calls | The webhook **Start a new app** adds to the new repository. Without it, or without the Webhooks permission above, the job warns and carries on; `make app-hooks` adds the webhook later |
 
 `make verify-platform` checks GitHub accepts each and warns 14 days before one expires (a missing `APP_REPOS_TOKEN` is a warning). Replace one: [operations](operations.md#secrets); Reloader restarts the console.
 
@@ -97,7 +98,7 @@ Application, Uvicorn access and action audit logs are one-line JSON. Audits reta
 
 - **Who:** oauth2-proxy returns the signed-in email as `X-Auth-Request-Email` (it needs `set-xauthrequest`) and Traefik copies it to the request; without it the console answers 401 (except `/healthz`). A NetworkPolicy admits only Traefik's pods, so no other pod can send a forged header. A POST must carry an `Origin` naming the console's own host (403 otherwise), so another website cannot use your sign-in cookie to start an action.
 - **What it may do in the cluster:** its ServiceAccount `console/console` may read Flux units, HelmReleases, the Git source, pods, workloads, Ingresses and Certificates, and in `flux-system` only patch Kustomizations and GitRepositories ([`rbac.yaml`](../platform/console/rbac.yaml)). No Secrets, no `pods/exec`, nothing else writable. RBAC cannot limit which fields a patch changes; the console's code does, and refuses the root units.
-- **The repository token** could change or delete any of your repositories, so only one class uses it ([`repos.py`](../tools/swhurl/console/repos.py)), and it can only check whether a repository exists, create a new public one, write the first commit to a repository it created in the same job, and read that repository's workflow runs. It has no delete call and refuses any other write (tested). Rendering uses Copier and `git` in the image, which only read the public template.
+- **The repository token** could change or delete any of your repositories, so only one class uses it ([`repos.py`](../tools/swhurl/console/repos.py)), and it can only check whether a repository exists, create a new public one, write the first commit and add the image webhook to a repository it created in the same job, and read that repository's workflow runs. It has no delete call and refuses any other write (tested). Rendering uses Copier and `git` in the image, which only read the public template.
 - **The tokens:** used only in the `Authorization` header of the console's GitHub API requests (download `main`, create a `console/*` branch and its commit, open the PR; create a new app repository and its first commit); never in a command line and redacted from all output. `main` is not protected, so the limit to `console/*` branches is the console's code (tested).
 - **State:** none. It stores nothing; `/tmp` is a 1 GiB `emptyDir` for downloaded trees.
 

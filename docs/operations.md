@@ -44,7 +44,7 @@ Replace one of the console's two GitHub tokens ([what each is for](console.md#gi
 
 1. On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate, resource owner `samclement`, the longest expiry offered:
    - `GITHUB_TOKEN` (name `swhurl-console`): repository access only `samclement/swhurl-platform`; Contents and Pull requests, read and write.
-   - `APP_REPOS_TOKEN` (name `swhurl-console-app-repos`): **All repositories** (GitHub requires it to create repositories); Administration, Contents and Workflows read and write, Actions read-only.
+   - `APP_REPOS_TOKEN` (name `swhurl-console-app-repos`): **All repositories** (GitHub requires it to create repositories); Administration, Contents, Workflows and Webhooks read and write, Actions read-only.
 2. In your own terminal, from the repository root, set the value without echoing it (replace `KEY` with `GITHUB_TOKEN` or `APP_REPOS_TOKEN`, then paste the token): `read -rs T && SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["KEY"]' "\"$T\""; unset T`. Never paste the token anywhere else.
 3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
@@ -53,6 +53,19 @@ Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub r
 1. In your own terminal: `sops platform/flux-webhook/secret.sops.yaml` and set `token` to the output of `openssl rand -hex 32`.
 2. `make check-secrets`, commit, push, `make reconcile UNIT=platform-flux-webhook` (the receiver reads the Secret on each request; nothing restarts).
 3. On GitHub: Settings → Webhooks → the `flux-webhook` hook → Secret: paste the same value, save, then **Redeliver** the latest delivery and check it returns 200.
+
+Rotate the image webhook token ([what it is](services.md#image-webhook)); until step 3, app repositories call the old address and new images wait for the hourly scan:
+
+1. In your own terminal, from the repository root, write one new value to both copies:
+
+   ```bash
+   T=$(openssl rand -hex 32)
+   SOPS_AGE_KEY_FILE=./age.agekey sops set platform/flux-webhook/image-secret.sops.yaml '["stringData"]["token"]' "\"$T\""
+   SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["IMAGE_WEBHOOK_TOKEN"]' "\"$T\""
+   unset T
+   ```
+2. `make check-secrets` (the two copies must match), commit, push, `make flux-reconcile` (Reloader restarts the console).
+3. `make app-hooks` repoints every app repository's webhook; `make verify-platform` shows them under Image Webhooks after each repository's next publish.
 
 Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-image)), adding the new key before removing the old so automatic deploys keep working:
 

@@ -45,7 +45,8 @@ def ghcr(status=None):
 
 
 class Cluster:
-    def __init__(self, exists=False, runs=None):
+    def __init__(self, exists=False, runs=None, token=True):
+        self.hooks = []
         self.runs = list(runs or [[], [{'number': 1, 'headSha': SHA, 'status': 'in_progress', 'conclusion': '',
                                         'url': 'u'}],
                                   [{'number': 1, 'headSha': SHA, 'status': 'completed', 'conclusion': 'success',
@@ -56,7 +57,14 @@ class Cluster:
         r.on('copier', stdout='')
         r.on('git', stdout='')
         r.on('gh', 'repo', 'create', stdout='')
+        r.on('sops', 'decrypt', stdout='stringData: {token: fixture-webhook-token}\n', returncode=0 if token else 1)
+        r.on('gh', 'api', 'repos/samclement/notes/hooks', stdout='[]')
+        r.on('gh', 'api', '--method', 'POST', 'repos/samclement/notes/hooks', handler=self.add_hook)
         r.on('gh', 'run', 'list', handler=self.run_list)
+
+    def add_hook(self, args, body):
+        self.hooks.append(json.loads(body))
+        return Result(args, 0, '{}')
 
     def run_list(self, args, _):
         return Result(args, 0, json.dumps(self.runs.pop(0) if len(self.runs) > 1 else self.runs[0]))
@@ -76,7 +84,11 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual(image, f'ghcr.io/samclement/notes:1-abcdef0@{DIGEST}')
         verbs = [c[1] if c[0] == 'git' and c[1] != '-C' else (c[3] if c[0] == 'git' else ' '.join(c[:3]))
                  for c in cluster.runner.calls if c[:3] != ('gh', 'run', 'list')]
-        self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'gh repo create', 'push'])
+        self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'gh repo create', 'push', 'sops decrypt ' + verbs[-3].split()[-1],
+                                     'gh api repos/samclement/notes/hooks', 'gh api --method'])
+        self.assertEqual([h['events'] for h in cluster.hooks], [['package', 'registry_package']])
+        self.assertIn('[OK] Added the image webhook: Flux scans as soon as an image is published', lines)
+        self.assertNotIn('fixture-webhook-token', ' '.join(' '.join(c) for c in cluster.runner.calls))
         copy = next(c for c in cluster.runner.calls if 'copy' in c)
         self.assertIn('app_name=notes', copy)
         self.assertEqual(copy[copy.index('--vcs-ref') + 1], STACK_REVISIONS['typescript'])
@@ -92,6 +104,13 @@ class AppRepoTests(unittest.TestCase):
         self.assertIn('application/vnd.oci.image.index.v1+json', manifest.get_header('Accept'))
         self.assertIn(f'make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --image {image}"',
                       lines[-1])
+
+    def test_an_unreadable_webhook_token_is_a_warning_not_a_failure(self):
+        cluster = Cluster(token=False)
+        image, lines = self.create(cluster)
+        self.assertTrue(image.startswith('ghcr.io/samclement/notes:1-'))
+        self.assertEqual(cluster.hooks, [])
+        self.assertTrue(any(line.startswith('[WARN] no image webhook') and 'make app-hooks' in line for line in lines), lines)
 
     def test_refuses_an_existing_repository_or_a_bad_name_before_any_change(self):
         for req, cluster, message in ((repo.Request('notes'), Cluster(exists=True), 'already exists'),

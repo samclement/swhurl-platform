@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
+from swhurl.apps import hooks
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -452,6 +453,42 @@ def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> Non
                     + '; see Recent Deliveries on the webhook (Flux still polls every minute)')
 
 
+def check_image_webhooks(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """The app-images Receiver is Ready and each auto-deploy app's repository calls it (docs/services.md#image-webhook)."""
+    report.section('Image Webhooks')
+    try:
+        receiver = runner.json(['kubectl', '-n', hooks.RECEIVER_NAMESPACE, 'get',
+                                'receivers.notification.toolkit.fluxcd.io', hooks.RECEIVER, '-o', 'json'])
+        status, message = ready_condition(receiver)
+    except (CommandError, TypeError):
+        status, message = 'Unknown', 'could not read it'
+    name = f'{hooks.RECEIVER_NAMESPACE}/{hooks.RECEIVER}'
+    if status == 'True':
+        report.ok(f'Flux receiver {name} is Ready')
+    else:
+        report.bad(f'Flux receiver {name} is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
+    host = hooks.webhook_host(root)
+    fallback = 'Flux finds its new images within the hour'
+    for app, repository in hooks.auto_deploy_repositories(root).items():
+        try:
+            hook = hooks.find(runner.json(['gh', 'api', f'repos/{repository}/hooks']), host)
+        except CommandError as error:
+            report.warn(f'{app}: could not list the GitHub webhooks of {repository} with gh: {error}')
+            continue
+        last = (hook or {}).get('last_response') or {}
+        if not hook:
+            report.warn(f'{app}: no image webhook on {repository}; {fallback} (make app-hooks)')
+        elif not hook.get('active') or not set(hooks.EVENTS) <= set(hook.get('events') or []):
+            report.warn(f'{app}: the image webhook on {repository} is disabled or lacks its events; {fallback} '
+                        '(make app-hooks)')
+        elif last.get('code') in (200, None):
+            report.ok(f'{app}: image webhook on {repository}'
+                      + (', latest delivery returned 200' if last.get('code') else ', no delivery yet'))
+        else:
+            report.warn(f'{app}: the latest image webhook delivery from {repository} returned {last.get("code")} '
+                        f'{last.get("message") or ""}'.rstrip() + f'; {fallback} (after a token rotation: make app-hooks)')
+
+
 def check_image_automation(runner: Runner, report: Report) -> None:
     """Automatic staging deploys: every app ImagePolicy and its named writer are Ready."""
     report.section('Image Automation')
@@ -597,6 +634,7 @@ CHECKS = (
     Check('backups', frozenset({'host'}), check_backups),
     Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),
     Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
+    Check('image-webhooks', frozenset({'cluster', 'host'}), check_image_webhooks),
     Check('dashboards', frozenset({'cluster'}), check_dashboards),
     Check('notifications', frozenset({'cluster'}), check_notifications),
     Check('notification-heartbeat', frozenset({'host'}), check_notification_heartbeat),

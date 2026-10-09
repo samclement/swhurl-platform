@@ -7,7 +7,8 @@ and it can only:
 
   - read whether a repository exists and read its workflow runs;
   - create a new public repository (``POST /user/repos``);
-  - write the first commit to a repository it created in this job, and nothing else.
+  - write the first commit to a repository it created in this job;
+  - add the image webhook (apps/hooks.py) to a repository it created in this job, and nothing else.
 
 It has no method that deletes, and refuses every write to a repository it did not just create
 (tested). The token travels only in the ``Authorization`` header and is redacted from all output.
@@ -28,14 +29,14 @@ from typing import Any
 import httpx
 
 from swhurl import platform
-from swhurl.apps import repo
+from swhurl.apps import hooks, repo
 from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, STACKS
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 
 # What a 403 from each call usually means: the token lacks this permission (docs/console.md#github-tokens).
 PERMISSION_HINTS = {'/user/repos': 'Administration: Read and write', '/git/': 'Contents: Read and write',
-                    '/actions/': 'Actions: Read-only'}
+                    '/actions/': 'Actions: Read-only', '/hooks': 'Webhooks: Read and write'}
 FIRST_RUN_TIMEOUT = 600.0  # seconds: the first build is about two minutes
 POLL = 5.0
 
@@ -44,6 +45,7 @@ POLL = 5.0
 class AppReposToken:
     token: str
     owner: str = APP_OWNER
+    image_webhook_token: str = ''  # signs the image webhook; without it new repositories get none
     api: str = 'https://api.github.com'
     transport: httpx.BaseTransport | None = dataclass_field(default=None, compare=False, repr=False)  # tests
 
@@ -54,7 +56,9 @@ def token_from_env(runner: Runner, env: Mapping[str, str] | None = None) -> AppR
     if token in ('', 'REPLACE_ME'):
         return None
     runner.add_secret(token)
-    return AppReposToken(token)
+    webhook = env.get(hooks.CONSOLE_TOKEN_KEY, '').strip()
+    runner.add_secret(webhook)
+    return AppReposToken(token, image_webhook_token='' if webhook == 'REPLACE_ME' else webhook)
 
 
 class AppRepos:
@@ -62,7 +66,8 @@ class AppRepos:
 
     def __init__(self, runner: Runner, config: AppReposToken):
         runner.add_secret(config.token)
-        self.runner, self.owner = runner, config.owner
+        runner.add_secret(config.image_webhook_token)
+        self.runner, self.owner, self.image_webhook_token = runner, config.owner, config.image_webhook_token
         self.created: set[str] = set()
         self.client = httpx.Client(
             base_url=config.api, transport=config.transport, timeout=60,
@@ -130,6 +135,10 @@ class AppRepos:
         self._call('PATCH', f'{base}/git/refs/heads/main', {'sha': commit})
         return commit
 
+    def add_image_hook(self, name: str, host: str) -> None:
+        """The webhook that tells Flux when this repository publishes an image."""
+        self._call('POST', f'{self._writable(name)}/hooks', hooks.hook_body(self.image_webhook_token, host))
+
     def run_for(self, name: str, commit: str) -> dict | None:
         """The app workflow's run for ``commit``, if it has started."""
         runs = self._call('GET', f'/repos/{self.owner}/{name}/actions/runs?head_sha={commit}&per_page=20').json()
@@ -158,6 +167,14 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
         job.lines.append(f'Created {url}')
         commit = repos.push_first_commit(req.name, work, f'Start {req.name} from {STACKS[req.stack]}\n\n'
                                          f'Requested-by: {job.identity}\n', sleep=sleep)
+        try:
+            if not repos.image_webhook_token:
+                raise ActionError(f'{hooks.CONSOLE_TOKEN_KEY} is not set')
+            repos.add_image_hook(req.name, hooks.webhook_host())
+            job.lines.append('Added the image webhook: Flux scans as soon as an image is published')
+        except ActionError as error:  # not worth failing the job: the hourly scan still finds images
+            job.lines.append(f'Warning: no image webhook ({error}); new images are found within the hour. '
+                             'Add it with make app-hooks')
         job.lines.append(f'Pushed {commit[:7]}; waiting for its {APP_WORKFLOW} run (checks, build, publish)')
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

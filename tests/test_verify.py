@@ -66,7 +66,7 @@ def healthy(**overrides):
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
-        'hooks': [{'active': True, 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
+        'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'], 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
                    'last_response': {'code': 200, 'message': 'OK'}}],
         'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
     }
@@ -161,7 +161,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                      '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
+                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -327,6 +327,27 @@ class ConsoleTokenTests(unittest.TestCase):
         _, report, text = run(healthy(providers={'items': []}))
         self.assertIn('[BAD] alert failures points at provider ntfy-failures, which does not exist', report.lines, text)
 
+    def test_image_webhook_problems(self):
+        url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
+        events = ['package', 'registry_package']
+        _, report, text = run(healthy())
+        self.assertIn('[OK] hello-ts: image webhook on samclement/hello-ts, latest delivery returned 200', report.lines, text)
+        cases = {
+            'receiver': ({'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no secret'}]}}},
+                         '[BAD] Flux receiver flux-system/app-images is not Ready: no secret'),
+            'no hook': ({'hooks': []}, '[WARN] hello-ts: no image webhook on samclement/hello-ts; Flux finds its new images '
+                                       'within the hour (make app-hooks)'),
+            'unused': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': None}}]},
+                       '[OK] hello-ts: image webhook on samclement/hello-ts, no delivery yet'),
+            'failing': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': 404}}]},
+                        '[WARN] hello-ts: the latest image webhook delivery from samclement/hello-ts returned 404'),
+            'events': ({'hooks': [{'active': True, 'events': ['push'], 'config': url}]}, 'is disabled or lacks its events'),
+        }
+        for name, (overrides, expected) in cases.items():
+            with self.subTest(name=name):
+                _, report, text = run(healthy(**overrides))
+                self.assertTrue(any(expected in line for line in report.lines), text)
+
     def test_push_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
         cases = {
@@ -364,7 +385,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

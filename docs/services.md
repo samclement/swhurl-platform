@@ -16,7 +16,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | Flux notification Providers and Alerts, to ntfy.sh |
-| [Push webhook](#push-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (Flux `Receiver`) |
+| [Push webhook](#push-webhook) and [image webhook](#image-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (two Flux `Receiver`s) |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
 
@@ -167,6 +167,22 @@ GitHub calls `https://flux-webhook.<BASE_DOMAIN>/hook/<path>` on every push to t
 - **Route:** the only platform Ingress without sign-in (GitHub cannot sign in); it serves only `/hook/` and only Flux's `webhook-receiver` Service (`make check` enforces both). A NetworkPolicy admits Traefik to cert-manager's HTTP-01 solver in `flux-system`, which Flux's own policy would block.
 - **GitHub side:** Settings → Webhooks → `flux-webhook.<BASE_DOMAIN>`, content type `application/json`, events: push. Recent Deliveries shows each call and its response.
 - If GitHub cannot reach it, nothing breaks: Flux still polls every minute.
+
+## Image webhook
+
+The repository of each app with automatic deploys calls `https://flux-webhook.<BASE_DOMAIN>/hook/<path>` when its workflow publishes an image to GHCR. The Flux `Receiver` `app-images` then scans the apps' image repositories at once, and the rest of the [deploy chain](apps.md#deploy-a-new-image) follows from events:
+
+```text
+image published → GitHub webhook (package events) → Receiver app-images
+  → ImageRepository scan → ImagePolicy picks the tag → ImageUpdateAutomation commits the pin
+  → push webhook → Flux applies
+```
+
+- **Scope:** the receiver can only start a scan of `ImageRepository` objects labelled `platform.swhurl.com/managed` (`make check` enforces it). One delivery scans all of them, one registry call each: the receiver sees only an object's metadata, so it cannot match a package to the image an object scans.
+- **Fallback:** each `ImageRepository` and `ImageUpdateAutomation` still runs hourly (`interval: 1h`, written by `make app-new`), so a missed delivery delays a deploy by up to an hour instead of losing it.
+- **Token:** a second random shared secret, in [`platform/flux-webhook/image-secret.sops.yaml`](../platform/flux-webhook/image-secret.sops.yaml), in every app repository's webhook, and as `IMAGE_WEBHOOK_TOKEN` in the console's Secret so [the console](console.md#github-tokens) can create the webhook on a new repository. `make check-secrets` fails unless the two SOPS copies match. It is separate from the push webhook's token: whoever holds it can start image scans and nothing else. The receiver's path is a hash of the token, so rotating it changes the URL too ([operations](operations.md#secrets)).
+- **Route:** the same Ingress as the push webhook.
+- **GitHub side:** one webhook per app repository, content type `application/json`, events: packages and registry packages. `make app-repo` and the console's **Start a new app** create it; `make app-hooks` creates or repoints it for every app with automatic deploys (idempotent), which is how an app added from an existing image gets one. `make verify-platform` lists each app's webhook and its latest delivery.
 
 ## Certificates, ingress and storage
 

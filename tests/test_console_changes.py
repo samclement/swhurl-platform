@@ -687,13 +687,15 @@ DIGEST = 'sha256:' + 'd' * 64
 class FakeAppGitHub:
     """GitHub's API as the second token sees it: notes does not exist until created; its first run succeeds."""
 
-    def __init__(self, existing=('hello-ts',), runs=None):
+    def __init__(self, existing=('hello-ts',), runs=None, webhook='fixture-image-webhook-token', hooks_status=201):
+        self.hooks_status = hooks_status
         self.requests: list[httpx.Request] = []
         self.existing = set(existing)
         self.runs = list(runs if runs is not None else [None, {'status': 'in_progress'}, {'status': 'completed',
                                                                                         'conclusion': 'success'}])
         from swhurl.console import repos
-        self.config = repos.AppReposToken('github_pat_app_repos_fixture_0123', transport=httpx.MockTransport(self.handle))
+        self.config = repos.AppReposToken('github_pat_app_repos_fixture_0123', image_webhook_token=webhook,
+                                          transport=httpx.MockTransport(self.handle))
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -713,6 +715,8 @@ class FakeAppGitHub:
             runs = [] if run is None else [{'name': 'Container', 'run_number': 1, 'html_url': 'https://run/1',
                                             'conclusion': None, **run}]
             return httpx.Response(200, json={'workflow_runs': runs})
+        if (method, path) == ('POST', '/repos/samclement/notes/hooks'):
+            return httpx.Response(self.hooks_status, json={'message': 'Resource not accessible by personal access token'})
         if (method, path) in answers:
             return httpx.Response(200, json=answers[(method, path)])
         return httpx.Response(404, json={'message': 'Not Found'})
@@ -774,7 +778,14 @@ class AppReposTests(unittest.TestCase):
         self.assertEqual(image, f'ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}')
         self.assertEqual(api.writes(), [('POST', '/user/repos')] + [('POST', '/repos/samclement/notes/git/blobs')] * 2
                          + [('POST', '/repos/samclement/notes/git/trees'), ('POST', '/repos/samclement/notes/git/commits'),
-                            ('PATCH', '/repos/samclement/notes/git/refs/heads/main')])
+                            ('PATCH', '/repos/samclement/notes/git/refs/heads/main'),
+                            ('POST', '/repos/samclement/notes/hooks')])
+        hook = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/hooks')))
+        self.assertEqual((hook['events'], hook['config']['secret']), (['package', 'registry_package'],
+                                                                      'fixture-image-webhook-token'))
+        self.assertIn('/hook/', hook['config']['url'])
+        self.assertIn('Added the image webhook: Flux scans as soon as an image is published', job.lines)
+        self.assertNotIn('fixture-image-webhook-token', '\n'.join(job.lines))
         created = json.loads(api.requests[1].content)
         self.assertEqual((created['private'], created['auto_init']), (False, True))
         tree = json.loads(next(r.content for r in api.requests if r.url.path.endswith('/git/trees')))
@@ -786,6 +797,20 @@ class AppReposTests(unittest.TestCase):
         self.assertIn('A swhurl.yaml', job.lines)
         self.assertIn('run 1 in_progress', job.lines)
         self.assertNotIn('github_pat_app_repos_fixture_0123', '\n'.join(job.lines))
+
+    def test_a_missing_or_refused_image_webhook_is_a_warning_not_a_failure(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        for name, api, expected in (('no token', FakeAppGitHub(webhook=''), 'IMAGE_WEBHOOK_TOKEN is not set'),
+                                    ('refused', FakeAppGitHub(hooks_status=403), 'Webhooks: Read and write')):
+            with self.subTest(name=name):
+                client, job = repos.AppRepos(repo_runner(), api.config), self.job()
+                image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
+                                              opener=ghcr_opener)
+                self.assertTrue(image.startswith('ghcr.io/samclement/notes:1-'))
+                warning = next(line for line in job.lines if line.startswith('Warning: no image webhook'))
+                self.assertIn(expected, warning)
+                self.assertIn('make app-hooks', warning)
 
     def test_a_permission_refusal_names_the_permission_to_check(self):
         from swhurl.apps import repo

@@ -799,3 +799,12 @@ Plan section 0, item 10. Commits `13c761c` (console and generator) and `2cbdd9f`
 - `make verify-platform` passed after the rollout.
 - With `apps/hello` and its two unit files moved aside, `make test`, `make check-repo` and `make check-apps` passed; the tree was restored.
 - Not exercised: a new app through the console or `make app-repo` after this change (no repository was created), and a signed-in browser view of the new page.
+
+## Platform-generated apps only, phase D: hello retired (9 October 2026)
+
+Commit `131818a`, after the operator's "yes, retire hello".
+
+- `make app-remove` for `hello/prod` and `hello/staging`, pushed; `make flux-reconcile` passed. Namespaces `hello-staging` and `hello-prod` and units `app-hello-staging` and `app-hello-prod` are gone (neither had a volume); `hello.homelab.swhurl.com` and `staging-hello.homelab.swhurl.com` no longer answer; `hello-ts.homelab.swhurl.com` still returns 302 to sign-in.
+- The node collector restarted at 16:34:54 UTC with the nginx parsers removed and logged no errors; `make check-otel` passed its log fixtures through the real collector.
+- `make check-apps` passed for the 10 remaining instances with the new `platform-image` rule; `make verify-platform` passed (one expected warning until the publish run deploys the console image built from this commit); `make app-status APP=hello-ts ENV=staging` showed "running: matches desired".
+- Not exercised: the `platform-image` rule refusing a real hand-committed instance in CI or the console's merge gate (unit tests only).

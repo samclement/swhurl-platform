@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 import yaml
 
 from swhurl import ROOT, platform
+from swhurl.apps import hooks
 from swhurl.run import CommandError, Runner
 
 
@@ -46,6 +47,8 @@ def looks_double_encoded(raw: bytes) -> bool:
 
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret.sops.yaml')
+# The image webhook token: (file, key) of the Receiver's Secret and of the console's copy.
+IMAGE_WEBHOOK_COPIES = ((str(hooks.TOKEN_FILE), 'token'), ('platform/console/secret.sops.yaml', hooks.CONSOLE_TOKEN_KEY))
 NOTIFICATION_SECRET = 'platform/console/notification-secret.sops.yaml'
 NTFY_DESTINATIONS = {  # channel: (provider Secret file, provider key, checker key)
     'failures': ('platform/alerts/secret-failures.sops.yaml', 'address', 'NTFY_FAILURES_URL'),
@@ -69,6 +72,14 @@ def notification_destination_problem(copies: dict[str, str]) -> str | None:
     return None
 
 
+def image_webhook_problem(copies: dict[str, str]) -> str | None:
+    """``copies`` maps each file holding the image webhook token to its value's fingerprint."""
+    files = [f for f, _ in IMAGE_WEBHOOK_COPIES]
+    if sorted(copies) != sorted(files) or len(set(copies.values())) != 1:
+        return f'the image webhook token must be set and identical in {" and ".join(files)}'
+    return None
+
+
 def ingestion_key_problem(copies: dict[str, str]) -> str | None:
     """``copies`` maps each file holding the ingestion key to its value's fingerprint."""
     if sorted(copies) != sorted(INGESTION_FILES):
@@ -87,6 +98,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     errors = warnings = 0
     ingestion: dict[str, str] = {}
     destinations: dict[str, str] = {}
+    image_webhook: dict[str, str] = {}
     for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
@@ -104,6 +116,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 raw = base64.b64decode(value) if field == 'data' else str(value).encode()
                 if key == INGESTION_KEY and not fixture:
                     ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
+                if (str(rel), key) in IMAGE_WEBHOOK_COPIES:
+                    image_webhook[str(rel)] = hashlib.sha256(raw).hexdigest()
                 for channel, (provider_file, provider_key, checker_key) in NTFY_DESTINATIONS.items():
                     source = str(rel) == provider_file and key == provider_key
                     checker = str(rel) == NOTIFICATION_SECRET and key == checker_key
@@ -131,5 +145,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         errors += 1
     else:
         print('[OK] ntfy destinations match the notification checker copies (compared by hashes)')
+    problem = image_webhook_problem(image_webhook)
+    if problem:
+        print(f'[ERROR] {problem}')
+        errors += 1
+    else:
+        print('[OK] the image webhook token is identical in ' + ' and '.join(f for f, _ in IMAGE_WEBHOOK_COPIES))
     print(f'\n{errors} error(s), {warnings} warning(s).')
     return 1 if errors else 0

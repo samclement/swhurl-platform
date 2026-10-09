@@ -3,5 +3,7 @@ kind: Kustomization
 resources:
   - secret.sops.yaml
   - receiver.yaml
+  - image-secret.sops.yaml
+  - image-receiver.yaml
   - ingress.yaml
   - networkpolicy.yaml

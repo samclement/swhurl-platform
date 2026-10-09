@@ -8,7 +8,7 @@ metadata:
     platform.swhurl.com/app: test-2
 spec:
   image: ghcr.io/samclement/test-2
-  interval: 1m
+  interval: 1h
 ---
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
@@ -39,7 +39,7 @@ metadata:
     platform.swhurl.com/managed: 'true'
     platform.swhurl.com/app: test-2
 spec:
-  interval: 1m
+  interval: 1h
   sourceRef:
     kind: GitRepository
     name: swhurl-platform-write

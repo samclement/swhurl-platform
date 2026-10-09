@@ -26,6 +26,7 @@ COMMANDS = {
     'app': ('swhurl.apps.ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
     'app-new': ('swhurl.apps.new', 'main', 'Generate an app instance'),
     'app-repo': ('swhurl.apps.repo', 'main', 'Create an app repository from a stack template; wait for its first image'),
+    'app-hooks': ('swhurl.apps.hooks', 'main', 'Create or repoint the image webhook on every auto-deploy app repository'),
     'app-promote': ('swhurl.apps.edit', 'main_promote', 'Create production from staging or update its image (Git edit)'),
     'app-scale': ('swhurl.apps.edit', 'main_scale', 'Change replicas or resources of an app instance (Git edit)'),
     'app-expose': ('swhurl.apps.edit', 'main_expose', 'Change who can reach an app instance: private, signed-in or public (Git edit)'),

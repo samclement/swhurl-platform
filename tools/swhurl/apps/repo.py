@@ -9,7 +9,8 @@ choices are refused before anything is created.
 1. refuses if OWNER/NAME already exists;
 2. renders the stack's Copier template (uvx copier) into a scratch directory, commits it;
 3. creates the public repository with your ``gh`` login and pushes over SSH (your usual Git access;
-   ``gh``'s token needs no ``workflow`` scope);
+   ``gh``'s token needs no ``workflow`` scope), and adds the image webhook (apps/hooks.py; a failure
+   there is a warning: ``make app-hooks`` adds it later);
 4. waits for the repository's first Container run (checks, build, smoke test, publish);
 5. reads the image's digest from GHCR (anonymously, as the cluster pulls) and prints the
    ``make app-new … --from-repo`` line that adds the app to staging.
@@ -32,6 +33,7 @@ from pathlib import Path
 
 import yaml
 
+from swhurl.apps import hooks
 from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, COPIER, STACK_REVISIONS, STACKS
 from swhurl.apps.new import NAME_RE
 from swhurl.run import CommandError, Runner
@@ -200,7 +202,7 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
         out(f'Plan (app-repo {req.repo}):')
         answers = ''.join(f' {k}={v}' for k, v in sorted(req.answers.items()))
         out(f'  - render {template} ({req.stack}) with app_name={req.name}{answers} using {" ".join(copier_command())}')
-        out(f'  - create the public repository {req.repo} and push the first commit over SSH')
+        out(f'  - create the public repository {req.repo}, push the first commit over SSH, add the image webhook')
         out(f'  - wait for its first {APP_WORKFLOW} run, read the image digest from GHCR, print the app-new line')
         return f'{req.image}:<run>-<sha>@sha256:<digest>'
 
@@ -216,6 +218,11 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
                     '--description', req.description or f'A swhurl app ({req.stack})'], mutating=True)
         runner.run([*git, 'push', '--quiet', f'ssh://git@github.com/{req.repo}.git', 'main'], mutating=True)
         out(f'[OK] Created https://github.com/{req.repo} from {template}')
+        try:
+            hooks.ensure(runner, req.repo, hooks.read_token(runner), hooks.webhook_host())
+            out('[OK] Added the image webhook: Flux scans as soon as an image is published')
+        except (hooks.HookError, CommandError) as error:
+            out(f'[WARN] no image webhook ({error}); new images are found within the hour. Add it: make app-hooks')
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

@@ -1,0 +1,22 @@
+# Each app repository calls this when its workflow publishes an image to GHCR (repository
+# webhook, docs/services.md#image-webhook); Flux then scans the apps' image repositories at
+# once instead of at their hourly interval. A new tag moves the app's ImagePolicy, whose
+# ImageUpdateAutomation commits the pin. Requests must be signed with the token in
+# image-secret.sops.yaml. Every labelled ImageRepository is scanned (one registry call
+# each): the receiver sees only metadata, so it cannot match a package to spec.image.
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: app-images
+  namespace: flux-system
+spec:
+  type: github
+  events: [ping, package, registry_package]
+  secretRef:
+    name: image-webhook-token
+  resources:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: "*"
+      matchLabels:
+        platform.swhurl.com/managed: "true"

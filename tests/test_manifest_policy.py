@@ -210,6 +210,11 @@ class ClickStackRenderTests(unittest.TestCase):
         self.assertEqual([(p['path'], p['backend']['service']['name']) for p in paths], [('/hook/', 'webhook-receiver')])
         receiver = yaml.safe_load((ROOT / 'platform/flux-webhook/receiver.yaml').read_text())
         self.assertEqual(receiver['spec']['secretRef']['name'], 'github-webhook-token')
+        images = yaml.safe_load((ROOT / 'platform/flux-webhook/image-receiver.yaml').read_text())
+        self.assertEqual(images['spec']['secretRef']['name'], 'image-webhook-token')
+        self.assertEqual([(r['kind'], r['matchLabels']) for r in images['spec']['resources']],
+                         [('ImageRepository', {'platform.swhurl.com/managed': 'true'})],
+                         'an app repository webhook may only start image scans')
         self.assertIn("req.ref == 'refs/heads/main'", receiver['spec']['resourceFilter'])
 
     def test_mongodb_data_survives_claim_deletion(self):

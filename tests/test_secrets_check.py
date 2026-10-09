@@ -21,6 +21,13 @@ class SecretsCheckTests(unittest.TestCase):
         self.assertFalse(module.looks_double_encoded(bytes(range(40))), 'binary bytes are not base64 text')
         self.assertNotIn('.sops.yaml', [p.name for p in module.secret_files()])
 
+    def test_image_webhook_token_must_be_one_value_in_both_secrets(self):
+        from swhurl.secrets_check import IMAGE_WEBHOOK_COPIES, image_webhook_problem
+        receiver, console = (f for f, _ in IMAGE_WEBHOOK_COPIES)
+        self.assertIsNone(image_webhook_problem({receiver: 'a', console: 'a'}))
+        for copies in ({receiver: 'a', console: 'b'}, {receiver: 'a'}, {}):
+            self.assertIn('identical', image_webhook_problem(copies))
+
     def test_ingestion_key_must_be_one_value_in_both_secrets(self):
         from swhurl.secrets_check import INGESTION_FILES, ingestion_key_problem
         clickstack, otel = INGESTION_FILES

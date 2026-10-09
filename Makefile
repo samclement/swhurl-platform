@@ -85,6 +85,10 @@ app-repo: ## NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-repo NAME=<app> [STACK=typescript]" >&2; exit 2; }
 	@DRY_RUN=$(DRY_RUN) STACK="$(STACK)" ANSWERS="$(ANSWERS)" DESCRIPTION="$(DESCRIPTION)" $(SWHURL) app-repo $(NAME)
 
+.PHONY: app-hooks
+app-hooks: ## Create or repoint the image webhook on every auto-deploy app's repository (idempotent; DRY_RUN=true)
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) app-hooks
+
 .PHONY: app-status app-logs app-reconcile app-check
 app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one app instance
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }

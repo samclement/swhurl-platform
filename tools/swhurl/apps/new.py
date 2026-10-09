@@ -138,7 +138,9 @@ def image_automation(args) -> list[dict]:
     return [
         {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageRepository',
          'metadata': {'name': args.name, 'namespace': 'flux-system', 'labels': labels},
-         'spec': {'image': repository, 'interval': '1m'}},
+         # The app repository's image webhook starts the scan (apps/hooks.py); the interval is the
+         # fallback for a missed delivery.
+         'spec': {'image': repository, 'interval': '1h'}},
         {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImagePolicy',
          'metadata': {'name': image_policy_name(args.name), 'namespace': 'flux-system', 'labels': labels},
          'spec': {'imageRepositoryRef': {'name': args.name},
@@ -149,7 +151,8 @@ def image_automation(args) -> list[dict]:
                   'digestReflectionPolicy': 'Always', 'interval': '1h'}},
         {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageUpdateAutomation',
          'metadata': {'name': f'{args.name}-staging', 'namespace': 'flux-system', 'labels': labels},
-         'spec': {'interval': '1m', 'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform-write'},
+         # Runs when its ImagePolicy picks a new image; the interval only retries a missed one.
+         'spec': {'interval': '1h', 'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform-write'},
                   'git': {'checkout': {'ref': {'branch': 'main'}},
                           'commit': {'author': {'name': 'fluxcdbot',
                                                 'email': 'fluxcdbot@users.noreply.github.com'},

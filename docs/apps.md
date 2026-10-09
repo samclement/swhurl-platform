@@ -78,7 +78,7 @@ After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from
 
 **The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute. It lists Kubernetes HelmRelease records, keeps the ones registered by an `app-<name>-<env>` Flux unit whose app name and namespace match the release, then groups staging and production records by app. As soon as Flux has created the staging HelmRelease, the job creates or updates `App: <name>` in HyperDX. It does not wait for the release or pods to become Ready. It uses ClickStack's API; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
 
-Once staging is deployed, later pushes to the app repository's `main` publish images. For template apps with `autoDeploy: true`, Flux image automation notices the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
+Once staging is deployed, later pushes to the app repository's `main` publish images. For template apps with `autoDeploy: true`, the app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux image automation finds the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
 
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
@@ -92,7 +92,7 @@ git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/s
 make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
 ```
 
-`make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run `make app-new` with the image that run publishes.
+`make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run `make app-new` with the image that run publishes.
 
 ### Stacks and features
 
@@ -259,13 +259,13 @@ An instance runs the image named by `repository`, `tag` and `digest` in its Helm
 
 ```text
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
-  → image-reflector-controller sees the new tag (checks every minute)
+  → image webhook → image-reflector-controller scans the registry at once (hourly without the webhook)
   → ImagePolicy <app>-staging picks the highest <run> and its digest
   → the app-named image-automation-controller commits the new tag and digest to apps/<app>/staging as fluxcdbot
   → push webhook → Flux applies → helm-controller rolls the Deployment
 ```
 
-The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` and `app-expose` keep them). `make verify-platform` shows each app's newest image under Image Automation. To stop automatic deploys for one app, remove the markers (and `image-automation.yaml` with its line in `kustomization.yaml`) in a commit; staging then keeps its current image until you change it by hand.
+The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` and `app-expose` keep them). `make verify-platform` shows each app's newest image under Image Automation and its webhook under Image Webhooks; an app added from an existing image gets the webhook from `make app-hooks` (until then Flux finds new images within the hour). To stop automatic deploys for one app, remove the markers (and `image-automation.yaml` with its line in `kustomization.yaml`) in a commit; staging then keeps its current image until you change it by hand.
 
 **Other apps (by hand).** Nothing watches them; change the pin yourself:
 

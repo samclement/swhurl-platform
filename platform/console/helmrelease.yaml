@@ -54,7 +54,8 @@ spec:
             env:
               CONSOLE_REPO: samclement/swhurl-platform
             # GITHUB_TOKEN: create console/* branches and open PRs; APP_REPOS_TOKEN: create new app
-            # repositories (secret.sops.yaml; docs/console.md#github-tokens).
+            # repositories; IMAGE_WEBHOOK_TOKEN: sign the image webhook added to them
+            # (secret.sops.yaml; docs/console.md#github-tokens).
             envFrom:
             - secretRef:
                 name: console-github

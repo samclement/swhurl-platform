@@ -20,7 +20,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 10. **Platform-generated apps only** (started 9 October 2026). Goal: every app comes from a stack template through `make app-repo` or the console's **Start a new app**, runs `ghcr.io/samclement/<app>` and deploys to staging automatically; nothing else is supported. Each phase ends in `make check`, a commit, a reconcile and `make verify-platform`.
     - **A. Console:** remove **Deploy an existing image** (the form, its tabs and presets, `POST /new`); `/new` shows only **Start a new app**; a failed first build points at the terminal `make app-new --from-repo` line.
     - **B. Generator:** `make app-new` needs `--from-repo samclement/<name>` (`--manifest` stays for `make check-templates` and test fixtures); `--preset` and the presets go; docs lose "Add an existing image" and "Other apps (by hand)".
-    - **C. Tests stop reading `apps/hello`:** the tooling tests that copy it use a generated instance instead (offline).
+    - **C. Tests stop reading `apps/hello`:** the tooling tests that copied it read a frozen copy in `tests/fixtures/instance` instead (offline).
     - **D. Retire `hello` and enforce (needs the operator's yes: it uninstalls `hello/staging` and `hello/prod` and deletes their namespaces):** `make app-remove` both, drop the nginx log parsers keyed on `hello-`, then add the app policy rule `platform-image`: an instance under `apps/` runs `ghcr.io/samclement/<app>` and its staging has image automation.
     - Out of scope: `tests/fixtures/apps` keeps its busybox and nginx images (the live test must pull them; the rule covers `apps/` only); `hello-ts` stays as it is; the template repositories; private repositories (item 1).
 

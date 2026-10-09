@@ -13,8 +13,8 @@ def classify(paths: list[str]) -> tuple[bool, bool]:
     """Return (app_instance_only, tooling_tests_needed); empty paths fail closed."""
     if not paths or any(not (APP_INSTANCE.fullmatch(path) or APP_UNIT.fullmatch(path)) for path in paths):
         return False, True
-    # The tooling tests use apps/hello as a checked-in source fixture.
-    return True, any(path.startswith("apps/hello/") for path in paths)
+    # The tooling tests' sample instance is tests/fixtures/instance, which is not an app path.
+    return True, False
 
 
 def main() -> int:

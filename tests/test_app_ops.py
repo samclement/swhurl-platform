@@ -293,8 +293,8 @@ class UsageTests(unittest.TestCase):
 
     def test_check_runs_the_policy_for_that_instance(self):
         with mock.patch.object(app_ops.policy, 'main', return_value=0) as policy:
-            self.assertEqual(run(FakeRunner(), 'check', 'hello', 'prod')[0], 0)
-        policy.assert_called_once_with([str(ROOT / 'apps/hello/prod')])
+            self.assertEqual(run(FakeRunner(), 'check', 'web', 'prod')[0], 0)
+        policy.assert_called_once_with([str(ROOT / 'apps/web/prod')])
 
 
 if __name__ == '__main__':

@@ -27,17 +27,18 @@ WHO = {'X-Auth-Request-Email': 'sam@swhurl.com', 'Origin': 'http://testserver'}
 NEW = {'name': 'weather-api', 'stack': 'typescript', 'exposure': 'authenticated-web', 'host': ''}
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
 REVISION = 'main@sha1:' + HEAD
+SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
 MAIN = {'README.md': b'# repo\n'}
 for env in ('staging', 'prod'):
-    for path in (ROOT / 'apps/hello' / env).glob('*.yaml'):
-        MAIN[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    for path in (SAMPLE / 'apps/hello' / env).glob('*.yaml'):
+        MAIN[path.relative_to(SAMPLE).as_posix()] = path.read_bytes()
     rel = f'apps/hello/{env}/helmrelease.yaml'
     doc = yaml.safe_load(MAIN[rel])
     doc['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(
         IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
     MAIN[rel] = yaml.safe_dump(doc, sort_keys=False).encode()
 for rel in ('clusters/home/app-hello-staging.yaml', 'clusters/home/app-hello-prod.yaml'):
-    MAIN[rel] = (ROOT / rel).read_bytes()
+    MAIN[rel] = (SAMPLE / rel).read_bytes()
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
     for rel, data in MAIN.items():

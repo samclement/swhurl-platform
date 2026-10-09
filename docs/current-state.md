@@ -749,3 +749,9 @@ Not exercised yet: first production on the cluster, the new console confirmation
 - Nothing changed in the cluster: the collect-only CronJob from 8 October keeps running until the plan's task 6. Checked the same day: `samclement/hello-ts` is public with issues enabled and `main` unprotected.
 - Not exercised: every part of design B (issue writing, the `restarts` signal, the GitHub token, any agent). The model path of the earlier design was never enabled in the cluster.
 
+
+### Private app repositories: decision and plan (9 October 2026)
+
+- Operator decisions, later the same day: incident issues carry full evidence (stack trace, log message, request path), so app repositories and images become private first. The node pulls through a host `registries.yaml` (`make host-registry`), Flux scans with one `ghcr-pull` Secret in `flux-system`, and the credential is a classic `read:packages` token. `swhurl-platform`, the stack templates and the console image stay public. Plan section 4 holds the task list (stage A, then B); section 14 was amended and starts after it.
+- Checked, read-only: every `swhurl-*` repository is public; `/etc/rancher/k3s/registries.yaml` does not exist; k3s is `v1.34.4+k3s1`; app units have no SOPS decryption or substitution; the console's `GITHUB_TOKEN` (this repository only) is what `app-new --from-repo` would use for a private `swhurl.yaml`.
+- Nothing changed in the cluster or on GitHub. Not checked: the operator's GitHub plan, whether a package stays public when its repository goes private, and whether GHCR still refuses fine-grained tokens (plan tasks P0, P1 and P2).

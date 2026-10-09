@@ -142,7 +142,7 @@ Removal leaves the incident file and log in place. `make notifications-heartbeat
 
 ## Incident reviewer
 
-The [incident reviewer](services.md#incident-reviewer) is removed from the platform configuration. The empty namespace remains; removing it is a separate decision. The encrypted model key remains in Git history, so deleting the Kubernetes Secret did not revoke it at the provider.
+The [incident reviewer](services.md#incident-reviewer) and its namespace are removed from the platform. The encrypted model key remains in Git history, so deleting the Kubernetes Secret did not revoke it at the provider.
 
 ## Backups and recovery
 

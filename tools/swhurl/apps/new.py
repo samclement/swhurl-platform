@@ -125,7 +125,7 @@ def validate(args) -> None:
         image = parse_image(args.image)
         if not re.match(AUTO_DEPLOY_TAG_PATTERN, image.get('tag', '')) or 'digest' not in image:
             raise GenerationError('automatic deploys need an image REPO:<run>-<sha>@sha256:... as the swhurl '
-                                  "template's workflow publishes it (or use --no-auto-deploy)")
+                                  "template's workflow publishes it (--no-auto-deploy is for fixtures under another --root)")
 
 
 def auto_deploys(args) -> bool:
@@ -444,7 +444,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     source.add_argument('--manifest', type=Path, metavar='PATH',
                         help=f'defaults from a local {MANIFEST_FILE} (check-templates and tests)')
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
-    p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
+    p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
+                                                        '(any REPO:TAG or digest form under another --root)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '

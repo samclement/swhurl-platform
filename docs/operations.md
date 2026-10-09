@@ -129,17 +129,7 @@ Removal leaves the incident file and log in place. `make notifications-heartbeat
 
 ## Incident reviewer
 
-The [incident reviewer](services.md#incident-reviewer) is the CronJob `incident-review/incident-review`. It is suspended while its rollback is prepared; no new sweeps start. `make verify-platform` reports an expected suspension warning until the reviewer is removed.
-
-- **See what it knows:** `make incident-review-status` (last sweep, hourly counts, incidents, spend, pending messages; no log text). `make incident-review-bundle` prints the evidence it would send for the last full hour, without sending it.
-- **Pause:** `suspend: true` under `cronjob:` in [`platform/incident-review/helmrelease.yaml`](../platform/incident-review/helmrelease.yaml) stops new Jobs. The existing `INCIDENT_REVIEW_MODE: collect-only` setting had prevented model calls before suspension.
-- **Model key:** create or rotate it in the provider's project, then `sops platform/incident-review/secret.sops.yaml`, set `OPENAI_API_KEY`, commit and push. The next Job reads it; nothing restarts. The project's own spend cap is set at the provider and is the hard limit; the reviewer's counter (`monthly_refuse_cents`) stops earlier.
-- **ClickHouse password:** it is a copy. After rotating `CLICKHOUSE_APP_PASSWORD` in `platform/clickstack/secret.sops.yaml`, set the same value in `platform/incident-review/secret-clickhouse.sops.yaml`; `make check-secrets` fails while they differ.
-- **ntfy topic:** read it with `sops decrypt platform/incident-review/secret-ntfy.sops.yaml` and subscribe once per device. The topic name is the credential.
-- **Health:** `make verify-platform` fails when the CronJob has not succeeded for 130 minutes, and the [host heartbeat](#notification-checker-heartbeat) alerts on the same condition. A run that reports a failure exits non-zero, so repeated failures surface there too.
-- **A failure message** names one reason: `query` (ClickHouse or the HelmRelease list), `redaction`, `state-unavailable`, `state-corrupt`, `state-size`, `contract` (a handoff file is missing or malformed), `provider`, `timeout`, `schema` (the model's answer was refused) or `delivery`. Read the Job's pod logs for which step reported it.
-- **Reset state** (after `state-corrupt` or `state-size`): `kubectl -n incident-review patch configmap incident-review-state --type=merge -p '{"data":{"state.json":""}}'`. This forgets incidents and baselines and restarts the month's spend count, so one diagnosis per live incident may repeat.
-- **Images:** the publish workflows pin both images in the HelmRelease. By hand: `make console-image` for the `collect` and `decide` image, `make incident-review-image` for the worker.
+The [incident reviewer](services.md#incident-reviewer) is retired from the platform configuration. The empty Flux unit remains until its former inventory is confirmed pruned. The namespace remains; removing it is a separate decision. The encrypted model key remains in Git history, so deleting the Kubernetes Secret does not revoke it at the provider.
 
 ## Backups and recovery
 

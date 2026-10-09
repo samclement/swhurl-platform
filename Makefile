@@ -40,10 +40,6 @@ notifications-check: ## Live: preview lifecycle/health notifications without sen
 notifications-heartbeat: ## Live: alert if the notification checker is stale (ARGS=--dry-run previews)
 	@$(SWHURL_APPS) notifications-heartbeat $(ARGS)
 
-.PHONY: incident-review-dry-run
-incident-review-dry-run: ## Offline: run the incident reviewer's collect, analyse (fixture) and decide steps on fixtures; no external calls
-	@$(SWHURL_APPS) incident-review-dry-run $(ARGS)
-
 .PHONY: verify-logs
 verify-logs: ## Live: summarize fresh log parsing, severity and trace coverage (no bodies; MINUTES=15)
 	@$(SWHURL) verify-logs --minutes $(or $(MINUTES),15)
@@ -95,20 +91,8 @@ app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one 
 	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
 
 .PHONY: console-image
-console-image: ## Pin platform/console (and the incident reviewer's operator image) to the image published for this commit (Git edit)
+console-image: ## Pin platform/console to the image published for this commit (Git edit)
 	$(SWHURL) console-image
-
-.PHONY: incident-review-status
-incident-review-status: ## Live: summarise the incident reviewer's state: last sweep, hourly counts, incidents, spend (read-only)
-	@$(SWHURL_APPS) incident-review-status
-
-.PHONY: incident-review-bundle
-incident-review-bundle: ## Live: print the evidence bundle the reviewer would send for one hour (ARGS="--hours-ago 2 --summary"; read-only)
-	@$(SWHURL_APPS) incident-review-bundle $(ARGS)
-
-.PHONY: incident-review-image
-incident-review-image: ## Pin the incident reviewer to the worker image published for this commit (src-<hash> tag and digest; Git edit)
-	$(SWHURL) worker-image
 
 .PHONY: console-dev
 console-dev: ## Read-only web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)

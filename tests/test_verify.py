@@ -106,7 +106,6 @@ def healthy(**overrides):
                 + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n'))
             .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
             .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', handler=answer('notifications'))
-            .on('kubectl', '-n', 'incident-review', 'get', 'cronjob', 'incident-review', handler=answer('notifications'))
             .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
             .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                 handler=answer('units'))
@@ -162,7 +161,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                      '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==', '\n== Incident reviewer ==',
+                      '\n== Push Webhook ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -363,7 +362,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications', 'Incident reviewer'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, retention, backups, sqlite-backups, push-webhook, notification-heartbeat, console, console-token',
                       report.lines)
@@ -505,34 +504,3 @@ class NotificationHeartbeatHostVerifyTests(unittest.TestCase):
     def test_check_is_registered_as_host_scoped(self):
         check = next(c for c in verify.CHECKS if c.name == 'notification-heartbeat')
         self.assertEqual(check.needs, frozenset({'host'}))
-
-
-class IncidentReviewCheckTests(unittest.TestCase):
-    def verify(self, *, age=600, suspended=False, error=False):
-        now = dt.datetime.now(dt.UTC)
-        status = {} if age is None else {'lastSuccessfulTime': (now - dt.timedelta(seconds=age)).isoformat()}
-        runner = FakeRunner().on('kubectl', '-n', 'incident-review', 'get', 'cronjob', 'incident-review',
-                                 stdout=json.dumps({'spec': {'suspend': suspended}, 'status': status}),
-                                 returncode=1 if error else 0)
-        out = io.StringIO()
-        report = Report(out)
-        verify.check_incident_review(runner, report, now)
-        return report.exit_code(), out.getvalue()
-
-    def test_recent_success_passes_and_stale_missing_or_unreadable_fail(self):
-        code, output = self.verify()
-        self.assertEqual(code, 0, output)
-        self.assertIn('succeeded in the last 130 minutes', output)
-        for options in ({'age': 131 * 60}, {'age': None}, {'error': True}):
-            with self.subTest(options=options):
-                code, output = self.verify(**options)
-                self.assertEqual(code, 1, output)
-
-    def test_suspended_is_a_warning(self):
-        code, output = self.verify(suspended=True)
-        self.assertIn('[WARN] incident reviewer is suspended', output)
-        self.assertNotEqual(code, 1)
-
-    def test_check_needs_only_cluster_reads(self):
-        check = next(c for c in verify.CHECKS if c.name == 'incident-review')
-        self.assertEqual(check.needs, frozenset({'cluster'}))

@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **Incident reviewer rollback.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented. First suspend the collect-only CronJob and stop watching it from the host heartbeat. Then prepare a selective removal of its manifests, credentials, worker image path, commands and code while preserving shared notification and console behavior. Confirm before Flux prunes the reviewer's Secrets and state ConfigMap. The operator decides separately whether to revoke the unused OpenAI key and delete the worker GHCR package and ntfy subscription.
+9. **Incident reviewer rollback.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented. The collect-only CronJob was suspended and removed from the host heartbeat (`82b9a8f`). Next: confirm and reconcile the empty reviewer Flux unit so Flux prunes the HelmRelease, RBAC, NetworkPolicy, state ConfigMap and three Secrets. Once its inventory is empty, remove the unit definition and decide separately whether to delete the namespace, revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 
 ### Delivered
 
@@ -600,9 +600,9 @@ Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the 
 
 **Decision (9 October 2026, operator).** This replaces the earlier design (A): a three-container pod that sent a redacted bundle to the Codex CLI, validated the diagnosis, kept its own state and was to grow a patch worker, a verifier and a PR broker. Design B keeps the detector and gives the record, the deduplication and the fix path to GitHub. Reasons: about a third of the code, no model credential in the cluster, and fixes arrive through the review path already trusted. The design A contract, which some code comments still cite by heading ("Handoff files", "State"), is this file at `47ff348`.
 
-**What is deployed.** Design A in collect-only mode ([services](services.md#incident-reviewer)): hourly sweep configuration, pre-filter and state, no model call. The CronJob is suspended for rollback.
+**What is deployed.** The first rollback commit suspended the collect-only CronJob. The next change empties its Flux unit so the reviewer resources are pruned; the namespace remains until a separate decision.
 
-**Rollback status (9 October 2026):** the collect-only CronJob is being suspended and its host heartbeat watch removed. The issue-writer design below is on hold; its tasks are not an approved rollout sequence while the replacement design is reconsidered.
+**Rollback status (9 October 2026):** the GitHub-issue design below is an archived proposal, not an approved rollout sequence while the replacement design is reconsidered. The issue writer was never implemented.
 
 ### Flow
 

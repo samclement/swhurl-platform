@@ -74,7 +74,7 @@ push → Validate (≈25s) → build and push the image (≈1 min) → bot commi
 - **Skipped on purpose** when `main` has moved on to other image inputs by the time the run pins (that commit's own run pins its image), and when the pin is already current (docs-only commits). Each run's summary says which.
 - **The console restarts** when its pin changes; a job running at that moment stops, and the Activity job list is emptied as on any restart.
 - **Pushes made with the workflow's token start no workflows**, so the pin commit runs neither Validate nor another publish.
-- **By hand** (the run failed, or to pin an older image): `make console-image`, commit, push. The pin also moves the incident reviewer's `collect` and `decide` containers, which run the same image. `make verify-platform` warns while the running image is older than your checkout's tooling.
+- **By hand** (the run failed, or to pin an older image): `make console-image`, commit, push. `make verify-platform` warns while the running image is older than your checkout's tooling.
 
 **Check that it deployed:** `make verify-platform` checks the console's desired image against this checkout and its running workload; Platform shows `platform-console` health. A green Publish run proves the image was published/pinned, not that the new pod is Ready. The current [notification coverage and gaps](services.md#alerts) explain which console failures produce a push; the console uses the same deployment, rollback and prolonged-health notifications as apps.
 

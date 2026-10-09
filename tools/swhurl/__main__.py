@@ -13,16 +13,6 @@ COMMANDS = {
     # command: (module, function, summary)
     'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
     'notifications-check': ('swhurl.notifications', 'main', 'Evaluate lifecycle/health notifications (--dry-run reads only)'),
-    'incident-review-dry-run': ('swhurl.incident_review.dryrun', 'main',
-                                'Offline: run collect, a fixture analysis and decide over checked-in fixtures'),
-    'incident-review-collect': ('swhurl.incident_review.collect', 'main',
-                                'Reviewer pod: query telemetry, pre-filter, write the report and bundle'),
-    'incident-review-status': ('swhurl.incident_review.inspect', 'status_main',
-                               'Summarise the incident reviewer state: last sweep, counts, incidents, spend'),
-    'incident-review-bundle': ('swhurl.incident_review.inspect', 'bundle_main',
-                               'Print the evidence bundle the reviewer would send for one hour (read-only)'),
-    'incident-review-decide': ('swhurl.incident_review.decide', 'main',
-                               'Reviewer pod: validate the diagnosis, update state, notify'),
     'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main',
                                  'Alert if the notification checker is stale (host timer)'),
     'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),
@@ -57,8 +47,6 @@ COMMANDS = {
     'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
     'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
     'console-image': ('swhurl.images', 'main', 'Pin the console HelmRelease to the image published for this checkout (Git edit)'),
-    'worker-image': ('swhurl.images', 'worker_main',
-                     'Pin the incident reviewer to the worker image published for this commit (Git edit)'),
     'prune-backups': ('swhurl.retention', 'main', 'Prune ClickStack MongoDB backups to the retention set'),
 }
 

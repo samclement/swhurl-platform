@@ -253,8 +253,8 @@ spec:
   wait: true
   timeout: 10m
 ---
-# The AI incident reviewer (docs/plan.md section 14). Separate from platform-console: its own
-# namespace, service account, state and Secrets. No substitution: nothing here needs a setting.
+# Empty retirement unit for the incident reviewer. Keep it until Flux prunes its
+# former resources; removing this Orphan unit first would leave them unmanaged.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -270,10 +270,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./platform/incident-review
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
   deletionPolicy: Orphan

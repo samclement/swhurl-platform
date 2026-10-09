@@ -157,7 +157,7 @@ Pending messages are checkpointed before posting and removed only after ntfy acc
 
 ## Incident reviewer
 
-The reviewer has been retired from the platform configuration. Its prior collect-only run and the rollback evidence are recorded in [current state](current-state.md). The empty Flux unit remains until its former inventory is confirmed pruned; the `incident-review` namespace is retained separately.
+The reviewer is removed from the platform configuration. Its prior collect-only run and the rollback evidence are recorded in [current state](current-state.md). The empty `incident-review` namespace is retained separately.
 
 ## Push webhook
 

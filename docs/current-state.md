@@ -760,3 +760,8 @@ Not exercised yet: first production on the cluster, the new console confirmation
 
 - Commit `82b9a8f` suspended the collect-only CronJob and removed the incident reviewer from the host heartbeat's watched jobs. The operator ran `make check`, committed and pushed the change, then reported that `make flux-reconcile` and `make verify-platform` passed. A live read returned `true` for `incident-review/incident-review`'s `spec.suspend`.
 - The operator reported `make app-status APP=hello-ts ENV=staging` healthy: its desired and applied revisions matched, its deployment was 1/1 ready, and its signed-in route and TLS were ready. The reviewer resources and credentials still exist; no issue writer or private repository change has been deployed.
+
+### Incident reviewer rollback, resource prune (9 October 2026)
+
+- Commit `77f3b3b` removed the reviewer manifests and tooling and emptied its Flux unit. The operator ran `make check` before committing, then reported that `make flux-reconcile`, `make verify-platform`, and `make app-status APP=hello-ts ENV=staging` passed.
+- Read-only cluster queries returned no reviewer HelmRelease, CronJob, state ConfigMap, three Secrets, NetworkPolicy, namespaced Role or RoleBinding, or cluster Role or RoleBinding. The `platform-incident-review` Flux inventory was empty. The empty Flux unit and `incident-review` namespace remained for separate cleanup.

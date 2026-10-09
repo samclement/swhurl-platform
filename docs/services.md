@@ -57,7 +57,7 @@ For example, `{"level":30,"msg":"request completed","req":{"method":"GET"},"stat
 | ClickHouse and Keeper | Timestamp, thread/query IDs, level, logger and message from their text prefix. |
 | ClickHouse operator and platform collectors | Tab-separated logger output and its trailing JSON fields. |
 | metrics-server and older cert-manager logs | Kubernetes klog prefix (level, caller, PID, message and quoted key/value fields). |
-| nginx and oauth2-proxy | Request fields (method, path, status, client, user agent, sizes); separate parsers for application/error lines. |
+| oauth2-proxy | Request fields (method, path, status, client, user agent, sizes); a separate parser for application lines. |
 | CoreDNS | Bracketed level and message. |
 | local-path provisioner; older Traefik and Reloader logs | Quoted logfmt fields. |
 | Older console logs | Uvicorn access/application lines and audit prefixes. |

@@ -19,12 +19,10 @@ An app's life, and where each step is described. Every app comes from a stack te
 
 | Instance | Host | Image |
 | --- | --- | --- |
-| `hello/staging` | `staging-hello.homelab.swhurl.com` | `nginxinc/nginx-unprivileged:1.27-alpine`, pinned by digest |
-| `hello/prod` | `hello.homelab.swhurl.com` | same digest |
 | `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts); deployed automatically on each push |
 | `hello-ts/prod` | `hello-ts.homelab.swhurl.com` | changes only through a promote |
 
-All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080 and is the one instance not made from a stack template: it predates [the rule](#start-a-new-app) and `make app-new` would refuse it today ([plan](plan.md#0-where-this-paused-and-what-is-left), item 10); `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+All require sign-in. `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
 
 ## Start a new app
 
@@ -93,7 +91,7 @@ make app-status APP=weather-api ENV=staging    # expect "running: matches desire
 
 `make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes (the console's job prints the line too).
 
-**Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes) and its `swhurl.yaml` must set `autoDeploy: true`, as the stack templates do. There is no route for an image built elsewhere or a public image such as nginx.
+**Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes) and its `swhurl.yaml` must set `autoDeploy: true`, as the stack templates do. There is no route for an image built elsewhere or a public image such as nginx: `make check-apps` (and so CI and the console's merge gate) fails an instance committed by hand that is not such an app ([the app policy](#the-app-policy)).
 
 ### Stacks and features
 
@@ -176,7 +174,7 @@ exposure: authenticated-web   # optional; default: web apps authenticated-web, w
 | `authenticated-web` | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
-Set it with `--exposure` at creation, and change it later with `make app-expose APP=hello ENV=staging ARGS="--exposure public --host hello.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+Set it with `--exposure` at creation, and change it later with `make app-expose APP=hello-ts ENV=staging ARGS="--exposure public --host hello-ts.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
 
 ## Secrets
 
@@ -339,11 +337,11 @@ On **later promotions**, production already exists, so the reviewed PR changes o
 ## Operate an instance
 
 ```bash
-make app-status APP=hello ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
-make app-logs APP=hello ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
-make app-reconcile APP=hello ENV=prod  # fetch Git and reconcile this instance's unit now
-make app-check APP=hello ENV=prod      # the app policy, offline
-make app-scale APP=hello ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
+make app-status APP=hello-ts ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
+make app-logs APP=hello-ts ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
+make app-reconcile APP=hello-ts ENV=prod  # fetch Git and reconcile this instance's unit now
+make app-check APP=hello-ts ENV=prod      # the app policy, offline
+make app-scale APP=hello-ts ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
 ```
 
 The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). `app-scale`, `app-expose` and `app-promote` accept handwritten YAML using the app-template structure. They retain comments (including Flux image automation markers), quotation styles, key order, flow collections and consistent indentation. For example, scaling `memory: "128Mi" # measured limit` to 256Mi keeps the quotes and comment. Later promotion changes only the target image tag/digest; first promotion has the [supported conversion boundary](#promote-to-production). Exposure edits the main host, TLS host, sign-in middleware, Namespace label and required Flux dependencies; it keeps other annotations, middleware, paths, TLS secret names and extra dependencies.
@@ -377,7 +375,7 @@ Every tile selects the app's namespaces, so an app without an SDK still gets its
 
 ## The app policy
 
-`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), and `HOST_IP` defined before an OTLP endpoint uses it. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
+`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), and `HOST_IP` defined before an OTLP endpoint uses it. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
 
 A reviewed exception goes on the HelmRelease, with a reason:
 

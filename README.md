@@ -1,6 +1,6 @@
 # Swhurl Platform
 
-GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello.homelab.swhurl.com`. A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
+GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello-ts.homelab.swhurl.com`. A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
 
 The cluster is live. What has been verified on it, and when, is in [current state](docs/current-state.md); what is left to build is in [the plan](docs/plan.md), section 0.
 

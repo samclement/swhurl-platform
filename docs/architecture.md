@@ -98,9 +98,9 @@ sequenceDiagram
   participant Git as GitHub (main)
   participant NC as notification-controller<br/>(Receiver github)
   participant SC as source-controller<br/>(GitRepository swhurl-platform)
-  participant KC as kustomize-controller<br/>(unit app-hello-staging)
-  participant HC as helm-controller<br/>(HelmRelease hello)
-  participant K as Deployment hello
+  participant KC as kustomize-controller<br/>(unit app-hello-ts-staging)
+  participant HC as helm-controller<br/>(HelmRelease hello-ts)
+  participant K as Deployment hello-ts
   Git->>NC: push webhook, signed with the shared token
   NC->>SC: request a reconcile (main only)
   SC->>Git: fetch main, store the new revision
@@ -185,7 +185,7 @@ flowchart TB
     reloader[Reloader<br/>platform-system]
     console[Console<br/>console, read-only]
     notifications[Lifecycle and health checker<br/>console, own ConfigMap state]
-    app[hello, app-template<br/>hello-staging, hello-prod]
+    app[hello-ts, app-template<br/>hello-ts-staging, hello-ts-prod]
   end
 
   user -- HTTPS --> traefik
@@ -215,9 +215,9 @@ flowchart LR
   router --> mw[oauth-auth-shared middleware]
   mw -- ForwardAuth --> proxy[oauth2-proxy-shared]
   proxy -- OIDC login --> google[Google]
-  router -- host --> ingress[hello Ingress] --> svc[hello Service] --> pod[hello Deployment<br/>non-root, :8080]
+  router -- host --> ingress[hello-ts Ingress] --> svc[hello-ts Service] --> pod[hello-ts Deployment<br/>non-root, :8080]
   cm[cert-manager] -- ACME --> le["Let's Encrypt"]
-  cm -- hello-tls --> ingress
+  cm -- hello-ts-tls --> ingress
 ```
 
 App creation through the commands and console deploys staging. Production is created through [promotion](apps.md#promote-to-production); later promotions update only its image. Console promotions go through the [review and merge gate](console.md#auto-merge), which validates the latest merge result before pushing it to `main`. Each environment retains its own Flux unit, settings, storage and credentials. Custom deployments remain reviewed Git edits.

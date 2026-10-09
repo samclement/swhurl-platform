@@ -20,6 +20,12 @@ with Helm) and checks the resulting Kubernetes objects:
   otlp-host-ip        a container that uses $(HOST_IP) (the OTLP endpoint) defines HOST_IP
                       from status.hostIP before it; otherwise the SDK gets the literal text
 
+for an instance of this platform (under apps/; the test fixtures are exempt), from its source:
+
+  platform-image      the app was made from a stack template: it runs ghcr.io/<owner>/<app>, the
+                      image its repository publishes, and staging deploys new images
+                      automatically (image-automation.yaml and the setter markers). No exceptions
+
 and, across the environments of one app (source manifests, not rendered):
 
   env-drift           environments differ only in namespace, hosts, image tag/digest,
@@ -44,7 +50,9 @@ import yaml
 
 from swhurl import ROOT, platform
 from swhurl.apps.contract import (
+    APP_OWNER,
     AUTH_MIDDLEWARE,
+    AUTO_DEPLOY_ENV,
     COOKIE_DOMAIN,
     ENVIRONMENT,
     EXCEPTIONS,
@@ -53,7 +61,9 @@ from swhurl.apps.contract import (
     INSTANCE_ROOTS,
     OTLP_HOST_IP,
     STORAGE_CLASSES,
+    image_policy_name,
     in_cookie_domain,
+    strip_image_markers,
 )
 from swhurl.run import Runner
 
@@ -288,9 +298,30 @@ def drift(environments: list[Path]) -> list[str]:
     return problems
 
 
+def platform_image(instance: Path) -> list[str]:
+    """Why ``<app>/<env>`` is not an app made from a stack template (rule platform-image)."""
+    app, env = instance.parent.name, instance.name
+    text = (instance / 'helmrelease.yaml').read_text()
+    values = (yaml.safe_load(text).get('spec') or {}).get('values') or {}
+    image = ((((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {}).get('image') or {}
+    expected = f'ghcr.io/{APP_OWNER}/{app}'
+    problems = []
+    if image.get('repository') != expected:
+        problems.append(f'image {image.get("repository")} is not {expected}; apps are made with make app-repo or the console')
+    if env == AUTO_DEPLOY_ENV:
+        listed = IMAGE_AUTOMATION_FILE in (yaml.safe_load((instance / 'kustomization.yaml').read_text()).get('resources') or [])
+        if not (instance / IMAGE_AUTOMATION_FILE).is_file() or not listed:
+            problems.append(f'{env} has no {IMAGE_AUTOMATION_FILE} in its kustomization.yaml: new images would not deploy')
+        elif strip_image_markers(text)[1] != image_policy_name(app):
+            problems.append(f'the image tag and digest lines lack their {image_policy_name(app)} setter markers')
+    return [f'platform-image: {problem}' for problem in problems]
+
+
 def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     docs = render(instance, runner)
     allowed, problems = exceptions(docs)
+    if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
+        problems += platform_image(instance)
     return problems + [f'{rule}: {message}' for rule, message in check(docs) if rule not in allowed]
 
 

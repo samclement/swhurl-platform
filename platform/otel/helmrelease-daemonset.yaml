@@ -127,17 +127,6 @@ spec:
               "^cert-manager|^metrics-server"))
             - set(cache["parser"], "klog") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
               and IsMatch(resource.attributes["k8s.pod.name"], "^cert-manager|^metrics-server")))
-            - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<client_address>\\S+) - (?P<user>\\S+) \\[(?P<timestamp>[^]]+)\\]
-              \"(?P<method>\\S+) (?P<path>\\S+) (?P<protocol>[^\"]+)\" (?P<status>\\d{3}) (?P<response_bytes>\\d+) \"(?P<referer>[^\"]*)\"
-              \"(?P<user_agent>[^\"]*)\"(?:.*)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
-              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-"))
-            - set(cache["parser"], "nginx-access") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
-              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
-            - 'set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<timestamp>\\d{4}/\\d\\d/\\d\\d \\d\\d:\\d\\d:\\d\\d)
-              \\[(?P<level>\\w+)\\] (?P<pid>\\d+)#(?P<thread_id>\\d+): (?P<message>.*)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
-              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-"))'
-            - set(cache["parser"], "nginx-error") where (Len(cache["fields"]) > 0) and ((cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
-              and IsMatch(resource.attributes["k8s.pod.name"], "^hello-")))
             - set(cache["fields"], ExtractPatterns(cache["candidate"], "^(?P<client_address>\\S+) - (?P<request_id>\\S+) - (?P<user>\\S+)
               \\[(?P<timestamp>[^]]+)\\] (?P<host>\\S+) (?P<method>\\S+) \\S+ \"(?P<path>[^\"]*)\" (?P<protocol>\\S+) \"(?P<user_agent>[^\"]*)\"
               (?P<status>\\d{3}) (?P<response_bytes>\\d+) (?P<duration_seconds>\\S+)$")) where (cache["parser"] == "plain" and IsString(resource.attributes["k8s.pod.name"])
@@ -189,7 +178,7 @@ spec:
               "^cert-manager") and cache["fields"]["err"] != nil
             - set(cache["level"], "INFO") where cache["level"] == nil and IsString(resource.attributes["k8s.pod.name"]) and IsMatch(resource.attributes["k8s.pod.name"],
               "^cert-manager") and cache["fields"]["v"] != nil
-            - set(cache["level"], "INFO") where (cache["parser"] == "nginx-access" or cache["parser"] == "oauth-request") and ((IsMap(cache["fields"])))
+            - set(cache["level"], "INFO") where (cache["parser"] == "oauth-request") and ((IsMap(cache["fields"])))
             - set(cache["level"], ConvertCase(cache["level"], "upper")) where (IsString(cache["level"])) and ((IsMap(cache["fields"])))
             - set(severity_number, 1) where (severity_number == 0 and (cache["level"] == "TRACE" or cache["level"] == "T" or cache["level"]
               == 10)) and ((IsMap(cache["fields"])))
@@ -214,7 +203,7 @@ spec:
             - set(body, cache["fields"]["message"]) where (not IsString(cache["fields"]["msg"]) and IsString(cache["fields"]["message"]))
               and ((IsMap(cache["fields"])))
             - set(body, Concat([cache["fields"]["method"], cache["fields"]["path"], cache["fields"]["status"]], " ")) where (cache["parser"]
-              == "nginx-access" or cache["parser"] == "oauth-request") and ((IsMap(cache["fields"])))
+              == "oauth-request") and ((IsMap(cache["fields"])))
             - set(attributes["log.record.original"], cache["original"]) where (IsString(cache["original"]) and body != cache["original"]
               and attributes["log.record.original"] == nil) and ((IsMap(cache["fields"])))
             - set(trace_id.string, cache["fields"]["trace_id"]) where (trace_id.string == "00000000000000000000000000000000" and IsString(cache["fields"]["trace_id"])

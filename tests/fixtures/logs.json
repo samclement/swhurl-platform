@@ -347,36 +347,6 @@
     }
   },
   {
-    "name": "nginx-access",
-    "resource": {
-      "k8s.pod.name": "hello-test"
-    },
-    "input": "10.42.0.1 - - [02/Oct/2026:17:00:00 +0000] \"GET /index.html HTTP/1.1\" 200 12 \"-\" \"test-client\"",
-    "expected": {
-      "attributes": {
-        "log.parser": "nginx-access",
-        "status": "200",
-        "user_agent": "test-client"
-      },
-      "body": "GET /index.html 200",
-      "severityNumber": 9
-    }
-  },
-  {
-    "name": "nginx-error",
-    "resource": {
-      "k8s.pod.name": "hello-test"
-    },
-    "input": "2026/10/02 17:00:00 [error] 21#21: file missing",
-    "expected": {
-      "attributes": {
-        "log.parser": "nginx-error"
-      },
-      "body": "file missing",
-      "severityNumber": 17
-    }
-  },
-  {
     "name": "oauth-request",
     "resource": {
       "k8s.pod.name": "oauth2-proxy-test"

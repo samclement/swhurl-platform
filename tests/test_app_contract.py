@@ -421,6 +421,44 @@ class PolicyTests(unittest.TestCase):
 
 
 
+class PlatformImageTests(unittest.TestCase):
+    """Rule platform-image: an instance under apps/ is an app made from a stack template."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / 'clusters/home').mkdir(parents=True)
+        (self.tmp / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image',
+                                       TEMPLATE_IMAGE, '--root', str(self.tmp), '--no-policy-check']), 0)
+        self.staging = self.tmp / 'apps/w/staging'
+
+    def test_a_template_app_passes_and_real_instances_do(self):
+        self.assertEqual(app_policy.platform_image(self.staging), [])
+        for instance in sorted((ROOT / 'apps').glob('*/*/')):
+            with self.subTest(instance=instance.relative_to(ROOT)):
+                self.assertEqual(app_policy.platform_image(instance), [])
+
+    def test_a_foreign_image_or_a_staging_without_automation_fails(self):
+        release = self.staging / 'helmrelease.yaml'
+        original = release.read_text()
+        release.write_text(original.replace('ghcr.io/samclement/w', 'docker.io/nginxinc/nginx-unprivileged'))
+        self.assertIn('platform-image: image docker.io/nginxinc/nginx-unprivileged is not ghcr.io/samclement/w',
+                      app_policy.platform_image(self.staging)[0])
+        release.write_text(contract.strip_image_markers(original)[0])
+        self.assertIn('setter markers', app_policy.platform_image(self.staging)[0])
+        release.write_text(original)
+        (self.staging / contract.IMAGE_AUTOMATION_FILE).unlink()
+        self.assertIn('new images would not deploy', app_policy.platform_image(self.staging)[0])
+
+    def test_it_applies_to_the_platform_tree_only(self):
+        (self.staging / contract.IMAGE_AUTOMATION_FILE).unlink()
+        with mock.patch.object(app_policy, 'render', return_value=[]), mock.patch.object(app_policy, 'check', return_value=[]):
+            self.assertEqual(app_policy.evaluate(self.staging), [], 'fixtures and scratch trees are exempt')
+            with mock.patch.object(app_policy, 'ROOT', self.tmp):
+                self.assertEqual(len(app_policy.evaluate(self.staging)), 1)
+
+
 class DriftTests(unittest.TestCase):
     """Environments of one app may differ only in the settings policy.VARIES names."""
 

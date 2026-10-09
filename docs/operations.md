@@ -7,7 +7,7 @@ Day-to-day work on the live cluster. Every `make` target is listed in [commands]
 ```bash
 make verify-platform              # Flux units, HTTPS redirect, ingestion key, ClickStack sign-up closed, retention, backup age
 flux get kustomizations           # one line per Flux unit
-make app-status APP=hello ENV=prod
+make app-status APP=hello-ts ENV=prod
 ```
 
 A unit showing `DependencyNotReady` is waiting for another unit; fix that one first ([dependencies](architecture.md#flux-units)).

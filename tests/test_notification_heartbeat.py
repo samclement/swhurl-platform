@@ -126,7 +126,7 @@ class HeartbeatCommandTests(unittest.TestCase):
 class WatchedJobsTests(unittest.TestCase):
     """A second watched CronJob gets its own maximum age, messages and incident flag."""
 
-    REVIEW = h.Watched('incident review', 'incident-review', 'incident-review', 130 * 60)
+    SECOND = h.Watched('report sync', 'reports', 'sync', 130 * 60)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -135,18 +135,18 @@ class WatchedJobsTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_main(self, *, checker, review, review_error=None):
+    def run_main(self, *, checker, second, second_error=None):
         runner = runner_for(checker)
 
-        def review_result(args, _input):
-            if review_error:
-                return Result(args, 1, '', review_error)
-            return Result(args, 0, json.dumps(review))
+        def second_result(args, _input):
+            if second_error:
+                return Result(args, 1, '', second_error)
+            return Result(args, 0, json.dumps(second))
 
-        runner.on('kubectl', '-n', 'incident-review', 'get', 'cronjob', 'incident-review', handler=review_result)
+        runner.on('kubectl', '-n', 'reports', 'get', 'cronjob', 'sync', handler=second_result)
         output = io.StringIO()
         with mock.patch.object(h, 'publish') as send, contextlib.redirect_stdout(output):
-            code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.REVIEW))
+            code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.SECOND))
         return code, [call.args[1]['title'] for call in send.call_args_list], output.getvalue()
 
     def test_watched_jobs(self):
@@ -154,24 +154,24 @@ class WatchedJobsTests(unittest.TestCase):
                          [('console', 'console-notifications', 600)])
 
     def test_each_job_uses_its_own_maximum_age_and_flag(self):
-        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=129 * 60))
+        code, titles, _ = self.run_main(checker=cronjob(age=60), second=cronjob(age=129 * 60))
         self.assertEqual((code, titles, self.state_path.exists()), (0, [], False))
-        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=131 * 60))
-        self.assertEqual((code, titles), (0, ['incident review stale']))
+        code, titles, _ = self.run_main(checker=cronjob(age=60), second=cronjob(age=131 * 60))
+        self.assertEqual((code, titles), (0, ['report sync stale']))
         self.assertEqual(json.loads(self.state_path.read_text()),
                          {'alerting_since': None, 'last_alert': None,
-                          'others': {'incident-review/incident-review': {'alerting_since': NOW, 'last_alert': NOW}}})
-        code, titles, _ = self.run_main(checker=cronjob(age=601), review=cronjob(age=131 * 60))
+                          'others': {'reports/sync': {'alerting_since': NOW, 'last_alert': NOW}}})
+        code, titles, _ = self.run_main(checker=cronjob(age=601), second=cronjob(age=131 * 60))
         self.assertEqual(titles, ['notification checker stale'])
-        code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=60))
-        self.assertEqual(sorted(titles), ['incident review recovered', 'notification checker recovered'])
-        self.assertEqual(json.loads(self.state_path.read_text())['others']['incident-review/incident-review'],
+        code, titles, _ = self.run_main(checker=cronjob(age=60), second=cronjob(age=60))
+        self.assertEqual(sorted(titles), ['notification checker recovered', 'report sync recovered'])
+        self.assertEqual(json.loads(self.state_path.read_text())['others']['reports/sync'],
                          {'alerting_since': None, 'last_alert': None})
 
     def test_one_unreadable_job_does_not_hide_the_other(self):
-        code, titles, output = self.run_main(checker=cronjob(age=601), review=None, review_error='API unavailable')
+        code, titles, output = self.run_main(checker=cronjob(age=601), second=None, second_error='API unavailable')
         self.assertEqual((code, titles), (1, ['notification checker stale']))
-        self.assertIn('cannot read incident review', output)
+        self.assertIn('cannot read report sync', output)
 
     def test_state_written_before_there_were_other_jobs_still_reads(self):
         self.state_path.write_text('{"alerting_since":12,"last_alert":13}\n')

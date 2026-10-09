@@ -349,25 +349,6 @@ def check_notifications(runner: Runner, report: Report, now: dt.datetime | None 
         report.bad('cannot read notification checker status (console/console-notifications)')
 
 
-def check_incident_review(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """The hourly incident reviewer finished a run recently; a run that reports a failure exits non-zero."""
-    report.section('Incident reviewer')
-    now = now or dt.datetime.now(dt.UTC)
-    try:
-        job = runner.json(['kubectl', '-n', 'incident-review', 'get', 'cronjob', 'incident-review', '-o', 'json'])
-        last = (job.get('status') or {}).get('lastSuccessfulTime', '')
-        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
-        if job['spec'].get('suspend'):
-            report.warn('incident reviewer is suspended (platform/incident-review/helmrelease.yaml)')
-        elif taken is None or now - taken > dt.timedelta(minutes=130):
-            report.bad('incident reviewer has no success in the last 130 minutes; check the Job logs in '
-                       'incident-review and make incident-review-status')
-        else:
-            report.ok('incident reviewer succeeded in the last 130 minutes')
-    except (CommandError, KeyError, ValueError, TypeError):
-        report.bad('cannot read incident reviewer status (incident-review/incident-review)')
-
-
 def check_notification_heartbeat(runner: Runner, report: Report,
                                  now: dt.datetime | None = None) -> None:
     """The host timer is active and its last heartbeat service run succeeded within 15 minutes."""
@@ -619,7 +600,6 @@ CHECKS = (
     Check('dashboards', frozenset({'cluster'}), check_dashboards),
     Check('notifications', frozenset({'cluster'}), check_notifications),
     Check('notification-heartbeat', frozenset({'host'}), check_notification_heartbeat),
-    Check('incident-review', frozenset({'cluster'}), check_incident_review),
     Check('console', frozenset({'cluster', 'host'}), check_console),
     Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
 )

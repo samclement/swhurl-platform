@@ -12,11 +12,6 @@ the console deploys itself. ``--expect`` makes it do nothing when ``main`` has
 since moved to other image inputs (that commit's own run pins its image);
 a push rejected because ``main`` moved is rebased and retried once.
 
-The incident reviewer (``platform/incident-review/helmrelease.yaml``) runs two
-published images: this console image for its collect and decide steps, and the
-analysis worker image. Their ``tag:`` and ``digest:`` lines end in ``# image: console``
-or ``# image: worker``; ``console-image`` keeps the first pair equal to the console's
-pin, and ``worker-image`` pins the second the same way from its own inputs.
 """
 from __future__ import annotations
 
@@ -33,7 +28,6 @@ from swhurl.run import CommandError, Runner
 REGISTRY = 'ghcr.io'
 REPOSITORY = 'samclement/swhurl-console'
 RELEASE = Path('platform/console/helmrelease.yaml')
-REVIEWER = Path('platform/incident-review/helmrelease.yaml')
 INDEX_TYPES = ('application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json')
 
 
@@ -50,9 +44,7 @@ class Image:
 
 
 CONSOLE = Image('console', REPOSITORY, platform.CONSOLE_IMAGE_INPUTS, 'Publish console image',
-                ((RELEASE, None), (REVIEWER, 'console')))
-WORKER = Image('incident review worker', 'samclement/swhurl-incident-review-worker', platform.WORKER_IMAGE_INPUTS,
-               'Publish incident review worker image', ((REVIEWER, 'worker'),))
+                ((RELEASE, None),))
 
 
 class ImageError(Exception):
@@ -147,8 +139,7 @@ def commit_and_push(runner: Runner, root: Path, tag: str, expect: str | None, im
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, root: Path = ROOT,
          image: Image = CONSOLE) -> int:
-    command = 'console-image' if image is CONSOLE else 'worker-image'
-    parser = argparse.ArgumentParser(prog=f'swhurl {command}', description=__doc__.split('\n\n')[0])
+    parser = argparse.ArgumentParser(prog='swhurl console-image', description=__doc__.split('\n\n')[0])
     parser.add_argument('--expect', help='only pin if HEAD builds this src-<hash> tag (the publish workflow)')
     parser.add_argument('--commit', action='store_true', help='commit the pin and push it to main (the publish workflow)')
     args = parser.parse_args(argv or [])
@@ -174,8 +165,3 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, root: Path
     except (ImageError, CommandError, KeyError, TypeError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
-
-
-def worker_main(argv: list[str] | None = None, runner: Runner | None = None, root: Path = ROOT) -> int:
-    """``worker-image``: pin the incident reviewer to the analysis worker image published for this checkout."""
-    return main(argv, runner, root, WORKER)

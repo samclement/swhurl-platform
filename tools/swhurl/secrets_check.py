@@ -47,10 +47,6 @@ def looks_double_encoded(raw: bytes) -> bool:
 INGESTION_KEY = 'CLICKSTACK_INGESTION_KEY'
 INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret.sops.yaml')
 NOTIFICATION_SECRET = 'platform/console/notification-secret.sops.yaml'
-# The incident reviewer reads telemetry as ClickHouse's existing read-only ``app`` user: (file, key) of the
-# source and of the reviewer's copy, which must stay equal when the source is rotated.
-CLICKHOUSE_COPIES = (('platform/clickstack/secret.sops.yaml', 'CLICKHOUSE_APP_PASSWORD'),
-                     ('platform/incident-review/secret-clickhouse.sops.yaml', 'CLICKHOUSE_PASSWORD'))
 NTFY_DESTINATIONS = {  # channel: (provider Secret file, provider key, checker key)
     'failures': ('platform/alerts/secret-failures.sops.yaml', 'address', 'NTFY_FAILURES_URL'),
     'deploys': ('platform/alerts/secret-deploys.sops.yaml', 'address', 'NTFY_DEPLOYS_URL'),
@@ -73,18 +69,6 @@ def notification_destination_problem(copies: dict[str, str]) -> str | None:
     return None
 
 
-def clickhouse_copy_problem(copies: dict[str, str]) -> str | None:
-    """``copies`` maps each file in ``CLICKHOUSE_COPIES`` to its password's fingerprint."""
-    source, copy = (path for path, _ in CLICKHOUSE_COPIES)
-    if copy not in copies:
-        return None  # the reviewer is not deployed in this checkout
-    if source not in copies:
-        return f'{CLICKHOUSE_COPIES[0][1]} is missing from {source}'
-    if copies[source] != copies[copy]:
-        return f'the ClickHouse app password differs between {source} and {copy}'
-    return None
-
-
 def ingestion_key_problem(copies: dict[str, str]) -> str | None:
     """``copies`` maps each file holding the ingestion key to its value's fingerprint."""
     if sorted(copies) != sorted(INGESTION_FILES):
@@ -103,7 +87,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     errors = warnings = 0
     ingestion: dict[str, str] = {}
     destinations: dict[str, str] = {}
-    clickhouse: dict[str, str] = {}
     for path in secret_files(runner):
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
@@ -121,8 +104,6 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 raw = base64.b64decode(value) if field == 'data' else str(value).encode()
                 if key == INGESTION_KEY and not fixture:
                     ingestion[str(rel)] = hashlib.sha256(raw).hexdigest()
-                if (str(rel), key) in CLICKHOUSE_COPIES:
-                    clickhouse[str(rel)] = hashlib.sha256(raw).hexdigest()
                 for channel, (provider_file, provider_key, checker_key) in NTFY_DESTINATIONS.items():
                     source = str(rel) == provider_file and key == provider_key
                     checker = str(rel) == NOTIFICATION_SECRET and key == checker_key
@@ -150,11 +131,5 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         errors += 1
     else:
         print('[OK] ntfy destinations match the notification checker copies (compared by hashes)')
-    problem = clickhouse_copy_problem(clickhouse)
-    if problem:
-        print(f'[ERROR] {problem}')
-        errors += 1
-    elif CLICKHOUSE_COPIES[1][0] in clickhouse:
-        print('[OK] the incident reviewer\'s ClickHouse password matches its source (compared by hashes)')
     print(f'\n{errors} error(s), {warnings} warning(s).')
     return 1 if errors else 0

@@ -770,3 +770,22 @@ Not exercised yet: first production on the cluster, the new console confirmation
 
 - Commit `b6debf6` removed the empty `platform-incident-review` Flux unit. The operator reported that `make flux-reconcile`, `make verify-platform`, and `make app-status APP=hello-ts ENV=staging` passed after the push.
 - A read-only query returned no `flux-system/platform-incident-review` Kustomization; `kubectl get namespace incident-review -o name` returned `namespace/incident-review`. Namespace deletion, provider key revocation, worker package deletion and ntfy subscription removal remain separate decisions.
+
+## Image webhook (9 October 2026)
+
+Commit `c7f2bf5` added the `app-images` Receiver, its token, `make app-hooks`, the verify check, and set the scan and automation intervals to `1h`.
+
+- `make flux-reconcile` passed; the Receiver is Ready and all four `ImageRepository` and `ImageUpdateAutomation` objects show `interval: 1h`. `make app-hooks` created the webhook on `hello-ts`, `test-2`, `test-3` and `test-4`; each ping returned 200.
+- Live test: a one-line README push to `samclement/hello-ts` (`6ec5f63`, run 36), times in UTC:
+
+  | Time | Event |
+  | --- | --- |
+  | 14:36:41 | push to the app repository |
+  | 14:37:35.6 and 14:37:36.8 | GitHub delivered `registry_package` and `package` (published); both returned 200 |
+  | 14:37:37 | `ImageRepository` scan; `ImagePolicy` picked `36-6ec5f63` |
+  | 14:37:38 | `fluxcdbot` committed the pin (`59058dd`) |
+  | 14:38:21 | new pod created; Ready at 14:38:26 |
+
+  From published image to the pin commit took about 3 seconds with both intervals at one hour, so the scan, the policy and the automation all ran from the event. The 43 seconds between the pin and the pod were the app unit waiting behind the console image deploy (`2604f98`, 14:37:17) that this change's own publish run pushed 21 seconds earlier.
+- `make verify-platform` passed with four `[OK]` lines under Image Webhooks; `make app-status APP=hello-ts ENV=staging` showed `36-6ec5f63` desired and running.
+- Not exercised: the webhook created by `make app-repo` and by the console's **Start a new app** on a new repository (offline tests only; the console path also needs the Webhooks permission on `APP_REPOS_TOKEN`), and a token rotation followed by `make app-hooks`.

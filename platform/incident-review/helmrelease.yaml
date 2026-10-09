@@ -43,7 +43,7 @@ spec:
         serviceAccount:
           name: incident-review
         cronjob:
-          suspend: false
+          suspend: true
           schedule: "17 * * * *"
           concurrencyPolicy: Forbid
           startingDeadlineSeconds: 300

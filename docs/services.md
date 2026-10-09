@@ -158,7 +158,7 @@ Pending messages are checkpointed before posting and removed only after ntfy acc
 
 ## Incident reviewer
 
-An hourly CronJob that looks for application failures in ClickStack telemetry and, when a deterministic pre-filter fires, asks a model for a diagnosis and sends it to ntfy. It never changes the cluster or a repository. What has run live is in [current state](current-state.md). It runs in **collect-only mode**: sweeps, the pre-filter and state are live, and no model is called. The model path will not be enabled: [plan section 14](plan.md#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) replaces it with a reviewer that opens GitHub issues, and this section describes what runs until that cutover.
+The incident reviewer is suspended while its rollback is prepared. It ran hourly in **collect-only mode**: sweeps, the pre-filter and state were live, and no model was called. It never changed the cluster or a repository. Its credentials and other resources remain until the removal step. What ran live is in [current state](current-state.md).
 
 ```mermaid
 flowchart LR

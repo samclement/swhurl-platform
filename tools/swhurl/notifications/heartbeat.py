@@ -1,8 +1,8 @@
 """Alert from the host when a watched in-cluster CronJob goes stale.
 
-``WATCHED`` lists the jobs: the notification checker, whose ntfy Secret also carries
-every heartbeat message, and the incident reviewer. Add a row only once its CronJob is
-deployed and unsuspended, because a missing or suspended job is reported as stale.
+``WATCHED`` lists the jobs. The notification checker owns the ntfy Secret used
+for every heartbeat message. Add a row only once its CronJob is deployed and
+unsuspended, because a missing or suspended job is reported as stale.
 """
 from __future__ import annotations
 
@@ -38,10 +38,7 @@ class Watched:
     max_age: float  # seconds since the last successful Job before it counts as stale
 
 
-WATCHED = (Watched('notification checker', CRONJOB_NAMESPACE, CRONJOB_NAME, 600),
-           # Hourly; stale after two missed runs. Its failed runs exit non-zero, so this also reports
-           # reviewer failures that could not send their own message.
-           Watched('incident review', 'incident-review', 'incident-review', 130 * 60))
+WATCHED = (Watched('notification checker', CRONJOB_NAMESPACE, CRONJOB_NAME, 600),)
 SECRET_NAME = 'notification-ntfy'
 SECRET_KEY = 'NTFY_FAILURES_URL'
 REMINDER_SECONDS = 3600

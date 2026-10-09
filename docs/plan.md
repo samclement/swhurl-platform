@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **Next.** Chart update PRs and the console image are done. Decided 9 October 2026: app repositories and images become private so incident issues can carry full evidence. Left, in order: stage A (P0 your GitHub plan, P1 you make `hello-ts` private), stage B (P2 you create a `read:packages` token, P3 the `ghcr-pull` Secret, P4 you run `make host-registry`, P5 to P9 tooling, private by default, live proof). Open work 9 follows it.
+1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **On hold while the incident reviewer is rolled back.** No private-repository or image change was implemented. The 9 October design in section 4 remains a record for reconsideration, not the next execution task.
 2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: a write-only IAM user for backups instead of `sam`; possibly a Kubernetes CronJob with a published backup image once PR06's GHCR half is done.
 3. **Final operator exercise** (section 6), using only the docs.
 4. **Operator browser checks:** a real Google-signed-in session for (a) reviewing and submitting a promotion (automated UI proof used the local dev identity) and (b) the live job-output stream, including that Traefik and ForwardAuth do not buffer it ([section 12](#12-live-job-output-on-the-console-deployed-3-october-2026)). Also confirm the console's `GITHUB_TOKEN` is limited to this repository.
@@ -16,7 +16,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 6. **Decision needed — ClickHouse CPU** (delivered item 17): merge write amplification sets the load, not data volume. The lever is `async_insert` or bigger batches in the ClickStack HelmRelease, which trades a few seconds of data on a crash. Unexplained: since HyperDX restarted at 21:44 on 2 October the histogram table merges every new part on its own (about +100 s of merge time an hour). Revert `008c5d5` and `6cdfe3f` (coarser metric intervals, no CPU gain) if the graphs bother you.
 7. **App page stack panel** (section 8, phase 8): show the stack, its features and each capability's health (last SQLite backup, later roles).
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); retiring `hello` or migrating `hello-ts`.
-9. **Incident issues and agent fixes** ([section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started)). Redesigned on 9 October 2026 (design B): the reviewer opens one GitHub issue per distinct failure in the app's repository and a coding agent in GitHub proposes the fix; the reviewer calls no model. The earlier design still runs hourly in **collect-only mode** and is replaced at task 6. **Starts after open work 1** (issues carry stack traces, messages and request paths, so the repository must be private first). Left, in order: stage B1 tasks 1 to 4 (offline), task 5 (you create an issues-only GitHub token, decision 6), task 6 (cut over and remove the old analysis path; confirm first, Flux prunes two Secrets and the state ConfigMap), task 7 (live gate on `hello-ts`); then stage B2 (choose the agent, protect app `main`). Yours to delete after task 6: the GHCR package `swhurl-incident-review-worker`, the OpenAI project and key, the diagnoses ntfy subscription.
+9. **Incident reviewer rollback.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented. First suspend the collect-only CronJob and stop watching it from the host heartbeat. Then prepare a selective removal of its manifests, credentials, worker image path, commands and code while preserving shared notification and console behavior. Confirm before Flux prunes the reviewer's Secrets and state ConfigMap. The operator decides separately whether to revoke the unused OpenAI key and delete the worker GHCR package and ntfy subscription.
 
 ### Delivered
 
@@ -135,6 +135,8 @@ First-party images go to GHCR. Each app repo tests, builds, publishes a source-r
 ### Private app repositories and images — planned 9 October 2026, not started
 
 **Goal.** App repositories and their images are private, so incident issues ([section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started)) can carry stack traces, log messages and request paths. Stage A makes the pilot repository private with no cluster change. Stage B gives the cluster a pull credential and makes private the default for new apps. Section 14 stage B1 starts after the stage B gate.
+
+**Status:** on hold during the incident reviewer rollback. None of P0–P9 has started.
 
 **Decisions (operator, 9 October 2026).**
 
@@ -598,7 +600,9 @@ Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the 
 
 **Decision (9 October 2026, operator).** This replaces the earlier design (A): a three-container pod that sent a redacted bundle to the Codex CLI, validated the diagnosis, kept its own state and was to grow a patch worker, a verifier and a PR broker. Design B keeps the detector and gives the record, the deduplication and the fix path to GitHub. Reasons: about a third of the code, no model credential in the cluster, and fixes arrive through the review path already trusted. The design A contract, which some code comments still cite by heading ("Handoff files", "State"), is this file at `47ff348`.
 
-**What runs today.** Design A in collect-only mode ([services](services.md#incident-reviewer)): hourly sweeps, pre-filter and state, no model call. It stays as it is until task 6 below replaces it.
+**What is deployed.** Design A in collect-only mode ([services](services.md#incident-reviewer)): hourly sweep configuration, pre-filter and state, no model call. The CronJob is suspended for rollback.
+
+**Rollback status (9 October 2026):** the collect-only CronJob is being suspended and its host heartbeat watch removed. The issue-writer design below is on hold; its tasks are not an approved rollout sequence while the replacement design is reconsidered.
 
 ### Flow
 

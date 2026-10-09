@@ -151,8 +151,7 @@ class WatchedJobsTests(unittest.TestCase):
 
     def test_watched_jobs(self):
         self.assertEqual([(job.namespace, job.name, job.max_age) for job in h.WATCHED],
-                         [('console', 'console-notifications', 600), ('incident-review', 'incident-review', 7800)])
-        self.assertEqual(self.REVIEW, h.WATCHED[1])
+                         [('console', 'console-notifications', 600)])
 
     def test_each_job_uses_its_own_maximum_age_and_flag(self):
         code, titles, _ = self.run_main(checker=cronjob(age=60), review=cronjob(age=129 * 60))

@@ -12,8 +12,9 @@ class CIChangeClassificationTests(unittest.TestCase):
             'clusters/home/app-weather-staging.yaml',
         ]), (True, False))
 
-    def test_hello_changes_keep_tooling_tests(self):
-        self.assertEqual(classify(['apps/hello/staging/helmrelease.yaml']), (True, True))
+    def test_sample_instance_changes_keep_tooling_tests(self):
+        self.assertEqual(classify(['tests/fixtures/instance/apps/hello/staging/helmrelease.yaml']), (False, True))
+        self.assertEqual(classify(['apps/hello/staging/helmrelease.yaml']), (True, False))
 
     def test_mixed_and_unclassifiable_changes_run_everything(self):
         for paths in ([], ['README.md'], ['apps/weather/staging/helmrelease.yaml', 'clusters/home/kustomization.yaml']):

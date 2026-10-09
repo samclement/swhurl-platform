@@ -35,7 +35,7 @@ class PromotionTests(unittest.TestCase):
     def test_partial_production_is_not_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            shutil.copytree(ROOT / 'apps/hello/staging', root / 'apps/hello/staging')
+            shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello/staging', root / 'apps/hello/staging')
             source, target = promotion.read(root, 'hello')
             self.assertEqual(promotion.decide(source, target).outcome, 'create')
             (root / 'apps/hello/prod').mkdir()

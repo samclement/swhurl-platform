@@ -1,4 +1,4 @@
-"""app-promote, app-scale, app-remove: Git edits of generated instances, offline on a copy of the repo."""
+"""app-promote, app-scale, app-remove: Git edits of generated instances, offline on a copy of the sample instance."""
 import difflib
 import io
 import shutil
@@ -15,6 +15,7 @@ from swhurl.apps import contract, edit, new, ops, policy
 from swhurl.run import CommandError
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
+SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
 
 
 def changed_lines(before: str, after: str) -> list[str]:
@@ -27,9 +28,8 @@ class EditTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        for rel in ('apps/hello', 'clusters/home/kustomization.yaml', 'clusters/home/app-hello-staging.yaml',
-                    'clusters/home/app-hello-prod.yaml', 'platform/reloader/helmrelease.yaml'):
-            src, dst = ROOT / rel, self.root / rel
+        for base, rel in ((SAMPLE, 'apps'), (SAMPLE, 'clusters'), (ROOT, 'platform/reloader/helmrelease.yaml')):
+            src, dst = base / rel, self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
         self.staging = self.root / 'apps/hello/staging/helmrelease.yaml'

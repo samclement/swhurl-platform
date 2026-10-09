@@ -427,7 +427,7 @@ class DriftTests(unittest.TestCase):
     def setUp(self):
         self.app = Path(tempfile.mkdtemp()) / 'hello'
         self.addCleanup(shutil.rmtree, self.app.parent)
-        shutil.copytree(ROOT / 'apps/hello', self.app)
+        shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', self.app)
 
     def edit(self, change):
         path = self.app / 'staging/helmrelease.yaml'
@@ -462,7 +462,7 @@ class DriftTests(unittest.TestCase):
         for label, (change, where) in cases.items():
             with self.subTest(label):
                 shutil.rmtree(self.app)
-                shutil.copytree(ROOT / 'apps/hello', self.app)
+                shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', self.app)
                 self.edit(change)
                 problems = self.drift()
                 self.assertEqual(len(problems), 1, problems)

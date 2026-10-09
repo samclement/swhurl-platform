@@ -11,6 +11,10 @@ so an app without an OpenTelemetry SDK still gets its log tiles. The definitions
 truth: the command creates missing dashboards, overwrites changed ones (edits made in the HyperDX UI are
 lost) and deletes ``swhurl-app`` dashboards whose app is gone from Git.
 
+The scheduled sync (``--cluster``) takes the apps from the cluster's HelmReleases instead and deletes more
+narrowly: only a tagged dashboard named exactly ``App: <app name>`` whose app has no HelmRelease left, and
+nothing at all when it finds no app releases (a cluster still being restored).
+
 HyperDX's external API (``/api/v2``) authenticates with a user's access key; the command reads the admin
 account's key from MongoDB, as ``make clickstack-bootstrap`` reads the team key, and never prints it.
 """
@@ -25,12 +29,15 @@ from pathlib import Path
 import yaml
 
 from swhurl import clickstack
+from swhurl.apps.new import NAME_RE
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 TAG = 'swhurl-app'
 NAMESPACE = "ResourceAttributes['k8s.namespace.name']"
+APP_DASHBOARD = re.compile('App: ' + NAME_RE.pattern.strip('^$'))  # what the scheduled sync may delete
+IN_GIT, ON_CLUSTER = 'its app is not in Git', 'its app has no HelmRelease on the cluster'
 ADMIN_KEY = ('const u = db.users.findOne({email: EMAIL}, {accessKey: 1});'
              ' print("RESULT " + JSON.stringify({key: (u && u.accessKey) || ""}));')
 
@@ -67,7 +74,7 @@ def cluster_apps(runner: Runner) -> list[App]:
 
     Match the generated Flux unit, release and namespace together so shared services
     and manually installed releases never become app dashboards. Discovery failures
-    propagate before any API write; the scheduled sync never prunes dashboards.
+    propagate before any API write.
     """
     found: dict[str, dict] = {}
     for release in runner.json(RELEASES)['items']:
@@ -164,7 +171,8 @@ def sources(api: HyperDX) -> tuple[str, str]:
     return found['trace'], found['log']
 
 
-def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool = True) -> int:
+def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool = True, cluster: bool = False) -> int:
+    """Create, update and (with ``prune``) delete; ``cluster`` narrows deletion to dashboards named for an app."""
     report.section('ClickStack app dashboards')
     inputs = clickstack.read_secret(runner, clickstack.INPUTS_SECRET)
     email = inputs.get('CLICKSTACK_ADMIN_EMAIL', '')
@@ -192,12 +200,17 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
         else:
             api.call('POST', '/dashboards', body)
             report.ok(f"created {body['name']}")
+    if not prune and live:
+        report.info(f'no app releases found; not deleting dashboards ({len(live)} left)')
+    reason = ON_CLUSTER if cluster else IN_GIT
     for name, stale in sorted(live.items()) if prune else []:
-        if runner.dry_run:
-            report.info(f'would delete {name} (its app is not in Git)')
+        if cluster and not APP_DASHBOARD.fullmatch(name):
+            report.info(f'left {name}: tagged {TAG} but not named for an app')
+        elif runner.dry_run:
+            report.info(f'would delete {name} ({reason})')
         else:
             api.call('DELETE', f"/dashboards/{stale['id']}")
-            report.ok(f'deleted {name} (its app is not in Git)')
+            report.ok(f'deleted {name} ({reason})')
     return report.exit_code()
 
 
@@ -205,8 +218,10 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     parser = argparse.ArgumentParser(prog='swhurl clickstack-dashboards', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--cluster', action='store_true',
-                        help='discover Flux-managed live app environments; create/update only, never delete dashboards')
+                        help='discover Flux-managed live app environments; delete only dashboards named for an app with no '
+                             'HelmRelease left, and none when no app release is found')
     args = parser.parse_args(argv)
     runner = runner or Runner.from_environment()
-    return sync(runner, report or Report(redact=runner.redact),
-                cluster_apps(runner) if args.cluster else apps(), prune=not args.cluster)
+    wanted = cluster_apps(runner) if args.cluster else apps()
+    return sync(runner, report or Report(redact=runner.redact), wanted,
+                prune=bool(wanted) or not args.cluster, cluster=args.cluster)

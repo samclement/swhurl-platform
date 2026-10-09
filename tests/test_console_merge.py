@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from swhurl import ROOT
 from swhurl.apps import new, policy, promotion
 from swhurl.console import merge
 from swhurl.console import promotion as console
@@ -15,6 +16,7 @@ BASE = 'a' * 40
 HEAD = 'b' * 40
 REPO = 'samclement/swhurl-platform'
 IMAGE = 'ghcr.io/example/app:2-abcdef0@sha256:' + 'a' * 64
+MANIFESTS = ROOT / 'tests/fixtures/manifests'
 
 
 class MergeTests(unittest.TestCase):
@@ -26,7 +28,7 @@ class MergeTests(unittest.TestCase):
         (self.root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
         for env in ('staging', 'prod'):
             image = IMAGE if env == 'staging' else IMAGE.replace('2-', '1-').replace('a' * 64, 'c' * 64)
-            args = new.parse_args(['example', '--preset', 'swhurl-web', '--env', env, '--no-auto-deploy', '--image', image])
+            args = new.parse_args(['example', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', env, '--no-auto-deploy', '--image', image])
             new.generate(args, self.root)
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr = {'state': 'open', 'head': {'ref': 'console/promote-example-staging-aaaaaaa', 'sha': HEAD,

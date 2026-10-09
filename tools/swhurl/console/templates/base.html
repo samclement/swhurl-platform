@@ -55,7 +55,7 @@
            border: 1px solid var(--line); background: var(--bg); color: var(--text); }
   button:hover { border-color: var(--accent); }
   button.risky { color: var(--warn); }
-  /* New app form (new.html): one column, label above field, so opening Advanced cannot shift anything. */
+  /* Forms (New app, and the app page's pull requests): one column, label above field. */
   .lead { color: var(--muted); max-width: 60em; }
   .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 16px 0 8px; }
   .tabs a { padding: 6px 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -67,9 +67,9 @@
   form.wizard legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
   form.wizard .field { margin-bottom: 12px; }
   form.wizard .field > label:not(.check), form.wizard .label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px; }
-  form.wizard input:not([type=checkbox]):not([type=radio]), form.wizard select {
+  form.wizard input:not([type=checkbox]):not([type=radio]) {
     font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
-  form.wizard input:focus-visible, form.wizard select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  form.wizard input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   form.wizard .hint { display: block; margin: 4px 0 0; }
   form.wizard [hidden] { display: none; }
   form.wizard .check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
@@ -82,27 +82,16 @@
   .choice input { margin-top: 4px; }
   .choice:has(input:checked) { border-color: var(--accent); }
   form.wizard .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
-  form.wizard .pair .field:has(.check) { grid-column: 1 / -1; }
   @media (max-width: 600px) { form.wizard .pair { grid-template-columns: minmax(0, 1fr); } }
-  details.advanced { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 16px; }
-  details.advanced > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
   form.wizard .submit { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; border-top: 1px solid var(--line); padding-top: 16px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-size: 14px; font-weight: 600; padding: 6px 16px; }
   button.primary:disabled { opacity: .5; cursor: not-allowed; }
   .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26em), 1fr)); gap: 16px; align-items: start; max-width: 62em; margin-bottom: 12px; }
   aside.summary { position: sticky; top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
   aside.summary h2 { margin-top: 0; }
-  aside.summary dd { min-width: 0; overflow-wrap: anywhere; }
-  dl.plain { background: none; border: 0; padding: 0; gap: 4px 12px; }
   /* Overview, Platform, unit and Activity pages. A status mark pairs colour with a shape. */
   .verdict { font-size: 17px; margin: 0 0 4px; }
   .tabs + .verdict { margin-top: 16px; }
-  .scenarios { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
-  @media (max-width: 600px) { .scenarios { grid-template-columns: minmax(0, 1fr); } }
-  .scenarios a { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--line);
-                 border-radius: 6px; background: var(--panel); color: var(--text); text-decoration: none; }
-  .scenarios a.here { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .scenarios .produces { font-size: 0.9em; }
   .mark { display: inline-block; width: 1.2em; text-align: center; font-weight: 700; }
   .mark.healthy { color: var(--ok); } .mark.healthy::before { content: "✓"; }
   .mark.updating { color: var(--accent); } .mark.updating::before { content: "↻"; }

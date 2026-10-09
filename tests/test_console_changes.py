@@ -1,4 +1,4 @@
-"""Console changes through GitHub: form to app-new argv, download, commit, branch, PR; offline, with
+"""Console changes through GitHub: form to tooling argv, download, commit, branch, PR; offline, with
 FakeRunner for the tree's tooling and a fake GitHub API."""
 import base64
 import io
@@ -24,8 +24,7 @@ from swhurl.run import CommandError, FakeRunner, Result
 TOKEN = 'github_pat_fixture_0123456789abcdef'
 HEAD = 'abc1234' + '0' * 33
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com', 'Origin': 'http://testserver'}
-FORM = {'name': 'weather-api', 'env': 'staging', 'image': 'ghcr.io/me/weather:1.0', 'exposure': 'authenticated-web',
-        'host': 'weather.homelab.swhurl.com', 'health_path': '/ready', 'kind': '', 'port': ''}
+NEW = {'name': 'weather-api', 'stack': 'typescript', 'exposure': 'authenticated-web', 'host': ''}
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
 REVISION = 'main@sha1:' + HEAD
 MAIN = {'README.md': b'# repo\n'}
@@ -131,40 +130,6 @@ def app_under_test(runner, **kwargs):
 
 
 class FormTests(unittest.TestCase):
-    def test_form_becomes_flag_equals_value_arguments(self):
-        name, env, argv = changes.new_app_args({**FORM, 'cpu': '--no-policy-check'})
-        self.assertEqual((name, env), ('weather-api', 'staging'))
-        self.assertEqual(argv, ['weather-api', '--env=staging', '--exposure=authenticated-web',
-                                '--image=ghcr.io/me/weather:1.0', '--host=weather.homelab.swhurl.com',
-                                '--health-path=/ready', '--cpu=--no-policy-check', '--no-otlp'])
-
-    def test_otlp_checkbox_becomes_a_bare_flag(self):
-        _, _, ticked = changes.new_app_args({**FORM, 'otlp': 'on'})
-        _, _, unticked = changes.new_app_args(FORM)
-        self.assertEqual(ticked[-1], '--otlp')
-        self.assertEqual(unticked[-1], '--no-otlp', 'explicit, so unticking overrides a preset')
-        with self.assertRaisesRegex(actions.ActionError, 'checkbox'):
-            changes.new_app_args({**FORM, 'otlp': '--no-policy-check'})
-
-    def test_otlp_hint_states_the_cluster_default(self):
-        self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', changes.OTLP_HINT)
-        self.assertIn('OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf', changes.OTLP_HINT)
-        self.assertNotIn('otlp', changes.new_app_defaults())
-
-    def test_preset_is_passed_to_app_new(self):
-        _, _, argv = changes.new_app_args({'name': 'weather-api', 'env': 'staging', 'preset': 'swhurl-web',
-                                           'image': 'ghcr.io/me/weather:42-abc1234', 'otlp': 'on'})
-        self.assertEqual(argv, ['weather-api', '--env=staging', '--preset=swhurl-web',
-                                '--image=ghcr.io/me/weather:42-abc1234', '--otlp'])
-        with self.assertRaisesRegex(actions.ActionError, 'preset must be'):
-            changes.new_app_args({**FORM, 'preset': 'nope'})
-
-    def test_preset_defaults_come_from_app_new(self):
-        self.assertEqual(changes.new_app_defaults('swhurl-web')['health_path'], '/healthz')
-        self.assertEqual(changes.new_app_defaults('swhurl-web')['exposure'], 'authenticated-web')
-        self.assertEqual(changes.new_app_checked('swhurl-web'), {'otlp': True})
-        self.assertEqual(changes.new_app_checked(''), {'otlp': False})
-
     def test_expose_form_becomes_app_expose_arguments(self):
         self.assertEqual(changes.expose_args({'exposure': 'public', 'host': 'weather.example.com'}),
                          ['--exposure=public', '--host=weather.example.com'])
@@ -173,12 +138,6 @@ class FormTests(unittest.TestCase):
                               ({'exposure': 'public', 'host': '--root=/'}, 'not a DNS name')):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.expose_args(form)
-
-    def test_bad_input_is_refused_before_anything_runs(self):
-        for form, message in (({**FORM, 'name': 'Weather'}, 'DNS label'), ({**FORM, 'env': 'dev'}, 'env must'),
-                              ({**FORM, 'kind': 'cron'}, 'Kind must'), ({**FORM, 'host': 'a\nb'}, 'one line')):
-            with self.subTest(message=message), self.assertRaisesRegex(actions.ActionError, message):
-                changes.new_app_args(form)
 
     def test_only_console_branches(self):
         self.assertEqual(changes.branch_name('new-weather-api-staging', 'abc1234'), 'console/new-weather-api-staging-abc1234')
@@ -193,18 +152,6 @@ class FormTests(unittest.TestCase):
         found = changes.github_from_env(runner, {'GITHUB_TOKEN': TOKEN, 'CONSOLE_REPO': 'me/repo'})
         self.assertEqual(found, changes.GitHub('me/repo', TOKEN))
         self.assertEqual(runner.redact(TOKEN), '<redacted>')
-
-
-class DefaultsTests(unittest.TestCase):
-    def test_defaults_come_from_app_new(self):
-        parser = new.parser()
-        defaults = changes.new_app_defaults()
-        self.assertEqual(defaults['port'], '8080')
-        self.assertEqual(defaults['uid'], '65532')
-        for field, value in defaults.items():
-            self.assertEqual(value, str(parser.get_default(field)), field)
-        self.assertNotIn('image', defaults)
-        self.assertNotIn('host', defaults)
 
 
 class OpenPrTests(unittest.TestCase):
@@ -329,49 +276,20 @@ class NewAppRouteTests(unittest.TestCase):
         github = self.api.github if github else None
         return TestClient(app_under_test(runner, jobs=jobs, github=github)), jobs
 
-    def test_form_opens_a_pr_as_a_job(self):
+    def test_the_page_only_starts_a_new_app(self):
         runner = tree_fake()
         c, jobs = self.client(runner)
-        preset = c.get('/new?preset=swhurl-web', headers=WHO).text
-        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">\n    <strong>Deploy an existing image</strong>', preset)
-        self.assertIn('<a href="/new?preset=swhurl-web" class="here" aria-current="page">Web app, platform conventions</a>', preset)
-        self.assertIn('choose <strong>Custom</strong>', preset, 'says when the conventions do not fit')
-        self.assertIn('<input type="hidden" name="preset" value="swhurl-web">', preset)
-        self.assertIn('name="exposure" value="authenticated-web" checked>', preset)
-        self.assertIn('<details class="advanced">', preset)
-        self.assertIn('<input type="checkbox" id="otlp" name="otlp" checked>', preset)
-        form = c.get('/new?preset=', headers=WHO).text
-        self.assertIn('Open pull request', form)
-        self.assertIn('<details class="advanced" open>', form, 'no preset fills Advanced, so it starts open')
-        self.assertIn('id="port" name="port" value="" placeholder="8080"', form)
-        self.assertIn('id="uid" name="uid" value="" placeholder="65532"', form)
-        self.assertIn('<option value="">web (default)</option>', form)
-        self.assertIn('name="exposure" value="private" checked>', form)
-        self.assertNotIn('clones', form + preset, 'the intro describes the API-based PR')
-        self.assertIn('nginx-unprivileged is 101', form)
-        self.assertIn('<input type="checkbox" id="otlp" name="otlp" >', form)
-        self.assertIn('OTEL_EXPORTER_OTLP_ENDPOINT=http://$(HOST_IP):4318', form)
-        response = c.post('/new', data=FORM, headers=WHO, follow_redirects=False)
-        self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
-        job = jobs.get(1)
-        self.assertEqual((job.state, job.link, job.unit), ('succeeded', 'https://github.com/x/pull/7', 'weather-api/staging'))
-        self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
-        rejected = c.post('/new', data={**FORM, 'env': 'prod', 'image': 'ghcr.io/me/weather:1.0@sha256:' + 'a' * 64}, headers=WHO)
-        self.assertEqual(rejected.status_code, 400)
-        self.assertIsNone(jobs.get(2))
-        self.assertEqual(len(self.api.sent('POST /pulls')), 1, 'forged production submissions open no PR')
-        self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
-
-    def test_every_field_is_on_the_form_once_and_a_bad_form_keeps_advanced_open(self):
-        c, _ = self.client(tree_fake())
-        for preset in ('swhurl-web', 'swhurl-worker', ''):
-            page = c.get(f'/new?preset={preset}', headers=WHO).text
-            for field, _, _ in changes.NEW_APP_FIELDS:
-                with self.subTest(preset=preset, field=field):
-                    self.assertEqual(page.count(f'name="{field}"'), 3 if field == 'exposure' else 1)
-        page = c.post('/new', data={**FORM, 'name': 'Bad', 'port': '9090', 'preset': 'swhurl-web'}, headers=WHO).text
-        self.assertIn('<details class="advanced" open>', page)
-        self.assertIn('value="9090"', page)
+        for url in ('/new', '/new?preset=swhurl-web'):
+            with self.subTest(url=url):
+                page = c.get(url, headers=WHO).text
+                self.assertIn('action="/new/repo"', page)
+                self.assertIn('Create repository and open pull request', page)
+                self.assertNotIn('Deploy an existing image', page)
+                self.assertNotIn('name="image"', page)
+        self.assertEqual(c.post('/new', data={'name': 'weather-api', 'image': 'ghcr.io/me/weather:1.0'},
+                                headers=WHO).status_code, 405)
+        self.assertIsNone(jobs.get(1))
+        self.assertEqual((runner.calls, self.api.requests), ([], []))
 
     def test_pr_description_explains_setting_secret_values(self):
         body = changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging', '--secret-keys=API_TOKEN,DB_URL'])
@@ -390,36 +308,6 @@ class NewAppRouteTests(unittest.TestCase):
         api = FakeGitHub(fail={'GET /pulls': (401, 'Bad credentials')})
         page = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), inline=True), github=api.github))
         self.assertIn('Could not list open pull requests', page.get('/activity', headers=WHO).text)
-
-    def test_an_image_can_take_its_settings_from_the_repository(self):
-        c, jobs = self.client(tree_fake())
-        page = c.get('/new?preset=from-repo', headers=WHO).text
-        self.assertIn('class="here" aria-current="page">From the repository&#39;s swhurl.yaml</a>', page)
-        self.assertIn('<input type="hidden" name="preset" value="from-repo">', page)
-        self.assertIn('id="repo" name="repo" required', page)
-        self.assertIn('empty fields come from swhurl.yaml', page)
-        self.assertIn('name="exposure" value="" checked>', page, "exposure defaults to the file's, not private")
-        self.assertIn('id="port" name="port" value="" placeholder="from swhurl.yaml">', page, 'no preset default is shown')
-        form = {**FORM, 'preset': 'from-repo', 'repo': 'samclement/hello-ts@v1', 'exposure': '', 'host': '', 'health_path': ''}
-        _, _, argv = changes.new_app_args(form)
-        self.assertEqual(argv[:3], ['weather-api', '--env=staging', '--from-repo=samclement/hello-ts@v1'])
-        self.assertNotIn('--preset', ' '.join(argv))
-        self.assertNotIn('--no-otlp', argv, "unticked keeps swhurl.yaml's telemetry")
-        self.assertIn('--otlp', changes.new_app_args({**form, 'otlp': 'on'})[2])
-        for bad in ('', 'hello-ts', '--all/x', 'a/b c'):
-            with self.subTest(bad), self.assertRaisesRegex(actions.ActionError, 'repository must be OWNER/REPO'):
-                changes.new_app_args({**form, 'repo': bad})
-        response = c.post('/new', data={**form, 'repo': 'nope'}, headers=WHO)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('id="repo" name="repo" required pattern=', response.text, 'the returned form keeps its tab')
-
-    def test_reserved_secret_keys_are_refused_on_the_form(self):
-        with self.assertRaisesRegex(actions.ActionError, 'reserved for the platform: OTEL_SERVICE_NAME'):
-            changes.new_app_args({**FORM, 'secret_keys': 'API_TOKEN, OTEL_SERVICE_NAME'})
-        response = self.client(tree_fake())[0].post('/new', data={**FORM, 'secret_keys': 'DATABASE_PATH'}, headers=WHO)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('reserved for the platform: DATABASE_PATH', response.text)
-        self.assertEqual(self.api.requests, [], 'nothing reaches GitHub')
 
     def test_a_new_app_not_yet_applied_waits_for_its_pr(self):
         runner = tree_fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout='')
@@ -445,21 +333,24 @@ class NewAppRouteTests(unittest.TestCase):
 
     def test_invalid_form_or_missing_token_runs_nothing(self):
         runner = tree_fake()
-        c, _ = self.client(runner)
-        response = c.post('/new', data={**FORM, 'name': 'Bad'}, headers=WHO)
+        app_api = FakeAppGitHub()
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=app_api.config))
+        response = c.post('/new/repo', data={**NEW, 'name': 'Bad'}, headers=WHO)
         self.assertEqual(response.status_code, 400)
         self.assertIn('value="Bad"', response.text)
-        c, _ = self.client(runner, github=False)
-        self.assertIn('No GitHub token', c.get('/new?preset=swhurl-web', headers=WHO).text)
-        self.assertEqual(c.post('/new', data=FORM, headers=WHO).status_code, 409)
-        self.assertEqual(runner.calls, [])
+        c = TestClient(app_under_test(runner, jobs=jobs, app_repos=app_api.config))
+        self.assertIn('No GitHub token is configured', c.get('/new', headers=WHO).text)
+        self.assertEqual(c.post('/new/repo', data=NEW, headers=WHO).status_code, 409)
+        self.assertEqual((runner.calls, app_api.requests), ([], []))
 
     def test_cross_site_post_is_refused(self):
         runner = tree_fake()
-        c, _ = self.client(runner)
-        self.assertEqual(c.post('/new', data=FORM, headers={**WHO, 'Origin': 'https://evil.example'}).status_code, 403)
-        self.assertEqual(runner.calls, [])
-
+        app_api = FakeAppGitHub()
+        c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, audit=lambda line: None, inline=True),
+                                      github=FakeGitHub().github, app_repos=app_api.config))
+        self.assertEqual(c.post('/new/repo', data=NEW, headers={**WHO, 'Origin': 'https://evil.example'}).status_code, 403)
+        self.assertEqual((runner.calls, app_api.requests), ([], []))
 
 
 def staging_reads(runner):
@@ -847,13 +738,18 @@ class AppReposTests(unittest.TestCase):
         self.assertEqual(client.runner.calls, [], 'nothing rendered')
         api = FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'failure'}])
         client = repos.AppRepos(repo_runner(), api.config)
-        with self.assertRaisesRegex(actions.ActionError, 'ended failure: https://run/1'):
+        add = 'run make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --image <image the run prints>"'
+        with self.assertRaises(actions.ActionError) as failed:
             repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+        self.assertIn('ended failure: https://run/1', str(failed.exception))
+        self.assertIn(add, str(failed.exception))
         ticks = iter(range(0, 10_000, 100))
         client = repos.AppRepos(repo_runner(), FakeAppGitHub(runs=[None]).config)
-        with self.assertRaisesRegex(actions.ActionError, 'no finished Container run after 10 minutes'):
+        with self.assertRaises(actions.ActionError) as late:
             repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
                                   clock=lambda: next(ticks))
+        self.assertIn('no finished Container run after 10 minutes', str(late.exception))
+        self.assertIn(add, str(late.exception))
 
 
 class NewRepoRouteTests(unittest.TestCase):
@@ -863,8 +759,8 @@ class NewRepoRouteTests(unittest.TestCase):
         platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
         c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
         page = c.get('/new', headers=WHO).text
-        self.assertIn('<a href="/new" class="here" aria-current="page">\n    <strong>Start a new app</strong>', page)
-        self.assertIn('<a href="/new?preset=swhurl-web">\n    <strong>Deploy an existing image</strong>', page)
+        self.assertIn('What happens', page)
+        self.assertNotIn('Deploy an existing image', page)
         self.assertIn('action="/new/repo"', page)
         self.assertIn('name="stack" value="typescript" checked', page)
         self.assertIn('name="feature-kind" value="web" checked', page)
@@ -884,6 +780,8 @@ class NewRepoRouteTests(unittest.TestCase):
         copy = next(c for c in runner.calls if 'copy' in c)
         self.assertIn('kind=web', copy)
         self.assertIn('database=none', copy)
+        self.assertEqual(platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
+        self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
         body = platform_api.sent('POST /pulls')[0]['body']
         self.assertIn('created https://github.com/samclement/notes from', body)
 

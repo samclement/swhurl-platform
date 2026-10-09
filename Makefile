@@ -56,8 +56,8 @@ flux-bootstrap: ## Apply the root units and sources (Flux must already be instal
 # Apps ---------------------------------------------------------------------------
 
 .PHONY: app-new
-app-new: ## NAME=<app> ARGS="--env ... --image ..." Generate an app instance (ARGS=--help for options)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--env staging --image repo:tag ...'" >&2; exit 2; }
+app-new: ## NAME=<app> ARGS="--from-repo OWNER/<app> --image ..." Generate the staging instance of an app made by app-repo (ARGS=--help for options)
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--from-repo OWNER/<app> --env staging --image ghcr.io/OWNER/<app>:TAG@DIGEST' (make app-repo prints it)" >&2; exit 2; }
 	$(SWHURL_APPS) app-new $(NAME) $(ARGS)
 
 .PHONY: app-promote

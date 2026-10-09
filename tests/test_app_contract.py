@@ -1,4 +1,5 @@
 """App contract: generator guards, fixture drift, and rendered-resource policy."""
+import argparse
 import copy
 import io
 import os
@@ -19,6 +20,7 @@ from swhurl.apps import policy as app_policy
 from swhurl.run import CommandError, FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
+MANIFESTS = ROOT / 'tests/fixtures/manifests'
 TEMPLATE_IMAGE = 'ghcr.io/samclement/w:12-abcdef0@sha256:' + 'b' * 64
 WEB = ['--env', 'staging', '--exposure', 'authenticated-web', '--host', 'x.homelab.swhurl.com',
        '--image', 'repo/app:1.0', '--health-path', '/healthz']
@@ -137,8 +139,8 @@ class GeneratorTests(unittest.TestCase):
         })
         self.assertIsNone(env('p'), 'without --otlp nothing is written')
 
-    def test_web_preset_fills_template_conventions_and_derives_the_host(self):
-        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', TEMPLATE_IMAGE,
+    def test_a_template_manifest_fills_its_conventions_and_derives_the_host(self):
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         values = yaml.safe_load((self.tmp / 'apps/w/staging/helmrelease.yaml').read_text())['spec']['values']
         main = values['controllers']['main']['containers']['main']
@@ -149,7 +151,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
 
     def test_auto_deploy_watches_the_image_and_marks_staging_only(self):
-        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', TEMPLATE_IMAGE,
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         with mock.patch.object(app_policy, 'evaluate', return_value=[]):
             source, _ = promotion.read(self.tmp, 'w')
@@ -180,12 +182,35 @@ class GeneratorTests(unittest.TestCase):
     def test_auto_deploy_needs_a_template_tag_and_digest(self):
         for image in ('ghcr.io/samclement/w:1.0@sha256:' + 'a' * 64, 'ghcr.io/samclement/w:12-abcdef0'):
             with self.subTest(image=image), redirect_stderr(io.StringIO()) as err:
-                self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--image', image,
+                self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', image,
                                                '--root', str(self.tmp), '--no-policy-check']), 2)
             self.assertIn('automatic deploys need', err.getvalue())
-        self.assertEqual(app_new.main(['w', '--preset', 'swhurl-web', '--env', 'staging', '--no-auto-deploy',
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--no-auto-deploy',
                                        '--image', 'ghcr.io/samclement/w:1.0', '--root', str(self.tmp),
                                        '--no-policy-check']), 0)
+
+    def test_in_the_platform_repository_only_a_platform_created_app_is_generated(self):
+        def problem(*argv):
+            return app_new.platform_origin_problem(app_new.parse_args(
+                ['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', *argv]))
+        ours = argparse.Namespace(name='w', env='staging', from_repo='samclement/w@v1', image=TEMPLATE_IMAGE,
+                                  auto_deploy=True)
+        self.assertIsNone(app_new.platform_origin_problem(ours))
+        for change, expected in (({'from_repo': None}, '--from-repo samclement/w is required'),
+                                 ({'from_repo': 'someone/w'}, '--from-repo samclement/w is required'),
+                                 ({'from_repo': 'samclement/other'}, '--from-repo samclement/w is required'),
+                                 ({'image': 'docker.io/library/nginx:1.27'}, 'the image must be ghcr.io/samclement/w'),
+                                 ({'image': TEMPLATE_IMAGE.replace('/w:', '/other:')}, 'the image must be ghcr.io/samclement/w'),
+                                 ({'auto_deploy': False}, 'must deploy to staging automatically')):
+            with self.subTest(change=change):
+                self.assertIn(expected, app_new.platform_origin_problem(argparse.Namespace(**{**vars(ours), **change})))
+        self.assertIn('make app-repo NAME=w', problem('--image', TEMPLATE_IMAGE), 'a local manifest is not a repository')
+        # main applies it to the platform's own tree only: fixtures and tests write to another --root
+        with mock.patch.object(app_new, 'ROOT', self.tmp.resolve()), redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(self.gen('w', '--env', 'staging', '--image', 'r/w:1', '--kind', 'worker'), 2)
+        self.assertIn('--from-repo samclement/w is required', err.getvalue())
+        self.assertFalse((self.tmp / 'apps').exists())
+        self.assertEqual(self.gen('w', '--env', 'staging', '--image', 'r/w:1', '--kind', 'worker'), 0)
 
     def test_markers_round_trip(self):
         text = '    image:\n      tag: 12-abcdef0\n      digest: sha256:aa\n'
@@ -193,11 +218,11 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(contract.strip_image_markers(marked), (text, 'w-staging'))
         self.assertEqual(contract.strip_image_markers(text), (text, None))
 
-    def test_explicit_flags_beat_the_preset(self):
-        args = app_new.parse_args(['w', '--preset', 'swhurl-web', '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
+    def test_explicit_flags_beat_the_manifest(self):
+        args = app_new.parse_args(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
                                    '--no-otlp', '--port', '3000', '--exposure', 'private'])
         self.assertEqual((args.otlp, args.port, args.exposure, args.health_path), (False, 3000, 'private', '/healthz'))
-        worker = app_new.parse_args(['q', '--preset', 'swhurl-worker', '--env', 'staging', '--image', 'r/q:1'])
+        worker = app_new.parse_args(['q', '--manifest', str(MANIFESTS / 'worker.yaml'), '--env', 'staging', '--image', 'r/q:1'])
         self.assertEqual((worker.kind, worker.exposure, worker.otlp), ('worker', 'private', True))
 
     def test_signed_in_host_is_derived_per_environment(self):

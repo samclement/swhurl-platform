@@ -551,7 +551,7 @@ def check_console_token(runner: Runner, report: Report, now: dt.datetime | None 
     """GitHub accepts the console's tokens, and none is about to expire (read from GitHub's reply).
 
     GITHUB_TOKEN (pull requests here) is required; APP_REPOS_TOKEN (new app repositories) is optional:
-    without it only the console's New app and repository tab is off."""
+    without it only the console's New app page is off."""
     report.section('Console GitHub Token')
     name = platform.CONSOLE_TOKEN_SECRET
     try:
@@ -571,7 +571,7 @@ def check_console_token(runner: Runner, report: Report, now: dt.datetime | None 
             if required:
                 report.bad(message)
             else:
-                report.warn(message + " (the console's New app and repository tab is off until then)")
+                report.warn(message + " (the console's New app page is off until then)")
             continue
         check_github_token(runner, report, token, label, now)
 

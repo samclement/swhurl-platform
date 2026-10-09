@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
-{% import "_scenarios.html" as sc %}
 {% block title %}New app{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › New app</p>
 <h1>New app</h1>
-{{ sc.choose('new') }}
 <p class="lead">The console creates the repository <code>{{ owner }}/&lt;name&gt;</code> from the stack's template, waits for its first image, then opens a pull request that adds it to staging. Nothing changes on the cluster until you merge that PR; after that, every push to the repository's <code>main</code> deploys to staging. <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app">How it works</a></p>
 
 {% if not github or not app_repos %}<p class="bad">{% if not app_repos %}No token for creating repositories is configured (<code>APP_REPOS_TOKEN</code>{% else %}No GitHub token is configured (<code>GITHUB_TOKEN</code>{% endif %} in Secret <code>console/console-github</code>), so this cannot run.</p>{% endif %}

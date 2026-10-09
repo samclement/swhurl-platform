@@ -1,0 +1,8 @@
+# The swhurl.yaml of a web app from a stack template, for tests (app-new --manifest).
+version: 1
+kind: web
+port: 8080
+healthPath: /healthz
+uid: 65532
+telemetry: otlp
+autoDeploy: true

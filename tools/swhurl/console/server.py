@@ -245,7 +245,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 features[stack], features_error = [], str(problem)
         return page(request, 'new_repo.html', status_code=status_code,
                     features=features, features_error=features_error,
-                    preset=changes.NEW_REPO, stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
+                    stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER,
                     exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
                     github=github, app_repos=app_repos)
@@ -276,48 +276,6 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             job = jobs.submit('new app and repository', f'{name}/staging', request.state.identity, work)
         except actions.ActionError as error:
             return new_repo_form(request, 409, str(error), form)
-        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
-
-    def new_app_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
-        form = form or {}
-        # A returned /new form is always an existing-image tab; a plain GET starts on the new repository tab.
-        preset = form.get('preset', 'swhurl-web') if form else request.query_params.get('preset', changes.NEW_REPO)
-        if preset not in changes.PRESET_LABELS:
-            preset = changes.NEW_REPO
-        if preset == changes.NEW_REPO:
-            return new_repo_form(request, status_code, error)
-        checked = {f: bool(form.get(f)) for f in changes.CHECKBOXES} if form else changes.new_app_checked(preset)
-        advanced = [f for _, group in changes.ADVANCED_GROUPS for f in group]
-        return page(request, 'new.html', status_code=status_code, fields=changes.NEW_APP_FIELDS,
-                    labels={f: label for f, _, label in changes.NEW_APP_FIELDS},
-                    choices=changes.CHOICES, checkboxes=changes.CHECKBOXES, otlp_hint=changes.OTLP_HINT,
-                    exposure_text=changes.EXPOSURE_LABELS, groups=changes.ADVANCED_GROUPS,
-                    # Open when nothing fills it (no preset) or a returned form set something in it.
-                    advanced_open=not preset or any(form.get(f) for f in advanced if f not in changes.CHECKBOXES),
-                    preset=preset, existing=changes.EXISTING_LABELS, domain=contract.COOKIE_DOMAIN, checked=checked,
-                    defaults=changes.new_app_defaults(preset), form=form, error=error, github=github)
-
-    async def new_app(request: Request) -> Response:
-        if request.method == 'GET':
-            return new_app_form(request)
-        # A plain URL-encoded form; parse_qs avoids a multipart dependency.
-        form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
-        if github is None:
-            return new_app_form(request, 409, 'No GitHub token is configured (console-github Secret).', form)
-        try:
-            name, env, argv = changes.new_app_args(form)
-        except actions.ActionError as error:
-            return new_app_form(request, 400, str(error), form)
-
-        def work(job: actions.Job) -> None:
-            job.link = changes.open_pr(
-                runner, github, job, slug=f'new-{name}-{env}', title=f'apps: add {name}/{env}',
-                body=changes.new_app_body(name, env, argv),
-                change=lambda clone: changes.run_app_new(runner, job, clone, argv), auto_merge=env == 'staging')
-        try:
-            job = jobs.submit('new app', f'{name}/{env}', request.state.identity, work)
-        except actions.ActionError as error:
-            return new_app_form(request, 409, str(error), form)
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     def review_promotion(request: Request) -> Response:
@@ -431,7 +389,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
                 Route('/jobs/{id:int}/events', job_events),
-                Route('/new', new_app, methods=['GET', 'POST']), Route('/new/repo', new_repo, methods=['POST']),
+                Route('/new', new_repo_form), Route('/new/repo', new_repo, methods=['POST']),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])
 

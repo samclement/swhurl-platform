@@ -145,6 +145,12 @@ class AppRepos:
         return next((r for r in runs.get('workflow_runs') or [] if r.get('name') == APP_WORKFLOW), None)
 
 
+def add_command(req: repo.Request) -> str:
+    """The terminal command that adds the app to staging once its repository has published an image."""
+    return (f'make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging '
+            '--image <image the run prints>"')
+
+
 def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request, *,
                     sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
                     opener: repo.Opener = repo._open) -> str:
@@ -189,12 +195,13 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
         if run and run['status'] == 'completed':
             if run['conclusion'] != 'success':
                 raise ActionError(f'the first {APP_WORKFLOW} run ended {run["conclusion"]}: {run["html_url"]}. '
-                                  'Fix the app and push; then add it from the Web app tab with the image that run prints')
+                                  f'Fix the app and push; after it publishes an image, run {add_command(req)}, '
+                                  'then commit and push')
             break
         if clock() > deadline:
             raise ActionError(f'no finished {APP_WORKFLOW} run after {FIRST_RUN_TIMEOUT / 60:.0f} minutes: '
-                              f'https://github.com/{req.repo}/actions. When it publishes, add the app from the '
-                              'Web app tab with the image the run prints')
+                              f'https://github.com/{req.repo}/actions. After it publishes an image, run '
+                              f'{add_command(req)}, then commit and push')
         sleep(POLL)
     tag = f'{run["run_number"]}-{commit[:7]}'
     try:

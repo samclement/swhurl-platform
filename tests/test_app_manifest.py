@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from swhurl import ROOT
 from swhurl.apps import contract
 from swhurl.apps import new as app_new
 from swhurl.apps.contract import ManifestError, manifest_defaults
@@ -18,13 +19,15 @@ WEB = {'version': 1, 'stack': 'typescript', 'kind': 'web', 'port': 8080, 'health
 
 
 class ManifestTests(unittest.TestCase):
-    def test_presets_are_template_manifests_with_unchanged_defaults(self):
-        self.assertEqual(contract.PRESETS, {
-            'swhurl-web': {'kind': 'web', 'exposure': 'authenticated-web', 'port': 8080, 'health_path': '/healthz',
-                           'uid': 65532, 'otlp': True, 'auto_deploy': True},
-            'swhurl-worker': {'kind': 'worker', 'exposure': 'private', 'uid': 65532, 'otlp': True,
-                              'auto_deploy': True}})
-        self.assertEqual(manifest_defaults(WEB), contract.PRESETS['swhurl-web'])
+    def test_a_template_manifest_maps_to_app_new_defaults(self):
+        self.assertEqual(manifest_defaults(WEB), {
+            'kind': 'web', 'exposure': 'authenticated-web', 'port': 8080, 'health_path': '/healthz',
+            'uid': 65532, 'otlp': True, 'auto_deploy': True})
+        self.assertEqual(manifest_defaults({'version': 1, 'kind': 'worker', 'telemetry': 'otlp', 'autoDeploy': True}),
+                         {'kind': 'worker', 'exposure': 'private', 'uid': 65532, 'otlp': True, 'auto_deploy': True})
+        for name in ('web', 'worker'):  # the fixtures other tests generate instances from
+            doc = yaml.safe_load((ROOT / f'tests/fixtures/manifests/{name}.yaml').read_text())
+            self.assertEqual((manifest_defaults(doc)['kind'], manifest_defaults(doc)['auto_deploy']), (name, True))
 
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
@@ -115,14 +118,14 @@ class FromRepoTests(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn(message, err.getvalue())
 
-    def test_a_local_manifest_and_a_preset_cannot_be_combined(self):
+    def test_a_local_manifest_is_read_and_cannot_be_combined_with_a_repository(self):
         with tempfile.NamedTemporaryFile('w', suffix='.yaml') as handle:
             handle.write(yaml.safe_dump({**WEB, 'kind': 'worker', 'port': None, 'healthPath': None}))
             handle.flush()
             args = app_new.parse_args(['w', '--manifest', handle.name, '--env', 'staging', '--image', 'x:1'])
             self.assertEqual((args.kind, args.exposure), ('worker', 'private'))
-            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                app_new.parse_args(['w', '--manifest', handle.name, '--preset', 'swhurl-web', '--env', 'staging',
+            with self.assertRaisesRegex(app_new.GenerationError, 'cannot be combined'):
+                app_new.parse_args(['w', '--manifest', handle.name, '--from-repo', 'samclement/w', '--env', 'staging',
                                     '--image', 'x:1'])
         err = io.StringIO()
         with redirect_stderr(err):

@@ -2,14 +2,13 @@
 
 An **app instance** is one app in one environment: namespace `<app>-<env>`, a HelmRelease of the pinned [bjw-s app-template](https://bjw-s-labs.github.io/helm-charts/docs/app-template/) chart (5.2.1), an optional encrypted Secret, and its own Flux unit `app-<app>-<env>`. Instances wait only for `infra-base` and, when signed-in, `platform-oauth2-proxy`; a broken instance never blocks another, and an observability outage never blocks an app.
 
-An app's life, and where each step is described. Every change is a Git edit (by hand, a `make` command or a console pull request) that Flux applies ([how changes reach the cluster](architecture.md#how-changes-reach-the-cluster)):
+An app's life, and where each step is described. Every app comes from a stack template, and every change is a Git edit (by hand, a `make` command or a console pull request) that Flux applies ([how changes reach the cluster](architecture.md#how-changes-reach-the-cluster)):
 
 | Stage | Console | Command | Section |
 | --- | --- | --- | --- |
 | Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to production** | `make app-promote` | [Promote to production](#promote-to-production) |
-| Add an image that already exists | **New app** → **Deploy an existing image** | `make app-new` | [Add an existing image](#add-an-existing-image) |
 | Choose who can reach it | **Who can reach it** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
@@ -25,7 +24,7 @@ An app's life, and where each step is described. Every change is a Git edit (by 
 | `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts); deployed automatically on each push |
 | `hello-ts/prod` | `hello-ts.homelab.swhurl.com` | changes only through a promote |
 
-All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080; `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+All require sign-in. `hello` serves the stock nginx page as UID 101 on port 8080 and is the one instance not made from a stack template: it predates [the rule](#start-a-new-app) and `make app-new` would refuse it today ([plan](plan.md#0-where-this-paused-and-what-is-left), item 10); `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
 
 ## Start a new app
 
@@ -78,7 +77,7 @@ After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from
 
 **The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute. It lists Kubernetes HelmRelease records, keeps the ones registered by an `app-<name>-<env>` Flux unit whose app name and namespace match the release, then groups staging and production records by app. As soon as Flux has created the staging HelmRelease, the job creates or updates `App: <name>` in HyperDX. It does not wait for the release or pods to become Ready. It uses ClickStack's API; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
 
-Once staging is deployed, later pushes to the app repository's `main` publish images. For template apps with `autoDeploy: true`, the app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux image automation finds the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
+Once staging is deployed, later pushes to the app repository's `main` publish images. The app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux image automation finds the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
 
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
@@ -92,7 +91,9 @@ git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/s
 make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
 ```
 
-`make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run `make app-new` with the image that run publishes.
+`make app-repo` refuses a name that already exists on GitHub, creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes (the console's job prints the line too).
+
+**Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes) and its `swhurl.yaml` must set `autoDeploy: true`, as the stack templates do. There is no route for an image built elsewhere or a public image such as nginx.
 
 ### Stacks and features
 
@@ -115,7 +116,7 @@ Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tm
 **How templates are tested.** Two halves, so neither grows with the other:
 
 - **The template's own CI** (its Template workflow) renders combinations of its questions and, for each, type-checks, tests, builds the image and smoke-tests it. Today it builds every combination (four per stack). From a third question on, list the defaults, each non-default choice on its own and all non-defaults together, instead of every combination: that grows with the number of choices rather than doubling with each question. Each combination keeps its own image build cache. SQLite runtime checks apply migrations and write through the actual image, restart with the same data directory, then verify migration history and previous rows are preserved and new writes work. Database inspection uses a disposable copy including WAL files. Both stacks use the same conformance assertions; each retains its own compiler, tests and build.
-- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into staging with `app-new --manifest`, then production through the promotion conversion; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing (eight combinations today), and catches a template declaring something the platform refuses before anyone creates an app from it.
+- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into staging with `app-new --manifest` (a local file instead of `--from-repo`, writing to a scratch `--root`), then production through the promotion conversion; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing (eight combinations today), and catches a template declaring something the platform refuses before anyone creates an app from it.
 
 ### Template updates
 
@@ -127,32 +128,7 @@ Platform rendering remains exhaustive while cheap. On 3 October 2026 the eight c
 
 ### Add production
 
-Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. Both creation routes deploy staging only; `app-new --env prod` is refused. Existing production instances keep working, and production-only apps need staging before using promotion. Custom deployments remain a reviewed Git route.
-
-## Add an existing image
-
-For an image that already exists: an app made elsewhere, a public image such as nginx, or a retry after a failed first build. Pick the source of the defaults:
-
-| The app | Command | Console |
-| --- | --- | --- |
-| Has a `swhurl.yaml` in its repository | `make app-new NAME=<app> ARGS="--from-repo OWNER/REPO --env staging --image …"` | **From the repository's swhurl.yaml** tab |
-| Follows the platform conventions (port 8080, `/healthz`, UID 65532, `OTEL_*`, `<run>-<sha>` tags) | `--preset swhurl-web` or `--preset swhurl-worker` | **Web app, platform conventions** or **Worker, platform conventions** tab |
-| Anything else | every option yourself (table below) | **Custom** tab, with **Advanced** open |
-
-```bash
-make app-new NAME=hello ARGS="--env staging --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine \
-  --exposure authenticated-web --uid 101 --health-path /"
-make check-apps
-git add apps/hello clusters/home && git commit -m "apps: add hello/staging" && git push
-make flux-reconcile && make app-status APP=hello ENV=staging   # flux-reconcile waits for the new unit
-```
-
-`--from-repo OWNER/REPO[@REF]` reads `swhurl.yaml` from the default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set (a private repository needs it); `--manifest PATH` reads a local copy. A flag you give wins over `swhurl.yaml` or a preset (for example `--exposure public --host weather.example.com`). With `--secret-keys`, set the values before pushing ([secrets](#secrets)) and also `git add platform/reloader`.
-
-| Preset | Fills in |
-| --- | --- |
-| `swhurl-web` | `--kind web --exposure authenticated-web --port 8080 --health-path /healthz --uid 65532 --otlp --auto-deploy`; host `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) |
-| `swhurl-worker` | `--kind worker --exposure private --uid 65532 --otlp --auto-deploy` |
+Production is created by the first [promotion](#promote-to-production) from reviewed staging settings. The console and `make app-new` create staging only; `app-new --env prod` is refused.
 
 ### What the generator writes
 
@@ -160,14 +136,13 @@ make flux-reconcile && make app-status APP=hello ENV=staging   # flux-reconcile 
 
 | Option | Rules |
 | --- | --- |
-| `--from-repo`, `--manifest`, `--preset` | Where the defaults come from (one of them, or none) |
+| `--from-repo samclement/<name>[@REF]` | Required: reads `swhurl.yaml` from the app repository's default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set; its fields become the defaults and a flag you give wins (for example `--exposure public --host weather.example.com`) |
 | `--env` | `staging` (default); production is created by promotion |
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
-| `--image` | `repo:tag`, `repo@sha256:…` or both; no `latest`; **production requires a digest** |
+| `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
-| `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)) |
+| `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)): set the values before pushing and also `git add platform/reloader` |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
-| `--auto-deploy` / `--no-auto-deploy` | Staging only: Flux deploys each newer image the app publishes; needs an image `REPO:<run>-<sha>@sha256:…` ([deploy a new image](#deploy-a-new-image)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
 | `--persistence SIZE` | A claim on `local-path-retain`, kept on Helm uninstall; the namespace is never pruned ([remove an app](#remove-an-app)). Any instance with a volume runs one replica and stops the old pod before starting the new one (policy rule `single-writer`) |
 | `--uid`, `--port`, `--cpu`, `--memory`, `--memory-limit`, `--issuer` | Defaults: 65532, 8080, `10m`, `32Mi`, `128Mi`, `letsencrypt-prod` |
@@ -176,7 +151,7 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## swhurl.yaml
 
-What an app needs from the platform, kept in the app's own repository (the templates write it from your feature answers) and read by `app-new --from-repo` and `--manifest`. Each field becomes an `app-new` default; flags on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
+What an app needs from the platform, kept in the app's own repository (the templates write it from your feature answers) and read by `app-new --from-repo`. Each field becomes an `app-new` default; flags on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
 
 ```yaml
 version: 1              # required; this platform reads version 1
@@ -186,7 +161,7 @@ port: 8080              # web only (default 8080)            --port
 healthPath: /healthz    # web only, required                 --health-path
 uid: 65532              # default 65532                      --uid
 telemetry: otlp         # otlp or none (default)             --otlp
-autoDeploy: true        # staging follows new images         --auto-deploy
+autoDeploy: true        # staging follows new images (required: app-new refuses false)
 database: sqlite        # optional; databaseSize: 1Gi        --database, --database-size
 secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
@@ -255,7 +230,7 @@ In HyperDX, filter on `ServiceName` or `k8s.namespace.name` (which tells staging
 
 An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Staging changes first; production gets the same digest only when you [promote](#promote-to-production) it.
 
-**Apps from a template (automatic in staging).** A staging instance with `autoDeploy: true` in its `swhurl.yaml` (both templates), `--preset` or `--auto-deploy` is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own, in about two minutes:
+**Staging is automatic.** Every staging instance is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own, in about two minutes:
 
 ```text
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
@@ -265,24 +240,11 @@ app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<ru
   → push webhook → Flux applies → helm-controller rolls the Deployment
 ```
 
-The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` and `app-expose` keep them). `make verify-platform` shows each app's newest image under Image Automation and its webhook under Image Webhooks; an app added from an existing image gets the webhook from `make app-hooks` (until then Flux finds new images within the hour). To stop automatic deploys for one app, remove the markers (and `image-automation.yaml` with its line in `kustomization.yaml`) in a commit; staging then keeps its current image until you change it by hand.
-
-**Other apps (by hand).** Nothing watches them; change the pin yourself:
-
-1. Find the new image's digest: the registry's page for that tag, the digest your image build printed, or `docker buildx imagetools inspect <repository>:<tag>` (the `Digest:` line; use the index digest for a multi-architecture image).
-2. In `apps/<app>/staging/helmrelease.yaml`, set both lines under `controllers.main.containers.main.image`:
-
-   ```yaml
-   tag: 1.28-alpine
-   digest: sha256:<new digest>
-   ```
-
-   Staging accepts a tag alone, but `make app-promote` refuses an image without a digest (production requires one), so set both.
-3. `make app-check APP=<app> ENV=staging`, commit, push (or open a pull request and merge it). The [push webhook](services.md#push-webhook) has Flux fetch it within seconds; its unit applies the new values and helm-controller rolls the Deployment.
+The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` and `app-expose` keep them). `make verify-platform` shows each app's newest image under Image Automation and its webhook under Image Webhooks (`make app-hooks` adds a missing webhook; until then Flux finds new images within the hour).
 
 **Check it:** `make app-status APP=<app> ENV=staging` compares the main controller/container's running image with Git by digest (sidecars and other controllers keep their own images): each pod's spec names the digest it was given, and a pull by digest guarantees that content (the node's own image ID can name another digest for the same image, when two builds published identical content). It reports `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails ([operate an instance](#operate-an-instance)).
 
-**Roll back** staging by reverting the commit that changed the pin; for an automatic app, a newer image then replaces it again, so fix forward in the app, or remove the markers first. Chart versions are different: Renovate opens pull requests for app-template in this repository, and one merged pull request updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
+**Roll back** staging by reverting the commit that changed the pin; the app's next published image replaces it again, so fix forward in the app. Chart versions are different: Renovate opens pull requests for app-template in this repository, and one merged pull request updates every instance, staging and production together ([chart updates](operations.md#chart-updates)).
 
 ## Dependency updates in app repositories
 
@@ -433,6 +395,6 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 - No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
-- Only staging updates automatically, and only for apps whose tags follow `<run>-<sha>` (the template's workflow); other apps' pins are edited by hand ([deploy a new image](#deploy-a-new-image)).
+- Only apps made from a stack template are supported, and only staging updates automatically; production changes through a promote ([deploy a new image](#deploy-a-new-image)).
 - App images must be public: the cluster has no registry pull credentials.
 - `nginx-unprivileged` listens on IPv4 only (its IPv6 script cannot edit the read-only config); use `127.0.0.1`, not `localhost`, inside the pod.

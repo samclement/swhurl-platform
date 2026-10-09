@@ -1,0 +1,6 @@
+# The swhurl.yaml of a worker from a stack template, for tests (app-new --manifest).
+version: 1
+kind: worker
+uid: 65532
+telemetry: otlp
+autoDeploy: true

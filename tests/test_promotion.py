@@ -10,6 +10,7 @@ from swhurl.apps import ops, promotion
 from swhurl.apps.yaml_file import EditError
 
 DIGEST = 'sha256:' + 'a' * 64
+MANIFESTS = ROOT / 'tests/fixtures/manifests'
 
 
 def release(tag='2-abcdef0', digest=DIGEST):
@@ -69,7 +70,7 @@ class FirstProductionTests(unittest.TestCase):
 
     def staging(self, kind='web', *extra):
         from swhurl.apps import new
-        args = new.parse_args(['example', '--preset', 'swhurl-' + kind, '--env', 'staging',
+        args = new.parse_args(['example', '--manifest', str(MANIFESTS / f'{kind}.yaml'), '--env', 'staging',
                                '--image', 'ghcr.io/example/app:2-abcdef0@' + DIGEST,
                                '--no-auto-deploy', *extra])
         new.generate(args, self.root)

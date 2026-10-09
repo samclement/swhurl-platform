@@ -31,17 +31,8 @@ from typing import Any
 import httpx
 
 from swhurl import platform
-from swhurl.apps import new, repo
-from swhurl.apps.contract import (
-    DATABASES,
-    EXPOSURES,
-    OTLP_ENDPOINT,
-    OTLP_HOST_IP,
-    OTLP_PROTOCOL,
-    PRESETS,
-    STACKS,
-    secret_key_problem,
-)
+from swhurl.apps import repo
+from swhurl.apps.contract import EXPOSURES, STACKS
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -54,52 +45,16 @@ AUTO_MERGE_LABEL = 'auto-merge'
 AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
 UNSET = ('', 'REPLACE_ME')
 
-# The app-new options the form offers, in form order: (field, flag, label).
-NEW_APP_FIELDS = (
-    ('kind', 'kind', 'Kind'),
-    ('exposure', 'exposure', 'Exposure'),
-    ('image', 'image', 'Image'),
-    ('host', 'host', 'Host'),
-    ('health_path', 'health-path', 'Health path'),
-    ('port', 'port', 'Port'),
-    ('uid', 'uid', 'UID'),
-    ('cpu', 'cpu', 'CPU request'),
-    ('memory', 'memory', 'Memory request'),
-    ('memory_limit', 'memory-limit', 'Memory limit'),
-    ('persistence', 'persistence', 'Persistent volume size'),
-    ('secret_keys', 'secret-keys', 'Secret environment variables'),
-    ('database', 'database', 'Database'),
-    ('otlp', 'otlp', 'Sends OpenTelemetry'),
-    ('issuer', 'issuer', 'Certificate issuer'),
-)
-CHOICES = {'env': ('staging',), 'kind': ('web', 'worker'), 'exposure': EXPOSURES, 'database': DATABASES,
-           'issuer': ('letsencrypt-prod', 'letsencrypt-staging', 'selfsigned')}
-CHECKBOXES = {'otlp'}
-"""On/off fields: always sent explicitly (``--<flag>`` or ``--no-<flag>``), so a preset's default can be turned off."""
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
     'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
     'private': ('Private', 'No web address; reachable only inside the cluster. For workers and internal services.'),
 }
 """The form's plain-language names for each exposure: (title, description)."""
-ADVANCED_GROUPS = (('Runtime', ('kind', 'port', 'health_path', 'uid')),
-                   ('Resources', ('cpu', 'memory', 'memory_limit', 'persistence')),
-                   ('Telemetry and TLS', ('otlp', 'issuer')))
-"""The New app form's Advanced section, in order. Name, environment, image, secret keys, database, exposure and
-host are up front; every other NEW_APP_FIELDS field is in one group (a test checks)."""
-NEW_REPO = 'new-repo'
-FROM_REPO = 'from-repo'
-EXISTING_LABELS = {'swhurl-web': 'Web app, platform conventions', 'swhurl-worker': 'Worker, platform conventions',
-                   FROM_REPO: "From the repository's swhurl.yaml", '': 'Custom'}
-"""How an existing image runs, the second New app scenario's tabs: a preset, the app repository's swhurl.yaml
-(``app-new --from-repo``) or every setting by hand."""
-PRESET_LABELS = {NEW_REPO: 'Start a new app', **EXISTING_LABELS}
-"""Every ``/new?preset=`` value: a new repository from a stack (console/repos.py), or one of EXISTING_LABELS."""
-REPO_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+(@[A-Za-z0-9._/-]+)?')
 
 
 def new_repo_args(form: Mapping[str, str], questions: list[repo.Question]) -> tuple[str, str, str, dict[str, str], list[str]]:
-    """``(name, stack, description, template answers, extra app-new argv)`` from the New app and repository form.
+    """``(name, stack, description, template answers, extra app-new argv)`` from the New app form.
 
     ``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
     A worker gets no exposure or host: its swhurl.yaml makes it private."""
@@ -136,24 +91,6 @@ def new_repo_body(repo_url: str, template: str, argv: list[str]) -> str:
     name = argv[0]
     return (f'The console created {repo_url} from [{template}](https://github.com/{template}) and waited for its first '
             f'image.\n\n' + new_app_body(name, 'staging', argv))
-OTLP_HINT = (f'Tick if the app has an OpenTelemetry SDK. Sets OTEL_EXPORTER_OTLP_ENDPOINT={OTLP_ENDPOINT} '
-             f'({OTLP_HOST_IP} is the node IP), OTEL_EXPORTER_OTLP_PROTOCOL={OTLP_PROTOCOL} and OTEL_SERVICE_NAME=<name>; '
-             'no key needed. Logs on stdout reach ClickStack either way.')
-
-
-def new_app_defaults(preset: str = '') -> dict[str, str]:
-    """What app-new uses when a field is left empty, read from its own parser (this image's copy)."""
-    if preset == FROM_REPO:
-        return {}  # the repository's swhurl.yaml decides, read when the PR is made
-    parser = new.parser(preset or None)
-    return {field: str(parser.get_default(field)) for field, _, _ in NEW_APP_FIELDS
-            if parser.get_default(field) is not None and field not in CHECKBOXES}
-
-
-def new_app_checked(preset: str = '') -> dict[str, bool]:
-    """Whether each checkbox starts ticked (a preset can turn one on)."""
-    parser = new.parser(None if preset in ('', FROM_REPO) else preset)
-    return {field: bool(parser.get_default(field)) for field in CHECKBOXES}
 
 
 @dataclass(frozen=True)
@@ -172,43 +109,6 @@ def github_from_env(runner: Runner, env: Mapping[str, str] | None = None) -> Git
         return None
     runner.add_secret(token)
     return GitHub(env.get('CONSOLE_REPO') or DEFAULT_REPO, token)
-
-
-def new_app_args(form: Mapping[str, str]) -> tuple[str, str, list[str]]:
-    """``(name, env, app-new argv)`` from the form. Values go as ``--flag=value`` so none can become an option."""
-    name, env = form.get('name', '').strip(), form.get('env', 'staging').strip()
-    if not NAME_RE.match(name):
-        raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
-    if env != 'staging':
-        raise ActionError('env must be staging; create production with Promote to production')
-    preset = form.get('preset', '').strip()
-    if preset == FROM_REPO:
-        source = form.get('repo', '').strip()
-        if not REPO_RE.fullmatch(source):
-            raise ActionError('repository must be OWNER/REPO or OWNER/REPO@REF, for example samclement/hello-ts')
-        argv = [name, f'--env={env}', f'--from-repo={source}']
-    elif preset and preset not in PRESETS:
-        raise ActionError(f'preset must be one of {", ".join(sorted(PRESETS))}')
-    else:
-        argv = [name, f'--env={env}'] + ([f'--preset={preset}'] if preset else [])
-    for field, flag, label in NEW_APP_FIELDS:
-        value = form.get(field, '').strip()
-        if field in CHECKBOXES:
-            if value not in ('', 'on'):
-                raise ActionError(f'{label} is a checkbox')
-            if value or preset != FROM_REPO:  # unticked leaves swhurl.yaml's choice alone
-                argv.append(f'--{flag}' if value else f'--no-{flag}')
-            continue
-        if not value:
-            continue
-        if '\n' in value or '\r' in value:
-            raise ActionError(f'{label} must be one line')
-        if field in CHOICES and value not in CHOICES[field]:
-            raise ActionError(f'{label} must be one of {", ".join(CHOICES[field])}')
-        if field == 'secret_keys' and (problem := secret_key_problem([k.strip() for k in value.split(',') if k.strip()])):
-            raise ActionError(problem)
-        argv.append(f'--{flag}={value}')
-    return name, env, argv
 
 
 def new_app_body(name: str, env: str, argv: list[str]) -> str:

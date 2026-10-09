@@ -1,11 +1,13 @@
 """Generate one app instance: namespace, app-template HelmRelease, Flux unit.
 
-    make app-new NAME=<app> ARGS="--env staging --image IMAGE [options]"
-    make app-new NAME=<app> ARGS="--from-repo OWNER/REPO[@REF] --env staging --image IMAGE"
-    python3 -m swhurl app-new NAME --env staging --image IMAGE [options]
+    make app-new NAME=<app> ARGS="--from-repo OWNER/<app> --env staging --image ghcr.io/OWNER/<app>:TAG@DIGEST"
 
---from-repo reads the app's swhurl.yaml from GitHub (GITHUB_TOKEN if set, for private
-repositories) and --manifest from a file; its fields become the defaults, as a preset's do.
+Every app comes from a stack template (make app-repo, or the console's Start a new app, which
+print or run this line): --from-repo reads the app's swhurl.yaml from GitHub (GITHUB_TOKEN if
+set, for private repositories) and its fields become the defaults; flags still win. In this
+repository the app must be the owner's repository NAME, run the image that repository
+publishes and deploy to staging automatically (platform_origin_problem). --manifest reads a
+local swhurl.yaml instead, for make check-templates and tests, which write to another --root.
 
 Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
@@ -34,6 +36,7 @@ from swhurl import ROOT
 from swhurl.apps import policy
 from swhurl.apps.contract import (
     APP,
+    APP_OWNER,
     AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
@@ -53,7 +56,6 @@ from swhurl.apps.contract import (
     IMAGE_AUTOMATION_FILE,
     MANAGED,
     MANIFEST_FILE,
-    PRESETS,
     RETAINED_STORAGE_CLASS,
     SQLITE_PATH,
     STARTUP_PERIOD,
@@ -432,17 +434,15 @@ def load_manifest(text: str, source: str) -> dict:
         raise GenerationError(str(error)) from None
 
 
-def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.ArgumentParser:
-    """The app-new options, with a preset's (or swhurl.yaml's) values as the defaults (explicit flags still win)."""
+def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
+    """The app-new options, with swhurl.yaml's values as the defaults (explicit flags still win)."""
     p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
     source = p.add_mutually_exclusive_group()
-    source.add_argument('--preset', choices=sorted(PRESETS),
-                        help='defaults for an app built from the swhurl template: '
-                        + '; '.join(f'{n}: ' + ', '.join(f'{k}={v}' for k, v in d.items()) for n, d in PRESETS.items()))
     source.add_argument('--from-repo', metavar='OWNER/REPO[@REF]',
-                        help=f"defaults from the app repository's {MANIFEST_FILE} on GitHub")
-    source.add_argument('--manifest', type=Path, metavar='PATH', help=f'defaults from a local {MANIFEST_FILE}')
+                        help=f"the app's repository: defaults from its {MANIFEST_FILE} on GitHub")
+    source.add_argument('--manifest', type=Path, metavar='PATH',
+                        help=f'defaults from a local {MANIFEST_FILE} (check-templates and tests)')
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
     p.add_argument('--image', required=True, help='REPO:TAG, REPO@sha256:..., or REPO:TAG@sha256:... (digest required for prod)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
@@ -477,8 +477,6 @@ def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.
                    help='do not add the unit to clusters/home/kustomization.yaml')
     p.add_argument('--no-policy-check', dest='policy_check', action='store_false',
                    help='skip rendering the new instance against the app policy (needs helm)')
-    if preset:
-        p.set_defaults(**PRESETS[preset])
     if defaults:
         p.set_defaults(**defaults)
     return p
@@ -486,11 +484,12 @@ def parser(preset: str | None = None, defaults: dict | None = None) -> argparse.
 
 def parse_args(argv=None, opener: Opener = _open) -> argparse.Namespace:
     pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument('--preset', choices=sorted(PRESETS))
     pre.add_argument('--from-repo')
     pre.add_argument('--manifest', type=Path)
     known, _ = pre.parse_known_args(argv)
     defaults = None
+    if known.from_repo and known.manifest:
+        raise GenerationError('--from-repo and --manifest cannot be combined')
     if known.from_repo:
         text = fetch_manifest(known.from_repo, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
         defaults = load_manifest(text, f'{known.from_repo}:{MANIFEST_FILE}')
@@ -500,7 +499,21 @@ def parse_args(argv=None, opener: Opener = _open) -> argparse.Namespace:
         except OSError as error:
             raise GenerationError(f'cannot read {known.manifest}: {error.strerror}') from None
         defaults = load_manifest(text, str(known.manifest))
-    return parser(known.preset, defaults).parse_args(argv)
+    return parser(defaults).parse_args(argv)
+
+
+def platform_origin_problem(args) -> str | None:
+    """Why this is not an app the platform created (make app-repo, or the console's Start a new app)."""
+    repository = f'{APP_OWNER}/{args.name}'
+    create = f'create the app with make app-repo NAME={args.name} (or the console) and run the line it prints'
+    if (args.from_repo or '').split('@')[0] != repository:
+        return f'--from-repo {repository} is required: every app comes from a stack template; {create}'
+    if parse_image(args.image)['repository'] != f'ghcr.io/{repository}':
+        return f'the image must be ghcr.io/{repository}, which the app repository publishes; {create}'
+    if not auto_deploys(args):
+        return (f'{repository} must deploy to staging automatically: set autoDeploy: true in its {MANIFEST_FILE} '
+                '(the stack templates do)')
+    return None
 
 
 def main(argv=None, opener: Opener = _open) -> int:
@@ -512,6 +525,9 @@ def main(argv=None, opener: Opener = _open) -> int:
     try:
         if args.env != 'staging':
             raise GenerationError('app-new creates staging only; create production with make app-promote APP=' + args.name)
+        problem = platform_origin_problem(args) if args.root.resolve() == ROOT else None
+        if problem:
+            raise GenerationError(problem)
         written = generate(args, args.root.resolve())
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)

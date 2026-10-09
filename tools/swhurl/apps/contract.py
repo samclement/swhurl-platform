@@ -184,18 +184,9 @@ APP_WORKFLOW = 'Container'
 """The workflow in every app repository that checks and publishes its image (calls the template's app.yml)."""
 
 
-# Apps built from the template repository (samclement/swhurl-app-template-typescript) follow
-# these conventions; each preset is the swhurl.yaml such an app would carry.
+# What the stack templates (samclement/swhurl-app-template-*) use; swhurl.yaml's defaults.
 TEMPLATE_PORT = 8080
-TEMPLATE_HEALTH_PATH = '/healthz'
 TEMPLATE_UID = 65532
-PRESET_MANIFESTS = {
-    'swhurl-web': {'version': 1, 'kind': 'web', 'port': TEMPLATE_PORT, 'healthPath': TEMPLATE_HEALTH_PATH,
-                   'uid': TEMPLATE_UID, 'telemetry': 'otlp', 'autoDeploy': True},
-    'swhurl-worker': {'version': 1, 'kind': 'worker', 'uid': TEMPLATE_UID, 'telemetry': 'otlp', 'autoDeploy': True},
-}
-PRESETS = {name: manifest_defaults(doc, f'preset {name}') for name, doc in PRESET_MANIFESTS.items()}
-"""app-new defaults per preset; flags given explicitly still win."""
 
 
 def default_host(name: str, env: str) -> str:

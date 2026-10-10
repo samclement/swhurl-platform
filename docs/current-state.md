@@ -2,7 +2,11 @@
 
 What has been verified on the live cluster, and when: current facts first, then evidence by change, oldest first. Paths not yet exercised are noted in each section. Never record Secret values, kubeconfig contents or private keys here.
 
-## Cluster now
+## Latest verification (10 October 2026)
+
+At `37d20f0` (repository blueprint documentation), `make flux-reconcile` fetched and applied the revision; all 22 Flux Kustomizations reached Ready at that revision. `make verify-platform` passed, including controller, ingress redirect, telemetry retention, backups, webhooks, dashboard sync, notification checker, heartbeat, and console image checks. `make app-status APP=hello-ts ENV=staging` showed the same desired and applied revision, a Ready HelmRelease, the desired image running, 1/1 replicas Ready, and a Ready TLS certificate. This was a documentation-only commit; the blueprint's browser navigation was checked locally, not served by the cluster.
+
+## Earlier cluster baseline (29 September 2026)
 
 Checked read-only on 29 September 2026 at `c8723e2`:
 

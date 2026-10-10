@@ -39,7 +39,7 @@ No hostnames, ports, environment names, tokens or broker addresses appear in app
 | --- | --- | --- |
 | Teams and isolation | A `platform.swhurl.com/team` namespace label from a registry of team names in this repository; a ResourceQuota per namespace; a NetworkPolicy on the app's pods admitting only Traefik and declared callers | Kubernetes; k3s enforces NetworkPolicies itself |
 | Service discovery | `SWHURL_SERVICE_<NAME>_URL` pointing at the same environment's instance; a **Services** page in the console | Kubernetes DNS, the console |
-| App-to-app identity | A short-lived service-account token for each callee, mounted as a file and usable only for that callee (not for the Kubernetes API); the caller's name on the callee's `SWHURL_ALLOWED_CALLERS` | Kubernetes projected tokens and the cluster's public signing keys |
+| App-to-app identity | A short-lived service-account token for each callee, mounted as a file and usable only for that callee (not for the Kubernetes API); the caller's name on the callee's `SWHURL_ALLOWED_CALLERS` | Kubernetes projected tokens; the cluster's public signing keys, handed to each app as a file |
 | Events | A NATS user per app, limited to publishing its own subjects and reading the ones it declared; a durable stream per publishing app; credentials in the app's SOPS Secret | NATS JetStream (the one new component) |
 | Persistence | Unchanged: `database: sqlite`, retained volume, nightly backup | Existing |
 | Human sign-in | Unchanged: Google through oauth2-proxy | Existing |
@@ -102,7 +102,7 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 | Decision | Choice | Status |
 | --- | --- | --- |
-| App-to-app identity | Kubernetes service-account tokens | Confirmed; depends on increment 0 |
+| App-to-app identity | Kubernetes service-account tokens | Confirmed; proven 10 October 2026 |
 | Events | NATS JetStream | Confirmed |
 | Persistence | SQLite only | Decided: no Postgres |
 | Isolation | Namespace per app with team label, quota and NetworkPolicy | Confirmed |
@@ -123,7 +123,7 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 ## Risks
 
-- **Token verification without an API credential** is the assumption everything in increment 2 rests on: the app must read the cluster's public keys while still having no API token. Today only service accounts may read them, so increment 0 adds a binding that lets anyone in the cluster read these public keys, and proves it (fallback: the keys published as a ConfigMap).
+- **Signing keys are a copy.** This API server refuses anonymous requests, so an app without an API token cannot fetch the cluster's public keys; the platform hands them to each app as a file kept in Git. If the cluster's key is rotated before the file is refreshed, calls are refused until it is; `make verify-platform` reports the difference.
 - **NetworkPolicy and HTTP-01:** a policy selecting every pod in a namespace blocks certificate issuance ([lesson in `AGENTS.md`](../AGENTS.md)); policies select the workload's pods only.
 - **NATS credentials are stored secrets,** unlike the call tokens. Rotation goes through SOPS and Reloader like any app Secret.
 - **The scenario creates real public GitHub repositories** that only the operator can delete; they are named `swhurl-try-<n>`.

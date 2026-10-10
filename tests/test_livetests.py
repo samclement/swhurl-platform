@@ -102,7 +102,7 @@ class PreflightTests(unittest.TestCase):
             lifecycle: {'namespace/lifecycle-test': {'metadata': {}}},
             reloader: {'namespace/reloader-test': {'metadata': {}}},
             app_template: {'namespace/smoke-web-staging': {'metadata': {}}},
-            call_identity: {'clusterrolebinding/call-identity-test-jwks': {'metadata': {}}},
+            call_identity: {'namespace/call-identity-callee': {'metadata': {}}},
             network_policy: {'namespace/network-policy-test-client': {'metadata': {}}},
         }
         for module, existing in cases.items():
@@ -125,26 +125,24 @@ class PreflightTests(unittest.TestCase):
 class CallIdentityTests(unittest.TestCase):
     """The callee's answers are scripted; the test must turn them into the right verdicts."""
 
-    GOOD = {'accepted': True, 'keysStatus': 200, 'sub': call_identity.SUBJECT, 'aud': ['callee'], 'exp': 1,
-            'apiStatus': 401}
+    GOOD = {'accepted': True, 'anonymousKeysStatus': 401, 'sub': call_identity.SUBJECT, 'aud': ['callee'],
+            'exp': 1, 'apiStatus': 401}
 
     def runner(self, good=None, rotated_exp=2):
         good = good or self.GOOD
-        state = {'bound': False, 'calls': 0}
+        state = {'calls': 0}
 
         def handler(args, _input):
             if 'caller.mjs' in ' '.join(args):
                 audience = args[-1]
-                if not state['bound']:
-                    answer = {'accepted': False, 'keysStatus': 403, 'reason': 'cannot read signing keys'}
-                elif audience == 'callee':
+                if audience == 'callee':
                     state['calls'] += 1
-                    answer = dict(good, exp=good['exp'] if state['calls'] == 1 else rotated_exp)
+                    answer = dict(good, exp=good.get('exp') if state['calls'] == 1 else rotated_exp)
                 else:
                     answer = {'accepted': False, 'reason': 'wrong audience' if audience == 'other' else 'no token'}
                 return Result(args, 0, json.dumps(answer))
-            if 'apply' in args and 'ClusterRoleBinding' in (_input or ''):
-                state['bound'] = True
+            if '--raw' in args:
+                return Result(args, 0, '{"keys": []}')
             if 'get' in args or ('exec' in args and 'test' in args):
                 return Result(args, 1, '', 'NotFound')
             return Result(args, 0, '')
@@ -155,7 +153,7 @@ class CallIdentityTests(unittest.TestCase):
         code, text = run(call_identity, runner)
         self.assertEqual(code, 0, text)
         self.assertIn('Call identity test passed.', text)
-        self.assertIn('without the binding the callee cannot read the keys (HTTP 403)', text)
+        self.assertIn('the API refuses an anonymous request for the keys (HTTP 401)', text)
         self.assertIn('token file replaced before expiry', text)
         # Cleanup found nothing carrying the label in this fake, so it deleted nothing.
         self.assertEqual([c for c in runner.calls if 'delete' in c], [])
@@ -164,6 +162,13 @@ class CallIdentityTests(unittest.TestCase):
         code, text = run(call_identity, self.runner(dict(self.GOOD, apiStatus=200)))
         self.assertEqual(code, 1)
         self.assertIn('[BAD] the Kubernetes API answered 200 to the token', text)
+
+    def test_a_refused_token_stops_before_the_long_wait(self):
+        runner = self.runner({'accepted': False, 'reason': 'bad signature'})
+        code, text = run(call_identity, runner)
+        self.assertEqual(code, 1)
+        self.assertIn("[BAD] token not accepted", text)
+        self.assertNotIn('Rotation', text)
 
     def test_a_token_that_never_rotates_fails_the_test(self):
         code, text = run(call_identity, self.runner(rotated_exp=1))

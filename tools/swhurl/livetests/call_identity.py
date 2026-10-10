@@ -2,15 +2,16 @@
 Prove an app can verify who called it with what Kubernetes already issues:
   - a caller's short-lived token for audience "callee" is accepted by a callee
     that has no API token of its own
-  - the callee reads the cluster's public signing keys unauthenticated, and only
-    once a ClusterRoleBinding allows it
+  - the callee checks the signature against the cluster's public signing keys,
+    handed to it as a ConfigMap: this API server refuses anonymous requests, so
+    an app without an API token cannot fetch them itself
   - a token for another audience, and a request without a token, are refused
   - the token names the caller's namespace and service account
   - the Kubernetes API refuses the token
   - the kubelet replaces the token file before it expires (about 8 minutes;
     SKIP_ROTATION=true skips this check)
-Creates only two namespaces and one ClusterRoleBinding labelled
-platform.swhurl.com/call-identity-test=true and removes them. No token is printed.
+Creates only two namespaces labelled platform.swhurl.com/call-identity-test=true
+and removes them. No token is printed.
 """
 from __future__ import annotations
 
@@ -22,14 +23,13 @@ from swhurl.platform import label
 
 CALLER_NS = 'call-identity-caller'
 CALLEE_NS = 'call-identity-callee'
-BINDING = 'call-identity-test-jwks'
 LABEL = label('call-identity-test')
 IMAGE = 'node:24-bookworm-slim'
 SUBJECT = f'system:serviceaccount:{CALLER_NS}:caller'
 TOKEN_SECONDS = 600  # the shortest the API server issues
 
-# The callee: verifies a bearer token against the cluster's public keys, then
-# reports what it found (never the token).
+# The callee: verifies a bearer token against the cluster's public keys (a mounted
+# file), then reports what it found (never the token).
 CALLEE_JS = r"""
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -49,14 +49,13 @@ const api = (path, token) => new Promise((resolve, reject) => {
 const decode = (part) => JSON.parse(Buffer.from(part, 'base64url').toString());
 
 async function verify(token) {
-  const keys = await api('/openid/v1/jwks');
-  const out = { accepted: false, keysStatus: keys.status };
-  if (keys.status !== 200) return { ...out, reason: 'cannot read signing keys' };
+  const out = { accepted: false, anonymousKeysStatus: (await api('/openid/v1/jwks')).status };
+  const keys = JSON.parse(fs.readFileSync('/keys/jwks.json', 'utf8')).keys;
   const [head, payload, signature] = token.split('.');
   if (!signature) return { ...out, reason: 'no token' };
   const header = decode(head);
   const claims = decode(payload);
-  const jwk = JSON.parse(keys.body).keys.find((key) => key.kid === header.kid);
+  const jwk = keys.find((key) => key.kid === header.kid);
   if (!jwk || header.alg !== 'RS256') return { ...out, reason: 'unknown key' };
   const valid = crypto.verify('RSA-SHA256', Buffer.from(`${head}.${payload}`),
     crypto.createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(signature, 'base64url'));
@@ -115,11 +114,15 @@ def deployment(name: str, command: list[str], volumes: list[dict], mounts: list[
                      'template': {'metadata': {'labels': {'app': name, LABEL: 'true'}}, 'spec': spec}}}
 
 
-def callee() -> list[dict]:
+def callee(jwks: str) -> list[dict]:
+    """``jwks`` is the cluster's public key set; the CA is only for asking the API what it makes of the token."""
     return [script('callee.mjs', CALLEE_JS),
+            {'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': 'signing-keys', 'labels': {LABEL: 'true'}},
+             'data': {'jwks.json': jwks}},
             deployment('callee', ['node', '/app/callee.mjs'],
-                       [{'name': 'ca', 'configMap': {'name': 'kube-root-ca.crt'}}],
-                       [{'name': 'ca', 'mountPath': '/ca'}]),
+                       [{'name': 'ca', 'configMap': {'name': 'kube-root-ca.crt'}},
+                        {'name': 'keys', 'configMap': {'name': 'signing-keys'}}],
+                       [{'name': 'ca', 'mountPath': '/ca'}, {'name': 'keys', 'mountPath': '/keys'}]),
             {'apiVersion': 'v1', 'kind': 'Service', 'metadata': {'name': 'callee', 'labels': {LABEL: 'true'}},
              'spec': {'selector': {'app': 'callee'}, 'ports': [{'port': 8080}]}}]
 
@@ -134,15 +137,6 @@ def caller() -> list[dict]:
                        [{'name': 'tokens', 'mountPath': '/tokens', 'readOnly': True}], service_account='caller')]
 
 
-def binding() -> dict:
-    """Lets anyone who can reach the API server read its public signing keys."""
-    return {'apiVersion': 'rbac.authorization.k8s.io/v1', 'kind': 'ClusterRoleBinding',
-            'metadata': {'name': BINDING, 'labels': {LABEL: 'true'}},
-            'roleRef': {'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'ClusterRole',
-                        'name': 'system:service-account-issuer-discovery'},
-            'subjects': [{'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'Group', 'name': 'system:unauthenticated'}]}
-
-
 def call(t: LiveTest, audience: str) -> dict:
     """The callee's answer to a call carrying the caller's token for ``audience``."""
     result = t.runner.run(['kubectl', '-n', CALLER_NS, 'exec', 'deploy/caller', '--', 'node', '/app/caller.mjs',
@@ -154,22 +148,20 @@ def call(t: LiveTest, audience: str) -> dict:
 
 
 def cleanup(t: LiveTest) -> None:
-    if t.label(t.get('get', 'clusterrolebinding', BINDING), LABEL) == 'true':
-        t.quietly('delete', 'clusterrolebinding', BINDING, '--ignore-not-found')
     for name in (CALLER_NS, CALLEE_NS):
         t.delete_namespace_if_labelled(name, LABEL, wait=True)
     t.report.info('Cleaned up call-identity test resources')
 
 
 def body(t: LiveTest, rotation: bool) -> None:
-    if any(t.get('get', 'namespace', name) for name in (CALLER_NS, CALLEE_NS)) or t.get('get', 'clusterrolebinding',
-                                                                                         BINDING):
+    if any(t.get('get', 'namespace', name) for name in (CALLER_NS, CALLEE_NS)):
         raise Preflight('Test resources already exist; clean up first')
     t.cleanup.callback(cleanup, t)
 
     t.step('Deploy a caller and a callee')
+    jwks = t.kubectl('get', '--raw', '/openid/v1/jwks')  # public keys, read with the operator's access
     t.apply(namespace(CALLER_NS), namespace(CALLEE_NS))
-    t.apply(*callee(), namespace=CALLEE_NS)
+    t.apply(*callee(jwks), namespace=CALLEE_NS)
     t.apply(*caller(), namespace=CALLER_NS)
     for ns, name in ((CALLEE_NS, 'callee'), (CALLER_NS, 'caller')):
         t.kubectl('-n', ns, 'rollout', 'status', f'deploy/{name}', '--timeout=5m')
@@ -177,26 +169,26 @@ def body(t: LiveTest, rotation: bool) -> None:
                            '/var/run/secrets/kubernetes.io/serviceaccount/token'),
             'callee has no API token', 'callee has an API token mounted')
 
-    t.step('Signing keys')
-    answer = call(t, 'callee')
-    t.check(answer.get('keysStatus') in (401, 403) and not answer.get('accepted'),
-            f"without the binding the callee cannot read the keys (HTTP {answer.get('keysStatus')})",
-            f'expected the keys to be refused before the binding: {answer}')
-    t.apply(binding())
+    t.step('A call with the token for this callee')
+    answer: dict = {}
 
     def accepted() -> bool:
         nonlocal answer
         answer = call(t, 'callee')
         return answer.get('accepted') is True
-    t.check(t.poll(accepted, attempts=20, interval=3),
-            'with the binding the callee reads the keys unauthenticated and accepts the token',
-            f'token not accepted: {answer}')
-
-    t.step('What the token says, and what it cannot do')
+    if not t.check(t.poll(accepted, attempts=10, interval=3),
+                   'callee verifies the signature with the mounted public keys and accepts the token',
+                   f'token not accepted: {answer}'):
+        return
     t.check(answer.get('sub') == SUBJECT, f'token names the caller: {SUBJECT}', f"unexpected subject: {answer.get('sub')}")
     t.check(answer.get('aud') == ['callee'], 'token is for audience callee only', f"unexpected audience: {answer.get('aud')}")
     t.check(answer.get('apiStatus') == 401, 'the Kubernetes API refuses the token (HTTP 401)',
             f"the Kubernetes API answered {answer.get('apiStatus')} to the token")
+    t.check(answer.get('anonymousKeysStatus') == 401,
+            'the API refuses an anonymous request for the keys (HTTP 401): they must be handed to the app',
+            f"an anonymous request for the keys answered {answer.get('anonymousKeysStatus')}: apps could fetch them")
+
+    t.step('Calls that must be refused')
     other = call(t, 'other')
     t.check(other.get('reason') == 'wrong audience', 'a token for another audience is refused',
             f'token for another audience: {other}')

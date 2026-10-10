@@ -82,7 +82,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
 | `live-test-restore-mongodb` † | Restore the latest backup into a throwaway namespace and check it (`BACKUP_FILE`, `AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
 | `live-test-restore-sqlite` † | Back up a throwaway app's SQLite database, change it, restore it with `restore-sqlite` and check the rows, the kept files and the resumed HelmRelease (`AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
-| `live-test-call-identity` † | Prove a callee with no API token verifies a caller's short-lived, audience-bound service-account token against the cluster's public keys, and that the Kubernetes API refuses that token. Waits about 8 minutes for the kubelet to replace the token (`SKIP_ROTATION=true` skips that) | Cluster (throwaway, plus one labelled ClusterRoleBinding) |
+| `live-test-call-identity` † | Prove a callee with no API token verifies a caller's short-lived, audience-bound service-account token against the cluster's public keys handed to it as a ConfigMap, and that the Kubernetes API refuses that token. Waits about 8 minutes for the kubelet to replace the token (`SKIP_ROTATION=true` skips that) | Cluster (throwaway) |
 | `live-test-network-policy` † | Prove a NetworkPolicy selecting an app's pods blocks another namespace while Traefik, probes and an unselected pod on 8089 keep working | Cluster (throwaway) |
 
 ## Host

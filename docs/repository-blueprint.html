@@ -1,82 +1,1632 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Swhurl platform · repository blueprint</title>
+<meta name="description" content="Interactive repository architecture blueprint.">
+<meta name="color-scheme" content="light dark">
+<title>Repository Blueprint</title>
 <style>
-  :root{color-scheme:light;--ink:#172d37;--muted:#536874;--line:#c6d6d8;--paper:#f5f8f5;--card:#fff;--teal:#087d75;--blue:#355f9d;--amber:#a66513;--rose:#9b5262}
-  *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}button,a{font:inherit}button{cursor:pointer}a{color:#155c8e}a:focus-visible,button:focus-visible{outline:3px solid #d07f22;outline-offset:3px}
-  .shell{max-width:1640px;margin:auto;padding:24px 30px 36px}.mast{display:flex;justify-content:space-between;align-items:start;gap:24px;border-bottom:1px solid var(--line);padding-bottom:18px}.eyebrow{font-size:12px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:var(--teal)}h1{font-size:clamp(28px,3vw,44px);line-height:1.05;letter-spacing:-.035em;margin:7px 0 10px}p{margin:0}.intro{max-width:68ch;color:var(--muted)}.stamp{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
-  .toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:18px 0}.toolbar button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:8px 12px;font-weight:650}.toolbar button:hover{border-color:var(--teal)}.toolbar button:disabled{opacity:.45;cursor:default}.crumbs{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;flex:1;min-width:220px}.crumbs button{border:0;background:none;padding:3px;color:#155c8e}.crumbs strong{color:var(--ink)}
-  .workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start}.map-panel,.detail{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 12px #183b3510}.map-head{display:flex;justify-content:space-between;gap:20px;align-items:start;padding:18px 20px;border-bottom:1px solid #dbe5e5}.map-head h2{margin:0;font-size:18px;letter-spacing:-.015em}.map-head p{font-size:13px;color:var(--muted);margin-top:4px}.hint{font-size:12px;color:var(--muted);text-align:right}.viewport{overflow:auto;max-height:650px;scrollbar-color:#a9bebe transparent}.board{position:relative;width:1100px;height:620px;background:radial-gradient(circle at 1px 1px,#dce7e4 1px,transparent 0) 0 0/24px 24px}.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.edge{fill:none;stroke:#91aaa9;stroke-width:1.8;marker-end:url(#arrow)}.edge-label{fill:#48626b;font-size:11px;font-weight:650;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}.node{position:absolute;width:182px;min-height:94px;text-align:left;padding:12px 13px;border:1.5px solid var(--line);border-left:5px solid var(--accent);border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 3px 9px #17353b10;transition:opacity .18s,transform .18s,border-color .18s}.node:hover{transform:translateY(-2px);border-color:var(--accent)}.node.selected{box-shadow:0 0 0 3px #f2b75a;border-color:#915a09}.node.dim{opacity:.43}.node .kind{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:800;margin-bottom:5px}.node .name{display:block;font-size:14px;font-weight:750;line-height:1.2}.node .micro{display:block;color:var(--muted);font-size:11px;margin-top:7px}.node .go{float:right;color:var(--accent);font-weight:900}.node[data-kind="actor"]{--accent:var(--amber)}.node[data-kind="source"],.node[data-kind="code"]{--accent:var(--blue)}.node[data-kind="controller"],.node[data-kind="service"]{--accent:var(--teal)}.node[data-kind="external"]{--accent:var(--rose)}.node[data-kind="workload"]{--accent:#6c649a}
-  .board.overview .node{width:150px}.legend{display:flex;flex-wrap:wrap;gap:12px;padding:12px 20px;border-top:1px solid #dbe5e5;font-size:12px;color:var(--muted)}.legend span:before{content:"";display:inline-block;width:6px;height:12px;background:var(--cue);vertical-align:-1px;margin-right:6px;border-radius:2px}.detail{padding:20px;min-height:300px;position:sticky;top:16px}.detail h2{font-size:21px;line-height:1.15;margin:5px 0 12px}.detail .tag{font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--teal)}.detail p{color:#354d58}.detail h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin:22px 0 8px;color:var(--muted)}.detail ul{padding-left:18px;margin:0}.detail li{margin:5px 0}.detail .drill{margin-top:20px;padding:9px 13px;border:0;background:var(--teal);color:#fff;border-radius:8px;font-weight:700}.detail .drill:hover{background:#065e59}.detail .scope{font-size:12px;color:var(--muted);margin-top:14px}.note{font-size:12px;color:var(--muted);margin-top:12px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-  @media(max-width:980px){.shell{padding:18px}.workspace{grid-template-columns:1fr}.detail{position:static}.mast{flex-wrap:wrap}.stamp{text-align:left}.viewport{max-height:520px}}
-  @media(prefers-reduced-motion:reduce){.node{transition:none}}
+  :root {
+    --night: #f1f5f9;
+    --night-2: #ffffff;
+    --night-3: #e8eef5;
+    --paper: #17212b;
+    --paper-dim: #64748b;
+    --grid: rgba(71, 85, 105, .09);
+    --line: #d8e0ea;
+    --mint: #059669;
+    --cyan: #0891b2;
+    --amber: #d97706;
+    --coral: #e14f3d;
+    --violet: #7c3aed;
+    --blue: #2563eb;
+    --display: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+    --body: "Avenir Next", "Avenir", "Trebuchet MS", sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", monospace;
+  }
+  html[data-theme="dark"] {
+    --night: #111713;
+    --night-2: #18201b;
+    --night-3: #202922;
+    --paper: #e9e4d7;
+    --paper-dim: #aaa99f;
+    --grid: rgba(233, 228, 215, .055);
+    --line: #39463d;
+    --mint: #8be0ba;
+    --cyan: #73cbd7;
+    --amber: #f2b45d;
+    --coral: #f07a67;
+    --violet: #bda7e5;
+    --blue: #84aee8;
+  }
+  .process-card.peripheral { opacity: .18; }
+  .process-trace.peripheral { opacity: .1; }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { width: 100%; height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--night);
+    color: var(--paper);
+    font: 14px/1.5 var(--body);
+  }
+  button, input, textarea { font: inherit; }
+  button { color: inherit; }
+  :focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+
+  .app { display: grid; grid-template-rows: 58px minmax(0, 1fr); height: 100%; }
+  .topbar {
+    position: relative;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 246px minmax(320px, 1fr) auto;
+    align-items: center;
+    gap: 22px;
+    padding: 0 18px;
+    background: rgba(17, 23, 19, .95);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .18);
+    backdrop-filter: blur(14px);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; color: var(--paper); text-decoration: none; }
+  .brand-mark { position: relative; width: 27px; height: 27px; border: 1px solid var(--mint); transform: rotate(45deg); }
+  .brand-mark::before, .brand-mark::after { content: ""; position: absolute; background: var(--mint); }
+  .brand-mark::before { width: 1px; inset-block: 5px; left: 12px; }
+  .brand-mark::after { height: 1px; inset-inline: 5px; top: 12px; }
+  .brand-copy { min-width: 0; }
+  .brand-copy b { display: block; overflow: hidden; font: 700 13px/1.15 var(--display); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
+  .brand-copy span { color: var(--paper-dim); font: 9px/1.3 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+
+  .layer-switch { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 600px; justify-self: center; width: 100%; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .layer-btn {
+    position: relative;
+    min-width: 0;
+    padding: 8px 12px 7px;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--line);
+    color: var(--paper-dim);
+    cursor: pointer;
+    text-align: left;
+    transition: color .2s, background .2s;
+  }
+  .layer-btn:last-child { border-right: 0; }
+  .layer-btn:hover { color: var(--paper); background: rgba(255,255,255,.035); }
+  .layer-btn[aria-selected="true"] { color: var(--paper); background: var(--night-3); }
+  .layer-btn[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--layer-color, var(--mint)); }
+  .layer-no { margin-right: 6px; color: var(--layer-color, var(--mint)); font: 700 9px var(--mono); }
+  .layer-name { font: 650 11px var(--body); }
+
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  .icon-btn, .text-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 33px;
+    padding: 0 11px;
+    background: var(--night-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--paper-dim);
+    cursor: pointer;
+    font: 700 10px var(--mono);
+    letter-spacing: .04em;
+    transition: .18s ease;
+  }
+  .icon-btn { width: 33px; padding: 0; font-size: 16px; }
+  .icon-btn:hover, .text-btn:hover { color: var(--paper); border-color: #607063; transform: translateY(-1px); }
+  .text-btn.primary { background: var(--mint); border-color: var(--mint); color: #102219; }
+
+  .workspace { display: grid; grid-template-columns: 210px minmax(0, 1fr) 320px; min-height: 0; }
+  .rail, .inspector { position: relative; z-index: 10; min-height: 0; background: var(--night-2); }
+  .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  .inspector { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+
+  .rail-head { padding: 18px 17px 14px; border-bottom: 1px solid var(--line); }
+  .rail-kicker, .section-label { color: var(--paper-dim); font: 700 9px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+  .rail-title { margin: 5px 0 0; font: 700 20px/1.15 var(--display); }
+  .rail-tree { flex: 1; overflow: auto; padding: 12px 9px; }
+  .tree-section { margin-bottom: 18px; }
+  .tree-label { display: flex; align-items: center; gap: 7px; padding: 0 8px 7px; color: var(--paper-dim); font: 700 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .tree-label::before { content: ""; width: 16px; height: 1px; background: currentColor; }
+  .tree-item {
+    display: grid;
+    grid-template-columns: 23px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    padding: 7px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: #b9bbb2;
+    cursor: pointer;
+    text-align: left;
+  }
+  .tree-item:hover { background: rgba(255,255,255,.035); color: var(--paper); }
+  .tree-item.active { background: rgba(139,224,186,.08); border-color: rgba(139,224,186,.25); color: var(--paper); }
+  .tree-item.peripheral { opacity: .36; }
+  .tree-item.peripheral:hover { opacity: 1; }
+  .tree-glyph { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--kind-color); border-radius: 50%; color: var(--kind-color); font: 700 9px var(--mono); }
+  .tree-item span:last-child { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-foot { padding: 12px 14px; border-top: 1px solid var(--line); }
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; margin-top: 10px; color: var(--paper-dim); font: 9px var(--mono); }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; }
+
+  .canvas-shell { position: relative; min-width: 0; min-height: 0; overflow: hidden; background-color: #141b17; }
+  .canvas-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      linear-gradient(rgba(233,228,215,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(233,228,215,.025) 1px, transparent 1px);
+    background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+  }
+  .canvas-shell::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 100px rgba(0,0,0,.45); }
+  .canvas-status {
+    position: absolute;
+    z-index: 7;
+    top: 16px;
+    left: 18px;
+    max-width: calc(100% - 150px);
+    pointer-events: none;
+  }
+  .crumbs { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; color: var(--paper-dim); font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .crumbs b { color: var(--layer-accent, var(--mint)); }
+  .canvas-title { margin: 0; font: 700 clamp(18px, 2.2vw, 28px)/1.1 var(--display); letter-spacing: -.02em; }
+  .canvas-subtitle { margin: 6px 0 0; max-width: 560px; color: var(--paper-dim); font-size: 11px; }
+  .focus-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: max-content;
+    max-width: 100%;
+    margin-top: 12px;
+    padding: 5px;
+    background: rgba(17, 23, 19, .9);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.24);
+    opacity: 0;
+    transform: translateY(-7px);
+    visibility: hidden;
+    transition: opacity .25s ease, transform .25s ease, visibility .25s;
+    pointer-events: auto;
+  }
+  .focus-nav.visible { opacity: 1; transform: none; visibility: visible; }
+  .focus-back {
+    height: 27px;
+    padding: 0 9px;
+    background: var(--layer-accent, var(--mint));
+    border: 0;
+    border-radius: 2px;
+    color: #102219;
+    cursor: pointer;
+    font: 800 8px var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .focus-back:hover { filter: brightness(1.08); }
+  .focus-action {
+    height: 27px;
+    padding: 0 8px;
+    background: transparent;
+    border: 1px solid #465349;
+    border-radius: 2px;
+    color: #c1c3ba;
+    cursor: pointer;
+    font: 700 8px var(--mono);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .focus-action:hover { border-color: var(--layer-accent, var(--mint)); color: var(--paper); }
+  .focus-action[hidden] { display: none; }
+  .focus-path {
+    overflow: hidden;
+    padding-right: 7px;
+    color: var(--paper-dim);
+    font: 8px var(--mono);
+    letter-spacing: .06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .focus-path b { color: var(--paper); font-weight: 700; }
+  .zoom-tools { position: absolute; z-index: 8; right: 16px; top: 16px; display: flex; gap: 5px; }
+  .zoom-readout { width: 48px; font-size: 9px; }
+  .map-viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+  .map-viewport.dragging { cursor: grabbing; }
+  .map {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1200px;
+    height: 720px;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  .map.layer-flight { pointer-events: none; }
+  .map.layer-arrival { filter: blur(0); }
+  .map-bands { position: absolute; inset: 0; pointer-events: none; }
+  .map-band {
+    position: absolute;
+    inset-inline: 0;
+    border-top: 1px dashed rgba(233, 228, 215, .36);
+    background: linear-gradient(180deg, rgba(233,228,215,.018), transparent 42%);
+  }
+  .map-band-label {
+    position: absolute;
+    left: 15px;
+    top: 9px;
+    padding: 3px 6px;
+    background: #141b17;
+    color: #8e968f;
+    font: 700 8px var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .parent-boundary {
+    --boundary-color: var(--layer-accent, var(--mint));
+    position: absolute;
+    z-index: 0;
+    display: none;
+    border: 1px dashed color-mix(in srgb, var(--boundary-color) 62%, transparent);
+    border-radius: 10px;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--boundary-color) 7%, transparent), transparent 42%),
+      repeating-linear-gradient(90deg, transparent 0 31px, color-mix(in srgb, var(--boundary-color) 5%, transparent) 31px 32px);
+    box-shadow: inset 0 0 45px color-mix(in srgb, var(--boundary-color) 4%, transparent);
+    pointer-events: none;
+    animation: boundary-in .55s cubic-bezier(.16,1,.3,1) both;
+  }
+  .parent-boundary.visible { display: block; }
+  @keyframes boundary-in {
+    from { opacity: 0; transform: scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+  .parent-boundary-label {
+    position: absolute;
+    left: 17px;
+    top: -13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 34px);
+    padding: 5px 9px;
+    background: #141b17;
+    border: 1px solid color-mix(in srgb, var(--boundary-color) 55%, #39463d);
+    border-radius: 3px;
+    color: var(--paper);
+    font: 700 9px var(--display);
+    letter-spacing: .035em;
+    white-space: nowrap;
+  }
+  .parent-boundary-label::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border: 1px solid var(--boundary-color);
+    transform: rotate(45deg);
+  }
+  .parent-boundary-label small {
+    overflow: hidden;
+    color: var(--boundary-color);
+    font: 700 7px var(--mono);
+    letter-spacing: .11em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+  }
+  .process-strip {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 170px;
+    border-top: 1px dashed rgba(233,228,215,.45);
+    border-bottom: 1px dashed rgba(233,228,215,.45);
+    background: linear-gradient(180deg, rgba(242,180,93,.035), transparent);
+  }
+  .process-strip-label {
+    position: absolute;
+    left: 15px;
+    top: 12px;
+    color: var(--amber);
+    font: 800 8px var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .actor-span {
+    --actor-color: var(--amber);
+    position: absolute;
+    top: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 10px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--actor-color) 11%, var(--night-2));
+    border: 1px solid color-mix(in srgb, var(--actor-color) 62%, var(--line));
+    border-radius: 999px;
+    color: var(--paper);
+    cursor: pointer;
+    font: 750 9px var(--body);
+    letter-spacing: .045em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: opacity .2s, background .2s, box-shadow .2s;
+  }
+  .actor-span::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border: 1px solid var(--actor-color);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--actor-color) 22%, transparent);
+  }
+  .actor-span::after {
+    content: "";
+    position: absolute;
+    inset: auto 11px -6px;
+    height: 5px;
+    border: solid color-mix(in srgb, var(--actor-color) 60%, transparent);
+    border-width: 0 1px 1px;
+  }
+  .actor-span:hover, .actor-span.selected {
+    background: color-mix(in srgb, var(--actor-color) 18%, var(--night-2));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--actor-color) 30%, transparent);
+  }
+  .actor-span.peripheral { opacity: .18; }
+  .process-strip.has-actors .process-card {
+    top: 72px;
+    height: 72px;
+    padding: 8px 7px;
+    font-size: 10.5px;
+  }
+  .process-card {
+    --process-color: var(--amber);
+    position: absolute;
+    top: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--process-width, 112px);
+    height: 108px;
+    padding: 12px 9px;
+    background: color-mix(in srgb, var(--process-color) 15%, #1b231d);
+    border: 1px solid color-mix(in srgb, var(--process-color) 70%, #4b594e);
+    border-top: 3px solid var(--process-color);
+    border-radius: 2px;
+    color: #eee9db;
+    cursor: pointer;
+    font: 750 11.5px/1.3 var(--body);
+    letter-spacing: .015em;
+    text-align: center;
+    text-wrap: balance;
+    writing-mode: horizontal-tb;
+    transition: background .18s, box-shadow .18s, translate .18s;
+  }
+  .process-card:hover, .process-card.selected {
+    background: color-mix(in srgb, var(--process-color) 24%, #1b231d);
+    box-shadow: 0 0 0 1px var(--process-color), 0 10px 24px rgba(0,0,0,.25);
+    translate: 0 -3px;
+  }
+  .process-trace {
+    position: absolute;
+    top: 143px;
+    width: 1px;
+    border-left: 1px solid color-mix(in srgb, var(--process-color) 72%, transparent);
+    opacity: .7;
+    pointer-events: none;
+  }
+  .process-trace::after {
+    content: "";
+    position: absolute;
+    left: -3px;
+    bottom: -1px;
+    width: 5px;
+    height: 5px;
+    border-right: 1px solid var(--process-color);
+    border-bottom: 1px solid var(--process-color);
+    transform: rotate(45deg);
+  }
+  .edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  .edge { fill: none; stroke: #59665c; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+  .edge.async { stroke: var(--violet); stroke-dasharray: 7 5; }
+  .edge.event { stroke: var(--amber); }
+  .edge.read { stroke: var(--cyan); stroke-dasharray: 3 4; }
+  .edge.request { stroke: var(--mint); }
+  .edge.bus { stroke: var(--blue); stroke-width: 2.4; }
+  .edges g { transition: opacity .35s ease; }
+  .edges g.dimmed { opacity: .08; }
+  .edges g.peripheral { opacity: .12; }
+  .edges g.contextual { opacity: .38; }
+  .edge-label rect { fill: #18201b; stroke: #526056; }
+  .edge-label text { fill: #c8c8be; font: 8px var(--mono); letter-spacing: .04em; }
+  .flow-dot { fill: var(--paper); filter: drop-shadow(0 0 4px rgba(255,255,255,.6)); }
+
+  .node {
+    --kind-color: var(--mint);
+    position: absolute;
+    width: var(--w);
+    min-height: var(--h);
+    padding: 13px 14px 12px;
+    background: rgba(28, 37, 31, .94);
+    border: 1px solid #4b594e;
+    border-top: 2px solid var(--kind-color);
+    border-radius: 3px;
+    color: var(--paper);
+    box-shadow: 0 11px 25px rgba(0, 0, 0, .18);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .18s, box-shadow .18s, transform .18s, opacity .35s;
+    animation: node-in .48s both;
+    animation-delay: calc(var(--i) * 45ms);
+  }
+  @keyframes node-in { from { opacity: 0; transform: translateY(10px); } }
+  .node:hover { border-color: var(--kind-color); transform: translateY(-2px); box-shadow: 0 14px 28px rgba(0,0,0,.28), 0 0 0 1px color-mix(in srgb, var(--kind-color) 35%, transparent); }
+  .node.selected { border-color: var(--kind-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--kind-color) 50%, transparent), 0 14px 30px rgba(0,0,0,.3); }
+  .node.focused { z-index: 4; box-shadow: 0 0 0 2px color-mix(in srgb, var(--kind-color) 70%, transparent), 0 20px 45px rgba(0,0,0,.42); }
+  .node.dimmed { opacity: .1; filter: saturate(.35); }
+  .node.peripheral { opacity: .18; filter: saturate(.45); }
+  .node.peripheral:hover { opacity: .8; filter: none; }
+  .node-kicker { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; color: var(--kind-color); font: 700 8px var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+  .node-index { color: #737e75; }
+  .node h3 { margin: 0 0 5px; font: 700 14px/1.15 var(--display); letter-spacing: -.01em; }
+  .node p { margin: 0; color: #aaaead; font-size: 9.5px; line-height: 1.45; }
+  .node-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .node-tag { padding: 2px 5px; background: rgba(255,255,255,.035); border: 1px solid #3d493f; color: #aeb1a9; font: 7.5px var(--mono); }
+  .drill-hint { position: absolute; right: 9px; bottom: 7px; color: var(--kind-color); font: 700 12px var(--mono); opacity: .7; }
+  .node.boundary { background: rgba(28, 37, 31, .48); border-style: dashed; border-top-style: solid; }
+  .node.actor { border-radius: 48% 48% 4px 4px; }
+  .node.process { border-radius: 18px 3px 18px 3px; }
+  .node.codebase::before { content: "</>"; position: absolute; right: 11px; top: 10px; color: var(--kind-color); font: 700 9px var(--mono); opacity: .7; }
+
+  .minimap {
+    position: absolute;
+    z-index: 7;
+    right: 16px;
+    bottom: 16px;
+    width: 145px;
+    height: 86px;
+    overflow: hidden;
+    background: rgba(17,23,19,.9);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  .mini-node { position: absolute; background: var(--kind-color); opacity: .65; }
+  .mini-view { position: absolute; border: 1px solid var(--paper); background: rgba(233,228,215,.07); }
+
+  .inspector-empty { display: grid; place-items: center; flex: 1; padding: 40px; color: var(--paper-dim); text-align: center; }
+  .empty-symbol { display: grid; place-items: center; width: 58px; height: 58px; margin: 0 auto 18px; border: 1px solid #536056; transform: rotate(45deg); color: var(--mint); font: 24px var(--display); }
+  .empty-symbol span { transform: rotate(-45deg); }
+  .inspector-content { display: none; min-height: 0; flex: 1; flex-direction: column; }
+  .inspector.has-selection .inspector-empty { display: none; }
+  .inspector.has-selection .inspector-content { display: flex; }
+  .inspector-head { position: relative; padding: 21px 20px 17px; border-bottom: 1px solid var(--line); }
+  .inspector-kind { color: var(--selected-color, var(--mint)); font: 700 9px var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+  .inspector-head h2 { margin: 7px 26px 5px 0; font: 700 22px/1.1 var(--display); }
+  .inspector-head p { margin: 0; color: var(--paper-dim); font-size: 11px; }
+  .close-inspector { position: absolute; right: 12px; top: 12px; background: none; border: 0; color: var(--paper-dim); cursor: pointer; font-size: 20px; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+  .tab { padding: 10px 2px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--paper-dim); cursor: pointer; font: 700 8px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .tab.active { border-bottom-color: var(--selected-color, var(--mint)); color: var(--paper); }
+  .inspector-body { flex: 1; overflow: auto; padding: 18px 20px 30px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: reveal .2s ease; }
+  @keyframes reveal { from { opacity: 0; transform: translateY(3px); } }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+  .meta { padding: 9px; background: rgba(0,0,0,.13); border: 1px solid #354137; }
+  .meta span { display: block; color: #858d86; font: 7px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .meta b { display: block; margin-top: 3px; color: #dedbcf; font-size: 10px; font-weight: 600; }
+  .copy-block { margin-top: 17px; }
+  .copy-block h3 { margin: 0 0 8px; color: var(--paper-dim); font: 700 8px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .copy-block p { margin: 0; color: #c4c3ba; font-size: 11px; line-height: 1.65; }
+  .detail-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+  .detail-list li { position: relative; padding: 8px 9px 8px 20px; background: rgba(0,0,0,.12); border-left: 1px solid var(--selected-color, var(--mint)); color: #bec0b8; font-size: 10px; }
+  .detail-list li::before { content: "+"; position: absolute; left: 7px; color: var(--selected-color, var(--mint)); font-family: var(--mono); }
+  pre { margin: 0; overflow: auto; padding: 13px; background: #101512; border: 1px solid #354137; border-radius: 3px; color: #b9d6c7; font: 9px/1.65 var(--mono); white-space: pre-wrap; }
+  .drill-btn { width: 100%; margin-top: 18px; border-color: var(--selected-color, var(--mint)); color: var(--selected-color, var(--mint)); }
+
+  .dsl-drawer {
+    position: fixed;
+    z-index: 40;
+    inset: 58px 0 0 auto;
+    display: flex;
+    width: min(620px, 92vw);
+    flex-direction: column;
+    background: #121814;
+    border-left: 1px solid #536056;
+    box-shadow: -25px 0 60px rgba(0,0,0,.4);
+    transform: translateX(102%);
+    transition: transform .32s cubic-bezier(.2,.8,.2,1);
+  }
+  .dsl-drawer.open { transform: none; }
+  .dsl-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  .dsl-head h2 { margin: 0; font: 700 18px var(--display); }
+  .dsl-head p { margin: 3px 0 0; color: var(--paper-dim); font: 9px var(--mono); }
+  .dsl-actions { display: flex; gap: 7px; }
+  .dsl-editor { flex: 1; width: 100%; resize: none; padding: 19px 22px; background: #0d120f; border: 0; color: #c6dfd2; font: 11px/1.55 var(--mono); tab-size: 2; }
+  .dsl-message { min-height: 32px; padding: 8px 20px; border-top: 1px solid var(--line); color: var(--paper-dim); font: 9px var(--mono); }
+  .dsl-message.error { color: var(--coral); }
+  .scrim { position: fixed; z-index: 30; inset: 58px 0 0; visibility: hidden; background: rgba(3,7,4,.58); opacity: 0; transition: opacity .3s; }
+  .scrim.open { visibility: visible; opacity: 1; }
+  .toast { position: fixed; z-index: 60; left: 50%; bottom: 24px; padding: 9px 14px; background: var(--paper); color: #141b17; border-radius: 3px; font: 700 10px var(--mono); opacity: 0; transform: translate(-50%, 12px); transition: .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  html[data-theme="light"] .topbar { background: rgba(255,255,255,.96); box-shadow: 0 6px 24px rgba(15,23,42,.07); }
+  html[data-theme="light"] .layer-btn:hover,
+  html[data-theme="light"] .tree-item:hover { background: rgba(37,99,235,.055); }
+  html[data-theme="light"] .icon-btn:hover,
+  html[data-theme="light"] .text-btn:hover { border-color: #94a3b8; }
+  html[data-theme="light"] .text-btn.primary,
+  html[data-theme="light"] .focus-back { color: #fff; }
+  html[data-theme="light"] .tree-item { color: #526175; }
+  html[data-theme="light"] .tree-item.active { background: rgba(5,150,105,.08); border-color: rgba(5,150,105,.34); }
+  html[data-theme="light"] .canvas-shell { background-color: #f8fafc; }
+  html[data-theme="light"] .canvas-shell::before {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      linear-gradient(rgba(71,85,105,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(71,85,105,.035) 1px, transparent 1px);
+  }
+  html[data-theme="light"] .canvas-shell::after { box-shadow: inset 0 0 100px rgba(30,64,175,.035); }
+  html[data-theme="light"] .focus-nav { background: rgba(255,255,255,.96); box-shadow: 0 8px 24px rgba(15,23,42,.1); }
+  html[data-theme="light"] .focus-action { border-color: #cbd5e1; color: #526175; }
+  html[data-theme="light"] .map-band { border-top-color: rgba(71,85,105,.28); background: linear-gradient(180deg, rgba(37,99,235,.022), transparent 42%); }
+  html[data-theme="light"] .map-band-label,
+  html[data-theme="light"] .parent-boundary-label { background: #f8fafc; color: #526175; }
+  html[data-theme="light"] .parent-boundary-label { border-color: color-mix(in srgb, var(--boundary-color) 58%, #d8e0ea); }
+  html[data-theme="light"] .process-strip { border-color: rgba(71,85,105,.32); background: linear-gradient(180deg, rgba(37,99,235,.035), transparent); }
+  html[data-theme="light"] .process-card {
+    background: color-mix(in srgb, var(--process-color) 11%, #fff);
+    border-color: color-mix(in srgb, var(--process-color) 72%, #d8e0ea);
+    color: #17212b;
+    box-shadow: 0 6px 16px rgba(15,23,42,.08);
+  }
+  html[data-theme="light"] .process-card:hover,
+  html[data-theme="light"] .process-card.selected { background: color-mix(in srgb, var(--process-color) 19%, #fff); }
+  html[data-theme="light"] .edge { stroke: #64748b; }
+  html[data-theme="light"] .edge-label rect { fill: #ffffff; stroke: #a8b5c5; }
+  html[data-theme="light"] .edge-label text { fill: #334155; }
+  html[data-theme="light"] .node { background: rgba(255,255,255,.98); border-color: #b8c4d2; box-shadow: 0 8px 22px rgba(15,23,42,.085); }
+  html[data-theme="light"] .node p { color: #5f6f82; }
+  html[data-theme="light"] .node-index { color: #7c8b9d; }
+  html[data-theme="light"] .node-tag { background: #f3f6fa; border-color: #d8e0ea; color: #526175; }
+  html[data-theme="light"] .node.boundary { background: rgba(241,245,249,.56); }
+  html[data-theme="light"] .minimap { background: rgba(255,255,255,.96); }
+  html[data-theme="light"] .meta,
+  html[data-theme="light"] .detail-list li { background: #f6f8fb; border-color: #d8e0ea; }
+  html[data-theme="light"] .meta span { color: #718096; }
+  html[data-theme="light"] .meta b,
+  html[data-theme="light"] .copy-block p,
+  html[data-theme="light"] .detail-list li { color: #435166; }
+  html[data-theme="light"] pre { background: #f3f6fa; border-color: #d8e0ea; color: #075f46; }
+  html[data-theme="light"] .dsl-drawer { background: #ffffff; border-left-color: #d8e0ea; }
+  html[data-theme="light"] .dsl-editor { background: #f3f6fa; color: #075f46; }
+  html[data-theme="light"] .toast { background: #17212b; color: #fff; }
+
+  @media (max-width: 980px) {
+    .workspace { grid-template-columns: 178px minmax(0,1fr); }
+    .inspector { position: fixed; z-index: 25; inset: 58px 0 0 auto; width: min(340px, 90vw); transform: translateX(102%); box-shadow: -20px 0 50px rgba(0,0,0,.4); transition: transform .25s; }
+    .inspector.has-selection { transform: none; }
+    .topbar { grid-template-columns: 190px 1fr auto; gap: 10px; }
+    .layer-name { display: none; }
+  }
+  @media (max-width: 680px) {
+    .app { grid-template-rows: 104px minmax(0,1fr); }
+    .topbar { grid-template-columns: 1fr auto; grid-template-rows: 52px 42px; padding: 0 12px; }
+    .layer-switch { grid-column: 1 / -1; grid-row: 2; }
+    .layer-name { display: inline; }
+    .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 168px; }
+    .canvas-shell { grid-row: 1; }
+    .rail { display: flex; grid-row: 2; min-width: 0; border-right: 0; border-top: 1px solid var(--line); }
+    .rail-head, .rail-foot { display: none; }
+    .rail-tree { display: flex; gap: 8px; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; padding: 10px; }
+    .tree-section { min-width: 155px; max-width: 205px; margin: 0; overflow-y: auto; }
+    .inspector, .dsl-drawer { top: 104px; }
+    .scrim { inset-block-start: 104px; }
+    .canvas-subtitle { display: none; }
+    .minimap { display: none; }
+    .text-btn span { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
 </style>
 </head>
 <body>
-<main class="shell">
-  <header class="mast"><div><div class="eyebrow">Repository blueprint / GitOps homelab</div><h1>From a commit to a running service</h1><p class="intro">Explore how this repository defines the single-node k3s platform, how changes reach Flux, and where the operator code and manifests live. Select a card for evidence; drill into a group for its implementation.</p></div><div class="stamp">Source snapshot: repository files<br>Prepared 10 October 2026<br>Runtime state is not asserted</div></header>
-  <nav class="toolbar" aria-label="Map navigation"><button id="back" type="button">← Back</button><div id="crumbs" class="crumbs"></div><button id="full" type="button">Show full level</button></nav>
-  <div class="workspace"><section class="map-panel" aria-label="Architecture map"><div class="map-head"><div><h2 id="level-title"></h2><p id="level-subtitle"></p></div><div class="hint">Select a card · Enter to open details<br>Use the detail button to drill down</div></div><div id="viewport" class="viewport"><div id="board" class="board"><svg id="edges" class="edges" aria-hidden="true"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#91aaa9"/></marker></defs></svg></div></div><div id="legend" class="legend" aria-label="Visible component kinds"></div></section><aside id="detail" class="detail" aria-live="polite"></aside></div>
-  <p class="note">Solid arrows describe relationships supported by linked repository files or documentation. External services are shown only where this repo configures an integration. See <a href="architecture.md">architecture</a> for the canonical ownership and Flux dependency rules.</p>
+<main class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-copy"><b>Repository Blueprint</b><span>System explorer</span></span>
+    </div>
+    <nav class="layer-switch" id="layer-switch" aria-label="Abstraction level"></nav>
+    <div class="top-actions">
+      <button class="text-btn" id="dsl-open"><span>EDIT</span> DSL</button>
+      <button class="text-btn" id="theme-toggle" aria-pressed="false" title="Switch to dark theme"><span id="theme-label">DARK</span> ◐</button>
+      <button class="icon-btn" id="help-btn" title="Show keyboard help" aria-label="Show keyboard help">?</button>
+    </div>
+  </header>
+
+  <section class="workspace">
+    <aside class="rail" aria-label="Blueprint contents">
+      <div class="rail-head">
+        <div class="rail-kicker">Architecture map</div>
+        <h1 class="rail-title" id="blueprint-title"></h1>
+      </div>
+      <div class="rail-tree" id="rail-tree"></div>
+      <div class="rail-foot">
+        <div class="section-label">Element key</div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </aside>
+
+    <section class="canvas-shell" aria-label="Architecture canvas">
+      <div class="canvas-status">
+        <div class="crumbs"><span>Blueprint</span><span>/</span><b id="layer-crumb">Context</b></div>
+        <h2 class="canvas-title" id="canvas-title"></h2>
+        <p class="canvas-subtitle" id="canvas-subtitle"></p>
+        <nav class="focus-nav" id="focus-nav" aria-label="Zoom navigation">
+          <button class="focus-back" id="focus-back">← Back to map</button>
+          <button class="focus-action" id="group-prev" title="Previous group">← Group</button>
+          <button class="focus-action" id="show-layer">Show full layer</button>
+          <button class="focus-action" id="group-next" title="Next group">Group →</button>
+          <span class="focus-path"><span id="focus-layer"></span> / <b id="focus-name"></b></span>
+        </nav>
+      </div>
+      <div class="zoom-tools">
+        <button class="icon-btn" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+        <button class="icon-btn zoom-readout" id="zoom-fit" title="Fit diagram">100%</button>
+        <button class="icon-btn" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+      </div>
+      <div class="map-viewport" id="viewport">
+        <div class="map" id="map">
+          <div class="map-bands" id="map-bands" aria-hidden="true"></div>
+          <div class="process-strip" id="process-strip"></div>
+          <div class="parent-boundary" id="parent-boundary" aria-hidden="true">
+            <span class="parent-boundary-label"><small id="parent-boundary-source"></small><span id="parent-boundary-name"></span></span>
+          </div>
+          <svg class="edges" id="edges" width="1200" height="720" aria-hidden="true"></svg>
+          <div id="nodes"></div>
+        </div>
+      </div>
+      <div class="minimap" id="minimap" aria-hidden="true"></div>
+    </section>
+
+    <aside class="inspector" id="inspector" aria-label="Selected element details">
+      <div class="inspector-empty">
+        <div>
+          <div class="empty-symbol"><span>+</span></div>
+          <div class="section-label">Inspect the blueprint</div>
+          <p>Select any element to reveal its responsibilities, interfaces and implementation detail.</p>
+        </div>
+      </div>
+      <div class="inspector-content">
+        <div class="inspector-head">
+          <button class="close-inspector" id="close-inspector" aria-label="Close details">×</button>
+          <div class="inspector-kind" id="inspect-kind"></div>
+          <h2 id="inspect-title"></h2>
+          <p id="inspect-summary"></p>
+        </div>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="overview" role="tab">Overview</button>
+          <button class="tab" data-tab="interfaces" role="tab">Interfaces</button>
+          <button class="tab" data-tab="source" role="tab">Source / DSL</button>
+        </div>
+        <div class="inspector-body">
+          <section class="tab-panel active" id="tab-overview"></section>
+          <section class="tab-panel" id="tab-interfaces"></section>
+          <section class="tab-panel" id="tab-source"></section>
+        </div>
+      </div>
+    </aside>
+  </section>
 </main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="dsl-drawer" id="dsl-drawer" aria-label="Blueprint DSL editor" aria-hidden="true">
+  <div class="dsl-head">
+    <div><h2>Blueprint DSL</h2><p>JSON / service-blueprint/v1 · Ctrl/⌘ + Enter to apply</p></div>
+    <div class="dsl-actions">
+      <button class="text-btn" id="dsl-download">DOWNLOAD</button>
+      <button class="text-btn primary" id="dsl-apply">APPLY</button>
+      <button class="icon-btn" id="dsl-close" aria-label="Close DSL editor">×</button>
+    </div>
+  </div>
+  <textarea class="dsl-editor" id="dsl-editor" spellcheck="false" aria-label="Blueprint JSON"></textarea>
+  <div class="dsl-message" id="dsl-message">Ready. Edit nodes, edges or layout and apply to redraw.</div>
+</aside>
+<div class="toast" id="toast" role="status"></div>
+
 <script>
-/* Each node keeps architectural facts apart from its position in a view. */
-const nodes=[
-  {id:'author',level:0,kind:'actor',name:'Author a change',short:'Operator, console, or automation',purpose:'A person or automation writes a Git change. The Makefile and console are two authoring interfaces.',evidence:[['Change paths','architecture.md#how-changes-reach-the-cluster'],['Operator entry','../tools/swhurl/__main__.py']]},
-  {id:'review',level:0,kind:'source',name:'Validate & publish',short:'Checks, PRs, main',purpose:'Local make check and GitHub workflows validate changes. Main is the source Flux fetches.',evidence:[['Validation','contributing.md#validation'],['Workflow','../.github/workflows/validate.yml']]},
-  {id:'reconcile',level:0,kind:'controller',name:'Reconcile desired state',short:'Flux units and Helm releases',purpose:'Flux reads main, creates capability units, and applies their manifests and HelmReleases.',evidence:[['Flux units','architecture.md#flux-units'],['Root units','../clusters/home/flux-system/kustomizations.yaml']]},
-  {id:'run',level:0,kind:'workload',name:'Run the platform',short:'k3s, apps, shared services',purpose:'A single k3s node hosts app instances and shared services; host jobs support DNS, backups, and monitoring.',evidence:[['Architecture','architecture.md#concepts'],['Host setup','bootstrap.md']]},
-  {id:'observe',level:0,kind:'service',name:'Operate & observe',short:'Verification, telemetry, alerts',purpose:'Operator checks, telemetry, and alerts expose health and support recovery.',evidence:[['Operations','operations.md'],['Services','services.md']]},
-  {id:'cli',level:1,kind:'code',parents:['author'],name:'Make + swhurl CLI',short:'Local operator entry points',purpose:'Make targets call the Python swhurl command registry for app edits, checks, reconciliation, and recovery.',evidence:[['Makefile','../Makefile'],['Command registry','../tools/swhurl/__main__.py'],['Tooling contract','contributing.md#operator-tooling']]},
-  {id:'console',level:1,kind:'service',parents:['author','observe'],name:'Web console',short:'PR authoring and status',purpose:'The signed-in console reads cluster state and creates console/* pull requests for Git changes; it also runs allowed operational jobs.',evidence:[['Console guide','console.md'],['Server','../tools/swhurl/console/server.py'],['Deployment','../platform/console/helmrelease.yaml']]},
-  {id:'github',level:1,kind:'external',parents:['review'],name:'GitHub main + CI',short:'External source of truth',purpose:'GitHub hosts main and workflows; the platform repository source tracks main.',evidence:[['Git source','../clusters/home/flux-system/sources/gitrepositories.yaml'],['Validation workflow','../.github/workflows/validate.yml'],['Publish workflow','../.github/workflows/publish-console.yml']]},
-  {id:'receiver',level:1,kind:'controller',parents:['reconcile'],name:'Webhook receiver',short:'Push and image events',purpose:'GitHub push events prompt a GitRepository fetch. Package events prompt app image scans.',evidence:[['Push receiver','../platform/flux-webhook/receiver.yaml'],['Image receiver','../platform/flux-webhook/image-receiver.yaml'],['Webhook behaviour','services.md#push-webhook']]},
-  {id:'flux',level:1,kind:'controller',parents:['reconcile'],name:'Flux composition',short:'Sources → stack → units',purpose:'Root units supply sources and unit definitions; capability units reconcile their own paths with explicit dependencies.',evidence:[['Roots','../clusters/home/flux-system/kustomizations.yaml'],['Platform units','../clusters/home/platform.yaml'],['Infrastructure units','../clusters/home/infra.yaml']]},
-  {id:'infra',level:1,kind:'workload',parents:['run'],name:'Cluster foundation',short:'Ingress, storage, certificates',purpose:'Infra paths provide namespaces, retained storage, cert-manager issuers, and the k3s Traefik override.',evidence:[['Infra units','../clusters/home/infra.yaml'],['Foundation','services.md#certificates-ingress-and-storage']]},
-  {id:'services',level:1,kind:'service',parents:['run','observe'],name:'Shared capabilities',short:'Auth, telemetry, automation',purpose:'Platform units own sign-in, ClickStack, OTel, Reloader, alerts, console, and image automation.',evidence:[['Platform units','../clusters/home/platform.yaml'],['Service guide','services.md']]},
-  {id:'instances',level:1,kind:'workload',parents:['run'],name:'App instances',short:'One path per app/environment',purpose:'Each app environment has its own Flux unit, namespace, HelmRelease, and optional image automation.',evidence:[['Example unit','../clusters/home/app-hello-ts-staging.yaml'],['Example instance','../apps/hello-ts/staging/helmrelease.yaml'],['App guide','apps.md']]},
-  {id:'host',level:1,kind:'workload',parents:['run','observe'],name:'Host jobs',short:'DNS, backups, heartbeat',purpose:'Host scripts and systemd templates run outside Flux for dynamic DNS, backups, and notification heartbeat.',evidence:[['Host scripts','../host/install-timer.sh'],['Backup operations','operations.md#backups-and-recovery']]},
-  {id:'check',level:1,kind:'code',parents:['observe'],name:'Checks & live tests',short:'Offline and cluster verification',purpose:'The operator package validates manifests offline, checks the live platform, and runs guarded live tests.',evidence:[['Validation module','../tools/swhurl/validate.py'],['Verification module','../tools/swhurl/verify.py'],['Tests','../tests/run.py']]},
-  {id:'appedit',level:2,kind:'code',parents:['cli','console'],name:'App authoring',short:'Generator, edits, policy',purpose:'New app generation, edits, promotion, and contract checks are implemented in swhurl.apps.',evidence:[['Generator','../tools/swhurl/apps/new.py'],['Edits','../tools/swhurl/apps/edit.py'],['Contract','../tools/swhurl/apps/contract.py']]},
-  {id:'runner',level:2,kind:'code',parents:['cli','check'],name:'Runner + FakeRunner',short:'External command boundary',purpose:'Operator modules invoke external tools through Runner; tests use FakeRunner.',evidence:[['Runner','../tools/swhurl/run.py'],['Runner tests','../tests/test_runner.py'],['Contributing','contributing.md#operator-tooling']]},
-  {id:'consolecode',level:2,kind:'code',parents:['console'],name:'Console server & actions',short:'Pages, cluster reads, PRs',purpose:'Starlette serves signed-in pages; cluster and changes modules read state and author PRs.',evidence:[['Server','../tools/swhurl/console/server.py'],['Cluster reads','../tools/swhurl/console/cluster.py'],['PR changes','../tools/swhurl/console/changes.py']]},
-  {id:'workflows',level:2,kind:'source',parents:['github'],name:'Validate / publish',short:'GitHub Actions definitions',purpose:'Workflows validate repository changes and publish the console image from its inputs.',evidence:[['Validate','../.github/workflows/validate.yml'],['Publish console','../.github/workflows/publish-console.yml']]},
-  {id:'sources',level:2,kind:'source',parents:['flux','github'],name:'Git and Helm sources',short:'Repository + chart inputs',purpose:'Flux source manifests define the platform GitRepository, HelmRepositories, and platform settings.',evidence:[['Sources','../clusters/home/flux-system/sources/gitrepositories.yaml'],['Helm repositories','../clusters/home/flux-system/sources/helmrepositories.yaml'],['Settings','../clusters/home/flux-system/sources/configmap-platform-settings.yaml']]},
-  {id:'unitdefs',level:2,kind:'controller',parents:['flux'],name:'Unit definitions',short:'Dependencies and ownership',purpose:'Cluster YAML assigns each capability and app instance a reconcile path and dependency set.',evidence:[['Platform definitions','../clusters/home/platform.yaml'],['Infra definitions','../clusters/home/infra.yaml'],['App definition','../clusters/home/app-hello-ts-staging.yaml']]},
-  {id:'webhooks',level:2,kind:'controller',parents:['receiver'],name:'Flux Receivers',short:'Signed events',purpose:'Push and image Receivers connect external GitHub events to Flux source fetching and image scans.',evidence:[['Push','../platform/flux-webhook/receiver.yaml'],['Images','../platform/flux-webhook/image-receiver.yaml']]},
-  {id:'base',level:2,kind:'workload',parents:['infra'],name:'Base + certificates',short:'Namespaces, storage, issuers',purpose:'Base defines namespaces and retained local storage; cert-manager and issuers handle certificates.',evidence:[['Base','../infra/base/kustomization.yaml'],['Retain class','../infra/base/storageclass-local-path-retain.yaml'],['Issuers','../infra/issuers/kustomization.yaml']]},
-  {id:'traefik',level:2,kind:'workload',parents:['infra'],name:'Traefik override',short:'Ingress edge',purpose:'The repository configures the k3s packaged Traefik chart; k3s owns its installation.',evidence:[['Chart config','../infra/traefik/helmchartconfig.yaml'],['Ownership','architecture.md#principles']]},
-  {id:'auth',level:2,kind:'service',parents:['services'],name:'Sign-in middleware',short:'oauth2-proxy + ForwardAuth',purpose:'oauth2-proxy and the Traefik middleware protect signed-in routes.',evidence:[['Release','../platform/oauth2-proxy/helmrelease.yaml'],['Middleware','../platform/oauth2-proxy/middleware.yaml']]},
-  {id:'telemetry',level:2,kind:'service',parents:['services'],name:'OTel → ClickStack',short:'Logs, events, metrics',purpose:'Collectors export telemetry to ClickStack, whose release depends on its operators and sign-in middleware.',evidence:[['Cluster collector','../platform/otel/helmrelease-cluster.yaml'],['Node collector','../platform/otel/helmrelease-daemonset.yaml'],['ClickStack','../platform/clickstack/helmrelease.yaml']]},
-  {id:'automation',level:2,kind:'controller',parents:['services','instances'],name:'Image automation',short:'Staging image pins',purpose:'An app staging unit owns its image policy and automation; the shared write source lets Flux commit updated pins to main.',evidence:[['Shared write source','../platform/image-automation/gitrepository.yaml'],['Example policy','../apps/hello-ts/staging/image-automation.yaml'],['Deploy flow','apps.md#deploy-a-new-image']]},
-  {id:'appmanifest',level:2,kind:'workload',parents:['instances'],name:'Instance manifests',short:'HelmRelease + namespace',purpose:'An app environment renders a HelmRelease and namespace from its own directory.',evidence:[['Example HelmRelease','../apps/hello-ts/staging/helmrelease.yaml'],['Namespace','../apps/hello-ts/staging/namespace.yaml'],['Policy','apps.md#the-app-policy']]},
-  {id:'notifications',level:2,kind:'service',parents:['services','host'],name:'Alerts + checker',short:'Flux events and app lifecycle',purpose:'Flux Alerts send infrastructure failures; the console image runs a scheduled checker for app and console lifecycle, with a host heartbeat.',evidence:[['Flux alerts','../platform/alerts/alerts.yaml'],['Checker state','../platform/console/notification-state.yaml'],['Heartbeat unit','../host/templates/systemd/notification-heartbeat.timer.tmpl']]},
-  {id:'backups',level:2,kind:'code',parents:['host','check'],name:'Backup + recovery',short:'Host timers and swhurl commands',purpose:'Host systemd timers call repository backup commands; recovery code handles backup and restore workflows.',evidence:[['MongoDB backup','../host/templates/systemd/backup-mongodb.service.tmpl'],['MongoDB recovery','../tools/swhurl/recovery.py'],['SQLite backup','../tools/swhurl/sqlite_backup.py']]},
-  {id:'validation',level:2,kind:'code',parents:['check'],name:'Validation & verification',short:'Offline and live checks',purpose:'validate.py checks repository policy; verify.py checks the live platform through operator tooling.',evidence:[['Offline check','../tools/swhurl/validate.py'],['Live verification','../tools/swhurl/verify.py'],['Test runner','../tests/run.py']]}
-];
-const levels=[
-  {title:'01 / Change path',subtitle:'The five movements from authoring through operation.',layout:{author:[25,145],review:[225,145],reconcile:[425,145],run:[625,145],observe:[825,145]},edges:[['author','review','proposes'],['review','reconcile','main'],['reconcile','run','applies'],['run','observe','reports']]},
-  {title:'02 / System boundaries',subtitle:'The services and control points that make the change path real.',layout:{cli:[55,72],console:[55,390],github:[275,230],receiver:[485,72],flux:[485,390],infra:[695,72],services:[695,230],instances:[695,390],host:[905,72],check:[905,390]},edges:[['cli','github','Git edits'],['console','github','PRs'],['github','receiver','webhooks'],['receiver','flux','fetch'],['github','flux','source'],['flux','infra','applies'],['flux','services','applies'],['flux','instances','applies'],['instances','check','status'],['services','check','health']]},
-  {title:'03 / Implementation',subtitle:'Concrete source modules, unit definitions, and manifests.',layout:{appedit:[35,45],runner:[35,205],consolecode:[35,365],workflows:[245,45],sources:[245,205],webhooks:[245,365],unitdefs:[455,205],base:[665,45],traefik:[665,205],auth:[665,365],telemetry:[875,45],automation:[875,205],appmanifest:[875,365],notifications:[455,45],backups:[455,365],validation:[35,525]},edges:[['appedit','workflows','Git changes'],['consolecode','workflows','PRs'],['workflows','sources','main'],['webhooks','sources','fetch'],['sources','unitdefs','reconciles'],['unitdefs','base','applies'],['unitdefs','auth','applies'],['unitdefs','telemetry','applies'],['unitdefs','appmanifest','applies'],['automation','sources','pin commit'],['appmanifest','telemetry','emits'],['notifications','validation','checks']]}
-];
-const kinds={actor:'Actor',source:'Source',controller:'Controller',workload:'Workload',service:'Service',code:'Code'};
-const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
-let state={level:0,focus:null,selected:null};const history=[];
-const board=document.getElementById('board'),svg=document.getElementById('edges'),viewport=document.getElementById('viewport');
-function childrenOf(id){return nodes.filter(n=>n.level===byId[id].level+1&&n.parents?.includes(id))}
-function save(){return {...state,left:viewport.scrollLeft,top:viewport.scrollTop}}
-function navigate(next){history.push(save());state=next;render();viewport.scrollTo(0,0)}
-function showDetail(n){const el=document.getElementById('detail');if(!n){el.innerHTML='<span class="tag">How to read this map</span><h2>Select a card</h2><p>Each card has a purpose and links to its source evidence. Choose a card, then drill into its child group. The full level stays visible for context.</p><h3>Scope</h3><p>Configuration and code support this map. It does not claim current live health, external account settings, or deployment revision.</p>';return}const kids=childrenOf(n.id);el.innerHTML='<span class="tag">'+kinds[n.kind]+' · '+(n.level+1)+' of 3</span><h2>'+n.name+'</h2><p>'+n.purpose+'</p><h3>Evidence</h3><ul>'+n.evidence.map(([label,url])=>'<li><a href="'+url+'">'+label+'</a></li>').join('')+'</ul>'+(kids.length?'<button class="drill" id="drill" type="button">Explore '+kids.length+' linked parts →</button>':'')+'<p class="scope">'+(n.level===0?'Workflow view':n.level===1?'System boundary':'Implementation')+' · '+(n.kind==='external'?'Outside this repository':'Defined in this repository')+'</p>';if(kids.length)document.getElementById('drill').onclick=()=>navigate({level:n.level+1,focus:n.id,selected:kids[0].id})}
-function render(){const L=levels[state.level];board.classList.toggle('overview',state.level===0);board.style.width=state.level===0?'1000px':'1100px';board.style.height=state.level===0?'400px':'620px';document.getElementById('level-title').textContent=L.title;document.getElementById('level-subtitle').textContent=state.focus?'Focused on '+byId[state.focus].name+'. Other elements remain available.':L.subtitle;document.getElementById('back').disabled=!history.length;document.getElementById('full').disabled=!state.focus;const crumbs=document.getElementById('crumbs');crumbs.innerHTML='';const root=document.createElement('button');root.textContent='Overview';root.onclick=()=>navigate({level:0,focus:null,selected:null});crumbs.append(root);if(state.level){const sep=document.createElement('span');sep.textContent='›';crumbs.append(sep);const focus=document.createElement('strong');focus.textContent=state.focus?byId[state.focus].name:'Full level';crumbs.append(focus)}
-  board.querySelectorAll('.node').forEach(x=>x.remove());svg.querySelectorAll('.edge,.edge-label').forEach(x=>x.remove());const active=nodes.filter(n=>n.level===state.level);const focused=state.focus?active.filter(n=>n.parents?.includes(state.focus)).map(n=>n.id):[];for(const n of active){const [x,y]=L.layout[n.id];const b=document.createElement('button');b.type='button';b.className='node'+(state.selected===n.id?' selected':'')+(state.focus&&!focused.includes(n.id)?' dim':'');b.dataset.kind=n.kind;b.style.left=x+'px';b.style.top=y+'px';b.innerHTML='<span class="kind">'+kinds[n.kind]+'</span><span class="name">'+n.name+(childrenOf(n.id).length?' <span class="go" aria-hidden="true">↗</span>':'')+'</span><span class="micro">'+n.short+'</span>';b.setAttribute('aria-label',n.name+', '+kinds[n.kind]+'. Select for detail'+(childrenOf(n.id).length?'; drill down available':''));b.onclick=()=>{state.selected=n.id;render()};board.append(b)}
-  for(const [a,b,label] of L.edges){const [ax,ay]=L.layout[a],[bx,by]=L.layout[b],width=state.level===0?150:182;let sx=ax+width,sy=ay+47,tx=bx,ty=by+47;if(bx<ax){sx=ax+width/2;sy=ay+94;tx=bx+width/2;ty=by}const path=document.createElementNS('http://www.w3.org/2000/svg','path');const mid=(sx+tx)/2;path.setAttribute('d',`M${sx} ${sy} C${mid} ${sy},${mid} ${ty},${tx-9} ${ty}`);path.setAttribute('class','edge');svg.append(path);const t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',mid);t.setAttribute('y',(sy+ty)/2-8);t.setAttribute('text-anchor','middle');t.setAttribute('class','edge-label');t.textContent=label;svg.append(t)}
-  const colors={actor:'#a66513',source:'#355f9d',controller:'#087d75',workload:'#6c649a',service:'#087d75',code:'#355f9d'};document.getElementById('legend').innerHTML=[...new Set(active.map(n=>n.kind))].map(k=>'<span style="--cue:'+colors[k]+'">'+kinds[k]+'</span>').join('');showDetail(state.selected?byId[state.selected]:null)}
-document.getElementById('back').onclick=()=>{if(!history.length)return;const prev=history.pop();state={level:prev.level,focus:prev.focus,selected:prev.selected};render();viewport.scrollTo(prev.left,prev.top)};
-document.getElementById('full').onclick=()=>{if(!state.focus)return;history.push(save());state={...state,focus:null};render()};
-render();
+const blueprint = {"apiVersion":"service-blueprint/v1","kind":"SoftwareSystem","metadata":{"id":"swhurl-platform","title":"Swhurl platform","description":"GitOps source for a single-node k3s homelab: how a commit becomes a running service, and where each part lives. Built from repository files at dc80dbc, 10 October 2026; live state is not asserted.","owner":"Platform operator","status":"Repository snapshot dc80dbc, 10 October 2026"},"palette":{"actor":"#f2b45d","process":"#8be0ba","system":"#73cbd7","service":"#84aee8","infrastructure":"#bda7e5","codebase":"#f07a67","job":"#8be0ba"},"layers":[{"id":"context","order":1,"label":"Change path","shortLabel":"Context","description":"Who changes the platform, the path a change takes to the cluster, and what it touches outside the repository. Built from repository files at dc80dbc, 10 October 2026; live state is not asserted.","accent":"#8be0ba","canvas":{"width":1512,"height":730},"contentOffset":170,"businessProcesses":[{"id":"author","label":"Author a change","x":60,"w":132,"relatesTo":["operator","authoring"]},{"id":"validate","label":"Validate","x":312,"w":132,"relatesTo":["checks"]},{"id":"publish","label":"Publish to main","x":564,"w":132,"relatesTo":["github"]},{"id":"reconcile","label":"Reconcile","x":816,"w":132,"relatesTo":["flux"]},{"id":"run","label":"Run","x":1068,"w":132,"relatesTo":["app-user","apps","platform","host"]},{"id":"observe","label":"Observe and recover","x":1320,"w":132,"relatesTo":["observe","external"]}],"elements":[{"id":"operator","kind":"actor","name":"Platform operator","summary":"Writes changes, runs make targets and uses the console.","x":40,"y":24,"w":172,"h":136,"owner":"A person","technology":"Terminal and browser","responsibilities":["Edit manifests, app values and SOPS Secrets, then commit to main","Run make check before a commit and make flux-reconcile after a push","Merge the pull requests that wait for review (Renovate, scale, exposure, uninstall)","Run the bootstrap and host commands that cannot be a commit"],"tags":["PERSON"],"evidence":[{"label":"README: make a change","href":"../README.md#make-a-change","basis":"declared"},{"label":"How changes reach the cluster","href":"architecture.md#how-changes-reach-the-cluster","basis":"declared"}],"interfaces":["make \u003ctarget\u003e","https://console.\u003cBASE_DOMAIN\u003e","git push to main"],"children":["make-cli","console-app"]},{"id":"authoring","kind":"codebase","name":"Authoring interfaces","summary":"Makefile, swhurl CLI, web console and Renovate: everything that writes a change.","x":40,"y":202,"w":172,"h":136,"owner":"This repository","technology":"GNU Make, Python 3.12, Starlette","responsibilities":["Git-only make targets edit files; the operator commits and pushes them","The console opens console/* pull requests and creates new app repositories","Renovate opens chart version pull requests","A few commands write to the cluster directly because they cannot be a commit"],"tags":["","REPO"],"evidence":[{"label":"Makefile","href":"../Makefile","basis":"observed"},{"label":"Command registry","href":"../tools/swhurl/__main__.py","basis":"observed"},{"label":"Console","href":"console.md","basis":"declared"},{"label":"renovate.json","href":"../renovate.json","basis":"observed"},{"label":"Changes outside Git","href":"architecture.md#how-changes-reach-the-cluster","basis":"declared"}],"interfaces":["make app-new | app-promote | app-scale | app-expose | app-remove (Git edits)","make flux-bootstrap | flux-install | suspend | resume | destroy-data (cluster writes)","Console pages: Overview, Apps, Platform, New app, Activity"],"children":["make-cli","console-app","renovate"]},{"id":"checks","kind":"job","name":"Checks and CI","summary":"make check locally; Validate, Auto-merge and Publish runs on GitHub.","x":292,"y":380,"w":172,"h":136,"owner":"This repository","technology":"make, GitHub Actions","responsibilities":["Render every active Flux path and check schemas, SOPS structure, shell and doc links","Run the tooling unit tests, the app policy, template combinations, OTel config and lint","Merge eligible console pull requests once Validate passes","Build and pin the console image after Validate passes on main"],"tags":["REPO + CI"],"evidence":[{"label":"Validation","href":"contributing.md#validation","basis":"declared"},{"label":".github/workflows/validate.yml","href":"../.github/workflows/validate.yml","basis":"observed"},{"label":".github/workflows/auto-merge.yml","href":"../.github/workflows/auto-merge.yml","basis":"observed"},{"label":".github/workflows/publish-console.yml","href":"../.github/workflows/publish-console.yml","basis":"observed"}],"interfaces":["make check","Validate (pull_request, push to main)","CI runs after a direct push; it does not gate Flux"],"children":["local-check","wf-validate","wf-automerge","wf-publish"]},{"id":"github","kind":"system","name":"GitHub","summary":"Hosts main, the app repositories and GHCR images; sends the webhooks.","x":544,"y":380,"w":172,"h":136,"owner":"External: GitHub","technology":"Git, Actions, GHCR, webhooks","responsibilities":["Hold main, the only branch Flux fetches","Run the three workflows in .github/workflows","Hold each app repository and the images its workflow publishes","Call the push and package webhooks on flux-webhook.\u003cBASE_DOMAIN\u003e"],"tags":["EXTERNAL"],"evidence":[{"label":"GitRepository swhurl-platform","href":"../clusters/home/flux-system/sources/gitrepositories.yaml","basis":"observed"},{"label":"Push webhook","href":"services.md#push-webhook","basis":"declared"},{"label":"Image webhook","href":"services.md#image-webhook","basis":"declared"}],"interfaces":["https://github.com/samclement/swhurl-platform (main)","ghcr.io/samclement/\u003capp\u003e","main has no branch protection"],"children":["main","ghcr","app-repos"]},{"id":"flux","kind":"system","name":"Flux","summary":"Fetches main and applies each unit's path; commits staging image pins.","x":796,"y":202,"w":172,"h":136,"owner":"flux-system namespace","technology":"Flux 2.8.1 controllers","responsibilities":["Fetch main on a push webhook, or every minute without one","Apply each unit (a Flux Kustomization) from its own directory, in dependency order","Decrypt SOPS Secrets and substitute platform-settings where a unit asks for it","Scan app images and commit newer staging pins to main"],"tags":["CLUSTER"],"evidence":[{"label":"Flux units","href":"architecture.md#flux-units","basis":"declared"},{"label":"Root units","href":"../clusters/home/flux-system/kustomizations.yaml","basis":"observed"},{"label":"flux-install and flux-wait","href":"../tools/swhurl/flux.py","basis":"observed"}],"interfaces":["make flux-reconcile","make reconcile UNIT=\u003cname\u003e","Receiver github, Receiver app-images"],"children":["flux-controllers","root-units","flux-webhook","image-automation"]},{"id":"app-user","kind":"actor","name":"App user","summary":"Opens an app's HTTPS host; signs in with Google where the app requires it.","x":1048,"y":24,"w":172,"h":136,"owner":"A person","technology":"Browser","responsibilities":["Resolve the app host through Route 53 to the node","Reach the app over HTTPS through Traefik","Sign in through oauth2-proxy when the Ingress names the sign-in middleware"],"tags":["PERSON"],"evidence":[{"label":"C4 context","href":"architecture.md#context","basis":"declared"},{"label":"Request path to a signed-in app","href":"architecture.md#request-path-to-a-signed-in-app","basis":"declared"}],"interfaces":["https://\u003capp\u003e.\u003cBASE_DOMAIN\u003e","https://staging-\u003capp\u003e.\u003cBASE_DOMAIN\u003e"],"children":["traefik","oauth2-proxy","app-units"]},{"id":"apps","kind":"service","name":"App instances","summary":"One namespace, HelmRelease and Flux unit per app and environment.","x":1048,"y":202,"w":172,"h":136,"owner":"Flux units app-\u003capp\u003e-\u003cenv\u003e","technology":"bjw-s app-template 5.2.1","responsibilities":["Run one app in one environment (staging or prod), separated only by namespace","Staging follows the newest \u003crun\u003e-\u003csha\u003e image automatically","Production changes only through a promotion","Carry their own route, Secret, storage and resources"],"tags":["CLUSTER"],"evidence":[{"label":"Apps","href":"apps.md","basis":"declared"},{"label":"Example HelmRelease","href":"../apps/hello-ts/staging/helmrelease.yaml","basis":"observed"},{"label":"Example unit","href":"../clusters/home/app-hello-ts-staging.yaml","basis":"observed"}],"interfaces":["apps/\u003capp\u003e/\u003cenv\u003e/","clusters/home/app-\u003capp\u003e-\u003cenv\u003e.yaml","make app-status APP= ENV="],"children":["app-units","image-automation"]},{"id":"platform","kind":"infrastructure","name":"Foundation and shared services","summary":"Namespaces, storage, certificates, ingress settings, sign-in and Reloader.","x":1048,"y":380,"w":172,"h":136,"owner":"Flux units infra-* and platform-*","technology":"cert-manager, Traefik 3, oauth2-proxy, Reloader","responsibilities":["Provide the shared namespaces and the local-path-retain storage class","Issue certificates through cert-manager and its ClusterIssuers","Redirect HTTP to HTTPS and route requests (k3s owns Traefik; the repo owns its override)","Protect signed-in routes with oauth2-proxy and restart workloads on Secret changes"],"tags":["CLUSTER"],"evidence":[{"label":"Services","href":"services.md","basis":"declared"},{"label":"Infra units","href":"../clusters/home/infra.yaml","basis":"observed"},{"label":"Platform units","href":"../clusters/home/platform.yaml","basis":"observed"}],"interfaces":["Middleware ingress-oauth-auth-shared@kubernetescrd","ClusterIssuer letsencrypt-prod","StorageClass local-path-retain"],"children":["infra-base","cert-manager","traefik","oauth2-proxy","reloader"]},{"id":"host","kind":"infrastructure","name":"Host","summary":"The k3s node itself: systemd timers for dynamic DNS, backups and the heartbeat.","x":1048,"y":558,"w":172,"h":136,"owner":"The operator's machine","technology":"systemd, bash, AWS CLI","responsibilities":["Keep the Route 53 records pointed at this host","Back up ClickStack MongoDB and app SQLite databases daily, encrypted, to disk and S3","Alert when the in-cluster notification checker goes stale","Run outside Flux: installed with sudo by make host-*"],"tags":["HOST"],"evidence":[{"label":"host/install-timer.sh","href":"../host/install-timer.sh","basis":"observed"},{"label":"Bootstrap: host and tools","href":"bootstrap.md#1-host-and-tools","basis":"declared"},{"label":"Backups and recovery","href":"operations.md#backups-and-recovery","basis":"declared"}],"interfaces":["make host-dns","make host-backup","make host-heartbeat"],"children":["host-timers","aws"]},{"id":"observe","kind":"service","name":"Observability and alerts","summary":"OTel collectors, ClickStack, the notification checker, Flux alerts and verification.","x":1300,"y":202,"w":172,"h":136,"owner":"Flux units platform-otel, -clickstack, -alerts, -console","technology":"OpenTelemetry, ClickStack (HyperDX, ClickHouse, MongoDB), ntfy","responsibilities":["Collect logs, metrics and traces from nodes, the cluster and apps","Store telemetry in ClickStack; one dashboard per app","Notify on app lifecycle, health and Flux failures through ntfy","Verify the live platform with make verify-platform and throwaway live tests"],"tags":["CLUSTER"],"evidence":[{"label":"ClickStack and OTel","href":"services.md#clickstack-and-otel","basis":"declared"},{"label":"Alerts","href":"services.md#alerts","basis":"declared"},{"label":"tools/swhurl/verify.py","href":"../tools/swhurl/verify.py","basis":"observed"}],"interfaces":["https://clickstack.\u003cBASE_DOMAIN\u003e","make verify-platform","OTLP on the node IP, ports 4317 and 4318"],"children":["otel","clickstack","notif-checker","flux-alerts","verify"]},{"id":"external","kind":"system","name":"External services","summary":"Google OIDC, Let's Encrypt, Route 53, S3 and ntfy.","x":1300,"y":380,"w":172,"h":136,"owner":"External providers","technology":"OIDC, ACME HTTP-01, AWS, ntfy.sh","responsibilities":["Google signs users in for oauth2-proxy","Let's Encrypt issues certificates over HTTP-01","Route 53 resolves hosts to the node; S3 keeps encrypted backups","ntfy delivers push notifications"],"tags":["EXTERNAL"],"evidence":[{"label":"C4 context","href":"architecture.md#context","basis":"declared"},{"label":"Sign-in","href":"services.md#sign-in","basis":"declared"},{"label":"Backups and recovery","href":"operations.md#backups-and-recovery","basis":"declared"}],"interfaces":["Account settings on these services are outside this repository"],"children":["google","letsencrypt","aws","ntfy"]}],"connections":[{"from":"operator","to":"authoring","label":"make, browser","type":"request"},{"from":"authoring","to":"checks","label":"change","type":"request"},{"from":"authoring","to":"flux","label":"direct commands, outside Git","type":"async"},{"from":"checks","to":"github","label":"push, merge","type":"request"},{"from":"github","to":"flux","label":"webhook","type":"event"},{"from":"flux","to":"apps","label":"applies","type":"request"},{"from":"flux","to":"platform","label":"applies","type":"request"},{"from":"app-user","to":"apps","label":"HTTPS","type":"request"},{"from":"apps","to":"platform","label":"uses","type":"request"},{"from":"apps","to":"observe","label":"telemetry","type":"event"},{"from":"platform","to":"external","label":"OIDC, ACME","type":"request"},{"from":"host","to":"external","label":"DNS, S3","type":"request"},{"from":"observe","to":"external","label":"ntfy","type":"event"}]},{"id":"units","order":2,"label":"Units and services","shortLabel":"Units","description":"The Flux units, running services, CI workflows, host timers and external services behind each stage, and what flows between them.","accent":"#84aee8","canvas":{"width":2156,"height":1086},"contentOffset":170,"businessProcesses":[{"id":"author","label":"Author a change","x":67,"w":132,"relatesTo":["make-cli","renovate","console-app"]},{"id":"validate","label":"Validate","x":472,"w":132,"relatesTo":["local-check","wf-validate","wf-automerge","wf-publish"]},{"id":"publish","label":"Publish to main","x":877,"w":132,"relatesTo":["main","ghcr","app-repos"]},{"id":"reconcile","label":"Reconcile","x":1147,"w":132,"relatesTo":["image-automation","flux-webhook","flux-controllers","root-units"]},{"id":"run","label":"Run","x":1417,"w":132,"relatesTo":["traefik","app-units","infra-base","oauth2-proxy","cert-manager","reloader","host-timers"]},{"id":"observe","label":"Observe and recover","x":1822,"w":132,"relatesTo":["flux-alerts","notif-checker","otel","clickstack","verify"]}],"elements":[{"id":"make-cli","kind":"codebase","name":"Makefile + swhurl CLI","summary":"make targets call python3 -m swhurl \u003ccommand\u003e; one registry of operator commands.","x":40,"y":202,"w":186,"h":136,"owner":"This repository","technology":"GNU Make, Python 3.12","responsibilities":["Edit app instances and settings in Git (app-new, app-promote, app-scale, app-expose, app-remove)","Reconcile, wait for and verify Flux units","Operate apps: status, logs, suspend, resume, destroy-data","Call kubectl, flux, helm, sops, age and git only through Runner"],"tags":["","REPO"],"evidence":[{"label":"Makefile","href":"../Makefile","basis":"observed"},{"label":"COMMANDS registry","href":"../tools/swhurl/__main__.py","basis":"observed"},{"label":"Every make target","href":"commands.md","basis":"declared"},{"label":"Operator tooling","href":"contributing.md#operator-tooling","basis":"declared"}],"interfaces":["make help","PYTHONPATH=tools python3 -m swhurl \u003ccommand\u003e","DRY_RUN=true plans mutating calls"],"children":["make-entry","runner","app-generator","app-edits","app-ops","app-repo-tools"]},{"id":"renovate","kind":"actor","name":"Renovate","summary":"Opens pull requests for chart version bumps; the operator merges them.","x":40,"y":380,"w":186,"h":136,"owner":"External: Renovate app","technology":"Renovate, flux manager","responsibilities":["Watch chart versions in apps, clusters, infra and platform YAML","Open chore(charts) pull requests","Docker image updates are disabled"],"tags":["EXTERNAL BOT"],"evidence":[{"label":"renovate.json","href":"../renovate.json","basis":"observed"},{"label":"Chart updates","href":"operations.md#chart-updates","basis":"declared"}],"interfaces":["Pull requests against main"],"children":["renovate-json"]},{"id":"console-app","kind":"service","name":"Web console","summary":"Signed-in page that reads the cluster and opens console/* pull requests.","x":40,"y":558,"w":186,"h":136,"owner":"Flux unit platform-console, namespace console","technology":"Starlette, kubectl, GitHub REST API","responsibilities":["Show apps, Flux units and the verify-platform checks that need only cluster reads","Reconcile, suspend and resume a Flux unit: its only cluster writes","Open pull requests for new app, promote, scale, exposure and uninstall","Create a new app's repository from a stack template"],"tags":["FLUX UNIT"],"evidence":[{"label":"Console","href":"console.md","basis":"declared"},{"label":"tools/swhurl/console/server.py","href":"../tools/swhurl/console/server.py","basis":"observed"},{"label":"platform/console/helmrelease.yaml","href":"../platform/console/helmrelease.yaml","basis":"observed"}],"interfaces":["https://console.\u003cBASE_DOMAIN\u003e","X-Auth-Request-Email from oauth2-proxy","Branches console/\u003cchange\u003e-\u003capp\u003e-\u003cenv\u003e-\u003ccommit\u003e"],"children":["console-server","console-actions","console-changes","console-cluster","console-unit","app-generator","app-edits"]},{"id":"wf-validate","kind":"job","name":"Validate workflow","summary":"Runs the offline checks on every pull request and push to main.","x":310,"y":380,"w":186,"h":136,"owner":"External: GitHub Actions","technology":"GitHub Actions","responsibilities":["Classify changed paths; app-only pull requests take a fast path","Lint, unit tests and operator dry runs","make check-repo, check-apps, check-templates and the OTel collector check"],"tags":["CI"],"evidence":[{"label":".github/workflows/validate.yml","href":"../.github/workflows/validate.yml","basis":"observed"},{"label":"tools/ci_changes.py","href":"../tools/ci_changes.py","basis":"observed"},{"label":"Validation","href":"contributing.md#validation","basis":"declared"}],"interfaces":["on: pull_request, push to main"],"children":["validate-yml","check-repo","unit-tests","app-policy","templates-check","otel-check"]},{"id":"local-check","kind":"job","name":"make check","summary":"All offline checks, the same as CI, run in parallel before a commit.","x":580,"y":202,"w":186,"h":136,"owner":"This repository","technology":"make -j6, uv, kubectl, helm, sops","responsibilities":["check-repo: render active Flux paths, schemas, SOPS structure, shell syntax, doc links","test: unit tests for tooling, console, manifests and command safety","check-apps and check-templates: the app contract","check-otel and check-lint"],"tags":["REPO"],"evidence":[{"label":"Makefile: check target","href":"../Makefile","basis":"observed"},{"label":"Validation","href":"contributing.md#validation","basis":"declared"}],"interfaces":["make check","make check-secrets (separate: decrypts locally)"],"source":"Makefile","snippet":"check:\n\t@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-templates check-otel check-lint","children":["check-repo","unit-tests","app-policy","templates-check","secrets-check","otel-check","runner"]},{"id":"wf-automerge","kind":"job","name":"Auto-merge workflow","summary":"Re-validates an eligible console pull request and fast-forwards main.","x":580,"y":380,"w":186,"h":136,"owner":"External: GitHub Actions","technology":"GitHub Actions, swhurl console-merge","responsibilities":["Act only on console/* pull requests labelled auto-merge whose head passed Validate","Restrict the diff to one staging creation or production promotion and its unit registration","Run make check on the merge result with trusted main tooling","Fast-forward main; never force push"],"tags":["CI"],"evidence":[{"label":".github/workflows/auto-merge.yml","href":"../.github/workflows/auto-merge.yml","basis":"observed"},{"label":"tools/swhurl/console/merge.py","href":"../tools/swhurl/console/merge.py","basis":"observed"},{"label":"Auto-merge","href":"console.md#auto-merge","basis":"declared"}],"interfaces":["on: workflow_run (Validate completed), pull_request labeled"],"children":["automerge"]},{"id":"wf-publish","kind":"job","name":"Publish console image","summary":"After Validate passes on main: build the console image and pin it.","x":580,"y":558,"w":186,"h":136,"owner":"External: GitHub Actions","technology":"GitHub Actions, Buildx","responsibilities":["Hash the image inputs; skip when that content is already published","Build and push ghcr.io/samclement/swhurl-console:src-\u003chash\u003e","Commit the tag and digest to platform/console/helmrelease.yaml as github-actions[bot]"],"tags":["CI"],"evidence":[{"label":".github/workflows/publish-console.yml","href":"../.github/workflows/publish-console.yml","basis":"observed"},{"label":"tools/swhurl/images.py","href":"../tools/swhurl/images.py","basis":"observed"},{"label":"Deploy a new console","href":"console.md#deploy-a-new-console","basis":"declared"}],"interfaces":["on: workflow_run (Validate completed on main), workflow_dispatch"],"children":["publish-yml","console-image"]},{"id":"app-repos","kind":"system","name":"App repositories","summary":"One repository per app, made from a Copier stack template; its workflow publishes images.","x":310,"y":736,"w":186,"h":136,"owner":"External: GitHub","technology":"Copier templates (typescript, kotlin), GitHub Actions","responsibilities":["Hold the app's code, swhurl.yaml and build workflow","Publish \u003crun\u003e-\u003csha\u003e images to GHCR on each push to the app's main","Call the image webhook when a package is published"],"tags":["EXTERNAL"],"evidence":[{"label":"Start a new app","href":"apps.md#start-a-new-app","basis":"declared"},{"label":"tools/swhurl/apps/repo.py","href":"../tools/swhurl/apps/repo.py","basis":"observed"},{"label":"tools/swhurl/console/repos.py","href":"../tools/swhurl/console/repos.py","basis":"observed"}],"interfaces":["samclement/\u003capp\u003e","swhurl-app-template-typescript, swhurl-app-template-kotlin","Created by make app-repo or the console's Start a new app"],"children":["app-repo-tools","templates-check"]},{"id":"main","kind":"system","name":"main branch","summary":"The deployment path: Flux applies whatever is on main.","x":850,"y":380,"w":186,"h":136,"owner":"External: GitHub","technology":"Git","responsibilities":["Receive direct pushes from the operator","Receive merged pull requests from the console and Renovate","Receive bot commits: the console image pin and staging image pins"],"tags":["EXTERNAL"],"evidence":[{"label":"clusters/home/flux-system/sources/gitrepositories.yaml","href":"../clusters/home/flux-system/sources/gitrepositories.yaml","basis":"observed"},{"label":"How changes reach the cluster","href":"architecture.md#how-changes-reach-the-cluster","basis":"declared"}],"interfaces":["https://github.com/samclement/swhurl-platform","git pull --rebase before pushing: two bots also push"]},{"id":"ghcr","kind":"system","name":"GHCR images","summary":"Registry for the console image and every app's images.","x":850,"y":736,"w":186,"h":136,"owner":"External: GitHub Container Registry","technology":"OCI registry","responsibilities":["Hold ghcr.io/samclement/swhurl-console:src-\u003chash\u003e","Hold ghcr.io/samclement/\u003capp\u003e:\u003crun\u003e-\u003csha\u003e","Send package events to the image webhook"],"tags":["EXTERNAL"],"evidence":[{"label":".github/workflows/publish-console.yml","href":"../.github/workflows/publish-console.yml","basis":"observed"},{"label":"apps/hello-ts/staging/image-automation.yaml","href":"../apps/hello-ts/staging/image-automation.yaml","basis":"observed"},{"label":"Deploy a new image","href":"apps.md#deploy-a-new-image","basis":"declared"}],"interfaces":["ghcr.io/samclement/*"],"children":["console-image"]},{"id":"image-automation","kind":"infrastructure","name":"Image automation","summary":"Scans app images, picks the newest tag and commits the staging pin to main.","x":1120,"y":202,"w":186,"h":136,"owner":"Flux unit platform-image-automation; policies in each staging unit","technology":"ImageRepository, ImagePolicy, ImageUpdateAutomation","responsibilities":["Scan each app's image repository (hourly, or at once on a package webhook)","Pick the highest \u003crun\u003e from \u003crun\u003e-\u003csha\u003e tags","Commit the tag and digest as fluxcdbot over SSH with a write deploy key"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/image-automation/gitrepository.yaml","href":"../platform/image-automation/gitrepository.yaml","basis":"observed"},{"label":"apps/hello-ts/staging/image-automation.yaml","href":"../apps/hello-ts/staging/image-automation.yaml","basis":"observed"},{"label":"Deploy a new image","href":"apps.md#deploy-a-new-image","basis":"declared"}],"interfaces":["GitRepository swhurl-platform-write","Setter comments: # {\"$imagepolicy\": \"flux-system:\u003capp\u003e-staging:tag\"}"],"children":["write-source","image-policies"]},{"id":"flux-webhook","kind":"infrastructure","name":"Webhook receivers","summary":"Two Flux Receivers behind one Ingress: push events and package events.","x":1120,"y":380,"w":186,"h":136,"owner":"Flux unit platform-flux-webhook, namespace flux-system","technology":"Flux Receiver, Ingress, NetworkPolicy","responsibilities":["Receiver github: fetch main at once on a push to refs/heads/main","Receiver app-images: scan managed ImageRepository objects on a package event","Reject requests not signed with the shared token","The only platform Ingress without sign-in; serves only /hook/"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/flux-webhook/receiver.yaml","href":"../platform/flux-webhook/receiver.yaml","basis":"observed"},{"label":"platform/flux-webhook/image-receiver.yaml","href":"../platform/flux-webhook/image-receiver.yaml","basis":"observed"},{"label":"Push webhook","href":"services.md#push-webhook","basis":"declared"},{"label":"Image webhook","href":"services.md#image-webhook","basis":"declared"}],"interfaces":["https://flux-webhook.\u003cBASE_DOMAIN\u003e/hook/\u003cpath\u003e"],"children":["receivers"]},{"id":"flux-controllers","kind":"service","name":"Flux controllers","summary":"source, kustomize, helm, notification and the two image controllers.","x":1120,"y":558,"w":186,"h":136,"owner":"Installed by make flux-install (not by Flux)","technology":"Flux 2.8.1","responsibilities":["Fetch Git and Helm sources","Apply each unit's path server-side, with SOPS decryption and settings substitution","Install and upgrade HelmReleases","Retry a unit whose dependency is not Ready after 5 seconds"],"tags":["CLUSTER"],"evidence":[{"label":"tools/swhurl/flux.py","href":"../tools/swhurl/flux.py","basis":"observed"},{"label":"clusters/home/flux-system/install/kustomization.yaml","href":"../clusters/home/flux-system/install/kustomization.yaml","basis":"observed"},{"label":"From commit to running pods","href":"architecture.md#how-changes-reach-the-cluster","basis":"declared"}],"interfaces":["make flux-install","make flux-reconcile (waits with swhurl flux-wait)","kustomize-controller --requeue-dependency=5s"],"children":["flux-install","sops-secrets"]},{"id":"root-units","kind":"infrastructure","name":"Root units","summary":"cluster-sources and cluster-stack: the sources, settings and every unit definition.","x":1120,"y":736,"w":186,"h":136,"owner":"Applied by make flux-bootstrap","technology":"Flux Kustomization, GitRepository, HelmRepository, ConfigMap","responsibilities":["cluster-sources: Git and Helm sources and the platform-settings ConfigMap","cluster-stack: every unit definition under clusters/home","cluster-stack does not wait for the units it defines, so a failing unit never blocks new definitions","Shared units use deletionPolicy: Orphan"],"tags":["BOOTSTRAP"],"evidence":[{"label":"clusters/home/flux-system/kustomizations.yaml","href":"../clusters/home/flux-system/kustomizations.yaml","basis":"observed"},{"label":"clusters/home/kustomization.yaml","href":"../clusters/home/kustomization.yaml","basis":"observed"},{"label":"Flux units","href":"architecture.md#flux-units","basis":"declared"}],"interfaces":["make flux-bootstrap (kubectl apply -k clusters/home/flux-system)","Units: infra-base, infra-cert-manager, infra-issuers, infra-traefik, platform-*, app-\u003capp\u003e-\u003cenv\u003e"],"children":["sources","root-kustomizations","unit-defs"]},{"id":"traefik","kind":"infrastructure","name":"Traefik (k3s)","summary":"Ingress controller packaged with k3s; this repo owns only its HelmChartConfig.","x":1390,"y":380,"w":186,"h":136,"owner":"k3s; Flux unit infra-traefik owns the override","technology":"Traefik 3.6, chart 38","responsibilities":["Terminate HTTPS and route by host","Redirect all HTTP to HTTPS permanently","Call the sign-in middleware for Ingresses that name it","Write JSON access logs"],"tags":["K3S"],"evidence":[{"label":"infra/traefik/helmchartconfig.yaml","href":"../infra/traefik/helmchartconfig.yaml","basis":"observed"},{"label":"Certificates, ingress and storage","href":"services.md#certificates-ingress-and-storage","basis":"declared"}],"interfaces":["NodePort 31514 (HTTP), 30313 (HTTPS)"],"children":["traefik-config"]},{"id":"app-units","kind":"service","name":"App instance units","summary":"app-\u003capp\u003e-\u003cenv\u003e: namespace, app-template HelmRelease and route for one app instance.","x":1390,"y":558,"w":186,"h":136,"owner":"Flux units app-\u003capp\u003e-\u003cenv\u003e","technology":"bjw-s app-template 5.2.1","responsibilities":["Run non-root with no service-account token and a read-only root filesystem","Wait for infra-base, and for oauth2-proxy when the app is signed-in","Staging also owns the app's image policy and automation","Deleting the unit uninstalls the app; retained volumes survive"],"tags":["FLUX UNIT"],"evidence":[{"label":"clusters/home/app-hello-ts-staging.yaml","href":"../clusters/home/app-hello-ts-staging.yaml","basis":"observed"},{"label":"apps/hello-ts/staging/helmrelease.yaml","href":"../apps/hello-ts/staging/helmrelease.yaml","basis":"observed"},{"label":"What the generator writes","href":"apps.md#what-the-generator-writes","basis":"declared"},{"label":"The app policy","href":"apps.md#the-app-policy","basis":"declared"}],"interfaces":["Namespace \u003capp\u003e-\u003cenv\u003e","HelmRelease \u003capp\u003e","Instances in Git: hello-ts, test-2, test-3 (staging, prod); test-4 (staging)"],"children":["app-manifests","image-policies"]},{"id":"infra-base","kind":"infrastructure","name":"infra-base","summary":"Shared namespaces and the local-path-retain storage class.","x":1390,"y":736,"w":186,"h":136,"owner":"Flux unit infra-base","technology":"Namespace, StorageClass","responsibilities":["Create platform-system, ingress, cert-manager, logging, observability and console","Provide local-path-retain: volumes survive claim deletion","Every other capability unit waits for it"],"tags":["FLUX UNIT"],"evidence":[{"label":"infra/base/kustomization.yaml","href":"../infra/base/kustomization.yaml","basis":"observed"},{"label":"infra/base/namespaces.yaml","href":"../infra/base/namespaces.yaml","basis":"observed"},{"label":"infra/base/storageclass-local-path-retain.yaml","href":"../infra/base/storageclass-local-path-retain.yaml","basis":"observed"}],"interfaces":["StorageClass local-path-retain"],"children":["base-manifests"]},{"id":"reloader","kind":"service","name":"Reloader","summary":"Restarts an opted-in workload when the Secret it names changes.","x":1390,"y":914,"w":186,"h":136,"owner":"Flux unit platform-reloader, namespace platform-system","technology":"Stakater Reloader","responsibilities":["Watch only the namespaces listed in its HelmRelease","Act only on workloads annotated secret.reloader.stakater.com/reload","Current opt-ins: oauth2-proxy, both OTel collectors, the console"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/reloader/helmrelease.yaml","href":"../platform/reloader/helmrelease.yaml","basis":"observed"},{"label":"Reloader","href":"services.md#reloader","basis":"declared"}],"interfaces":["Annotation secret.reloader.stakater.com/reload: \"\u003csecret\u003e\""],"children":["reloader-release"]},{"id":"oauth2-proxy","kind":"service","name":"Sign-in (oauth2-proxy)","summary":"Google sign-in served as a Traefik ForwardAuth middleware.","x":1660,"y":380,"w":186,"h":136,"owner":"Flux unit platform-oauth2-proxy, namespace ingress","technology":"oauth2-proxy, Traefik Middleware","responsibilities":["Admit only the listed email addresses","Answer ForwardAuth at its root so browsers get a followable redirect","Pass X-Auth-Request-Email to the upstream","Session cookie covers .\u003cBASE_DOMAIN\u003e"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/oauth2-proxy/helmrelease.yaml","href":"../platform/oauth2-proxy/helmrelease.yaml","basis":"observed"},{"label":"platform/oauth2-proxy/middleware.yaml","href":"../platform/oauth2-proxy/middleware.yaml","basis":"observed"},{"label":"Sign-in","href":"services.md#sign-in","basis":"declared"}],"interfaces":["https://oauth.\u003cBASE_DOMAIN\u003e/oauth2/callback","Middleware ingress-oauth-auth-shared@kubernetescrd"],"children":["signin-manifests"]},{"id":"cert-manager","kind":"service","name":"cert-manager + issuers","summary":"Issues TLS certificates; three ClusterIssuers.","x":1660,"y":736,"w":186,"h":136,"owner":"Flux units infra-cert-manager and infra-issuers","technology":"cert-manager, ACME HTTP-01","responsibilities":["Install cert-manager and its CRDs","Provide selfsigned, letsencrypt-staging and letsencrypt-prod","infra-issuers waits for cert-manager so a bootstrap cannot race the CRDs"],"tags":["FLUX UNITS"],"evidence":[{"label":"infra/cert-manager/helmrelease.yaml","href":"../infra/cert-manager/helmrelease.yaml","basis":"observed"},{"label":"infra/issuers/kustomization.yaml","href":"../infra/issuers/kustomization.yaml","basis":"observed"},{"label":"Certificate mode","href":"operations.md#certificate-mode","basis":"declared"}],"interfaces":["ClusterIssuer selfsigned | letsencrypt-staging | letsencrypt-prod","make platform-certs-*"],"children":["cert-manifests"]},{"id":"host-timers","kind":"job","name":"Host timers","summary":"systemd timers on the node: dynamic DNS, daily backups, checker heartbeat.","x":1660,"y":914,"w":186,"h":136,"owner":"Host systemd; installed by make host-*","technology":"systemd, bash, AWS CLI, age","responsibilities":["dns: update the Route 53 A records every 10 minutes","backup: MongoDB then app SQLite, encrypted with age, pruned and copied to S3","heartbeat: alert every 5 minutes if the notification checker is stale","Log to /var/log/swhurl-platform, which the OTel DaemonSet reads"],"tags":["HOST"],"evidence":[{"label":"host/install-timer.sh","href":"../host/install-timer.sh","basis":"observed"},{"label":"host/aws-dns-updater.sh","href":"../host/aws-dns-updater.sh","basis":"observed"},{"label":"host/templates/systemd/backup-mongodb.service.tmpl","href":"../host/templates/systemd/backup-mongodb.service.tmpl","basis":"observed"},{"label":"Backups and recovery","href":"operations.md#backups-and-recovery","basis":"declared"}],"interfaces":["make host-dns","make host-backup","make host-heartbeat"],"children":["host-scripts","systemd-templates","backups","heartbeat"]},{"id":"verify","kind":"codebase","name":"Verification and live tests","summary":"make verify-platform checks live state; throwaway live tests prove behaviour.","x":1390,"y":24,"w":186,"h":136,"owner":"This repository","technology":"Python, kubectl","responsibilities":["Check Flux units, the HTTPS redirect, ingestion key, retention, backups and webhooks","Never print Secret values: compare by bytes or hashes","Live tests create their own labelled resources and remove them"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/verify.py","href":"../tools/swhurl/verify.py","basis":"observed"},{"label":"tools/swhurl/livetests/__init__.py","href":"../tools/swhurl/livetests/__init__.py","basis":"observed"},{"label":"Check health","href":"operations.md#check-health","basis":"declared"}],"interfaces":["make verify-platform","make live-test-lifecycle | -reloader | -app-template | -restore-mongodb | -restore-sqlite"],"children":["verify-py","livetests"]},{"id":"flux-alerts","kind":"infrastructure","name":"Flux alerts","summary":"Flux Providers and an Alert that send source and unit failures to ntfy.","x":1660,"y":24,"w":186,"h":136,"owner":"Flux unit platform-alerts, namespace flux-system","technology":"Flux notification Provider, Alert","responsibilities":["Alert on failures from Kustomizations, sources and image automation objects","Hold the ntfy topics in SOPS Secrets"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/alerts/alerts.yaml","href":"../platform/alerts/alerts.yaml","basis":"observed"},{"label":"Alerts","href":"services.md#alerts","basis":"declared"}],"interfaces":["Provider ntfy-failures, Provider ntfy-deploys","Alert failures"],"children":["alerts-manifests"]},{"id":"notif-checker","kind":"job","name":"Notification checker","summary":"CronJob that evaluates app lifecycle and health each minute and publishes to ntfy.","x":1660,"y":202,"w":186,"h":136,"owner":"CronJob console-notifications in the console HelmRelease","technology":"Python (swhurl notifications-check)","responsibilities":["Discover instances from app Flux paths, not a hand-kept list","Read release events, release status, replicas and running images","Keep an outbox and incident history in one ConfigMap","Never read app Secrets, pod logs or GitHub credentials"],"tags":["FLUX UNIT"],"evidence":[{"label":"tools/swhurl/notifications/__init__.py","href":"../tools/swhurl/notifications/__init__.py","basis":"observed"},{"label":"platform/console/notification-rbac.yaml","href":"../platform/console/notification-rbac.yaml","basis":"observed"},{"label":"Current notification behavior","href":"services.md#current-notification-behavior","basis":"declared"}],"interfaces":["make notifications-check (read-only preview)","ConfigMap state, at-least-once delivery"],"children":["notifications-pkg","heartbeat"]},{"id":"otel","kind":"service","name":"OTel collectors","summary":"A per-node DaemonSet and a cluster Deployment that forward telemetry to ClickStack.","x":1660,"y":558,"w":186,"h":136,"owner":"Flux unit platform-otel, namespace logging","technology":"opentelemetry-collector chart","responsibilities":["Collect node and cluster logs, metrics and events","Accept OTLP from apps on the node IP and forward it with the ingestion key","Normalise log formats and drop Kubernetes probe spans"],"tags":["FLUX UNIT"],"evidence":[{"label":"platform/otel/helmrelease-daemonset.yaml","href":"../platform/otel/helmrelease-daemonset.yaml","basis":"observed"},{"label":"platform/otel/helmrelease-cluster.yaml","href":"../platform/otel/helmrelease-cluster.yaml","basis":"observed"},{"label":"ClickStack and OTel","href":"services.md#clickstack-and-otel","basis":"declared"}],"interfaces":["OTLP on the node IP: 4317 (gRPC), 4318 (HTTP)","clickstack-otel-collector.observability:4318"],"children":["otel-releases","otel-check"]},{"id":"clickstack","kind":"service","name":"ClickStack","summary":"Stores logs, metrics and traces: HyperDX, a collector, ClickHouse and MongoDB.","x":1930,"y":558,"w":186,"h":136,"owner":"Flux units platform-clickstack-operators and platform-clickstack, namespace observability","technology":"ClickStack chart, MongoDB and ClickHouse operators","responsibilities":["Operators and CRDs install first; the stack waits for them and for sign-in","ClickHouse keeps telemetry for 30 days; MongoDB keeps team, users, sources and dashboards","Admin account, ingestion key and dashboards are written by make targets, from Git"],"tags":["FLUX UNITS"],"evidence":[{"label":"platform/clickstack/helmrelease.yaml","href":"../platform/clickstack/helmrelease.yaml","basis":"observed"},{"label":"platform/clickstack-operators/helmrelease.yaml","href":"../platform/clickstack-operators/helmrelease.yaml","basis":"observed"},{"label":"tools/swhurl/clickstack.py","href":"../tools/swhurl/clickstack.py","basis":"observed"},{"label":"ClickStack and OTel","href":"services.md#clickstack-and-otel","basis":"declared"}],"interfaces":["https://clickstack.\u003cBASE_DOMAIN\u003e","make clickstack-bootstrap","make clickstack-dashboards"],"children":["clickstack-releases","clickstack-tools"]},{"id":"ntfy","kind":"system","name":"ntfy","summary":"Push notification service that receives alerts and lifecycle messages.","x":1930,"y":24,"w":186,"h":136,"owner":"External: ntfy.sh","technology":"HTTP publish","responsibilities":["Deliver Flux failure alerts","Deliver app deployed, failed, unhealthy and recovered messages","Deliver the host heartbeat's stale-checker alert"],"tags":["EXTERNAL"],"evidence":[{"label":"platform/alerts/alerts.yaml","href":"../platform/alerts/alerts.yaml","basis":"observed"},{"label":"tools/swhurl/notifications/delivery.py","href":"../tools/swhurl/notifications/delivery.py","basis":"observed"},{"label":"Alerts","href":"services.md#alerts","basis":"declared"}],"interfaces":["Topics are held in SOPS Secrets"]},{"id":"google","kind":"system","name":"Google OIDC","summary":"Identity provider for sign-in.","x":1930,"y":380,"w":186,"h":136,"owner":"External: Google","technology":"OIDC with PKCE (S256)","responsibilities":["Authenticate the user for oauth2-proxy","The OAuth client must allow https://oauth.\u003cBASE_DOMAIN\u003e/oauth2/callback"],"tags":["EXTERNAL"],"evidence":[{"label":"platform/oauth2-proxy/helmrelease.yaml","href":"../platform/oauth2-proxy/helmrelease.yaml","basis":"observed"},{"label":"Sign-in","href":"services.md#sign-in","basis":"declared"}],"interfaces":["Client id and secret are in the SOPS Secret oauth2-proxy-shared-secret"]},{"id":"letsencrypt","kind":"system","name":"Let's Encrypt","summary":"ACME certificate authority reached over HTTP-01.","x":1930,"y":736,"w":186,"h":136,"owner":"External: Let's Encrypt","technology":"ACME HTTP-01","responsibilities":["Issue certificates for app and platform hosts","Follow Traefik's HTTP to HTTPS redirect during the challenge"],"tags":["EXTERNAL"],"evidence":[{"label":"infra/issuers/clusterissuer-letsencrypt-prod.yaml","href":"../infra/issuers/clusterissuer-letsencrypt-prod.yaml","basis":"observed"},{"label":"Certificates, ingress and storage","href":"services.md#certificates-ingress-and-storage","basis":"declared"}],"interfaces":["ClusterIssuer letsencrypt-staging, letsencrypt-prod"]},{"id":"aws","kind":"system","name":"Route 53 and S3","summary":"DNS records for the node and the bucket that keeps encrypted backups.","x":1930,"y":914,"w":186,"h":136,"owner":"External: AWS","technology":"Route 53, S3, AWS CLI","responsibilities":["Resolve hosts under BASE_DOMAIN to the node","Keep MongoDB and app SQLite backups; the bucket is versioned and expires old backups"],"tags":["EXTERNAL"],"evidence":[{"label":"host/aws-dns-updater.sh","href":"../host/aws-dns-updater.sh","basis":"observed"},{"label":"host/dns.env","href":"../host/dns.env","basis":"observed"},{"label":"Bootstrap: DNS","href":"bootstrap.md#2-dns","basis":"declared"},{"label":"Backups and recovery","href":"operations.md#backups-and-recovery","basis":"declared"}],"interfaces":["DYNAMIC_DNS_RECORDS in host/dns.env","BACKUP_S3_URI"],"children":["backups","host-scripts"]}],"connections":[{"from":"make-cli","to":"local-check","label":"make check","type":"request"},{"from":"local-check","to":"main","label":"commit, push","type":"request"},{"from":"renovate","to":"wf-validate","label":"chart PR","type":"request"},{"from":"console-app","to":"wf-validate","label":"console/* PR","type":"request"},{"from":"console-app","to":"app-repos","label":"creates repo","type":"request"},{"from":"wf-validate","to":"wf-automerge","label":"PR passed","type":"event"},{"from":"wf-validate","to":"wf-publish","label":"main passed","type":"event"},{"from":"wf-automerge","to":"main","label":"fast-forward","type":"request"},{"from":"wf-publish","to":"main","label":"pin commit","type":"request"},{"from":"wf-publish","to":"ghcr","label":"console image","type":"request"},{"from":"app-repos","to":"ghcr","label":"app images","type":"request"},{"from":"main","to":"flux-webhook","label":"push event","type":"event"},{"from":"ghcr","to":"flux-webhook","label":"package","type":"event"},{"from":"image-automation","to":"main","label":"staging pin commit","type":"request"},{"from":"flux-webhook","to":"flux-controllers","label":"fetch, scan","type":"event"},{"from":"flux-controllers","to":"root-units","label":"reconcile","type":"request"},{"from":"flux-controllers","to":"app-units","label":"applies","type":"request"},{"from":"root-units","to":"infra-base","label":"applies","type":"request"},{"from":"traefik","to":"oauth2-proxy","label":"ForwardAuth","type":"request"},{"from":"traefik","to":"app-units","label":"routes","type":"request"},{"from":"oauth2-proxy","to":"google","label":"OIDC","type":"request"},{"from":"app-units","to":"otel","label":"OTLP, logs","type":"event"},{"from":"otel","to":"clickstack","label":"OTLP","type":"event"},{"from":"infra-base","to":"cert-manager","label":"Ready first","type":"async"},{"from":"cert-manager","to":"letsencrypt","label":"HTTP-01","type":"request"},{"from":"host-timers","to":"aws","label":"DNS, backups","type":"request"},{"from":"flux-alerts","to":"ntfy","label":"failures","type":"event"},{"from":"notif-checker","to":"ntfy","label":"lifecycle","type":"event"}]},{"id":"source","order":3,"label":"Source and config","shortLabel":"Source","description":"The modules, manifests, workflows and host scripts that implement each unit and service, with links into the repository.","accent":"#f07a67","canvas":{"width":2160,"height":1170},"contentOffset":170,"businessProcesses":[{"id":"author","label":"Author a change","x":204,"w":132,"relatesTo":["console-server","make-entry","app-generator","app-edits"]},{"id":"validate","label":"Validate","x":609,"w":132,"relatesTo":["check-repo","unit-tests","app-policy","validate-yml"]},{"id":"publish","label":"Publish to main","x":879,"w":132,"relatesTo":["validate-yml","publish-yml","console-image","automerge"]},{"id":"reconcile","label":"Reconcile","x":1149,"w":132,"relatesTo":["flux-install","sources","root-kustomizations","unit-defs","receivers"]},{"id":"run","label":"Run","x":1554,"w":132,"relatesTo":["sops-secrets","reloader-release","app-manifests","base-manifests","host-scripts"]},{"id":"observe","label":"Observe and recover","x":1959,"w":132,"relatesTo":["otel-releases","clickstack-releases","notifications-pkg","alerts-manifests"]}],"elements":[{"id":"console-server","kind":"codebase","name":"console/server.py","summary":"Starlette app: pages, job streams and the sign-in and same-origin checks.","x":40,"y":24,"w":190,"h":150,"owner":"This repository","technology":"Starlette, Jinja2","responsibilities":["Require X-Auth-Request-Email on every page except /healthz","Accept a POST only from a page of the console itself","--dev serves a fixed identity on loopback only"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/console/server.py","href":"../tools/swhurl/console/server.py","basis":"observed"},{"label":"templates/","href":"../tools/swhurl/console/templates/base.html","basis":"observed"},{"label":"tests/test_console.py","href":"../tests/test_console.py","basis":"observed"},{"label":"How it is protected","href":"console.md#how-it-is-protected","basis":"declared"}],"interfaces":["python3 -m swhurl console","make console-dev"],"source":"tools/swhurl/console/server.py"},{"id":"console-actions","kind":"codebase","name":"console/actions.py","summary":"Background jobs: reconcile, suspend and resume a unit, and the Git change jobs.","x":40,"y":216,"w":190,"h":150,"owner":"This repository","technology":"Python 3.12","responsibilities":["Patch Flux objects with kubectl (the image has no flux CLI)","One job per unit or app instance at a time","Log [AUDIT] \u003cemail\u003e \u003caction\u003e \u003ctarget\u003e for every job"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/console/actions.py","href":"../tools/swhurl/console/actions.py","basis":"observed"},{"label":"Use it","href":"console.md#use-it","basis":"declared"}],"source":"tools/swhurl/console/actions.py"},{"id":"console-changes","kind":"codebase","name":"console/changes.py + repos.py","summary":"Download main, run its own tooling, commit to a console/* branch and open a PR.","x":40,"y":408,"w":190,"h":150,"owner":"This repository","technology":"httpx, GitHub REST API, Copier","responsibilities":["Run the downloaded tree's make app-new, app-promote, app-scale or app-remove","Write blobs, a tree, a commit and a ref through the API; never any ref but console/*","repos.py renders a stack template and creates the app repository","promotion.py reviews and recovers promotion PRs from GitHub's tree"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/console/changes.py","href":"../tools/swhurl/console/changes.py","basis":"observed"},{"label":"tools/swhurl/console/repos.py","href":"../tools/swhurl/console/repos.py","basis":"observed"},{"label":"tools/swhurl/console/promotion.py","href":"../tools/swhurl/console/promotion.py","basis":"observed"},{"label":"tests/test_console_changes.py","href":"../tests/test_console_changes.py","basis":"observed"}],"interfaces":["PR title [console] …","Requested-by: \u003cemail\u003e"],"source":"tools/swhurl/console/changes.py"},{"id":"console-cluster","kind":"codebase","name":"console/cluster.py","summary":"What the console reads from the cluster: read-only, no Secrets, no exec.","x":40,"y":600,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl","responsibilities":["List Flux units and HelmReleases as JSON","Reuse verify_platform for the checks that need only cluster reads","Raise ReadError when the cluster cannot be read"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/console/cluster.py","href":"../tools/swhurl/console/cluster.py","basis":"observed"},{"label":"platform/console/rbac.yaml","href":"../platform/console/rbac.yaml","basis":"observed"}],"source":"tools/swhurl/console/cluster.py","snippet":"UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']\nRELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']"},{"id":"console-unit","kind":"codebase","name":"platform/console/","summary":"The console's HelmRelease, RBAC, NetworkPolicy, state ConfigMap and SOPS Secrets.","x":40,"y":792,"w":190,"h":150,"owner":"Flux unit platform-console","technology":"app-template HelmRelease, RBAC","responsibilities":["Pin the console image by tag and digest","Run the notification checker and dashboard sync CronJobs","Grant dedicated, narrow RBAC to each"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/console/helmrelease.yaml","href":"../platform/console/helmrelease.yaml","basis":"observed"},{"label":"platform/console/kustomization.yaml","href":"../platform/console/kustomization.yaml","basis":"observed"},{"label":"platform/console/networkpolicy.yaml","href":"../platform/console/networkpolicy.yaml","basis":"observed"},{"label":"platform/console/notification-rbac.yaml","href":"../platform/console/notification-rbac.yaml","basis":"observed"}],"source":"platform/console/"},{"id":"renovate-json","kind":"codebase","name":"renovate.json","summary":"Renovate limited to the flux manager; Docker updates disabled.","x":40,"y":984,"w":190,"h":150,"owner":"This repository","technology":"Renovate config","responsibilities":["Match YAML under apps, clusters, infra and platform","Commit as chore(charts)"],"tags":["","REPO"],"evidence":[{"label":"renovate.json","href":"../renovate.json","basis":"observed"},{"label":"Chart updates","href":"operations.md#chart-updates","basis":"declared"}],"source":"renovate.json","snippet":"\"enabledManagers\": [\"flux\"],\n\"flux\": {\"managerFilePatterns\": [\"/^(apps|clusters|infra|platform)/.+\\\\.ya?ml$/\"]}"},{"id":"make-entry","kind":"codebase","name":"Makefile + __main__.py","summary":"Every make target and the COMMANDS registry it dispatches to.","x":310,"y":24,"w":190,"h":150,"owner":"This repository","technology":"GNU Make, Python","responsibilities":["Map each command to (module, function, summary)","Import a module only when its command runs","make help lists targets from their ## comments"],"tags":["","REPO"],"evidence":[{"label":"Makefile","href":"../Makefile","basis":"observed"},{"label":"tools/swhurl/__main__.py","href":"../tools/swhurl/__main__.py","basis":"observed"},{"label":"tools/swhurl/makehelp.py","href":"../tools/swhurl/makehelp.py","basis":"observed"},{"label":"Commands","href":"commands.md","basis":"declared"}],"source":"tools/swhurl/__main__.py","snippet":"COMMANDS = {\n    # command: (module, function, summary)\n    'check-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),\n    'verify-platform': ('swhurl.verify', 'main', 'Check live platform state: Flux, keys, redirect, retention'),\n    'app-new': ('swhurl.apps.new', 'main', 'Generate an app instance'),\n    ...\n}"},{"id":"runner","kind":"codebase","name":"run.py: Runner, FakeRunner","summary":"The single seam for external commands: dry run, redaction, testability.","x":310,"y":216,"w":190,"h":150,"owner":"This repository","technology":"Python 3.12","responsibilities":["DRY_RUN prints calls marked mutating instead of running them","Redact registered secrets from every message and error","FakeRunner records calls and answers from scripted rules"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/run.py","href":"../tools/swhurl/run.py","basis":"observed"},{"label":"tests/test_runner.py","href":"../tests/test_runner.py","basis":"observed"},{"label":"tests/test_command_safety.py","href":"../tests/test_command_safety.py","basis":"observed"},{"label":"Operator tooling","href":"contributing.md#operator-tooling","basis":"declared"}],"interfaces":["Runner.run, output, json, stream, pipe, attached","FakeRunner().on('kubectl', 'get', stdout='{}')"],"source":"tools/swhurl/run.py","snippet":"def run(self, args, *, input=None, check=True, mutating=False, secret_output=False, env=None, cwd=None) -\u003e Result:\n    argv = tuple(str(a) for a in args)\n    if mutating and self.dry_run:\n        self._plan(argv)\n        return Result(argv)"},{"id":"app-generator","kind":"codebase","name":"apps/new.py + contract.py","summary":"Generate one app instance and check it against the app contract.","x":310,"y":408,"w":190,"h":150,"owner":"This repository","technology":"Python, PyYAML","responsibilities":["Write apps/\u003capp\u003e/staging/ and clusters/home/app-\u003capp\u003e-staging.yaml","Register the unit in clusters/home/kustomization.yaml","Read defaults from the app repository's swhurl.yaml (--from-repo)","contract.py holds the rules both the generator and the policy import"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/new.py","href":"../tools/swhurl/apps/new.py","basis":"observed"},{"label":"tools/swhurl/apps/contract.py","href":"../tools/swhurl/apps/contract.py","basis":"observed"},{"label":"tests/test_app_manifest.py","href":"../tests/test_app_manifest.py","basis":"observed"},{"label":"What the generator writes","href":"apps.md#what-the-generator-writes","basis":"declared"}],"interfaces":["make app-new NAME=\u003capp\u003e ARGS=\"--from-repo OWNER/\u003capp\u003e --image ...\""],"source":"tools/swhurl/apps/new.py"},{"id":"app-edits","kind":"codebase","name":"apps/edit.py + promotion.py","summary":"Git-only edits to generated instances: promote, scale, expose, remove.","x":310,"y":600,"w":190,"h":150,"owner":"This repository","technology":"Python, round-trip YAML","responsibilities":["Create production from staging or update its image","Keep handwritten comments and settings through targeted edits (yaml_file.py)","promotion.py: Git decides existence, live status decides readiness"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/edit.py","href":"../tools/swhurl/apps/edit.py","basis":"observed"},{"label":"tools/swhurl/apps/promotion.py","href":"../tools/swhurl/apps/promotion.py","basis":"observed"},{"label":"tools/swhurl/apps/yaml_file.py","href":"../tools/swhurl/apps/yaml_file.py","basis":"observed"},{"label":"tests/test_app_edit.py","href":"../tests/test_app_edit.py","basis":"observed"},{"label":"Promote to production","href":"apps.md#promote-to-production","basis":"declared"}],"interfaces":["make app-promote | app-scale | app-expose | app-remove"],"source":"tools/swhurl/apps/edit.py"},{"id":"app-ops","kind":"codebase","name":"apps/ops.py + lifecycle.py","summary":"Operate one instance; suspend, resume and destroy-data cover what Git cannot express.","x":310,"y":792,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl, flux","responsibilities":["Status, logs, reconcile and check for \u003capp\u003e-\u003cenv\u003e","Suspend or resume a unit or release","destroy-data deletes a volume only when asked explicitly"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/ops.py","href":"../tools/swhurl/apps/ops.py","basis":"observed"},{"label":"tools/swhurl/lifecycle.py","href":"../tools/swhurl/lifecycle.py","basis":"observed"},{"label":"tests/test_lifecycle.py","href":"../tests/test_lifecycle.py","basis":"observed"},{"label":"Lifecycle","href":"operations.md#lifecycle","basis":"declared"}],"interfaces":["make app-status | app-logs | app-reconcile","make suspend | resume | destroy-data"],"source":"tools/swhurl/apps/ops.py"},{"id":"app-repo-tools","kind":"codebase","name":"apps/repo.py + hooks.py","summary":"Create an app repository from a stack template; manage its image webhook.","x":310,"y":984,"w":190,"h":150,"owner":"This repository","technology":"Python, Copier (uvx), GitHub API","responsibilities":["Create the repository and wait for its first image","Create or repoint the package webhook on every auto-deploy app repository"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/repo.py","href":"../tools/swhurl/apps/repo.py","basis":"observed"},{"label":"tools/swhurl/apps/hooks.py","href":"../tools/swhurl/apps/hooks.py","basis":"observed"},{"label":"tests/test_app_repo.py","href":"../tests/test_app_repo.py","basis":"observed"},{"label":"Start a new app","href":"apps.md#start-a-new-app","basis":"declared"}],"interfaces":["make app-repo NAME=\u003capp\u003e [STACK=typescript]","make app-hooks"],"source":"tools/swhurl/apps/repo.py"},{"id":"check-repo","kind":"codebase","name":"validate.py","summary":"check-repo: render every active Flux path and validate it offline.","x":580,"y":24,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl kustomize, flux-schema","responsibilities":["Render each active path with its substitutions and check Kubernetes and Flux schemas","Fail on an unresolved ${...} token","Check SOPS Secret structure, shell syntax and documentation links","Run every check even if an earlier one fails"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/validate.py","href":"../tools/swhurl/validate.py","basis":"observed"},{"label":"tests/test_validate.py","href":"../tests/test_validate.py","basis":"observed"},{"label":"tests/test_manifest_policy.py","href":"../tests/test_manifest_policy.py","basis":"observed"}],"interfaces":["make check-repo"],"source":"tools/swhurl/validate.py","snippet":"MANIFEST_ROOTS = ('clusters', 'infra', 'platform', 'apps')\nTOKEN = re.compile(r'(?\u003c!\\$)\\$\\{([^}]+)\\}')"},{"id":"unit-tests","kind":"codebase","name":"tests/","summary":"Unit tests for tooling, console, manifests and command safety; fixtures for live tests.","x":580,"y":216,"w":190,"h":150,"owner":"This repository","technology":"unittest, uv","responsibilities":["Run one test class per job in a process pool","Test command logic with FakeRunner, without a cluster","Enforce unit rules: dependencies, decryption and substitution"],"tags":["","REPO"],"evidence":[{"label":"tests/run.py","href":"../tests/run.py","basis":"observed"},{"label":"tests/test_flux.py","href":"../tests/test_flux.py","basis":"observed"},{"label":"tests/test_manifest_policy.py","href":"../tests/test_manifest_policy.py","basis":"observed"},{"label":"tests/fixtures/","href":"../tests/fixtures/apps.sh","basis":"observed"}],"interfaces":["make test"],"source":"tests/run.py"},{"id":"app-policy","kind":"codebase","name":"apps/policy.py","summary":"check-apps: render every app instance and check the app contract.","x":580,"y":408,"w":190,"h":150,"owner":"This repository","technology":"Python, helm template","responsibilities":["Non-root, no service-account token, dropped capabilities, read-only root","Single writer for any instance with a volume","Cookie-domain and exposure rules"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/policy.py","href":"../tools/swhurl/apps/policy.py","basis":"observed"},{"label":"tools/swhurl/apps/contract.py","href":"../tools/swhurl/apps/contract.py","basis":"observed"},{"label":"tests/test_app_contract.py","href":"../tests/test_app_contract.py","basis":"observed"},{"label":"The app policy","href":"apps.md#the-app-policy","basis":"declared"}],"interfaces":["make check-apps"],"source":"tools/swhurl/apps/policy.py"},{"id":"templates-check","kind":"codebase","name":"templates_check.py","summary":"check-templates: every stack template combination must still fit the platform.","x":580,"y":600,"w":190,"h":150,"owner":"This repository","technology":"Python, Copier","responsibilities":["Render each combination of a template's questions","Its swhurl.yaml must pass app-new and the app policy"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/apps/templates_check.py","href":"../tools/swhurl/apps/templates_check.py","basis":"observed"},{"label":"tests/test_templates_check.py","href":"../tests/test_templates_check.py","basis":"observed"},{"label":"Stacks and features","href":"apps.md#stacks-and-features","basis":"declared"}],"interfaces":["make check-templates (needs network)"],"source":"tools/swhurl/apps/templates_check.py"},{"id":"secrets-check","kind":"codebase","name":"secrets_check.py","summary":"check-secrets: decrypt tracked Secrets in memory and flag problems, never printing values.","x":580,"y":792,"w":190,"h":150,"owner":"This repository","technology":"Python, sops","responsibilities":["Flag placeholders and double base64 encoding","Fail unless the two copies of the image webhook token match"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/secrets_check.py","href":"../tools/swhurl/secrets_check.py","basis":"observed"},{"label":"tests/test_secrets_check.py","href":"../tests/test_secrets_check.py","basis":"observed"},{"label":"Secrets","href":"operations.md#secrets","basis":"declared"}],"interfaces":["make check-secrets"],"source":"tools/swhurl/secrets_check.py"},{"id":"otel-check","kind":"codebase","name":"otel.py + logs.py","summary":"Validate each collector's rendered config with the collector release it will run.","x":580,"y":984,"w":190,"h":150,"owner":"This repository","technology":"Python, helm, otelcol-k8s","responsibilities":["check-otel: render both collectors and validate with that exact otelcol-k8s release","verify-logs: summarise live log parsing coverage without printing bodies"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/otel.py","href":"../tools/swhurl/otel.py","basis":"observed"},{"label":"tools/swhurl/logs.py","href":"../tools/swhurl/logs.py","basis":"observed"},{"label":"tests/test_otel.py","href":"../tests/test_otel.py","basis":"observed"},{"label":"tests/fixtures/logs.json","href":"../tests/fixtures/logs.json","basis":"observed"}],"interfaces":["make check-otel","make verify-logs"],"source":"tools/swhurl/otel.py"},{"id":"validate-yml","kind":"codebase","name":"validate.yml","summary":"The Validate workflow and its changed-path classifier.","x":850,"y":24,"w":190,"h":150,"owner":"This repository","technology":"GitHub Actions","responsibilities":["Jobs: tooling tests and dry runs, manifests, app policy, templates, collector","ci_changes.py gives app-only pull requests a fast path"],"tags":["","REPO"],"evidence":[{"label":".github/workflows/validate.yml","href":"../.github/workflows/validate.yml","basis":"observed"},{"label":"tools/ci_changes.py","href":"../tools/ci_changes.py","basis":"observed"},{"label":"tests/test_ci_changes.py","href":"../tests/test_ci_changes.py","basis":"observed"}],"source":".github/workflows/validate.yml"},{"id":"publish-yml","kind":"codebase","name":"publish-console.yml","summary":"Publish console image: build after Validate passes on main, then pin.","x":850,"y":216,"w":190,"h":150,"owner":"This repository","technology":"GitHub Actions, Buildx","responsibilities":["Check out the validated commit and hash the image inputs","Skip when that content is already published","Pin the console on main, which deploys it"],"tags":["","REPO"],"evidence":[{"label":".github/workflows/publish-console.yml","href":"../.github/workflows/publish-console.yml","basis":"observed"},{"label":"Deploy a new console","href":"console.md#deploy-a-new-console","basis":"declared"}],"source":".github/workflows/publish-console.yml"},{"id":"console-image","kind":"codebase","name":"Dockerfile + images.py","summary":"The console image and the command that pins it in the HelmRelease.","x":850,"y":408,"w":190,"h":150,"owner":"This repository","technology":"Docker, Alpine, uv","responsibilities":["Bundle the tooling with kubectl, helm and sops at pinned SHA-256s; no flux CLI","Inputs: tools/, images/console/, pyproject.toml, uv.lock","console-image pins the tag and digest (Git edit only)"],"tags":["","REPO"],"evidence":[{"label":"images/console/Dockerfile","href":"../images/console/Dockerfile","basis":"observed"},{"label":"tools/swhurl/images.py","href":"../tools/swhurl/images.py","basis":"observed"},{"label":"pyproject.toml","href":"../pyproject.toml","basis":"observed"},{"label":"tests/test_images.py","href":"../tests/test_images.py","basis":"observed"}],"interfaces":["ghcr.io/samclement/swhurl-console:src-\u003chash\u003e","make console-image"],"source":"images/console/Dockerfile"},{"id":"automerge","kind":"codebase","name":"auto-merge.yml + merge.py","summary":"Validate the exact merge result; fast-forward main only while its base still matches.","x":850,"y":600,"w":190,"h":150,"owner":"This repository","technology":"GitHub Actions, Python","responsibilities":["Accept only console/new-* and console/promote-* staging branches","Refuse encrypted files, infrastructure, unrelated apps and deletions","Remove auto-merge and mark promotion-review-required on a relevant failure"],"tags":["","REPO"],"evidence":[{"label":".github/workflows/auto-merge.yml","href":"../.github/workflows/auto-merge.yml","basis":"observed"},{"label":"tools/swhurl/console/merge.py","href":"../tools/swhurl/console/merge.py","basis":"observed"},{"label":"tests/test_console_merge.py","href":"../tests/test_console_merge.py","basis":"observed"},{"label":"Auto-merge","href":"console.md#auto-merge","basis":"declared"}],"interfaces":["python -m swhurl console-merge"],"source":"tools/swhurl/console/merge.py","snippet":"BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')"},{"id":"verify-py","kind":"codebase","name":"verify.py + report.py","summary":"check-config (local) and verify-platform (live), reported as [OK], [BAD], [WARN].","x":850,"y":792,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl","responsibilities":["Flux units Ready, HTTPS redirect, ingestion key, retention, backups, webhooks","Warn while the running console image is older than the checkout's tooling","Exit non-zero on any [BAD]"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/verify.py","href":"../tools/swhurl/verify.py","basis":"observed"},{"label":"tools/swhurl/report.py","href":"../tools/swhurl/report.py","basis":"observed"},{"label":"tests/test_verify.py","href":"../tests/test_verify.py","basis":"observed"},{"label":"Check health","href":"operations.md#check-health","basis":"declared"}],"interfaces":["make verify-platform","make check-config"],"source":"tools/swhurl/verify.py"},{"id":"livetests","kind":"codebase","name":"livetests/","summary":"Throwaway live tests: create labelled resources, check behaviour, remove them.","x":850,"y":984,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl, flux","responsibilities":["lifecycle: suspend, uninstall, destroy-data and Orphan on a disposable app","reloader: opt-in and namespace scope","app_template and restore_sqlite: generated fixtures and a database restore","Refuse to touch namespaces without their platform.swhurl.com/\u003ctest\u003e label"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/livetests/__init__.py","href":"../tools/swhurl/livetests/__init__.py","basis":"observed"},{"label":"tools/swhurl/livetests/lifecycle.py","href":"../tools/swhurl/livetests/lifecycle.py","basis":"observed"},{"label":"tests/fixtures/lifecycle-app/app.yaml","href":"../tests/fixtures/lifecycle-app/app.yaml","basis":"observed"},{"label":"tests/test_livetests.py","href":"../tests/test_livetests.py","basis":"observed"}],"interfaces":["make live-test-*","Fixtures reconcile from the pushed Git revision"],"source":"tools/swhurl/livetests/"},{"id":"flux-install","kind":"codebase","name":"flux.py + install/","summary":"Install the Flux controllers at a pinned version with patches; wait for units.","x":1120,"y":24,"w":190,"h":150,"owner":"This repository","technology":"Python, flux CLI, kustomize","responsibilities":["Render flux install --export at FLUX_VERSION and apply the patches","Add the image-reflector and image-automation controllers","flux-wait polls until every unit is Ready at the fetched revision"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/flux.py","href":"../tools/swhurl/flux.py","basis":"observed"},{"label":"clusters/home/flux-system/install/kustomization.yaml","href":"../clusters/home/flux-system/install/kustomization.yaml","basis":"observed"},{"label":"tests/test_flux.py","href":"../tests/test_flux.py","basis":"observed"}],"interfaces":["make flux-install","swhurl flux-wait"],"source":"tools/swhurl/flux.py","snippet":"FLUX_VERSION = '2.8.1'\nEXTRA_COMPONENTS = ('image-reflector-controller', 'image-automation-controller')"},{"id":"sources","kind":"codebase","name":"flux-system/sources/","summary":"The GitRepository, the HelmRepositories and the platform-settings ConfigMap.","x":1120,"y":216,"w":190,"h":150,"owner":"Flux unit cluster-sources","technology":"Flux sources, ConfigMap","responsibilities":["GitRepository swhurl-platform: main over HTTPS, every minute","HelmRepositories for each chart","platform-settings: CERT_ISSUER and BASE_DOMAIN for Flux substitution"],"tags":["","BOOTSTRAP"],"evidence":[{"label":"clusters/home/flux-system/sources/gitrepositories.yaml","href":"../clusters/home/flux-system/sources/gitrepositories.yaml","basis":"observed"},{"label":"clusters/home/flux-system/sources/helmrepositories.yaml","href":"../clusters/home/flux-system/sources/helmrepositories.yaml","basis":"observed"},{"label":"clusters/home/flux-system/sources/configmap-platform-settings.yaml","href":"../clusters/home/flux-system/sources/configmap-platform-settings.yaml","basis":"observed"},{"label":"Settings","href":"services.md#settings","basis":"declared"}],"source":"clusters/home/flux-system/sources/gitrepositories.yaml","snippet":"kind: GitRepository\nmetadata:\n  name: swhurl-platform\n  namespace: flux-system\nspec:\n  interval: 1m\n  ref:\n    branch: main\n  url: https://github.com/samclement/swhurl-platform"},{"id":"root-kustomizations","kind":"codebase","name":"kustomizations.yaml (roots)","summary":"cluster-sources and cluster-stack, applied by make flux-bootstrap.","x":1120,"y":408,"w":190,"h":150,"owner":"make flux-bootstrap","technology":"Flux Kustomization","responsibilities":["Flux does not reconcile this file: apply changes with make flux-bootstrap","cluster-stack depends on cluster-sources and sets wait: false"],"tags":["","BOOTSTRAP"],"evidence":[{"label":"clusters/home/flux-system/kustomizations.yaml","href":"../clusters/home/flux-system/kustomizations.yaml","basis":"observed"},{"label":"clusters/home/flux-system/kustomization.yaml","href":"../clusters/home/flux-system/kustomization.yaml","basis":"observed"},{"label":"Bootstrap: Flux","href":"bootstrap.md#4-flux","basis":"declared"}],"source":"clusters/home/flux-system/kustomizations.yaml","snippet":"  name: cluster-stack\nspec:\n  dependsOn:\n    - name: cluster-sources\n  path: ./clusters/home\n  deletionPolicy: Orphan\n  prune: true\n  wait: false"},{"id":"unit-defs","kind":"codebase","name":"clusters/home/*.yaml","summary":"One Flux Kustomization per capability and per app instance, with its dependencies.","x":1120,"y":600,"w":190,"h":150,"owner":"Flux unit cluster-stack","technology":"Flux Kustomization","responsibilities":["infra.yaml and platform.yaml define the shared units","app-\u003capp\u003e-\u003cenv\u003e.yaml defines one app unit each; kustomization.yaml registers them","Set decryption exactly where a path holds encrypted Secrets","Set substituteFrom only where manifests use platform-settings"],"tags":["","FLUX UNIT"],"evidence":[{"label":"clusters/home/kustomization.yaml","href":"../clusters/home/kustomization.yaml","basis":"observed"},{"label":"clusters/home/infra.yaml","href":"../clusters/home/infra.yaml","basis":"observed"},{"label":"clusters/home/platform.yaml","href":"../clusters/home/platform.yaml","basis":"observed"},{"label":"clusters/home/app-hello-ts-staging.yaml","href":"../clusters/home/app-hello-ts-staging.yaml","basis":"observed"},{"label":"Flux units","href":"architecture.md#flux-units","basis":"declared"}],"source":"clusters/home/app-hello-ts-staging.yaml","snippet":"  name: app-hello-ts-staging\nspec:\n  dependsOn:\n  - name: infra-base\n  - name: platform-oauth2-proxy\n  - name: platform-image-automation\n  path: ./apps/hello-ts/staging\n  prune: true\n  wait: true\n  timeout: 3m"},{"id":"image-policies","kind":"codebase","name":"image-automation.yaml","summary":"ImageRepository, ImagePolicy and ImageUpdateAutomation for one app's staging.","x":1120,"y":792,"w":190,"h":150,"owner":"Flux unit app-\u003capp\u003e-staging","technology":"Flux image automation","responsibilities":["Scan ghcr.io/samclement/\u003capp\u003e hourly, or at once on a webhook","Order \u003crun\u003e-\u003csha\u003e tags by run number","Commit \"deploy: staging image for \u003capp\u003e\" to main through the write source"],"tags":["","FLUX UNIT"],"evidence":[{"label":"apps/hello-ts/staging/image-automation.yaml","href":"../apps/hello-ts/staging/image-automation.yaml","basis":"observed"},{"label":"Deploy a new image","href":"apps.md#deploy-a-new-image","basis":"declared"}],"source":"apps/hello-ts/staging/image-automation.yaml","snippet":"  filterTags:\n    pattern: ^(?P\u003crun\u003e[0-9]+)-[0-9a-f]{7,40}$\n    extract: $run\n  policy:\n    numerical:\n      order: asc"},{"id":"receivers","kind":"codebase","name":"platform/flux-webhook/","summary":"The github and app-images Receivers, their token Secrets, Ingress and NetworkPolicy.","x":1120,"y":984,"w":190,"h":150,"owner":"Flux unit platform-flux-webhook","technology":"Flux Receiver, Ingress, NetworkPolicy","responsibilities":["Filter push events to refs/heads/main","Limit image scans to ImageRepository objects labelled platform.swhurl.com/managed","Admit Traefik to cert-manager's HTTP-01 solver in flux-system"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/flux-webhook/receiver.yaml","href":"../platform/flux-webhook/receiver.yaml","basis":"observed"},{"label":"platform/flux-webhook/image-receiver.yaml","href":"../platform/flux-webhook/image-receiver.yaml","basis":"observed"},{"label":"platform/flux-webhook/ingress.yaml","href":"../platform/flux-webhook/ingress.yaml","basis":"observed"},{"label":"platform/flux-webhook/networkpolicy.yaml","href":"../platform/flux-webhook/networkpolicy.yaml","basis":"observed"}],"source":"platform/flux-webhook/receiver.yaml","snippet":"kind: Receiver\nmetadata:\n  name: github\nspec:\n  type: github\n  events: [ping, push]\n  resources:\n    - kind: GitRepository\n      name: swhurl-platform\n  resourceFilter: has(req.ref) \u0026\u0026 req.ref == 'refs/heads/main'"},{"id":"sops-secrets","kind":"codebase","name":".sops.yaml + *.sops.yaml","summary":"Secrets live beside their consumer, encrypted with age; Flux decrypts them.","x":1390,"y":24,"w":190,"h":150,"owner":"This repository","technology":"SOPS, age","responsibilities":["Encrypt only data and stringData","Rules for platform, sources, apps and the app fixtures","The age private key stays out of Git"],"tags":["","REPO"],"evidence":[{"label":".sops.yaml","href":"../.sops.yaml","basis":"observed"},{"label":"Example: oauth2-proxy Secret (encrypted)","href":"../platform/oauth2-proxy/secret.sops.yaml","basis":"observed"},{"label":"Secrets","href":"operations.md#secrets","basis":"declared"}],"interfaces":["decryption.secretRef: sops-age on units that hold encrypted Secrets"],"source":".sops.yaml"},{"id":"traefik-config","kind":"codebase","name":"infra/traefik/","summary":"HelmChartConfig override for the k3s-packaged Traefik: NodePorts, JSON logs, HTTPS redirect.","x":1390,"y":216,"w":190,"h":150,"owner":"Flux unit infra-traefik","technology":"k3s HelmChartConfig","responsibilities":["Redirect with ports.web.redirections.entryPoint (chart 38 ignores redirectTo)"],"tags":["","FLUX UNIT"],"evidence":[{"label":"infra/traefik/helmchartconfig.yaml","href":"../infra/traefik/helmchartconfig.yaml","basis":"observed"},{"label":"infra/traefik/kustomization.yaml","href":"../infra/traefik/kustomization.yaml","basis":"observed"}],"source":"infra/traefik/helmchartconfig.yaml","snippet":"    ports:\n      web:\n        nodePort: 31514\n        redirections:\n          entryPoint:\n            to: websecure\n            scheme: https\n            permanent: true\n      websecure:\n        nodePort: 30313"},{"id":"base-manifests","kind":"codebase","name":"infra/base/","summary":"Shared namespaces and the local-path-retain StorageClass.","x":1390,"y":408,"w":190,"h":150,"owner":"Flux unit infra-base","technology":"Namespace, StorageClass","responsibilities":["Namespaces: platform-system, ingress, cert-manager, logging, observability, console"],"tags":["","FLUX UNIT"],"evidence":[{"label":"infra/base/kustomization.yaml","href":"../infra/base/kustomization.yaml","basis":"observed"},{"label":"infra/base/namespaces.yaml","href":"../infra/base/namespaces.yaml","basis":"observed"},{"label":"infra/base/storageclass-local-path-retain.yaml","href":"../infra/base/storageclass-local-path-retain.yaml","basis":"observed"}],"source":"infra/base/"},{"id":"app-manifests","kind":"codebase","name":"apps/\u003capp\u003e/\u003cenv\u003e/","summary":"Namespace, HelmRelease and kustomization for one app instance.","x":1390,"y":600,"w":190,"h":150,"owner":"Flux unit app-\u003capp\u003e-\u003cenv\u003e","technology":"bjw-s app-template HelmRelease","responsibilities":["Plain YAML written by make app-new; edit it like any manifest","Image tag and digest carry Flux setter comments in staging","Helm waits 3 minutes, then retries once"],"tags":["","FLUX UNIT"],"evidence":[{"label":"apps/hello-ts/staging/helmrelease.yaml","href":"../apps/hello-ts/staging/helmrelease.yaml","basis":"observed"},{"label":"apps/hello-ts/staging/namespace.yaml","href":"../apps/hello-ts/staging/namespace.yaml","basis":"observed"},{"label":"apps/hello-ts/staging/kustomization.yaml","href":"../apps/hello-ts/staging/kustomization.yaml","basis":"observed"},{"label":"apps/hello-ts/prod/helmrelease.yaml","href":"../apps/hello-ts/prod/helmrelease.yaml","basis":"observed"},{"label":"apps/README.md","href":"../apps/README.md","basis":"observed"}],"source":"apps/hello-ts/staging/helmrelease.yaml","snippet":"            image:\n              repository: ghcr.io/samclement/hello-ts\n              tag: 36-6ec5f63 # {\"$imagepolicy\": \"flux-system:hello-ts-staging:tag\"}"},{"id":"write-source","kind":"codebase","name":"platform/image-automation/","summary":"A second GitRepository over SSH with a write deploy key, used only to push pins.","x":1390,"y":792,"w":190,"h":150,"owner":"Flux unit platform-image-automation","technology":"Flux GitRepository, SOPS Secret","responsibilities":["Flux applies manifests from the read-only HTTPS source, not from this one","The deploy key can write only this repository"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/image-automation/gitrepository.yaml","href":"../platform/image-automation/gitrepository.yaml","basis":"observed"},{"label":"platform/image-automation/kustomization.yaml","href":"../platform/image-automation/kustomization.yaml","basis":"observed"}],"source":"platform/image-automation/gitrepository.yaml","snippet":"kind: GitRepository\nmetadata:\n  name: swhurl-platform-write\nspec:\n  url: ssh://git@github.com/samclement/swhurl-platform\n  secretRef:\n    name: flux-image-automation-git"},{"id":"cert-manifests","kind":"codebase","name":"infra/cert-manager/ + infra/issuers/","summary":"The cert-manager HelmRelease and three ClusterIssuers.","x":1390,"y":984,"w":190,"h":150,"owner":"Flux units infra-cert-manager, infra-issuers","technology":"HelmRelease, ClusterIssuer","responsibilities":["selfsigned, letsencrypt-staging, letsencrypt-prod (HTTP-01 through Traefik)","Plain manifests with no settings substituted"],"tags":["","FLUX UNITS"],"evidence":[{"label":"infra/cert-manager/helmrelease.yaml","href":"../infra/cert-manager/helmrelease.yaml","basis":"observed"},{"label":"infra/issuers/clusterissuer-letsencrypt-prod.yaml","href":"../infra/issuers/clusterissuer-letsencrypt-prod.yaml","basis":"observed"},{"label":"infra/issuers/clusterissuer-letsencrypt-staging.yaml","href":"../infra/issuers/clusterissuer-letsencrypt-staging.yaml","basis":"observed"},{"label":"infra/issuers/clusterissuer-selfsigned.yaml","href":"../infra/issuers/clusterissuer-selfsigned.yaml","basis":"observed"}],"source":"infra/issuers/"},{"id":"reloader-release","kind":"codebase","name":"platform/reloader/","summary":"Reloader HelmRelease with the list of namespaces it may act in.","x":1660,"y":24,"w":190,"h":150,"owner":"Flux unit platform-reloader","technology":"HelmRelease","responsibilities":["make app-new --secret-keys adds the app's namespace; make app-remove takes it out"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/reloader/helmrelease.yaml","href":"../platform/reloader/helmrelease.yaml","basis":"observed"},{"label":"Live test","href":"../tools/swhurl/livetests/reloader.py","basis":"observed"}],"source":"platform/reloader/helmrelease.yaml"},{"id":"signin-manifests","kind":"codebase","name":"platform/oauth2-proxy/","summary":"oauth2-proxy HelmRelease, its SOPS Secret and the ForwardAuth middleware.","x":1660,"y":216,"w":190,"h":150,"owner":"Flux unit platform-oauth2-proxy","technology":"HelmRelease, Traefik Middleware","responsibilities":["upstream=static://202 and the middleware pointing at the root path","email_domains = [] so only listed addresses sign in","trusted-proxy-ip limited to the k3s pod CIDR"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/oauth2-proxy/helmrelease.yaml","href":"../platform/oauth2-proxy/helmrelease.yaml","basis":"observed"},{"label":"platform/oauth2-proxy/middleware.yaml","href":"../platform/oauth2-proxy/middleware.yaml","basis":"observed"},{"label":"Sign-in","href":"services.md#sign-in","basis":"declared"}],"source":"platform/oauth2-proxy/middleware.yaml","snippet":"kind: Middleware\nmetadata:\n  name: oauth-auth-shared\n  namespace: ingress\nspec:\n  forwardAuth:\n    address: http://oauth2-proxy-shared.ingress.svc.cluster.local/\n    trustForwardHeader: true"},{"id":"host-scripts","kind":"codebase","name":"host/*.sh + dns.env","summary":"Install or remove a host timer; update Route 53 records.","x":1660,"y":408,"w":190,"h":150,"owner":"Host; run by the operator with sudo","technology":"bash, AWS CLI","responsibilities":["install-timer.sh dns | backup | heartbeat [--dry-run] [--delete]","Units run scripts from this checkout as the installing user","dns.env is read on every run, so edits need no reinstall"],"tags":["","HOST"],"evidence":[{"label":"host/install-timer.sh","href":"../host/install-timer.sh","basis":"observed"},{"label":"host/aws-dns-updater.sh","href":"../host/aws-dns-updater.sh","basis":"observed"},{"label":"host/dns.env","href":"../host/dns.env","basis":"observed"},{"label":"Bootstrap: DNS","href":"bootstrap.md#2-dns","basis":"declared"}],"source":"host/install-timer.sh"},{"id":"systemd-templates","kind":"codebase","name":"systemd templates","summary":"Service and timer templates for dynamic DNS, backups and the heartbeat.","x":1660,"y":600,"w":190,"h":150,"owner":"Host systemd","technology":"systemd unit templates","responsibilities":["Exec lines expand $ and % themselves: write $$ and %% for the shell","A + prefix runs that line as root despite User=","Append output to /var/log/swhurl-platform/\u003cunit\u003e.log, rotated at 5 MiB"],"tags":["","HOST"],"evidence":[{"label":"host/templates/systemd/backup-mongodb.service.tmpl","href":"../host/templates/systemd/backup-mongodb.service.tmpl","basis":"observed"},{"label":"host/templates/systemd/backup-mongodb.timer.tmpl","href":"../host/templates/systemd/backup-mongodb.timer.tmpl","basis":"observed"},{"label":"host/templates/systemd/dynamic-dns.service.tmpl","href":"../host/templates/systemd/dynamic-dns.service.tmpl","basis":"observed"},{"label":"host/templates/systemd/notification-heartbeat.service.tmpl","href":"../host/templates/systemd/notification-heartbeat.service.tmpl","basis":"observed"}],"source":"host/templates/systemd/backup-mongodb.service.tmpl","snippet":"ExecStart=/usr/bin/make backup-mongodb\n# Runs only if the MongoDB backup succeeded; make verify-platform flags either one going stale.\nExecStart=/usr/bin/make backup-sqlite"},{"id":"backups","kind":"codebase","name":"recovery.py + sqlite_*.py","summary":"Encrypted backups of ClickStack MongoDB and app SQLite databases, pruned and copied to S3.","x":1660,"y":792,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl, age, AWS CLI","responsibilities":["Stream dumps through age so no plaintext touches disk","Keep 7 daily and 4 weekly backups (retention.py)","Restore one app's SQLite database; prove a MongoDB backup restores in a throwaway namespace"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/recovery.py","href":"../tools/swhurl/recovery.py","basis":"observed"},{"label":"tools/swhurl/sqlite_backup.py","href":"../tools/swhurl/sqlite_backup.py","basis":"observed"},{"label":"tools/swhurl/sqlite_restore.py","href":"../tools/swhurl/sqlite_restore.py","basis":"observed"},{"label":"tools/swhurl/retention.py","href":"../tools/swhurl/retention.py","basis":"observed"},{"label":"Backups and recovery","href":"operations.md#backups-and-recovery","basis":"declared"}],"interfaces":["make backup-mongodb","make backup-sqlite","make restore-sqlite APP= ENV= CONFIRM=\u003capp\u003e/\u003cenv\u003e"],"source":"tools/swhurl/recovery.py"},{"id":"otel-releases","kind":"codebase","name":"platform/otel/","summary":"HelmReleases for the DaemonSet and cluster collectors, and the ingestion key Secret.","x":1930,"y":24,"w":190,"h":150,"owner":"Flux unit platform-otel","technology":"opentelemetry-collector HelmRelease","responsibilities":["Host networking and the kubelet at 127.0.0.1:10250 for node metrics","${env:...} collector references need no Flux escaping here"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/otel/helmrelease-daemonset.yaml","href":"../platform/otel/helmrelease-daemonset.yaml","basis":"observed"},{"label":"platform/otel/helmrelease-cluster.yaml","href":"../platform/otel/helmrelease-cluster.yaml","basis":"observed"},{"label":"platform/otel/kustomization.yaml","href":"../platform/otel/kustomization.yaml","basis":"observed"}],"source":"platform/otel/"},{"id":"clickstack-releases","kind":"codebase","name":"platform/clickstack*/","summary":"HelmReleases for the operators and the ClickStack stack, with its Secret.","x":1930,"y":216,"w":190,"h":150,"owner":"Flux units platform-clickstack-operators, platform-clickstack","technology":"HelmRelease","responsibilities":["Bump platform.swhurl.com/config-revision with hyperdx.config changes","spec.timeout allows for cold image pulls"],"tags":["","FLUX UNITS"],"evidence":[{"label":"platform/clickstack/helmrelease.yaml","href":"../platform/clickstack/helmrelease.yaml","basis":"observed"},{"label":"platform/clickstack-operators/helmrelease.yaml","href":"../platform/clickstack-operators/helmrelease.yaml","basis":"observed"},{"label":"platform/clickstack/kustomization.yaml","href":"../platform/clickstack/kustomization.yaml","basis":"observed"}],"source":"platform/clickstack/helmrelease.yaml"},{"id":"clickstack-tools","kind":"codebase","name":"clickstack.py + dashboards.py","summary":"First-run setup and one dashboard per app, written through ClickStack's API.","x":1930,"y":408,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl through Runner","responsibilities":["Register the admin account and set the team ingestion key from SOPS","Create or update a dashboard per app in Git; delete those of removed apps"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/clickstack.py","href":"../tools/swhurl/clickstack.py","basis":"observed"},{"label":"tools/swhurl/dashboards.py","href":"../tools/swhurl/dashboards.py","basis":"observed"},{"label":"tests/test_dashboards.py","href":"../tests/test_dashboards.py","basis":"observed"},{"label":"Dashboards","href":"apps.md#dashboards","basis":"declared"}],"interfaces":["make clickstack-bootstrap","make clickstack-dashboards"],"source":"tools/swhurl/clickstack.py"},{"id":"notifications-pkg","kind":"codebase","name":"notifications/","summary":"Evaluate lifecycle events and health incidents; deliver through a durable outbox.","x":1930,"y":600,"w":190,"h":150,"owner":"This repository","technology":"Python, httpx, kubectl","responsibilities":["evaluate.py: discover targets and decide events and incidents","state.py and statestore.py: one JSON document in one ConfigMap key","delivery.py: validated ntfy publication, at least once"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/notifications/__init__.py","href":"../tools/swhurl/notifications/__init__.py","basis":"observed"},{"label":"tools/swhurl/notifications/evaluate.py","href":"../tools/swhurl/notifications/evaluate.py","basis":"observed"},{"label":"tools/swhurl/notifications/delivery.py","href":"../tools/swhurl/notifications/delivery.py","basis":"observed"},{"label":"tools/swhurl/statestore.py","href":"../tools/swhurl/statestore.py","basis":"observed"},{"label":"tests/test_notifications.py","href":"../tests/test_notifications.py","basis":"observed"}],"interfaces":["python3 -m swhurl notifications-check [--dry-run]"],"source":"tools/swhurl/notifications/"},{"id":"heartbeat","kind":"codebase","name":"heartbeat.py","summary":"Run from a host timer: alert when the in-cluster checker CronJob goes stale.","x":1930,"y":792,"w":190,"h":150,"owner":"This repository","technology":"Python, kubectl","responsibilities":["Watch the checker from outside the cluster it runs in"],"tags":["","REPO"],"evidence":[{"label":"tools/swhurl/notifications/heartbeat.py","href":"../tools/swhurl/notifications/heartbeat.py","basis":"observed"},{"label":"host/templates/systemd/notification-heartbeat.timer.tmpl","href":"../host/templates/systemd/notification-heartbeat.timer.tmpl","basis":"observed"},{"label":"tests/test_notification_heartbeat.py","href":"../tests/test_notification_heartbeat.py","basis":"observed"},{"label":"Notification checker heartbeat","href":"operations.md#notification-checker-heartbeat","basis":"declared"}],"interfaces":["make notifications-heartbeat","make host-heartbeat"],"source":"tools/swhurl/notifications/heartbeat.py"},{"id":"alerts-manifests","kind":"codebase","name":"platform/alerts/","summary":"ntfy Providers, the failures Alert and their SOPS Secrets.","x":1930,"y":984,"w":190,"h":150,"owner":"Flux unit platform-alerts","technology":"Flux Provider, Alert","responsibilities":["Event sources: Kustomization, GitRepository, HelmRepository and the image automation kinds","Root units carry the label platform.swhurl.com/alert: failures"],"tags":["","FLUX UNIT"],"evidence":[{"label":"platform/alerts/alerts.yaml","href":"../platform/alerts/alerts.yaml","basis":"observed"},{"label":"platform/alerts/kustomization.yaml","href":"../platform/alerts/kustomization.yaml","basis":"observed"}],"source":"platform/alerts/alerts.yaml"}],"connections":[{"from":"console-server","to":"console-actions","label":"starts jobs","type":"request"},{"from":"console-actions","to":"console-changes","label":"PR jobs","type":"request"},{"from":"console-changes","to":"app-generator","label":"app-new","type":"request"},{"from":"console-changes","to":"app-edits","label":"edits","type":"request"},{"from":"make-entry","to":"runner","label":"calls via","type":"request"},{"from":"make-entry","to":"check-repo","label":"make check","type":"request"},{"from":"runner","to":"unit-tests","label":"FakeRunner","type":"read"},{"from":"app-generator","to":"app-policy","label":"policy","type":"request"},{"from":"validate-yml","to":"publish-yml","label":"main passed","type":"event"},{"from":"publish-yml","to":"console-image","label":"builds, pins","type":"request"},{"from":"sources","to":"root-kustomizations","label":"Git revision","type":"read"},{"from":"root-kustomizations","to":"unit-defs","label":"applies","type":"request"},{"from":"unit-defs","to":"base-manifests","label":"path","type":"request"},{"from":"unit-defs","to":"app-manifests","label":"path","type":"request"},{"from":"image-policies","to":"app-manifests","label":"sets pin","type":"request"},{"from":"image-policies","to":"write-source","label":"pushes via","type":"request"},{"from":"app-manifests","to":"signin-manifests","label":"middleware","type":"read"},{"from":"host-scripts","to":"systemd-templates","label":"installs","type":"request"},{"from":"systemd-templates","to":"backups","label":"ExecStart","type":"request"},{"from":"systemd-templates","to":"heartbeat","label":"timer runs","type":"request"},{"from":"otel-releases","to":"clickstack-releases","label":"OTLP export","type":"event"}]}]};
+
+const KIND_NAMES = {
+  actor: "Actor", process: "Business process", system: "System",
+  service: "Service", infrastructure: "Infrastructure", codebase: "Component"
+};
+const KIND_GLYPHS = {
+  actor: "A", process: "P", system: "S", service: "SV", infrastructure: "I", codebase: "<>"
+};
+
+let model = structuredClone(blueprint);
+let activeLayerId = model.layers[0].id;
+let selectedId = null;
+let transform = { x: 0, y: 0, scale: 1 };
+let focusState = null;
+let layerHistory = [];
+let layerFlightActive = false;
+let activeScope = null;
+let drag = null;
+
+const $ = selector => document.querySelector(selector);
+const $$ = selector => [...document.querySelectorAll(selector)];
+const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
+const safeHref = value => {
+  const href = String(value || "");
+  return href && !/^(?:[^/]+:|\/\/|\\)/.test(href) && !/\s/.test(href) ? href : /^https?:\/\//.test(href) ? href : null;
+};
+const layer = () => model.layers.find(item => item.id === activeLayerId);
+const elementById = id => layer().elements.find(item => item.id === id);
+const visibleElements = () => layer().elements;
+const focusedElements = () => activeScope
+  ? layer().elements.filter(item => activeScope.ids.includes(item.id))
+  : layer().elements;
+const visibleConnections = () => layer().connections || [];
+const nextLayer = () => {
+  const index = model.layers.findIndex(item => item.id === activeLayerId);
+  return model.layers[index + 1] || null;
+};
+const LIGHT_PALETTE = {
+  actor: "#d97706", process: "#059669", system: "#0891b2",
+  service: "#2563eb", infrastructure: "#7c3aed", codebase: "#e14f3d"
+};
+const LIGHT_LAYER_COLORS = ["#059669", "#2563eb", "#e14f3d", "#7c3aed"];
+const isLightTheme = () => document.documentElement.dataset.theme !== "dark";
+const colorFor = kind => isLightTheme() ? (LIGHT_PALETTE[kind] || "#177a55") : (model.palette[kind] || "#8be0ba");
+const layerColor = item => isLightTheme()
+  ? LIGHT_LAYER_COLORS[model.layers.findIndex(layer => layer.id === item.id) % LIGHT_LAYER_COLORS.length]
+  : (item.accent || "#8be0ba");
+
+function validate(candidate) {
+  if (!candidate || candidate.apiVersion !== "service-blueprint/v1") throw new Error('apiVersion must be "service-blueprint/v1".');
+  if (candidate.kind !== "SoftwareSystem") throw new Error('kind must be "SoftwareSystem".');
+  if (!candidate.metadata?.title) throw new Error("metadata.title is required.");
+  if (!Array.isArray(candidate.layers) || candidate.layers.length === 0) throw new Error("At least one layer is required.");
+  const ids = new Set();
+  candidate.layers.forEach((current, index) => {
+    if (!current.id || !current.label || !Array.isArray(current.elements)) throw new Error(`Layer ${index + 1} needs id, label and elements.`);
+    current.elements.forEach(element => {
+      if (!element.id || !element.kind || !element.name) throw new Error(`Every element in ${current.id} needs id, kind and name.`);
+      const scopedId = `${current.id}:${element.id}`;
+      if (ids.has(scopedId)) throw new Error(`Duplicate element id: ${element.id} in ${current.id}.`);
+      ids.add(scopedId);
+    });
+    (current.connections || []).forEach(connection => {
+      if (!current.elements.some(item => item.id === connection.from)) throw new Error(`Unknown connection source: ${connection.from}.`);
+      if (!current.elements.some(item => item.id === connection.to)) throw new Error(`Unknown connection target: ${connection.to}.`);
+    });
+    (current.businessProcesses || []).forEach(process => {
+      if (!process.label || !Array.isArray(process.relatesTo) || process.relatesTo.length === 0) {
+        throw new Error(`Every business process in ${current.id} needs a label and relatesTo targets.`);
+      }
+      process.relatesTo.forEach(target => {
+        if (!current.elements.some(item => item.id === target)) throw new Error(`Unknown business process target: ${target}.`);
+      });
+    });
+    (current.actors || []).forEach(actor => {
+      const actorElement = current.elements.find(item => item.id === actor.ref);
+      if (!actorElement || actorElement.kind !== "actor") {
+        throw new Error(`Unknown actor element ${actor.ref} in ${current.id}.`);
+      }
+      if (!Array.isArray(actor.processes) || actor.processes.length === 0) {
+        throw new Error(`Actor ${actor.ref} in ${current.id} needs business process references.`);
+      }
+      actor.processes.forEach(processId => {
+        if (!current.businessProcesses.some(process => process.id === processId)) {
+          throw new Error(`Unknown business process ${processId} on actor ${actor.ref}.`);
+        }
+      });
+    });
+    const childLayer = candidate.layers[index + 1];
+    if (childLayer) {
+      current.elements.forEach(element => {
+        (element.children || []).forEach(childId => {
+          if (!childLayer.elements.some(item => item.id === childId)) {
+            throw new Error(`Unknown child ${childId} on ${current.id}:${element.id}.`);
+          }
+        });
+      });
+    }
+  });
+}
+
+function setTheme(theme) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = nextTheme;
+  $("#theme-toggle").setAttribute("aria-pressed", String(nextTheme === "dark"));
+  $("#theme-toggle").title = `Switch to ${nextTheme === "light" ? "dark" : "light"} theme`;
+  $("#theme-label").textContent = nextTheme === "light" ? "DARK" : "LIGHT";
+}
+
+function initTheme() {
+  setTheme("light");
+}
+
+function toggleTheme() {
+  const previousSelection = selectedId;
+  setTheme(isLightTheme() ? "dark" : "light");
+  document.documentElement.style.setProperty("--layer-accent", layerColor(layer()));
+  renderLayerSwitch();
+  renderLegend();
+  renderRail();
+  renderMap();
+  if (previousSelection) selectElement(previousSelection);
+  updateHierarchyNavigation();
+}
+
+function init() {
+  initTheme();
+  validate(model);
+  $("#blueprint-title").textContent = model.metadata.title;
+  document.title = `${model.metadata.title} — Repository Blueprint`;
+  renderLayerSwitch();
+  renderLegend();
+  selectLayer(activeLayerId, false);
+  bindEvents();
+}
+
+function renderLayerSwitch() {
+  $("#layer-switch").innerHTML = model.layers
+    .sort((a, b) => a.order - b.order)
+    .map((item, index) => `
+      <button class="layer-btn" data-layer="${escapeHtml(item.id)}" role="tab"
+        style="--layer-color:${escapeHtml(layerColor(item))}" aria-selected="${item.id === activeLayerId}">
+        <span class="layer-no">0${index + 1}</span><span class="layer-name">${escapeHtml(item.label)}</span>
+      </button>`).join("");
+}
+
+function renderLegend() {
+  const kinds = [...new Set(layer().elements.map(element => element.kind))];
+  $("#legend").innerHTML = kinds.map(kind => `
+    <span style="color:${colorFor(kind)}"><i></i>${escapeHtml(KIND_NAMES[kind] || kind)}</span>`).join("");
+}
+
+function selectLayer(id, animate = true, focusId = null) {
+  if (!model.layers.some(item => item.id === id)) return;
+  clearFocus(false);
+  layerHistory = [];
+  activeScope = null;
+  activeLayerId = id;
+  selectedId = null;
+  $("#inspector").classList.remove("has-selection");
+  $$(".layer-btn").forEach(button => button.setAttribute("aria-selected", String(button.dataset.layer === id)));
+  const current = layer();
+  document.documentElement.style.setProperty("--layer-accent", layerColor(current));
+  $("#layer-crumb").textContent = current.shortLabel || current.label;
+  $("#canvas-title").textContent = current.label;
+  $("#canvas-subtitle").textContent = current.description || "";
+  renderRail();
+  renderLegend();
+  renderMap();
+  requestAnimationFrame(() => {
+    fitMap(animate);
+    if (focusId) window.setTimeout(() => selectElement(focusId, true), animate ? 300 : 0);
+  });
+}
+
+function renderRail() {
+  const groups = {};
+  visibleElements().filter(item => item.visual !== "boundary").forEach(item => (groups[item.kind] ||= []).push(item));
+  $("#rail-tree").innerHTML = Object.entries(groups).map(([kind, items]) => `
+    <section class="tree-section">
+      <div class="tree-label">${escapeHtml(KIND_NAMES[kind] || kind)}s · ${items.length}</div>
+      ${items.map(item => `
+        <button class="tree-item ${activeScope && !activeScope.ids.includes(item.id) ? "peripheral" : ""}"
+          data-element="${escapeHtml(item.id)}" style="--kind-color:${colorFor(kind)}">
+          <span class="tree-glyph">${escapeHtml(KIND_GLYPHS[kind] || "·")}</span>
+          <span>${escapeHtml(item.name)}</span>
+        </button>`).join("")}
+    </section>`).join("");
+}
+
+function renderParentBoundary() {
+  const boundary = $("#parent-boundary");
+  if (!activeScope?.ids?.length) {
+    boundary.classList.remove("visible");
+    return;
+  }
+  const bounds = modelGroupBounds(activeScope.ids);
+  const parentLayer = model.layers.find(item => item.id === activeScope.parentLayer);
+  const padX = 34;
+  const padTop = 32;
+  const padBottom = 30;
+  boundary.style.left = `${Math.max(5, bounds.x - padX)}px`;
+  boundary.style.top = `${Math.max(5, bounds.y - padTop)}px`;
+  boundary.style.width = `${bounds.width + padX * 2}px`;
+  boundary.style.height = `${bounds.height + padTop + padBottom}px`;
+  boundary.style.setProperty("--boundary-color", layerColor(parentLayer || layer()));
+  $("#parent-boundary-source").textContent = `From ${parentLayer?.shortLabel || parentLayer?.label || "parent"}`;
+  $("#parent-boundary-name").textContent = activeScope.parentName;
+  boundary.classList.add("visible");
+}
+
+function renderMap() {
+  const current = layer();
+  const width = current.canvas?.width || 1200;
+  const height = (current.canvas?.height || 720) + (current.contentOffset || 0);
+  const offset = current.contentOffset || 0;
+  const map = $("#map");
+  map.style.width = `${width}px`;
+  map.style.height = `${height}px`;
+  $("#edges").setAttribute("width", width);
+  $("#edges").setAttribute("height", height);
+  $("#edges").setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const bands = (current.bands || []).map(band => `
+    <div class="map-band" style="top:${band.y}px;height:${band.height}px">
+      <span class="map-band-label">${escapeHtml(band.label)}</span>
+    </div>`).join("");
+  const focusedIds = new Set(focusedElements().map(item => item.id));
+  const businessProcesses = current.businessProcesses || [];
+  const processes = businessProcesses.map((process, index) => {
+    const inFocus = !activeScope || process.relatesTo.some(id => focusedIds.has(id));
+    const targetId = process.relatesTo.find(id => focusedIds.has(id)) || process.relatesTo[0];
+    const target = elementById(targetId);
+    const targetY = target ? target.y + offset : 330;
+    const centre = process.x + (process.w || 110) / 2;
+    return `
+      <button class="process-card ${inFocus ? "" : "peripheral"}" data-process="${index}" data-element="${escapeHtml(targetId || "")}"
+        style="left:${process.x}px;--process-width:${process.w || 110}px;--process-color:${layerColor(current)}"
+        title="Show ${escapeHtml(target?.name || process.label)}">${escapeHtml(process.label)}</button>
+      <i class="process-trace ${inFocus ? "" : "peripheral"}" style="left:${centre}px;height:${Math.max(20, targetY - 143)}px;--process-color:${layerColor(current)}"></i>`;
+  }).join("");
+  const actors = (current.actors || []).map(actor => {
+    const actorElement = elementById(actor.ref);
+    const actorProcesses = actor.processes
+      .map(processId => businessProcesses.find(process => process.id === processId))
+      .filter(Boolean);
+    const left = Math.min(...actorProcesses.map(process => process.x));
+    const right = Math.max(...actorProcesses.map(process => process.x + (process.w || 110)));
+    const inFocus = !activeScope || focusedIds.has(actor.ref);
+    return `<button class="actor-span ${inFocus ? "" : "peripheral"}" data-element="${escapeHtml(actor.ref)}"
+      style="left:${left}px;width:${right - left}px;--actor-color:${colorFor("actor")}"
+      title="${escapeHtml(actorElement?.summary || "")}">${escapeHtml(actorElement?.name || actor.ref)}</button>`;
+  }).join("");
+  $("#map-bands").innerHTML = bands;
+  $("#process-strip").hidden = !businessProcesses.length && !(current.actors || []).length;
+  $("#process-strip").classList.toggle("has-actors", Boolean(actors));
+  $("#process-strip").innerHTML = `<span class="process-strip-label">Business process / ${escapeHtml(current.shortLabel || current.label)}</span>${actors}${processes}`;
+  const ordered = [...visibleElements()].sort((a, b) => (a.visual === "boundary" ? -1 : 0) - (b.visual === "boundary" ? -1 : 0));
+  $("#nodes").innerHTML = ordered.map((item, index) => `
+    <button class="node ${escapeHtml(item.kind)} ${item.visual === "boundary" ? "boundary" : ""} ${activeScope && !activeScope.ids.includes(item.id) ? "peripheral" : ""}"
+      data-id="${escapeHtml(item.id)}" style="left:${item.x}px;top:${item.y + offset}px;--w:${item.w || 180}px;--h:${item.h || 110}px;--kind-color:${colorFor(item.kind)};--i:${index}">
+      <span class="node-kicker"><span>${escapeHtml(KIND_NAMES[item.kind] || item.kind)}</span><span class="node-index">${escapeHtml(item.tags?.[0] || "")}</span></span>
+      <h3>${escapeHtml(item.name)}</h3>
+      <p>${escapeHtml(item.summary)}</p>
+      <span class="node-tags">${(item.tags || []).slice(1).map(tag => `<span class="node-tag">${escapeHtml(tag)}</span>`).join("")}</span>
+      ${item.children?.length ? `<span class="drill-hint" title="Open ${item.children.length} child elements">↘ ${item.children.length}</span>` : ""}
+    </button>`).join("");
+  renderParentBoundary();
+  renderEdges();
+  renderMinimap();
+}
+
+function renderEdges() {
+  const svg = $("#edges");
+  const defs = `
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#718077"></path>
+      </marker>
+    </defs>`;
+  const connections = visibleConnections().map((edge, index) => {
+    const from = elementById(edge.from);
+    const to = elementById(edge.to);
+    if (!from || !to) return "";
+    const offset = layer().contentOffset || 0;
+    const start = { x: from.x + (from.w || 180), y: from.y + offset + (from.h || 110) / 2 };
+    const end = { x: to.x, y: to.y + offset + (to.h || 110) / 2 };
+    let path;
+    if (end.x > start.x + 30) {
+      const bend = Math.max(45, (end.x - start.x) * .48);
+      path = `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`;
+    } else {
+      const startX = from.x + (from.w || 180) / 2;
+      const startY = from.y + offset + (from.h || 110);
+      const endX = to.x + (to.w || 180) / 2;
+      const endY = to.y + offset;
+      path = `M ${startX} ${startY} C ${startX} ${startY + 55}, ${endX} ${endY - 55}, ${endX} ${endY}`;
+    }
+    const mid = pointOnCubic(path);
+    const labelWidth = Math.max(46, (edge.label || "").length * 5.4 + 13);
+    const fromFocused = !activeScope || activeScope.ids.includes(edge.from);
+    const toFocused = !activeScope || activeScope.ids.includes(edge.to);
+    const emphasis = fromFocused && toFocused ? "" : (fromFocused || toFocused ? "contextual" : "peripheral");
+    return `
+      <g class="${emphasis}" data-edge="${escapeHtml(edge.from)}:${escapeHtml(edge.to)}">
+        <path id="edge-${index}" class="edge ${escapeHtml(edge.type || "request")}" d="${path}" marker-end="url(#arrow)"></path>
+        <g class="edge-label" transform="translate(${mid.x - labelWidth / 2} ${mid.y - 9})">
+          <rect width="${labelWidth}" height="18" rx="3"></rect>
+          <text x="${labelWidth / 2}" y="12" text-anchor="middle">${escapeHtml(edge.label || "")}</text>
+        </g>
+        <circle class="flow-dot" r="2.4"><animateMotion dur="${3.2 + index * .19}s" repeatCount="indefinite" path="${path}"></animateMotion></circle>
+      </g>`;
+  }).join("");
+  svg.innerHTML = defs + connections;
+}
+
+function pointOnCubic(path) {
+  const numbers = path.match(/-?\d+(\.\d+)?/g).map(Number);
+  if (numbers.length === 8) {
+    const [x0,y0,x1,y1,x2,y2,x3,y3] = numbers;
+    return { x: (x0 + 3*x1 + 3*x2 + x3) / 8, y: (y0 + 3*y1 + 3*y2 + y3) / 8 };
+  }
+  return { x: 600, y: 360 };
+}
+
+function renderMinimap() {
+  const current = layer();
+  const width = current.canvas?.width || 1200;
+  const height = (current.canvas?.height || 720) + (current.contentOffset || 0);
+  const offset = current.contentOffset || 0;
+  const sx = 145 / width;
+  const sy = 86 / height;
+  $("#minimap").innerHTML = visibleElements().map(item => `
+    <i class="mini-node" style="--kind-color:${colorFor(item.kind)};left:${item.x*sx}px;top:${(item.y+offset)*sy}px;width:${Math.max(3,(item.w||180)*sx)}px;height:${Math.max(2,(item.h||110)*sy)}px"></i>`
+  ).join("") + '<i class="mini-view" id="mini-view"></i>';
+  updateMinimap();
+}
+
+function selectElement(id, centre = false) {
+  const item = elementById(id);
+  if (!item) return;
+  selectedId = id;
+  $$(".node").forEach(node => node.classList.toggle("selected", node.dataset.id === id));
+  $$(".process-card").forEach(process => process.classList.toggle("selected", process.dataset.element === id));
+  $$(".actor-span").forEach(actor => actor.classList.toggle("selected", actor.dataset.element === id));
+  $$(".tree-item").forEach(node => node.classList.toggle("active", node.dataset.element === id));
+  renderInspector(item);
+  if (centre) centreOn(item);
+}
+
+function focusElement(id) {
+  const item = elementById(id);
+  if (!item || item.visual === "boundary") return;
+  if (!focusState || focusState.layerId !== activeLayerId) {
+    focusState = { layerId: activeLayerId, elementId: id, transform: { ...transform } };
+  } else {
+    focusState.elementId = id;
+  }
+  selectElement(id);
+  const viewport = $("#viewport").getBoundingClientRect();
+  const width = item.w || 180;
+  const height = item.h || 110;
+  const offset = layer().contentOffset || 0;
+  const targetScale = Math.min(1.65, Math.max(1.15,
+    Math.min(viewport.width * .46 / width, viewport.height * .48 / height)));
+  transform.scale = targetScale;
+  transform.x = viewport.width / 2 - (item.x + width / 2) * targetScale;
+  transform.y = viewport.height / 2 - (item.y + offset + height / 2) * targetScale + 24;
+  $$(".node").forEach(node => {
+    node.classList.toggle("focused", node.dataset.id === id);
+    node.classList.toggle("dimmed", node.dataset.id !== id);
+  });
+  $$("#edges > g[data-edge]").forEach(edge => {
+    const [from, to] = edge.dataset.edge.split(":");
+    edge.classList.toggle("dimmed", from !== id && to !== id);
+  });
+  updateHierarchyNavigation();
+  updateTransform(true);
+}
+
+function groupRect(ids) {
+  const viewportRect = $("#viewport").getBoundingClientRect();
+  const nodes = (ids || [])
+    .map(id => $$(".node").find(node => node.dataset.id === id))
+    .filter(Boolean)
+    .map(node => node.getBoundingClientRect());
+  if (!nodes.length) {
+    return { left: viewportRect.width * .43, top: viewportRect.height * .43, width: viewportRect.width * .14, height: viewportRect.height * .14 };
+  }
+  const left = Math.min(...nodes.map(rect => rect.left));
+  const top = Math.min(...nodes.map(rect => rect.top));
+  const right = Math.max(...nodes.map(rect => rect.right));
+  const bottom = Math.max(...nodes.map(rect => rect.bottom));
+  return {
+    left: left - viewportRect.left,
+    top: top - viewportRect.top,
+    width: right - left,
+    height: bottom - top
+  };
+}
+
+function modelGroupBounds(ids) {
+  const offset = layer().contentOffset || 0;
+  const items = (ids || []).map(elementById).filter(Boolean);
+  if (!items.length) return { x: 500, y: 300, width: 200, height: 120 };
+  const left = Math.min(...items.map(item => item.x));
+  const top = Math.min(...items.map(item => item.y + offset));
+  const right = Math.max(...items.map(item => item.x + (item.w || 180)));
+  const bottom = Math.max(...items.map(item => item.y + offset + (item.h || 110)));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function alignGroupToRect(ids, rect) {
+  const bounds = modelGroupBounds(ids);
+  const scale = Math.max(.12, Math.min(rect.width / bounds.width, rect.height / bounds.height));
+  return {
+    scale,
+    x: rect.left + (rect.width - bounds.width * scale) / 2 - bounds.x * scale,
+    y: rect.top + (rect.height - bounds.height * scale) / 2 - bounds.y * scale
+  };
+}
+
+function focusedTransform() {
+  const items = focusedElements();
+  if (!items.length || !activeScope) return null;
+  const viewport = $("#viewport").getBoundingClientRect();
+  const offset = layer().contentOffset || 0;
+  const minX = Math.min(...items.map(item => item.x));
+  const maxX = Math.max(...items.map(item => item.x + (item.w || 180)));
+  const maxY = Math.max(...items.map(item => item.y + offset + (item.h || 110)));
+  const width = Math.max(260, maxX - minX);
+  const height = Math.max(320, maxY);
+  const pad = 72;
+  const scale = Math.min(1.35, (viewport.width - pad * 2) / width, (viewport.height - pad * 2) / height);
+  return {
+    scale,
+    x: (viewport.width - width * scale) / 2 - minX * scale,
+    y: (viewport.height - height * scale) / 2
+  };
+}
+
+async function flyToLayer(source, destination, reverse = false) {
+  if (layerFlightActive || !destination?.layer) return;
+  const map = $("#map");
+  const sourceIds = source ? [source] : (activeScope?.ids || []);
+  const sourceRect = groupRect(sourceIds);
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const departDuration = reducedMotion ? 1 : 240;
+  const arriveDuration = reducedMotion ? 1 : 520;
+  const sourceCentre = {
+    x: sourceRect.left + sourceRect.width / 2,
+    y: sourceRect.top + sourceRect.height / 2
+  };
+  const departureFactor = reverse ? .96 : 1.08;
+  const departureScale = transform.scale * departureFactor;
+  const departureTransform = {
+    scale: departureScale,
+    x: sourceCentre.x - (sourceCentre.x - transform.x) * departureFactor,
+    y: sourceCentre.y - (sourceCentre.y - transform.y) * departureFactor
+  };
+  const departureCss = `translate(${departureTransform.x}px, ${departureTransform.y}px) scale(${departureTransform.scale})`;
+  layerFlightActive = true;
+  map.classList.add("layer-flight");
+
+  const departingMap = map.animate(
+    [
+      { opacity: 1, filter: "blur(0)", transform: map.style.transform },
+      { opacity: 0, filter: "blur(2px)", transform: departureCss }
+    ],
+    { duration: departDuration, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }
+  );
+  await departingMap.finished.catch(() => {});
+
+  clearFocus(false);
+  activeLayerId = destination.layer;
+  activeScope = destination.scope || null;
+  selectedId = null;
+  $$(".layer-btn").forEach(button => button.setAttribute("aria-selected", String(button.dataset.layer === activeLayerId)));
+  const current = layer();
+  document.documentElement.style.setProperty("--layer-accent", layerColor(current));
+  $("#layer-crumb").textContent = current.shortLabel || current.label;
+  $("#canvas-title").textContent = current.label;
+  $("#canvas-subtitle").textContent = current.description || "";
+  renderRail();
+  renderMap();
+
+  const target = elementById(destination.focus) || focusedElements()[0];
+  const destinationIds = reverse && target ? [target.id] : (activeScope?.ids || (target ? [target.id] : []));
+  const finalTransform = reverse && destination.restoreTransform
+    ? { ...destination.restoreTransform }
+    : (focusedTransform() || { ...transform });
+  transform = alignGroupToRect(destinationIds, sourceRect);
+  updateTransform(false);
+  if (reverse && destination.restoreTransform) {
+    focusState = null;
+    if (target) selectElement(target.id);
+  }
+
+  departingMap.cancel();
+  const initialTransform = map.style.transform;
+  transform = finalTransform;
+  updateTransform(false);
+  const finalMapTransform = map.style.transform;
+  const arrivingMap = map.animate(
+    [
+      { opacity: 0, filter: "blur(2px)", transform: initialTransform },
+      { opacity: 1, filter: "blur(0)", transform: finalMapTransform }
+    ],
+    { duration: arriveDuration, easing: "cubic-bezier(.16,1,.3,1)", fill: "forwards" }
+  );
+  await arrivingMap.finished.catch(() => {});
+
+  arrivingMap.cancel();
+  updateTransform(false);
+  map.classList.remove("layer-flight");
+  layerFlightActive = false;
+  updateHierarchyNavigation();
+}
+
+function drillInto(item) {
+  const childLayer = nextLayer();
+  if (!item?.children?.length || !childLayer || layerFlightActive) {
+    if (item) focusElement(item.id);
+    return;
+  }
+  layerHistory.push({
+    layer: activeLayerId,
+    focus: item.id,
+    scope: activeScope ? { ...activeScope, ids: [...activeScope.ids] } : null,
+    transform: { ...transform }
+  });
+  flyToLayer(item.id, {
+    layer: childLayer.id,
+    focus: item.children[0],
+    scope: {
+      parentLayer: activeLayerId,
+      parentId: item.id,
+      parentName: item.name,
+      ids: [...item.children]
+    }
+  });
+}
+
+function navigateBack() {
+  if (!layerHistory.length) {
+    clearFocus();
+    return;
+  }
+  const previous = layerHistory.pop();
+  const currentFocus = focusState?.elementId || selectedId;
+  flyToLayer(currentFocus, {
+    layer: previous.layer,
+    focus: previous.focus,
+    scope: previous.scope,
+    restoreTransform: previous.transform
+  }, true);
+}
+
+function siblingGroups() {
+  const parentLayerId = activeScope?.parentLayer || layerHistory[layerHistory.length - 1]?.layer;
+  if (!parentLayerId) return [];
+  const parentLayer = model.layers.find(item => item.id === parentLayerId);
+  return (parentLayer?.elements || []).filter(item => item.children?.length);
+}
+
+function moveToSiblingGroup(direction) {
+  const groups = siblingGroups();
+  if (!groups.length || layerFlightActive) return;
+  const currentParentId = activeScope?.parentId || layerHistory[layerHistory.length - 1]?.focus;
+  const currentIndex = groups.findIndex(item => item.id === currentParentId);
+  const nextIndex = (currentIndex + direction + groups.length) % groups.length;
+  const parent = groups[nextIndex];
+  activeScope = {
+    parentLayer: activeScope?.parentLayer || layerHistory[layerHistory.length - 1].layer,
+    parentId: parent.id,
+    parentName: parent.name,
+    ids: [...parent.children]
+  };
+  if (layerHistory.length) layerHistory[layerHistory.length - 1].focus = parent.id;
+  selectedId = null;
+  $("#inspector").classList.remove("has-selection");
+  renderRail();
+  renderMap();
+  requestAnimationFrame(() => fitVisibleElements(true));
+  updateHierarchyNavigation();
+}
+
+function showFullLayer() {
+  if (!activeScope) return;
+  activeScope = null;
+  selectedId = null;
+  $("#inspector").classList.remove("has-selection");
+  renderRail();
+  renderMap();
+  requestAnimationFrame(() => fitMap(true));
+  updateHierarchyNavigation();
+}
+
+function updateHierarchyNavigation() {
+  const item = selectedId ? elementById(selectedId) : null;
+  const previousLayer = layerHistory.length
+    ? model.layers.find(current => current.id === layerHistory[layerHistory.length - 1].layer)
+    : null;
+  $("#focus-back").textContent = previousLayer ? `← Back to ${previousLayer.shortLabel || previousLayer.label}` : "← Back to map";
+  $("#focus-layer").textContent = layer().shortLabel || layer().label;
+  $("#focus-name").textContent = activeScope?.parentName || (layerHistory.length ? "Full layer" : item?.name || "");
+  $("#show-layer").hidden = !activeScope;
+  $("#group-prev").hidden = !layerHistory.length;
+  $("#group-next").hidden = !layerHistory.length;
+  $("#focus-nav").classList.toggle("visible", Boolean(activeScope || focusState || layerHistory.length));
+}
+
+function clearFocus(restore = true) {
+  if (!focusState) return;
+  const previous = focusState;
+  focusState = null;
+  $$(".node.focused, .node.dimmed").forEach(node => node.classList.remove("focused", "dimmed"));
+  $$("#edges > g.dimmed").forEach(edge => edge.classList.remove("dimmed"));
+  $("#focus-nav").classList.remove("visible");
+  if (restore && previous.layerId === activeLayerId) {
+    transform = { ...previous.transform };
+    updateTransform(true);
+  }
+  if (activeScope || layerHistory.length) updateHierarchyNavigation();
+}
+
+function renderInspector(item) {
+  const inspector = $("#inspector");
+  inspector.classList.add("has-selection");
+  inspector.style.setProperty("--selected-color", colorFor(item.kind));
+  $("#inspect-kind").textContent = KIND_NAMES[item.kind] || item.kind;
+  $("#inspect-title").textContent = item.name;
+  $("#inspect-summary").textContent = item.summary || "";
+  $("#tab-overview").innerHTML = `
+    <div class="meta-grid">
+      <div class="meta"><span>Owner</span><b>${escapeHtml(item.owner || "Unassigned")}</b></div>
+      <div class="meta"><span>Technology</span><b>${escapeHtml(item.technology || "Conceptual")}</b></div>
+      <div class="meta"><span>Layer</span><b>${escapeHtml(layer().shortLabel || layer().label)}</b></div>
+      <div class="meta"><span>Identifier</span><b>${escapeHtml(item.id)}</b></div>
+    </div>
+    <div class="copy-block"><h3>Responsibilities</h3><ul class="detail-list">${(item.responsibilities || ["No responsibilities documented."]).map(value => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>
+    ${item.children?.length && nextLayer() ? `<button class="text-btn drill-btn" data-drill>OPEN ${item.children.length} ${escapeHtml(nextLayer().shortLabel || nextLayer().label)} ELEMENT${item.children.length === 1 ? "" : "S"} →</button>` : ""}`;
+  const touching = visibleConnections().filter(edge => edge.from === item.id || edge.to === item.id);
+  $("#tab-interfaces").innerHTML = `
+    <div class="copy-block"><h3>Declared interfaces</h3><ul class="detail-list">${(item.interfaces || ["No explicit interface at this abstraction level."]).map(value => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>
+    <div class="copy-block"><h3>Connections</h3><ul class="detail-list">${touching.map(edge => {
+      const outgoing = edge.from === item.id;
+      const peer = elementById(outgoing ? edge.to : edge.from);
+      return `<li>${outgoing ? "OUT" : "IN"} · ${escapeHtml(edge.label || edge.type)} · ${escapeHtml(peer?.name || "Unknown")}</li>`;
+    }).join("") || "<li>No connections declared.</li>"}</ul></div>`;
+  $("#tab-source").innerHTML = `
+    ${item.source ? `<div class="copy-block"><h3>Source</h3><p>${escapeHtml(item.source)}</p></div>` : ""}
+    ${(item.evidence || []).length ? `<div class="copy-block"><h3>Evidence</h3><ul class="detail-list">${item.evidence.map(entry => safeHref(entry.href) ? `<li><a href="${escapeHtml(entry.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.label || entry.href)}</a>${entry.basis ? ` · ${escapeHtml(entry.basis)}` : ""}</li>` : `<li>${escapeHtml(entry.label || entry.href || "Source unavailable")}</li>`).join("")}</ul></div>` : ""}
+    ${item.snippet ? `<div class="copy-block"><h3>Code excerpt</h3><pre>${escapeHtml(item.snippet)}</pre></div>` : ""}
+    <div class="copy-block"><h3>Element DSL</h3><pre>${escapeHtml(JSON.stringify(item, null, 2))}</pre></div>`;
+}
+
+function updateTransform(animate = false) {
+  const map = $("#map");
+  map.style.transition = animate ? "transform .32s cubic-bezier(.2,.8,.2,1)" : "none";
+  map.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+  $("#zoom-fit").textContent = `${Math.round(transform.scale * 100)}%`;
+  updateMinimap();
+}
+
+function fitMap(animate = true) {
+  clearFocus(false);
+  const viewport = $("#viewport").getBoundingClientRect();
+  const current = layer();
+  const width = current.canvas?.width || 1200;
+  const height = (current.canvas?.height || 720) + (current.contentOffset || 0);
+  const pad = 38;
+  transform.scale = Math.min((viewport.width - pad * 2) / width, (viewport.height - pad * 2) / height, 1);
+  transform.x = (viewport.width - width * transform.scale) / 2;
+  transform.y = (viewport.height - height * transform.scale) / 2 + 18;
+  updateTransform(animate);
+}
+
+function fitVisibleElements(animate = true) {
+  clearFocus(false);
+  const nextTransform = focusedTransform();
+  if (!nextTransform) {
+    fitMap(animate);
+    return;
+  }
+  transform = nextTransform;
+  updateTransform(animate);
+}
+
+function zoomAt(factor, clientX, clientY) {
+  const bounds = $("#viewport").getBoundingClientRect();
+  const px = clientX - bounds.left;
+  const py = clientY - bounds.top;
+  const next = Math.min(1.8, Math.max(.35, transform.scale * factor));
+  const ratio = next / transform.scale;
+  transform.x = px - (px - transform.x) * ratio;
+  transform.y = py - (py - transform.y) * ratio;
+  transform.scale = next;
+  updateTransform();
+}
+
+function centreOn(item) {
+  const viewport = $("#viewport").getBoundingClientRect();
+  const offset = layer().contentOffset || 0;
+  transform.scale = Math.max(transform.scale, .85);
+  transform.x = viewport.width / 2 - (item.x + (item.w || 180) / 2) * transform.scale;
+  transform.y = viewport.height / 2 - (item.y + offset + (item.h || 110) / 2) * transform.scale;
+  updateTransform(true);
+}
+
+function updateMinimap() {
+  const mini = $("#mini-view");
+  if (!mini || !layer()) return;
+  const viewport = $("#viewport").getBoundingClientRect();
+  const width = layer().canvas?.width || 1200;
+  const height = (layer().canvas?.height || 720) + (layer().contentOffset || 0);
+  const sx = 145 / width;
+  const sy = 86 / height;
+  mini.style.left = `${Math.max(0, -transform.x / transform.scale * sx)}px`;
+  mini.style.top = `${Math.max(0, -transform.y / transform.scale * sy)}px`;
+  mini.style.width = `${Math.min(145, viewport.width / transform.scale * sx)}px`;
+  mini.style.height = `${Math.min(86, viewport.height / transform.scale * sy)}px`;
+}
+
+function openDsl() {
+  $("#dsl-editor").value = JSON.stringify(model, null, 2);
+  $("#dsl-drawer").classList.add("open");
+  $("#dsl-drawer").setAttribute("aria-hidden", "false");
+  $("#scrim").classList.add("open");
+  $("#dsl-editor").focus();
+}
+
+function closeDsl() {
+  $("#dsl-drawer").classList.remove("open");
+  $("#dsl-drawer").setAttribute("aria-hidden", "true");
+  $("#scrim").classList.remove("open");
+}
+
+function applyDsl() {
+  const message = $("#dsl-message");
+  try {
+    const candidate = JSON.parse($("#dsl-editor").value);
+    validate(candidate);
+    model = candidate;
+    activeLayerId = model.layers.some(item => item.id === activeLayerId) ? activeLayerId : model.layers[0].id;
+    $("#blueprint-title").textContent = model.metadata.title;
+    renderLayerSwitch();
+    renderLegend();
+    selectLayer(activeLayerId, false);
+    message.textContent = `${model.layers.length} layers · ${model.layers.reduce((sum, item) => sum + item.elements.length, 0)} elements · valid`;
+    message.classList.remove("error");
+    toast("Blueprint redrawn");
+  } catch (error) {
+    message.textContent = error.message;
+    message.classList.add("error");
+  }
+}
+
+function downloadDsl() {
+  const blob = new Blob([$("#dsl-editor").value], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${model.metadata.id || "service-blueprint"}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function toast(message) {
+  const item = $("#toast");
+  item.textContent = message;
+  item.classList.add("show");
+  window.setTimeout(() => item.classList.remove("show"), 1800);
+}
+
+function bindEvents() {
+  document.addEventListener("click", event => {
+    const layerButton = event.target.closest("[data-layer]");
+    const elementButton = event.target.closest("[data-element], .node");
+    const drillButton = event.target.closest("[data-drill]");
+    if (layerButton) selectLayer(layerButton.dataset.layer);
+    if (elementButton) selectElement(elementButton.dataset.element || elementButton.dataset.id);
+    if (drillButton) drillInto(elementById(selectedId));
+    if (event.target.matches(".tab")) {
+      $$(".tab").forEach(tab => tab.classList.toggle("active", tab === event.target));
+      $$(".tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === `tab-${event.target.dataset.tab}`));
+    }
+  });
+  $("#nodes").addEventListener("dblclick", event => {
+    const node = event.target.closest(".node");
+    if (!node) return;
+    event.preventDefault();
+    drillInto(elementById(node.dataset.id));
+  });
+  $("#process-strip").addEventListener("dblclick", event => {
+    const processParticipant = event.target.closest(".process-card, .actor-span");
+    if (!processParticipant) return;
+    event.preventDefault();
+    drillInto(elementById(processParticipant.dataset.element));
+  });
+  $("#focus-back").addEventListener("click", navigateBack);
+  $("#show-layer").addEventListener("click", showFullLayer);
+  $("#group-prev").addEventListener("click", () => moveToSiblingGroup(-1));
+  $("#group-next").addEventListener("click", () => moveToSiblingGroup(1));
+  $("#close-inspector").addEventListener("click", () => {
+    selectedId = null;
+    $("#inspector").classList.remove("has-selection");
+    $$(".selected, .tree-item.active").forEach(item => item.classList.remove("selected", "active"));
+  });
+  $("#zoom-in").addEventListener("click", () => {
+    const rect = $("#viewport").getBoundingClientRect();
+    zoomAt(1.18, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  $("#zoom-out").addEventListener("click", () => {
+    const rect = $("#viewport").getBoundingClientRect();
+    zoomAt(.84, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  $("#zoom-fit").addEventListener("click", () => {
+    if (focusState) clearFocus();
+    else if (activeScope) fitVisibleElements();
+    else fitMap();
+  });
+  $("#viewport").addEventListener("wheel", event => {
+    event.preventDefault();
+    zoomAt(event.deltaY < 0 ? 1.09 : .92, event.clientX, event.clientY);
+  }, { passive: false });
+  $("#viewport").addEventListener("pointerdown", event => {
+    if (event.target.closest(".node")) return;
+    drag = { x: event.clientX, y: event.clientY, tx: transform.x, ty: transform.y };
+    $("#viewport").classList.add("dragging");
+    $("#viewport").setPointerCapture(event.pointerId);
+  });
+  $("#viewport").addEventListener("pointermove", event => {
+    if (!drag) return;
+    transform.x = drag.tx + event.clientX - drag.x;
+    transform.y = drag.ty + event.clientY - drag.y;
+    updateTransform();
+  });
+  $("#viewport").addEventListener("pointerup", () => {
+    drag = null;
+    $("#viewport").classList.remove("dragging");
+  });
+  $("#dsl-open").addEventListener("click", openDsl);
+  $("#dsl-close").addEventListener("click", closeDsl);
+  $("#scrim").addEventListener("click", closeDsl);
+  $("#dsl-apply").addEventListener("click", applyDsl);
+  $("#dsl-download").addEventListener("click", downloadDsl);
+  $("#theme-toggle").addEventListener("click", toggleTheme);
+  $("#dsl-editor").addEventListener("keydown", event => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") applyDsl();
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const start = event.target.selectionStart;
+      event.target.setRangeText("  ", start, event.target.selectionEnd, "end");
+    }
+  });
+  $("#help-btn").addEventListener("click", () => toast("Double-click: drill down · Group arrows: explore · Show full layer: overview · Esc: parent"));
+  window.addEventListener("keydown", event => {
+    if (event.target.matches("textarea, input")) return;
+    if (/^[1-9]$/.test(event.key) && model.layers[Number(event.key) - 1]) selectLayer(model.layers[Number(event.key) - 1].id);
+    if (event.key === "0") fitMap();
+    if (event.key === "Escape") {
+      if (focusState || layerHistory.length) {
+        navigateBack();
+        return;
+      }
+      closeDsl();
+      $("#close-inspector").click();
+    }
+  });
+  window.addEventListener("resize", () => fitMap(false));
+}
+
+init();
 </script>
 </body>
 </html>

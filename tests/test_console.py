@@ -23,9 +23,12 @@ def unit(name, depends=(), ready='True', message='Applied', suspend=False):
             'status': {'lastAppliedRevision': REV, 'conditions': [{'type': 'Ready', 'status': ready, 'message': message}]}}
 
 
-def release(ns, name, tag='1.0'):
+def release(ns, name, tag='1.0', sqlite=False):
+    container = {'image': {'repository': 'docker.io/x/web', 'tag': tag}}
+    if sqlite:
+        container['env'] = {'DATABASE_PATH': '/data/app.db'}
     return {'metadata': {'namespace': ns, 'name': name}, 'spec': {'values': {'controllers': {'main': {
-        'containers': {'main': {'image': {'repository': 'docker.io/x/web', 'tag': tag}}}}}}}}
+        'containers': {'main': container}}}}}}
 
 
 UNITS = [unit('cluster-sources'), unit('infra-base'), unit('platform-oauth2-proxy', ['infra-base']),
@@ -108,6 +111,14 @@ class AppsTests(unittest.TestCase):
         text = client(fake(units=units)).get('/apps', headers=WHO).text
         self.assertNotIn('<script>x</script>', text)
         self.assertIn('&lt;script&gt;', text)
+
+    def test_database_is_visible_per_environment_and_unknown_without_a_release(self):
+        units = [unit('app-web-staging'), unit('app-web-prod'), unit('app-pending-staging')]
+        releases = [release('web-staging', 'web', sqlite=True), release('web-prod', 'web')]
+        text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
+        self.assertEqual(text.count('Database: <strong class="db-kind">SQLite</strong>'), 1)
+        self.assertEqual(text.count('Database: No SQLite'), 1)
+        self.assertEqual(text.count('Database: unknown'), 1)
 
     def test_unit_names_map_to_instances(self):
         self.assertEqual(cluster.instance_of_unit('app-my-api-staging'), cluster.ops.Instance('my-api', 'staging'))
@@ -235,7 +246,7 @@ class AppDetailTests(unittest.TestCase):
         answers = dict([
             get('kustomization', unit('app-web-prod')),
             get('gitrepository', {'status': {'artifact': {'revision': 'main@sha1:fff0000'}}}),
-            get('helmrelease', {**release('web-prod', 'web'), **unit('web')}),
+            get('helmrelease', {**release('web-prod', 'web', sqlite=True), 'status': unit('web')['status']}),
             get('pods', {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [
                 {'ready': False, 'state': {'waiting': {'reason': 'CrashLoopBackOff'}}}]}}]}),
             get('deploy,statefulset,daemonset', {'items': []}),
@@ -256,6 +267,8 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('action="/apps/web/prod/expose"', text)
         self.assertIn('name="exposure" value="public" checked>', text)
         self.assertIn('<strong>Public</strong> <span class="muted">(now)</span>', text)
+        self.assertIn('Database: <strong class="db-kind">SQLite</strong>', text)
+        self.assertIn('<dt>SQLite file</dt><dd><code>/data/app.db</code></dd>', text)
 
     def test_unknown_or_invalid_instance_is_404_without_odd_kubectl_calls(self):
         runner = fake().on('kubectl', '-n', 'flux-system', 'get', 'kustomization', 'app-nope-prod',

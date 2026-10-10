@@ -2,6 +2,8 @@
 
 One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the operator commands listed in [how changes reach the cluster](#how-changes-reach-the-cluster).
 
+For a navigable map of the repository's change path, system boundaries, and implementation files, open the [repository blueprint](repository-blueprint.html).
+
 ## Principles
 
 - **Git is the deployment path.** Commit, push, reconcile. Scripts check and operate; manifests define state.

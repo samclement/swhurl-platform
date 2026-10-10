@@ -4,7 +4,7 @@ What has been verified on the live cluster, and when: current facts first, then 
 
 ## Latest verification (10 October 2026)
 
-At `37d20f0` (repository blueprint documentation), `make flux-reconcile` fetched and applied the revision; all 22 Flux Kustomizations reached Ready at that revision. `make verify-platform` passed, including controller, ingress redirect, telemetry retention, backups, webhooks, dashboard sync, notification checker, heartbeat, and console image checks. `make app-status APP=hello-ts ENV=staging` showed the same desired and applied revision, a Ready HelmRelease, the desired image running, 1/1 replicas Ready, and a Ready TLS certificate. This was a documentation-only commit; the blueprint's browser navigation was checked locally, not served by the cluster.
+At `eac686d` (repository blueprint rebuilt with the `repository-blueprint` skill's renderer), `make flux-reconcile` fetched and applied the revision; all 22 Flux Kustomizations reached Ready at that revision. `make verify-platform` passed. `make app-status APP=hello-ts ENV=staging` showed a Ready HelmRelease, the desired image running, 1/1 replicas Ready and a Ready TLS certificate. This was a documentation-only commit. The blueprint was checked in headless Chromium against a local file server, not served by the cluster: all 286 evidence links resolve, drill-down and Back restore level, scope and camera, a card is selectable from the keyboard, and 390 px and 820 px viewports (the first with reduced motion) show no horizontal scroll.
 
 ## Earlier cluster baseline (29 September 2026)
 

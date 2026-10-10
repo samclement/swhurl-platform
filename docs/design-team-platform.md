@@ -1,6 +1,6 @@
 # Team platform — design brief
 
-Draft, 10 October 2026. Not started; nothing here runs yet. This brief is the input to an incremental implementation plan; when work begins, the plan goes in [plan section 0](plan.md#0-where-this-paused-and-what-is-left) and delivered behaviour moves to the canonical pages.
+Agreed 10 October 2026. Not started; nothing here runs yet. The order of work is [plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started); delivered behaviour moves to the canonical pages and this file is then deleted.
 
 ## Goal
 
@@ -102,19 +102,19 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 | Decision | Choice | Status |
 | --- | --- | --- |
-| App-to-app identity | Kubernetes service-account tokens | Recommended, liked by the operator; depends on increment 0 |
-| Events | NATS JetStream | Recommended, liked by the operator |
+| App-to-app identity | Kubernetes service-account tokens | Confirmed; depends on increment 0 |
+| Events | NATS JetStream | Confirmed |
 | Persistence | SQLite only | Decided: no Postgres |
-| Isolation | Namespace per app with team label, quota and NetworkPolicy | Recommended, liked by the operator |
-| Discovery | Generated variables plus a console page | Recommended, liked by the operator |
-| Callers outside the cluster | Not in the proof of concept; Dex is the later option | **To confirm** |
-| Human sign-in and team membership | Stay on Google; a team is a name in Git, not a set of people | **To confirm** |
-| Who the teams are | Simulated: the operator acts as each team, in this one repository | **To confirm** |
+| Isolation | Namespace per app with team label, quota and NetworkPolicy | Confirmed |
+| Discovery | Generated variables plus a console page | Confirmed |
+| Callers outside the cluster | Not in the proof of concept; Dex is the later option | Confirmed |
+| Human sign-in and team membership | Stay on Google; a team is a name in Git, not a set of people | Confirmed |
+| Who the teams are | Simulated: the operator acts as each team, in this one repository | Confirmed |
 
 ## Out of scope, and known limits
 
 - **Postgres** (excluded by the operator) and scaling an app with a database beyond one replica.
-- **Outside callers with tokens** (Dex) unless confirmed above.
+- **Outside callers with tokens** (Dex).
 - **Forged user headers from a declared caller.** An app admitted by `calls:` could send `x-auth-request-email` itself. Closing it means apps verifying a signed sign-in token; a later increment.
 - **Egress rules.** Only inbound traffic is restricted; apps can still reach anything outbound.
 - **Admission-time policy.** Rules stay in `make check-apps` on pull requests.
@@ -123,7 +123,7 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 ## Risks
 
-- **Token verification without an API credential** is the assumption everything in increment 2 rests on: the app must read the cluster's public keys while still having no API token. Increment 0 proves or replaces it (fallback: Dex client credentials).
+- **Token verification without an API credential** is the assumption everything in increment 2 rests on: the app must read the cluster's public keys while still having no API token. Today only service accounts may read them, so increment 0 adds a binding that lets anyone in the cluster read these public keys, and proves it (fallback: the keys published as a ConfigMap).
 - **NetworkPolicy and HTTP-01:** a policy selecting every pod in a namespace blocks certificate issuance ([lesson in `AGENTS.md`](../AGENTS.md)); policies select the workload's pods only.
 - **NATS credentials are stored secrets,** unlike the call tokens. Rotation goes through SOPS and Reloader like any app Secret.
 - **The scenario creates real public GitHub repositories** that only the operator can delete; they are named `swhurl-try-<n>`.

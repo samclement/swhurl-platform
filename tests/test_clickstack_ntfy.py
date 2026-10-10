@@ -51,6 +51,7 @@ class WebhookTests(unittest.TestCase):
         self.assertEqual([(m, p) for m, p, _ in new.calls], [('GET', '/webhooks'), ('POST', '/webhooks')])
         body = new.calls[-1][2]
         self.assertEqual((body['service'], body['url']), ('generic', 'https://ntfy.sh/'))
+        self.assertNotIn('{{/if}}}', body['body'])  # Handlebars treats this as a triple-brace close.
         rendered = (body['body'].replace('{{title}}', 'CPU \\"high\\"')
                     .replace('{{body}}', 'More than 90%')
                     .replace('{{link}}', 'https://clickstack.example/alerts')

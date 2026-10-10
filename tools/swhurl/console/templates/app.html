@@ -14,7 +14,8 @@
 <p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail | short }}</span>{% endif %}</p>
 <p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
   · {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{{ ', ' if not loop.last }}{% else %}no web address{% endfor %}
-  · {{ exposures.get(status.exposure, status.exposure) }}</p>
+  · {{ exposures.get(status.exposure, status.exposure) }}
+  · Database: {% if not status.release %}unknown{% elif status.environment.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
 
 <div class="toolbar">
   {% if status.routes %}<a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>{% endif %}
@@ -64,6 +65,7 @@
   <dd>{% for name, ready in status.certificates %}<div><span class="{{ ready | state }}">{{ ready }}</span> {{ name }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
   <dt>Provided by the platform</dt>
   <dd>{% for name, value in status.environment.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+  {% if status.environment.get('DATABASE_PATH') %}<dt>SQLite file</dt><dd><code>{{ status.environment['DATABASE_PATH'] }}</code></dd>{% endif %}
   <dt>Your secrets</dt>
   <dd>{% if status.secret_env %}every key of the Secret <code>{{ status.secret_env }}</code>, as a variable of the same name. Names and values are in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a> (encrypted; edit with <code>sops</code>){% else %}<span class="muted">none</span>{% endif %}</dd>
   <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>

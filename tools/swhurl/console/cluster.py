@@ -65,6 +65,7 @@ class AppRow:
     digest: str = ''
     hosts: tuple[str, ...] = ()
     reason: str = ''
+    database_path: str | None = None  # None: release missing; empty: no SQLite configured
 
     @property
     def state(self) -> State:
@@ -192,7 +193,8 @@ def apps(runner: Runner) -> list[AppRow]:
             image = release_image(release)
             rows.append(AppRow(found, ready_condition(unit), bool(unit['spec'].get('suspend')),
                                ops.desired_image(release) if release else 'no HelmRelease',
-                               image.get('tag', ''), image.get('digest', ''), release_hosts(release), ready_reason(unit)))
+                               image.get('tag', ''), image.get('digest', ''), release_hosts(release), ready_reason(unit),
+                               ops.release_env(release)[0].get('DATABASE_PATH', '') if release else None))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 

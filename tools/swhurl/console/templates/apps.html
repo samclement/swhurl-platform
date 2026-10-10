@@ -22,6 +22,7 @@
     <td>{% if row %}
       <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ st.state(row.state, detail=false) }}
       <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code></div>
+      <div class="muted">Database: {% if row.database_path is none %}unknown{% elif row.database_path %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</div>
       {% if row.state.detail and row.state.key != 'suspended' %}<div class="muted">{{ row.state.detail | short }}</div>{% endif %}
       {% for host in row.hosts %}<div class="muted">{{ host }}</div>{% else %}<div class="muted">no web address</div>{% endfor %}
     {% else %}<span class="muted">not deployed</span>{% endif %}</td>

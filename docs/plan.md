@@ -18,7 +18,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); migrating `hello-ts`.
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
-11. **Team platform — design brief, draft 10 October 2026, not started** ([design brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in six increments. Three decisions await the operator before an implementation plan is written.
+11. **Team platform — planned 10 October 2026, not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Decisions are confirmed. **Next:** T0, two throwaway live proofs; then stop for the operator's go-ahead.
 
 ### Delivered
 
@@ -758,3 +758,83 @@ Add apps and environments one allowlist entry at a time, production last. Revisi
 ### Stop conditions
 
 Write nothing to GitHub and fail the run if: a query fails or exceeds its limits; a finding cannot be reduced to the contract's fields; the repository is not private; the issue list cannot be read in full; the token is refused. A quiet hour is not a failure: the run ends normally and writes nothing.
+
+## 15. Team platform — planned 10 October 2026, not started
+
+**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. Start at T0; stop after it for the operator's go-ahead.
+
+### Decisions (confirmed by the operator, 10 October 2026)
+
+1. **Identity:** Kubernetes service-account tokens bound to the callee's name. No Dex; callers outside the cluster are out of scope.
+2. **Sign-in and teams:** Google through oauth2-proxy stays. A team is a name in `apps/teams.yaml`, not a set of people.
+3. **Teams are simulated:** the operator acts as each team in this one repository. The pull request is the callee's consent to a new caller.
+4. **Events:** NATS JetStream. **Persistence:** SQLite only.
+
+### Facts checked on the live cluster (10 October 2026, read-only)
+
+- Token issuer is `https://kubernetes.default.svc.cluster.local`, RS256. The built-in binding lets only `system:serviceaccounts` read the signing keys (`/openid/v1/jwks`), and apps run with `automountServiceAccountToken: false`, so a callee cannot fetch them today. T0 adds a second binding of the `system:service-account-issuer-discovery` ClusterRole to `system:unauthenticated` (public keys only; the documented Kubernetes approach) rather than editing the built-in one. Fallback if refused: a Flux-owned ConfigMap of the public keys, compared with the live ones by `make verify-platform`.
+- Traefik pods are in `kube-system` with `app.kubernetes.io/name=traefik`: the selector the app NetworkPolicies admit.
+- k3s `v1.34.4` runs without `--disable-network-policy`; enforcement on app pods is still to be proven (T0).
+
+### Decision to take during the work (operator; ask, do not assume)
+
+- **T4, how streams are created:** the NATS JetStream controller (streams as manifests Flux applies; one more controller) or an idempotent `make events-apply` (nothing extra to run; a merge then needs a command, like `make clickstack-bootstrap`). Lean: the controller, because every other app change completes on merge. Use the `decision-brief` skill.
+
+### Tasks (run in order; one commit per numbered step unless stated; `make check` before each)
+
+**T0. Proofs (throwaway namespaces; nothing existing changes).**
+1. `live-test-call-identity` (`tools/swhurl/livetests/call_identity.py`, fixtures under `tests/fixtures/`, `FakeRunner` tests). Two namespaces labelled `platform.swhurl.com/call-identity-test=true`; the test creates and deletes its own labelled ClusterRoleBinding. Caller pod: a projected token with audience `callee`, 10-minute expiry. Callee pod: no API token, the `kube-root-ca.crt` ConfigMap mounted, a short inline script on the Node image the template uses. Must show: (a) the callee reads the keys unauthenticated and accepts the token; (b) a token for another audience is refused; (c) `sub` names the caller's namespace and service account; (d) the Kubernetes API answers 401 to that token; (e) after expiry the kubelet has replaced the file.
+2. `live-test-network-policy` (`livetests/network_policy.py`). One throwaway web app with a route, and a policy selecting only its pods that admits the Traefik pods on the app port. Must show: (a) Traefik reaches it and it stays Ready (probes); (b) a pod in another namespace times out; (c) a second, unselected pod in the namespace on 8089 stays reachable (stands in for the HTTP-01 solver; no certificate is requested); (d) deleting the policy lets (b) connect, proving the policy was what blocked it.
+3. Push, run both, record evidence in `current-state.md`. **Stop conditions:** if 1(a) fails, try the ConfigMap fallback and report; if 2(b) connects, stop: isolation needs a different mechanism and the brief changes.
+
+**T1. Teams and isolation.**
+1. Contract: `apps/teams.yaml` (name, description; seed `platform`, `payments`, `insights`); optional `team` in `manifest_defaults` (`contract.py`) and `--team` on `app-new` (default `platform`); `make app-team APP= ARGS=--team=` for existing apps (`edit.py`). Generated per instance: the `platform.swhurl.com/team` namespace label, `resourcequota.yaml` (one fixed size in `contract.py`, large enough for a rolling update at current limits) and `networkpolicy.yaml` (workload pods only; Traefik admitted when the exposure has a route, nothing otherwise). `app-expose`, `app-scale`, `app-promote` and `app-remove` keep the three in step. No template revision: the console passes the flag.
+2. Policy (`policy.py`, `make check-apps`): `team-known`, `quota-present`, `network-policy-present`, `network-policy-workload-only` (refuses `podSelector: {}`).
+3. Console: a team select on **New app**; the team on the app page and list.
+4. Telemetry: the collector copies the namespace's team label to a `swhurl.team` resource attribute (`platform/otel`, `make check-otel`); document the filter in `apps.md`.
+5. Roll out: apply to `test-4/staging` only, push, reconcile, check it through Traefik and from another namespace; then the remaining instances in one commit. `make verify-platform` gains a check that every managed app namespace has the label, quota and policy.
+6. Docs: `apps.md` (teams, who can reach it, limits, policy), `commands.md`, `console.md`, `architecture.md`. Evidence in `current-state.md`.
+
+**T2. Calls and discovery.**
+1. Platform keys: the `system:unauthenticated` discovery binding in `infra/base`, with a `verify-platform` check.
+2. Contract and generator: `calls` (list of app names) in `swhurl.yaml` and `make app-calls APP= ENV= ARGS="--add orders | --remove orders"` (`edit.py`), which edits **both** instances in one change. Caller: a ServiceAccount named after the app (automount stays off), `SWHURL_SERVICE_<NAME>_URL`, and a projected token file per callee at `/var/run/swhurl/tokens/<callee>` (audience = callee name). Callee: the caller on `SWHURL_ALLOWED_CALLERS` and in its NetworkPolicy. Every web instance: `SWHURL_APP`, `SWHURL_ENV`, the issuer, the keys URL and the cluster CA file. After creation this repository is the truth, as with exposure.
+3. Policy: `calls-target-exists`, `calls-symmetric` (address, token, allowed list and network rule agree), `token-audience-is-app` (the only tokens a pod may carry). `app-promote` stops, naming the app, when a dependency has no production instance; `app-remove` refuses while others call the app.
+4. Templates (both stacks, one revision each; no new Copier question): `service(name)` client (address, token re-read from file, trace headers, timeout); a verifier on every route except the health path (signature, issuer, audience = own name, caller's namespace = an allowed app in the same environment; 401 otherwise); `caller.type` and `caller.id` on log lines and spans, with `user` from `x-auth-request-email` when there is no bearer token; verification off when the issuer variable is absent (local development), stated in the README. Tests use a locally generated key. Pin the revisions in `STACK_REVISIONS`; `make check-templates`.
+5. Console: a **Calls** form on the app page (pull request through `changes.py`).
+6. Live: create `swhurl-try-<n>` twice from the new TypeScript revision (`orders` with SQLite, `reports`), link them, and show: the call succeeds with `caller.id` in ClickStack; an unlinked third pod is blocked; with the network rule removed by hand in a throwaway copy, the app answers 401. One Kotlin app repeats the call in either direction. **Operator:** these are real public repositories; they stay until T5.
+7. Docs: `apps.md` (new "Calling another app" section, `swhurl.yaml`, reserved names, policy), `services.md` (the binding), `commands.md`, template READMEs.
+
+**T3. Services page and guard rails.**
+1. `provides: {api: <path>}` in the contract (shown, not enforced).
+2. Console `/services`: one row per app from this repository's files (team, environments, calls in and out, API link) plus health from `cluster.py`; **Call this from my app** shows the `swhurl.yaml` line and the `make app-calls` command.
+3. Console messages for the three refusals (unknown dependency, promotion without a production dependency, removing a called app) match the `make` output. Tests in `test_console*.py`.
+4. Docs: `console.md`. **Operator browser check:** the page while signed in.
+
+**T4. Events.**
+1. Run the `new-component-checklist` and take the stream-creation decision above.
+2. `platform/nats` as unit `platform-nats` (own namespace, one replica, JetStream on a retained volume, seven-day limits, a NetworkPolicy admitting only namespaces of apps that declare events, logs parsed into ClickStack, `verify-platform` coverage, no backup: stated in `operations.md`). Two accounts, staging and production.
+3. Contract and generator: `events: {publish: [...], subscribe: [...]}` and `make app-events`. Generated: a NATS user per instance allowed to publish `<app>.>` and read only declared subjects; a stream per publishing app; `SWHURL_EVENTS_URL` and the user name as variables, the password generated and SOPS-encrypted into the app's Secret (never printed) with only its hash in the NATS configuration; the namespace added to Reloader.
+4. Policy: `events-subscribe-target-exists`, `events-publish-own-subject`; `app-remove` refuses while others subscribe.
+5. Templates: a third Copier question `events` (`none` default, `nats`), so the client library is only in apps that use it; update each Template workflow matrix by the rule in `AGENTS.md`. Helpers `events.publish` and `events.subscribe` (CloudEvents JSON, trace context in headers, durable consumer named after the subscriber) for web and worker kinds.
+6. Services page: streams with publisher and subscribers.
+7. Live: `notifier` (`swhurl-try-<n>`, worker) receives `orders.created`; an app publishing another app's subject is refused; staging cannot read production.
+8. Docs: `services.md` (NATS), `apps.md` (events), `operations.md` (retention, rotation, troubleshooting), `architecture.md` (unit and dependency).
+
+**T5. Scenario and documentation.**
+1. A repeatable check, `make live-test-team-scenario`: drives `reports` → `orders` → `orders.created` → `notifier` on the deployed apps and reads ClickStack for one trace spanning all three with `caller.id` on each hop and `swhurl.team` on each service.
+2. Move anything still only in the brief into the canonical pages, delete `design-team-platform.md`, and reduce this section to its decisions and commits.
+3. Evidence in `current-state.md`, including what was not exercised. **Operator:** look at the trace in HyperDX; delete the `swhurl-try-<n>` repositories and packages listed in the evidence entry (their instances are removed with `make app-remove` first; retained volumes need the usual confirmation).
+
+### Operator actions, in order
+
+| When | Action | How |
+| --- | --- | --- |
+| After T0 | Read the two proofs and say go | In the session |
+| T2.6, T4.7 | Accept three real `swhurl-try-<n>` repositories until T5 | In the session |
+| T3.4, T5.3 | Browser checks while signed in | Own browser |
+| T4.1 | Stream-creation decision | In the session |
+| T5.3 | Delete the throwaway repositories and packages | Own browser or terminal |
+
+### Out of scope
+
+Everything under "Out of scope, and known limits" in the [brief](design-team-platform.md#out-of-scope-and-known-limits): Postgres, outside callers, signed user identity inside the cluster, egress rules, admission-time policy, per-team repositories and team-set secrets.

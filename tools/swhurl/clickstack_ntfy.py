@@ -29,9 +29,11 @@ def destination(runner: Runner) -> dict:
     runner.add_secret(topic)
     # HyperDX JSON-escapes each string variable before applying this template.
     # The condition sets high priority on firing and normal priority on recovery.
-    body = (json.dumps({'topic': topic, 'title': 'ClickStack: {{title}}',
-                        'message': '{{body}}', 'click': '{{link}}'}, separators=(',', ':'))
-            .removesuffix('}') + ',"priority":{{#if (eq state "ALERT")}}4{{else}}3{{/if}}}')
+    # Put the conditional before another field: `{{/if}}}` is parsed by
+    # Handlebars as a triple-brace close, even though the last `}` is JSON.
+    body = ('{"priority":{{#if (eq state "ALERT")}}4{{else}}3{{/if}},'
+            + json.dumps({'topic': topic, 'title': 'ClickStack: {{title}}',
+                          'message': '{{body}}', 'click': '{{link}}'}, separators=(',', ':'))[1:])
     runner.add_secret(body)
     return {'name': NAME, 'service': 'generic', 'url': 'https://ntfy.sh/',
             'description': DESCRIPTION, 'body': body}

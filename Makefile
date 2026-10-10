@@ -122,6 +122,10 @@ clickstack-bootstrap: ## Live: register the ClickStack admin and set the team in
 clickstack-dashboards: ## Live: a ClickStack dashboard per app in Git (create, update; delete removed apps' ones). DRY_RUN=true lists changes
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-dashboards
 
+.PHONY: clickstack-ntfy-webhook
+clickstack-ntfy-webhook: ## Live: create/update ClickStack's reusable webhook to the existing failures ntfy topic (DRY_RUN=true previews)
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-ntfy-webhook
+
 .PHONY: backup-mongodb
 backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb

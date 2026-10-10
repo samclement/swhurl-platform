@@ -72,3 +72,5 @@ All operator logic lives in the Python package [`tools/swhurl/`](../tools/swhurl
 ## Diagrams
 
 Diagrams are Mermaid blocks in the page they explain; GitHub renders them, so there is nothing to generate or commit besides the text. Keep external systems outside the cluster subgraph, label only the edges that carry meaning, and show `Let's Encrypt (ACME)` wherever cert-manager appears and the telemetry path (app → OTel collector → ClickStack) in the container view. To check a diagram locally: `npx -y @mermaid-js/mermaid-cli -i diagram.mmd -o diagram.svg`.
+
+The [repository blueprint](repository-blueprint.html) is the one generated diagram: a self-contained page built from a JSON model by the `repository-blueprint` skill's `build_blueprint.py`. To change it, open the page, take the model from **Edit DSL** → **Download**, edit it and rebuild; evidence links are relative to `docs/`.

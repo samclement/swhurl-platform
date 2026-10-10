@@ -94,6 +94,8 @@ jobs:
           make live-test-lifecycle DRY_RUN=true
           make live-test-reloader DRY_RUN=true
           make live-test-app-template DRY_RUN=true
+          make live-test-call-identity DRY_RUN=true
+          make live-test-network-policy DRY_RUN=true
           kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
           make platform-certs-staging DRY_RUN=true
           make platform-certs-prod DRY_RUN=true

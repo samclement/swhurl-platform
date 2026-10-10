@@ -39,6 +39,8 @@ COMMANDS = {
     'live-test-lifecycle': ('swhurl.livetests.lifecycle', 'main', 'Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app'),
     'live-test-reloader': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),
     'live-test-app-template': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
+    'live-test-call-identity': ('swhurl.livetests.call_identity', 'main', 'Live: prove a callee without an API token can verify a caller\'s audience-bound token'),
+    'live-test-network-policy': ('swhurl.livetests.network_policy', 'main', 'Live: prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes'),
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'clickstack-dashboards': ('swhurl.dashboards', 'main', 'Live: create or update a ClickStack dashboard per app in Git; delete those of removed apps (--cluster: per app on the cluster)'),
     'clickstack-ntfy-webhook': ('swhurl.clickstack_ntfy', 'main', 'Live: keep ClickStack\'s reusable webhook on the failures ntfy topic'),

@@ -200,6 +200,14 @@ live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway
 live-test-restore-sqlite: ## Back up a throwaway app's SQLite database, change it, restore it and check it
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-sqlite
 
+.PHONY: live-test-call-identity
+live-test-call-identity: ## Prove a callee with no API token can verify a caller's audience-bound token (SKIP_ROTATION=true)
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-call-identity
+
+.PHONY: live-test-network-policy
+live-test-network-policy: ## Prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-network-policy
+
 # Host ---------------------------------------------------------------------------
 
 .PHONY: host-dns

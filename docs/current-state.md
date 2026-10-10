@@ -831,3 +831,12 @@ Commit `048dabf`, after the operator's "Remove reviewer namespace".
 - Probe through HyperDX's API with three empty dashboards: `App: swhurl-try-prune` (tagged) was deleted by the next scheduled runs within 100 seconds; `App: test-2 (copy)` (tagged) stayed, with `[INFO] left App: test-2 (copy): tagged swhurl-app but not named for an app` in the job log; `App: swhurl-try-keep` (untagged) stayed. The two survivors were then deleted by id. The four app dashboards were untouched throughout.
 - Offline only (`FakeRunner`): removing one environment updates without deleting; no app release found deletes nothing; dry run writes nothing.
 - Not exercised: a real `make app-remove` or console **Uninstall** followed by the automatic deletion; removing the last app on the cluster.
+
+## ClickStack ntfy destination (10 October 2026)
+
+Commits `ff80eb5` and `34583dd` added `make clickstack-ntfy-webhook` and its HyperDX JSON template. The `ntfy: failures` Generic webhook takes the topic from the live `console/notification-ntfy` Secret; no topic value is in Git or command output.
+
+- `make check` passed before each commit (473 tests), as did the bash syntax and CI dry runs. A live `DRY_RUN=true` reported that it would create the webhook. The real command created it, updated the template after the ClickStack test exposed a Handlebars closing-brace parse error, and then reported it up to date on a repeat run.
+- HyperDX's own Test Webhook endpoint returned 200 with the saved destination and template. Its `ClickStack: Test Webhook from HyperDX` message was read back from the failures ntfy topic. The MongoDB counts are one `ntfy: failures` webhook and zero alert rules, so no query will alert until one is saved and selects this destination.
+- The console publish succeeded and pinned image `src-ec7ad4531097a128` in `cf9a339`. `make flux-reconcile` found every unit Ready at that revision. `make verify-platform` passed with the current console image, and `make app-status APP=hello-ts ENV=staging` showed matching desired/applied revision, 1/1 Ready and valid TLS.
+- Not exercised: a real alert rule firing and recovering, or a signed-in browser view of the webhook selector.

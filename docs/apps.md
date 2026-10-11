@@ -139,6 +139,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
+| `--team` | The owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)); default `platform` |
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)): set the values before pushing and also `git add platform/reloader` |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
@@ -164,17 +165,31 @@ database: sqlite        # optional; databaseSize: 1Gi        --database, --datab
 secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
 exposure: authenticated-web   # optional; default: web apps authenticated-web, workers private
+team: payments          # optional: a name in apps/teams.yaml (default platform)   --team
 ```
 
 ## Who can reach it
 
 | Exposure | Route | Host |
 | --- | --- | --- |
-| `private` (the default) | None: reachable only inside the cluster | — |
+| `private` (the default) | None, and no other pod can connect to it either ([isolation](#teams-and-isolation)) | — |
 | `authenticated-web` | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
 Set it with `--exposure` at creation, and change it later with `make app-expose APP=hello-ts ENV=staging ARGS="--exposure public --host hello-ts.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+
+## Teams and isolation
+
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. Set it at creation (`team:` in `swhurl.yaml`, `--team`, or the console's team select; default `platform`) and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. To add a team, add its name and a description to the file. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+
+Each instance carries two generated files beside its HelmRelease:
+
+| File | What it does |
+| --- | --- |
+| `resourcequota.yaml` | Caps the namespace at 14 pods, 2 CPU and 2Gi of memory requested, and 4Gi of memory limits: the same for every instance. `make app-scale` refuses replicas or sizes that would not fit beside a backup pod and a certificate solver (rule `quota`) |
+| `networkpolicy.yaml` | Decides who may connect to the app's pods: the Traefik pods on the app's port when the instance has a route, nobody otherwise. A pod in another namespace, or another pod in the same one, is refused. `make app-expose` rewrites it with the route |
+
+The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), never every pod in the namespace: cert-manager's HTTP-01 solver runs there on port 8089 and must stay reachable, as must the SQLite backup pod. Outbound connections are not restricted. Health probes come from the node and are not affected.
 
 ## Secrets
 
@@ -375,7 +390,7 @@ Every tile selects the app's namespaces, so an app without an SDK still gets its
 
 ## The app policy
 
-`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), and `HOST_IP` defined before an OTLP endpoint uses it. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
+`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, and the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)). Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
 
 A reviewed exception goes on the HelmRelease, with a reason:
 
@@ -391,7 +406,7 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 ## Limits
 
-- No per-instance quotas, NetworkPolicies or RBAC: namespaces separate failures and ownership, not trust.
+- Isolation is inbound only: an app's pods accept Traefik or nobody, but may connect out to anything. There is no per-team access control: a team is a label.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
 - Only apps made from a stack template are supported, and only staging updates automatically; production changes through a promote ([deploy a new image](#deploy-a-new-image)).
 - App images must be public: the cluster has no registry pull credentials.

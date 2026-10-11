@@ -188,6 +188,44 @@ class EditTests(unittest.TestCase):
         self.expose('staging', 'public', 'hello.example.com')
         self.assertEqual(policy.drift(instances), [], 'exposure may differ between environments')
 
+    def network_policy(self, env):
+        return yaml.safe_load((self.root / 'apps/hello' / env / 'networkpolicy.yaml').read_text())['spec']['ingress']
+
+    def test_expose_opens_and_closes_the_network_policy_with_the_route(self):
+        traefik = [{'from': [contract.TRAEFIK], 'ports': [{'port': 8080, 'protocol': 'TCP'}]}]
+        self.assertEqual(self.network_policy('staging'), traefik)
+        self.expose('staging', 'private')
+        self.assertEqual(self.network_policy('staging'), [], 'no route: Traefik is no longer admitted')
+        self.expose('staging', 'public', 'hello.example.com')
+        self.assertEqual(self.network_policy('staging'), traefik)
+        self.assertEqual(self.network_policy('prod'), traefik, 'the other environment is untouched')
+
+    def test_team_moves_every_environment_and_fills_in_missing_isolation(self):
+        (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  payments: {}\n')
+        for env in ('staging', 'prod'):  # an instance from before quotas and policies existed
+            instance = self.root / 'apps/hello' / env
+            for name in contract.ISOLATION_FILES:
+                (instance / name).unlink()
+            listing = instance / 'kustomization.yaml'
+            listing.write_text(''.join(line for line in listing.read_text().splitlines(keepends=True)
+                                       if not any(name in line for name in contract.ISOLATION_FILES)))
+        self.quiet(edit.team, self.root, 'hello', 'payments')
+        for env in ('staging', 'prod'):
+            instance = self.root / 'apps/hello' / env
+            labels = yaml.safe_load((instance / 'namespace.yaml').read_text())['metadata']['labels']
+            self.assertEqual(labels[contract.TEAM], 'payments')
+            resources = yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources']
+            self.assertEqual(resources[-2:], list(contract.ISOLATION_FILES))
+            self.assertEqual(yaml.safe_load((instance / 'networkpolicy.yaml').read_text())['metadata']['namespace'],
+                             f'hello-{env}')
+        self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
+        with self.assertRaisesRegex(edit.EditError, 'already belongs to payments'):
+            edit.team(self.root, 'hello', 'payments')
+        before = (self.root / 'apps/hello/staging/namespace.yaml').read_text()
+        with self.assertRaisesRegex(edit.EditError, "unknown team 'nobody'"):
+            edit.team(self.root, 'hello', 'nobody')
+        self.assertEqual((self.root / 'apps/hello/staging/namespace.yaml').read_text(), before)
+
     def test_expose_refusals(self):
         cases = (('public', None, 'needs --host'), ('public', 'x.homelab.swhurl.com', 'outside'),
                  ('authenticated-web', 'hello.example.com', 'must be under'), ('private', 'x.example.com', 'drop --host'),

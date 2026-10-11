@@ -2,6 +2,8 @@
 
     app-promote APP   create production from staging or update its image
     app-scale APP ENV [--replicas N] [--cpu Q] [--memory Q] [--memory-limit Q]
+    app-expose APP ENV --exposure E [--host H]     change who can reach an instance
+    app-team APP --team T                          move an app (every environment) to a registered team
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
 Each edits files under the repository root and checks the result against the
@@ -23,10 +25,12 @@ from swhurl.apps.contract import (
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
+    TEAM,
     default_host,
     in_cookie_domain,
+    teams,
 )
-from swhurl.apps.new import NAME_RE, check_generated, depends_on, ingress_values
+from swhurl.apps.new import NAME_RE, check_generated, depends_on, ingress_values, isolation_files
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
@@ -59,6 +63,52 @@ def controller(release: dict) -> dict:
 
 def container(release: dict) -> dict:
     return mapping(mapping(controller(release), 'containers'), 'main')
+
+
+def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_values: dict) -> list[tuple[Path, str]]:
+    """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them."""
+    port = None
+    if 'service' in app_values:
+        port = mapping(mapping(mapping(mapping(app_values, 'service'), 'main'), 'ports'), 'http').get('port')
+        if not isinstance(port, int):
+            raise EditError('service.main.ports.http.port: expected a port number; edit custom services by hand')
+    files = isolation_files(app, f'{app}-{env}', exposure, port)
+    edits = [(instance / name, text) for name, text in files.items()]
+    kustomization = YamlFile(instance / 'kustomization.yaml')
+    resources = kustomization.data.get('resources')
+    if not isinstance(resources, list):
+        raise EditError('kustomization.yaml: expected a resources list')
+    missing = [name for name in files if name not in resources]
+    if missing:
+        resources.extend(missing)
+        edits.append((kustomization.path, kustomization.render()))
+    return edits
+
+
+def team(root: Path, app: str, name: str) -> Path:
+    """Move every environment of an app to a team, and give each its quota and NetworkPolicy if it lacks them."""
+    if name not in teams(root):
+        raise EditError(f'unknown team {name!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
+    found = [env for env in ENVIRONMENTS if (root / 'apps' / app / env / 'helmrelease.yaml').is_file()]
+    if not found:
+        instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
+    edits: list[tuple[Path, str]] = []
+    for env in found:
+        instance = instance_dir(root, app, env)
+        namespace = YamlFile(instance / 'namespace.yaml')
+        labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
+        if labels.get(TEAM) != name:
+            labels[TEAM] = name
+            edits.append((namespace.path, namespace.render()))
+        wanted = isolation_edits(instance, app, env, labels.get(EXPOSURE),
+                                 values(YamlFile(instance / 'helmrelease.yaml').data))
+        edits += [(path, text) for path, text in wanted if not path.exists() or path.read_text() != text]
+    if not edits:
+        raise EditError(f'{app} already belongs to {name}')
+    for path, text in edits:
+        path.write_text(text)
+    print(f'[OK] {app}: team {name} ({", ".join(found)})')
+    return root / 'apps' / app / found[0]
 
 
 def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
@@ -207,6 +257,7 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
     # Render every file before writing any, so unsupported YAML cannot cause a
     # partially saved exposure edit. Policy still validates the resulting files.
     edits = [(file.path, file.render()) for file in (document, namespace, unit)]
+    edits += isolation_edits(instance, app, env, exposure, app_values)
     for path, text in edits:
         path.write_text(text)
     print(f'[OK] {app}/{env}: {current} -> {exposure}' + (f' at https://{host}' if host else ' (no route)'))
@@ -320,6 +371,15 @@ def main_expose(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: expose(args.root.resolve(), args.app, args.env, args.exposure, args.host), True)
+
+
+def main_team(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-team', description='Move an app to a team registered in apps/teams.yaml')
+    p.add_argument('app')
+    p.add_argument('--team', required=True)
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: team(args.root.resolve(), args.app, args.team), True)
 
 
 def main_remove(argv: list[str] | None = None) -> int:

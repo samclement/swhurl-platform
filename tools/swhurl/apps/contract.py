@@ -7,6 +7,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
+from swhurl import ROOT
 from swhurl.platform import base_domain, label
 
 CHART = 'app-template'
@@ -43,6 +46,64 @@ APP = label('app')
 ENVIRONMENT = label('environment')
 EXPOSURE = label('exposure')
 EXCEPTIONS = label('policy-exceptions')
+
+# Teams: an app belongs to one team, a name registered in TEAMS_FILE. The team is a Namespace label,
+# the same in every environment of the app; telemetry carries it as swhurl.team (platform/otel).
+TEAM = label('team')
+TEAMS_FILE = Path('apps/teams.yaml')
+DEFAULT_TEAM = 'platform'
+
+
+def teams(root: Path = ROOT) -> dict[str, str]:
+    """Registered team names and descriptions, from ``root`` (a scratch root falls back to this checkout)."""
+    for base in (root, ROOT):
+        path = base / TEAMS_FILE
+        if path.is_file():
+            registered = (yaml.safe_load(path.read_text()) or {}).get('teams') or {}
+            return {name: (entry or {}).get('description', '') for name, entry in registered.items()}
+    return {DEFAULT_TEAM: ''}
+
+
+# Isolation: every instance carries a ResourceQuota and a NetworkPolicy, generated here so the
+# generator, the edit commands and the policy check agree.
+QUOTA_FILE = 'resourcequota.yaml'
+NETWORK_POLICY_FILE = 'networkpolicy.yaml'
+ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
+# One size for every instance namespace: room for app-scale's maximum replicas at template sizes.
+QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}
+# What else runs in an instance's namespace beside the app: the SQLite backup or restore pod
+# (sqlite_backup.pod_manifest) and cert-manager's HTTP-01 solver. The quota check leaves this free.
+QUOTA_HEADROOM = {'pods': '2', 'requests.cpu': '20m', 'requests.memory': '96Mi', 'limits.memory': '320Mi'}
+TRAEFIK = {'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'kube-system'}},
+           'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'traefik'}}}
+"""Where routed requests come from: the k3s Traefik pods."""
+
+
+def quantity(value: object) -> float:
+    """A Kubernetes quantity as a number: CPU in cores, memory in bytes, counts as they are."""
+    text = str(value)
+    for suffix, factor in (('Ki', 2**10), ('Mi', 2**20), ('Gi', 2**30), ('m', 0.001)):
+        if text.endswith(suffix):
+            return float(text[:-len(suffix)]) * factor
+    return float(text)
+
+
+def resource_quota(app: str, namespace: str) -> dict:
+    return {'apiVersion': 'v1', 'kind': 'ResourceQuota', 'metadata': {'name': app, 'namespace': namespace},
+            'spec': {'hard': dict(QUOTA)}}
+
+
+def network_policy(app: str, namespace: str, routed_port: int | None) -> dict:
+    """Who may connect to the app's pods: Traefik on the app port when the instance has a route, otherwise nobody.
+
+    It selects the app's own pods only: a policy on every pod in the namespace would also block
+    cert-manager's HTTP-01 solver (port 8089) and with it certificate issuance.
+    """
+    ingress = [{'from': [TRAEFIK], 'ports': [{'port': routed_port, 'protocol': 'TCP'}]}] if routed_port else []
+    return {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy',
+            'metadata': {'name': app, 'namespace': namespace},
+            'spec': {'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}},
+                     'policyTypes': ['Ingress'], 'ingress': ingress}}
 
 # OpenTelemetry: apps with an SDK send OTLP to the collector DaemonSet on their own node,
 # which listens with host networking on 4318 (HTTP) and 4317 (gRPC) and adds the ingestion
@@ -107,7 +168,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'team'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -159,6 +220,8 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
             if not isinstance(resources[key], str):
                 raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
             defaults[dest] = resources[key]
+    if field('team', str):
+        defaults['team'] = doc['team']  # checked against the registry by app-new
     field('stack', str)
     return defaults
 

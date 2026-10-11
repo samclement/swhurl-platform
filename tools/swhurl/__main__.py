@@ -30,6 +30,7 @@ COMMANDS = {
     'app-promote': ('swhurl.apps.edit', 'main_promote', 'Create production from staging or update its image (Git edit)'),
     'app-scale': ('swhurl.apps.edit', 'main_scale', 'Change replicas or resources of an app instance (Git edit)'),
     'app-expose': ('swhurl.apps.edit', 'main_expose', 'Change who can reach an app instance: private, signed-in or public (Git edit)'),
+    'app-team': ('swhurl.apps.edit', 'main_team', 'Move an app to a registered team; adds its quota and NetworkPolicy if missing (Git edit)'),
     'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),
     'check-otel': ('swhurl.otel', 'main', 'Validate each OTel collector config with the collector version it will run'),
     'verify-logs': ('swhurl.logs', 'main', 'Inspect fresh log format coverage without printing log bodies'),

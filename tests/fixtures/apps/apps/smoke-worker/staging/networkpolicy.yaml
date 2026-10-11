@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-worker
+  namespace: smoke-worker-staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: smoke-worker
+  policyTypes:
+  - Ingress
+  ingress: []

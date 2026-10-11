@@ -31,11 +31,12 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
-               'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'}}
+               'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
+               'team': 'payments'}
         self.assertEqual(manifest_defaults(doc), {
             'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': False, 'exposure': 'private',
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
-            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi'})
+            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments'})
 
     def test_every_web_app_gets_the_same_startup_allowance(self):
         with self.assertRaisesRegex(ManifestError, 'unknown field.*startupSeconds'):

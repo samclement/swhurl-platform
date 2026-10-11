@@ -60,6 +60,9 @@ def check(runner: Runner, *, now: float, base: str, sender: Callable[[dict], Non
     return state
 
 
+DESTINATION = 'NTFY_PLATFORM_URL'  # the one platform topic; priority travels in each message
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Read and evaluate without posting or saving state')
@@ -74,18 +77,15 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         base = f'https://console.{base_domain()}'
 
     def sender(notice: dict) -> None:
-        variable = 'NTFY_FAILURES_URL' if notice['priority'] >= 4 else 'NTFY_DEPLOYS_URL'
-        url = os.environ.get(variable, '')
+        url = os.environ.get(DESTINATION, '')
         runner.add_secret(url)
         if not url:
-            raise NotificationError(f'{variable} is missing; notification remains pending')
+            raise NotificationError(f'{DESTINATION} is missing; notification remains pending')
         publish(url, notice)
 
     try:
-        if not runner.dry_run:
-            for variable in ('NTFY_FAILURES_URL', 'NTFY_DEPLOYS_URL'):
-                if not os.environ.get(variable):
-                    raise NotificationError(f'{variable} is missing; checker cannot deliver notifications')
+        if not runner.dry_run and not os.environ.get(DESTINATION):
+            raise NotificationError(f'{DESTINATION} is missing; checker cannot deliver notifications')
         state = check(runner, now=now, base=base, sender=sender)
         logging.getLogger(__name__).info('Notification check completed: %d instances, %d pending, dry_run=%s',
                                         len(state['instances']), len(state['pending']), runner.dry_run)

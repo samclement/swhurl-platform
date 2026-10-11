@@ -4,22 +4,12 @@
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Provider
 metadata:
-  name: ntfy-failures
+  name: ntfy-platform
   namespace: flux-system
 spec:
   type: generic
   secretRef:
-    name: ntfy-failures
----
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
-kind: Provider
-metadata:
-  name: ntfy-deploys
-  namespace: flux-system
-spec:
-  type: generic
-  secretRef:
-    name: ntfy-deploys
+    name: ntfy-platform
 ---
 # Infrastructure apply/health failures, source fetch failures and image automation errors.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
@@ -29,7 +19,7 @@ metadata:
   namespace: flux-system
 spec:
   providerRef:
-    name: ntfy-failures
+    name: ntfy-platform
   eventSeverity: error
   # Expected for a moment whenever an app with automatic deploys is added (its ImagePolicy runs before the
   # ImageRepository's first scan) or removed (the ImageRepository goes first). A repository that cannot be

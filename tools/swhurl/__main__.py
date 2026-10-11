@@ -52,7 +52,7 @@ COMMANDS = {
     'live-test-team-scenario': ('swhurl.livetests.team_scenario', 'main', 'Live: one request through a call and an event on three deployed apps, checked in ClickStack'),
     'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
     'clickstack-dashboards': ('swhurl.dashboards', 'main', 'Live: create or update a ClickStack dashboard per app in Git; delete those of removed apps (--cluster: per app on the cluster)'),
-    'clickstack-ntfy-webhook': ('swhurl.clickstack_ntfy', 'main', 'Live: keep ClickStack\'s reusable webhook on the failures ntfy topic'),
+    'clickstack-ntfy-webhook': ('swhurl.clickstack_ntfy', 'main', 'Live: keep ClickStack\'s reusable webhook on the platform ntfy topic'),
     'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
     'backup-sqlite': ('swhurl.sqlite_backup', 'backup_sqlite', 'Encrypted backup of every app SQLite database, then prune and copy to S3'),
     'restore-sqlite': ('swhurl.sqlite_restore', 'main', 'Restore one app SQLite database from its backup (stops the app meanwhile)'),

@@ -74,7 +74,7 @@ Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-imag
 3. `sops platform/image-automation/secret.sops.yaml`: replace `identity` and `identity.pub` with the two files' contents, then delete `/tmp/flux-deploy*`. `make check-secrets`, commit, push, `make reconcile UNIT=platform-image-automation`.
 4. `make verify-platform` shows Image Automation Ready; then delete the old deploy key on GitHub.
 
-Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops` both `platform/alerts/secret-failures.sops.yaml` and `secret-deploys.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in each `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_FAILURES_URL` and `NTFY_DEPLOYS_URL` to the corresponding topic URLs without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update); subscribe to the new topic in the ntfy app and unsubscribe from the old.
+Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops platform/alerts/secret-platform.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_PLATFORM_URL` to the same topic URL without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update) and `make clickstack-ntfy-webhook`; subscribe to the new topic in the ntfy app and unsubscribe from the old.
 
 ### Signing keys
 

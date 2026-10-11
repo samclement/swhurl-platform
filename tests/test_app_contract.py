@@ -423,6 +423,44 @@ class PolicyTests(unittest.TestCase):
                 mutate(docs)
                 self.assertIn(rule, self.rules(docs))
 
+    def test_team_quota_and_network_policy_rules(self):
+        def unknown_team(d):
+            self.find(d, 'Namespace')['metadata']['labels'][contract.TEAM] = 'nobody'
+        def no_quota(d):
+            d.remove(self.find(d, 'ResourceQuota'))
+        def other_quota(d):
+            self.find(d, 'ResourceQuota')['spec']['hard']['pods'] = '100'
+        def too_many_replicas(d):
+            self.find(d, 'Deployment')['spec']['replicas'] = 13
+        def too_much_memory(d):
+            self.container(d)['resources']['limits']['memory'] = '4Gi'  # leaves no room for a backup pod
+        def no_network_policy(d):
+            d.remove(self.find(d, 'NetworkPolicy'))
+        def every_pod(d):
+            self.find(d, 'NetworkPolicy')['spec']['podSelector'] = {}
+        def open_to_all(d):
+            self.find(d, 'NetworkPolicy')['spec']['ingress'] = [{}]
+        def wrong_port(d):
+            self.find(d, 'NetworkPolicy')['spec']['ingress'][0]['ports'][0]['port'] = 9999
+        cases = [('smoke-web/staging', unknown_team, 'team'), ('smoke-web/staging', no_quota, 'quota'),
+                 ('smoke-web/staging', other_quota, 'quota'), ('smoke-web/staging', too_many_replicas, 'quota'),
+                 ('smoke-web/staging', too_much_memory, 'quota'), ('smoke-web/staging', no_network_policy, 'network-policy'),
+                 ('smoke-web/staging', every_pod, 'network-policy'), ('smoke-worker/staging', open_to_all, 'network-policy'),
+                 ('smoke-web/staging', wrong_port, 'network-policy')]
+        for key, mutate, rule in cases:
+            with self.subTest(case=mutate.__name__):
+                docs = self.docs(key)
+                mutate(docs)
+                self.assertEqual(self.rules(docs), {rule})
+        # The registry is the root's: a team this checkout does not know passes when the caller's does.
+        docs = self.docs('smoke-web/staging')
+        unknown_team(docs)
+        self.assertEqual(app_policy.check(docs, {'nobody': ''}), [])
+        docs = self.docs('smoke-web/staging')
+        every_pod(docs)
+        message = dict(app_policy.check(docs))['network-policy']
+        self.assertIn("HTTP-01 solver", message)
+
     def test_generator_checks_its_own_output(self):
         instance = FIXTURES / 'apps/smoke-web/staging'
         out = io.StringIO()

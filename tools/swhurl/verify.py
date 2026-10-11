@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import hooks
+from swhurl.apps import contract, hooks
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -521,6 +521,40 @@ def check_image_automation(runner: Runner, report: Report) -> None:
             report.bad(f'ImagePolicy {name} is not Ready: {message}')
 
 
+def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """Every app namespace has a registered team, the platform quota and a NetworkPolicy on the app's pods."""
+    report.section('App isolation')
+    try:
+        namespaces = runner.json(['kubectl', 'get', 'namespaces', '-l', APP_LABEL, '-o', 'json'])['items']
+        quotas = runner.json(['kubectl', 'get', 'resourcequotas', '--all-namespaces', '-o', 'json'])['items']
+        policies = runner.json(['kubectl', 'get', 'networkpolicies.networking.k8s.io', '--all-namespaces',
+                                '-o', 'json'])['items']
+    except (CommandError, KeyError, TypeError):
+        report.bad('could not read app namespaces, ResourceQuotas or NetworkPolicies')
+        return
+    known = contract.teams(root)
+    complete = 0
+    for namespace in sorted(namespaces, key=lambda n: n['metadata']['name']):
+        name, labels = namespace['metadata']['name'], namespace['metadata'].get('labels') or {}
+        app = labels.get(APP_LABEL)
+        problems = []
+        if labels.get(contract.TEAM) not in known:
+            problems.append(f'team {labels.get(contract.TEAM)!r} is not in {contract.TEAMS_FILE}')
+        if not any(q['metadata']['namespace'] == name and (q.get('spec') or {}).get('hard') == contract.QUOTA
+                   for q in quotas):
+            problems.append('no platform ResourceQuota')
+        selector = {'matchLabels': {'app.kubernetes.io/instance': app}}
+        if not any(p['metadata']['namespace'] == name and (p.get('spec') or {}).get('podSelector') == selector
+                   for p in policies):
+            problems.append("no NetworkPolicy on the app's pods")
+        if problems:
+            report.bad(f'{name}: ' + '; '.join(problems))
+        else:
+            complete += 1
+    if complete:
+        report.ok(f'{complete} app namespace(s) have a registered team, the platform quota and a NetworkPolicy')
+
+
 ALERTS = ('failures',)  # platform/alerts/alerts.yaml
 
 
@@ -629,6 +663,7 @@ CHECKS = (
     Check('registration', frozenset({'cluster', 'exec'}), check_registration),
     Check('ingress', frozenset({'cluster'}), check_ingress),
     Check('image-automation', frozenset({'cluster'}), check_image_automation),
+    Check('isolation', frozenset({'cluster', 'host'}), check_isolation),  # reads apps/teams.yaml
     Check('alerts', frozenset({'cluster'}), check_alerts),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),

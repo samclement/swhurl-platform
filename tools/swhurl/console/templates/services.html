@@ -3,7 +3,7 @@
 {% block title %}Services{% endblock %}
 {% block main %}
 <h1>Services</h1>
-<p class="lead">Every app as other apps see it: who owns it, where it answers inside the cluster, and who calls whom. An app reaches another only after declaring the call.</p>
+<p class="lead">Every app as other apps see it: who owns it, where it answers inside the cluster, who calls whom, and the events each publishes and receives. An app reaches another only after declaring the call, and receives an event only after declaring the subscription.</p>
 {% if services %}
 <div class="scroll">
 <table class="compact apps">
@@ -21,6 +21,8 @@
       {% if e.api %}<div>API: {% if e.api.startswith('https://') %}<a href="{{ e.api }}">{{ e.api }}</a>{% else %}<code>{{ e.api }}</code>{% endif %}</div>{% endif %}
       <div class="muted">Calls: {% for name in e.calls %}<a href="#{{ name }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}nothing{% endfor %}</div>
       <div class="muted">Called by: {% for name in e.callers %}<a href="#{{ name }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}nobody{% endfor %}</div>
+      {% if e.publishes %}<div class="muted">Publishes: {% for name in e.publishes %}<code>{{ s.app }}.{{ name }}</code>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+      {% if e.subscribes %}<div class="muted">Subscribes to: {% for name in e.subscribes %}<a href="#{{ name.split('.')[0] }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
     {% else %}<span class="muted">not deployed</span>{% endif %}</td>
     {% endfor %}
   </tr>

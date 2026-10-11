@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from swhurl.apps import contract, ops, promotion
+from swhurl.apps import events as nats
 from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
 from swhurl.flux import WAITING_REASONS
@@ -207,6 +208,8 @@ class ServiceEnv:
     api: str  # where its API description is, if it says so
     calls: tuple[str, ...]
     callers: tuple[str, ...]
+    publishes: tuple[str, ...] = ()  # event names
+    subscribes: tuple[str, ...] = ()  # <app>.<event>
 
 
 @dataclass(frozen=True)
@@ -238,7 +241,8 @@ def services(runner: Runner) -> list[Service]:
         path = env.get(contract.API_ENV, '') if address else ''
         api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''
         found.setdefault(instance.app, {})[instance.env] = ServiceEnv(
-            row, address, api, tuple(contract.declared_calls(env)), tuple(contract.allowed_callers(env)))
+            row, address, api, tuple(contract.declared_calls(env)), tuple(contract.allowed_callers(env)),
+            tuple(nats.published(env)), tuple('.'.join(pair) for pair in nats.subscribed(env)))
     return [Service(app, next((teams[e.row.instance.namespace] for e in envs.values()
                                if teams.get(e.row.instance.namespace)), ''), envs)
             for app, envs in sorted(found.items())]

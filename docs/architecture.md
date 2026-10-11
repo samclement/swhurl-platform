@@ -45,9 +45,11 @@ flowchart LR
   base --> alerts[platform-alerts]
   base --> console[platform-console]
   auth --> console
+  base --> nats[platform-nats]
   traefik[infra-traefik]
   base --> app["app-APP-ENV (one per app instance)"]
   auth -. if signed-in .-> app
+  nats -. if it declares events .-> app
 ```
 
 | Unit | Owns (path) | Waits for | Inputs |
@@ -66,8 +68,9 @@ flowchart LR
 | `platform-alerts` | ntfy Providers and the infrastructure/source failure Alert, with their SOPS Secrets (`platform/alerts`) | infra-base | SOPS |
 | `platform-image-automation` | The write `GitRepository` (SSH, deploy key) and its SOPS Secret (`platform/image-automation`); each app's `ImageRepository`, `ImagePolicy` and app-named `ImageUpdateAutomation` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
+| `platform-nats` | NATS JetStream and its stream controller, the generated user list and a NetworkPolicy, in `messaging` (`platform/nats`; [services](services.md#nats)) | infra-base | SOPS |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
-| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in | SOPS if it has a Secret |
+| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-nats if it declares events | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 

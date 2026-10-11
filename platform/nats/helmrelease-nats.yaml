@@ -1,0 +1,59 @@
+# NATS with JetStream: the event broker apps publish to and subscribe from
+# (docs/services.md#nats). One server; staging and production are kept apart
+# by subject name and per-app permission, not by separate servers.
+#
+# Who may do what is not written here: users.yaml (generated from the app
+# instances) supplies config.merge.authorization.users through valuesFrom, and
+# the server's own reloader applies a changed list without a restart.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nats
+  namespace: messaging
+spec:
+  interval: 30m
+  releaseName: nats
+  chart:
+    spec:
+      chart: nats
+      version: 2.15.0
+      sourceRef:
+        kind: HelmRepository
+        name: nats
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  valuesFrom:
+    - kind: ConfigMap
+      name: nats-users
+      valuesKey: values.yaml
+  values:
+    config:
+      jetstream:
+        enabled: true
+        fileStore:
+          # Every stream is capped (64Mi, seven days: tools/swhurl/apps/events.py), so the volume
+          # bounds the number of publishing apps, not their traffic. Not backed up: an event
+          # stream is not a system of record.
+          maxSize: 1Gi
+          pvc:
+            size: 2Gi
+            storageClassName: local-path
+    container:
+      merge:
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 512Mi
+    # No debugging pod and no metrics exporter: nothing scrapes Prometheus endpoints here.
+    natsBox:
+      enabled: false
+    promExporter:
+      enabled: false

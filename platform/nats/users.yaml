@@ -21,3 +21,21 @@ data:
               subscribe:
                 allow:
                 - _INBOX.>
+          - nkey: UDI2RINKCVTQFX5S4IXXG4P3EFI4CXM235HJ3FPCNWJHDIMHTINQVZWX
+            permissions:
+              publish:
+                allow:
+                - staging.swhurl-try-10.visited
+              subscribe:
+                allow:
+                - _INBOX.staging.swhurl-try-10.>
+          - nkey: UB3QFGGBJ7M35TWJBTRS5RTXJMWJ67CVSMD5B4MAZBTI6RBDQBA4T73Z
+            permissions:
+              publish:
+                allow:
+                - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
+                - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
+                - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>
+              subscribe:
+                allow:
+                - _INBOX.staging.swhurl-try-13.>

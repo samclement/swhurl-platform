@@ -65,6 +65,9 @@ spec:
               OTEL_SERVICE_NAME: swhurl-try-10
               DATABASE_PATH: /data/app.db
               SWHURL_ALLOWED_CALLERS: swhurl-try-11,swhurl-try-12
+              SWHURL_EVENTS_PUBLISH: visited
+              SWHURL_EVENTS_NKEY: UDI2RINKCVTQFX5S4IXXG4P3EFI4CXM235HJ3FPCNWJHDIMHTINQVZWX
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:
               readiness:
                 enabled: true
@@ -89,8 +92,13 @@ spec:
                     port: 8080
                   periodSeconds: 5
                   failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: swhurl-try-10-events
         replicas: 1
         strategy: Recreate
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-10-events
     persistence:
       tmp:
         type: emptyDir

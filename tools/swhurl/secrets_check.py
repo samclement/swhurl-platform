@@ -51,8 +51,7 @@ INGESTION_FILES = ('platform/clickstack/secret.sops.yaml', 'platform/otel/secret
 IMAGE_WEBHOOK_COPIES = ((str(hooks.TOKEN_FILE), 'token'), ('platform/console/secret.sops.yaml', hooks.CONSOLE_TOKEN_KEY))
 NOTIFICATION_SECRET = 'platform/console/notification-secret.sops.yaml'
 NTFY_DESTINATIONS = {  # channel: (provider Secret file, provider key, checker key)
-    'failures': ('platform/alerts/secret-failures.sops.yaml', 'address', 'NTFY_FAILURES_URL'),
-    'deploys': ('platform/alerts/secret-deploys.sops.yaml', 'address', 'NTFY_DEPLOYS_URL'),
+    'platform': ('platform/alerts/secret-platform.sops.yaml', 'address', 'NTFY_PLATFORM_URL'),
 }
 
 

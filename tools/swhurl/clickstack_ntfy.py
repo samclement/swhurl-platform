@@ -1,4 +1,4 @@
-"""Keep ClickStack's reusable ntfy destination on the existing failures topic.
+"""Keep ClickStack's reusable ntfy destination on the platform topic.
 
 The topic comes from the live notification Secret. No topic or access key is
 printed or written to Git; the webhook itself is stored in ClickStack's MongoDB.
@@ -13,19 +13,19 @@ from swhurl import clickstack, dashboards
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
-NAME = 'ntfy: failures'
-DESCRIPTION = 'ClickStack alerts to the platform failures ntfy topic'
+NAME = 'ntfy: platform'
+DESCRIPTION = 'ClickStack alerts to the platform ntfy topic'
 NTFY_SECRET = ['kubectl', '-n', 'console', 'get', 'secret', 'notification-ntfy', '-o', 'json']
 
 
 def destination(runner: Runner) -> dict:
     data = runner.json(NTFY_SECRET, secret_output=True)['data']
-    url = base64.b64decode(data['NTFY_FAILURES_URL']).decode()
+    url = base64.b64decode(data['NTFY_PLATFORM_URL']).decode()
     runner.add_secret(url)
     parts = urlsplit(url)
     topic = parts.path.removeprefix('/')
     if (parts.scheme, parts.netloc) != ('https', 'ntfy.sh') or not topic or '/' in topic or parts.query or parts.fragment:
-        raise ValueError('the failures ntfy destination must be a single https://ntfy.sh/<topic> URL')
+        raise ValueError('the platform ntfy destination must be a single https://ntfy.sh/<topic> URL')
     runner.add_secret(topic)
     # HyperDX JSON-escapes each string variable before applying this template.
     # The condition sets high priority on firing and normal priority on recovery.

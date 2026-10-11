@@ -19,7 +19,7 @@ class Fixture:
         self.live, self.calls = list(live), []
         self.runner = (FakeRunner(dry_run=dry_run)
                        .on(*clickstack_ntfy.NTFY_SECRET, stdout=json.dumps({'data': {
-                           'NTFY_FAILURES_URL': b64(f'https://ntfy.sh/{topic}')}}))
+                           'NTFY_PLATFORM_URL': b64(f'https://ntfy.sh/{topic}')}}))
                        .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.INPUTS_SECRET,
                            stdout=json.dumps({'data': {'CLICKSTACK_ADMIN_EMAIL': b64(EMAIL)}}))
                        .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET,

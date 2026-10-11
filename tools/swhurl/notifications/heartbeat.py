@@ -40,7 +40,7 @@ class Watched:
 
 WATCHED = (Watched('notification checker', CRONJOB_NAMESPACE, CRONJOB_NAME, 600),)
 SECRET_NAME = 'notification-ntfy'
-SECRET_KEY = 'NTFY_FAILURES_URL'
+SECRET_KEY = 'NTFY_PLATFORM_URL'
 REMINDER_SECONDS = 3600
 EMPTY = {'alerting_since': None, 'last_alert': None}
 STATE_PATH = Path.home() / '.local/state/swhurl-platform/notification-heartbeat.json'

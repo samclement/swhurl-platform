@@ -80,8 +80,8 @@ def healthy(**overrides):
                                'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}]},
         'jwks': json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text()),
         'openid': {'issuer': calling.ISSUER},
-        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
-        'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
+        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-platform'}}}]},
+        'providers': {'items': [{'metadata': {'name': 'ntfy-platform'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'], 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
                    'last_response': {'code': 200, 'message': 'OK'}}],
@@ -408,7 +408,7 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
                       report.lines, text)
         _, report, text = run(healthy(providers={'items': []}))
-        self.assertIn('[BAD] alert failures points at provider ntfy-failures, which does not exist', report.lines, text)
+        self.assertIn('[BAD] alert failures points at provider ntfy-platform, which does not exist', report.lines, text)
 
     def test_image_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}

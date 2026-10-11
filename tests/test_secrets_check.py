@@ -6,9 +6,9 @@ import unittest
 class SecretsCheckTests(unittest.TestCase):
     def test_notification_destinations_match_without_reporting_values(self):
         from swhurl.secrets_check import notification_destination_problem
-        copies = {'source-failures': 'a', 'checker-failures': 'a', 'source-deploys': 'b', 'checker-deploys': 'b'}
+        copies = {'source-platform': 'a', 'checker-platform': 'a'}
         self.assertIsNone(notification_destination_problem(copies))
-        copies['checker-failures'] = 'private-fingerprint'
+        copies['checker-platform'] = 'private-fingerprint'
         error = notification_destination_problem(copies)
         self.assertIn('differs', error)
         self.assertNotIn('private-fingerprint', error)

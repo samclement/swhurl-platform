@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-13
-              tag: 2-1fbbe09 # {"$imagepolicy": "flux-system:swhurl-try-13-staging:tag"}
-              digest: sha256:8b517995c6ecd0a8f598f80c5f3836d21756ce32d220ae8ba3337bc22248da7c # {"$imagepolicy": "flux-system:swhurl-try-13-staging:digest"}
+              tag: 3-0049e22 # {"$imagepolicy": "flux-system:swhurl-try-13-staging:tag"}
+              digest: sha256:c6da10edc2aae3474b6642b9f14b1d5a8ad7cabdeeb6f0eb88830191641ac95e # {"$imagepolicy": "flux-system:swhurl-try-13-staging:digest"}
             resources:
               requests:
                 cpu: 10m

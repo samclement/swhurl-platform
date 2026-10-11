@@ -2,6 +2,7 @@
 import difflib
 import io
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -487,8 +488,9 @@ class EditTests(unittest.TestCase):
 
     def test_remove_leaves_no_trace(self):
         reloader = self.root / 'platform/reloader/helmrelease.yaml'
-        reloader.write_text(reloader.read_text().replace('namespaces: [ingress, logging, console]',
-                                                         'namespaces: [ingress, logging, console, hello-prod]'))
+        # Whatever the real list holds today (apps with secrets or events), start from a known one.
+        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console, hello-prod]',
+                                   reloader.read_text()))
         _, out = self.quiet(edit.remove, self.root, 'hello', 'prod')
         self.assertFalse((self.root / 'apps/hello/prod').exists())
         self.assertTrue((self.root / 'apps/hello/staging').exists())

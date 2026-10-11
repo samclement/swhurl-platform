@@ -7,8 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import contract, helmrelease, ops
-from swhurl.apps import events as nats
+from swhurl.apps import contract, events, helmrelease, ops
 from swhurl.apps.new import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -192,7 +191,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
             raise EditError('data must be a platform-managed retained claim; external bindings are unsupported')
     keys = []
     # Events are declared per environment (make app-events ENV=prod): the staging key stays in staging.
-    refs = [ref for ref in container.get('envFrom', []) if ref != {'secretRef': {'name': nats.secret_name(app)}}]
+    refs = [ref for ref in container.get('envFrom', []) if ref != {'secretRef': {'name': events.secret_name(app)}}]
     if refs and refs != [{'secretRef': {'name': f'{app}-secret'}}]:
         raise EditError('only the platform-managed app Secret reference is supported on first promotion')
     if refs:
@@ -205,7 +204,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     kustomization = YamlFile(instance / 'kustomization.yaml').data
     only(kustomization, {'apiVersion', 'kind', 'resources'}, 'kustomization')
     expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({'secret.sops.yaml'} if refs else set())
-    per_environment = {contract.IMAGE_AUTOMATION_FILE, nats.EVENTS_FILE, nats.SECRET_FILE}
+    per_environment = {contract.IMAGE_AUTOMATION_FILE, events.EVENTS_FILE, events.SECRET_FILE}
     resources = set(kustomization.get('resources', [])) - per_environment
     if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment != expected | {
             'kustomization.yaml'}:
@@ -289,16 +288,16 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         if contract.ENVIRONMENT_VARIABLE in variables:
             variables[contract.ENVIRONMENT_VARIABLE] = 'prod'
         variables.pop(contract.CALLERS_VARIABLE, None)
-        for key in (nats.PUBLISH_VARIABLE, nats.SUBSCRIBE_VARIABLE, nats.URL_VARIABLE, nats.NKEY_VARIABLE):
+        for key in (events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE):
             variables.pop(key, None)
-        staging_key = {'secretRef': {'name': nats.secret_name(app)}}
+        staging_key = {'secretRef': {'name': events.secret_name(app)}}
         if staging_key in main.get('envFrom', []):
             main['envFrom'].remove(staging_key)
             if not main['envFrom']:
                 del main['envFrom']
         reload_key = 'secret.reloader.stakater.com/reload'
         reloads = [name for name in str((workload.get('annotations') or {}).get(reload_key, '')).split(',')
-                   if name and name != nats.secret_name(app)]
+                   if name and name != events.secret_name(app)]
         if reload_key in (workload.get('annotations') or {}):
             if reloads:
                 workload['annotations'][reload_key] = ','.join(reloads)

@@ -150,13 +150,13 @@ class FirstProductionTests(unittest.TestCase):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
-        edit.calls(self.root, 'reports', 'staging', add=['orders'])
+        edit.set_calls(self.root, 'reports', 'staging', add=['orders'])
 
         def encrypt(args, _):
             Path(args[-1]).write_text(Path(args[-1]).read_text() + 'sops: {}\n')
             return Result(args, 0, '')
         from swhurl.run import Result
-        edit.events(self.root, 'orders', 'staging', publish=['created'], runner=FakeRunner().on('sops', handler=encrypt))
+        edit.set_events(self.root, 'orders', 'staging', publish=['created'], runner=FakeRunner().on('sops', handler=encrypt))
 
         def env(app, environment):
             release = yaml.safe_load((self.root / 'apps' / app / environment / 'helmrelease.yaml').read_text())
@@ -178,7 +178,7 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
         self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
         instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]
-        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.check_calls(instances), {})
         self.assertEqual(policy.drift([self.root / 'apps/reports/prod', self.root / 'apps/reports/staging']), [])
 
     def test_unsupported_shape_and_policy_failure_write_nothing(self):

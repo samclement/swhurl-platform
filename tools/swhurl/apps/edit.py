@@ -22,8 +22,7 @@ import sys
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import events as nats
-from swhurl.apps import helmrelease, nkeys, ops, promotion
+from swhurl.apps import events, helmrelease, nkeys, ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     CALLERS_VARIABLE,
@@ -123,11 +122,11 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     """
     main, workload = container(release), controller(release)
     variables = mapping(main, 'env', create=True)
-    publishes, subscribes = nats.published(variables), nats.subscribed(variables)
+    publishes, subscribes = events.published(variables), events.subscribed(variables)
     for publisher, event in subscribes:
         if event not in publishers.get(publisher, []):
             raise EditError(f'{app}/{env} subscribes to {publisher}.{event}, which {publisher}/{env} does not publish')
-    secret = nats.secret_name(app)
+    secret = events.secret_name(app)
     reference = {'secretRef': {'name': secret}}
     refs = main.get('envFrom')
     annotations = workload.get('annotations') or {}
@@ -140,25 +139,25 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     dependencies = unit_spec.get('dependsOn') or []
     edits: list[tuple[Path, str]] = []
     if publishes or subscribes:
-        if not variables.get(nats.NKEY_VARIABLE) or not (instance / nats.SECRET_FILE).is_file():
+        if not variables.get(events.NKEY_VARIABLE) or not (instance / events.SECRET_FILE).is_file():
             raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
-        if variables.get(nats.URL_VARIABLE) != nats.URL:
-            variables[nats.URL_VARIABLE] = nats.URL
+        if variables.get(events.URL_VARIABLE) != events.URL:
+            variables[events.URL_VARIABLE] = events.URL
         if refs is None:
             main['envFrom'] = [reference]
         elif reference not in refs:
             refs.append(reference)
         if secret not in reloads:
             mapping(workload, 'annotations', create=True)[RELOAD] = ','.join([*reloads, secret])
-        if not any(d.get('name') == nats.UNIT for d in dependencies):
-            unit_spec.setdefault('dependsOn', dependencies).append({'name': nats.UNIT})
+        if not any(d.get('name') == events.UNIT for d in dependencies):
+            unit_spec.setdefault('dependsOn', dependencies).append({'name': events.UNIT})
         if 'decryption' not in unit_spec:
             unit_spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
-        edits.append((instance / nats.EVENTS_FILE, dump(nats.manifests(app, env, publishes, subscribes))))
-        user = nats.user(str(variables[nats.NKEY_VARIABLE]), env, app, publishes, subscribes)
-        listed, unlisted = (nats.SECRET_FILE, nats.EVENTS_FILE), ()
+        edits.append((instance / events.EVENTS_FILE, dump(events.manifests(app, env, publishes, subscribes))))
+        user = events.user(str(variables[events.NKEY_VARIABLE]), env, app, publishes, subscribes)
+        listed, unlisted = (events.SECRET_FILE, events.EVENTS_FILE), ()
     else:
-        for key in (nats.URL_VARIABLE, nats.NKEY_VARIABLE):
+        for key in (events.URL_VARIABLE, events.NKEY_VARIABLE):
             variables.pop(key, None)
         if refs is not None and reference in refs:
             refs.remove(reference)
@@ -173,11 +172,11 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
                 if not annotations:
                     del workload['annotations']
         for index in reversed(range(len(dependencies))):
-            if dependencies[index].get('name') == nats.UNIT:
+            if dependencies[index].get('name') == events.UNIT:
                 del dependencies[index]
         if 'decryption' in unit_spec and not (instance / 'secret.sops.yaml').is_file():
             del unit_spec['decryption']
-        user, listed, unlisted = None, (), (nats.SECRET_FILE, nats.EVENTS_FILE)
+        user, listed, unlisted = None, (), (events.SECRET_FILE, events.EVENTS_FILE)
     if unit:
         edits.append((unit.path, unit.render()))
     return edits, listed, unlisted, user
@@ -185,7 +184,7 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
 
 def users_edit(root: Path) -> list[tuple[Path, str]]:
     """The NATS user list as a file edit, from the instances as they are on disk."""
-    found = nats.users_file(root)
+    found = events.users_file(root)
     return [found] if found else []
 
 
@@ -221,7 +220,7 @@ def sync_env(root: Path, env: str) -> list[Path]:
             if ports[callee] is None:
                 raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
     keys = signing_keys(root)
-    publishers = {app: nats.published(helmrelease.variables(doc.data)) for app, doc in releases.items()}
+    publishers = {app: events.published(helmrelease.variables(doc.data)) for app, doc in releases.items()}
     edits: list[tuple[Path, str]] = []
     deletions: list[Path] = []
     for app, doc in releases.items():
@@ -274,7 +273,7 @@ def sync(root: Path) -> Path | None:
     return None
 
 
-def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
+def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
     """Change which apps ``app/env`` may call: its side here, the callees' side through sync_env."""
     add, remove = add or [], remove or []
     if not add and not remove:
@@ -308,35 +307,35 @@ def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remov
     return instance
 
 
-def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
+def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
            runner: Runner | None = None) -> Path:
     """Set the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives (None: unchanged,
     an empty list: none). The first time, the instance gets its own NATS key; everything else follows in sync_env."""
     if publish is None and subscribe is None:
         raise EditError('give --publish and/or --subscribe (an empty value clears it)')
-    bad = [name for name in publish or [] if not nats.EVENT_RE.match(name)]
-    bad += [name for name in subscribe or [] if not nats.SUBSCRIPTION_RE.match(name)]
+    bad = [name for name in publish or [] if not events.EVENT_RE.match(name)]
+    bad += [name for name in subscribe or [] if not events.SUBSCRIPTION_RE.match(name)]
     if bad or len(set(publish or [])) != len(publish or []) or len(set(subscribe or [])) != len(subscribe or []):
         raise EditError('events are lowercase names (created), subscriptions <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))
     instance = instance_dir(root, app, env)
     document = YamlFile(instance / 'helmrelease.yaml')
     variables = mapping(container(document.data), 'env', create=True)
-    for key, value in ((nats.PUBLISH_VARIABLE, publish), (nats.SUBSCRIBE_VARIABLE, subscribe)):
+    for key, value in ((events.PUBLISH_VARIABLE, publish), (events.SUBSCRIBE_VARIABLE, subscribe)):
         if value:
             variables[key] = ','.join(value)
         elif value is not None:
             variables.pop(key, None)
-    active = bool(nats.published(variables) or nats.subscribed(variables))
+    active = bool(events.published(variables) or events.subscribed(variables))
     before = document.path.read_text()
-    secret = instance / nats.SECRET_FILE
+    secret = instance / events.SECRET_FILE
     created = False
-    if active and not (variables.get(nats.NKEY_VARIABLE) and secret.is_file()):
+    if active and not (variables.get(events.NKEY_VARIABLE) and secret.is_file()):
         # The seed goes from memory into a file that sops encrypts in place: it is never printed.
         seed, public = nkeys.generate()
         secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                                 'metadata': {'name': nats.secret_name(app), 'namespace': f'{app}-{env}'},
-                                 'type': 'Opaque', 'stringData': {nats.SEED_VARIABLE: seed}}]))
+                                 'metadata': {'name': events.secret_name(app), 'namespace': f'{app}-{env}'},
+                                 'type': 'Opaque', 'stringData': {events.SEED_VARIABLE: seed}}]))
         try:
             (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
         except CommandError as error:
@@ -345,7 +344,7 @@ def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, 
         if 'sops:' not in secret.read_text():
             secret.unlink()
             raise EditError(f'{secret.name} was not encrypted; removed it')
-        variables[nats.NKEY_VARIABLE] = public
+        variables[events.NKEY_VARIABLE] = public
         created = True
     document.save()
     try:
@@ -356,8 +355,8 @@ def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, 
             secret.unlink(missing_ok=True)
         raise
     now = helmrelease.variables(YamlFile(instance / 'helmrelease.yaml').data)
-    print(f'[OK] {app}/{env} publishes: {", ".join(nats.published(now)) or "nothing"}; '
-          f'subscribes to: {", ".join(".".join(pair) for pair in nats.subscribed(now)) or "nothing"}')
+    print(f'[OK] {app}/{env} publishes: {", ".join(events.published(now)) or "nothing"}; '
+          f'subscribes to: {", ".join(".".join(pair) for pair in events.subscribed(now)) or "nothing"}')
     return instance
 
 
@@ -366,7 +365,7 @@ def subscribers_of(root: Path, app: str, env: str) -> list[str]:
     found = []
     for other in instances_in(root, env):
         release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
-        if other != app and any(publisher == app for publisher, _ in nats.subscribed(helmrelease.variables(release))):
+        if other != app and any(publisher == app for publisher, _ in events.subscribed(helmrelease.variables(release))):
             found.append(other)
     return found
 
@@ -381,7 +380,7 @@ def callers_of(root: Path, app: str, env: str) -> list[str]:
     return found
 
 
-def team(root: Path, app: str, name: str) -> Path:
+def set_team(root: Path, app: str, name: str) -> Path:
     """Move every environment of an app to a team, and give each its quota and NetworkPolicy if it lacks them."""
     if name not in teams(root):
         raise EditError(f'unknown team {name!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
@@ -689,7 +688,7 @@ def main_team(argv: list[str] | None = None) -> int:
     p.add_argument('--team', required=True)
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: team(args.root.resolve(), args.app, args.team), True)
+    return run(lambda: set_team(args.root.resolve(), args.app, args.team), True)
 
 
 def main_calls(argv: list[str] | None = None) -> int:
@@ -702,7 +701,7 @@ def main_calls(argv: list[str] | None = None) -> int:
     p.add_argument('--remove', type=names, default=[], help='comma-separated apps to stop calling')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
+    return run(lambda: set_calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
 
 
 def main_events(argv: list[str] | None = None) -> int:
@@ -715,7 +714,7 @@ def main_events(argv: list[str] | None = None) -> int:
     p.add_argument('--subscribe', type=names, help='comma-separated <app>.<event> it receives ("" for none)')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe), True)
+    return run(lambda: set_events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe), True)
 
 
 def main_sync(argv: list[str] | None = None) -> int:

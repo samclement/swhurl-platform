@@ -211,7 +211,7 @@ class EditTests(unittest.TestCase):
             listing = instance / 'kustomization.yaml'
             listing.write_text(''.join(line for line in listing.read_text().splitlines(keepends=True)
                                        if not any(name in line for name in contract.ISOLATION_FILES)))
-        self.quiet(edit.team, self.root, 'hello', 'payments')
+        self.quiet(edit.set_team, self.root, 'hello', 'payments')
         for env in ('staging', 'prod'):
             instance = self.root / 'apps/hello' / env
             labels = yaml.safe_load((instance / 'namespace.yaml').read_text())['metadata']['labels']
@@ -222,10 +222,10 @@ class EditTests(unittest.TestCase):
                              f'hello-{env}')
         self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
         with self.assertRaisesRegex(edit.EditError, 'already belongs to payments'):
-            edit.team(self.root, 'hello', 'payments')
+            edit.set_team(self.root, 'hello', 'payments')
         before = (self.root / 'apps/hello/staging/namespace.yaml').read_text()
         with self.assertRaisesRegex(edit.EditError, "unknown team 'nobody'"):
-            edit.team(self.root, 'hello', 'nobody')
+            edit.set_team(self.root, 'hello', 'nobody')
         self.assertEqual((self.root / 'apps/hello/staging/namespace.yaml').read_text(), before)
 
     def env(self, app, env='staging'):
@@ -242,7 +242,7 @@ class EditTests(unittest.TestCase):
 
     def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
         self.second_app()
-        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         self.assertEqual(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'],
                          'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
         release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
@@ -255,7 +255,7 @@ class EditTests(unittest.TestCase):
             'ports': [{'port': 9000, 'protocol': 'TCP'}]}])
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders', 'prod'), 'production is its own decision')
         instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
-        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.check_calls(instances), {})
         self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging'])
                          + policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [],
                          'calls may differ between environments')
@@ -263,7 +263,7 @@ class EditTests(unittest.TestCase):
 
         with self.assertRaisesRegex(edit.EditError, 'is called by hello: remove those calls first'):
             edit.remove(self.root, 'orders', 'staging')
-        self.quiet(edit.calls, self.root, 'hello', 'staging', remove=['orders'])
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', remove=['orders'])
         self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'))
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders'))
         release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
@@ -278,25 +278,25 @@ class EditTests(unittest.TestCase):
                  ({'remove': ['orders']}, 'does not call orders'), ({}, 'give --add and/or --remove'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
-                edit.calls(self.root, 'hello', 'staging', **kwargs)
+                edit.set_calls(self.root, 'hello', 'staging', **kwargs)
         self.assertEqual(self.staging.read_text(), before)
-        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         with self.assertRaisesRegex(edit.EditError, 'already calls orders'):
-            edit.calls(self.root, 'hello', 'staging', add=['orders'])
+            edit.set_calls(self.root, 'hello', 'staging', add=['orders'])
 
     def test_one_sided_calls_are_policy_violations(self):
         self.second_app()
-        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         orders = self.root / 'apps/orders/staging/helmrelease.yaml'
         orders.write_text(orders.read_text().replace('SWHURL_ALLOWED_CALLERS: hello', 'SWHURL_ALLOWED_CALLERS: stranger'))
         instances = [self.root / 'apps/hello/staging', self.root / 'apps/orders/staging']
-        problems = policy.calls(instances)
+        problems = policy.check_calls(instances)
         self.assertIn('calls: calls orders, which does not allow it; make app-sync rewrites both sides',
                       problems[instances[0]])
         self.assertIn('calls: allows stranger, which does not declare a call to it; make app-sync rewrites both sides',
                       problems[instances[1]])
         self.quiet(edit.sync, self.root)
-        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.check_calls(instances), {})
 
     def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
         from swhurl.apps import keys
@@ -338,14 +338,14 @@ class EditTests(unittest.TestCase):
         key.write_text('UCONTROLLER\n')
 
     def test_events_give_a_publisher_a_stream_and_a_subscriber_a_consumer_and_both_a_nats_user(self):
-        from swhurl.apps import events as nats
+        from swhurl.apps import events
         self.with_units()
         runner = self.sops()
-        self.quiet(edit.events, self.root, 'orders', 'staging', publish=['created', 'cancelled'], runner=runner)
-        self.quiet(edit.events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', publish=['created', 'cancelled'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
 
         publisher, subscriber = self.env('orders'), self.env('hello')
-        self.assertEqual((publisher['SWHURL_EVENTS_PUBLISH'], publisher['SWHURL_EVENTS_URL']), ('created,cancelled', nats.URL))
+        self.assertEqual((publisher['SWHURL_EVENTS_PUBLISH'], publisher['SWHURL_EVENTS_URL']), ('created,cancelled', events.URL))
         self.assertEqual(subscriber['SWHURL_EVENTS_SUBSCRIBE'], 'orders.created')
         for app in ('orders', 'hello'):
             key = self.env(app)['SWHURL_EVENTS_NKEY']
@@ -364,7 +364,7 @@ class EditTests(unittest.TestCase):
             self.assertLessEqual({'events.yaml', 'events.sops.yaml'}, set(listed))
         self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
         self.assertEqual(len(self.seeds), 2, 'a later change reuses the key')
-        self.quiet(edit.events, self.root, 'orders', 'staging', publish=['created', 'cancelled', 'paid'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', publish=['created', 'cancelled', 'paid'], runner=runner)
         self.assertEqual(len(self.seeds), 2)
 
         stream, = yaml.safe_load_all((self.root / 'apps/orders/staging/events.yaml').read_text())
@@ -390,16 +390,16 @@ class EditTests(unittest.TestCase):
         self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging'])
                          + policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
-        self.assertEqual(policy.calls(instances), {})
-        self.assertEqual(policy.event_users(self.root), [])
+        self.assertEqual(policy.check_calls(instances), {})
+        self.assertEqual(policy.check_event_users(self.root), [])
 
         with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
             edit.remove(self.root, 'orders', 'staging')
         with self.assertRaisesRegex(edit.EditError, 'subscribes to orders.created, which orders/staging does not publish'):
-            edit.events(self.root, 'orders', 'staging', publish=['paid'], runner=runner)
+            edit.set_events(self.root, 'orders', 'staging', publish=['paid'], runner=runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,cancelled,paid', 'a refused change is undone')
 
-        self.quiet(edit.events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
         self.assertFalse(any(key.startswith('SWHURL_EVENTS_') for key in self.env('hello')))
         self.assertFalse((self.root / 'apps/hello/staging/events.yaml').exists())
         self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
@@ -419,12 +419,12 @@ class EditTests(unittest.TestCase):
                  ({'subscribe': ['orders.created']}, 'which orders/staging does not publish'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
-                edit.events(self.root, 'hello', 'staging', runner=self.sops(), **kwargs)
+                edit.set_events(self.root, 'hello', 'staging', runner=self.sops(), **kwargs)
         self.assertEqual(self.staging.read_text(), before)
         self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
         from swhurl.run import FakeRunner
         with self.assertRaisesRegex(edit.EditError, 'could not SOPS-encrypt'):
-            edit.events(self.root, 'hello', 'staging', publish=['created'],
+            edit.set_events(self.root, 'hello', 'staging', publish=['created'],
                         runner=FakeRunner().on('sops', returncode=1, stderr='no key'))
         self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists(), 'no plaintext seed is left')
         self.assertEqual(self.staging.read_text(), before)

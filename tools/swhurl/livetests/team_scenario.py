@@ -18,8 +18,7 @@ import os
 import secrets
 
 from swhurl import verify
-from swhurl.apps import contract, helmrelease
-from swhurl.apps import events as nats
+from swhurl.apps import contract, events, helmrelease
 from swhurl.apps.new import NAME_RE
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
@@ -38,11 +37,11 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
     if callee not in contract.declared_calls(helmrelease.variables(releases[caller])):
         raise Preflight(f'{caller}/{env} does not declare a call to {callee}: make app-calls APP={caller} ENV={env} ARGS="--add {callee}"')
-    published = nats.published(helmrelease.variables(releases[callee]))
+    published = events.published(helmrelease.variables(releases[callee]))
     if not published:
         raise Preflight(f'{callee}/{env} publishes no event: make app-events APP={callee} ENV={env} ARGS="--publish visited"')
     event = published[0]
-    if (callee, event) not in nats.subscribed(helmrelease.variables(releases[subscriber])):
+    if (callee, event) not in events.subscribed(helmrelease.variables(releases[subscriber])):
         raise Preflight(f'{subscriber}/{env} does not subscribe to {callee}.{event}: '
                         f'make app-events APP={subscriber} ENV={env} ARGS="--subscribe {callee}.{event}"')
     port = helmrelease.port(releases[caller])

@@ -19,8 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import contract, helmrelease, hooks
-from swhurl.apps import events as nats
+from swhurl.apps import contract, events, helmrelease, hooks
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -591,8 +590,8 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """NATS and its stream controller run, and every stream and consumer the instances declare is Ready in NATS."""
     report.section('Events')
     try:
-        server = runner.json(['kubectl', '-n', nats.NAMESPACE, 'get', 'statefulset', 'nats', '-o', 'json'])
-        controller = runner.json(['kubectl', '-n', nats.NAMESPACE, 'get', 'deployment', 'nats-controller', '-o', 'json'])
+        server = runner.json(['kubectl', '-n', events.NAMESPACE, 'get', 'statefulset', 'nats', '-o', 'json'])
+        controller = runner.json(['kubectl', '-n', events.NAMESPACE, 'get', 'deployment', 'nats-controller', '-o', 'json'])
         declared = runner.json(['kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io',
                                 '--all-namespaces', '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
@@ -611,9 +610,9 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad(line)
     if declared and not waiting:
         report.ok(f'{len(declared)} declared stream(s) and consumer(s) exist in NATS')
-    wanted = nats.users_file(root)
+    wanted = events.users_file(root)
     if wanted and (not wanted[0].is_file() or wanted[0].read_text() != wanted[1]):
-        report.bad(f'{nats.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
+        report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
 
 
 ALERTS = ('failures',)  # platform/alerts/alerts.yaml

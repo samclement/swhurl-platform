@@ -72,8 +72,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, platform
-from swhurl.apps import events as nats
-from swhurl.apps import helmrelease
+from swhurl.apps import events, helmrelease
 from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
@@ -189,7 +188,7 @@ def pod_spec(doc: dict) -> dict | None:
     return None
 
 
-def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> list[tuple[str, str]]:
+def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> list[tuple[str, str]]:
     """The team, quota and network-policy rules for one rendered instance."""
     violations: list[tuple[str, str]] = []
     if labels.get(TEAM) not in known_teams:
@@ -237,7 +236,7 @@ def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> li
     return violations
 
 
-def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]:
+def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]:
     """The identity and call-tokens rules for one rendered instance."""
     violations: list[tuple[str, str]] = []
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
@@ -266,25 +265,25 @@ def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]
         if tokens != expected:
             violations.append(('call-tokens', f'{where} must carry one {TOKEN_SECONDS}-second token per declared call '
                                f'({", ".join(calls) or "none declared"}), each for that audience only; make app-sync writes them'))
-    violations += event_rule(docs, releases[0], labels)
+    violations += check_events(docs, releases[0], labels)
     return violations
 
 
-def event_rule(docs: list[dict], release: dict, labels: dict) -> list[tuple[str, str]]:
+def check_events(docs: list[dict], release: dict, labels: dict) -> list[tuple[str, str]]:
     """The events rule for one rendered instance."""
     app, env, variables = release['metadata']['name'], labels.get(ENVIRONMENT), helmrelease.variables(release)
-    publishes, subscribes = nats.published(variables), nats.subscribed(variables)
+    publishes, subscribes = events.published(variables), events.subscribed(variables)
     declared = [d for d in docs if d['kind'] in ('Stream', 'Consumer')]
-    referenced = nats.secret_name(app) in helmrelease.secret_references(release)
+    referenced = events.secret_name(app) in helmrelease.secret_references(release)
     problems = []
     if not (publishes or subscribes):
-        if declared or referenced or variables.get(nats.URL_VARIABLE) or variables.get(nats.NKEY_VARIABLE):
+        if declared or referenced or variables.get(events.URL_VARIABLE) or variables.get(events.NKEY_VARIABLE):
             problems.append('declares no events but carries a stream, consumer, NATS address, key or Secret reference')
     else:
-        key = str(variables.get(nats.NKEY_VARIABLE, ''))
-        if variables.get(nats.URL_VARIABLE) != nats.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
-            problems.append(f'needs {nats.URL_VARIABLE}, a public key in {nats.NKEY_VARIABLE} and the {nats.secret_name(app)} Secret reference')
-        wanted = nats.manifests(app, env, publishes, subscribes)
+        key = str(variables.get(events.NKEY_VARIABLE, ''))
+        if variables.get(events.URL_VARIABLE) != events.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
+            problems.append(f'needs {events.URL_VARIABLE}, a public key in {events.NKEY_VARIABLE} and the {events.secret_name(app)} Secret reference')
+        wanted = events.manifests(app, env, publishes, subscribes)
         def shape(doc):
             return doc['kind'], doc['metadata']['name'], doc['spec']
         if sorted(map(shape, declared), key=str) != sorted(map(shape, wanted), key=str):
@@ -301,8 +300,8 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     exposure = labels.get(EXPOSURE)
     if not env or not exposure:
         violations.append(('exposure', 'instance Namespace needs platform.swhurl.com/environment and /exposure labels'))
-    violations += isolation(docs, labels, teams() if known_teams is None else known_teams)
-    violations += identity(docs, labels, signing_keys() if keys is None else keys)
+    violations += check_isolation(docs, labels, teams() if known_teams is None else known_teams)
+    violations += check_identity(docs, labels, signing_keys() if keys is None else keys)
 
     for doc in docs:
         spec = pod_spec(doc)
@@ -385,7 +384,7 @@ VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-m
           # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
           ENVIRONMENT_VARIABLE, CALLERS_VARIABLE, TOKENS_VOLUME,
           # Events too: each environment has its own declaration, key and Secret (make app-events).
-          nats.PUBLISH_VARIABLE, nats.SUBSCRIBE_VARIABLE, nats.URL_VARIABLE, nats.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload'}
+          events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload'}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.
@@ -421,7 +420,7 @@ def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[s
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
         if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml',
-                                                             NETWORK_POLICY_FILE, nats.EVENTS_FILE}:
+                                                             NETWORK_POLICY_FILE, events.EVENTS_FILE}:
             # Automatic deploys and production-only promotion alerts are environment-specific; the
             # NetworkPolicy follows from each environment's exposure and callers (rule network-policy).
             continue
@@ -430,11 +429,11 @@ def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[s
                 doc['metadata'].pop('name', None)
             if doc.get('kind') == 'Kustomization':
                 doc['resources'] = [r for r in doc.get('resources') or []
-                                    if r not in (IMAGE_AUTOMATION_FILE, nats.EVENTS_FILE, nats.SECRET_FILE)]
+                                    if r not in (IMAGE_AUTOMATION_FILE, events.EVENTS_FILE, events.SECRET_FILE)]
             if doc.get('kind') == 'HelmRelease':  # the reference to this environment's event key
                 container = helmrelease.container(doc)
                 refs = [ref for ref in container.get('envFrom') or []
-                        if ref != {'secretRef': {'name': nats.secret_name(doc['metadata']['name'])}}]
+                        if ref != {'secretRef': {'name': events.secret_name(doc['metadata']['name'])}}]
                 if 'envFrom' in container:
                     container['envFrom'] = refs
                     if not refs:
@@ -462,7 +461,7 @@ def drift(environments: list[Path]) -> list[str]:
     return problems
 
 
-def calls(instances: list[Path]) -> dict[Path, list[str]]:
+def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
     """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
     releases = {instance: yaml.safe_load(strip_image_markers((instance / 'helmrelease.yaml').read_text())[0])
                 for instance in instances}
@@ -486,23 +485,23 @@ def calls(instances: list[Path]) -> dict[Path, list[str]]:
                 found.append(f'allows {caller}, which does not declare a call to it')
         if found:
             problems[instance] = [f'calls: {problem}; make app-sync rewrites both sides' for problem in found]
-        missing = [f'{publisher}.{event}' for publisher, event in nats.subscribed(helmrelease.variables(release))
-                   if publisher not in peers or event not in nats.published(helmrelease.variables(peers[publisher]))]
+        missing = [f'{publisher}.{event}' for publisher, event in events.subscribed(helmrelease.variables(release))
+                   if publisher not in peers or event not in events.published(helmrelease.variables(peers[publisher]))]
         if missing:
             problems.setdefault(instance, []).append(
                 f'events: subscribes to {", ".join(missing)}, which no app of {env} publishes')
     return problems
 
 
-def event_users(root: Path = ROOT) -> list[str]:
+def check_event_users(root: Path = ROOT) -> list[str]:
     """Whether the NATS user list is what the instances generate (rule event-users)."""
-    wanted = nats.users_file(root)
+    wanted = events.users_file(root)
     if not wanted:
         return []
     path, text = wanted
     if path.is_file() and path.read_text() == text:
         return []
-    return [f'event-users: {nats.USERS_FILE} is not what the instances declare; make app-sync rewrites it']
+    return [f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it']
 
 
 def platform_image(instance: Path) -> list[str]:
@@ -536,7 +535,7 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
-    call_problems = calls(paths)
+    call_problems = check_calls(paths)
     for instance in paths:
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
         problems = evaluate(instance, runner) + call_problems.get(instance, [])
@@ -558,10 +557,10 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             for problem in problems:
                 print(f'       {problem}')
     if not argv:  # the whole tree
-        problems = event_users()
+        problems = check_event_users()
         if problems:
             failed += 1
-            print(f'[BAD] {nats.USERS_FILE}')
+            print(f'[BAD] {events.USERS_FILE}')
             for problem in problems:
                 print(f'       {problem}')
     if failed:

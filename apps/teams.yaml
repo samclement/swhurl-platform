@@ -3,6 +3,8 @@
 teams:
   platform:
     description: The platform itself and apps without another owner
+    notify:
+    - platform
   payments:
     description: Orders and payments (team platform scenario)
   insights:

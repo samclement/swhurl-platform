@@ -38,7 +38,7 @@ from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
-TAG = 'swhurl-app'
+TAG = app_alerts.TAG
 NAMESPACE = "ResourceAttributes['k8s.namespace.name']"
 APP_DASHBOARD = re.compile('App: ' + NAME_RE.pattern.strip('^$'))  # what the scheduled sync may delete
 IN_GIT, ON_CLUSTER = 'its app is not in Git', 'its app has no HelmRelease on the cluster'

@@ -14,6 +14,9 @@ import re
 from dataclasses import dataclass
 
 PREFIX = 'swhurl:'
+TAG = 'swhurl-app'
+"""On every app dashboard and alert the platform keeps; an alert also carries its app's name as a tag,
+so the HyperDX alerts page filters to one app."""
 ANNOTATION = 'platform.swhurl.com/alerts'
 """An app's own settings, the same on every environment's Namespace: ``none``, or ``<preset>=<n>`` and
 ``<preset>=none`` separated by commas (``error-logs=20,errors=none``). Absent: the defaults."""
@@ -86,9 +89,9 @@ def wanted(app: str, dashboard: dict, webhook: str, spec: str = '') -> list[dict
     """The alerts ``app`` should have on its live ``dashboard`` (its tiles carry the server's ids)."""
     tiles = {tile.get('name'): tile.get('id') for tile in dashboard.get('tiles') or []}
     settings = lenient(spec)
-    return [{'name': alert_name(app, preset), 'source': 'tile', 'dashboardId': dashboard['id'], 'tileId': tiles[preset.tile],
-             'threshold': settings[preset.key], 'thresholdType': 'above', 'interval': preset.interval,
-             'channel': {'type': 'webhook', 'webhookId': webhook}}
+    return [{'name': alert_name(app, preset), 'tags': [TAG, app], 'source': 'tile', 'dashboardId': dashboard['id'],
+             'tileId': tiles[preset.tile], 'threshold': settings[preset.key], 'thresholdType': 'above',
+             'interval': preset.interval, 'channel': {'type': 'webhook', 'webhookId': webhook}}
             for preset in PRESETS if tiles.get(preset.tile) and settings[preset.key] is not None]
 
 
@@ -98,9 +101,9 @@ def same(live: dict, want: dict) -> bool:
 
 def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run: bool,
               specs: dict[str, str] | None = None) -> None:
-    """Create each app's missing alerts, replace the ones that differ (a rebuilt dashboard has new tile
-    ids, an app changed its thresholds) and, with ``prune``, delete the alerts of apps that are gone
-    or switched theirs off. ``dashboards`` maps each app to its live dashboard, ``specs`` to its settings."""
+    """Create each app's missing alerts, update the ones that differ in place (a rebuilt dashboard has
+    new tile ids, an app changed its thresholds), and, with ``prune``, delete the alerts of apps that
+    are gone or switched theirs off. ``dashboards`` maps each app to its live dashboard, ``specs`` to its settings."""
     report.section('ClickStack app alerts')
     webhook = next((w.get('id') for w in api.call('GET', '/webhooks').get('data', []) if w.get('name') == WEBHOOK), None)
     if not webhook:
@@ -119,12 +122,15 @@ def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run:
                 continue
             changed += 1
             if dry_run:
-                report.info(f"would {'replace' if found else 'create'} {want['name']}")
+                report.info(f"would {'update' if found else 'create'} {want['name']}")
                 continue
-            for stale in found:
-                api.call('DELETE', f"/alerts/{stale['id']}")
-            api.call('POST', '/alerts', want)
-            report.ok(f"{'replaced' if found else 'created'} {want['name']}")
+            for extra in found[1:]:  # two with one name: keep the first
+                api.call('DELETE', f"/alerts/{extra['id']}")
+            if found:
+                api.call('PUT', f"/alerts/{found[0]['id']}", want)
+            else:
+                api.call('POST', '/alerts', want)
+            report.ok(f"{'updated' if found else 'created'} {want['name']}")
     for name, found in sorted(live.items()) if prune else []:
         changed += 1
         if dry_run:

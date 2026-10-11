@@ -14,6 +14,9 @@ rules:
   - apiGroups: [helm.toolkit.fluxcd.io]
     resources: [helmreleases]
     verbs: [list]
+  - apiGroups: [""]
+    resources: [namespaces]  # an app's own alert settings (docs/apps.md#alerts)
+    verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

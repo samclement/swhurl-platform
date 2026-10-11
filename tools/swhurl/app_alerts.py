@@ -2,7 +2,8 @@
 
 Each alert watches one tile of the app's ``App: <app>`` dashboard and calls the notify service's
 webhook, which sends it to the channel of the app's team. They are created, repaired and removed by
-the same job that keeps the dashboards (dashboards.py): nothing is declared per app.
+the same job that keeps the dashboards (dashboards.py). Nothing has to be declared per app; an app
+that wants other thresholds, or none, says so in ``ANNOTATION`` on its namespaces (make app-alerts).
 
 An alert is named ``swhurl:<app>:<preset>``. The name is how the notify service knows which app an
 alert is about, and how this module knows which alerts are its own: any other alert is left alone.
@@ -13,6 +14,11 @@ import re
 from dataclasses import dataclass
 
 PREFIX = 'swhurl:'
+ANNOTATION = 'platform.swhurl.com/alerts'
+"""An app's own settings, the same on every environment's Namespace: ``none``, or ``<preset>=<n>`` and
+``<preset>=none`` separated by commas (``error-logs=20,errors=none``). Absent: the defaults."""
+OFF = 'none'  # not "off": YAML reads that as false, and an annotation or a swhurl.yaml field would stop being text
+MAX_THRESHOLD = 1_000_000
 NAME = re.compile(r'swhurl:(?P<app>[a-z][a-z0-9-]*):(?P<preset>[a-z][a-z0-9-]*)')
 WEBHOOK = 'swhurl notify'
 """The HyperDX webhook that reaches the notify service (make clickstack-notify-webhook creates it)."""
@@ -38,27 +44,68 @@ def alert_name(app: str, preset: Preset) -> str:
     return f'{PREFIX}{app}:{preset.key}'
 
 
-def wanted(app: str, dashboard: dict, webhook: str) -> list[dict]:
+def thresholds(spec: str) -> dict[str, int | None]:
+    """Each preset's threshold under an app's settings; None for one that is switched off.
+
+    Raises ValueError naming what is wrong: the commands and the app policy show it. The job that
+    keeps the alerts falls back to the defaults instead (``lenient``), so a bad value on the cluster
+    never leaves an app without alerts."""
+    found: dict[str, int | None] = {preset.key: preset.threshold for preset in PRESETS}
+    spec = (spec or '').strip()
+    if spec == OFF:
+        return dict.fromkeys(found)
+    for part in [p.strip() for p in spec.split(',') if p.strip()]:
+        key, _, value = part.partition('=')
+        if key not in found:
+            raise ValueError(f'{key!r} is not an alert: choose from {", ".join(found)}')
+        if value == OFF:
+            found[key] = None
+        elif value.isdigit() and 1 <= int(value) <= MAX_THRESHOLD:
+            found[key] = int(value)
+        else:
+            raise ValueError(f'{key}={value!r}: give a number from 1 to {MAX_THRESHOLD}, or {OFF}')
+    return found
+
+
+def lenient(spec: str) -> dict[str, int | None]:
+    try:
+        return thresholds(spec)
+    except ValueError:
+        return thresholds('')
+
+
+def spec_of(settings: dict[str, int | None]) -> str:
+    """The shortest setting that says ``settings``: '' for the defaults, ``none`` for no alert."""
+    if all(value is None for value in settings.values()):
+        return OFF
+    return ','.join(f'{preset.key}={OFF if settings[preset.key] is None else settings[preset.key]}'
+                    for preset in PRESETS if settings[preset.key] != preset.threshold)
+
+
+def wanted(app: str, dashboard: dict, webhook: str, spec: str = '') -> list[dict]:
     """The alerts ``app`` should have on its live ``dashboard`` (its tiles carry the server's ids)."""
     tiles = {tile.get('name'): tile.get('id') for tile in dashboard.get('tiles') or []}
+    settings = lenient(spec)
     return [{'name': alert_name(app, preset), 'source': 'tile', 'dashboardId': dashboard['id'], 'tileId': tiles[preset.tile],
-             'threshold': preset.threshold, 'thresholdType': 'above', 'interval': preset.interval,
+             'threshold': settings[preset.key], 'thresholdType': 'above', 'interval': preset.interval,
              'channel': {'type': 'webhook', 'webhookId': webhook}}
-            for preset in PRESETS if tiles.get(preset.tile)]
+            for preset in PRESETS if tiles.get(preset.tile) and settings[preset.key] is not None]
 
 
 def same(live: dict, want: dict) -> bool:
     return all(live.get(key) == value for key, value in want.items())
 
 
-def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run: bool) -> None:
+def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run: bool,
+              specs: dict[str, str] | None = None) -> None:
     """Create each app's missing alerts, replace the ones that differ (a rebuilt dashboard has new tile
-    ids) and, with ``prune``, delete the alerts of apps that are gone. ``dashboards`` maps each app
-    to its live dashboard."""
+    ids, an app changed its thresholds) and, with ``prune``, delete the alerts of apps that are gone
+    or switched theirs off. ``dashboards`` maps each app to its live dashboard, ``specs`` to its settings."""
     report.section('ClickStack app alerts')
     webhook = next((w.get('id') for w in api.call('GET', '/webhooks').get('data', []) if w.get('name') == WEBHOOK), None)
     if not webhook:
-        report.warn(f'no "{WEBHOOK}" webhook in HyperDX, so apps have no default alerts: make clickstack-notify-webhook')
+        # A failure, so the job's check (make verify-platform, the console) shows it: without the webhook no app has alerts.
+        report.bad(f'no "{WEBHOOK}" webhook in HyperDX, so apps have no default alerts: make clickstack-notify-webhook')
         return
     live: dict[str, list[dict]] = {}
     for alert in api.call('GET', '/alerts').get('data', []):
@@ -66,7 +113,7 @@ def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run:
             live.setdefault(alert['name'], []).append(alert)
     changed = 0
     for app, dashboard in sorted(dashboards.items()):
-        for want in wanted(app, dashboard, webhook):
+        for want in wanted(app, dashboard, webhook, (specs or {}).get(app, '')):
             found = live.pop(want['name'], [])
             if len(found) == 1 and same(found[0], want):
                 continue
@@ -85,6 +132,6 @@ def reconcile(api, report, dashboards: dict[str, dict], *, prune: bool, dry_run:
             continue
         for stale in found:
             api.call('DELETE', f"/alerts/{stale['id']}")
-        report.ok(f'deleted {name}: its app or tile is gone')
+        report.ok(f'deleted {name}: its app or tile is gone, or the app switched it off')
     if not changed:
         report.ok(f'{len(dashboards)} app(s) have their default alerts')

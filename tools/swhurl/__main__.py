@@ -31,6 +31,7 @@ COMMANDS = {
     'app-promote': ('swhurl.apps.edit', 'main_promote', 'Create production from staging or update its image (Git edit)'),
     'app-scale': ('swhurl.apps.edit', 'main_scale', 'Change replicas or resources of an app instance (Git edit)'),
     'app-expose': ('swhurl.apps.edit', 'main_expose', 'Change who can reach an app instance: private, signed-in or public (Git edit)'),
+    'app-alerts': ('swhurl.apps.edit', 'main_alerts', 'Change an app\'s default alerts in every environment: thresholds, or none (Git edit)'),
     'app-team': ('swhurl.apps.edit', 'main_team', 'Move an app to a registered team; adds its quota and NetworkPolicy if missing (Git edit)'),
     'platform-signing-keys': ('swhurl.apps.keys', 'main', 'Refresh the cluster\'s public token-signing keys in Git and in every web app (Git edit)'),
     'team-add': ('swhurl.apps.teams', 'main_add', 'Register a team in apps/teams.yaml (Git edit)'),

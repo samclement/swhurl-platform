@@ -53,6 +53,7 @@ class App:
     name: str
     kind: str  # web or worker
     envs: tuple[str, ...]
+    alerts: str = ''  # its own alert settings (app_alerts.ANNOTATION); '' for the defaults
 
     @property
     def namespaces(self) -> str:
@@ -66,13 +67,18 @@ def apps(paths: list[Path] | None = None) -> list[App]:
     for instance in paths:
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
         kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
-        entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': []})
+        entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(instance.name)
-    return [App(name, entry['kind'], tuple(sorted(entry['envs'], key=lambda e: e != 'staging')))
+        namespace = instance / 'namespace.yaml'
+        if namespace.is_file():
+            annotations = (yaml.safe_load(namespace.read_text()).get('metadata') or {}).get('annotations') or {}
+            entry['alerts'] = entry['alerts'] or str(annotations.get(app_alerts.ANNOTATION, ''))
+    return [App(name, entry['kind'], tuple(sorted(entry['envs'], key=lambda e: e != 'staging')), entry['alerts'])
             for name, entry in sorted(found.items())]
 
 
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
+NAMESPACES = ['kubectl', 'get', 'namespaces', '-o', 'json']  # an app's alert settings are an annotation on its namespaces
 
 
 def cluster_apps(runner: Runner) -> list[App]:
@@ -83,6 +89,8 @@ def cluster_apps(runner: Runner) -> list[App]:
     propagate before any API write.
     """
     found: dict[str, dict] = {}
+    settings = {n['metadata']['name']: str((n['metadata'].get('annotations') or {}).get(app_alerts.ANNOTATION, ''))
+                for n in runner.json(NAMESPACES)['items']}
     for release in runner.json(RELEASES)['items']:
         metadata = release['metadata']
         labels = metadata.get('labels') or {}
@@ -94,9 +102,10 @@ def cluster_apps(runner: Runner) -> list[App]:
         if metadata['name'] != app or metadata['namespace'] != f'{app}-{env}':
             continue
         kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
-        entry = found.setdefault(app, {'kind': kind, 'envs': []})
+        entry = found.setdefault(app, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(env)
-    return [App(name, entry['kind'], tuple(sorted(set(entry['envs']), key=lambda e: e != 'staging')))
+        entry['alerts'] = entry['alerts'] or settings.get(f'{app}-{env}', '')
+    return [App(name, entry['kind'], tuple(sorted(set(entry['envs']), key=lambda e: e != 'staging')), entry['alerts'])
             for name, entry in sorted(found.items())]
 
 
@@ -251,7 +260,8 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
     # created or updated dashboard has new tile ids.
     current = {d['name']: d for d in api.call('GET', '/dashboards').get('data', []) if TAG in (d.get('tags') or [])}
     app_alerts.reconcile(api, report, {app.name: current[f'App: {app.name}'] for app in wanted_apps
-                                       if f'App: {app.name}' in current}, prune=prune, dry_run=runner.dry_run)
+                                       if f'App: {app.name}' in current}, prune=prune, dry_run=runner.dry_run,
+                          specs={app.name: app.alerts for app in wanted_apps})
     return report.exit_code()
 
 

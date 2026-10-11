@@ -177,6 +177,21 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("unknown team 'nobody'; registered in apps/teams.yaml: platform", err.getvalue())
         self.assertFalse((self.tmp / 'apps/web').exists())
 
+    def test_an_apps_own_alert_settings_go_on_its_namespace_and_bad_ones_are_refused(self):
+        self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--alerts', 'error-logs=20,errors=none'), 0)
+        namespace = yaml.safe_load((self.tmp / 'apps/web/staging/namespace.yaml').read_text())
+        self.assertEqual(namespace['metadata']['annotations'], {'platform.swhurl.com/alerts': 'error-logs=20,errors=none'})
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(self.gen('api', '--image', 'r/api:1', '--health-path', '/h', '--alerts', 'latency=5'), 2)
+        self.assertIn("--alerts: 'latency' is not an alert: choose from error-logs, errors", err.getvalue())
+        self.assertFalse((self.tmp / 'apps/api').exists())
+        base = {'version': 1, 'kind': 'worker', 'autoDeploy': True}
+        self.assertEqual(contract.manifest_defaults(base | {'alerts': 'none'})['alerts'], 'none')
+        with self.assertRaisesRegex(contract.ManifestError, "alerts: errors='lots': give a number"):
+            contract.manifest_defaults(base | {'alerts': 'errors=lots'})
+        self.assertNotIn('alerts', contract.manifest_defaults(base))
+
     def test_secret_stub_is_encrypted_and_namespace_watched(self):
         fake = self.tmp / 'bin'
         fake.mkdir()

@@ -75,6 +75,11 @@ app-expose: ## APP= ENV= ARGS="--exposure private|authenticated-web|public [--ho
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-expose APP=<app> ENV=<env> ARGS='--exposure public --host app.example.com'" >&2; exit 2; }
 	$(SWHURL_APPS) app-expose $(APP) $(ENV) $(ARGS)
 
+.PHONY: app-alerts
+app-alerts: ## APP= ARGS="--error-logs N|none --errors N|none | --none | --default" Change an app's default alerts in every environment (Git edit)
+	@[[ -n "$(APP)" && -n "$(ARGS)" ]] || { echo "Usage: make app-alerts APP=<app> ARGS='--error-logs 20'" >&2; exit 2; }
+	$(SWHURL_APPS) app-alerts $(APP) $(ARGS)
+
 .PHONY: app-team
 app-team: ## APP= ARGS="--team T" Move an app (every environment) to a team in apps/teams.yaml; adds a missing quota and NetworkPolicy (Git edit)
 	@[[ -n "$(APP)" && -n "$(ARGS)" ]] || { echo "Usage: make app-team APP=<app> ARGS='--team payments'" >&2; exit 2; }

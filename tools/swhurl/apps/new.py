@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, app_alerts
 from swhurl.apps import policy
 from swhurl.apps.calling import (
     API_VARIABLE,
@@ -121,6 +121,10 @@ def validate(args, root: Path = ROOT) -> None:
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
     if args.name == NOTIFY:
         raise GenerationError(f'{NOTIFY} is the platform\'s notify service: every app carries a token for that name; choose another')
+    try:
+        app_alerts.thresholds(getattr(args, 'alerts', ''))
+    except ValueError as error:
+        raise GenerationError(f'--alerts: {error}') from None
     if args.team not in teams(root):
         raise GenerationError(f'unknown team {args.team!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
     if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
@@ -317,6 +321,8 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     if args.persistence:
         # Keeps the namespace (and so the claim) when the app unit is removed; see destroy-data.
         ns['metadata']['annotations'] = {'kustomize.toolkit.fluxcd.io/prune': 'disabled'}
+    if getattr(args, 'alerts', ''):
+        ns['metadata'].setdefault('annotations', {})[app_alerts.ANNOTATION] = args.alerts
     release = {
         'apiVersion': 'helm.toolkit.fluxcd.io/v2',
         'kind': 'HelmRelease',
@@ -486,6 +492,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
+    p.add_argument('--alerts', default='', metavar='SPEC',
+                   help='the app\'s own default-alert settings: none, or error-logs=20,errors=none (default: the platform\'s)')
     p.add_argument('--team', default=DEFAULT_TEAM, help='the owning team, a name in apps/teams.yaml (default %(default)s)')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '

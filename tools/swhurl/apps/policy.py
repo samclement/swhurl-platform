@@ -73,7 +73,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, platform
+from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import channels, events, helmrelease
 from swhurl.apps.calling import (
     CALLERS_VARIABLE,
@@ -196,6 +196,12 @@ def pod_spec(doc: dict) -> dict | None:
 def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> list[tuple[str, str]]:
     """The team, quota and network-policy rules for one rendered instance."""
     violations: list[tuple[str, str]] = []
+    for doc in docs:
+        spec = (doc['metadata'].get('annotations') or {}).get(app_alerts.ANNOTATION) if doc['kind'] == 'Namespace' else None
+        try:
+            app_alerts.thresholds(str(spec or ''))
+        except ValueError as error:
+            violations.append(('alerts', f'{app_alerts.ANNOTATION}: {error}; make app-alerts sets it'))
     if labels.get(TEAM) not in known_teams:
         violations.append(('team', f'Namespace team {labels.get(TEAM)!r} is not registered in apps/teams.yaml '
                                    f'({", ".join(known_teams)}); set it with make app-team'))

@@ -10,6 +10,8 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 from swhurl import ROOT, clickstack, flux, platform, verify
 from swhurl.apps import calling, channels, contract
 from swhurl.report import Report
@@ -194,7 +196,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
                           '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
-                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
+                      '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
         self.assertTrue(text.rstrip().endswith('Validation passed.'))
@@ -436,6 +438,21 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
                       '(make reconcile UNIT=platform-notify)', report.lines, text)
 
+    def test_a_team_that_owns_apps_and_has_no_channel_is_named(self):
+        _, report, text = run(healthy())
+        owned = {}
+        for path in (ROOT / 'apps').glob('*/*/namespace.yaml'):
+            owned.setdefault(yaml.safe_load(path.read_text())['metadata']['labels'][contract.TEAM], set()).add(path.parent.parent.name)
+        routes = channels.team_channels(ROOT)
+        for team, apps in owned.items():
+            line = (f'[WARN] team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
+                    f'reach nobody (make team-channel NAME={team})')
+            (self.assertNotIn if routes.get(team) else self.assertIn)(line, report.lines, text)
+        cluster = healthy()
+        with mock.patch.object(verify.channels, 'team_channels', return_value={team: [team] for team in owned}):
+            _, report, text = run(cluster)
+        self.assertFalse([line for line in report.lines if 'has no notification channel' in line], text)
+
     def test_notify_service_problems(self):
         _, report, text = run(healthy())
         self.assertIn(f'[OK] the notify service is running {CONSOLE_TAG}, as the console', report.lines, text)
@@ -505,7 +522,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts', 'Notify service'] + ['App dashboards', 'Notifications'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)

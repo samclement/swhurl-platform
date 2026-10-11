@@ -18,6 +18,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
 from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
 from swhurl.report import Report
@@ -316,19 +318,21 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
 
 
 def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """A successful minute-by-minute sync must be recent, and scheduling enabled."""
-    report.section('App dashboards')
+    """A successful minute-by-minute sync of every app's dashboard and default alerts must be recent, and
+    scheduling enabled. The job also fails while HyperDX lacks the webhook the alerts need."""
+    report.section('App dashboards and alerts')
     now = now or dt.datetime.now(dt.UTC)
     try:
         job = runner.json(['kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', '-o', 'json'])
         last = (job.get('status') or {}).get('lastSuccessfulTime', '')
         taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
         if job['spec'].get('suspend'):
-            report.bad('dashboard sync is suspended')
+            report.bad('dashboard and alert sync is suspended')
         elif taken is None or now - taken > dt.timedelta(minutes=5):
-            report.bad('dashboard sync has no success in the last 5 minutes; check console-dashboards job logs')
+            report.bad('dashboard and alert sync has no success in the last 5 minutes: check the console-dashboards job logs '
+                       '(no "swhurl notify" webhook? make clickstack-notify-webhook)')
         else:
-            report.ok('dashboard sync succeeded in the last 5 minutes')
+            report.ok('dashboard and alert sync succeeded in the last 5 minutes')
     except (CommandError, KeyError, ValueError, TypeError):
         report.bad('cannot read dashboard sync status (console/console-dashboards)')
 
@@ -643,6 +647,14 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
                    '(make reconcile UNIT=platform-notify)')
     elif known:
         report.ok(f'{len(known)} channel(s) have their Secret')
+    owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
+    for path in sorted((root / 'apps').glob('*/*/namespace.yaml')):
+        labels = ((yaml.safe_load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {}
+        owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(path.parent.parent.name)
+    for team, apps in sorted(owned.items()):
+        if team and not routes.get(team):
+            report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
+                        f'reach nobody (make team-channel NAME={team})')
 
 
 def check_notify_service(runner: Runner, report: Report) -> None:

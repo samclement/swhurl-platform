@@ -298,8 +298,12 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 # apps name instead of raising a false alarm.
                 registered = registered | {team: '' for team in owned if team}
                 unregistered = {team: apps for team, apps in owned.items() if not team}
+            latest: dict[str, actions.Job] = {}  # each team's newest job, shown in its row
+            for job in jobs.recent():
+                if job.unit.startswith('team:'):
+                    latest.setdefault(job.unit[5:], job)
             return {'teams': registered, 'owned': owned, 'unregistered': unregistered, 'registry_error': registry_error,
-                    'default_team': contract.DEFAULT_TEAM, 'error': error}
+                    'default_team': contract.DEFAULT_TEAM, 'error': error, 'team_jobs': latest}
         return reading(request, 'teams.html', read, status_code=status_code)
 
     async def change_team(request: Request) -> Response:

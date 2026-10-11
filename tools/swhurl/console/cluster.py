@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from swhurl.apps import calling, contract, events, helmrelease, ops, promotion
@@ -334,6 +335,27 @@ class Checks:
         return sum(len(group) for _, group in self.sections)
 
 
+AUTOMATION = re.compile(r'ImageUpdateAutomation (\S+) is Ready(?:; last pushed (\S+))?')
+NEWEST = re.compile(r'(\S+): newest image (\S+)')
+
+
+def condensed(group: list[Entry], ago: Callable[[str], str] = str) -> list[Entry]:
+    """A check group in fewer lines: an app's passing image automation and its newest image are two
+    checks about one thing, so they read as one line. Anything not passing keeps its own words."""
+    newest = {m[1]: m[2] for e in group if e.level == 'ok' and (m := NEWEST.fullmatch(e.message))}
+    merged = {m[1]: m[2] for e in group if e.level == 'ok' and (m := AUTOMATION.fullmatch(e.message)) and m[1] in newest}
+    out = []
+    for entry in group:
+        found = entry.level == 'ok' and (AUTOMATION.fullmatch(entry.message) or NEWEST.fullmatch(entry.message))
+        if not found or found[1] not in merged:
+            out.append(entry)
+        elif found.re is AUTOMATION:
+            name, pushed = found[1], merged[found[1]]
+            out.append(Entry(entry.section, 'ok', f'{target(f"app-{name}")[0]}: newest image {newest[name]}, updates automatic'
+                                                  + (f', last pushed {ago(pushed)}' if pushed else '')))
+    return out
+
+
 FLUX_SECTION = 'Flux Kustomizations'  # the units list shows these; the check's failures still count as problems
 
 
@@ -397,20 +419,21 @@ class Problem:
 
 def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
     """What needs attention: failing or warning checks, then suspended units (which can still be Ready)."""
-    by_name = {u.name: u for u in found}
-    names = set(by_name)
+    names = {u.name for u in found}
     out = []
     for section, group in checks.sections:
         for entry in group:
             if entry.level in ('bad', 'warn'):
-                unit, _, rest = entry.message.partition(' ')
-                if section == FLUX_SECTION and unit in names and by_name[unit].state.key == 'updating':
-                    continue  # waiting, not failing: listed by updating()
-                if section == FLUX_SECTION and unit in names:
-                    label, link = target(unit)
-                    out.append(Problem('failing' if entry.level == 'bad' else 'warn', f'{label} {rest}', link))
-                else:
-                    out.append(Problem('failing' if entry.level == 'bad' else 'warn', entry.message))
+                if section == FLUX_SECTION and entry.message.partition(' ')[0] in names:
+                    # The check read the units a moment before ``found`` did, and a unit can become Ready
+                    # in between: ``found`` alone says what a unit is, so every page agrees with itself.
+                    continue
+                out.append(Problem('failing' if entry.level == 'bad' else 'warn', entry.message))
+    for u in found:
+        failing = state_of(u.ready, reason=u.reason)  # suspended or not; waiting is not failing: updating() lists it
+        if failing.key == 'failing':
+            label, link = target(u.name)
+            out.append(Problem('failing', f'{label} is not Ready' + (f': {failing.detail}' if failing.detail else ''), link))
     for u in found:
         if u.suspended:
             label, link = target(u.name)

@@ -17,6 +17,7 @@ import json
 import re
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -69,6 +70,37 @@ def logs_url(app: str) -> str:
 
 
 TEMPLATES.env.globals['logs_url'] = logs_url
+
+
+def ago(when: dt.datetime | str, now: dt.datetime | None = None) -> str:
+    """A time as how long ago it was (``3 h ago``); text that is not a time is returned as it is."""
+    if isinstance(when, str):
+        try:
+            when = dt.datetime.fromisoformat(when.replace('Z', '+00:00'))
+        except ValueError:
+            return when
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.UTC)
+    seconds = ((now or dt.datetime.now(dt.UTC)) - when).total_seconds()
+    if seconds < 90:
+        return 'just now'
+    if seconds < 90 * 60:
+        return f'{round(seconds / 60)} min ago'
+    if seconds < 36 * 3600:
+        return f'{round(seconds / 3600)} h ago'
+    return f'{round(seconds / 86400)} days ago'
+
+
+TEMPLATES.env.filters['ago'] = ago
+
+
+def follow(url: str) -> Markup:
+    """htmx attributes for something that says a job is running: re-read the page it is on shortly,
+    so the row it sits in shows what the job did without anyone pressing Refresh."""
+    return Markup(f'hx-get="{escape(url)}" hx-trigger="load delay:10s" hx-select="main" hx-target="main" hx-swap="outerHTML"')
+
+
+TEMPLATES.env.globals['follow'] = follow
 
 
 class RequireIdentity(BaseHTTPMiddleware):
@@ -190,8 +222,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             checks, found = cluster.platform_checks(runner), cluster.units(runner)
             layers = [(title, text, [u for u in found if u.layer == title])
                       for title, text in [(t, d) for _, t, d in cluster.LAYERS] + [(cluster.OTHER_LAYER, '')]]
+            revisions = Counter(u.revision for u in found if u.revision).most_common(1)
             return {'checks': checks, 'units': found, 'problems': cluster.problems(checks, found), 'updating': cluster.updating(found),
-                    'layers': [layer for layer in layers if layer[2]], 'flux_section': cluster.FLUX_SECTION}
+                    'layers': [layer for layer in layers if layer[2]],
+                    'groups': [(section, cluster.condensed(group, ago)) for section, group in checks.sections
+                               if section != cluster.FLUX_SECTION],
+                    # What nearly every unit has applied: said once, so a row shows a revision only when it differs.
+                    'revision': revisions[0][0] if revisions else ''}
         return reading(request, 'platform.html', read)
 
     def unit(request: Request) -> Response:
@@ -221,8 +258,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 return HTMLResponse(f'<span class="bad" role="alert">{escape(error)}</span>')
             return page(request, 'error.html', status_code=409 if isinstance(error, actions.ActionError) else 502, error=str(error))
         if in_place:
-            return HTMLResponse(f'<a class="started" href="/jobs/{job.id}"><span class="mark updating" aria-hidden="true"></span> '
-                                f'{escape(job.action)} started · job #{job.id}</a>')
+            here = urlparse(request.headers.get('hx-current-url', ''))
+            back = here.path + (f'?{here.query}' if here.query else '') if here.path.startswith('/') else '/'
+            return HTMLResponse(f'<a class="started" href="/jobs/{job.id}" {follow(back)}><span class="mark updating" aria-hidden="true">'
+                                f'</span> {escape(job.action)} started · job #{job.id}</a>')
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     def job(request: Request) -> Response:

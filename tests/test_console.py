@@ -440,12 +440,18 @@ class UnitsTests(unittest.TestCase):
     def test_platform_groups_units_by_layer_without_buttons(self):
         text = client(fake(**CHECKS)).get('/platform', headers=WHO).text
         for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps'):
-            self.assertIn(f'<h3>{layer} ', text)
+            self.assertIn(f'<tr class="group"><th colspan="4" scope="colgroup">{layer} ', text)
         self.assertIn('href="/units/infra-base"', text)
         self.assertIn('abc1234', text)
         self.assertIn('infra-base, platform-oauth2-proxy', text, 'what each unit waits for')
-        self.assertIn('<details class="section" open>', text, 'a unit not Ready opens the units list')
-        self.assertNotIn('<form', text, 'actions live on each unit\'s page')
+        self.assertIn('<details class="section" id="units-list" open>', text, 'a unit not Ready opens the units list')
+        self.assertIn('hx-post="/units/infra-base/reconcile" hx-target="closest td" hx-select="unset"', text,
+                      'a unit is acted on from its row; the answer is a fragment, not a page to pick main out of')
+        self.assertIn('action="/units/infra-base/suspend"', text)
+        self.assertIn('action="/units/app-my-api-staging/resume"', text, 'a suspended unit offers Resume alone')
+        self.assertNotIn('action="/units/app-my-api-staging/suspend"', text)
+        self.assertNotIn('action="/units/cluster-sources/', text, 'the root units have no actions')
+        self.assertEqual(text.count('<th>Unit</th>'), 1, 'one table, one header')
         self.assertNotIn('<strong>Flux Kustomizations</strong>', text, 'the units list replaces that check group')
         self.assertIn('my-api/staging is suspended', text)
 
@@ -500,10 +506,36 @@ class PlatformTests(unittest.TestCase):
                          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('<strong>Ingress</strong> · <span class="bad">1 of 1 not passing</span>', response.text)
-        self.assertIn('Traefik does not redirect HTTP to HTTPS', response.text)
+        self.assertIn('<span class="mark failing" aria-hidden="true"></span> <strong>Ingress</strong> <span class="muted">·</span> '
+                      'Traefik does not redirect HTTP to HTTPS', response.text, 'a group of one check is that check, on one line')
         self.assertIn('14 more checks read Secrets, run commands in pods or need your machine', response.text)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
+
+    def test_a_unit_is_what_one_read_says_it_is(self):
+        """The checks read the units a moment before the units list does: a unit that became Ready in
+        between was once shown as failing beside a list that said all healthy."""
+        from swhurl.report import Entry
+        checks = cluster.Checks(False, [(cluster.FLUX_SECTION, [
+            Entry(cluster.FLUX_SECTION, 'bad', 'app-web-prod is not Ready: Reconciliation in progress')])], [])
+        ready = cluster.units(fake(units=[unit('app-web-prod')]))
+        self.assertEqual(cluster.problems(checks, ready), [])
+        failing = cluster.units(fake(units=[unit('app-web-prod', ready='False', message='boom')]))
+        self.assertEqual(cluster.problems(cluster.Checks(True, [], []), failing),
+                         [cluster.Problem('failing', 'web/prod is not Ready: boom', '/apps/web/prod')])
+
+    def test_two_passing_checks_about_one_app_read_as_one_line_and_times_as_how_long_ago(self):
+        from swhurl.report import Entry
+        group = [Entry('Image Automation', 'ok', 'ImageUpdateAutomation web-staging is Ready; last pushed 2026-10-09T14:37:39Z'),
+                 Entry('Image Automation', 'ok', 'web-staging: newest image 36-6ec5f63'),
+                 Entry('Image Automation', 'bad', 'ImageUpdateAutomation api-staging is not Ready: boom'),
+                 Entry('Image Automation', 'ok', 'api-staging: newest image 2-abc')]
+        now = dt.datetime(2026, 10, 11, 14, 37, 39, tzinfo=dt.UTC)
+        self.assertEqual([e.message for e in cluster.condensed(group, lambda stamp: server.ago(stamp, now))],
+                         ['web/staging: newest image 36-6ec5f63, updates automatic, last pushed 2 days ago',
+                          'ImageUpdateAutomation api-staging is not Ready: boom', 'api-staging: newest image 2-abc'])
+        for seconds, text in ((30, 'just now'), (600, '10 min ago'), (3 * 3600, '3 h ago'), (5 * 86400, '5 days ago')):
+            self.assertEqual(server.ago(now - dt.timedelta(seconds=seconds), now), text)
+        self.assertEqual(server.ago('not a time'), 'not a time')
 
     def test_unreachable_cluster_is_a_502(self):
         runner = FakeRunner().on('kubectl', 'get', '--raw=/version', returncode=1, stderr='refused')
@@ -615,9 +647,11 @@ class ActionTests(unittest.TestCase):
     def test_a_button_in_a_list_gets_its_answer_in_place_instead_of_the_job_page(self):
         runner = fake()
         c, jobs, _ = operate(runner)
-        started = c.post('/units/infra-base/reconcile', headers={**ORIGIN, 'HX-Request': 'true'}, follow_redirects=False)
+        started = c.post('/units/infra-base/reconcile', follow_redirects=False,
+                         headers={**ORIGIN, 'HX-Request': 'true', 'HX-Current-URL': 'http://testserver/platform'})
         self.assertEqual(started.status_code, 200)
-        self.assertIn('<a class="started" href="/jobs/1">', started.text)
+        self.assertIn('<a class="started" href="/jobs/1" hx-get="/platform" hx-trigger="load delay:10s"', started.text,
+                      'and the page it is on is read again, so the row shows what the job did')
         self.assertIn('reconcile started · job #1', started.text)
         refused = c.post('/units/cluster-stack/reconcile', headers={**ORIGIN, 'HX-Request': 'true'})
         self.assertEqual(refused.status_code, 200, 'htmx swaps only a 2xx answer, so the refusal is one')

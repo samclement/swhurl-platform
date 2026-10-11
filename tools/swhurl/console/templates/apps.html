@@ -7,9 +7,9 @@
       {{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ a.app }}/{{ env }}" title="{{ a.app }}/{{ env }}: {{ row.image }}" aria-label="{{ a.app }}/{{ env }}, {{ row.tag or row.image }}"><code>{{ row.tag or row.image }}</code></a>{% if row.database_path %} <strong class="db-kind">SQLite</strong>{% elif row.database_path is none %} <span class="muted">release unknown</span>{% endif %}
       {% for host in row.hosts %} <a class="open" href="https://{{ host }}" title="Open {{ host }}">{% if host != default_host(a.app, env) %}{{ host }} {% else %}<span class="sr-only">Open {{ host }}</span>{% endif %}{{ st.icon('external') }}</a>{% endfor %}
       {% if row.state.detail and row.state.key != 'suspended' %}<div class="muted">{{ row.state.detail | short }}</div>{% endif %}
-      {% if job %}<div><a href="/jobs/{{ job.id }}">{{ st.mark('updating') }} {{ job.action }} · job #{{ job.id }}</a></div>
+      {% if job %}<div>{{ st.running(job, refresh_url) }}</div>
       {% elif row.state.key not in ('healthy', 'updating', 'stopped') %}{% set action = 'resume' if row.suspended else 'reconcile' %}
-      <form class="inline" method="post" action="/units/{{ unit }}/{{ action }}" hx-post="/units/{{ unit }}/{{ action }}" hx-swap="outerHTML"><button title="{{ 'Apply Git changes to it again, starting with a reconcile' if row.suspended else 'Fetch Git and apply this instance now. Safe: it applies what Git already says' }}">{{ action | capitalize }}</button></form>{% endif %}
+      <form class="inline" method="post" action="/units/{{ unit }}/{{ action }}" hx-post="/units/{{ unit }}/{{ action }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Apply Git changes to it again, starting with a reconcile' if row.suspended else 'Fetch Git and apply this instance now. Safe: it applies what Git already says' }}">{{ action | capitalize }}</button></form>{% endif %}
     {% else %}<span class="muted">—</span>{% endif %}</td>
 {% endmacro %}
 {% block main %}

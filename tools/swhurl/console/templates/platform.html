@@ -3,7 +3,7 @@
 {% block title %}Platform{% endblock %}
 {% block main %}
 <h1>Platform</h1>
-<p class="lead">The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Open a unit to reconcile, suspend or resume it.</p>
+<p class="lead">The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Reconcile, suspend or resume a unit from its row; open it for what it applies and what needs it.</p>
 {% set unhealthy = units | rejectattr('healthy') | list %}
 <p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
 {% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
@@ -13,35 +13,50 @@
 {% if updating %}<h2>Updating now</h2>{{ st.items(updating) }}{% endif %}
 
 <h2>Health checks</h2>
-{% for section, group in checks.sections if section != flux_section %}
+{# A group of one check is that check, on one line; a longer group opens. #}
+<div class="checks">
+{% for section, group in groups %}
 {% set failing = group | rejectattr('level', 'equalto', 'ok') | list %}
-<details class="section"{{ ' open' if failing }}>
-  <summary><strong>{{ section }}</strong> · {% if failing %}<span class="bad">{{ failing | length }} of {{ group | length }} not passing</span>{% else %}<span class="ok">{{ group | length }} passing</span>{% endif %}</summary>
+{% if group | length == 1 %}
+<p class="check">{{ st.check(group[0].level) }} <strong>{{ section }}</strong> <span class="muted">·</span> {{ group[0].message | short }}</p>
+{% else %}
+<details class="section" id="checks-{{ loop.index }}"{{ ' open' if failing }}>
+  <summary>{{ st.check('bad' if failing else 'ok') }} <strong>{{ section }}</strong> <span class="muted">·</span> {% if failing %}<span class="bad">{{ failing | length }} of {{ group | length }} not passing</span>{% else %}{{ group | length }} passing{% endif %}</summary>
   <ul class="items">
     {% for e in group %}<li>{{ st.check(e.level) }} {{ e.message | short }}</li>{% endfor %}
   </ul>
 </details>
+{% endif %}
 {% endfor %}
+</div>
 <p class="muted">Flux unit checks are in the list below.{% if checks.skipped %} {{ checks.skipped | length }} more checks read Secrets, run commands in pods or need your machine ({{ checks.skipped | join(', ') }}): run <code>make verify-platform</code>.{% endif %}</p>
 
 <h2 id="units">Flux units</h2>
-<details class="section"{{ ' open' if unhealthy }}>
-  <summary>{{ units | length }} units · {% if unhealthy %}<span class="warn">{{ unhealthy | length }} not healthy</span>{% else %}<span class="ok">all healthy</span>{% endif %} · grouped by what they hold</summary>
-  {% for title, text, members in layers %}
-  <h3>{{ title }} <span class="muted">— {{ text }}</span></h3>
+{% set elsewhere = units | rejectattr('revision', 'equalto', revision) | list %}
+<details class="section" id="units-list"{{ ' open' if unhealthy }}>
+  <summary>{{ units | length }} units · {% if unhealthy %}<span class="warn">{{ unhealthy | length }} not healthy</span>{% else %}<span class="ok">all healthy</span>{% endif %}
+    · {% if elsewhere %}{{ elsewhere | length }} not at <code>{{ revision }}</code>{% else %}all at <code>{{ revision }}</code>{% endif %}</summary>
   <div class="scroll">
   <table class="compact units">
-    <tr><th>Unit</th><th>State</th><th>Applied</th><th>Waits for</th></tr>
-    {% for u in members %}
+    <tr><th>Unit</th><th>State</th><th>Waits for</th><th><span class="sr-only">Actions</span></th></tr>
+    {% for title, text, members in layers %}
+    <tr class="group"><th colspan="4" scope="colgroup">{{ title }} <span class="muted">— {{ text }}</span></th></tr>
+    {% for u in members %}{% set job = running_jobs | selectattr('unit', 'equalto', u.name) | first %}
     <tr>
       <td><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</td>
-      <td>{{ st.state(u.state, detail=u.state.key in ('updating', 'failing')) }}</td>
-      <td class="mono">{{ u.revision or '—' }}</td>
+      <td>{{ st.state(u.state, detail=u.state.key in ('updating', 'failing'), quiet=true) }}{% if u.revision != revision %} <span class="muted">at <code>{{ u.revision or 'no revision' }}</code></span>{% endif %}</td>
       <td class="muted">{{ u.depends_on | join(', ') or '—' }}</td>
+      <td class="row-links">
+        {% if u.name in refused %}<span class="muted" title="This unit is {{ refused[u.name] }}">make flux-bootstrap</span>
+        {% elif job %}{{ st.running(job, refresh_url) }}
+        {% elif u.suspended %}<form class="inline" method="post" action="/units/{{ u.name }}/resume" hx-post="/units/{{ u.name }}/resume" hx-target="closest td" hx-select="unset" hx-swap="innerHTML"><button title="Apply Git changes to this unit again, starting with a reconcile">Resume</button></form>
+        {% else %}<form class="inline" method="post" action="/units/{{ u.name }}/reconcile" hx-post="/units/{{ u.name }}/reconcile" hx-target="closest td" hx-select="unset" hx-swap="innerHTML"><button class="quiet" title="Fetch Git and apply this unit now. Safe: it applies what Git already says">Reconcile</button></form>
+        <form class="inline" method="post" action="/units/{{ u.name }}/suspend" hx-post="/units/{{ u.name }}/suspend" hx-target="closest td" hx-select="unset" hx-swap="innerHTML" data-confirm="Suspend {{ u.name }}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="quiet danger" title="Stop applying Git changes to this unit until you resume it">Suspend</button></form>{% endif %}
+      </td>
     </tr>
+    {% endfor %}
     {% endfor %}
   </table>
   </div>
-  {% endfor %}
 </details>
 {% endblock %}

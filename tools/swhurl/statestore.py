@@ -12,7 +12,7 @@ from swhurl.run import Runner
 
 def read_key(runner: Runner, *, namespace: str, name: str, key: str) -> str | None:
     """The raw value of ``key``, or None when the key has not been written yet."""
-    doc = runner.json(['kubectl', '-n', namespace, 'get', 'configmap', name, '-o', 'json'])
+    doc = runner.json(['kubectl', '-n', namespace, 'get', 'configmap', name, '-o', 'json']) or {}
     return (doc.get('data') or {}).get(key) or None
 
 

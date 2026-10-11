@@ -93,7 +93,7 @@
     <div class="panel">
       {{ env_panel(a, 'staging') }}
       {{ env_panel(a, 'prod') }}
-      <p class="foot"><a href="{{ logs_url(a.app) }}">Logs and traces {{ st.icon('external') }}</a> <span class="muted">·</span> <a href="https://github.com/{{ owner }}/{{ a.app }}">Repository {{ st.icon('external') }}</a></p>
+      <p class="foot"><a href="{{ logs_url(a.app) }}">Logs and traces {{ st.icon('external') }}</a> <span class="muted">·</span> {% if dashboards.get(a.app) %}<a href="{{ dashboards[a.app] }}" title="The App: {{ a.app }} dashboard in HyperDX">Dashboard {{ st.icon('external') }}</a> <span class="muted">·</span> {% endif %}<a href="https://github.com/{{ owner }}/{{ a.app }}">Repository {{ st.icon('external') }}</a></p>
     </div>
   </details>
   {% endfor %}

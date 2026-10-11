@@ -136,6 +136,7 @@ def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
                           (cluster.RELEASES[:3], [release for _, release in staging]),
                           (('kubectl', 'get', 'namespaces'), [])):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
+    runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     (runner.on(sys.executable, '-m', 'swhurl', 'app-new', handler=lambda args, _: Result(
         args, app_new.returncode, app_new.stdout, app_new.stderr))
         .on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n')))

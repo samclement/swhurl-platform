@@ -86,7 +86,7 @@
       {% for env in ('staging', 'prod') %}{% set row = envs.get(env) %}
       <td>{% if row %}{{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ app }}/{{ env }}" title="{{ app }}/{{ env }}: {{ row.image }}" aria-label="{{ app }}/{{ env }}, {{ row.tag or row.image }}"><code>{{ row.tag or row.image }}</code></a>{% else %}<span class="muted">—</span>{% endif %}</td>
       {% endfor %}
-      <td class="row-links"><a href="{{ logs_url(app) }}" title="Logs and traces of {{ app }} in HyperDX">Logs {{ st.icon('external') }}</a></td>
+      <td class="row-links">{% if dashboards.get(app) %}<a href="{{ dashboards[app] }}" title="The App: {{ app }} dashboard in HyperDX">Dashboard {{ st.icon('external') }}</a> <span class="muted">·</span> {% endif %}<a href="{{ logs_url(app) }}" title="Logs and traces of {{ app }} in HyperDX">Logs {{ st.icon('external') }}</a></td>
     </tr>
     {% endfor %}
   </table>

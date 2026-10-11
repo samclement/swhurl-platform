@@ -15,6 +15,10 @@ The scheduled sync (``--cluster``) takes the apps from the cluster's HelmRelease
 narrowly: only a tagged dashboard named exactly ``App: <app name>`` whose app has no HelmRelease left, and
 nothing at all when it finds no app releases (a cluster still being restored).
 
+Each run also records which dashboard belongs to which app (``{"<app>": "<dashboard id>"}``) in the
+``console/app-dashboards`` ConfigMap, so the console can link to an app's dashboard without a HyperDX key
+of its own. It is written only when it changed, and holds nothing that the next run cannot rebuild.
+
 HyperDX's external API (``/api/v2``) authenticates with a user's access key; the command reads the admin
 account's key from MongoDB, as ``make clickstack-bootstrap`` reads the team key, and never prints it.
 """
@@ -28,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import clickstack
+from swhurl import clickstack, statestore
 from swhurl.apps.new import NAME_RE
 from swhurl.platform import ROOT
 from swhurl.report import Report
@@ -38,6 +42,8 @@ TAG = 'swhurl-app'
 NAMESPACE = "ResourceAttributes['k8s.namespace.name']"
 APP_DASHBOARD = re.compile('App: ' + NAME_RE.pattern.strip('^$'))  # what the scheduled sync may delete
 IN_GIT, ON_CLUSTER = 'its app is not in Git', 'its app has no HelmRelease on the cluster'
+RECORD = {'namespace': 'console', 'name': 'app-dashboards', 'key': 'dashboards.json'}  # read by the console
+DASHBOARD_ID = re.compile(r'[0-9a-f]{24}')  # a MongoDB ObjectId: the only thing that may become part of a link
 ADMIN_KEY = ('const u = db.users.findOne({email: EMAIL}, {accessKey: 1});'
              ' print("RESULT " + JSON.stringify({key: (u && u.accessKey) || ""}));')
 
@@ -171,6 +177,31 @@ def sources(api: HyperDX) -> tuple[str, str]:
     return found['trace'], found['log']
 
 
+def recorded(runner: Runner) -> dict[str, str]:
+    """``{app: dashboard id}`` as last recorded; empty when nothing usable is there. Entries that are
+    not an app name and a dashboard id are dropped, so a link is only ever built from those."""
+    try:
+        doc = json.loads(statestore.read_key(runner, **RECORD) or '{}')
+    except (CommandError, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    return {app: ident for app, ident in doc.items()
+            if isinstance(app, str) and isinstance(ident, str) and NAME_RE.match(app) and DASHBOARD_ID.fullmatch(ident)}
+
+
+def record(runner: Runner, report: Report, ids: dict[str, str]) -> None:
+    """Keep the console's record of each app's dashboard in step, writing only when it changed."""
+    raw = json.dumps(ids, sort_keys=True)
+    try:
+        if statestore.read_key(runner, **RECORD) == raw:
+            return
+        statestore.write_key(runner, **RECORD, raw=raw, field_manager='dashboard-sync')
+        report.ok(f'recorded {len(ids)} dashboard address{"es" if len(ids) != 1 else ""} for the console')
+    except CommandError as error:
+        report.bad(f'could not record dashboard addresses in {RECORD["namespace"]}/{RECORD["name"]}: {error}')
+
+
 def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool = True, cluster: bool = False) -> int:
     """Create, update and (with ``prune``) delete; ``cluster`` narrows deletion to dashboards named for an app."""
     report.section('ClickStack app dashboards')
@@ -187,9 +218,11 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
     api = HyperDX(runner, key)
     traces, logs = sources(api)
     live = {d['name']: d for d in api.call('GET', '/dashboards').get('data', []) if TAG in (d.get('tags') or [])}
+    ids: dict[str, str] = {}
     for app in wanted_apps:
         body = dashboard(app, traces, logs)
         current = live.pop(body['name'], None)
+        ids[app.name] = str((current or {}).get('id', ''))
         if current and same(current, body):
             report.ok(f"{body['name']} is up to date")
         elif runner.dry_run:
@@ -198,8 +231,11 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
             api.call('PUT', f"/dashboards/{current['id']}", body)
             report.ok(f"updated {body['name']}")
         else:
-            api.call('POST', '/dashboards', body)
+            created = api.call('POST', '/dashboards', body).get('data')
+            ids[app.name] = str(created.get('id', '')) if isinstance(created, dict) else ''  # else the next run has it
             report.ok(f"created {body['name']}")
+    if not runner.dry_run and (wanted_apps or prune):
+        record(runner, report, {app: ident for app, ident in ids.items() if DASHBOARD_ID.fullmatch(ident)})
     if not prune and live:
         report.info(f'no app releases found; not deleting dashboards ({len(live)} left)')
     reason = ON_CLUSTER if cluster else IN_GIT

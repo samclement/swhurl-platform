@@ -22,8 +22,13 @@ WEB, WORKER = dashboards.App('web', 'web', ('staging', 'prod')), dashboards.App(
 class HyperDX:
     """Scripted external API and MongoDB; records each API call as (method, path, body)."""
 
-    def __init__(self, dashboards_live=(), key=ACCESS_KEY):
+    def __init__(self, dashboards_live=(), key=ACCESS_KEY, recorded=None, writable=True):
         self.live, self.key, self.calls = list(dashboards_live), key, []
+        self.recorded, self.writable, self.patches = recorded, writable, []  # the console's record (a ConfigMap)
+
+    def patch(self, argv, patch):
+        self.patches.append(json.loads(patch))
+        return Result(argv, 0 if self.writable else 1, '', '' if self.writable else 'forbidden')
 
     def runner(self, dry_run=False):
         return (FakeRunner(dry_run=dry_run)
@@ -33,7 +38,10 @@ class HyperDX:
                     stdout=json.dumps({'data': {'connectionString.standard': b64(URI)}}))
                 .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD,
                     stdout='RESULT ' + json.dumps({'key': self.key}))
-                .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=self.api))
+                .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=self.api)
+                .on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards',
+                    stdout=json.dumps({'data': {'dashboards.json': self.recorded}} if self.recorded else {}))
+                .on('kubectl', '-n', 'console', 'patch', 'configmap', 'app-dashboards', handler=self.patch))
 
     def api(self, argv, program):
         url, request = re.search(r'fetch\(("[^"]*"), (\{.*\})\);', program).groups()
@@ -69,6 +77,40 @@ class SyncTests(unittest.TestCase):
         self.assertIn('[OK] App: web is up to date', out)
         self.assertIn('[OK] deleted App: gone (its app is not in Git)', out)
         self.assertNotIn(ACCESS_KEY, out)
+
+    def test_each_apps_dashboard_is_recorded_for_the_console_and_written_only_when_it_changed(self):
+        ids = {'web': 'a' * 24, 'job': 'b' * 24}
+        raw = json.dumps(ids, sort_keys=True)
+        live = [{**dashboards.dashboard(WEB, 't1', 'l1'), 'id': ids['web']}, {**dashboards.dashboard(WORKER, 't1', 'l1'), 'id': ids['job']}]
+        api = HyperDX(live)
+        code, out = run(api, [WEB, WORKER, dashboards.App('new', 'web', ('staging',))])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(api.patches, [{'data': {'dashboards.json': raw}}],
+                         'a dashboard created in this run has no id yet: the next run records it')
+        self.assertIn('[OK] recorded 2 dashboard addresses for the console', out)
+        unchanged = HyperDX(live, recorded=raw)
+        self.assertEqual(run(unchanged, [WEB, WORKER])[0], 0)
+        self.assertEqual(unchanged.patches, [], 'unchanged: nothing is written')
+        self.assertEqual(dashboards.recorded(unchanged.runner()), ids)
+        dry = HyperDX(live)
+        run(dry, [WEB], dry_run=True)
+        self.assertEqual(dry.patches, [])
+
+    def test_only_an_app_name_and_a_dashboard_id_are_read_back(self):
+        def stored(raw):
+            return dashboards.recorded(HyperDX(recorded=raw).runner())
+        self.assertEqual(stored(json.dumps({'web': 'a' * 24, 'x': '../../evil', 'Bad Name': 'b' * 24, 'n': 7})), {'web': 'a' * 24})
+        self.assertEqual(stored('not json'), {})
+        self.assertEqual(stored('[1]'), {})
+        self.assertEqual(stored(None), {}, 'never written yet')
+        refused = FakeRunner().on('kubectl', '-n', 'console', 'get', 'configmap', returncode=1, stderr='forbidden')
+        self.assertEqual(dashboards.recorded(refused), {}, 'unreadable: the console leaves the link out')
+
+    def test_a_record_that_cannot_be_written_fails_the_run(self):
+        api = HyperDX([{**dashboards.dashboard(WEB, 't1', 'l1'), 'id': 'a' * 24}], writable=False)
+        code, out = run(api, [WEB])
+        self.assertEqual(code, 1)
+        self.assertIn('could not record dashboard addresses in console/app-dashboards', out)
 
     def test_dry_run_reads_but_writes_nothing(self):
         api = HyperDX([{'id': 'd3', 'name': 'App: gone', 'tags': ['swhurl-app'], 'tiles': []}])

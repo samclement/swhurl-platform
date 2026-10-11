@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: swhurl-try-10
+  namespace: swhurl-try-10-staging
+spec:
+  hard:
+    pods: '14'
+    requests.cpu: '2'
+    requests.memory: 2Gi
+    limits.memory: 4Gi

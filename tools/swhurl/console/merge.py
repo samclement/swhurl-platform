@@ -125,9 +125,13 @@ def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
         if runs and runs[0].get('status') == 'completed':
             if runs[0].get('conclusion') != 'success':
                 raise Hold('Validate has not passed on the current PR head')
+            if waited:
+                print(f'Validate passed after a {waited} s wait', flush=True)
             return
         if waited >= VALIDATE_WAIT:
             raise Hold('Validate has not passed on the current PR head (still running)')
+        if not waited:
+            print(f'Waiting up to {VALIDATE_WAIT} s for Validate on {sha[:7]}', flush=True)
         sleep(VALIDATE_POLL)
         waited += VALIDATE_POLL
 

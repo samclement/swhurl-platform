@@ -1,4 +1,6 @@
 """Auto-merge gates preserve reviewed settings and never push on failed or stale checks."""
+import contextlib
+import io
 import json
 import shutil
 import tempfile
@@ -178,7 +180,10 @@ class MergeTests(unittest.TestCase):
         running = '[{"databaseId": 1, "status": "in_progress", "conclusion": ""}]'
         done = '[{"databaseId": 1, "status": "completed", "conclusion": "success"}]'
         runner = self.runner(validate=['[]', running, done])
-        self.check(runner)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.check(runner)
+        self.assertEqual(out.getvalue().splitlines(), ['Waiting up to 120 s for Validate on bbbbbbb',
+                                                       'Validate passed after a 10 s wait'])
         self.assertEqual(self.slept, [merge.VALIDATE_POLL] * 2)
         self.assertTrue(self.pushes(runner))
 
@@ -188,7 +193,7 @@ class MergeTests(unittest.TestCase):
             self.check(runner)
         self.assertEqual((self.slept, self.pushes(runner)), ([], []))
         runner = self.runner(validate=['[{"databaseId": 1, "status": "queued", "conclusion": ""}]'])
-        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'):
+        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'), contextlib.redirect_stdout(io.StringIO()):
             self.check(runner)
         self.assertEqual(sum(self.slept), merge.VALIDATE_WAIT)
         self.assertEqual(self.pushes(runner), [])

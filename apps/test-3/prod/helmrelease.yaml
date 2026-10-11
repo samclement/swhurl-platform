@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/test-3
-              tag: 1-03a3ddc
-              digest: sha256:f938077c397d723429c92ecd972c8d840397f607c37879214f0b779e74c43c95
+              tag: 4-45b5d9e
+              digest: sha256:cfe7484617f690f2f21488ab610a594c8c8dd38225c53f9b0418cbe2d1033a4b
             resources:
               requests:
                 cpu: 10m

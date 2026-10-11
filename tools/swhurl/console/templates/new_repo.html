@@ -28,8 +28,8 @@
     {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
     <div class="field">
       <label for="team">Owning team</label>
-      <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}</option>{% endfor %}</select>
-      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. The app's deployment and health messages also go to the team's <a href="/teams#channels">notification channels</a>. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+      <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}{% if team_channels.get(name) %} · notifies {{ team_channels[name] | first }}{% else %} · no notification channel{% endif %}</option>{% endfor %}</select>
+      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. The app's deployment and health messages also go to the team's <a href="/teams#channels">notification channel</a>, named beside each team; give a team one on the Teams page. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
     </div>
   </fieldset>
 

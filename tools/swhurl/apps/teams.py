@@ -1,7 +1,7 @@
 """Manage the team registry (apps/teams.yaml) without leaving an app pointing at a team that is gone.
 
     team-add NAME [--description TEXT]
-    team-edit NAME [--description TEXT] [--rename NEW] [--notify CHANNEL[,CHANNEL]]
+    team-edit NAME [--description TEXT] [--rename NEW] [--notify CHANNEL]
     team-remove NAME [--move-apps-to OTHER]
     channel-add NAME [--transport ntfy] [--replace]      the address is read from standard input, never an argument
     channel-remove NAME
@@ -17,7 +17,7 @@ make check-apps fails (rule team), so each command changes both in one Git edit:
 
 Telemetry already stored keeps the name it was written with (swhurl.team); only new data follows.
 
-A team's ``notify`` list names the channels that get its apps' lifecycle messages
+A team's ``notify`` names the one channel that gets its apps' lifecycle messages
 (docs/services.md#notification-channels). A channel is one encrypted Secret, written once: these
 commands encrypt and never decrypt, and no output repeats an address.
 """
@@ -116,6 +116,8 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
         raise EditError('give --description, --rename and/or --notify')
     if notify is not None:
         notify = checked_channels(root, notify)
+        if len(notify) > 1:
+            raise EditError(f'a team notifies one channel, not {len(notify)}: choose one of {", ".join(notify)}')
         current = teams[name] if isinstance(teams[name], dict) else entry('')
         if notify:
             current['notify'] = notify
@@ -239,7 +241,7 @@ def channel_remove(root: Path, name: str) -> None:
     users = [team for team, names in channels.team_channels(root).items() if name in names]
     if users:
         raise EditError(f'channel {name} is notified by {", ".join(users)}: change those teams first '
-                        '(make team-edit NAME=<team> ARGS="--notify <other channels>")')
+                        '(make team-edit NAME=<team> ARGS="--notify <another channel>")')
     document, resources = listed_channels(root)
     if path.name in resources:
         resources.remove(path.name)
@@ -269,8 +271,8 @@ def main_edit(argv: list[str] | None = None) -> int:
     p.add_argument('name')
     p.add_argument('--description')
     p.add_argument('--rename', metavar='NEW')
-    p.add_argument('--notify', metavar='CHANNEL[,CHANNEL]', type=lambda s: [c.strip() for c in s.split(',') if c.strip()],
-                   help='the channels that get its apps\' lifecycle messages; an empty value clears them')
+    p.add_argument('--notify', metavar='CHANNEL', type=lambda s: [c.strip() for c in s.split(',') if c.strip()],
+                   help='the channel that gets its apps\' lifecycle messages; an empty value clears it')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return edit.run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)

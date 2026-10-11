@@ -19,7 +19,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
 11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console (restructured the same day: one Apps list with a map, and Use, Connect and Operate on each app page), and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a signed sign-in identity inside the cluster.
-12. **App notification service: N1 and N2 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026)). Next: N3, ClickStack alerts through the service (starts with a spike on the HyperDX alerts API). Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
+12. **App notification service: N1 and N2 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026)). Goals and order revised on 11 October ([end goal](#end-goal-and-revised-order-11-october-2026)). Next: N3, the send helper in generated apps. Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
 
 ### Delivered
 
@@ -816,6 +816,21 @@ Listed as [limits](apps.md#limits) where a user would meet them: tokens for call
 
 **What is deployed.** N1 and N2: [notification channels](services.md#notification-channels) and the [notify service](services.md#notify-service), which delivers the checker's messages about a team's apps to the team's channels. Every platform alert uses one ntfy destination ([alerts](services.md#alerts)).
 
+### End goal and revised order (11 October 2026)
+
+Stated by the operator: a new app comes with sensible default alerts, as it comes with a dashboard; they and the app's own messages go through the notify service to the app's channel; and a generated app sends to that channel with one call, pre-configured the way SQLite is.
+
+Decided by the operator: **one channel per team**, to keep management small (it may change later). An app's channel is therefore its team's: choosing the team at creation chooses the channel, and a team without one is given one on the Teams page. Per-app channels (`notify.channels` on an app) are dropped from the contract below.
+
+| Step | Delivers | Checkable by |
+| --- | --- | --- |
+| N1, N2 | Done: channels, team routing and the notify service | [current state](current-state.md) |
+| N3 | Apps send: the service accepts an app's own token (it can only send as itself), admits app namespaces, limits each app's rate; every instance gets the service address and token file; a `notify()` helper in both stack templates (pin the new revision in `STACK_REVISIONS`) | A throwaway app sends one message to its team's channel; it cannot send as another app; a flood is limited |
+| N4 | Default alerts: preset ClickStack rules created and removed with each app, like its dashboard, on by default; one HyperDX webhook to the service. First a spike: can the HyperDX API create alert rules, and can a webhook carry a fixed secret header (ClickStack cannot present a rotating service-account token)? | An induced error rate on a throwaway app fires and recovers on the team's channel |
+| N5 | A second adapter | The same message on two providers from one request |
+
+Open before N3: whether `notify()` works for every app whose team has a channel (proposed) or only for apps that ask at creation.
+
 ### Two planes
 
 ```mermaid
@@ -851,7 +866,7 @@ Proposed, to confirm when the step that needs them starts:
 | Decision | Proposal | Why |
 | --- | --- | --- |
 | Channel and transport are different things | A **transport** is how a message is delivered (ntfy, later Slack, email); a **channel** is a named destination in Git that uses one transport with a fixed address | Sending to an app's end users later is a transport with the recipient in the request, not a redesign |
-| Where routing lives | `notify:` on a team in `apps/teams.yaml` (default), overridden by `notify.channels` on an app | A team is already the owner label; most apps need no setting |
+| Where routing lives | `notify:` on a team in `apps/teams.yaml`: one channel per team (operator, 11 October) | A team is already the owner label; no app needs a setting |
 | Where channel credentials live | One SOPS Secret per channel, written by `make channel-add` or the console | The address is the credential (an ntfy topic, a webhook URL); apps never hold it. One file per channel because the console can only encrypt: adding a channel must not need an existing file decrypted |
 | How a creator learns a channel's address | They never do: channels are write-only. Whoever creates a channel supplies its address (their ntfy topic, their Slack webhook) and the platform only stores it. A new app in an existing team inherits the team's channel, so nothing secret changes hands. For ntfy the console form offers **Generate**: a random topic made in the browser and shown with a subscribe link before submitting, never again afterwards | A console that could show addresses would need to read channel credentials, and a team is a name, not a set of people, so any signed-in user could read any team's. Provider webhooks are issued to the person setting them up anyway. A lost address is replaced, like a rotation; the operator can still decrypt with the age key |
 | Who also gets app lifecycle messages | The operator's platform topic keeps receiving every app's; a team's channel gets a copy | Assumed, not yet confirmed by the operator: nothing the operator sees today goes away, and a broken team channel cannot hide a failure |
@@ -865,15 +880,10 @@ Proposed, to confirm when the step that needs them starts:
 ```yaml
 # apps/teams.yaml
 payments:
-  notify: [payments-phone]        # channel names
-
-# swhurl.yaml (each field optional; flags on app-new and fields on the console's Start a new app)
-notify:
-  channels: [payments-phone]      # default: the team's
-  lifecycle: true                 # deployed, unhealthy, recovered for this app
-  alerts: [error-rate, latency]   # ClickStack presets (step N3)
-  send: true                      # the app may call the notify service (step N4)
+  notify: [payments-phone]        # the team's one channel
 ```
+
+Nothing is set per app: its channel is its team's, lifecycle messages and default alerts are on, and `notify()` is in every generated app (whether it must be asked for is the open question above).
 
 ```
 POST $SWHURL_SERVICE_NOTIFY_URL/v1/notify      Authorization: Bearer <token for audience notify>
@@ -884,9 +894,9 @@ The console and the tooling show a channel's name and transport, never its addre
 
 The service takes the app and environment from the token, never from the body. `202` means accepted into the outbox; delivery is at least once, as for the [checker](services.md#current-notification-behavior). `401` is a missing or bad token, `403` an app without `notify.send`.
 
-### Steps
+### Steps as first planned
 
-Each step ends in `make check`, a reconcile and a live check recorded in [current state](current-state.md). N2 onwards goes through the `new-component-checklist` skill.
+Superseded from N3 on by the [revised order](#end-goal-and-revised-order-11-october-2026); N1 and N2 were delivered as written. Each step ends in `make check`, a reconcile and a live check recorded in [current state](current-state.md). N2 onwards goes through the `new-component-checklist` skill.
 
 | Step | Delivers | Checkable by |
 | --- | --- | --- |

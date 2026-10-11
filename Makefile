@@ -90,7 +90,7 @@ team-add: ## NAME= [DESCRIPTION=] Register a team in apps/teams.yaml (Git edit)
 	$(SWHURL_APPS) team-add $(NAME) --description "$(DESCRIPTION)"
 
 .PHONY: team-edit
-team-edit: ## NAME= ARGS="--description TEXT | --rename NEW | --notify CHANNEL[,CHANNEL]" Change a team; a rename relabels its apps (Git edit)
+team-edit: ## NAME= ARGS="--description TEXT | --rename NEW | --notify CHANNEL" Change a team; a rename relabels its apps (Git edit)
 	@[[ -n "$(NAME)" && -n "$(ARGS)" ]] || { echo "Usage: make team-edit NAME=<team> ARGS='--rename new-name'" >&2; exit 2; }
 	$(SWHURL_APPS) team-edit $(NAME) $(ARGS)
 

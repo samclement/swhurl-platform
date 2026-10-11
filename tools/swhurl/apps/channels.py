@@ -2,7 +2,7 @@
 
 A channel is a named destination: one SOPS-encrypted Secret in platform/notify whose address is the
 credential (an ntfy topic URL). Its name and transport are plain metadata; the address is written once
-and never shown again. A team lists the channels its apps notify in apps/teams.yaml; that list reaches
+and never shown again. A team names the one channel its apps notify in apps/teams.yaml; that reaches
 the cluster as the generated ROUTES_FILE, which the notification checker reads.
 
 Reads and rendering only (PyYAML): the app policy imports this. The commands are in teams.py.
@@ -100,6 +100,8 @@ def problems(root: Path) -> list[str]:
         if channel_file(name).name not in listed:
             found.append(f'{channel_file(name).name} is not in {NOTIFY_DIR}/kustomization.yaml: the channel would not exist')
     for team, names in team_channels(root).items():
+        if len(names) > 1:
+            found.append(f'team {team} notifies {len(names)} channels; a team has one (make team-edit NAME={team} ARGS="--notify <channel>")')
         missing = [name for name in names if name not in known]
         if missing:
             found.append(f'team {team} notifies {", ".join(missing)}, which is not a channel (make channel-add)')

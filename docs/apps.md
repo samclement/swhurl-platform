@@ -196,7 +196,7 @@ Manage teams on the console's **Teams** page or with `make team-add`, `make team
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.
 
-A team can name [notification channels](services.md#notification-channels) (`make team-edit NAME=payments ARGS="--notify payments-phone"`): each gets a copy of the deployment and health messages of every app the team owns.
+A team can name one [notification channel](services.md#notification-channels) (`make team-edit NAME=payments ARGS="--notify payments-phone"`): it gets a copy of the deployment and health messages of every app the team owns. Choosing a team for a new app is therefore also choosing where its messages go; the console's New app form names each team's channel.
 
 Each instance carries two generated files beside its HelmRelease:
 

@@ -26,6 +26,11 @@
       {% endfor %}
     </div>
     {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
+    <div class="field">
+      <label for="team">Team</label>
+      <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}</option>{% endfor %}</select>
+      <span class="muted hint">Who owns the app. Teams are registered in <code>apps/teams.yaml</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+    </div>
   </fieldset>
 
   {% for stack, questions in features.items() %}
@@ -49,7 +54,7 @@
     {{ ui.exposure_choices(form.exposure or 'authenticated-web', 'authenticated-web', 'default') }}
     {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
   </fieldset>
-  <p class="muted" id="worker-note" hidden>A worker has no web address: it is private, reachable only inside the cluster.</p>
+  <p class="muted" id="worker-note" hidden>A worker has no web address: it is private, and no other app can connect to it.</p>
 
   {{ ui.submit('Create repository and open pull request', 'About three minutes: the first image is built before the PR opens.') }}
 </form>

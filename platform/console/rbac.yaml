@@ -27,6 +27,9 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [namespaces]  # the team label on an app's namespace
+    verbs: [get, list]
   - apiGroups: [batch]
     resources: [cronjobs]
     verbs: [get, list]

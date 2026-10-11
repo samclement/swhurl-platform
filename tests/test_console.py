@@ -57,6 +57,7 @@ CHECKS['kubectl -n console get cronjob console-notifications'] = CHECKS['kubectl
 
 def fake(units=UNITS, releases=RELEASES, **extra):
     runner = FakeRunner()
+    runner.on('kubectl', 'get', 'namespace', stdout=json.dumps({'metadata': {'labels': {'platform.swhurl.com/team': 'payments'}}}))
     runner.on(*cluster.UNITS[:5], stdout=json.dumps({'items': units}))
     runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():

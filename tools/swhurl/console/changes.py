@@ -29,10 +29,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 
 from swhurl import platform
 from swhurl.apps import repo
-from swhurl.apps.contract import EXPOSURES, STACKS
+from swhurl.apps.contract import DEFAULT_TEAM, EXPOSURES, STACKS, TEAMS_FILE
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
@@ -48,16 +49,31 @@ UNSET = ('', 'REPLACE_ME')
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
     'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
-    'private': ('Private', 'No web address; reachable only inside the cluster. For workers and internal services.'),
+    'private': ('Private', 'No web address, and no other app can connect to it. For workers.'),
 }
 """The form's plain-language names for each exposure: (title, description)."""
 
 
-def new_repo_args(form: Mapping[str, str], questions: list[repo.Question]) -> tuple[str, str, str, dict[str, str], list[str]]:
+def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
+    """Team names and descriptions from the registry on ``main`` (the console image carries no checkout)."""
+    api = GitHubAPI(runner, github)
+    try:
+        listing = api.json('GET', f'/contents/{TEAMS_FILE.as_posix()}?ref={BASE}')
+        registered = (yaml.safe_load(base64.b64decode(listing.get('content', ''))) or {}).get('teams') or {}
+    except (ValueError, AttributeError, yaml.YAMLError) as error:
+        raise ActionError(f'cannot read {TEAMS_FILE}: {error}') from None
+    finally:
+        api.client.close()
+    return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
+
+
+def new_repo_args(form: Mapping[str, str], questions: list[repo.Question],
+                  teams: Mapping[str, str] | None = None) -> tuple[str, str, str, dict[str, str], list[str]]:
     """``(name, stack, description, template answers, extra app-new argv)`` from the New app form.
 
     ``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
-    A worker gets no exposure or host: its swhurl.yaml makes it private."""
+    ``teams`` are the registered ones; the form's team must be among them. A worker gets no exposure
+    or host: its swhurl.yaml makes it private."""
     name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
     description = ' '.join(form.get('description', '').split())[:200]
     if not NAME_RE.match(name):
@@ -70,11 +86,16 @@ def new_repo_args(form: Mapping[str, str], questions: list[repo.Question]) -> tu
         if value not in question.choices:
             raise ActionError(f'{question.name} must be one of {", ".join(question.choices)}')
         answers[question.name] = value
+    extra = []
+    team = form.get('team', '').strip()
+    if team:
+        if team not in (teams or {DEFAULT_TEAM: ''}):
+            raise ActionError(f'team must be one of {", ".join(teams or [DEFAULT_TEAM])} ({TEAMS_FILE})')
+        extra.append(f'--team={team}')
     if answers.get('kind') == 'worker':
         if form.get('host', '').strip():
             raise ActionError('a worker has no web address; leave Host empty')
-        return name, stack, description, answers, []
-    extra = []
+        return name, stack, description, answers, extra
     exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
     if exposure:
         if exposure not in EXPOSURES:

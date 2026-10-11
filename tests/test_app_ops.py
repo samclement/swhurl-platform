@@ -34,6 +34,7 @@ def cluster(**overrides):
         'certificate': {'items': [{'metadata': {'name': 'web-tls'}, **ready()}]},
     }
     objects.update(overrides)
+    team = objects.pop('namespace', {'metadata': {'labels': {'platform.swhurl.com/team': 'payments'}}})
     fake = FakeRunner()
     for kind, value in objects.items():
         def handler(args, _input, value=value):
@@ -44,6 +45,8 @@ def cluster(**overrides):
             return Result(args, 0, json.dumps(value))
         fake.on('kubectl', '-n', 'flux-system' if kind in ('kustomization', 'gitrepository') else 'web-prod',
                 'get', kind, handler=handler)
+    fake.on('kubectl', 'get', 'namespace', 'web-prod', stdout=json.dumps(team) if isinstance(team, dict) else '',
+            returncode=0 if isinstance(team, dict) else 1)
     return fake.on('kubectl', '-n', 'flux-system', 'logs').on('kubectl', '-n', 'web-prod', 'logs').on('flux')
 
 
@@ -66,6 +69,7 @@ class StatusTests(unittest.TestCase):
             f'Image      docker.io/x/web:1.0@{DIGEST}',
             '           running: matches desired',
             'Replicas   Deployment/web: 1/1 ready',
+            'Team       payments',
             'Exposure   signed-in (Google sign-in)',
             'Route      https://web.homelab.swhurl.com',
             'TLS        web-tls: True',
@@ -82,6 +86,12 @@ class StatusTests(unittest.TestCase):
         problem = out.split('Problems\n')[1].splitlines()[0]
         self.assertTrue(problem.startswith('  web-2: ImagePullBackOff not found'))
         self.assertLessEqual(len(problem), len('  web-2: ImagePullBackOff ') + 160)
+
+    def test_an_unreadable_namespace_only_drops_the_team_line(self):
+        code, out, _ = run(cluster(namespace=None), 'status', 'web', 'prod')
+        self.assertEqual(code, 0)
+        self.assertNotIn('Team', out)
+        self.assertIn('Exposure   signed-in', out)
 
     def test_missing_release_is_reported_not_fatal(self):
         code, out, _ = run(cluster(helmrelease=None), 'status', 'web', 'prod')

@@ -6,27 +6,13 @@
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › {{ i.app }}</p>
-<h1>{{ i.app }}/{{ i.env }}</h1>
+<h1>{{ i.app }}</h1>
 <nav class="tabs" aria-label="Environment">
-{% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ i.app }}/{{ env }}</a>{% endif %}{% endfor %}
+{% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail | short }}</span>{% endif %}</p>
-<p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
-  · {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{{ ', ' if not loop.last }}{% else %}no web address{% endfor %}
-  · {{ exposures.get(status.exposure, status.exposure) }}{% if team %}
-  · Team {{ team }}{% endif %}
-  · Database: {% if not status.release %}unknown{% elif status.variables.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
-
-<div class="toolbar">
-  {% if status.routes %}<a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>{% endif %}
-  {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
-  <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
-  {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
-  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="muted">Same image in both</span>
-  {% elif i.env == 'prod' and summary and 'staging' not in summary.envs %}<span class="muted">Promotion requires a staging instance.</span>{% endif %}
-  <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
-</div>
+<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail | short }}</span>{% endif %}
+  <span class="muted"> · {{ i.app }}/{{ i.env }} · team {{ team or 'unknown' }}</span></p>
 
 {% if status.problems %}
 <h2 class="bad">Failing pods</h2>
@@ -37,6 +23,92 @@
 </table>
 {% endif %}
 
+<h2 class="part">Use</h2>
+{% if status.routes %}
+<div class="toolbar">
+  <a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>
+  {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{% endfor %}
+</div>
+{% set reach = exposures.get(status.exposure, status.exposure) %}<p class="muted {{ 'warn' if status.exposure == 'public' else '' }}">{{ reach[:1] | upper }}{{ reach[1:] }}. <span class="muted">Change it under Operate → Who can reach it.</span></p>
+{% else %}
+<p class="muted">No web address: {{ 'a worker, with nothing to open' if not connections.address else 'private, reachable only by the apps that declare a call to it' }}.</p>
+{% endif %}
+
+<h2 class="part">Connect</h2>
+<dl>
+  <dt>Address</dt>
+  <dd>{% if connections.address %}<code>{{ connections.address }}</code> <span class="muted">inside the cluster, for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
+  {% if connections.api %}<dt>API</dt><dd>{% if connections.api.startswith('https://') %}<a href="{{ connections.api }}">{{ connections.api }}</a>{% else %}<code>{{ connections.api }}</code>{% endif %}</dd>{% endif %}
+  <dt>Calls</dt>
+  <dd>{% for name in connections.calls %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
+  <dt>Called by</dt>
+  <dd>{% for name in connections.callers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nobody</span>{% endfor %}</dd>
+  <dt>Publishes</dt>
+  <dd>{% for name in connections.publishes %}<code>{{ i.app }}.{{ name }}</code>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
+  {% if connections.subscribers %}<dt>Its subscribers</dt>
+  <dd>{% for event, name in connections.subscribers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a> <span class="muted">({{ event }})</span>{{ ', ' if not loop.last }}{% endfor %}</dd>{% endif %}
+  <dt>Subscribes to</dt>
+  <dd>{% for name in connections.subscribes %}<a href="/apps/{{ name.split('.')[0] }}/{{ i.env }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
+</dl>
+{% if connections.address %}
+<details class="section disclose">
+  <summary><strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
+  <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
+  <pre><code>calls: [{{ i.app }}]</code></pre>
+  <p class="muted">Afterwards, your app page's <strong>Change calls</strong> form, or:</p>
+  <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
+  <p class="muted">Then, in your code (the stack templates' helper):</p>
+  <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
+platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
+</details>
+{% endif %}
+{% if connections.publishes %}
+<details class="section disclose">
+  <summary><strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
+  <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
+  <pre><code>events: {subscribe: [{{ i.app }}.{{ connections.publishes[0] }}]}</code></pre>
+  <p class="muted">Afterwards, your app page's <strong>Change events</strong> form, or:</p>
+  <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--subscribe {{ i.app }}.{{ connections.publishes[0] }}"</code></pre>
+  <p class="muted">Then, in your code:</p>
+  <pre><code>subscribe("{{ i.app }}.{{ connections.publishes[0] }}", async (event) => { ... })        // TypeScript
+events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>
+</details>
+{% endif %}
+<p class="muted">Every change form on this page opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
+<details class="section disclose">
+  <summary><strong>Change calls</strong> <span class="muted">— which apps {{ i.app }}/{{ i.env }} may call</span></summary>
+  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
+    <fieldset>
+      {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
+      {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=connections.calls | join(', '), hint='App names, comma-separated.') }}
+    </fieldset>
+    {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
+  </form>
+</details>
+<details class="section disclose">
+  <summary><strong>Change events</strong> <span class="muted">— what {{ i.app }}/{{ i.env }} publishes and receives</span></summary>
+  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/events">
+    <fieldset>
+      {{ ui.text_field('events_publish', 'Publishes', connections.publishes | join(', '), name='publish', placeholder='created, cancelled', hint='Event names, comma-separated. Other apps see them as ' ~ i.app ~ '.<event>. What you send replaces the list; empty publishes nothing.') }}
+      {{ ui.text_field('events_subscribe', 'Subscribes to', connections.subscribes | join(', '), name='subscribe', placeholder='orders.created', hint='<app>.<event>, comma-separated. Each must be published by an app with a ' ~ i.env ~ ' instance. Empty subscribes to nothing.') }}
+    </fieldset>
+    {{ ui.submit('Open events PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
+  </form>
+</details>
+
+<h2 class="part">Operate</h2>
+<p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
+  · {% for r in status.replicas %}{{ r.ready }}/{{ r.wanted }} ready{{ ', ' if not loop.last }}{% else %}no replicas{% endfor %}
+  · Database: {% if not status.release %}unknown{% elif status.variables.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
+<div class="toolbar">
+  <a class="button" href="{{ logs }}">Logs and traces ↗</a>
+  <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
+  {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
+  <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
+  {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
+  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="muted">Same image in both</span>
+  {% elif i.env == 'prod' and summary and 'staging' not in summary.envs %}<span class="muted">Promotion requires a staging instance.</span>{% endif %}
+</div>
 <details class="section">
   <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS, environment (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
 <dl>
@@ -73,8 +145,6 @@
 </dl>
 </details>
 
-<h2>Change</h2>
-<p class="muted">Each opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
 <details class="section disclose">
   <summary><strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
@@ -97,16 +167,6 @@
   </form>
 </details>
 
-<details class="section disclose">
-  <summary><strong>Calls</strong> <span class="muted">— calls {{ calls | join(', ') or 'no other app' }}; called by {{ callers | join(', ') or 'no other app' }}</span></summary>
-  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
-    <fieldset>
-      {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
-      {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=calls | join(', '), hint='App names, comma-separated.') }}
-    </fieldset>
-    {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
-  </form>
-</details>
 
 <h2>Recent jobs</h2>
 {% if unit_jobs %}

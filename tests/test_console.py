@@ -58,6 +58,8 @@ CHECKS['kubectl -n console get cronjob console-notifications'] = CHECKS['kubectl
 def fake(units=UNITS, releases=RELEASES, **extra):
     runner = FakeRunner()
     runner.on('kubectl', 'get', 'namespace', stdout=json.dumps({'metadata': {'labels': {'platform.swhurl.com/team': 'payments'}}}))
+    if not any(key.startswith('kubectl get namespaces') for key in extra):
+        runner.on('kubectl', 'get', 'namespaces', stdout=json.dumps({'items': []}))
     runner.on(*cluster.UNITS[:5], stdout=json.dumps({'items': units}))
     runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():
@@ -97,20 +99,23 @@ class IdentityTests(unittest.TestCase):
         self.assertIn('only binds to loopback', err.getvalue())
 
 
-class ServicesTests(unittest.TestCase):
-    def page(self):
-        def web(ns, name, env=None, host=None):
+class ConnectionsTests(unittest.TestCase):
+    """One list of apps serves every reader: team and connections on the list, a map, and Connect on the app page."""
+
+    def cluster(self):
+        def web(ns, name, variables=None, host=None):
             doc = release(ns, name)
             values = doc['spec']['values']
             values['service'] = {'main': {'ports': {'http': {'port': 9000}}}}
-            values['controllers']['main']['containers']['main']['env'] = env or {}
+            values['controllers']['main']['containers']['main']['env'] = variables or {}
             if host:
                 values['ingress'] = {'main': {'hosts': [{'host': host}]}}
             return doc
         releases = [
-            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_API_PATH': '/openapi.json'},
+            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_API_PATH': '/openapi.json',
+                                             'SWHURL_EVENTS_PUBLISH': 'created,paid'},
                 host='staging-orders.homelab.swhurl.com'),
-            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json', 'SWHURL_EVENTS_PUBLISH': 'created,paid'}),
+            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json'}),
             web('reports-staging', 'reports', {'SWHURL_SERVICE_ORDERS_URL': 'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000'}),
             release('job-staging', 'job'),
         ]
@@ -118,37 +123,68 @@ class ServicesTests(unittest.TestCase):
             'SWHURL_EVENTS_SUBSCRIBE': 'orders.created'}
         units = [unit(f'app-{name}') for name in ('orders-staging', 'orders-prod', 'reports-staging', 'job-staging')]
         namespaces = {'items': [{'metadata': {'name': 'orders-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
+                                {'metadata': {'name': 'job-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
                                 {'metadata': {'name': 'reports-staging', 'labels': {'platform.swhurl.com/team': '<b>insights'}}}]}
-        runner = fake(units=units, releases=releases,
-                      **{'kubectl get namespaces -l platform.swhurl.com/app': json.dumps(namespaces)})
-        return runner, client(runner).get('/services', headers=WHO)
+        return fake(units=units, releases=releases, **{'kubectl get namespaces -l platform.swhurl.com/app': json.dumps(namespaces)})
 
-    def test_lists_each_app_with_its_team_address_and_who_calls_whom(self):
-        runner, response = self.page()
-        self.assertEqual(response.status_code, 200, response.text)
-        text = response.text
+    def test_the_list_shows_each_apps_team_and_connections_and_filters_by_team(self):
+        runner = self.cluster()
+        text = client(runner).get('/apps', headers=WHO).text
         self.assertIn('Team payments', text)
         self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
-        self.assertIn('Team unknown', text, 'an app whose namespace has no team label')
-        self.assertIn('<code>http://orders.orders-staging.svc.cluster.local:9000</code>', text)
-        self.assertIn('<code>http://orders.orders-prod.svc.cluster.local:9000</code>', text)
-        self.assertIn('Called by: <a href="#reports">reports</a>', text)
-        self.assertIn('Calls: <a href="#orders">orders</a>', text)
-        self.assertIn('<a href="https://staging-orders.homelab.swhurl.com/openapi.json">', text, 'a routed app: its public API link')
-        self.assertIn('<code>http://orders.orders-prod.svc.cluster.local:9000/openapi.json</code>', text,
-                      'no route: the address inside the cluster')
-        self.assertIn('make app-calls APP=&lt;your app&gt; ENV=staging ARGS="--add orders"', text)
-        self.assertIn('A worker: nothing to call', text)
-        self.assertIn('Publishes: <code>orders.created</code>, <code>orders.paid</code>', text)
-        self.assertIn('Subscribes to: <a href="#orders"><code>orders.created</code></a>', text)
-        self.assertEqual(text.count('Call this from my app'), 2, 'offered for the two web apps only')
+        self.assertIn('called by 1 · publishes 2', text)
+        self.assertIn('<div class="muted">calls 1</div>', text)
+        self.assertIn('<div class="muted">subscribes to 1</div>', text)
+        self.assertIn('Not in production · <a href="/apps/reports/staging/promotion">review promotion</a>', text)
+        self.assertNotIn('href="/services"', text, 'there is one list of apps, not two')
+        payments = client(runner).get('/apps?team=payments', headers=WHO).text
+        self.assertIn('<strong>orders</strong>', payments)
+        self.assertNotIn('<strong>reports</strong>', payments)
         self.assertTrue(all(call[:2] == ('kubectl', 'get') or call[:4] == ('kubectl', '-n', 'flux-system', 'get')
-                            for call in runner.calls), 'the page only reads')
-        self.assertIn('href="/services" class="here"', text)
+                            for call in runner.calls), 'the pages only read')
 
-    def test_unreadable_cluster_is_a_502_page(self):
-        runner = FakeRunner().on('kubectl', returncode=1, stderr='connection refused')
-        self.assertEqual(client(runner).get('/services', headers=WHO).status_code, 502)
+    def test_the_map_draws_calls_and_events_left_to_right(self):
+        found = cluster.app_map(cluster.apps(self.cluster()), 'staging')
+        positions = {node.row.instance.app: (node.x, node.y) for node in found.nodes}
+        self.assertEqual(set(positions), {'orders', 'reports', 'job'}, 'staging only')
+        self.assertLess(positions['reports'][0], positions['orders'][0], 'a caller is left of its callee')
+        self.assertLess(positions['orders'][0], positions['job'][0], 'a publisher is left of its subscriber')
+        self.assertEqual(sorted((kind, source, target) for kind, _, source, target in found.edges),
+                         [('call', 'reports', 'orders'), ('event', 'orders', 'job')])
+        text = client(self.cluster()).get('/apps?view=map', headers=WHO).text
+        self.assertIn('<svg class="map"', text)
+        self.assertEqual(text.count('<path class="call"'), 1)
+        self.assertEqual(text.count('<path class="event"'), 1)
+        self.assertIn('<a href="/apps/orders/staging"><rect', text)
+        self.assertIn('<title>reports calls orders</title>', text)
+        self.assertIn('No app is deployed in prod for team nobody', client(self.cluster()).get(
+            '/apps?view=map&env=prod&team=nobody', headers=WHO).text)
+        self.assertEqual(cluster.app_map([], 'staging').nodes, [])
+
+    def test_the_old_services_address_goes_to_the_map(self):
+        response = client(self.cluster()).get('/services', headers=WHO, follow_redirects=False)
+        self.assertEqual((response.status_code, response.headers['location']), (301, '/apps?view=map'))
+
+    def test_connections_read_the_same_whichever_side_declares_them(self):
+        rows = {(row.instance.app, row.instance.env): row.connections for row in cluster.apps(self.cluster())}
+        orders = rows['orders', 'staging']
+        self.assertEqual((orders.address, orders.api), ('http://orders.orders-staging.svc.cluster.local:9000',
+                                                        'https://staging-orders.homelab.swhurl.com/openapi.json'))
+        self.assertEqual((orders.callers, orders.publishes, orders.subscribers),
+                         (('reports',), ('created', 'paid'), (('created', 'job'),)))
+        self.assertEqual(rows['orders', 'prod'].api, 'http://orders.orders-prod.svc.cluster.local:9000/openapi.json',
+                         'no route: the address inside the cluster')
+        self.assertEqual(rows['orders', 'prod'].subscribers, (), 'production has its own connections')
+        self.assertEqual((rows['job', 'staging'].address, rows['job', 'staging'].subscribes), ('', ('orders.created',)))
+        self.assertEqual(rows['reports', 'staging'].summary, 'calls 1')
+        self.assertEqual(cluster.Connections().summary, '')
+
+    def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):
+        runner = fake(**{'kubectl get namespaces -l platform.swhurl.com/app': ''})
+        runner._rules.insert(0, (('kubectl', 'get', 'namespaces'), Result((), 1, '', 'forbidden')))
+        rows = cluster.apps(runner)
+        self.assertTrue(rows)
+        self.assertEqual({row.team for row in rows}, {''})
 
 
 class AppsTests(unittest.TestCase):
@@ -171,9 +207,8 @@ class AppsTests(unittest.TestCase):
         units = [unit('app-web-staging'), unit('app-web-prod'), unit('app-pending-staging')]
         releases = [release('web-staging', 'web', sqlite=True), release('web-prod', 'web')]
         text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
-        self.assertEqual(text.count('Database: <strong class="db-kind">SQLite</strong>'), 1)
-        self.assertEqual(text.count('Database: No SQLite'), 1)
-        self.assertEqual(text.count('Database: unknown'), 1)
+        self.assertEqual(text.count('<strong class="db-kind">SQLite</strong>'), 1, 'said only where there is one')
+        self.assertEqual(text.count('release unknown'), 1)
 
     def test_unit_names_map_to_instances(self):
         self.assertEqual(cluster.instance_of_unit('app-my-api-staging'), cluster.ops.Instance('my-api', 'staging'))
@@ -266,7 +301,7 @@ class AppSummaryTests(unittest.TestCase):
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
         self.assertIn('Staging and prod differ', text)
-        self.assertIn('href="/apps/web/staging/promotion">Review promotion</a>', text)
+        self.assertIn('Staging and prod differ · <a href="/apps/web/staging/promotion">review promotion</a>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
 
     def test_every_page_names_app_instances_the_same_way(self):
@@ -311,9 +346,14 @@ class AppDetailTests(unittest.TestCase):
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 3, 'the app page uses the New app form layout')
+        self.assertEqual(text.count('<form class="wizard"'), 4, 'the app page uses the New app form layout')
         self.assertIn('action="/apps/web/prod/calls"', text)
-        self.assertIn('calls no other app; called by no other app', text)
+        self.assertIn('action="/apps/web/prod/events"', text)
+        self.assertLess(text.index('>Use</h2>'), text.index('>Connect</h2>'))
+        self.assertLess(text.index('>Connect</h2>'), text.index('>Operate</h2>'))
+        self.assertEqual(text.count('<h1>web</h1>'), 1, 'the app is named once; the environment is the tab')
+        self.assertIn('Logs and traces', text)
+        self.assertIn('search?where=ServiceName%3A%22web%22', text)
         self.assertIn('action="/apps/web/prod/remove"', text)
         self.assertIn('<section class="danger">', text)
         self.assertIn('<strong>Failing</strong>', text, 'a failing pod makes the verdict')

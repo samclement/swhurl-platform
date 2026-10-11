@@ -17,7 +17,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from markupsafe import Markup, escape
 from starlette.applications import Starlette
@@ -28,7 +28,7 @@ from starlette.responses import PlainTextResponse, RedirectResponse, Response, S
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from swhurl.apps import calling, contract, new, ops, repo
+from swhurl.apps import contract, new, ops, repo
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import actions, changes, cluster, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
@@ -111,10 +111,19 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return reading(request, 'overview.html', read)
 
     def apps(request: Request) -> Response:
-        return reading(request, 'apps.html', lambda: {'apps': cluster.summaries(cluster.apps(runner))})
+        """Every app as a list (optionally one team's) or, with ?view=map, one environment as a map of who calls whom."""
+        view, team = request.query_params.get('view', 'list'), request.query_params.get('team', '')
+        env = request.query_params.get('env', 'staging')
 
-    def services(request: Request) -> Response:
-        return reading(request, 'services.html', lambda: {'services': cluster.services(runner)})
+        def read():
+            rows = cluster.apps(runner)
+            summaries = cluster.summaries(rows)
+            teams = sorted({summary.team for summary in summaries if summary.team})
+            return {'apps': [summary for summary in summaries if not team or summary.team == team], 'teams': teams,
+                    'team': team, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
+                    'map': cluster.app_map([row for row in rows if not team or row.team == team],
+                                           env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
+        return reading(request, 'apps.html', read)
 
     def read_app(request: Request) -> Response:
         found = cluster.instance(request.path_params['app'], request.path_params['env'])
@@ -135,8 +144,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
-        return page(request, 'app.html', status=status, team=ops.team_of(runner, found),
-                    calls=calling.declared_calls(status.variables), callers=calling.allowed_callers(status.variables),
+        row = summary.envs.get(found.env) if summary else None
+        logs = (f'https://clickstack.{contract.COOKIE_DOMAIN}/search?'
+                + urlencode({'where': f'ServiceName:"{found.app}"', 'whereLanguage': 'lucene'}))
+        return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
+                    connections=row.connections if row else cluster.Connections(), logs=logs,
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
@@ -336,7 +348,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         """Promote, scale, change access to, change the calls of or remove an instance: a PR made by the clone's app-* command."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = cluster.instance(app, env)
-        if found is None or change not in ('promote', 'scale', 'expose', 'calls', 'remove'):
+        if found is None or change not in ('promote', 'scale', 'expose', 'calls', 'events', 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
@@ -367,6 +379,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             elif change == 'calls':
                 command, argv, target = 'app-calls', [app, env, *changes.calls_args(form)], f'{app}/{env}'
                 title, make = f'apps: change what {app}/{env} calls', f'make app-calls APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+            elif change == 'events':
+                command, argv, target = 'app-events', [app, env, *changes.events_args(form)], f'{app}/{env}'
+                title, make = f'apps: change the events of {app}/{env}', f'make app-events APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
                 title, make = f'apps: remove {app}/{env}', f'make app-remove APP={app} ENV={env}'
@@ -406,7 +421,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return PlainTextResponse('ok\n')
 
     return Starlette(
-        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', services),
+        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')),
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
                 Route('/apps/{app}/staging/promotion', review_promotion),

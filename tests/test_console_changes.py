@@ -420,6 +420,9 @@ class ChangeAppRouteTests(unittest.TestCase):
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
+            ('/apps/hello/staging/calls', {'add': 'orders, billing', 'remove': ''},
+             ('app-calls', 'hello', 'staging', '--add=orders,billing'), 'hello/staging',
+             'console/calls-hello-staging-abc1234', '[console] apps: change what hello/staging calls'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):
@@ -439,6 +442,7 @@ class ChangeAppRouteTests(unittest.TestCase):
                  ('/apps/hello/staging/promote', PROMOTION, True),
                  ('/apps/hello/staging/promote', {**PROMOTION, 'hold': 'on'}, False),
                  ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
+                 ('/apps/hello/staging/calls', {'remove': 'orders'}, False),
                  ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
         for path, form, merges in cases:
             with self.subTest(path=path, form=form):
@@ -453,6 +457,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         c, _ = self.client(runner)
         for path, form, code in (('/apps/hello/prod/promote', {}, 400), ('/apps/hello/prod/scale', {}, 400),
                                  ('/apps/hello/prod/scale', {'replicas': '2; rm'}, 400), ('/apps/hello/prod/delete', {}, 404),
+                                 ('/apps/hello/prod/calls', {}, 400), ('/apps/hello/prod/calls', {'add': '--root=/'}, 400),
                                  ('/apps/Hello/prod/remove', {}, 404), ('/apps/hello/dev/remove', {}, 404)):
             with self.subTest(path=path, form=form):
                 self.assertEqual(c.post(path, data=form, headers=WHO).status_code, code)

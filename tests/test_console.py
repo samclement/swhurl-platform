@@ -257,7 +257,9 @@ class AppDetailTests(unittest.TestCase):
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 2, 'the app page uses the New app form layout')
+        self.assertEqual(text.count('<form class="wizard"'), 3, 'the app page uses the New app form layout')
+        self.assertIn('action="/apps/web/prod/calls"', text)
+        self.assertIn('calls no other app; called by no other app', text)
         self.assertIn('action="/apps/web/prod/remove"', text)
         self.assertIn('<section class="danger">', text)
         self.assertIn('<strong>Failing</strong>', text, 'a failing pod makes the verdict')

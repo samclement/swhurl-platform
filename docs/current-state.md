@@ -1006,3 +1006,13 @@ Commit `21996f6` gave every instance `SWHURL_NOTIFY_URL` and a token for the aud
 - Limits: with the app's own token, naming another app or `prod` got 403. Of 31 further calls, 29 were sent and 2 were not: the service answered 429 after 30 in the hour, the helper returned false and logged why, and the topic held exactly 30 of the app's messages.
 - The throwaway channel was removed again with `make team-channel NAME=payments ARGS=--remove`. `swhurl-try-14` (repository, package and staging instance) is left for the operator to remove.
 - Not exercised: the Kotlin helper on the cluster (its tests and build passed), a worker app sending, and the reworked Teams page forms in a signed-in browser.
+
+## Default app alerts, N4 (11 October 2026)
+
+Commit `f1a7278` gave every app two [default alerts](apps.md#alerts), kept by the dashboard job, and the notify service a `POST /v1/alert` for ClickStack's webhook; the publish run pinned `src-5884d1b541cab5c6` (`72186c1`).
+
+- Spike first, with a throwaway alert and webhook that were deleted again: the HyperDX API created and deleted an alert on a dashboard tile; a webhook's `headers` were not stored; a fired alert sent its name as the title and a body with a `Group:` line naming the namespace, the value and the time range.
+- `make check` passed (578 tests). After `make flux-reconcile`, `make clickstack-notify-webhook` created the `swhurl notify` webhook (the secret was never printed), and the next run of the dashboard job created 18 alerts, two for each of the nine apps; the run after reported `9 app(s) have their default alerts` and wrote nothing.
+- Fired and recovered: with a throwaway channel on team payments, twelve failed requests to `swhurl-try-14` (`/call/nope`, HTTP 502) produced `swhurl-try-14/staging alert: failed requests or runs` on the team's topic at 18:10:02 UTC, high priority, with `12 meets or exceeds 5`, the time range and a link to the dashboard; `swhurl-try-14/staging recovered: failed requests or runs` followed at 18:15:01 with normal priority. The service logged the alert as accepted from ClickStack for one channel and delivered.
+- The throwaway channel was removed afterwards; no team has a channel now, so the 18 alerts deliver to nobody until one is set.
+- Not exercised: the `error-logs` preset firing (the same path), a wrong webhook secret from ClickStack itself (unit-tested; the live endpoint was reached only by the real webhook), an alert for a production instance, and alerts being removed with their app.

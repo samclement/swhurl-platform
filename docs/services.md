@@ -206,7 +206,7 @@ flowchart LR
 
 **What a channel receives.** A copy of each message about the team's apps, with the same title, priority and link. The platform topic still receives every message, and the console's own messages, the notification monitor and the [Flux failure Alert](#current-notification-behavior) go only there. The [notify service](#notify-service) reads each app's team from its namespace label and the channel addresses from the `notify` namespace, whose only other Secret is Helm's record of the service's own release (chart values, no credential).
 
-**When a channel cannot be reached.** Its copy stays in the notify service's outbox and is retried for two hours, then dropped with an error in the service's logs; it never delays other channels or the platform topic. The same happens to a channel whose Secret is missing. `make verify-platform` (check `channels`) fails when the routes in the cluster are not Git's or a channel has no Secret.
+**When a channel cannot be reached.** Its copy stays in the notify service's outbox and is retried for two hours, then dropped with an error in the service's logs; it never delays other channels or the platform topic. The same happens to a channel whose Secret is missing. `make verify-platform` (check `channels`) fails when the routes in the cluster are not Git's or a channel has no Secret, and warns about each team that owns apps and has no channel, since their alerts and messages reach nobody.
 
 ### Notify service
 

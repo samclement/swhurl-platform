@@ -202,6 +202,32 @@ class EditTests(unittest.TestCase):
         self.assertEqual(self.network_policy('staging'), traefik)
         self.assertEqual(self.network_policy('prod'), traefik, 'the other environment is untouched')
 
+    def alert_settings(self, env):
+        metadata = yaml.safe_load((self.root / 'apps/hello' / env / 'namespace.yaml').read_text())['metadata']
+        return (metadata.get('annotations') or {}).get('platform.swhurl.com/alerts')
+
+    def test_alert_settings_change_in_every_environment_and_go_back_to_the_defaults(self):
+        _, out = self.quiet(edit.set_alerts, self.root, 'hello', {'error-logs': '20'})
+        self.assertEqual((self.alert_settings('staging'), self.alert_settings('prod')), ('error-logs=20', 'error-logs=20'))
+        self.assertIn('[OK] hello: alerts error-logs >= 20, errors >= 5 (staging, prod)', out)
+        self.quiet(edit.set_alerts, self.root, 'hello', {'errors': 'none'})
+        self.assertEqual(self.alert_settings('prod'), 'error-logs=20,errors=none', 'a change keeps what was set before')
+        self.quiet(edit.set_alerts, self.root, 'hello', {'error-logs': '5'})
+        self.assertEqual(self.alert_settings('staging'), 'errors=none', 'a default is not written down')
+        self.quiet(edit.set_alerts, self.root, 'hello', none=True)
+        self.assertEqual(self.alert_settings('staging'), 'none')
+        self.quiet(edit.set_alerts, self.root, 'hello', default=True)
+        self.assertEqual((self.alert_settings('staging'), self.alert_settings('prod')), (None, None))
+        self.assertNotIn('annotations: {}', (self.root / 'apps/hello/staging/namespace.yaml').read_text())
+        for kwargs, message in (({'changes': {'errors': 'many'}}, "errors='many': give a number from 1"),
+                                ({'default': True}, 'hello already has those alert settings'),
+                                ({}, 'give thresholds'), ({'changes': {'errors': '9'}, 'none': True}, 'give thresholds')):
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_alerts(self.root, 'hello', **kwargs)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(edit.main_alerts(['hello', '--errors', 'none', '--error-logs', '9', '--root', str(self.root)]), 0)
+        self.assertEqual(self.alert_settings('prod'), 'error-logs=9,errors=none')
+
     def test_team_moves_every_environment_and_fills_in_missing_isolation(self):
         (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  payments: {}\n')
         for env in ('staging', 'prod'):  # an instance from before quotas and policies existed

@@ -166,6 +166,7 @@ secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
 exposure: authenticated-web   # optional; default: web apps authenticated-web, workers private
 team: payments          # optional: a name in apps/teams.yaml (default platform)   --team
+alerts: error-logs=20,errors=none   # optional: its own default-alert thresholds, or none   --alerts
 calls: [orders]         # optional: apps this one calls; each must exist in staging   --calls
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
 events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
@@ -525,7 +526,18 @@ flowchart LR
 
 A firing alert reaches the app's team's [notification channel](services.md#notification-channels) as `orders/staging alert: error logs`, high priority, with the count, the time range and a link to the dashboard; its recovery arrives as `orders/staging recovered: error logs`. A team without a channel receives nothing, so give the team one first. The operator's platform topic does not get app alerts.
 
-The rules are in [`app_alerts.py`](../tools/swhurl/app_alerts.py). Each run of the dashboard job creates the missing ones, replaces any that differ (an edit made in the HyperDX UI is lost, as for dashboards) and deletes those of apps that are gone; alerts not named `swhurl:...` are never touched, so add your own beside them. They need the `swhurl notify` webhook in HyperDX: `make clickstack-notify-webhook` creates it ([services](services.md#notify-service)), and until it exists the job warns and creates none.
+The rules are in [`app_alerts.py`](../tools/swhurl/app_alerts.py). Each run of the dashboard job creates the missing ones, replaces any that differ (an edit made in the HyperDX UI is lost, as for dashboards) and deletes those of apps that are gone; alerts not named `swhurl:...` are never touched, so add your own beside them. They need the `swhurl notify` webhook in HyperDX: `make clickstack-notify-webhook` creates it ([services](services.md#notify-service)). Until it exists the job fails, so `make verify-platform` and the console's Platform page show the dashboard and alert sync as failing, with that command in the message.
+
+**An app's own settings.** An app that is noisier or quieter than the defaults says so once, for every environment:
+
+```
+make app-alerts APP=orders ARGS="--error-logs 20"      # fire at 20 error logs in 5 minutes instead of 5
+make app-alerts APP=orders ARGS="--errors none"        # no alert on failed requests; error logs stay
+make app-alerts APP=orders ARGS="--none"               # no default alerts at all
+make app-alerts APP=orders ARGS="--default"            # back to the platform's
+```
+
+or at creation with `alerts:` in `swhurl.yaml` (`alerts: error-logs=20,errors=none`, or `alerts: none`). It is the `platform.swhurl.com/alerts` annotation on the app's namespaces, so it follows a promotion; `make check-apps` (rule `alerts`) refuses a value it cannot read. The word is `none`, not `off`, which YAML would read as false.
 
 ## Remove an app
 

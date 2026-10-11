@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT
+from swhurl import ROOT, app_alerts
 from swhurl.platform import base_domain, label
 
 CHART = 'app-template'
@@ -175,7 +175,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides', 'events'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides', 'events', 'alerts'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -253,6 +253,12 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         defaults['calls'] = calls
     if field('team', str):
         defaults['team'] = doc['team']  # checked against the registry by app-new
+    if field('alerts', str):
+        try:
+            app_alerts.thresholds(doc['alerts'])
+        except ValueError as error:
+            raise fail(f'alerts: {error}') from None
+        defaults['alerts'] = doc['alerts']
     field('stack', str)
     return defaults
 

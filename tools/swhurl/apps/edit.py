@@ -21,7 +21,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, app_alerts
 from swhurl.apps import events, helmrelease, nkeys, ops, promotion
 from swhurl.apps.calling import (
     callee_address,
@@ -174,6 +174,46 @@ def set_team(root: Path, app: str, name: str) -> Path:
     for path, text in edits:
         path.write_text(text)
     print(f'[OK] {app}: team {name} ({", ".join(found)})')
+    return root / 'apps' / app / found[0]
+
+
+def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, none: bool = False,
+               default: bool = False) -> Path:
+    """Change an app's default alerts in every environment: a threshold or ``none`` per alert (``changes``),
+    no alert at all, or back to the defaults. The dashboard job replaces the alerts within a minute."""
+    found = [env for env in ENVIRONMENTS if (root / 'apps' / app / env / 'namespace.yaml').is_file()]
+    if not found:
+        instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
+    if sum((bool(changes), none, default)) != 1:
+        raise EditError('give thresholds (--error-logs, --errors), or --none, or --default')
+    namespaces = [YamlFile(root / 'apps' / app / env / 'namespace.yaml') for env in found]
+    current = next((str(annotations[app_alerts.ANNOTATION]) for n in namespaces
+                    if app_alerts.ANNOTATION in (annotations := mapping(n.data, 'metadata').get('annotations') or {})), '')
+    try:
+        settings = app_alerts.thresholds(current)
+        for key, value in (changes or {}).items():
+            settings |= {key: app_alerts.thresholds(f'{key}={value}')[key]}
+    except ValueError as error:
+        raise EditError(str(error)) from None
+    spec = app_alerts.OFF if none else '' if default else app_alerts.spec_of(settings)
+    edits = 0
+    for namespace in namespaces:
+        metadata = mapping(namespace.data, 'metadata')
+        annotations = metadata.get('annotations') or {}
+        if str(annotations.get(app_alerts.ANNOTATION, '')) == spec:
+            continue
+        if spec:
+            mapping(metadata, 'annotations', create=True)[app_alerts.ANNOTATION] = spec
+        else:
+            del annotations[app_alerts.ANNOTATION]
+            if not annotations:
+                del metadata['annotations']
+        namespace.save()
+        edits += 1
+    if not edits:
+        raise EditError(f'{app} already has those alert settings')
+    described = ', '.join(f'{key} {"none" if value is None else f">= {value}"}' for key, value in app_alerts.thresholds(spec).items())
+    print(f'[OK] {app}: alerts {described} ({", ".join(found)})')
     return root / 'apps' / app / found[0]
 
 
@@ -460,6 +500,21 @@ def main_team(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: set_team(args.root.resolve(), args.app, args.team), True)
+
+
+def main_alerts(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-alerts', description='Change an app\'s default alerts: their thresholds, or none')
+    p.add_argument('app')
+    for preset in app_alerts.PRESETS:
+        p.add_argument(f'--{preset.key}', metavar='N|none', help=f'{preset.label}: fire at N in {preset.interval} '
+                                                                  f'(default {preset.threshold}), or none')
+    p.add_argument('--none', action='store_true', help='no default alerts for this app')
+    p.add_argument('--default', action='store_true', help='back to the defaults')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    changes = {preset.key: value for preset in app_alerts.PRESETS
+               if (value := getattr(args, preset.key.replace('-', '_'))) is not None}
+    return run(lambda: set_alerts(args.root.resolve(), args.app, changes, none=args.none, default=args.default), True)
 
 
 def main_calls(argv: list[str] | None = None) -> int:

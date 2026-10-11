@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import contract, ops
+from swhurl.apps import contract, helmrelease, ops
 from swhurl.apps import events as nats
 from swhurl.apps.new import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
@@ -218,7 +218,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     args.host = host
     args.team = namespace['metadata'].get('labels', {}).get(contract.TEAM, contract.DEFAULT_TEAM)
     if kind == 'web':  # the NetworkPolicy admits Traefik on the app's own port
-        args.port = values['service']['main']['ports']['http'].get('port', args.port)
+        args.port = helmrelease.port(source) or args.port
     args.health_path = '/' if kind == 'web' else None  # the reviewed probes replace generator defaults
     args.secret_keys = keys
     args.issuer = (route or {}).get('annotations', {}).get('cert-manager.io/cluster-issuer', 'letsencrypt-prod')
@@ -284,28 +284,28 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
                 labels[contract.ENVIRONMENT] = 'prod'
         # What the platform derives per environment: production's own identity; its callers are
         # worked out from the production instances that exist (edit.sync_env, after this).
-        env = values['controllers']['main']['containers']['main'].get('env') or {}
+        main, workload = helmrelease.container(release), helmrelease.workload(release)
+        env = main.get('env') or {}
         if contract.ENV_ENV in env:
             env[contract.ENV_ENV] = 'prod'
         env.pop(contract.CALLERS_ENV, None)
         for key in (nats.PUBLISH_ENV, nats.SUBSCRIBE_ENV, nats.URL_ENV, nats.NKEY_ENV):
             env.pop(key, None)
-        main = values['controllers']['main']
         staging_key = {'secretRef': {'name': nats.secret_name(app)}}
-        if staging_key in main['containers']['main'].get('envFrom', []):
-            main['containers']['main']['envFrom'].remove(staging_key)
-            if not main['containers']['main']['envFrom']:
-                del main['containers']['main']['envFrom']
+        if staging_key in main.get('envFrom', []):
+            main['envFrom'].remove(staging_key)
+            if not main['envFrom']:
+                del main['envFrom']
         reload_key = 'secret.reloader.stakater.com/reload'
-        reloads = [name for name in str((main.get('annotations') or {}).get(reload_key, '')).split(',')
+        reloads = [name for name in str((workload.get('annotations') or {}).get(reload_key, '')).split(',')
                    if name and name != nats.secret_name(app)]
-        if reload_key in (main.get('annotations') or {}):
+        if reload_key in (workload.get('annotations') or {}):
             if reloads:
-                main['annotations'][reload_key] = ','.join(reloads)
+                workload['annotations'][reload_key] = ','.join(reloads)
             else:
-                del main['annotations'][reload_key]
-                if not main['annotations']:
-                    del main['annotations']
+                del workload['annotations'][reload_key]
+                if not workload['annotations']:
+                    del workload['annotations']
         if args.exposure != 'private':
             route = values['ingress']['main']
             route['hosts'][0]['host'] = args.host

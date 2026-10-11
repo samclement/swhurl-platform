@@ -10,9 +10,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import platform
-from swhurl.apps import ops, promotion
+from swhurl.apps import helmrelease, ops, promotion
 from swhurl.apps.yaml_file import EditError
-from swhurl.console import changes, cluster
+from swhurl.console import changes
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 
@@ -53,7 +53,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     if decision.outcome == 'create':
         args = promotion.first_args(root, app, source, preview=True)
     needs_host = decision.outcome == 'create' and exposure == 'public'
-    addresses = cluster.release_hosts(target) if target else ((args.host,) if args and args.host else ())
+    addresses = helmrelease.hosts(target) if target else ((args.host,) if args and args.host else ())
     return {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
             'rollback': decision.rollback, 'revision': status.applied_revision,
             'configuration': promotion.fingerprint(root, app, 'staging'),

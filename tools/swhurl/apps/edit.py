@@ -23,7 +23,7 @@ from pathlib import Path
 
 from swhurl import ROOT
 from swhurl.apps import events as nats
-from swhurl.apps import nkeys, ops, promotion
+from swhurl.apps import helmrelease, nkeys, ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     CALLERS_ENV,
@@ -86,12 +86,12 @@ def container(release: dict) -> dict:
     return mapping(mapping(controller(release), 'containers'), 'main')
 
 
-def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_values: dict, *,
+def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: dict, *,
                     listed: tuple[str, ...] = (), unlisted: tuple[str, ...] = ()) -> list[tuple[Path, str]]:
     """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them
     (and ``listed``, and no longer ``unlisted``: the event files, which sync_env writes or deletes)."""
-    port = service_port(app_values)
-    callers = allowed_callers(mapping(container_of(app_values), 'env') if 'env' in container_of(app_values) else {})
+    port = service_port(values(release))
+    callers = allowed_callers(helmrelease.variables(release))
     files = isolation_files(app, f'{app}-{env}', exposure, port, callers)
     edits = [(instance / name, text) for name, text in files.items()]
     kustomization = YamlFile(instance / 'kustomization.yaml')
@@ -189,10 +189,6 @@ def users_edit(root: Path) -> list[tuple[Path, str]]:
     return [found] if found else []
 
 
-def container_of(app_values: dict) -> dict:
-    return mapping(mapping(mapping(mapping(app_values, 'controllers'), 'main'), 'containers'), 'main')
-
-
 def service_port(app_values: dict) -> int | None:
     """The app's HTTP port, or None for a worker."""
     if 'service' not in app_values:
@@ -256,7 +252,7 @@ def sync_env(root: Path, env: str) -> list[Path]:
             watch_namespace(root, f'{app}-{env}')
         edits.append((doc.path, doc.render()))
         edits += event_files
-        edits += isolation_edits(instance, app, env, exposure, app_values, listed=listed, unlisted=unlisted)
+        edits += isolation_edits(instance, app, env, exposure, doc.data, listed=listed, unlisted=unlisted)
         deletions += [instance / name for name in unlisted if (instance / name).exists()]
     changed = [(path, text) for path, text in edits if not path.exists() or path.read_text() != text]
     for path, text in changed:
@@ -400,8 +396,7 @@ def team(root: Path, app: str, name: str) -> Path:
         if labels.get(TEAM) != name:
             labels[TEAM] = name
             edits.append((namespace.path, namespace.render()))
-        wanted = isolation_edits(instance, app, env, labels.get(EXPOSURE),
-                                 values(YamlFile(instance / 'helmrelease.yaml').data))
+        wanted = isolation_edits(instance, app, env, labels.get(EXPOSURE), YamlFile(instance / 'helmrelease.yaml').data)
         edits += [(path, text) for path, text in wanted if not path.exists() or path.read_text() != text]
     if not edits:
         raise EditError(f'{app} already belongs to {name}')
@@ -562,7 +557,7 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
     # Render every file before writing any, so unsupported YAML cannot cause a
     # partially saved exposure edit. Policy still validates the resulting files.
     edits = [(file.path, file.render()) for file in (document, namespace, unit)]
-    edits += isolation_edits(instance, app, env, exposure, app_values)
+    edits += isolation_edits(instance, app, env, exposure, document.data)
     for path, text in edits:
         path.write_text(text)
     print(f'[OK] {app}/{env}: {current} -> {exposure}' + (f' at https://{host}' if host else ' (no route)'))

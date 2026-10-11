@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import new, promotion
+from swhurl.apps import helmrelease, new, promotion
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
@@ -89,7 +89,7 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 (shutil.copytree if src.is_dir() else shutil.copyfile)(src, dst)
         source = json.loads(json.dumps(source))
-        source['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(meta['image'])
+        helmrelease.container(source)['image'] = new.parse_image(meta['image'])
         promotion.create(work, app, source, runner=runner)
         expected_files = sorted([p.relative_to(work).as_posix() for p in (work / 'apps' / app / 'prod').iterdir()]
                                 + [f'clusters/home/app-{app}-prod.yaml', 'clusters/home/kustomization.yaml'])

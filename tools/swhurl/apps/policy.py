@@ -73,6 +73,7 @@ import yaml
 
 from swhurl import ROOT, platform
 from swhurl.apps import events as nats
+from swhurl.apps import helmrelease
 from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
@@ -116,8 +117,8 @@ WORKLOAD_KINDS = {'Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'}
 def instances() -> list[Path]:
     found = []
     for base in (ROOT / r for r in INSTANCE_ROOTS):
-        for helmrelease in sorted(base.glob('*/*/helmrelease.yaml')):
-            found.append(helmrelease.parent)
+        for release_file in sorted(base.glob('*/*/helmrelease.yaml')):
+            found.append(release_file.parent)
     return found
 
 
@@ -221,8 +222,8 @@ def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> li
                                     f'(allowed {QUOTA}, less {QUOTA_HEADROOM} kept free)'))
 
     routed = labels.get(EXPOSURE) in ('authenticated-web', 'public')
-    port = release_port(releases[0])
-    callers = allowed_callers(release_env(releases[0]))
+    port = helmrelease.port(releases[0])
+    callers = allowed_callers(helmrelease.variables(releases[0]))
     expected = network_policy(app, namespace, port if routed else None, port, callers)['spec']
     policies = [d for d in docs if d['kind'] == 'NetworkPolicy']
     if any(not (d['spec'].get('podSelector') or {}).get('matchLabels') for d in policies):
@@ -236,26 +237,14 @@ def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> li
     return violations
 
 
-def release_port(release: dict) -> int | None:
-    values = release['spec'].get('values') or {}
-    return ((((values.get('service') or {}).get('main') or {}).get('ports') or {}).get('http') or {}).get('port')
-
-
-def release_env(release: dict) -> dict:
-    values = release['spec'].get('values') or {}
-    env = (((((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {})
-           .get('env') or {})
-    return env if isinstance(env, dict) else {}
-
-
 def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]:
     """The identity and call-tokens rules for one rendered instance."""
     violations: list[tuple[str, str]] = []
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
     if not releases:
         return violations
-    app, env = releases[0]['metadata']['name'], release_env(releases[0])
-    wanted = identity_env(app, labels.get(ENVIRONMENT), release_port(releases[0]) is not None, keys)
+    app, env = releases[0]['metadata']['name'], helmrelease.variables(releases[0])
+    wanted = identity_env(app, labels.get(ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
     wrong = [key for key, value in wanted.items() if env.get(key) != value]
     if wrong:
         violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; make app-sync writes them'))
@@ -283,12 +272,10 @@ def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]
 
 def event_rule(docs: list[dict], release: dict, labels: dict) -> list[tuple[str, str]]:
     """The events rule for one rendered instance."""
-    app, env, variables = release['metadata']['name'], labels.get(ENVIRONMENT), release_env(release)
+    app, env, variables = release['metadata']['name'], labels.get(ENVIRONMENT), helmrelease.variables(release)
     publishes, subscribes = nats.published(variables), nats.subscribed(variables)
     declared = [d for d in docs if d['kind'] in ('Stream', 'Consumer')]
-    values = release['spec'].get('values') or {}
-    main = (((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {}
-    referenced = {'secretRef': {'name': nats.secret_name(app)}} in (main.get('envFrom') or [])
+    referenced = nats.secret_name(app) in helmrelease.secret_references(release)
     problems = []
     if not (publishes or subscribes):
         if declared or referenced or variables.get(nats.URL_ENV) or variables.get(nats.NKEY_ENV):
@@ -445,8 +432,7 @@ def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[s
                 doc['resources'] = [r for r in doc.get('resources') or []
                                     if r not in (IMAGE_AUTOMATION_FILE, nats.EVENTS_FILE, nats.SECRET_FILE)]
             if doc.get('kind') == 'HelmRelease':  # the reference to this environment's event key
-                main = ((((doc.get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main') or {})
-                container = (main.get('containers') or {}).get('main') or {}
+                container = helmrelease.container(doc)
                 refs = [ref for ref in container.get('envFrom') or []
                         if ref != {'secretRef': {'name': nats.secret_name(doc['metadata']['name'])}}]
                 if 'envFrom' in container:
@@ -486,22 +472,22 @@ def calls(instances: list[Path]) -> dict[Path, list[str]]:
         peers = {other.parent.name: doc for other, doc in releases.items()
                  if other.name == env and other.parent.parent == instance.parent.parent}
         found = []
-        for callee in declared_calls(release_env(release)):
+        for callee in declared_calls(helmrelease.variables(release)):
             target = peers.get(callee)
-            if target is None or release_port(target) is None:
+            if target is None or helmrelease.port(target) is None:
                 found.append(f'calls {callee}, which is not a web app with a {env} instance')
                 continue
-            if release_env(release)[service_env(callee)] != service_url(callee, release_port(target)):
-                found.append(f"{service_env(callee)} is not {callee}'s address {service_url(callee, release_port(target))}")
-            if app not in allowed_callers(release_env(target)):
+            if helmrelease.variables(release)[service_env(callee)] != service_url(callee, helmrelease.port(target)):
+                found.append(f"{service_env(callee)} is not {callee}'s address {service_url(callee, helmrelease.port(target))}")
+            if app not in allowed_callers(helmrelease.variables(target)):
                 found.append(f'calls {callee}, which does not allow it')
-        for caller in allowed_callers(release_env(release)):
-            if caller not in peers or app not in declared_calls(release_env(peers[caller])):
+        for caller in allowed_callers(helmrelease.variables(release)):
+            if caller not in peers or app not in declared_calls(helmrelease.variables(peers[caller])):
                 found.append(f'allows {caller}, which does not declare a call to it')
         if found:
             problems[instance] = [f'calls: {problem}; make app-sync rewrites both sides' for problem in found]
-        missing = [f'{publisher}.{event}' for publisher, event in nats.subscribed(release_env(release))
-                   if publisher not in peers or event not in nats.published(release_env(peers[publisher]))]
+        missing = [f'{publisher}.{event}' for publisher, event in nats.subscribed(helmrelease.variables(release))
+                   if publisher not in peers or event not in nats.published(helmrelease.variables(peers[publisher]))]
         if missing:
             problems.setdefault(instance, []).append(
                 f'events: subscribes to {", ".join(missing)}, which no app of {env} publishes')
@@ -523,8 +509,7 @@ def platform_image(instance: Path) -> list[str]:
     """Why ``<app>/<env>`` is not an app made from a stack template (rule platform-image)."""
     app, env = instance.parent.name, instance.name
     text = (instance / 'helmrelease.yaml').read_text()
-    values = (yaml.safe_load(text).get('spec') or {}).get('values') or {}
-    image = ((((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {}).get('image') or {}
+    image = helmrelease.image(yaml.safe_load(text))
     expected = f'ghcr.io/{APP_OWNER}/{app}'
     problems = []
     if image.get('repository') != expected:

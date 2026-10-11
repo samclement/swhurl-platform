@@ -24,6 +24,8 @@ from pathlib import Path
 
 import yaml
 
+from swhurl.apps import helmrelease
+
 NAMESPACE = 'messaging'
 UNIT = 'platform-nats'
 URL = f'nats://nats.{NAMESPACE}.svc.cluster.local:4222'
@@ -117,9 +119,7 @@ def users_file(root: Path) -> tuple[Path, str] | None:
     users = [controller_user(key_file.read_text().strip())]
     for env in ('staging', 'prod'):
         for path in sorted((root / 'apps').glob(f'*/{env}/helmrelease.yaml')):
-            values = (yaml.safe_load(path.read_text()).get('spec') or {}).get('values') or {}
-            variables = ((((values.get('controllers') or {}).get('main') or {}).get('containers') or {})
-                         .get('main') or {}).get('env') or {}
+            variables = helmrelease.variables(yaml.safe_load(path.read_text()))
             if variables.get(NKEY_ENV) and (published(variables) or subscribed(variables)):
                 users.append(user(str(variables[NKEY_ENV]), env, path.parent.parent.name, published(variables),
                                   subscribed(variables)))

@@ -5,7 +5,7 @@ import io
 import re
 from dataclasses import dataclass
 
-from swhurl.apps import contract, ops, promotion
+from swhurl.apps import contract, helmrelease, ops, promotion
 from swhurl.apps import events as nats
 from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
@@ -83,17 +83,6 @@ class AppSummary:
     app: str
     envs: dict[str, AppRow]
     comparison: str  # 'same', 'ahead' (staging has a newer run), 'differs', or '' with one environment
-
-
-def release_image(release: dict | None) -> dict:
-    return (((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {})
-            .get('main', {}).get('containers', {}).get('main', {}).get('image') or {})
-
-
-def release_hosts(release: dict | None) -> tuple[str, ...]:
-    """The hosts Git gives the app's routes."""
-    ingresses = (((release or {}).get('spec') or {}).get('values') or {}).get('ingress') or {}
-    return tuple(h['host'] for ing in ingresses.values() for h in (ing or {}).get('hosts') or [] if h.get('host'))
 
 
 def compare(staging: AppRow, prod: AppRow) -> str:
@@ -192,11 +181,11 @@ def apps(runner: Runner) -> list[AppRow]:
         found = instance_of_unit(unit['metadata']['name'])
         if found:
             release = releases.get((found.namespace, found.app))
-            image = release_image(release)
+            image = helmrelease.image(release)
             rows.append(AppRow(found, ready_condition(unit), bool(unit['spec'].get('suspend')),
                                ops.desired_image(release) if release else 'no HelmRelease',
-                               image.get('tag', ''), image.get('digest', ''), release_hosts(release), ready_reason(unit),
-                               ops.release_env(release)[0].get('DATABASE_PATH', '') if release else None))
+                               image.get('tag', ''), image.get('digest', ''), helmrelease.hosts(release), ready_reason(unit),
+                               str(helmrelease.variables(release).get('DATABASE_PATH', '')) if release else None))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 
@@ -234,9 +223,8 @@ def services(runner: Runner) -> list[Service]:
     for row in apps(runner):
         instance = row.instance
         release = releases.get((instance.namespace, instance.app))
-        env = ops.release_env(release)[0]
-        values = ((release or {}).get('spec') or {}).get('values') or {}
-        port = ((((values.get('service') or {}).get('main') or {}).get('ports') or {}).get('http') or {}).get('port')
+        env = helmrelease.variables(release)
+        port = helmrelease.port(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
         path = env.get(contract.API_ENV, '') if address else ''
         api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''

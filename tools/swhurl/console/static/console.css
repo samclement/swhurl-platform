@@ -153,10 +153,6 @@ th, td { text-align: left; padding: var(--gap-2) var(--gap-3); border-bottom: 1p
 tr:last-child > td { border-bottom: 0; }
 th { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 table.compact td, table.compact th { padding: 7px var(--gap-3); }
-table.units td { padding-block: 4px; }
-table.units tr.group th { background: var(--sunk); color: var(--text); font-size: var(--size-detail); letter-spacing: 0; text-transform: none; }
-table.units tr.group th .muted { font-weight: 400; }
-table.units td.row-links { white-space: nowrap; }
 a.started { white-space: nowrap; }
 .merging form.inline { margin: 0 0 0 var(--gap-2); }
 .merging, td.nowrap { white-space: nowrap; }
@@ -164,12 +160,6 @@ p.check { margin: 0; padding: 6px 0; }
 .checks details.section { margin: 0; }
 .checks ul.items { margin-left: calc(1.15em + 4px); }
 .checks ul.items li { padding: 3px 0; border-bottom: 0; font-size: var(--size-detail); }
-table.apps td:first-child > strong { font-size: 1rem; }
-table.apps td, table.apps th { padding-inline: 10px; }
-table.apps td { white-space: nowrap; }
-table.apps td[data-label="Connections"] { white-space: normal; }
-table.apps td > div { white-space: normal; max-width: 24em; }
-table.apps a.open { color: var(--muted); } table.apps a.open:hover { color: var(--accent); }
 td.row-links { text-align: right; }
 a.plain { color: inherit; text-decoration: none; } a.plain:hover { color: var(--accent); text-decoration: underline; }
 form.inline { display: inline-block; margin: 2px 0 0; }
@@ -220,6 +210,45 @@ table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
 .team-foot { margin: 0; padding: var(--gap-2) var(--gap-5); font-size: var(--size-detail); }
 .pill { display: inline-block; font-size: var(--size-label); font-weight: 600; line-height: 1.5; padding: 0 var(--gap-2); border-radius: 10px;
         border: 1px solid var(--line); background: var(--sunk); color: var(--text); vertical-align: 0.1em; white-space: nowrap; }
+
+/* A list whose rows open (Apps, Flux units, jobs): the row says what there is, one fact per column;
+   opened, it shows the rest and what you can do to it, with room to say what each action does.
+   The heading and every row of a list share one grid (set per list below). */
+.openlist { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-2); }
+.cols { display: grid; gap: var(--gap-3); align-items: baseline; padding: var(--gap-3) var(--gap-4); }
+.openlist.apps .cols { grid-template-columns: 1rem 11rem 6.5rem 6.5rem minmax(0, 1fr) minmax(0, 1fr) 7.5rem 8.5rem; }
+.openlist.units .cols { grid-template-columns: 1rem minmax(0, 22rem) 9rem minmax(0, 1fr); padding-block: var(--gap-2); }
+.openlist.jobs .cols { grid-template-columns: 1rem 7rem minmax(0, 1.4fr) minmax(0, 1fr) 11rem minmax(0, 12rem); padding-block: var(--gap-2); }
+.cols.head { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+             border-bottom: 1px solid var(--line); padding-block: var(--gap-2); }
+.openlist .group { background: var(--sunk); border-bottom: 1px solid var(--line); padding: var(--gap-2) var(--gap-4); font-size: var(--size-detail); font-weight: 600; }
+.openlist .group .muted { font-weight: 400; }
+details.openrow { border-bottom: 1px solid var(--line); scroll-margin-top: 3.5rem; }
+details.openrow:last-child { border-bottom: 0; }
+details.openrow > summary { cursor: pointer; list-style: none; }
+details.openrow > summary::-webkit-details-marker { display: none; }
+details.openrow > summary:hover { background: color-mix(in oklch, var(--sunk) 55%, var(--panel)); }
+.openlist.apps summary strong { font-size: 1rem; overflow-wrap: anywhere; }
+details.openrow .cell { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+details.openrow .cell.wrap { white-space: normal; }
+details.openrow .cell.act { text-align: right; }
+details.openrow a.open { color: var(--muted); } details.openrow a.open:hover { color: var(--accent); }
+.chev::before { content: "›"; display: inline-block; color: var(--muted); font-weight: 600; transition: transform 0.12s; }
+details.openrow[open] > summary .chev::before { transform: rotate(90deg); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .chev::before { transition: none; } }
+.panel { background: var(--bg); border-top: 1px dashed var(--line);
+         padding: var(--gap-4) var(--gap-5) var(--gap-4) calc(1rem + var(--gap-4) + var(--gap-3)); }
+.openlist.apps .panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap-4) var(--gap-6); }
+.panel h3 { font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--gap-2); }
+.panel h3 .status { text-transform: none; letter-spacing: 0; margin-left: var(--gap-2); }
+.panel p { margin: 0 0 var(--gap-2); } .panel p.reason { font-size: var(--size-detail); }
+.panel .toolbar { margin: var(--gap-3) 0 0; gap: var(--gap-4); }
+.panel .action-row { max-width: 46em; padding: var(--gap-2) 0; }
+.panel dl.plain + .action-row { margin-top: var(--gap-2); border-top: 1px solid var(--line); }
+.panel pre { margin: 0 0 var(--gap-2); max-height: 22rem; overflow-y: auto; }
+.panel .foot { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: var(--gap-3); margin: 0; font-size: var(--size-detail); }
+dl.plain { background: none; border: 0; border-radius: 0; padding: 0; gap: var(--gap-1) var(--gap-4); margin: 0; }
+.pill.attention { color: var(--attention); background: color-mix(in oklch, var(--attention) 15%, var(--panel)); border-color: transparent; }
 
 /* Disclosure: a section that opens. One that changes something (a form, ending in a pull
    request) is a solid row; one that only explains is a dashed row. */
@@ -285,14 +314,14 @@ svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   dl { grid-template-columns: minmax(0, 1fr); gap: 0; }
   dl dt { margin-top: var(--gap-2); } dl dt:first-child { margin-top: 0; }
   form.wizard { padding: var(--gap-3); } form.wizard .pair { grid-template-columns: minmax(0, 1fr); }
-  table.apps, table.apps tbody, table.apps tr, table.apps td { display: block; }
-  table.apps tr:first-child:has(th) { display: none; }
-  table.apps td { border-bottom: 0; padding-block: 3px; white-space: normal; }
-  table.apps td[data-label] { position: relative; padding-left: calc(6.5rem + var(--gap-3)); }
-  td.row-links { text-align: left; }
-  table.apps tr { border-bottom: 1px solid var(--line); padding-block: var(--gap-2); }
-  table.apps td[data-label]::before { content: attr(data-label); position: absolute; left: var(--gap-3); top: 5px; color: var(--muted); font-size: var(--size-label);
-                                      font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .cols.head { display: none; }
+  .openlist .cols { grid-template-columns: 1rem minmax(0, 1fr); gap: var(--gap-1) var(--gap-2); padding: var(--gap-3); }
+  details.openrow > summary > :not(.chev) { grid-column: 2; }
+  details.openrow .cell { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; white-space: normal; }
+  details.openrow .cell[data-label]::before { content: attr(data-label); flex: 0 0 6.25rem; color: var(--muted); font-size: var(--size-label); font-weight: 600;
+                                              letter-spacing: 0.06em; text-transform: uppercase; }
+  details.openrow .cell.act { text-align: left; } details.openrow .cell.act:empty { display: none; }
+  .panel, .openlist.apps .panel { grid-template-columns: minmax(0, 1fr); padding: var(--gap-3); }
   .action-row { flex-direction: column; } .action-row form { width: 100%; }
   .team-head { padding: var(--gap-3); } .team-head h2, .team-head p { margin-right: 0; }
   .team-head > details.act { display: inline-block; margin: var(--gap-3) var(--gap-2) 0 0; }

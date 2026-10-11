@@ -3,7 +3,7 @@
 {% block title %}Platform{% endblock %}
 {% block main %}
 <h1>Platform</h1>
-{% call st.about() %}The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Reconcile, suspend or resume a unit from its row; open it for what it applies and what needs it.{% endcall %}
+{% call st.about() %}The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Open a unit's row for what it applies and what needs it, and to reconcile, suspend or resume it.{% endcall %}
 {% set unhealthy = units | rejectattr('healthy') | list %}
 <p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
 {% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
@@ -36,27 +36,50 @@
 <details class="section" id="units-list"{{ ' open' if unhealthy }}>
   <summary>{{ units | length }} units · {% if unhealthy %}<span class="warn">{{ unhealthy | length }} not healthy</span>{% else %}<span class="ok">all healthy</span>{% endif %}
     · {% if elsewhere %}{{ elsewhere | length }} not at <code>{{ revision }}</code>{% else %}all at <code>{{ revision }}</code>{% endif %}</summary>
-  <div class="scroll">
-  <table class="compact units">
-    <tr><th>Unit</th><th>State</th><th>Waits for</th><th><span class="sr-only">Actions</span></th></tr>
+  {# One row per unit; a row opens to what the unit applies and needs, and to its actions, each with what it does. #}
+  <div class="openlist units">
+    <div class="cols head" aria-hidden="true"><span></span><span>Unit</span><span>State</span><span>Waits for</span></div>
     {% for title, text, members in layers %}
-    <tr class="group"><th colspan="4" scope="colgroup">{{ title }} <span class="muted">— {{ text }}</span></th></tr>
+    <div class="group">{{ title }} <span class="muted">— {{ text }}</span></div>
     {% for u in members %}{% set job = running_jobs | selectattr('unit', 'equalto', u.name) | first %}
-    <tr>
-      <td><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</td>
-      <td>{{ st.state(u.state, detail=u.state.key in ('updating', 'failing'), quiet=true) }}{% if u.revision != revision %} <span class="muted">at <code>{{ u.revision or 'no revision' }}</code></span>{% endif %}</td>
-      <td class="muted">{{ u.depends_on | join(', ') or '—' }}</td>
-      <td class="row-links">
-        {% if u.name in refused %}<span class="muted" title="This unit is {{ refused[u.name] }}">make flux-bootstrap</span>
-        {% elif job %}{{ st.running(job, refresh_url) }}
-        {% elif u.suspended %}<form class="inline" method="post" action="/units/{{ u.name }}/resume" hx-post="/units/{{ u.name }}/resume" hx-target="closest td" hx-select="unset" hx-swap="innerHTML"><button title="Apply Git changes to this unit again, starting with a reconcile">Resume</button></form>
-        {% else %}<form class="inline" method="post" action="/units/{{ u.name }}/reconcile" hx-post="/units/{{ u.name }}/reconcile" hx-target="closest td" hx-select="unset" hx-swap="innerHTML"><button class="quiet" title="Fetch Git and apply this unit now. Safe: it applies what Git already says">Reconcile</button></form>
-        <form class="inline" method="post" action="/units/{{ u.name }}/suspend" hx-post="/units/{{ u.name }}/suspend" hx-target="closest td" hx-select="unset" hx-swap="innerHTML" data-confirm="Suspend {{ u.name }}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="quiet danger" title="Stop applying Git changes to this unit until you resume it">Suspend</button></form>{% endif %}
-      </td>
-    </tr>
+    <details class="openrow" id="unit-{{ u.name }}"{{ ' open' if not u.healthy and u.state.key != 'updating' }}>
+      <summary class="cols" title="Show or hide the details and actions of {{ u.name }}">
+        <span class="chev" aria-hidden="true"></span>
+        <span class="cell"><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</span>
+        <span class="cell" data-label="State">{{ st.state(u.state, detail=false, quiet=true) }}{% if u.revision != revision %} <span class="muted">at <code>{{ u.revision or 'no revision' }}</code></span>{% endif %}{% if job %} {{ st.running(job, refresh_url) }}{% endif %}</span>
+        <span class="cell wrap muted" data-label="Waits for">{{ u.depends_on | join(', ') or '—' }}</span>
+      </summary>
+      <div class="panel">
+        {% if u.state.detail %}<p class="reason {{ 'bad' if u.state.key == 'failing' else 'muted' }}">{{ u.state.detail | short }}</p>{% endif %}
+        <dl class="plain">
+          <dt>Applies</dt><dd class="mono">{{ u.path or '—' }}</dd>
+          <dt>Applied revision</dt><dd class="mono">{{ u.revision or '—' }}</dd>
+          <dt>Checks Git</dt><dd>every {{ u.interval or '—' }}, and at once on a push (webhook)</dd>
+          <dt>Needed by</dt><dd>{% for d in u.needed_by %}<a class="mono" href="#unit-{{ d }}">{{ d }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
+        </dl>
+        {% if u.name in refused %}<p class="muted">No actions here: this unit is {{ refused[u.name] }}. Change it with <code>make flux-bootstrap</code>.</p>
+        {% elif job %}<p>{{ st.running(job, refresh_url) }}</p>
+        {% else %}
+        {% if u.suspended %}
+        <div class="action-row">
+          <form method="post" action="/units/{{ u.name }}/resume" hx-post="/units/{{ u.name }}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
+          <span class="muted">Apply Git changes to this unit again, starting with a reconcile.</span>
+        </div>
+        {% else %}
+        <div class="action-row">
+          <form method="post" action="/units/{{ u.name }}/reconcile" hx-post="/units/{{ u.name }}/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile now</button></form>
+          <span class="muted">Fetch Git and apply this unit now instead of at the next check. Safe: it applies what Git already says.</span>
+        </div>
+        <div class="action-row">
+          <form method="post" action="/units/{{ u.name }}/suspend" hx-post="/units/{{ u.name }}/suspend" hx-target="this" hx-select="unset" hx-swap="outerHTML" data-confirm="Suspend {{ u.name }}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="danger">Suspend</button></form>
+          <span class="muted">Stop applying Git changes to this unit until you resume it; what is running stays as it is. Use it while you investigate or try something by hand.</span>
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </details>
     {% endfor %}
     {% endfor %}
-  </table>
   </div>
 </details>
 {% endblock %}

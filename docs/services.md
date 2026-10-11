@@ -17,6 +17,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | The Flux notification Provider and Alert, to ntfy.sh |
+| [Notification channels](#notification-channels) | `platform-notify` · [`platform/notify`](../platform/notify) | `notify` | — | plain manifests (channel Secrets and the generated routes) |
 | [Push webhook](#push-webhook) and [image webhook](#image-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (two Flux `Receiver`s) |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
@@ -144,7 +145,7 @@ The console's title is `console`. A successful Git revert or promotion of an old
 
 ### Current notification behavior
 
-**Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads application Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap.
+**Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads application Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap, plus the [channel](#notification-channels) routes and addresses in the `notify` namespace.
 
 ```mermaid
 flowchart LR
@@ -172,6 +173,38 @@ Pending messages are checkpointed before posting and removed only after ntfy acc
 - **One topic:** the Flux Alert, the checker, the heartbeat and ClickStack's `ntfy: platform` webhook all post to the same platform topic; each message carries its own priority (high for failures, normal for deployments and recoveries).
 - **Subscribe** (once per phone or browser): install the ntfy app, then subscribe to the topic. The topic name is the credential (anyone who knows it can read and post), so it is only in SOPS; show the topic name in your own terminal with `SOPS_AGE_KEY_FILE=./age.agekey sops decrypt --extract '["stringData"]["address"]' platform/alerts/secret-platform.sops.yaml | sed 's|https://ntfy.sh/||; s|?.*||'` (from the repository root; the key file is not in Git).
 - **Native Flux provider:** it posts event JSON through a generic provider and ntfy renders it with the template in the address. The checker uses [ntfy's JSON publish API](https://docs.ntfy.sh/publish/#publish-as-json) directly so lifecycle titles differ by action and identify the environment. Tapping opens the relevant app page, Activity for uninstall, or Platform for console/monitor failures.
+
+### Notification channels
+
+A team's apps can also notify the team. A **channel** is a named destination, and a team lists the channels that get a copy of its apps' [lifecycle and health messages](#notification-expectations). For example, giving team `payments` its own ntfy topic:
+
+```
+make channel-add NAME=payments-phone                          # prompts for https://ntfy.sh/<topic>, not shown
+make team-edit NAME=payments ARGS="--notify payments-phone"
+```
+
+```mermaid
+flowchart LR
+    teams[apps/teams.yaml<br/>payments: notify payments-phone] -->|generated| routes[notify/notification-routes]
+    add[make channel-add] -->|encrypts| secret[notify/channel-payments-phone]
+    routes --> checker[Notification checker]
+    secret --> checker
+    ns[App namespace<br/>team label] --> checker
+    checker -->|every message| platform[platform topic]
+    checker -->|copy| phone[payments-phone topic]
+```
+
+| Part | Where | Notes |
+| --- | --- | --- |
+| Channel | [`platform/notify/channel-<name>.sops.yaml`](../platform/notify): Secret `notify/channel-<name>` | Its transport is a plain label (`ntfy` is the only one); its address is the credential and is encrypted. One file per channel, so adding one decrypts nothing |
+| Team's channels | `notify:` on the team in [`apps/teams.yaml`](../apps/teams.yaml) | Every app of the team, in every environment. A team without `notify` gets no copy |
+| Routes | [`platform/notify/routes.yaml`](../platform/notify/routes.yaml): ConfigMap `notify/notification-routes` | Generated from the registry: never edit it. `make app-sync` rewrites it and `make check-apps` (rule `notify-channels`) fails when it, a team's list or the channel files disagree |
+
+**Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channels, so nothing secret changes hands. A lost or leaked address is replaced with `make channel-add NAME=<channel> ARGS=--replace`; `make channel-remove` is refused while a team notifies the channel.
+
+**What a channel receives.** A copy of each message about the team's apps, with the same title, priority and link. The platform topic still receives every message, and the console's own messages, the notification monitor and the [Flux failure Alert](#current-notification-behavior) go only there. The checker reads each app's team from its namespace label and the channel addresses from the `notify` namespace, which holds nothing else.
+
+**When a channel cannot be reached.** Its copy stays in the outbox and is retried every minute for two hours, then dropped with an error in the checker's logs; it never delays the platform topic or other channels. The same happens to a channel whose Secret is missing. `make verify-platform` (check `channels`) fails when the routes in the cluster are not Git's or a channel has no Secret.
 
 ## Incident reviewer
 

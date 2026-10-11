@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, clickstack, flux, platform, verify
-from swhurl.apps import calling, contract
+from swhurl.apps import calling, channels, contract
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -82,6 +82,9 @@ def healthy(**overrides):
         'openid': {'issuer': calling.ISSUER},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-platform'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-platform'}}]},
+        'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
+            {'teams': channels.team_channels(ROOT)})}}]},
+        'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.channels(ROOT))),
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'], 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
                    'last_response': {'code': 200, 'message': 'OK'}}],
@@ -145,6 +148,8 @@ def healthy(**overrides):
             .on('gh', 'api', handler=answer('hooks'))
             .on('kubectl', '-n', 'flux-system', 'get', 'alerts.notification.toolkit.fluxcd.io', handler=answer('alerts'))
             .on('kubectl', '-n', 'flux-system', 'get', 'providers.notification.toolkit.fluxcd.io', handler=answer('providers'))
+            .on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=answer('routes'))
+            .on('kubectl', '-n', 'notify', 'get', 'secrets', '-o', 'name', handler=answer('channel-secrets'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imageupdateautomations.image.toolkit.fluxcd.io',
                 '-l', 'platform.swhurl.com/app', '-o', 'json', handler=answer('automations'))
             .on('kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
@@ -185,7 +190,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -410,6 +415,24 @@ class ConsoleTokenTests(unittest.TestCase):
         _, report, text = run(healthy(providers={'items': []}))
         self.assertIn('[BAD] alert failures points at provider ntfy-platform, which does not exist', report.lines, text)
 
+    def test_channel_problems(self):
+        _, report, text = run(healthy())
+        self.assertIn(f'[OK] {len(channels.team_channels(ROOT))} team(s) notify a channel, as in Git', report.lines, text)
+        _, report, text = run(healthy(routes={'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {
+            channels.ROUTES_KEY: json.dumps({'teams': {'ghosts': ['nowhere']}})}}]}))
+        self.assertIn('[BAD] the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
+                      'and make flux-reconcile', report.lines, text)
+        _, report, text = run(healthy(routes={'items': []}))
+        self.assertTrue(any('team routes in the cluster are not' in line for line in report.lines), text)
+        _, report, text = run(healthy(routes=Result((), 1, '', 'forbidden')))
+        self.assertIn('[BAD] could not read the notification routes and channels (make reconcile UNIT=platform-notify)',
+                      report.lines, text)
+        cluster = healthy()  # no channel Secret in the cluster
+        with mock.patch.object(verify.channels, 'channels', return_value={'payments-phone': 'ntfy'}):
+            _, report, text = run(cluster)
+        self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
+                      '(make reconcile UNIT=platform-notify)', report.lines, text)
+
     def test_image_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
         events = ['package', 'registry_package']
@@ -468,7 +491,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

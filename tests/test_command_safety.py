@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, flux, platform
-from swhurl.apps import calling, contract
+from swhurl.apps import calling, channels, contract
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -44,6 +44,8 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
                                             for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
         self.env['QUOTA'] = json.dumps(contract.QUOTA)
+        self.env['ROUTES'] = json.dumps({'teams': channels.team_channels(ROOT)})
+        self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.channels(ROOT))
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name
@@ -95,6 +97,11 @@ elif any(a.startswith('networkpolicies') for a in argv):
                     for a, e in json.loads(os.environ['INSTANCES'])]})
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
+elif argv[:3] == ['-n', 'notify', 'get']:
+    if 'configmaps' in argv:
+        emit({'items': [{'metadata': {'name': 'notification-routes'}, 'data': {'routes.json': os.environ['ROUTES']}}]})
+    else:
+        print(os.environ['CHANNEL_SECRETS'])
 elif any(a.startswith('alerts.notification') for a in argv):
     emit({'items': [{'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]})
 elif any(a.startswith('providers.notification') for a in argv):

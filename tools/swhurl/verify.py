@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import calling, contract, events, helmrelease, hooks
+from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -615,6 +615,36 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
 
 
+def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """The team routes in the cluster are Git's and every channel has its Secret (names only, never an address)."""
+    report.section('Notification channels')
+    wanted = channels.routes_file(root)
+    if not wanted:
+        return
+    get = ['kubectl', '-n', channels.NAMESPACE, 'get']
+    try:
+        configmaps = runner.json([*get, 'configmaps', '-o', 'json'])['items']
+        secrets = runner.output([*get, 'secrets', '-o', 'name']).split()
+        live = next((json.loads(c['data'][channels.ROUTES_KEY]) for c in configmaps
+                     if c['metadata']['name'] == channels.ROUTES_NAME), None)
+    except (CommandError, KeyError, TypeError, ValueError):
+        report.bad('could not read the notification routes and channels (make reconcile UNIT=platform-notify)')
+        return
+    routes = channels.team_channels(root)
+    if live != {'teams': routes}:
+        report.bad('the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
+                   'and make flux-reconcile')
+    else:
+        report.ok(f'{len(routes)} team(s) notify a channel, as in Git')
+    known = channels.channels(root)
+    missing = [name for name in known if f'secret/{channels.SECRET_PREFIX}{name}' not in secrets]
+    if missing:
+        report.bad(f'channel {", ".join(missing)} has no Secret in the cluster: its teams get no notifications '
+                   '(make reconcile UNIT=platform-notify)')
+    elif known:
+        report.ok(f'{len(known)} channel(s) have their Secret')
+
+
 ALERTS = ('failures',)  # platform/alerts/alerts.yaml
 
 
@@ -727,6 +757,7 @@ CHECKS = (
     Check('signing-keys', frozenset({'cluster', 'host'}), check_signing_keys),  # reads apps/signing-keys.json
     Check('events', frozenset({'cluster', 'host'}), check_events),  # reads platform/nats/users.yaml
     Check('alerts', frozenset({'cluster'}), check_alerts),
+    Check('channels', frozenset({'cluster', 'host'}), check_channels),  # reads apps/teams.yaml and platform/notify
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
     Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),

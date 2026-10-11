@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from swhurl.apps import events, helmrelease
+from swhurl.apps import channels, events, helmrelease
 from swhurl.apps.calling import (
     CALLERS_VARIABLE,
     TOKENS_VOLUME,
@@ -238,6 +238,10 @@ def sync_env(root: Path, env: str) -> list[Path]:
 
 def sync(root: Path) -> Path | None:
     changed = [path for env in ENVIRONMENTS for path in sync_env(root, env)]
+    routes = channels.routes_file(root)
+    if routes and (not routes[0].is_file() or routes[0].read_text() != routes[1]):
+        routes[0].write_text(routes[1])
+        changed.append(routes[0])
     for path in changed:
         print(f'[OK] rewrote {path.relative_to(root)}')
     if not changed:

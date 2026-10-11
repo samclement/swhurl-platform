@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import json
 import re
 
-from swhurl.apps import ops
+from swhurl.apps import channels, ops
+from swhurl.apps.contract import TEAM
 from swhurl.run import Runner
 from swhurl.verify import ready_condition
 
@@ -36,6 +38,8 @@ def snapshot(runner: Runner) -> dict:
         'workloads': ['get', 'deployments,statefulsets,daemonsets', '--all-namespaces'],
         'pods': ['get', 'pods', '--all-namespaces'],
         'events': ['get', 'events', '--all-namespaces'],
+        'namespaces': ['get', 'namespaces'],
+        'routes': ['-n', channels.NAMESPACE, 'get', 'configmaps'],
     }
     return {key: runner.json(['kubectl', *args, '-o', 'json'])['items']
             for key, args in commands.items()}
@@ -46,8 +50,17 @@ def object_key(obj: dict) -> str:
     return f"{meta.get('namespace', '')}/{meta['name']}"
 
 
+def team_routes(data: dict) -> dict[str, list[str]]:
+    """Namespace name to the channels its team notifies (docs/services.md#notification-channels)."""
+    routes = next((json.loads(c['data'][channels.ROUTES_KEY]) for c in data.get('routes', [])
+                   if c['metadata']['name'] == channels.ROUTES_NAME), {}).get('teams', {})
+    return {n['metadata']['name']: list(routes.get((n['metadata'].get('labels') or {}).get(TEAM), []))
+            for n in data.get('namespaces', [])}
+
+
 def targets(data: dict) -> dict:
     found = {}
+    routes = team_routes(data)
     for unit in data['units']:
         if unit['metadata'].get('deletionTimestamp'):
             continue
@@ -63,14 +76,21 @@ def targets(data: dict) -> dict:
             continue
         found[key] = {'title': title, 'unit': unit['metadata']['name'], 'namespace': key.split('/')[0],
                       'name': key.split('/')[1], 'console': title == 'console', 'unit_object': unit}
+        if title != 'console':
+            found[key]['channels'] = routes.get(found[key]['namespace'], [])
     return found
 
 
-def enqueue(state: dict, key: str, title: str, message: str, *, high: bool, click: str, now: float) -> None:
-    if key in state['seen'] or any(n['key'] == key for n in state['pending']):
-        return
-    state['pending'].append({'key': key, 'title': title, 'message': message, 'priority': 4 if high else 3,
-                             'tags': ['warning' if high else 'white_check_mark'], 'click': click, 'queued': now})
+def enqueue(state: dict, key: str, title: str, message: str, *, high: bool, click: str, now: float,
+            channels: list[str] | tuple = ()) -> None:
+    """Queue a notice for the platform topic and a copy for each of the app's team channels."""
+    for channel in (None, *channels):
+        copy_key = f'{key}@{channel}' if channel else key
+        if copy_key in state['seen'] or any(n['key'] == copy_key for n in state['pending']):
+            continue
+        notice = {'key': copy_key, 'title': title, 'message': message, 'priority': 4 if high else 3,
+                  'tags': ['warning' if high else 'white_check_mark'], 'click': click, 'queued': now}
+        state['pending'].append(notice | {'channel': channel} if channel else notice)
 
 
 def link(base: str, entry: dict, *, removed: bool = False) -> str:
@@ -80,7 +100,7 @@ def link(base: str, entry: dict, *, removed: bool = False) -> str:
 
 
 def incident(state: dict, record: dict, fault: str | None, *, title: str, detail: str,
-             grace: int, now: float, click: str) -> None:
+             grace: int, now: float, click: str, channels: list[str] | tuple = ()) -> None:
     # None is unknown: do not advance recovery or reset a fault's first-observed time.
     if fault is None:
         record.pop('healthy_since', None)
@@ -92,7 +112,7 @@ def incident(state: dict, record: dict, fault: str | None, *, title: str, detail
         if now - record['since'] >= grace and now - record.get('last_notice', -REMINDER) >= REMINDER:
             minutes = int((now - record['since']) // 60)
             enqueue(state, f"incident:{title}:{record['since']}:{now}", f'{title} {fault}',
-                    f'{detail}. Observed for {minutes} minutes.', high=True, click=click, now=now)
+                    f'{detail}. Observed for {minutes} minutes.', high=True, click=click, now=now, channels=channels)
             record['last_notice'] = now
             record['notified'] = True
     elif record.get('notified'):
@@ -100,7 +120,7 @@ def incident(state: dict, record: dict, fault: str | None, *, title: str, detail
         if now - record['healthy_since'] >= RECOVERY:
             enqueue(state, f"recovery:{title}:{record['since']}", f'{title} recovered',
                     f'Healthy/current for 2 minutes; incident lasted {int((now - record["since"]) // 60)} minutes.',
-                    high=False, click=click, now=now)
+                    high=False, click=click, now=now, channels=channels)
             record.clear()
     else:
         record.clear()
@@ -185,7 +205,8 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str) -> dict:
         else:
             incident(state, record['incident'], '' if fault == 'suspended' else fault,
                      title=entry['title'], detail=detail,
-                     grace=CONSOLE_GRACE if entry['console'] else GRACE, now=now, click=link(base, entry))
+                     grace=CONSOLE_GRACE if entry['console'] else GRACE, now=now, click=link(base, entry),
+                     channels=entry.get('channels', ()))
     # Keep identity after removal so a later Helm uninstall event still has an app/environment title.
     for key, entry in list(state['instances'].items()):
         if key not in current:
@@ -249,7 +270,7 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str) -> dict:
             message += ' The requested upgrade failed; Helm restored the previous release.'
             state['pending'] = [p for p in state['pending'] if p['title'] != f"{entry['title']} deployment failed"]
         enqueue(state, notice_key, title, message, high=not action or action == 'rolled back',
-                click=link(base, entry, removed=action == 'uninstalled'), now=now)
+                click=link(base, entry, removed=action == 'uninstalled'), now=now, channels=entry.get('channels', ()))
         if action == 'uninstalled':
             entry['uninstalled'] = uid
         if not action or action == 'rolled back':
@@ -272,7 +293,7 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str) -> dict:
             if entry.get('retained'):
                 message += ' Storage is retained; data has not been deleted.'
             enqueue(state, f"removed:{entry['uid']}", f"{entry['title']} uninstalled", message,
-                    high=False, click=link(base, entry, removed=True), now=now)
+                    high=False, click=link(base, entry, removed=True), now=now, channels=entry.get('channels', ()))
             entry['uninstalled'] = entry['uid']
     state['last_success'] = now
     incident(state, state['monitor'], '', title='notification monitor', detail='',

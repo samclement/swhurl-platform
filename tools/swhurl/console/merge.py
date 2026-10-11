@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -16,6 +18,8 @@ from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
+VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
+VALIDATE_POLL = 5
 PROMOTION_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
 
@@ -111,14 +115,29 @@ def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str]:
     return match[1], match[2]
 
 
-def merge(runner: Runner, root: Path, number: int, sha: str, repo: str) -> None:
+def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
+    """Wait for Validate on the PR head. The label starts this run beside Validate, and leaving while it
+    is still running would cost the next run a second runner start before the merge."""
+    waited = 0
+    while True:
+        runs = runner.json(['gh', 'run', 'list', '--workflow', 'validate.yml', '--commit', sha,
+                            '--event', 'pull_request', '--limit', '1', '--json', 'databaseId,status,conclusion'])
+        if runs and runs[0].get('status') == 'completed':
+            if runs[0].get('conclusion') != 'success':
+                raise Hold('Validate has not passed on the current PR head')
+            return
+        if waited >= VALIDATE_WAIT:
+            raise Hold('Validate has not passed on the current PR head (still running)')
+        sleep(VALIDATE_POLL)
+        waited += VALIDATE_POLL
+
+
+def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
+          sleep: Callable[[float], None] = time.sleep) -> None:
     pr_path = f'repos/{repo}/pulls/{number}'
     pr = runner.json(['gh', 'api', pr_path])
     action, app = eligible(pr, sha, repo)
-    runs = runner.json(['gh', 'run', 'list', '--workflow', 'validate.yml', '--commit', sha,
-                        '--event', 'pull_request', '--limit', '1', '--json', 'databaseId,status,conclusion'])
-    if not runs or runs[0].get('status') != 'completed' or runs[0].get('conclusion') != 'success':
-        raise Hold('Validate has not passed on the current PR head')
+    validated(runner, sha, sleep)
     files = runner.output(['gh', 'pr', 'diff', str(number), '--repo', repo, '--name-only']).splitlines()
     runner.run(['git', 'fetch', 'origin', 'main'], cwd=root)
     runner.run(['git', 'fetch', 'origin', f'pull/{number}/head'], cwd=root)

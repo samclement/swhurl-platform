@@ -37,9 +37,16 @@ class MergeTests(unittest.TestCase):
                    'body': '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'}
         self.files = ['apps/example/prod/helmrelease.yaml']
 
-    def runner(self, *, validation=0, latest=None, current=BASE, passed=True):
+    def runner(self, *, validation=0, latest=None, current=BASE, passed=True, validate=None):
+        """``validate``: what each successive read of the PR's Validate run returns (the last one repeats)."""
         runner = FakeRunner()
         reads = 0
+        done = '[{"databaseId": 1, "status": "completed", "conclusion": "success"}]'
+        answers = list(validate if validate is not None else [done if passed else
+                                                              done.replace('success', 'failure')])
+
+        def validate_run(args, _):
+            return Result(args, stdout=answers.pop(0) if len(answers) > 1 else answers[0])
 
         def pr(args, _):
             nonlocal reads
@@ -62,7 +69,7 @@ class MergeTests(unittest.TestCase):
             return Result(args)
 
         (runner.on('gh', 'api', f'repos/{REPO}/pulls/7', handler=pr)
-         .on('gh', 'run', 'list', stdout='[{"databaseId": 1, "status": "completed", "conclusion": "success"}]' if passed else '[]')
+         .on('gh', 'run', 'list', handler=validate_run)
          .on('gh', 'pr', 'diff', stdout='\n'.join(self.files))
          .on('git', 'rev-parse', 'origin/main', stdout=BASE)
          .on('git', 'rev-parse', 'FETCH_HEAD', stdout=HEAD)
@@ -73,8 +80,9 @@ class MergeTests(unittest.TestCase):
         return runner
 
     def check(self, runner):
+        self.slept = []
         with mock.patch.object(policy, 'evaluate', return_value=[]):
-            merge.merge(runner, self.root, 7, HEAD, REPO)
+            merge.merge(runner, self.root, 7, HEAD, REPO, sleep=self.slept.append)
 
     def pushes(self, runner):
         return [c for c in runner.calls if c[:3] == ('git', 'push', 'origin')]
@@ -165,3 +173,22 @@ class MergeTests(unittest.TestCase):
             self.check(runner)
         self.assertEqual([c for c in runner.calls if c[0] == 'make'], [('make', 'check')])
         self.assertTrue(self.pushes(runner))
+
+    def test_waits_for_a_running_validate_then_merges(self):
+        running = '[{"databaseId": 1, "status": "in_progress", "conclusion": ""}]'
+        done = '[{"databaseId": 1, "status": "completed", "conclusion": "success"}]'
+        runner = self.runner(validate=['[]', running, done])
+        self.check(runner)
+        self.assertEqual(self.slept, [merge.VALIDATE_POLL] * 2)
+        self.assertTrue(self.pushes(runner))
+
+    def test_a_failed_validate_is_not_waited_for_and_a_stuck_one_is_given_up(self):
+        runner = self.runner(passed=False)
+        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'):
+            self.check(runner)
+        self.assertEqual((self.slept, self.pushes(runner)), ([], []))
+        runner = self.runner(validate=['[{"databaseId": 1, "status": "queued", "conclusion": ""}]'])
+        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'):
+            self.check(runner)
+        self.assertEqual(sum(self.slept), merge.VALIDATE_WAIT)
+        self.assertEqual(self.pushes(runner), [])

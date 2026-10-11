@@ -9,11 +9,15 @@ data:
   routes.json: |
     {
       "channels": {
-        "payments": "ntfy"
+        "payments": "ntfy",
+        "platform": "ntfy"
       },
       "teams": {
         "payments": [
           "payments"
+        ],
+        "platform": [
+          "platform"
         ]
       }
     }

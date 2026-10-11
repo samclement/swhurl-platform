@@ -11,3 +11,4 @@ resources:
   - networkpolicy.yaml
   - helmrelease.yaml
   - channel-payments.sops.yaml
+  - channel-platform.sops.yaml

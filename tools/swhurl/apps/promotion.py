@@ -200,7 +200,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
             raise EditError('staging app Secret needs supported environment variable keys')
     kustomization = YamlFile(instance / 'kustomization.yaml').data
     only(kustomization, {'apiVersion', 'kind', 'resources'}, 'kustomization')
-    expected = {'namespace.yaml', 'helmrelease.yaml'} | ({'secret.sops.yaml'} if refs else set())
+    expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({'secret.sops.yaml'} if refs else set())
     resources = set(kustomization.get('resources', [])) - {contract.IMAGE_AUTOMATION_FILE}
     if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - {
             contract.IMAGE_AUTOMATION_FILE} != expected | {'kustomization.yaml'}:
@@ -211,6 +211,9 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     args = new.parser().parse_args([app, '--env', 'prod', '--image', ops.image_reference(image_of(source)),
                                     '--kind', kind, '--exposure', exposure])
     args.host = host
+    args.team = namespace['metadata'].get('labels', {}).get(contract.TEAM, contract.DEFAULT_TEAM)
+    if kind == 'web':  # the NetworkPolicy admits Traefik on the app's own port
+        args.port = values['service']['main']['ports']['http'].get('port', args.port)
     args.health_path = '/' if kind == 'web' else None  # the reviewed probes replace generator defaults
     args.secret_keys = keys
     args.issuer = (route or {}).get('annotations', {}).get('cert-manager.io/cluster-issuer', 'letsencrypt-prod')
@@ -219,10 +222,10 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     new.resolve(args)
     if preview and exposure == 'public' and not host:
         args.host = route['hosts'][0]['host']
-        new.validate(args)
+        new.validate(args, root)
         args.host = None
     else:
-        new.validate(args)
+        new.validate(args, root)
     return args
 
 

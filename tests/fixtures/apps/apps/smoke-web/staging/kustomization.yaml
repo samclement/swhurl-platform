@@ -4,3 +4,5 @@ resources:
 - namespace.yaml
 - secret.sops.yaml
 - helmrelease.yaml
+- resourcequota.yaml
+- networkpolicy.yaml

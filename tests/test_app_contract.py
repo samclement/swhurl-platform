@@ -95,7 +95,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(self.gen('x', *WEB), 0)
         instance = self.tmp / 'apps/x/staging'
         self.assertEqual(sorted(p.name for p in instance.iterdir()),
-                         ['helmrelease.yaml', 'kustomization.yaml', 'namespace.yaml'])
+                         ['helmrelease.yaml', 'kustomization.yaml', 'namespace.yaml', 'networkpolicy.yaml',
+                          'resourcequota.yaml'])
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-x-staging.yaml').read_text())
         self.assertEqual(unit['metadata']['name'], 'app-x-staging')
         self.assertEqual({d['name'] for d in unit['spec']['dependsOn']},
@@ -103,6 +104,39 @@ class GeneratorTests(unittest.TestCase):
         self.assertNotIn('deletionPolicy', unit['spec'], 'app units must keep MirrorPrune')
         self.assertIn('- app-x-staging.yaml', (self.tmp / 'clusters/home/kustomization.yaml').read_text())
         self.assertEqual(self.gen('x', *WEB), 2, 'overwrite must be refused')
+
+    def test_every_instance_gets_a_team_a_quota_and_a_network_policy(self):
+        (self.tmp / 'apps').mkdir()
+        (self.tmp / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  payments: {description: Orders}\n')
+        self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--port', '9000',
+                                  '--exposure', 'authenticated-web', '--team', 'payments'), 0)
+        self.assertEqual(self.gen('job', '--image', 'r/job:1', '--kind', 'worker'), 0)
+
+        def load(app, name):
+            return yaml.safe_load((self.tmp / 'apps' / app / 'staging' / name).read_text())
+        self.assertEqual(load('web', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'payments')
+        self.assertEqual(load('job', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'platform')
+        for app in ('web', 'job'):
+            self.assertEqual(load(app, 'resourcequota.yaml')['spec']['hard'], contract.QUOTA)
+            self.assertLessEqual({'resourcequota.yaml', 'networkpolicy.yaml'}, set(load(app, 'kustomization.yaml')['resources']))
+            policy = load(app, 'networkpolicy.yaml')
+            self.assertEqual((policy['metadata']['namespace'], policy['spec']['podSelector']),
+                             (f'{app}-staging', {'matchLabels': {'app.kubernetes.io/instance': app}}))
+        self.assertEqual(load('web', 'networkpolicy.yaml')['spec']['ingress'],
+                         [{'from': [contract.TRAEFIK], 'ports': [{'port': 9000, 'protocol': 'TCP'}]}])
+        self.assertEqual(load('job', 'networkpolicy.yaml')['spec']['ingress'], [], 'no route: nobody is admitted')
+        # A web app without a route is closed too: Traefik has nothing to send it.
+        self.assertEqual(self.gen('quiet', '--image', 'r/q:1', '--health-path', '/h'), 0)
+        self.assertEqual(load('quiet', 'networkpolicy.yaml')['spec']['ingress'], [])
+
+    def test_an_unregistered_team_is_refused_before_writing(self):
+        (self.tmp / 'apps').mkdir()
+        (self.tmp / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n')
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--team', 'nobody'), 2)
+        self.assertIn("unknown team 'nobody'; registered in apps/teams.yaml: platform", err.getvalue())
+        self.assertFalse((self.tmp / 'apps/web').exists())
 
     def test_secret_stub_is_encrypted_and_namespace_watched(self):
         fake = self.tmp / 'bin'

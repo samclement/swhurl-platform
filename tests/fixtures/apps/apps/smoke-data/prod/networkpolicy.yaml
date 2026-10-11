@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-data
+  namespace: smoke-data-prod
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: smoke-data
+  policyTypes:
+  - Ingress
+  ingress: []

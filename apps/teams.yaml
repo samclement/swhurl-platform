@@ -1,0 +1,9 @@
+# Teams that own apps. An app names one with `team:` in its swhurl.yaml or `make app-team`;
+# it becomes the platform.swhurl.com/team label on the app's namespaces (docs/apps.md#teams).
+teams:
+  platform:
+    description: The platform itself and apps without another owner
+  payments:
+    description: Orders and payments (team platform scenario)
+  insights:
+    description: Reporting (team platform scenario)

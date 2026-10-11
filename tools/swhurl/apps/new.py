@@ -48,6 +48,7 @@ from swhurl.apps.contract import (
     DATABASE_PATH_ENV,
     DATABASES,
     DEFAULT_DATABASE_SIZE,
+    DEFAULT_TEAM,
     ENVIRONMENT,
     ENVIRONMENTS,
     EXPOSURE,
@@ -56,18 +57,24 @@ from swhurl.apps.contract import (
     IMAGE_AUTOMATION_FILE,
     MANAGED,
     MANIFEST_FILE,
+    NETWORK_POLICY_FILE,
+    QUOTA_FILE,
     RETAINED_STORAGE_CLASS,
     SQLITE_PATH,
     STARTUP_PERIOD,
     STARTUP_SECONDS,
+    TEAM,
     ManifestError,
     add_image_markers,
     default_host,
     image_policy_name,
     in_cookie_domain,
     manifest_defaults,
+    network_policy,
     otlp_env,
+    resource_quota,
     secret_key_problem,
+    teams,
 )
 from swhurl.run import CommandError, Runner
 
@@ -101,9 +108,11 @@ def resolve(args) -> None:
         args.mount_path = DATA_MOUNT
 
 
-def validate(args) -> None:
+def validate(args, root: Path = ROOT) -> None:
     if not NAME_RE.match(args.name):
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
+    if args.team not in teams(root):
+        raise GenerationError(f'unknown team {args.team!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
     if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
         raise GenerationError(problem)
     if args.kind == 'worker' and args.exposure != 'private':
@@ -260,9 +269,16 @@ def dump(docs) -> str:
     return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
 
 
+def isolation_files(app: str, namespace: str, exposure: str, port: int | None) -> dict[str, str]:
+    """The instance's quota and NetworkPolicy by file name; Traefik is admitted only when there is a route."""
+    routed = port if exposure in ('authenticated-web', 'public') else None
+    return {QUOTA_FILE: dump([resource_quota(app, namespace)]),
+            NETWORK_POLICY_FILE: dump([network_policy(app, namespace, routed)])}
+
+
 def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     resolve(args)
-    validate(args)
+    validate(args, root)
     namespace = f'{args.name}-{args.env}'
     unit = f'app-{args.name}-{args.env}'
     instance = root / 'apps' / args.name / args.env
@@ -276,6 +292,7 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
         APP: args.name,
         ENVIRONMENT: args.env,
         EXPOSURE: args.exposure,
+        TEAM: args.team,
     }
     ns = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': namespace, 'labels': labels}}
     if args.persistence:
@@ -296,7 +313,7 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
             'values': build_values(args),
         },
     }
-    resources = ['namespace.yaml', 'helmrelease.yaml']
+    resources = ['namespace.yaml', 'helmrelease.yaml', QUOTA_FILE, NETWORK_POLICY_FILE]
     if args.secret_keys:
         resources.insert(1, 'secret.sops.yaml')
     release_text = dump([release])
@@ -309,6 +326,9 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
         instance / 'kustomization.yaml': dump([{'apiVersion': 'kustomize.config.k8s.io/v1beta1',
                                                'kind': 'Kustomization', 'resources': resources}]),
     }
+    for name, text in isolation_files(args.name, namespace, args.exposure,
+                                      args.port if args.kind == 'web' else None).items():
+        files[instance / name] = text
 
     if auto_deploys(args):
         files[instance / IMAGE_AUTOMATION_FILE] = dump(image_automation(args))
@@ -447,6 +467,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
+    p.add_argument('--team', default=DEFAULT_TEAM, help='the owning team, a name in apps/teams.yaml (default %(default)s)')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
                         f'public: no sign-in, host outside {COOKIE_DOMAIN}')

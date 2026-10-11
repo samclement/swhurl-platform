@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import ops, promotion
+from swhurl.apps import contract, ops, promotion
 from swhurl.apps.yaml_file import EditError
 
 DIGEST = 'sha256:' + 'a' * 64
@@ -117,6 +117,24 @@ class FirstProductionTests(unittest.TestCase):
                 shutil.rmtree(self.root / 'apps')
                 for unit in (self.root / 'clusters/home').glob('app-example-*.yaml'):
                     unit.unlink()
+
+    def test_production_keeps_the_team_and_gets_its_own_quota_and_network_policy(self):
+        from unittest import mock
+
+        import yaml
+
+        from swhurl.apps import policy
+        from swhurl.run import FakeRunner
+        source = self.staging('web', '--team', 'payments', '--port', '9000')
+        with mock.patch.object(policy, 'evaluate', return_value=[]):
+            dst = promotion.create(self.root, 'example', source, runner=FakeRunner())
+        self.assertEqual(yaml.safe_load((dst / 'namespace.yaml').read_text())['metadata']['labels'][contract.TEAM],
+                         'payments')
+        network = yaml.safe_load((dst / 'networkpolicy.yaml').read_text())
+        self.assertEqual(network['metadata']['namespace'], 'example-prod')
+        self.assertEqual(network['spec']['ingress'][0]['ports'], [{'port': 9000, 'protocol': 'TCP'}])
+        self.assertEqual(yaml.safe_load((dst / 'resourcequota.yaml').read_text())['metadata']['namespace'], 'example-prod')
+        self.assertEqual(policy.drift([dst, self.root / 'apps/example/staging']), [])
 
     def test_unsupported_shape_and_policy_failure_write_nothing(self):
         from unittest import mock

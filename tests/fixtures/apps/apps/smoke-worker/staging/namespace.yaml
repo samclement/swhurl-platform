@@ -7,3 +7,4 @@ metadata:
     platform.swhurl.com/app: smoke-worker
     platform.swhurl.com/environment: staging
     platform.swhurl.com/exposure: private
+    platform.swhurl.com/team: platform

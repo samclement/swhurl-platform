@@ -19,6 +19,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
 11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console (restructured the same day: one Apps list with a map, and Use, Connect and Operate on each app page), and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a signed sign-in identity inside the cluster.
+12. **App notification service: designed 11 October 2026, not started** ([section 16](#16-app-notification-service--designed-11-october-2026-not-started)). Next: step N1 (channels and routing in Git; the checker sends app lifecycle messages to the team's channel). Open before N1: where channel credentials live and whether the operator also keeps receiving every app's lifecycle messages.
 
 ### Delivered
 
@@ -808,3 +809,89 @@ Listed as [limits](apps.md#limits) where a user would meet them: tokens for call
    ```
 
    `swhurl-try-7`, `-8` and `-9` are older leftovers with no instance here.
+
+## 16. App notification service — designed 11 October 2026, not started
+
+**Goal.** Keep cluster-operations alerts for the operator, and give apps a platform service that sends their notifications to destinations chosen per team or app: lifecycle messages, ClickStack alerts and messages the app sends itself. Start with ntfy; adding a provider must not change any app.
+
+**What is deployed.** Nothing. The one preparatory change is live: every platform alert uses one ntfy destination ([alerts](services.md#alerts), `1b5cb75`, `6d79f0f`).
+
+### Two planes
+
+```mermaid
+flowchart LR
+  subgraph ops[Operations plane: unchanged, operator only]
+    flux[Flux failures Alert] --> topic[platform ntfy topic]
+    hb[Host heartbeat] --> topic
+    chk1[Checker: console and monitor] --> topic
+  end
+  subgraph apps[App plane: new]
+    chk2[Checker: app lifecycle] --> notify[notify service]
+    cs[ClickStack alert rules] -->|one webhook| notify
+    app[App code] -->|call token, audience notify| notify
+    notify -->|routes by app and team| ch[Channels: ntfy first, then others]
+  end
+```
+
+The operations plane posts to ntfy directly and never through the notify service, so it does not depend on what it would have to report as broken.
+
+### Decisions
+
+Confirmed by the operator on 11 October 2026:
+
+| Decision | Why |
+| --- | --- |
+| Operations and app notifications are separate planes | Different audiences; the operator's alerts must not depend on an app-facing service |
+| Platform alerts share one ntfy topic named `platform` | The two former destinations already held the same topic; priority travels in each message |
+| Our own notify service in `tools/swhurl` (option B), not the stock Apprise API server (option C) | It can verify the caller's identity, retry from a durable outbox, pass a link and priority per message and serve one ClickStack webhook for every app. Apprise API has no caller identity (any admitted pod can post to any key), no retry, takes ntfy's link and priority only from the configured URL, and needs one HyperDX webhook per key |
+| ntfy is a hand-written adapter | Apprise's ntfy plugin cannot set the link per message |
+
+Proposed, to confirm when the step that needs them starts:
+
+| Decision | Proposal | Why |
+| --- | --- | --- |
+| Channel and transport are different things | A **transport** is how a message is delivered (ntfy, later Slack, email); a **channel** is a named destination in Git that uses one transport with a fixed address | Sending to an app's end users later is a transport with the recipient in the request, not a redesign |
+| Where routing lives | `notify:` on a team in `apps/teams.yaml` (default), overridden by `notify.channels` on an app | A team is already the owner label; most apps need no setting |
+| Where channel credentials live | One SOPS Secret for the service, one entry per channel | The address is the credential (an ntfy topic, a webhook URL); apps never hold it |
+| App identity | The service is a callee named `notify`: the app gets `SWHURL_SERVICE_NOTIFY_URL` and a token for the audience `notify`, as for [calls between apps](apps.md#calling-another-app) | No new credential kind; an app cannot send as another. `notify` becomes a reserved app name |
+| Where it runs | Its own Flux unit `platform-notify` and namespace, from the published console image | A platform service like NATS; the image is already built, pinned and deployed by the publish workflow. Cost: a broken console image stops app notifications, so the heartbeat watches it |
+| More providers | Add the Apprise Python library behind the adapter interface when a third provider is wanted | Breadth without giving up identity, routing and retries |
+| End-user notifications (email to an app's users) | Not built until an app needs it | The platform would own the provider credential, sender domain, rate limit and address-safe logs; the app owns recipients, preferences and unsubscribe |
+
+### Consumer contract (draft)
+
+```yaml
+# apps/teams.yaml
+payments:
+  notify: [payments-phone]        # channel names
+
+# swhurl.yaml (each field optional; flags on app-new and fields on the console's Start a new app)
+notify:
+  channels: [payments-phone]      # default: the team's
+  lifecycle: true                 # deployed, unhealthy, recovered for this app
+  alerts: [error-rate, latency]   # ClickStack presets (step N3)
+  send: true                      # the app may call the notify service (step N4)
+```
+
+```
+POST $SWHURL_SERVICE_NOTIFY_URL/v1/notify      Authorization: Bearer <token for audience notify>
+{"title": "Order backlog", "message": "412 orders waiting", "priority": "high", "click": "https://..."}
+```
+
+The service takes the app and environment from the token, never from the body. `202` means accepted into the outbox; delivery is at least once, as for the [checker](services.md#current-notification-behavior). `401` is a missing or bad token, `403` an app without `notify.send`.
+
+### Steps
+
+Each step ends in `make check`, a reconcile and a live check recorded in [current state](current-state.md). N2 onwards goes through the `new-component-checklist` skill.
+
+| Step | Delivers | Checkable by |
+| --- | --- | --- |
+| N1 | Channels and team routing in Git; the checker sends each app's lifecycle messages to its team's channel (ntfy only, no new service). `make check-apps` refuses an unknown channel | A throwaway app's `deployed` message arrives on a second topic |
+| N2 | The notify service: one `POST /v1/notify`, the ntfy adapter, the outbox reused from `notifications/delivery.py`, its Flux unit, NetworkPolicy, `verify-platform` check and heartbeat row. The checker's app messages move onto it | The same message, now through the service; a request with another app's token is refused |
+| N3 | One ClickStack webhook to the service and preset alert rules synced per app like dashboards. First a spike: confirm the HyperDX API can create alert rules (the repo uses only its dashboards and webhooks endpoints) | An induced error rate on a throwaway app fires and recovers on the team's channel |
+| N4 | `notify.send`: the derived variable and token, and a `notify()` helper in the stack templates (pin the new template revision in `STACK_REVISIONS`) | A throwaway app sends one message; an app without `send` gets 403 |
+| N5 | A second adapter | The same message on two providers from one request |
+
+### Out of scope
+
+The operations gaps in [open work](#open-work) item 5 (backups, certificates, disk, external availability) stay on the operations plane and can go ahead independently. End-user notifications, a console page for editing channels, and per-user preferences are not planned.

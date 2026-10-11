@@ -25,7 +25,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -60,6 +60,15 @@ def short_hashes(text: object) -> Markup:
 
 TEMPLATES.env.filters['short'] = short_hashes
 TEMPLATES.env.globals['target'] = cluster.target
+TEMPLATES.env.globals['default_host'] = contract.default_host
+
+
+def logs_url(app: str) -> str:
+    """HyperDX, filtered to one app's logs and traces."""
+    return f'https://clickstack.{contract.COOKIE_DOMAIN}/search?' + urlencode({'where': f'ServiceName:"{app}"', 'whereLanguage': 'lucene'})
+
+
+TEMPLATES.env.globals['logs_url'] = logs_url
 
 
 class RequireIdentity(BaseHTTPMiddleware):
@@ -124,6 +133,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         """Every app as a list (optionally one team's) or, with ?view=map, one environment as a map of who calls whom."""
         view, team = request.query_params.get('view', 'list'), request.query_params.get('team', '')
         env = request.query_params.get('env', 'staging')
+        attention = request.query_params.get('show') == 'attention'
 
         def read():
             rows = cluster.apps(runner)
@@ -133,10 +143,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             # What needs you comes first; within each group, by name.
             shown.sort(key=lambda summary: (all(row.state.key == 'healthy' for row in summary.envs.values()), summary.app))
             states = [row.state.key for summary in shown for row in summary.envs.values()]
-            return {'apps': shown, 'teams': teams,
-                    'tally': {'healthy': states.count('healthy'), 'updating': states.count('updating'),
-                              'attention': len(states) - states.count('healthy') - states.count('updating')},
-                    'team': team, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
+            tally = {'healthy': states.count('healthy'), 'updating': states.count('updating'), 'apps': len(shown),
+                     'attention': len(states) - states.count('healthy') - states.count('updating')}
+            if attention:
+                shown = [summary for summary in shown if any(row.state.key != 'healthy' for row in summary.envs.values())]
+            return {'apps': shown, 'teams': teams, 'tally': tally, 'attention': attention, 'team': team, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
                                            env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
         return reading(request, 'apps.html', read)
@@ -161,10 +172,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
         row = summary.envs.get(found.env) if summary else None
-        logs = (f'https://clickstack.{contract.COOKIE_DOMAIN}/search?'
-                + urlencode({'where': f'ServiceName:"{found.app}"', 'whereLanguage': 'lucene'}))
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
-                    connections=row.connections if row else cluster.Connections(), logs=logs,
+                    connections=row.connections if row else cluster.Connections(), logs=logs_url(found.app),
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
@@ -202,12 +211,18 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return lambda _request: RedirectResponse(target, status_code=301)
 
     def start(request: Request) -> Response:
+        """Start a Flux action. From a button in a list (htmx) the answer replaces the button in its
+        row, so you stay where you are; from a plain form it is the job's page."""
+        in_place = request.headers.get('hx-request') == 'true'
         try:
             job = jobs.start(request.path_params['action'], request.path_params['unit'], request.state.identity)
-        except actions.ActionError as error:
-            return page(request, 'error.html', status_code=409, error=str(error))
-        except cluster.ReadError as error:
-            return page(request, 'error.html', status_code=502, error=str(error))
+        except (actions.ActionError, cluster.ReadError) as error:
+            if in_place:
+                return HTMLResponse(f'<span class="bad" role="alert">{escape(error)}</span>')
+            return page(request, 'error.html', status_code=409 if isinstance(error, actions.ActionError) else 502, error=str(error))
+        if in_place:
+            return HTMLResponse(f'<a class="started" href="/jobs/{job.id}"><span class="mark updating" aria-hidden="true"></span> '
+                                f'{escape(job.action)} started · job #{job.id}</a>')
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     def job(request: Request) -> Response:

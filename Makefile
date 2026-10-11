@@ -94,6 +94,11 @@ team-edit: ## NAME= ARGS="--description TEXT | --rename NEW | --notify CHANNEL" 
 	@[[ -n "$(NAME)" && -n "$(ARGS)" ]] || { echo "Usage: make team-edit NAME=<team> ARGS='--rename new-name'" >&2; exit 2; }
 	$(SWHURL_APPS) team-edit $(NAME) $(ARGS)
 
+.PHONY: team-channel
+team-channel: ## NAME= [ARGS="--remove"] Give a team its notification channel or a new address; prompts without showing it (Git edit)
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-channel NAME=<team> [ARGS=--remove]" >&2; exit 2; }
+	$(SWHURL_APPS) team-channel $(NAME) $(ARGS)
+
 .PHONY: channel-add
 channel-add: ## NAME= [ARGS="--replace"] Add a notification channel; prompts for its address without showing it (Git edit)
 	@[[ -n "$(NAME)" ]] || { echo "Usage: make channel-add NAME=<channel> [ARGS=--replace]" >&2; exit 2; }

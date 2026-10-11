@@ -5,9 +5,9 @@
 {% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs | first }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
 {# An ntfy address: typed, or made here in the browser. Generate fills the field with a random topic and
    shows its subscribe link; nothing is sent until the form is submitted, and it is never shown again. #}
-{% macro address_field(id) %}
+{% macro address_field(id, label='Address') %}
 <div class="field" data-address>
-  <label for="{{ id }}">Address</label>
+  <label for="{{ id }}">{{ label }}</label>
   <div class="with-button"><input id="{{ id }}" name="address" placeholder="https://ntfy.sh/your-topic" spellcheck="false" autocomplete="off" required>
     <button type="button" class="button" data-generate hidden>Generate</button></div>
   <span class="muted hint">An ntfy topic URL. The topic is the credential: anyone who knows it can read and post, so use a long random one.</span>
@@ -49,10 +49,11 @@
 </div>
 {% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
 <section class="card" id="{{ name }}">
-  <div class="card-head">
+  <div class="card-head" style="--acts: 3">
     <h2>{{ name }}{% if name == default_team %} <span class="pill" title="New apps without a team go to it; it cannot be renamed or deleted">default</span>{% endif %}</h2>
     <p class="{{ '' if description else 'muted' }}">{{ description or 'No description yet.' }}</p>
-    <p class="notifies">{% for channel in team_channels.get(name, []) %}{% if loop.first %}<span class="muted">Notifies</span> {% endif %}<a class="pill" href="#channels" title="Gets a copy of the deployment and health messages of this team's apps">{{ channel }}</a> {% else %}<span class="muted">No notification channel: messages about its apps go to the platform topic only.</span>{% endfor %}</p>
+    {% set channel = team_channels.get(name, []) | first %}
+    <p class="notifies">{% if channel %}<span class="pill ok" title="Gets a copy of the deployment and health messages of this team's apps">notification channel · {{ channels.get(channel, 'ntfy') }}</span>{% else %}<span class="muted">No notification channel: messages about its apps go to the platform topic only.</span>{% endif %}</p>
     {% if job %}<p class="muted">{{ st.job(job) }} Last change: <a href="/jobs/{{ job.id }}">{{ job.action }} {{ job.state }}</a>{% if job.link %} · <a href="{{ job.link }}">pull request {{ st.icon('external') }}</a>{% endif %}</p>{% endif %}
     <details class="act" name="team-form" style="--slot: 0">
       <summary class="button">{{ st.icon('edit') }} Edit</summary>
@@ -62,21 +63,27 @@
           {{ ui.text_field('description-' ~ name, 'Description', description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
           {% if name != default_team %}{{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team: the same pull request relabels ' ~ ('its ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else, since it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
           {% else %}<span class="muted hint">The default team keeps its name: new apps without a team go to it.</span>{% endif %}
-          {% if channels %}
-          <div class="field">
-            <label for="notify-{{ name }}">Notification channel</label>
-            <input type="hidden" name="notify_shown" value="1">
-            {% set current = team_channels.get(name, []) | first %}
-            <select id="notify-{{ name }}" name="notify">
-              <option value="" {{ 'selected' if not current }}>None: the platform topic only</option>
-              {% for channel, transport in channels.items() %}<option value="{{ channel }}" {{ 'selected' if channel == current }}>{{ channel }} · {{ transport }}</option>{% endfor %}
-            </select>
-            <span class="muted hint">A team has one channel. It gets a copy of the deployment and health messages of every app this team owns; the platform topic still gets them all.</span>
-          </div>
-          {% endif %}
         </fieldset>
         {{ ui.submit('Open edit PR', 'You review and merge it on GitHub.') }}
       </form>
+    </details>
+    {# The team's one channel: an address is typed (or generated in the browser) once, sent to the
+       server and never rendered back. #}
+    <details class="act" name="team-form" style="--slot: {{ 1 if name == default_team else 2 }}; --wide: 7rem">
+      <summary class="button">{{ st.icon('edit') }} Channel</summary>
+      <form class="wizard" method="post" action="/team-channel/set" autocomplete="off">
+        <input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="transport" value="ntfy">
+        <fieldset>
+          {{ address_field('address-' ~ name, 'New address' if channel else 'Address') }}
+          <span class="muted hint">{% if channel %}Use this when the address leaked or was lost: messages go to the new one once the pull request is merged, and the old one stops receiving them.{% else %}The team's one channel: it gets a copy of the deployment and health messages of every app the team owns. You supply the address and subscribe to it; it is stored encrypted and never shown again.{% endif %}</span>
+        </fieldset>
+        {{ ui.submit('Open new address PR' if channel else 'Open channel PR', 'Adds one encrypted file; nothing is decrypted. You review and merge it on GitHub.') }}
+      </form>
+      {% if channel %}
+      <form class="inline" method="post" action="/team-channel/remove" data-confirm="Open a pull request removing the notification channel of {{ name }}? Messages about its apps then go to the platform topic only." data-confirm-label="Open remove PR">
+        <input type="hidden" name="name" value="{{ name }}"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('trash') }} Remove the channel</button>
+      </form>
+      {% endif %}
     </details>
     {% if name != default_team %}
     <details class="act" name="team-form" style="--slot: 1">
@@ -119,64 +126,4 @@
   {% else %}<p class="card-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{% endif %}
 </section>
 {% endfor %}
-
-{# Channels: names and transports only. An address is typed (or generated in the browser) once, sent
-   to the server and never rendered back: there is nothing here that could show one. #}
-<section class="card" id="channels" style="--pitch: 9rem">
-  <div class="card-head">
-    <h2>Notification channels</h2>
-    <p class="muted">A channel is a destination for messages about a team's apps: today an ntfy topic. Whoever creates it supplies its address and subscribes to it; the address is stored encrypted and never shown again, here or anywhere else.</p>
-    {% if channel_job %}<p class="muted">{{ st.job(channel_job) }} Last change: <a href="/jobs/{{ channel_job.id }}">{{ channel_job.action }} {{ channel_job.state }}</a>{% if channel_job.link %} · <a href="{{ channel_job.link }}">pull request {{ st.icon('external') }}</a>{% endif %}</p>{% endif %}
-    <details class="act" name="team-form" style="--slot: 0; --wide: 8.5rem">
-      <summary class="button">{{ st.icon('plus') }} New channel</summary>
-      <form class="wizard" method="post" action="/channels/add" autocomplete="off">
-        <fieldset>
-          {{ ui.text_field('channel-name', 'Name', '', 'payments-phone', 'Lowercase letters, digits and hyphens; at most 40 characters. This is what a team chooses; it is not secret.', name='name') }}
-          <input type="hidden" name="transport" value="ntfy">
-          {{ address_field('channel-address') }}
-        </fieldset>
-        {{ ui.submit('Open new channel PR', 'Adds one encrypted file. Once merged, choose the channel in a team\'s Edit form.') }}
-      </form>
-    </details>
-    {% if channels %}
-    <details class="act" name="team-form" style="--slot: 1; --wide: 8.5rem">
-      <summary class="button">{{ st.icon('edit') }} New address</summary>
-      <form class="wizard" method="post" action="/channels/replace" autocomplete="off">
-        <input type="hidden" name="transport" value="ntfy">
-        <fieldset>
-          <div class="field">
-            <label for="replace-name">Channel</label>
-            <select id="replace-name" name="name" required>{% for channel in channels %}<option value="{{ channel }}">{{ channel }}</option>{% endfor %}</select>
-            <span class="muted hint">Use this when its address leaked or was lost. Messages go to the new address once the pull request is merged; the old one stops receiving them.</span>
-          </div>
-          {{ address_field('replace-address') }}
-        </fieldset>
-        {{ ui.submit('Open new address PR', 'Replaces the encrypted file; nothing is decrypted.') }}
-      </form>
-    </details>
-    {% endif %}
-  </div>
-  {% if channels %}
-  <div class="scroll">
-  <table class="team-apps">
-    <tr><th>Channel</th><th>Transport</th><th>Teams that notify it</th><th><span class="sr-only">Changes</span></th></tr>
-    {% for channel, transport in channels.items() %}{% set users = channel_teams.get(channel, []) %}
-    <tr>
-      <td><strong>{{ channel }}</strong></td>
-      <td><span class="pill">{{ transport }}</span></td>
-      <td>{% for team in users %}<a href="#{{ team }}">{{ team }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">none yet</span>{% endfor %}</td>
-      <td class="row-links">
-        {% if not users %}
-        <form class="inline" method="post" action="/channels/remove" data-confirm="Open a pull request removing channel {{ channel }}? No team notifies it." data-confirm-label="Open remove PR">
-          <input type="hidden" name="name" value="{{ channel }}"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('trash') }} Remove</button>
-        </form>
-        {% else %}<span class="muted" title="Choose another channel, or none, in each team's Edit form first">in use</span>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  </div>
-  <p class="card-foot muted">A channel a team notifies cannot be removed: choose another, or none, in the team's Edit form first.</p>
-  {% else %}<p class="card-foot muted">No channels yet: messages about every app go to the platform topic only.</p>{% endif %}
-</section>
 {% endblock %}

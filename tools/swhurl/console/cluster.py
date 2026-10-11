@@ -189,8 +189,6 @@ def target(name: str) -> tuple[str, str]:
     ``<app>/<env>``; anything else is a Flux unit, by name."""
     if name.startswith('team:'):  # a change made on the Teams page
         return f'team {name[5:]}', f'/teams#{name[5:]}'
-    if name.startswith('channel:'):
-        return f'channel {name[8:]}', '/teams#channels'
     found = instance_of_unit(name)
     app, _, env = name.partition('/')
     found = found or (instance(app, env) if env else None)

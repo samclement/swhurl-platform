@@ -413,26 +413,27 @@ def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], d
         api.client.close()
 
 
-def channel_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str, str | None]:
-    """``(command, argv, PR title, the make line, standard input)`` for a channel's add, replace or remove.
+def team_channel_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str, str | None]:
+    """``(command, argv, PR title, the make line, standard input)`` for giving a team its channel
+    (or a new address for it), or removing it.
 
     The address is the credential: it is returned only as the command's standard input, and no
     message built here repeats it."""
     name = form.get('name', '').strip()
     if not TEAM_NAME.fullmatch(name):
-        raise ActionError('channel name: lowercase letters, digits and hyphens, at most 40 characters')
+        raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
     if action == 'remove':
-        return 'channel-remove', [name], f'notify: remove channel {name}', f'make channel-remove NAME={name}', None
-    if action not in ('add', 'replace'):
+        return ('team-channel', [name, '--remove'], f'teams: remove the notification channel of {name}',
+                f'make team-channel NAME={name} ARGS=--remove', None)
+    if action != 'set':
         raise ActionError('no such channel change')
     transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
     problem = channels.address_problem(transport, address)
     if problem:
         raise ActionError(f'channel address: {problem}')
-    argv = [name, f'--transport={transport}'] + (['--replace'] if action == 'replace' else [])
-    return ('channel-add', argv, f'notify: {"replace the address of" if action == "replace" else "add"} channel {name}',
-            f'make channel-add NAME={name}' + (' ARGS=--replace' if action == 'replace' else '')
-            + '    # the address was entered on the console and is only in the encrypted file', address + '\n')
+    return ('team-channel', [name, f'--transport={transport}'], f'teams: set the notification channel of {name}',
+            f'make team-channel NAME={name}    # the address was entered on the console and is only in the encrypted file',
+            address + '\n')
 
 
 def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str]:
@@ -453,11 +454,6 @@ def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], s
                 f"make team-add NAME={name} DESCRIPTION='{description}'")
     if action == 'edit':
         argv = [name, f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
-        if 'notify_shown' in form:  # the form offered the channels: the one chosen (or none) is the team's
-            notify = form.get('notify', '')
-            if notify and not TEAM_NAME.fullmatch(notify):
-                raise ActionError('channel name: lowercase letters, digits and hyphens')
-            argv.append(f'--notify={notify}')
         return 'team-edit', argv, f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(argv[1:])}"'
     if action == 'remove':
         argv = [name] + ([f'--move-apps-to={move}'] if move else [])

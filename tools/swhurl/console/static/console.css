@@ -153,6 +153,8 @@ table.units tr.group th { background: var(--sunk); color: var(--text); font-size
 table.units tr.group th .muted { font-weight: 400; }
 table.units td.row-links { white-space: nowrap; }
 a.started { white-space: nowrap; }
+.merging form.inline { margin: 0 0 0 var(--gap-2); }
+.merging, td.nowrap { white-space: nowrap; }
 p.check { margin: 0; padding: 6px 0; }
 .checks details.section { margin: 0; }
 .checks ul.items { margin-left: calc(1.15em + 4px); }

@@ -536,6 +536,8 @@ class PlatformTests(unittest.TestCase):
         for seconds, text in ((30, 'just now'), (600, '10 min ago'), (3 * 3600, '3 h ago'), (5 * 86400, '5 days ago')):
             self.assertEqual(server.ago(now - dt.timedelta(seconds=seconds), now), text)
         self.assertEqual(server.ago('not a time'), 'not a time')
+        self.assertEqual([server.ago(day, now) for day in ('2026-10-11', '2026-10-10', '2026-10-01')],
+                         ['today', 'yesterday', '10 days ago'], 'a date alone has no hour to count from')
 
     def test_unreachable_cluster_is_a_502(self):
         runner = FakeRunner().on('kubectl', 'get', '--raw=/version', returncode=1, stderr='refused')
@@ -765,6 +767,8 @@ class ActionTests(unittest.TestCase):
         self.assertIn('1 running</span>', c.get('/apps', headers=WHO).text)
         activity = c.get('/activity', headers=WHO).text
         self.assertIn('href="/jobs/7"', activity)
+        self.assertIn('<span class="state updating"> Running</span>', activity, 'the state leads the row, as on every list')
+        self.assertIn('just now', activity)
         self.assertIn('href="/units/infra-base">Back to infra-base', c.get('/jobs/7', headers=WHO).text)
 
     def test_dry_run_plans_the_patches_and_does_not_wait(self):

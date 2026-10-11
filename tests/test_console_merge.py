@@ -69,7 +69,7 @@ class MergeTests(unittest.TestCase):
          .on('git', 'worktree', 'add', handler=worktree)
          .on('git', 'ls-remote', stdout=current + '\trefs/heads/main\n')
          .on('git', stdout='')
-         .on('make', 'check', returncode=validation, stderr='validation failed' if validation else ''))
+         .on('make', returncode=validation, stderr='validation failed' if validation else ''))
         return runner
 
     def check(self, runner):
@@ -85,7 +85,9 @@ class MergeTests(unittest.TestCase):
         self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'fetch')],
                          [('git', 'fetch', 'origin', 'main'), ('git', 'fetch', 'origin', 'pull/7/head')])
         self.assertEqual(self.pushes(runner)[0], ('git', 'push', 'origin', 'HEAD:refs/heads/main'))
-        self.assertLess(runner.calls.index(('make', 'check')), runner.calls.index(self.pushes(runner)[0]))
+        checks = ('make', '-j2', '--output-sync=target', 'check-repo', 'check-apps')
+        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [checks])
+        self.assertLess(runner.calls.index(checks), runner.calls.index(self.pushes(runner)[0]))
 
     def test_head_validation_failure_merge_failure_hold_and_base_race_never_push(self):
         held = {**self.pr, 'labels': []}
@@ -154,3 +156,12 @@ class MergeTests(unittest.TestCase):
         with self.assertRaisesRegex(merge.Hold, 'setup'):
             self.check(runner)
         self.assertEqual(self.pushes(runner), [])
+
+    def test_new_app_runs_every_check_before_the_push(self):
+        self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
+        self.files = ['apps/fresh/staging/helmrelease.yaml']
+        runner = self.runner()
+        with mock.patch.object(merge, 'scope'):
+            self.check(runner)
+        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [('make', 'check')])
+        self.assertTrue(self.pushes(runner))

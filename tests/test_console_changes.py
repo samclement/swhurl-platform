@@ -16,7 +16,7 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import new, ops, promotion
+from swhurl.apps import new, ops, promotion, repo
 from swhurl.console import actions, changes, server
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result
@@ -82,6 +82,8 @@ class FakeGitHub:
             'POST /git/trees': {'sha': 'tree1'},
             'POST /git/commits': {'sha': 'def5678' + '0' * 33},
             'POST /git/refs': {'ref': 'x'},
+            'GET /contents/apps/teams.yaml': {'content': base64.b64encode(
+                b'teams:\n  platform: {description: The platform itself}\n  payments: {}\n').decode()},
             'POST /pulls': {'html_url': 'https://github.com/x/pull/7', 'number': 7},
             'POST /issues/7/labels': [{'name': 'auto-merge'}],
             'GET /pulls': [{'number': 7, 'title': '[console] apps: add weather-api staging', 'html_url': 'https://github.com/x/pull/7',
@@ -290,7 +292,31 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(c.post('/new', data={'name': 'weather-api', 'image': 'ghcr.io/me/weather:1.0'},
                                 headers=WHO).status_code, 405)
         self.assertIsNone(jobs.get(1))
-        self.assertEqual((runner.calls, self.api.requests), ([], []))
+        self.assertEqual(runner.calls, [])
+        self.assertEqual({(r.method, r.url.path.rsplit('/', 1)[-1]) for r in self.api.requests}, {('GET', 'teams.yaml')},
+                         'the page reads the team registry and nothing else')
+        self.assertEqual(len(self.api.requests), 1, 'and keeps it for five minutes')
+
+    def test_the_team_is_chosen_from_the_registry_on_main(self):
+        c, _ = self.client(tree_fake())
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('<option value="platform" selected>platform — The platform itself</option>', page)
+        self.assertIn('<option value="payments" >payments</option>', page)
+        teams = changes.platform_teams(FakeRunner(), self.api.github)
+        self.assertEqual(teams, {'platform': 'The platform itself', 'payments': ''})
+        web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
+        self.assertEqual(changes.new_repo_args({**NEW, 'team': 'payments'}, web, teams)[4],
+                         ['--team=payments', '--exposure=authenticated-web'])
+        self.assertEqual(changes.new_repo_args({**NEW, 'team': 'payments', 'feature-kind': 'worker'}, web, teams)[4],
+                         ['--team=payments'], 'a worker has a team too')
+        self.assertEqual(changes.new_repo_args(NEW, web, teams)[4], ['--exposure=authenticated-web'],
+                         'no team in the form: app-new uses the default')
+        with self.assertRaisesRegex(actions.ActionError, 'team must be one of platform, payments'):
+            changes.new_repo_args({**NEW, 'team': 'nobody'}, web, teams)
+        unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
+        page = TestClient(app_under_test(tree_fake(), github=unreadable.github)).get('/new', headers=WHO).text
+        self.assertIn('Only the default team is offered', page)
+        self.assertIn('<option value="platform" selected>platform</option>', page)
 
     def test_pr_description_explains_setting_secret_values(self):
         body = changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging', '--secret-keys=API_TOKEN,DB_URL'])

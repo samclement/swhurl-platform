@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from swhurl import ROOT
 from swhurl.apps import policy
-from swhurl.apps.contract import AUTH_MIDDLEWARE, INSTANCE_ROOTS
+from swhurl.apps.contract import AUTH_MIDDLEWARE, INSTANCE_ROOTS, TEAM
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 
@@ -241,6 +241,15 @@ def release_env(release: dict | None) -> tuple[dict[str, str], str]:
     return shown, next((s for s in secrets if s), '')
 
 
+def team_of(runner: Runner, instance: Instance) -> str:
+    """The instance's team, from its namespace label; '' when it has none or the account may not read namespaces."""
+    try:
+        namespace = get(runner, 'get', 'namespace', instance.namespace) or {}
+    except CommandError:
+        return ''
+    return ((namespace.get('metadata') or {}).get('labels') or {}).get(TEAM, '')
+
+
 def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     """Read the instance from the cluster; None if its Flux unit does not exist."""
     ns = instance.namespace
@@ -275,7 +284,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     )
 
 
-def status_lines(found: InstanceStatus) -> list[str]:
+def status_lines(found: InstanceStatus, team: str = '') -> list[str]:
     instance = found.instance
     note = '' if found.applied else '  <- not yet applied'
     lines = [
@@ -293,6 +302,8 @@ def status_lines(found: InstanceStatus) -> list[str]:
         lines += [f'Image      desired {found.desired_image}',
                   f"           running {', '.join(found.running_images) or 'none'}{note}"]
     lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
+    if team:
+        lines.append(f'Team       {team}')
     lines.append(f'Exposure   {EXPOSURE_LABELS.get(found.exposure, found.exposure)}')
     lines += [f'Route      https://{host}' for host in found.routes]
     lines += [f'TLS        {name}: {ready}' for name, ready in found.certificates]
@@ -314,7 +325,7 @@ def status(runner: Runner, instance: Instance) -> int:
     if found is None:
         print(f'[ERROR] Flux unit {instance.unit} not found', file=sys.stderr)
         return 1
-    for line in status_lines(found):
+    for line in status_lines(found, team_of(runner, instance)):
         print(line)
     return 0
 

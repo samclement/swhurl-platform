@@ -132,7 +132,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
-        return page(request, 'app.html', status=status, scale_fields=changes.SCALE_FIELDS, github=github,
+        return page(request, 'app.html', status=status, team=ops.team_of(runner, found),
+                    scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=cluster.instance_state(status, summary.envs.get(found.env) if summary else None), unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
@@ -235,8 +236,24 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         questions_cache[stack] = (time.monotonic(), found)
         return found
 
+    teams_cache: list[tuple[float, dict[str, str]]] = []
+
+    def platform_teams() -> tuple[dict[str, str], str]:
+        """``(registered teams, problem)``, read from main at most every 5 minutes; the default team alone on a problem."""
+        if teams_cache and time.monotonic() - teams_cache[0][0] <= 300:
+            return teams_cache[0][1], ''
+        if github is None:
+            return {contract.DEFAULT_TEAM: ''}, ''
+        try:
+            found = changes.platform_teams(runner, github)
+        except actions.ActionError as problem:
+            return {contract.DEFAULT_TEAM: ''}, str(problem)
+        teams_cache[:] = [(time.monotonic(), found)]
+        return found, ''
+
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
+        teams, teams_error = platform_teams()
         features, features_error = {}, ''
         for stack in contract.STACKS:
             try:
@@ -246,7 +263,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return page(request, 'new_repo.html', status_code=status_code,
                     features=features, features_error=features_error,
                     stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
-                    owner=contract.APP_OWNER,
+                    owner=contract.APP_OWNER, teams=teams, teams_error=teams_error, default_team=contract.DEFAULT_TEAM,
                     exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
                     github=github, app_repos=app_repos)
 
@@ -256,7 +273,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return new_repo_form(request, 409, 'Both GitHub tokens must be configured (console-github Secret).', form)
         try:
             questions = stack_questions(form.get('stack', '').strip()) if form.get('stack', '').strip() in contract.STACKS else []
-            name, stack, description, answers, extra = changes.new_repo_args(form, questions)
+            name, stack, description, answers, extra = changes.new_repo_args(form, questions, platform_teams()[0])
         except (actions.ActionError, repo.RepoError) as error:
             return new_repo_form(request, 400, str(error), form)
         req = repo.Request(name, stack, contract.APP_OWNER, description, answers)

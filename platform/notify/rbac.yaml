@@ -1,6 +1,6 @@
 # The notify service reads the routes and the channel addresses, keeps its outbox, looks up an app's
-# namespace for its team and asks Kubernetes whose token a caller presented. This namespace holds
-# nothing else, so listing its Secrets shows channel addresses only. The chart creates the
+# namespace for its team and asks Kubernetes whose token a caller presented. This namespace's
+# only other Secret is Helm's record of this release, so listing Secrets shows no other credential. The chart creates the
 # ServiceAccount (helmrelease.yaml); this file binds it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

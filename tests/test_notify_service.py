@@ -39,7 +39,7 @@ def cluster(*, teams=None, state=None, fails=(), addresses=None):
     secrets = [{'metadata': {'name': f'channel-{name}', 'labels': {channels.TRANSPORT: 'ntfy'}},
                 'data': {'address': base64.b64encode(address.encode()).decode()}}
                for name, address in (addresses or {'payments-phone': ADDRESS, 'payments-desk': ADDRESS + '-desk'}).items()]
-    (runner.on('kubectl', 'create', '-f', '-', handler=review)
+    (runner.on(*service.REVIEW, handler=review)
      .on('kubectl', 'get', 'namespace', 'orders-staging', stdout=json.dumps(
          {'metadata': {'name': 'orders-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}}))
      .on('kubectl', 'get', 'namespace', stdout='')
@@ -76,6 +76,7 @@ class CallerTests(unittest.TestCase):
         self.assertEqual(saved, [])
         reviews = [call for call in runner.calls if call[:2] == ('kubectl', 'create')]
         self.assertEqual(len(reviews), 2, 'no token, no question to Kubernetes')
+        self.assertIn('--validate=false', service.REVIEW, 'client-side validation lists CRDs, which the service may not')
         self.assertNotIn('token', ' '.join(' '.join(call) for call in runner.calls) + ' '.join(runner.echoed),
                          'the token goes to kubectl on standard input, never as an argument')
 

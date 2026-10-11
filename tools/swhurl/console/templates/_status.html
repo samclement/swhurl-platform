@@ -1,7 +1,10 @@
 {# The console's status vocabulary: Healthy, Updating, Failing, Suspended, Unknown, Stopped (cluster.State), each with its
    own mark so meaning does not rest on colour. Import with: {% import "_status.html" as st %} #}
 {% macro mark(key) %}<span class="mark {{ key }}" aria-hidden="true"></span>{% endmacro %}
-{% macro state(s, detail=true) %}{{ mark(s.key) }} <span class="state {{ s.key }}">{{ s.label }}</span>{% if detail and s.detail %} <span class="muted">— {{ s.detail | short }}</span>{% endif %}{% endmacro %}
+{# A state as a mark and a word. Healthy is plain; anything else is a tinted pill. ``quiet`` hides the word
+   "Healthy" (lists, where a column of them says nothing) but keeps it for screen readers. #}
+{% macro state(s, detail=true, quiet=false) %}<span class="status {{ s.key }}">{{ mark(s.key) }}<span class="state {{ s.key }}{{ ' sr-only' if quiet and s.key == 'healthy' }}">{{ s.label }}</span></span>{% if detail and s.detail %} <span class="muted">— {{ s.detail | short }}</span>{% endif %}{% endmacro %}
+{% macro icon(name) %}<svg class="icon" aria-hidden="true"><use href="#i-{{ name }}"/></svg>{% endmacro %}
 {% macro job(j) %}{{ mark({'running': 'updating', 'succeeded': 'healthy', 'failed': 'failing'}.get(j.state, 'updating')) }}{% endmacro %}
 {% macro check(level) %}{{ mark({'ok': 'healthy', 'bad': 'failing'}.get(level, 'warn')) }}{% endmacro %}
 {% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text | short }}</a>{% else %}{{ p.text | short }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}

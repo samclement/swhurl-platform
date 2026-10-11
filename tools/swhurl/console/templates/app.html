@@ -11,7 +11,7 @@
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-<p class="verdict">{{ st.mark(state.key) }} <strong>{{ state.label }}</strong>{% if state.detail %} <span class="muted">— {{ state.detail | short }}</span>{% endif %}
+<p class="verdict">{{ st.state(state) }}
   <span class="muted"> · {{ i.app }}/{{ i.env }} · team {{ team or 'unknown' }}</span></p>
 
 {% if status.problems %}
@@ -23,10 +23,12 @@
 </table>
 {% endif %}
 
-<h2 class="part">Use</h2>
+<nav class="anchors" aria-label="On this page"><a href="#use">Use</a><a href="#connect">Connect</a><a href="#operate">Operate</a></nav>
+
+<h2 class="part" id="use">Use</h2>
 {% if status.routes %}
 <div class="toolbar">
-  <a class="button primary" href="https://{{ status.routes[0] }}">Open ↗</a>
+  <a class="button primary" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>
   {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{% endfor %}
 </div>
 {% set reach = exposures.get(status.exposure, status.exposure) %}<p class="muted {{ 'warn' if status.exposure == 'public' else '' }}">{{ reach[:1] | upper }}{{ reach[1:] }}. <span class="muted">Change it under Operate → Who can reach it.</span></p>
@@ -34,7 +36,7 @@
 <p class="muted">No web address: {{ 'a worker, with nothing to open' if not connections.address else 'private, reachable only by the apps that declare a call to it' }}.</p>
 {% endif %}
 
-<h2 class="part">Connect</h2>
+<h2 class="part" id="connect">Connect</h2>
 <dl>
   <dt>Address</dt>
   <dd>{% if connections.address %}<code>{{ connections.address }}</code> <span class="muted">inside the cluster, for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
@@ -51,8 +53,8 @@
   <dd>{% for name in connections.subscribes %}<a href="/apps/{{ name.split('.')[0] }}/{{ i.env }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
 </dl>
 {% if connections.address %}
-<details class="section disclose">
-  <summary><strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
+<details class="section disclose help">
+  <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
   <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
   <pre><code>calls: [{{ i.app }}]</code></pre>
   <p class="muted">Afterwards, your app page's <strong>Change calls</strong> form, or:</p>
@@ -63,8 +65,8 @@ platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
 </details>
 {% endif %}
 {% if connections.publishes %}
-<details class="section disclose">
-  <summary><strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
+<details class="section disclose help">
+  <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
   <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
   <pre><code>events: {subscribe: [{{ i.app }}.{{ connections.publishes[0] }}]}</code></pre>
   <p class="muted">Afterwards, your app page's <strong>Change events</strong> form, or:</p>
@@ -74,9 +76,9 @@ platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
 events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>
 </details>
 {% endif %}
-<p class="muted">Every change form on this page opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.{% if not github %} <span class="bad">No GitHub token is configured, so pull requests cannot be opened.</span>{% endif %}</p>
+<p class="muted">Every change form on this page opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.</p>
 <details class="section disclose">
-  <summary><strong>Change calls</strong> <span class="muted">— which apps {{ i.app }}/{{ i.env }} may call</span></summary>
+  <summary>{{ st.icon('pr') }} <strong>Change calls</strong> <span class="muted">— which apps {{ i.app }}/{{ i.env }} may call</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
     <fieldset>
       {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
@@ -86,7 +88,7 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
   </form>
 </details>
 <details class="section disclose">
-  <summary><strong>Change events</strong> <span class="muted">— what {{ i.app }}/{{ i.env }} publishes and receives</span></summary>
+  <summary>{{ st.icon('pr') }} <strong>Change events</strong> <span class="muted">— what {{ i.app }}/{{ i.env }} publishes and receives</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/events">
     <fieldset>
       {{ ui.text_field('events_publish', 'Publishes', connections.publishes | join(', '), name='publish', placeholder='created, cancelled', hint='Event names, comma-separated. Other apps see them as ' ~ i.app ~ '.<event>. What you send replaces the list; empty publishes nothing.') }}
@@ -96,12 +98,12 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
   </form>
 </details>
 
-<h2 class="part">Operate</h2>
+<h2 class="part" id="operate">Operate</h2>
 <p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
   · {% for r in status.replicas %}{{ r.ready }}/{{ r.wanted }} ready{{ ', ' if not loop.last }}{% else %}no replicas{% endfor %}
   · Database: {% if not status.release %}unknown{% elif status.variables.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
 <div class="toolbar">
-  <a class="button" href="{{ logs }}">Logs and traces ↗</a>
+  <a class="button" href="{{ logs }}">Logs and traces {{ st.icon('external') }}</a>
   <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
   {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
   <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
@@ -146,7 +148,7 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
 </details>
 
 <details class="section disclose">
-  <summary><strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
+  <summary>{{ st.icon('pr') }} <strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
     <fieldset>
       <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
@@ -156,7 +158,7 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
   </form>
 </details>
 <details class="section disclose">
-  <summary><strong>Who can reach it</strong> <span class="muted">— signed in, public or private, and the host</span></summary>
+  <summary>{{ st.icon('pr') }} <strong>Who can reach it</strong> <span class="muted">— signed in, public or private, and the host</span></summary>
   <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
     <fieldset>
       {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
@@ -178,7 +180,6 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
 <section class="danger">
   <h2>Uninstall</h2>
   <p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
-  <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove"><button class="risky" {{ 'disabled' if not github }}
-    onclick="return confirm('Open a PR removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it (a retained volume and its namespace are kept).')">Open uninstall PR</button></form>
+  <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove" data-confirm="Open a pull request removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('trash') }} Open uninstall PR</button></form>
 </section>
 {% endblock %}

@@ -934,7 +934,7 @@ class TeamsPageTests(unittest.TestCase):
         self.assertEqual(self.api.sent('POST /pulls'), [])
         without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
         self.assertEqual(without_token.post('/teams/add', data={'name': 'billing'}, headers=WHO).status_code, 409)
-        self.assertIn('pull requests cannot be opened', without_token.get('/teams', headers=WHO).text)
+        self.assertIn('cannot open pull requests', without_token.get('/teams', headers=WHO).text)
 
     def test_an_unreadable_registry_is_said_so_and_raises_no_false_alarm(self):
         self.client()

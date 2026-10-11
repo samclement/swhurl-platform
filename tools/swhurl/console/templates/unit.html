@@ -30,7 +30,7 @@
 </div>
 {% else %}
 <div class="action-row">
-  <form method="post" action="/units/{{ u.name }}/suspend"><button class="risky" onclick="return confirm('Suspend {{ u.name }}? Git changes stop applying to it until you resume it.')">Suspend</button></form>
+  <form method="post" action="/units/{{ u.name }}/suspend" data-confirm="Suspend {{ u.name }}? Git changes stop applying to it until you resume it. What is running stays as it is." data-confirm-label="Suspend"><button class="danger">Suspend</button></form>
   <span class="muted">Stop applying Git changes to this unit until you resume it; what is running stays as it is. Use it while you investigate or try something by hand.</span>
 </div>
 {% endif %}

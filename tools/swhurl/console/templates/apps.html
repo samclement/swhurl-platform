@@ -5,7 +5,7 @@
 {% block main %}
 <h1>Apps</h1>
 <p class="lead">Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. Open an environment to use it, connect to it or operate it.</p>
-<div class="filters">
+<div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
   <span class="muted">Team</span>
   <a href="{{ link(view, '', env) }}" class="{{ 'here' if not team }}">all</a>
   {% for name in teams %}<a href="{{ link(view, name, env) }}" class="{{ 'here' if team == name }}">{{ name }}</a>{% endfor %}
@@ -17,7 +17,7 @@
 <div class="filters">
   <span class="muted">Environment</span>
   {% for name in ('staging', 'prod') %}<a href="{{ link('map', team, name) }}" class="{{ 'here' if env == name }}">{{ name }}</a>{% endfor %}
-  <span class="gap muted">A solid line is a call, from caller to callee. A dashed line is an event, from publisher to subscriber.</span>
+  <span class="gap legend">A solid line is a call, from caller to callee. A dashed line is an event, from publisher to subscriber.</span>
 </div>
 {% if map.nodes %}
 <div class="scroll">
@@ -34,6 +34,7 @@
 </div>
 {% else %}<p class="muted">No app is deployed in {{ env }}{% if team %} for team {{ team }}{% endif %}.</p>{% endif %}
 {% elif apps %}
+<p class="tally">{% if tally.attention %}<span class="status failing">{{ st.mark('failing') }}<span>{{ tally.attention }} need{{ 's' if tally.attention == 1 }} attention</span></span> · {% endif %}{% if tally.updating %}<span class="status updating">{{ st.mark('updating') }}<span>{{ tally.updating }} updating</span></span> · {% endif %}<span class="status healthy">{{ st.mark('healthy') }}<strong>{{ tally.healthy }}</strong>&nbsp;healthy</span> <span class="muted">· environments of {{ apps | length }} app{{ 's' if apps | length != 1 }}; anything not healthy is listed first</span></p>
 <div class="scroll">
 <table class="compact apps">
   <tr><th>App</th>{% for env in ('staging', 'prod') %}<th>{{ env | capitalize }}</th>{% endfor %}</tr>
@@ -47,8 +48,8 @@
       {% elif 'staging' in a.envs %}<div class="muted hint-line">Not in production · <a href="/apps/{{ a.app }}/staging/promotion">review promotion</a></div>{% endif %}
     </td>
     {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}
-    <td>{% if row %}
-      <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ st.state(row.state, detail=false) }}
+    <td data-label="{{ env | capitalize }}">{% if row %}
+      {{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a>
       <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code>{% if row.database_path %} · <strong class="db-kind">SQLite</strong>{% elif row.database_path is none %} · <span class="muted">release unknown</span>{% endif %}</div>
       {% if row.state.detail and row.state.key != 'suspended' %}<div class="muted">{{ row.state.detail | short }}</div>{% endif %}
       {% for host in row.hosts %}<div class="muted">{{ host }}</div>{% else %}<div class="muted">no web address</div>{% endfor %}

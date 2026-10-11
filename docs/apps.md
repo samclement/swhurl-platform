@@ -168,6 +168,7 @@ exposure: authenticated-web   # optional; default: web apps authenticated-web, w
 team: payments          # optional: a name in apps/teams.yaml (default platform)   --team
 calls: [orders]         # optional: apps this one calls; each must exist in staging   --calls
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
+events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
 ```
 
 ## Who can reach it
@@ -231,6 +232,43 @@ Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every we
 **Finding what exists.** The console's **Services** page lists every app with its team, its address in each environment, who calls it and whom it calls, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
 
 **Rules.** A callee must be a web app with an instance in the same environment. Calls are declared per environment, like replicas: declare them in staging, promote, then declare them in production. The first promotion of a caller is refused until every app it calls has a production instance, and it adds the caller to those apps' production instances; such a pull request touches other apps' files, so the console does not merge it by itself. `make app-remove` refuses an instance that others call. The variables above are the platform's: `make app-sync` rewrites them, and `make check-apps` fails when the two sides disagree (rules `calls`, `identity`, `call-tokens`).
+
+## Events
+
+An app can publish events and receive other apps' events without knowing who is on the other side. The broker is NATS JetStream ([services](services.md#nats)). For example, `orders` publishing and `notifier` receiving:
+
+```
+make app-events APP=orders   ENV=staging ARGS="--publish created,cancelled"
+make app-events APP=notifier ENV=staging ARGS="--subscribe orders.created"
+```
+
+or, before an app is created, in its `swhurl.yaml`:
+
+```yaml
+events:
+  publish: [created, cancelled]
+  subscribe: [orders.created]      # <app>.<event>
+```
+
+```mermaid
+flowchart LR
+  orders["orders<br/>publish created"] -- "staging.orders.created" --> stream[("stream staging-orders<br/>7 days, 64Mi")]
+  stream -- "consumer notifier_created" --> notifier["notifier<br/>subscribe orders.created"]
+```
+
+An event is named `<app>.<event>`: only its app may publish it. Each list on `make app-events` replaces the old one, and `""` clears it. What the command writes, in one commit:
+
+| Where | What | Why |
+| --- | --- | --- |
+| The instance's HelmRelease | `SWHURL_EVENTS_PUBLISH`, `SWHURL_EVENTS_SUBSCRIBE`, `SWHURL_EVENTS_URL` and `SWHURL_EVENTS_NKEY` (the instance's public key) | What it declared, where NATS is, and who it is there |
+| `events.sops.yaml` | `SWHURL_EVENTS_SEED`, the private half of that key | Created and encrypted the first time the instance declares events; never printed. Reloader restarts the app if it changes |
+| `events.yaml` | A stream for a publisher; a durable consumer for each subscription | The stream controller creates them in NATS when the commit is applied |
+| `platform/nats/users.yaml` | The instance's NATS user | It may publish exactly its declared events, and fetch and acknowledge exactly the events it subscribes to |
+| The instance's Flux unit | Waits for `platform-nats` | The manifests need the controller's resource types |
+
+**What the app does.** The stack templates' `events` feature ships the helper: `events.publish("created", data)` and `events.subscribe("orders.created", handler)`. An event travels as a [CloudEvents](https://cloudevents.io) JSON envelope with the trace context in its headers, so the subscriber's work joins the publisher's trace. A handler that throws gets the event again, up to five times.
+
+**Rules.** A subscription must name an event that an app of the same environment publishes; removing that event or its app is refused while someone subscribes. Staging and production are separate: an app's production instance has its own key, declared with `make app-events ENV=prod` after promotion, and cannot read staging's events. A stream keeps seven days or 64Mi, whichever comes first, and is not backed up: keep anything you must not lose in the app's own database. `make check-apps` fails when the files disagree with the declaration (rules `events`, `event-users`); `make app-sync` rewrites them.
 
 ## Secrets
 
@@ -431,7 +469,7 @@ Every tile selects the app's namespaces, so an app without an SDK still gets its
 
 ## The app policy
 
-`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), and its identity, declared calls and their tokens ([calling another app](#calling-another-app)); across an environment, every declared call has a callee that allows it. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
+`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), and its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events); across an environment, every declared call has a callee that allows it and every subscription a publisher. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments: they may differ only in namespace, hosts, image tag and digest, replicas, resources, issuer and exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own); encrypted Secrets and staging's `image-automation.yaml` are skipped. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
 
 A reviewed exception goes on the HelmRelease, with a reason:
 

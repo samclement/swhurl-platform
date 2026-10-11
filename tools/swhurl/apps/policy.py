@@ -29,6 +29,9 @@ with Helm) and checks the resulting Kubernetes objects:
                       in apps/signing-keys.json
   call-tokens         the only service-account tokens a pod carries are one per app it declares it
                       calls, each for that audience alone and short-lived
+  events              an instance that declares events (SWHURL_EVENTS_PUBLISH / _SUBSCRIBE) has the
+                      NATS address, a public key, its seed's Secret reference, and exactly the stream
+                      and consumers that follow from the declaration; one that declares none has none
 
 for an instance of this platform (under apps/; the test fixtures are exempt), from its source:
 
@@ -40,11 +43,16 @@ across the instances of one environment (source manifests, not rendered):
 
   calls               every declared call names a web app of the same environment at its real port,
                       and an app allows exactly the callers that declare it (make app-sync rewrites both)
+  events              every subscription names an event that an app of the same environment publishes
+
+and, for the whole tree:
+
+  event-users         platform/nats/users.yaml is what the instances' declarations generate
 
 and, across the environments of one app (source manifests, not rendered):
 
   env-drift           environments differ only in namespace, hosts, image tag/digest,
-                      replicas, resources, issuer, exposure (route and sign-in) and calls; encrypted
+                      replicas, resources, issuer, exposure (route and sign-in), calls and events; encrypted
                       Secrets and the staging-only
                       image-automation.yaml (automatic deploys) are skipped
 
@@ -64,6 +72,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, platform
+from swhurl.apps import events as nats
 from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
@@ -268,7 +277,32 @@ def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]
         if tokens != expected:
             violations.append(('call-tokens', f'{where} must carry one {TOKEN_SECONDS}-second token per declared call '
                                f'({", ".join(calls) or "none declared"}), each for that audience only; make app-sync writes them'))
+    violations += event_rule(docs, releases[0], labels)
     return violations
+
+
+def event_rule(docs: list[dict], release: dict, labels: dict) -> list[tuple[str, str]]:
+    """The events rule for one rendered instance."""
+    app, env, variables = release['metadata']['name'], labels.get(ENVIRONMENT), release_env(release)
+    publishes, subscribes = nats.published(variables), nats.subscribed(variables)
+    declared = [d for d in docs if d['kind'] in ('Stream', 'Consumer')]
+    values = release['spec'].get('values') or {}
+    main = (((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {}
+    referenced = {'secretRef': {'name': nats.secret_name(app)}} in (main.get('envFrom') or [])
+    problems = []
+    if not (publishes or subscribes):
+        if declared or referenced or variables.get(nats.URL_ENV) or variables.get(nats.NKEY_ENV):
+            problems.append('declares no events but carries a stream, consumer, NATS address, key or Secret reference')
+    else:
+        key = str(variables.get(nats.NKEY_ENV, ''))
+        if variables.get(nats.URL_ENV) != nats.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
+            problems.append(f'needs {nats.URL_ENV}, a public key in {nats.NKEY_ENV} and the {nats.secret_name(app)} Secret reference')
+        wanted = nats.manifests(app, env, publishes, subscribes)
+        def shape(doc):
+            return doc['kind'], doc['metadata']['name'], doc['spec']
+        if sorted(map(shape, declared), key=str) != sorted(map(shape, wanted), key=str):
+            problems.append('its streams and consumers are not what its declaration generates')
+    return [('events', f'{problem}; make app-events sets them and make app-sync rewrites what follows') for problem in problems]
 
 
 def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str | None = None) -> list[tuple[str, str]]:
@@ -362,7 +396,9 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
 
 VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT,
           # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
-          ENV_ENV, CALLERS_ENV, TOKENS_VOLUME}
+          ENV_ENV, CALLERS_ENV, TOKENS_VOLUME,
+          # Events too: each environment has its own declaration, key and Secret (make app-events).
+          nats.PUBLISH_ENV, nats.SUBSCRIBE_ENV, nats.URL_ENV, nats.NKEY_ENV, 'secret.reloader.stakater.com/reload'}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.
@@ -398,15 +434,25 @@ def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[s
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
         if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml',
-                                                             NETWORK_POLICY_FILE}:
+                                                             NETWORK_POLICY_FILE, nats.EVENTS_FILE}:
             # Automatic deploys and production-only promotion alerts are environment-specific; the
             # NetworkPolicy follows from each environment's exposure and callers (rule network-policy).
             continue
         for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)
-            if doc.get('kind') == 'Kustomization' and IMAGE_AUTOMATION_FILE in (doc.get('resources') or []):
-                doc['resources'] = [r for r in doc['resources'] if r != IMAGE_AUTOMATION_FILE]
+            if doc.get('kind') == 'Kustomization':
+                doc['resources'] = [r for r in doc.get('resources') or []
+                                    if r not in (IMAGE_AUTOMATION_FILE, nats.EVENTS_FILE, nats.SECRET_FILE)]
+            if doc.get('kind') == 'HelmRelease':  # the reference to this environment's event key
+                main = ((((doc.get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main') or {})
+                container = (main.get('containers') or {}).get('main') or {}
+                refs = [ref for ref in container.get('envFrom') or []
+                        if ref != {'secretRef': {'name': nats.secret_name(doc['metadata']['name'])}}]
+                if 'envFrom' in container:
+                    container['envFrom'] = refs
+                    if not refs:
+                        del container['envFrom']
             leaves.update(flatten(doc, f'{path.name}#{index}', varies))
     return leaves
 
@@ -454,7 +500,23 @@ def calls(instances: list[Path]) -> dict[Path, list[str]]:
                 found.append(f'allows {caller}, which does not declare a call to it')
         if found:
             problems[instance] = [f'calls: {problem}; make app-sync rewrites both sides' for problem in found]
+        missing = [f'{publisher}.{event}' for publisher, event in nats.subscribed(release_env(release))
+                   if publisher not in peers or event not in nats.published(release_env(peers[publisher]))]
+        if missing:
+            problems.setdefault(instance, []).append(
+                f'events: subscribes to {", ".join(missing)}, which no app of {env} publishes')
     return problems
+
+
+def event_users(root: Path = ROOT) -> list[str]:
+    """Whether the NATS user list is what the instances generate (rule event-users)."""
+    wanted = nats.users_file(root)
+    if not wanted:
+        return []
+    path, text = wanted
+    if path.is_file() and path.read_text() == text:
+        return []
+    return [f'event-users: {nats.USERS_FILE} is not what the instances declare; make app-sync rewrites it']
 
 
 def platform_image(instance: Path) -> list[str]:
@@ -508,6 +570,13 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         if problems:
             failed += 1
             print(f'[BAD] {app.relative_to(ROOT) if app.is_relative_to(ROOT) else app}')
+            for problem in problems:
+                print(f'       {problem}')
+    if not argv:  # the whole tree
+        problems = event_users()
+        if problems:
+            failed += 1
+            print(f'[BAD] {nats.USERS_FILE}')
             for problem in problems:
                 print(f'       {problem}')
     if failed:

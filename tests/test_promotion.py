@@ -152,6 +152,12 @@ class FirstProductionTests(unittest.TestCase):
             new.generate(args, self.root)
         edit.calls(self.root, 'reports', 'staging', add=['orders'])
 
+        def encrypt(args, _):
+            Path(args[-1]).write_text(Path(args[-1]).read_text() + 'sops: {}\n')
+            return Result(args, 0, '')
+        from swhurl.run import Result
+        edit.events(self.root, 'orders', 'staging', publish=['created'], runner=FakeRunner().on('sops', handler=encrypt))
+
         def env(app, environment):
             release = yaml.safe_load((self.root / 'apps' / app / environment / 'helmrelease.yaml').read_text())
             return release['spec']['values']['controllers']['main']['containers']['main']['env']
@@ -163,6 +169,12 @@ class FirstProductionTests(unittest.TestCase):
             self.assertNotIn('SWHURL_ALLOWED_CALLERS', env('orders', 'prod'), 'nobody calls it in production yet')
             edit.promote(self.root, 'reports', runner=FakeRunner())
         self.assertEqual(env('reports', 'prod')['SWHURL_ENV'], 'prod')
+        self.assertFalse(any(key.startswith('SWHURL_EVENTS_') for key in env('orders', 'prod')),
+                         'events are declared per environment: production starts without them')
+        production = yaml.safe_load((self.root / 'apps/orders/prod/helmrelease.yaml').read_text())
+        self.assertNotIn('envFrom', production['spec']['values']['controllers']['main']['containers']['main'])
+        self.assertFalse((self.root / 'apps/orders/prod/events.yaml').exists())
+        self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [])
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
         self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
         instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]

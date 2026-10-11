@@ -162,7 +162,7 @@ class GeneratorTests(unittest.TestCase):
         err = io.StringIO()
         with redirect_stderr(err), redirect_stdout(io.StringIO()):
             self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'nowhere'), 2)
-        self.assertIn('--calls: no instance nowhere/staging', err.getvalue())
+        self.assertIn('no instance nowhere/staging', err.getvalue())
         self.assertFalse((self.tmp / 'apps/lost').exists())
         self.assertFalse((self.tmp / 'clusters/home/app-lost-staging.yaml').exists())
 
@@ -489,6 +489,11 @@ class PolicyTests(unittest.TestCase):
         def api_token(d):  # no audience: a token the Kubernetes API itself would accept
             app_policy.pod_spec(self.find(d, 'Deployment')).setdefault('volumes', []).append(
                 {'name': 't', 'projected': {'sources': [{'serviceAccountToken': {'path': 'token'}}]}})
+        def events_without_what_follows(d):
+            self.find(d, 'HelmRelease')['spec']['values']['controllers']['main']['containers']['main']['env'][
+                'SWHURL_EVENTS_PUBLISH'] = 'created'
+        def stray_stream(d):
+            d.append({'apiVersion': 'jetstream.nats.io/v1beta2', 'kind': 'Stream', 'metadata': {'name': 'x'}, 'spec': {}})
         def env_used_before_defined(d):
             env = self.container(d)['env']
             env.insert(0, {'name': 'EARLY', 'value': 'http://x-$(SWHURL_ENV)'})
@@ -498,7 +503,8 @@ class PolicyTests(unittest.TestCase):
                  ('smoke-web/staging', every_pod, 'network-policy'), ('smoke-worker/staging', open_to_all, 'network-policy'),
                  ('smoke-web/staging', wrong_port, 'network-policy'), ('smoke-web/staging', wrong_identity, 'identity'),
                  ('smoke-web/staging', stale_keys, 'identity'), ('smoke-worker/staging', api_token, 'call-tokens'),
-                 ('smoke-web/staging', env_used_before_defined, 'identity')]
+                 ('smoke-web/staging', env_used_before_defined, 'identity'),
+                 ('smoke-web/staging', events_without_what_follows, 'events'), ('smoke-worker/staging', stray_stream, 'events')]
         for key, mutate, rule in cases:
             with self.subTest(case=mutate.__name__):
                 docs = self.docs(key)

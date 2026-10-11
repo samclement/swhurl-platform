@@ -497,6 +497,10 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
     p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')
     p.add_argument('--mount-path', default='/data')
+    p.add_argument('--publish', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
+                   help='comma-separated events this app publishes (make app-events later)')
+    p.add_argument('--subscribe', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
+                   help='comma-separated <app>.<event> it receives: each must be published in this environment')
     p.add_argument('--api-path', metavar='PATH', help='web only: where the app serves its API description, for the Services page')
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
@@ -565,14 +569,18 @@ def main(argv=None, opener: Opener = _open) -> int:
         if problem:
             raise GenerationError(problem)
         written = generate(args, args.root.resolve())
-        if args.calls:
+        if args.calls or args.publish or args.subscribe:
             from swhurl.apps import edit  # edit imports this module
             try:
-                edit.calls(args.root.resolve(), args.name, args.env, add=args.calls)
+                if args.calls:
+                    edit.calls(args.root.resolve(), args.name, args.env, add=args.calls)
+                if args.publish or args.subscribe:
+                    edit.events(args.root.resolve(), args.name, args.env, publish=args.publish or None,
+                                subscribe=args.subscribe or None)
             except edit.EditError as error:
-                # Nothing half-made: the instance without its calls would start and fail every request.
+                # Nothing half-made: the instance without its calls or events would start and fail.
                 edit.remove(args.root.resolve(), args.name, args.env)
-                raise GenerationError(f'--calls: {error}') from None
+                raise GenerationError(f'--calls, --publish or --subscribe: {error}') from None
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 2

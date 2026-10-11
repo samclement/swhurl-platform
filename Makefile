@@ -231,6 +231,10 @@ live-test-call-identity: ## Prove a callee with no API token can verify a caller
 live-test-network-policy: ## Prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-network-policy
 
+.PHONY: live-test-team-scenario
+live-test-team-scenario: ## CALLER= CALLEE= SUBSCRIBER= [ENV=staging] One request through a call and an event on three deployed apps, checked in ClickStack
+	@DRY_RUN=$(DRY_RUN) CALLER="$(CALLER)" CALLEE="$(CALLEE)" SUBSCRIBER="$(SUBSCRIBER)" ENV="$(ENV)" $(SWHURL) live-test-team-scenario
+
 # Host ---------------------------------------------------------------------------
 
 .PHONY: host-dns

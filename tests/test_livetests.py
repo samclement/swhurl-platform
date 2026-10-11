@@ -13,6 +13,7 @@ from swhurl.livetests import (
     network_policy,
     reloader,
     run_live_test,
+    team_scenario,
 )
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
@@ -50,7 +51,7 @@ def run(module, runner):
 
 class FrameworkTests(unittest.TestCase):
     def test_dry_run_prints_plan_and_calls_nothing(self):
-        for module in (lifecycle, reloader, app_template, call_identity, network_policy):
+        for module in (lifecycle, reloader, app_template, call_identity, network_policy, team_scenario):
             with self.subTest(module=module.__name__):
                 runner = FakeRunner(dry_run=True)
                 code, text = run(module, runner)
@@ -212,6 +213,84 @@ class NetworkPolicyTests(unittest.TestCase):
         code, text = run(network_policy, self.runner(traefik_blocked=True))
         self.assertEqual(code, 1)
         self.assertIn('[BAD] Traefik is blocked too: HTTP 000', text)
+
+
+class TeamScenarioTests(unittest.TestCase):
+    """The cluster and ClickStack are scripted; the test must turn them into the right verdicts."""
+    ENV = {'CALLER': 'reports', 'CALLEE': 'orders', 'SUBSCRIBER': 'notifier', 'ENV': 'staging'}
+
+    def runner(self, *, spans=None, linked=True, logged='1'):
+        variables = {
+            'reports': {'SWHURL_SERVICE_ORDERS_URL': 'http://x'} if linked else {},
+            'orders': {'SWHURL_EVENTS_PUBLISH': 'created'},
+            'notifier': {'SWHURL_EVENTS_SUBSCRIBE': 'orders.created'},
+        }
+        teams = {'reports': 'insights', 'orders': 'payments', 'notifier': 'payments'}
+        if spans is None:
+            spans = [('reports', 'insights', 'Server', 'GET', 'anonymous', ''), ('reports', 'insights', 'Client', 'GET', '', ''),
+                     ('orders', 'payments', 'Server', 'GET', 'app', 'reports'),
+                     ('orders', 'payments', 'Producer', 'publish orders.created', '', ''),
+                     ('notifier', 'payments', 'Consumer', 'process orders.created', '', '')]
+
+        def handler(args, _input):
+            joined = ' '.join(args)
+            if 'clickhouse-client' in args:
+                if 'otel_logs' in joined:
+                    return Result(args, 0, logged + '\n')
+                return Result(args, 0, '\n'.join('\t'.join(span) for span in spans) + '\n')
+            if 'wget' in args:
+                self.request = args
+                return Result(args, 0, json.dumps({'called': 'orders', 'status': 200}))
+            if 'helmrelease' in args:
+                app = args[args.index('helmrelease') + 1]
+                values = {'controllers': {'main': {'containers': {'main': {'env': variables[app]}}}},
+                          'service': {'main': {'ports': {'http': {'port': 8080}}}}}
+                return Result(args, 0, json.dumps({'spec': {'values': values}}))
+            if 'pods' in args:
+                return Result(args, 0, json.dumps({'items': [{'status': {'podIP': '10.0.0.9'}}]}))
+            if 'namespace' in args:
+                app = args[args.index('namespace') + 1].removesuffix('-staging')
+                return Result(args, 0, json.dumps({'metadata': {'labels': {'platform.swhurl.com/team': teams[app]}}}))
+            return Result(args, 1, '', 'unexpected')
+        return FakeRunner().on('kubectl', handler=handler)
+
+    def run_it(self, runner, env=None):
+        from unittest import mock
+        with mock.patch.dict('os.environ', env or self.ENV):
+            return run(team_scenario, runner)
+
+    def test_passes_sends_one_traced_request_and_changes_nothing(self):
+        runner = self.runner()
+        code, text = self.run_it(runner)
+        self.assertEqual(code, 0, text)
+        self.assertIn('Team scenario passed.', text)
+        self.assertIn('http://10.0.0.9:8080/call/orders', self.request)
+        self.assertTrue(any(arg.startswith('traceparent: 00-') for arg in self.request))
+        self.assertEqual(mutating(runner), [])
+        self.assertTrue(all('exec' in call or 'get' in call for call in runner.calls))
+
+    def test_each_missing_piece_fails(self):
+        no_subscriber = [('reports', 'insights', 'Server', 'GET', '', ''), ('orders', 'payments', 'Server', 'GET', 'app', 'reports'),
+                         ('orders', 'payments', 'Producer', 'publish orders.created', '', '')]
+        wrong_team = [('reports', 'platform', 'Server', 'GET', '', ''), ('orders', 'payments', 'Server', 'GET', 'app', 'reports'),
+                      ('orders', 'payments', 'Producer', 'p', '', ''), ('notifier', 'payments', 'Consumer', 'process orders.created', '', '')]
+        cases = (({'spans': no_subscriber}, '[BAD] after 90 seconds the trace holds spans from orders, reports only'),
+                 ({'spans': wrong_team}, "[BAD] reports's spans carry team ['platform'], its namespace says insights"),
+                 ({'logged': '0'}, '[BAD] orders logged no line in this trace with caller.id = reports'))
+        for kwargs, expected in cases:
+            with self.subTest(expected=expected):
+                code, text = self.run_it(self.runner(**kwargs))
+                self.assertEqual(code, 1)
+                self.assertIn(expected, text)
+
+    def test_unlinked_apps_or_missing_names_stop_before_any_request(self):
+        runner = self.runner(linked=False)
+        code, text = self.run_it(runner)
+        self.assertEqual(code, 1)
+        self.assertIn('[ERROR] reports/staging does not declare a call to orders', text)
+        self.assertFalse(any('wget' in call for call in runner.calls))
+        code, text = self.run_it(self.runner(), {'CALLER': '', 'CALLEE': '', 'SUBSCRIBER': ''})
+        self.assertIn('[ERROR] give CALLER, CALLEE and SUBSCRIBER', text)
 
 
 if __name__ == '__main__':

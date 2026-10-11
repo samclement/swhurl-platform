@@ -843,7 +843,7 @@ Commits `ff80eb5` and `34583dd` added `make clickstack-ntfy-webhook` and its Hyp
 
 ## Team platform T0: call identity and network policy proofs (10 October 2026)
 
-Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), run at `12a86b5`. Neither changes an existing namespace; both left nothing behind (no test namespaces afterwards).
+Two throwaway live tests for [plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), run at `12a86b5`. Neither changes an existing namespace; both left nothing behind (no test namespaces afterwards).
 
 - `make live-test-network-policy` passed (8 checks). Before the policy a pod in another namespace reached the app and Traefik served `https://network-policy-test.homelab.swhurl.com` on its default certificate. With a policy selecting only the app's pods and admitting the Traefik pods on 8080: the other namespace was blocked and stayed blocked after 20 seconds, Traefik still returned 200, the app stayed Ready, and an unselected pod on 8089 in the same namespace stayed reachable. Deleting the policy let the other namespace in again. k3s enforces NetworkPolicies on app pods.
 - `make live-test-call-identity` passed (8 checks, about 10 minutes). A callee with no API token accepted a caller's 600-second service-account token for audience `callee`, checking the signature against the cluster's public keys mounted as a ConfigMap; the token named `system:serviceaccount:call-identity-caller:caller`; the Kubernetes API answered 401 to it; a token for another audience and a request without a token were refused; the kubelet replaced the token file before expiry and the new token was accepted.
@@ -852,7 +852,7 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 
 ## Team platform T1: teams and isolation (11 October 2026)
 
-[Plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), task T1, verified at `3daf729`. `make check` passed before each commit (489 tests; `make check-apps` passes for 10 instances).
+[Plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), task T1, verified at `3daf729`. `make check` passed before each commit (489 tests; `make check-apps` passes for 10 instances).
 
 - **First instance, alone** (`e351e2c`): `test-4/staging` got the team label, quota and NetworkPolicy. A request from the Traefik pod to the app pod's `/healthz` answered `{"ok":true}`; the same request from a pod in `hello-ts-staging` timed out; that pod still reached `test-3-staging`, which had no policy yet (the control). `https://staging-test-4.homelab.swhurl.com` still redirected to Google sign-in and `make app-status` showed 1/1 Ready.
 - **All seven instances** (`57f2a96`): `hello-ts`, `test-2`, `test-3` (staging and prod) and `test-4/staging` each have `resourcequota/<app>` and `networkpolicy/<app>`. For every one, the Traefik pod got `{"ok":true}` from the app pod and a pod in another namespace was blocked. A pod reaching its own address is not blocked, so `hello-ts-staging` was tested from the `hello-ts-prod` pod.
@@ -864,7 +864,7 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 
 ## Team platform T2: calls and discovery (11 October 2026)
 
-[Plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), task T2, verified at `a2867b7`. `make check` passed before each commit (497 tests; `make check-apps` passes for 13 instances). Both template repositories' Template workflows passed on the commits pinned in `STACK_REVISIONS` (`ea294aa` TypeScript, `e7dd18e` Kotlin; four combinations each).
+[Plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), task T2, verified at `a2867b7`. `make check` passed before each commit (497 tests; `make check-apps` passes for 13 instances). Both template repositories' Template workflows passed on the commits pinned in `STACK_REVISIONS` (`ea294aa` TypeScript, `e7dd18e` Kotlin; four combinations each).
 
 - **Existing apps** (`19f6ac3`): all seven restarted once with `SWHURL_APP`, `SWHURL_ENV`, `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, and came back 1/1 Ready. `make verify-platform` passed, with the new "Call identity" section: `apps/signing-keys.json` holds the cluster's one signing key and the issuer matches.
 - **Three throwaway apps**, each created with `make app-repo` and `make app-new`: `swhurl-try-10` (TypeScript, SQLite, team payments), `swhurl-try-11` (TypeScript, team insights, created with `--calls swhurl-try-10`) and `swhurl-try-12` (Kotlin, team insights). `make app-calls` then added try-12 → try-10 and try-11 → try-12.
@@ -878,7 +878,7 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 
 ## Team platform T3: Services page (11 October 2026)
 
-[Plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), task T3, verified at `e88387d` with console image `src-2b7311f62c1333e9`. `make check` passed at `4d8baaf` (500 tests).
+[Plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), task T3, verified at `e88387d` with console image `src-2b7311f62c1333e9`. `make check` passed at `4d8baaf` (500 tests).
 
 - **Deployed console, read through a port-forward** (so with its own service account): `/services` answered 401 without an identity header and 200 with one. It showed `swhurl-try-10` as team payments, called by `swhurl-try-11` and `swhurl-try-12`; `swhurl-try-11` as team insights calling both; `hello-ts` as team platform in staging and prod; each web instance with its address inside the cluster.
 - **Layout** checked in headless Chromium against the console run locally with `--dev` on the live cluster, with the **Call this from my app** panel closed and open.
@@ -889,7 +889,7 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 
 ## Team platform T4: events (11 October 2026)
 
-[Plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), task T4, verified at `cf1ccc4`. `make check` passed before each commit (506 tests; `make check-apps` passes for 14 instances). Both template repositories' Template workflows passed on the pinned commits (`086161f` TypeScript, `81f7d8b` Kotlin).
+[Plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), task T4, verified at `cf1ccc4`. `make check` passed before each commit (506 tests; `make check-apps` passes for 14 instances). Both template repositories' Template workflows passed on the pinned commits (`086161f` TypeScript, `81f7d8b` Kotlin).
 
 - **The broker** (`1e714ac`): `platform-nats` became Ready in under a minute: `nats-0` 2/2 with JetStream (1 GB store on a 2Gi volume) and `nats-controller` 1/1. The controller signed in with its nkey, which also proves the pure-Python key encoding against a real server.
 - **Declared through Git:** `make app-events` gave `swhurl-try-10` `--publish visited` and a new worker, `swhurl-try-13` (team payments), `--subscribe swhurl-try-10.visited`. After the push the controller created stream `staging-swhurl-try-10` and consumer `swhurl-try-13_visited` (both Ready), and NATS ran with three users.
@@ -900,3 +900,14 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 - **Start-up race, found and fixed:** try-13 first started seconds before NATS had loaded its user, was refused ("Authorization Violation") and, with the first helper, never tried again. The helpers now retry every five seconds. Reproduced on purpose by removing and re-adding the subscription (`3247dad`, `418a502`): twelve refused tries over about a minute, then delivery. The delay is the kubelet refreshing NATS's mounted configuration.
 - **Health and logs:** `make verify-platform` passed with its Events section (NATS running, controller running, declared streams and consumers exist). Logs from `nats-0` and the controller are in ClickStack under namespace `messaging`. `make check-secrets` passed for the four new Secrets.
 - Not exercised: a Kotlin app subscribing on the live cluster (unit-tested and compiled; only Kotlin publishing was run live); events in production, and that staging cannot read production (no production instance declares events; the permission is by subject name, as tested for the `prod.` publish); a redelivery after a handler throws; a stream reaching its size or age limit; the controller restoring a stream deleted by hand; replacing a key; a NATS restart or data loss; an upgrade of either chart.
+
+## Team platform T5: scenario and documentation (11 October 2026)
+
+[Plan section 15](plan.md#15-team-platform--delivered-10-to-11-october-2026), task T5, on the cluster as of `cf61a4e`.
+
+- **`make live-test-team-scenario CALLER=swhurl-try-11 CALLEE=swhurl-try-10 SUBSCRIBER=swhurl-try-13`** passed (8 checks). One request to try-11's `/call/swhurl-try-10`, sent from the Traefik pod with a trace id the test chose, returned 200. ClickStack then held one trace (`b2278d68…`, 5 spans) with spans from all three apps: try-10's server span named its caller (`app swhurl-try-11`), try-10's producer span and try-13's consumer span for `swhurl-try-10.visited` were in it, each app's spans carried its team (insights, payments, payments), and try-10's log line for the request named the caller.
+- **With the Kotlin app as caller** (`CALLER=swhurl-try-12`) it passed the same 8 checks (trace `2ddf73aa…`).
+- **It stops on bad input:** an unlinked pair (`CALLER=swhurl-try-10 CALLEE=swhurl-try-11`) exited 1 before sending anything, naming the `make app-calls` command that would link them; no names exited 1 with the usage.
+- **Through the browser** (operator, signed in): opening `https://staging-swhurl-try-10.homelab.swhurl.com/` published `swhurl-try-10.visited` and try-13 logged `event received` for it, twice (the page and a second browser request).
+- **Documentation:** the design brief's overview is now [architecture](architecture.md#how-apps-work-together), its limits are in [apps](apps.md#limits), and the brief is deleted. A block my T4 edit had duplicated in `docs/plan.md` (the recovery-drill tasks and section 14, repeated inside section 15 in `cf61a4e`) was removed after checking it was an exact copy of text that remains.
+- Not exercised: the scenario in production (no production instance has calls or events); the trace viewed in HyperDX (operator); removal of the throwaway apps.

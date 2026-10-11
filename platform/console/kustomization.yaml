@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - rbac.yaml
   - dashboard-rbac.yaml
+  - dashboard-state.yaml
   - notification-rbac.yaml
   - notification-state.yaml
   - notification-secret.sops.yaml

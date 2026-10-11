@@ -204,7 +204,7 @@ pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var
 table.team-apps { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; table-layout: fixed; }
 table.team-apps th, table.team-apps td { padding: 10px var(--gap-3); vertical-align: baseline; white-space: nowrap; }
 table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-5); width: 30%; }
-table.team-apps th:nth-child(2) { width: 16%; } table.team-apps th:nth-child(5) { width: 6rem; }
+table.team-apps th:nth-child(2) { width: 16%; } table.team-apps th:nth-child(5) { width: 12rem; }
 table.team-apps td:last-child { padding-right: var(--gap-5); }
 table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
 .team-foot { margin: 0; padding: var(--gap-2) var(--gap-5); font-size: var(--size-detail); }

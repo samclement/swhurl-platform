@@ -104,6 +104,7 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
   · Database: {% if not status.release %}unknown{% elif status.variables.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
 <div class="toolbar">
   <a class="button" href="{{ logs }}">Logs and traces {{ st.icon('external') }}</a>
+  {% if dashboard %}<a class="button" href="{{ dashboard }}" title="The App: {{ i.app }} dashboard in HyperDX: staging and production as separate lines">Dashboard {{ st.icon('external') }}</a>{% endif %}
   <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
   {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
   <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>

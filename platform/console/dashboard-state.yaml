@@ -1,0 +1,10 @@
+# Which HyperDX dashboard belongs to which app, for the console's Dashboard links.
+# Flux owns the object metadata, never data: the dashboard job owns data["dashboards.json"]
+# and rewrites it whenever it changes, so nothing here needs a backup.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-dashboards
+  namespace: console
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge

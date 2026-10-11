@@ -31,6 +31,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
+from swhurl import dashboards
 from swhurl.apps import contract, new, ops, repo
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import actions, changes, cluster, logconfig, promotion, repos
@@ -71,6 +72,12 @@ def logs_url(app: str) -> str:
 
 
 TEMPLATES.env.globals['logs_url'] = logs_url
+
+
+def dashboard_urls(runner: Runner) -> dict[str, str]:
+    """Each app's HyperDX dashboard, from the record the dashboard job keeps (``console/app-dashboards``).
+    Empty when it cannot be read: the pages then leave the link out."""
+    return {app: f'https://clickstack.{contract.COOKIE_DOMAIN}/dashboards/{ident}' for app, ident in dashboards.recorded(runner).items()}
 
 
 def ago(when: dt.datetime | str, now: dt.datetime | None = None) -> str:
@@ -217,7 +224,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 shown = [summary for summary in shown if any(row.state.key != 'healthy' for row in summary.envs.values())]
             return {'apps': shown, 'teams': teams, 'tally': tally, 'attention': attention, 'team': team,
                     'stacks': stacks([summary.app for summary in shown]) if view != 'map' else {},
-                    'stack_names': STACK_NAMES, 'owner': contract.APP_OWNER, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
+                    'stack_names': STACK_NAMES, 'owner': contract.APP_OWNER,
+                    'dashboards': dashboard_urls(runner) if view != 'map' else {}, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
                                            env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
         return reading(request, 'apps.html', read)
@@ -243,7 +251,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
-                    connections=row.connections if row else cluster.Connections(), logs=logs_url(found.app),
+                    connections=row.connections if row else cluster.Connections(), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
@@ -409,6 +417,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return {'teams': registered, 'owned': owned, 'unregistered': unregistered, 'registry_error': registry_error,
                     'default_team': contract.DEFAULT_TEAM, 'error': error, 'team_jobs': latest,
                     'stacks': stacks(sorted({app for apps in owned.values() for app in apps})),
+                    'dashboards': dashboard_urls(runner),
                     'stack_names': STACK_NAMES}
         return reading(request, 'teams.html', read, status_code=status_code)
 

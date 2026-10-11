@@ -64,6 +64,7 @@ def fake(units=UNITS, releases=RELEASES, **extra):
     runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():
         runner.on(*prefix.split(), stdout=stdout)
+    runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     return runner
 
 
@@ -148,6 +149,7 @@ class ConnectionsTests(unittest.TestCase):
         self.assertIn('<strong>orders</strong>', payments)
         self.assertNotIn('<strong>reports</strong>', payments)
         self.assertTrue(all(call[:2] == ('kubectl', 'get') or call[:4] == ('kubectl', '-n', 'flux-system', 'get')
+                            or call[:6] == ('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards')
                             for call in runner.calls), 'the pages only read')
 
     def test_the_map_draws_calls_and_events_left_to_right(self):
@@ -367,6 +369,15 @@ class AppSummaryTests(unittest.TestCase):
         self.assertIn('>Images differ</span>', text)
         self.assertIn('<span class="cell act"><a href="/apps/web/staging/promotion">Review promotion</a></span>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
+
+    def test_an_apps_dashboard_is_linked_where_the_dashboard_job_recorded_one(self):
+        record = {'kubectl -n console get configmap app-dashboards': json.dumps({'data': {'dashboards.json': json.dumps(
+            {'web': 'a' * 24, 'my-api': 'javascript:alert(1)'})}})}
+        link = '<a href="https://clickstack.homelab.swhurl.com/dashboards/' + 'a' * 24 + '"'
+        text = client(fake(**record)).get('/apps', headers=WHO).text
+        self.assertEqual(text.count(link), 1, 'web has one; what is not a dashboard id never becomes a link')
+        self.assertNotIn('javascript:', text)
+        self.assertNotIn('Dashboard <svg', client(fake()).get('/apps', headers=WHO).text, 'no record: no link')
 
     def test_promotion_is_one_of_four_labels_each_with_its_own_colour(self):
         def page(staging_tag, prod_tag):

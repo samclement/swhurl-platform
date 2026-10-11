@@ -1025,3 +1025,12 @@ Commit `f1a7278` gave every app two [default alerts](apps.md#alerts), kept by th
 - `make verify-platform` named the teams that own apps and have no channel as warnings and reported the dashboard and alert sync as succeeding.
 - Not exercised: the job failing for a missing webhook on the live cluster (unit-tested; deleting the webhook would stop every app's alerts), `alerts:` from a real app repository's `swhurl.yaml`, and the setting surviving a real promotion.
 - Alert tags (`9144085`, console image pinned by the publish run): each default alert now carries its app's name as a tag beside `swhurl-app`, and a differing alert is updated in place. A throwaway alert first showed that the HyperDX API stores tags on create and on update. After the reconcile the dashboard job updated the existing alerts, all 16 read back with `['swhurl-app', '<app>']`, and the following run wrote nothing. Not exercised: filtering by the tag in the HyperDX alerts page in a browser.
+
+## Promotion merge gate runs two checks (11 October 2026)
+
+Commit `d7782fe` (console image `src-e188ff509a5edf6b`, pinned in `ccbc8db`) made the [auto-merge gate](console.md#auto-merge) check a promotion's merge result with `make check-repo` and `make check-apps` only; a new app still gets all of `make check`.
+
+- Why: promoting `test-3` to production at 19:45:17 UTC (`8f23bf8`) reached `main` at 19:46:20 and its `test-3/prod deployed` message at 19:48:05. The gate's merge step took 41 s of that, nearly all of it `make check`; Flux fetched the push in 2 s and Helm finished 21 s later.
+- The checker's 19:47:06 pass sent nothing because an unrelated push to `main` (19:46:55) had the `app-test-3-prod` unit waiting on its dependencies between 19:46:59 and 19:47:10, and a "deployed" message needs the unit Ready; the next pass sent it.
+- On this host the two checks take 10 s against 89 s for `make check` (585 tests passed). Validate and the publish run passed on `d7782fe`; after `make flux-reconcile`, `make verify-platform` passed with the new console image running.
+- Not exercised: a real promotion through the narrowed gate (no staging build was waiting), so the saving on GitHub's runner, estimated at 30 s, is not measured.

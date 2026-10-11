@@ -29,7 +29,7 @@
     <div class="field">
       <label for="team">Owning team</label>
       <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}</option>{% endfor %}</select>
-      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. The app's deployment and health messages also go to the team's <a href="/teams#channels">notification channels</a>. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
     </div>
   </fieldset>
 

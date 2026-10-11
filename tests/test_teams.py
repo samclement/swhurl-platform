@@ -189,7 +189,7 @@ class TeamTests(unittest.TestCase):
         kustomization.write_text(kustomization.read_text().replace('  - channel-payments-phone.sops.yaml\n', ''))
         found = '\n'.join(channels.problems(self.root))
         for expected in ('team payments notifies ghost, which is not a channel', 'is not in platform/notify/kustomization.yaml',
-                         'routes.yaml is not what apps/teams.yaml declares'):
+                         'routes.yaml is not what the channel files and apps/teams.yaml declare'):
             self.assertIn(f'notify-channels: {expected}' if expected.startswith('team') else expected, found)
         scratch = self.root / 'elsewhere'
         scratch.mkdir()

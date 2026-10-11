@@ -183,6 +183,8 @@ make channel-add NAME=payments-phone                          # prompts for http
 make team-edit NAME=payments ARGS="--notify payments-phone"
 ```
 
+The console's [Teams page](console.md#use-it) does the same as pull requests: **New channel** (its **Generate** button makes a random topic in your browser and shows the link to subscribe with before you submit), then tick the channel in the team's **Edit** form.
+
 ```mermaid
 flowchart LR
     teams[apps/teams.yaml<br/>payments: notify payments-phone] -->|generated| routes[notify/notification-routes]
@@ -198,7 +200,7 @@ flowchart LR
 | --- | --- | --- |
 | Channel | [`platform/notify/channel-<name>.sops.yaml`](../platform/notify): Secret `notify/channel-<name>` | Its transport is a plain label (`ntfy` is the only one); its address is the credential and is encrypted. One file per channel, so adding one decrypts nothing |
 | Team's channels | `notify:` on the team in [`apps/teams.yaml`](../apps/teams.yaml) | Every app of the team, in every environment. A team without `notify` gets no copy |
-| Routes | [`platform/notify/routes.yaml`](../platform/notify/routes.yaml): ConfigMap `notify/notification-routes` | Generated from the registry: never edit it. `make app-sync` rewrites it and `make check-apps` (rule `notify-channels`) fails when it, a team's list or the channel files disagree |
+| Routes | [`platform/notify/routes.yaml`](../platform/notify/routes.yaml): ConfigMap `notify/notification-routes` | Generated from the channel files and the registry, names only: never edit it. `make app-sync` rewrites it and `make check-apps` (rule `notify-channels`) fails when it, a team's list or the channel files disagree |
 
 **Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channels, so nothing secret changes hands. A lost or leaked address is replaced with `make channel-add NAME=<channel> ARGS=--replace`; `make channel-remove` is refused while a team notifies the channel.
 

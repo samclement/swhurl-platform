@@ -90,6 +90,14 @@ spec:
               if: 'attributes.level != nil'
               field: attributes.level
       processors:
+        # Adds to the chart preset's pod attributes: an app's team, from its namespace label
+        # (docs/apps.md#teams-and-isolation). Filter on ResourceAttributes['swhurl.team'].
+        k8s_attributes:
+          extract:
+            labels:
+            - tag_name: swhurl.team
+              key: platform.swhurl.com/team
+              from: namespace
         # Source parsers normalize messages, fields and severity after container framing.
         # Unknown/malformed lines remain intact. Lambda mapping keeps arrays as JSON before flattening.
         transform/log-structure:

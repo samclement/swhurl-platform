@@ -16,6 +16,7 @@ from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
+PROMOTION_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
 
 
@@ -136,7 +137,9 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str) -> None:
                 check_promotion(base, candidate, app, pr.get('body') or '', files, runner)
             elif (base / 'apps' / app / 'staging').exists():
                 raise Hold('new-app PR overwrites an existing staging instance')
-            runner.run(['make', 'check'], cwd=candidate)
+            # A promotion's files are pinned above to the reviewed image or conversion, so only the checks
+            # that read app instances can change. A new app's unit is only read by the tests: run them all.
+            runner.run(['make', *(PROMOTION_CHECKS if action == 'promote' else ['check'])], cwd=candidate)
             # Recheck the human's hold and the exact PR head after the potentially long validation.
             eligible(runner.json(['gh', 'api', pr_path]), sha, repo)
             current = runner.output(['git', 'ls-remote', 'origin', 'refs/heads/main'], cwd=root).split()[0]

@@ -33,6 +33,7 @@ COMMANDS = {
     'app-team': ('swhurl.apps.edit', 'main_team', 'Move an app to a registered team; adds its quota and NetworkPolicy if missing (Git edit)'),
     'platform-signing-keys': ('swhurl.apps.keys', 'main', 'Refresh the cluster\'s public token-signing keys in Git and in every web app (Git edit)'),
     'app-calls': ('swhurl.apps.edit', 'main_calls', 'Change which apps an instance may call; updates the callees too (Git edit)'),
+    'app-events': ('swhurl.apps.edit', 'main_events', 'Set the events an instance publishes and receives; creates its NATS key the first time (Git edit)'),
     'app-sync': ('swhurl.apps.edit', 'main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, callers (Git edit)'),
     'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),
     'check-otel': ('swhurl.otel', 'main', 'Validate each OTel collector config with the collector version it will run'),

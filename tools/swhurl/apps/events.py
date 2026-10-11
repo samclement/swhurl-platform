@@ -108,6 +108,24 @@ def users_configmap(users: list[dict]) -> str:
             'data:\n  values.yaml: |\n' + ''.join(f'    {line}\n' for line in values.splitlines()))
 
 
+def users_file(root: Path) -> tuple[Path, str] | None:
+    """The NATS user list for every instance under ``root`` as it is on disk, with its path; None
+    where this root has no NATS unit (the scratch roots of tests and template checks)."""
+    key_file = root / CONTROLLER_KEY_FILE
+    if not key_file.is_file():
+        return None
+    users = [controller_user(key_file.read_text().strip())]
+    for env in ('staging', 'prod'):
+        for path in sorted((root / 'apps').glob(f'*/{env}/helmrelease.yaml')):
+            values = (yaml.safe_load(path.read_text()).get('spec') or {}).get('values') or {}
+            variables = ((((values.get('controllers') or {}).get('main') or {}).get('containers') or {})
+                         .get('main') or {}).get('env') or {}
+            if variables.get(NKEY_ENV) and (published(variables) or subscribed(variables)):
+                users.append(user(str(variables[NKEY_ENV]), env, path.parent.parent.name, published(variables),
+                                  subscribed(variables)))
+    return root / USERS_FILE, users_configmap(users)
+
+
 def manifests(app: str, env: str, publishes: list[str], subscribes: list[tuple[str, str]]) -> list[dict]:
     """The instance's stream (if it publishes) and one durable consumer per subscription."""
     namespace = f'{app}-{env}'

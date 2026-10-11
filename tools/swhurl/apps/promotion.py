@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import contract, ops
+from swhurl.apps import events as nats
 from swhurl.apps.new import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -190,7 +191,8 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
                                or volume.get('retain') is not True):
             raise EditError('data must be a platform-managed retained claim; external bindings are unsupported')
     keys = []
-    refs = container.get('envFrom', [])
+    # Events are declared per environment (make app-events ENV=prod): the staging key stays in staging.
+    refs = [ref for ref in container.get('envFrom', []) if ref != {'secretRef': {'name': nats.secret_name(app)}}]
     if refs and refs != [{'secretRef': {'name': f'{app}-secret'}}]:
         raise EditError('only the platform-managed app Secret reference is supported on first promotion')
     if refs:
@@ -203,9 +205,10 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     kustomization = YamlFile(instance / 'kustomization.yaml').data
     only(kustomization, {'apiVersion', 'kind', 'resources'}, 'kustomization')
     expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({'secret.sops.yaml'} if refs else set())
-    resources = set(kustomization.get('resources', [])) - {contract.IMAGE_AUTOMATION_FILE}
-    if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - {
-            contract.IMAGE_AUTOMATION_FILE} != expected | {'kustomization.yaml'}:
+    per_environment = {contract.IMAGE_AUTOMATION_FILE, nats.EVENTS_FILE, nats.SECRET_FILE}
+    resources = set(kustomization.get('resources', [])) - per_environment
+    if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment != expected | {
+            'kustomization.yaml'}:
         raise EditError('first promotion refuses additional resources or files')
     env = container.get('env', {})
     if any(isinstance(v, dict) and 'valueFrom' in v and k != contract.OTLP_HOST_IP for k, v in env.items()):
@@ -285,6 +288,24 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         if contract.ENV_ENV in env:
             env[contract.ENV_ENV] = 'prod'
         env.pop(contract.CALLERS_ENV, None)
+        for key in (nats.PUBLISH_ENV, nats.SUBSCRIBE_ENV, nats.URL_ENV, nats.NKEY_ENV):
+            env.pop(key, None)
+        main = values['controllers']['main']
+        staging_key = {'secretRef': {'name': nats.secret_name(app)}}
+        if staging_key in main['containers']['main'].get('envFrom', []):
+            main['containers']['main']['envFrom'].remove(staging_key)
+            if not main['containers']['main']['envFrom']:
+                del main['containers']['main']['envFrom']
+        reload_key = 'secret.reloader.stakater.com/reload'
+        reloads = [name for name in str((main.get('annotations') or {}).get(reload_key, '')).split(',')
+                   if name and name != nats.secret_name(app)]
+        if reload_key in (main.get('annotations') or {}):
+            if reloads:
+                main['annotations'][reload_key] = ','.join(reloads)
+            else:
+                del main['annotations'][reload_key]
+                if not main['annotations']:
+                    del main['annotations']
         if args.exposure != 'private':
             route = values['ingress']['main']
             route['hosts'][0]['host'] = args.host

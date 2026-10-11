@@ -240,7 +240,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides', 'events'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -292,6 +292,17 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
             if not isinstance(resources[key], str):
                 raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
             defaults[dest] = resources[key]
+    declared = field('events', dict) or {}
+    if set(declared) - {'publish', 'subscribe'}:
+        raise fail('events may set publish and subscribe only')
+    for key, dest, pattern in (('publish', 'publish', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?'),
+                               ('subscribe', 'subscribe', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?')):
+        names = declared.get(key) or []
+        if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(pattern, n) for n in names) \
+                or len(set(names)) != len(names):
+            raise fail('events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)')
+        if names:
+            defaults[dest] = names
     provides = field('provides', dict) or {}
     if set(provides) - {'api'} or not isinstance(provides.get('api', '/'), str) or not provides.get('api', '/').startswith('/'):
         raise fail('provides may set api only, a path such as /openapi.json')

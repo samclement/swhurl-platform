@@ -112,7 +112,7 @@ Restarts a workload when a Secret it names changes, so rotations need no manual 
 
 ## NATS
 
-The event broker: apps publish events and subscribe to each other's. One NATS server with JetStream in `messaging`, reachable only inside the cluster at `nats://nats.messaging.svc.cluster.local:4222`, and the JetStream controller (NACK) beside it.
+The event broker: apps publish events and subscribe to each other's ([events](apps.md#events)). One NATS server with JetStream in `messaging`, reachable only inside the cluster at `nats://nats.messaging.svc.cluster.local:4222`, and the JetStream controller (NACK) beside it.
 
 - **Staging and production share the server.** They are kept apart by name and permission: an event's subject is `<env>.<app>.<event>`, and an app's user may publish only its own declared subjects in its own environment.
 - **Who may do what** is [`users.yaml`](../platform/nats/users.yaml): one user per app instance that declares events, generated from the instances by `make app-events` and `make app-sync`. It holds public keys and permissions only, so it is plain YAML in Git. Flux upgrades the release when it changes and NATS reloads without restarting. Do not edit it by hand.

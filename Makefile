@@ -89,6 +89,11 @@ app-calls: ## APP= ENV= ARGS="--add orders | --remove orders" Change which apps 
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-calls APP=<app> ENV=<env> ARGS='--add orders'" >&2; exit 2; }
 	$(SWHURL_APPS) app-calls $(APP) $(ENV) $(ARGS)
 
+.PHONY: app-events
+app-events: ## APP= ENV= ARGS="--publish created --subscribe orders.created" Set the events an instance publishes and receives (Git edit)
+	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-events APP=<app> ENV=<env> ARGS='--publish created'" >&2; exit 2; }
+	$(SWHURL_APPS) app-events $(APP) $(ENV) $(ARGS)
+
 .PHONY: app-sync
 app-sync: ## Rewrite what the platform derives in every instance: identity, signing keys, allowed callers (Git edit)
 	$(SWHURL_APPS) app-sync

@@ -5,6 +5,7 @@
     app-expose APP ENV --exposure E [--host H]     change who can reach an instance
     app-team APP --team T                          move an app (every environment) to a registered team
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
+    app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...]   set the events an instance publishes and receives
     app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -21,7 +22,8 @@ import sys
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import ops, promotion
+from swhurl.apps import events as nats
+from swhurl.apps import nkeys, ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     CALLERS_ENV,
@@ -41,7 +43,15 @@ from swhurl.apps.contract import (
     teams,
     tokens_volume,
 )
-from swhurl.apps.new import NAME_RE, check_generated, depends_on, ingress_values, isolation_files
+from swhurl.apps.new import (
+    NAME_RE,
+    check_generated,
+    depends_on,
+    dump,
+    ingress_values,
+    isolation_files,
+    watch_namespace,
+)
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
 
@@ -76,8 +86,10 @@ def container(release: dict) -> dict:
     return mapping(mapping(controller(release), 'containers'), 'main')
 
 
-def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_values: dict) -> list[tuple[Path, str]]:
-    """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them."""
+def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_values: dict, *,
+                    listed: tuple[str, ...] = (), unlisted: tuple[str, ...] = ()) -> list[tuple[Path, str]]:
+    """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them
+    (and ``listed``, and no longer ``unlisted``: the event files, which sync_env writes or deletes)."""
     port = service_port(app_values)
     callers = allowed_callers(mapping(container_of(app_values), 'env') if 'env' in container_of(app_values) else {})
     files = isolation_files(app, f'{app}-{env}', exposure, port, callers)
@@ -86,11 +98,95 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_value
     resources = kustomization.data.get('resources')
     if not isinstance(resources, list):
         raise EditError('kustomization.yaml: expected a resources list')
-    missing = [name for name in files if name not in resources]
-    if missing:
-        resources.extend(missing)
+    missing = [name for name in (*files, *listed) if name not in resources]
+    stale = [name for name in unlisted if name in resources]
+    resources.extend(missing)
+    for name in stale:
+        resources.remove(name)
+    if missing or stale:
         edits.append((kustomization.path, kustomization.render()))
     return edits
+
+
+RELOAD = 'secret.reloader.stakater.com/reload'
+
+
+def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, publishers: dict[str, list[str]],
+                ) -> tuple[list[tuple[Path, str]], tuple[str, ...], tuple[str, ...], dict | None]:
+    """What follows from the events an instance declares (SWHURL_EVENTS_PUBLISH / _SUBSCRIBE):
+    ``(file edits, files to list, files to delete and unlist, its NATS user or None)``.
+
+    In the release (edited in place): the NATS address, the reference to the Secret holding the
+    app's seed, and Reloader restarting the app when that Secret changes. Beside it: the stream and
+    consumers (events.yaml), and the unit waiting for platform-nats and decrypting.
+    ``publishers`` maps each app of this environment to the events it publishes.
+    """
+    main, workload = container(release), controller(release)
+    env_map = mapping(main, 'env', create=True)
+    publishes, subscribes = nats.published(env_map), nats.subscribed(env_map)
+    for publisher, event in subscribes:
+        if event not in publishers.get(publisher, []):
+            raise EditError(f'{app}/{env} subscribes to {publisher}.{event}, which {publisher}/{env} does not publish')
+    secret = nats.secret_name(app)
+    reference = {'secretRef': {'name': secret}}
+    refs = main.get('envFrom')
+    annotations = workload.get('annotations') or {}
+    reloads = [name for name in str(annotations.get(RELOAD, '')).split(',') if name]
+    unit_path = root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    if not (publishes or subscribes) and not unit_path.is_file():
+        unit_path = None  # an instance without its unit (a test tree) has nothing to undo there
+    unit = YamlFile(unit_path) if unit_path else None
+    unit_spec = mapping(unit.data, 'spec') if unit else {}
+    dependencies = unit_spec.get('dependsOn') or []
+    edits: list[tuple[Path, str]] = []
+    if publishes or subscribes:
+        if not env_map.get(nats.NKEY_ENV) or not (instance / nats.SECRET_FILE).is_file():
+            raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
+        if env_map.get(nats.URL_ENV) != nats.URL:
+            env_map[nats.URL_ENV] = nats.URL
+        if refs is None:
+            main['envFrom'] = [reference]
+        elif reference not in refs:
+            refs.append(reference)
+        if secret not in reloads:
+            mapping(workload, 'annotations', create=True)[RELOAD] = ','.join([*reloads, secret])
+        if not any(d.get('name') == nats.UNIT for d in dependencies):
+            unit_spec.setdefault('dependsOn', dependencies).append({'name': nats.UNIT})
+        if 'decryption' not in unit_spec:
+            unit_spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
+        edits.append((instance / nats.EVENTS_FILE, dump(nats.manifests(app, env, publishes, subscribes))))
+        user = nats.user(str(env_map[nats.NKEY_ENV]), env, app, publishes, subscribes)
+        listed, unlisted = (nats.SECRET_FILE, nats.EVENTS_FILE), ()
+    else:
+        for key in (nats.URL_ENV, nats.NKEY_ENV):
+            env_map.pop(key, None)
+        if refs is not None and reference in refs:
+            refs.remove(reference)
+            if not refs:
+                del main['envFrom']
+        if secret in reloads:
+            reloads.remove(secret)
+            if reloads:
+                annotations[RELOAD] = ','.join(reloads)
+            else:
+                del annotations[RELOAD]
+                if not annotations:
+                    del workload['annotations']
+        for index in reversed(range(len(dependencies))):
+            if dependencies[index].get('name') == nats.UNIT:
+                del dependencies[index]
+        if 'decryption' in unit_spec and not (instance / 'secret.sops.yaml').is_file():
+            del unit_spec['decryption']
+        user, listed, unlisted = None, (), (nats.SECRET_FILE, nats.EVENTS_FILE)
+    if unit:
+        edits.append((unit.path, unit.render()))
+    return edits, listed, unlisted, user
+
+
+def users_edit(root: Path) -> list[tuple[Path, str]]:
+    """The NATS user list as a file edit, from the instances as they are on disk."""
+    found = nats.users_file(root)
+    return [found] if found else []
 
 
 def container_of(app_values: dict) -> dict:
@@ -129,7 +225,9 @@ def sync_env(root: Path, env: str) -> list[Path]:
             if ports[callee] is None:
                 raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
     keys = signing_keys(root)
+    publishers = {app: nats.published(container(doc.data).get('env') or {}) for app, doc in releases.items()}
     edits: list[tuple[Path, str]] = []
+    deletions: list[Path] = []
     for app, doc in releases.items():
         instance = doc.path.parent
         app_values, main = values(doc.data), container(doc.data)
@@ -153,12 +251,22 @@ def sync_env(root: Path, env: str) -> list[Path]:
         elif not calls[app]:
             persistence.pop(TOKENS_VOLUME, None)
         exposure = mapping(mapping(YamlFile(instance / 'namespace.yaml').data, 'metadata'), 'labels').get(EXPOSURE)
+        event_files, listed, unlisted, user = event_edits(root, instance, app, env, doc.data, publishers)
+        if user:
+            watch_namespace(root, f'{app}-{env}')
         edits.append((doc.path, doc.render()))
-        edits += isolation_edits(instance, app, env, exposure, app_values)
+        edits += event_files
+        edits += isolation_edits(instance, app, env, exposure, app_values, listed=listed, unlisted=unlisted)
+        deletions += [instance / name for name in unlisted if (instance / name).exists()]
     changed = [(path, text) for path, text in edits if not path.exists() or path.read_text() != text]
     for path, text in changed:
         path.write_text(text)
-    return [path for path, _ in changed]
+    for path in deletions:
+        path.unlink()
+    users = [(path, text) for path, text in users_edit(root) if not path.exists() or path.read_text() != text]
+    for path, text in users:  # after the instances are written: it reads every environment from disk
+        path.write_text(text)
+    return [path for path, _ in changed] + deletions + [path for path, _ in users]
 
 
 def sync(root: Path) -> Path | None:
@@ -202,6 +310,69 @@ def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remov
     now = declared_calls(mapping(container(YamlFile(instance / 'helmrelease.yaml').data), 'env'))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
     return instance
+
+
+def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
+           runner: Runner | None = None) -> Path:
+    """Set the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives (None: unchanged,
+    an empty list: none). The first time, the instance gets its own NATS key; everything else follows in sync_env."""
+    if publish is None and subscribe is None:
+        raise EditError('give --publish and/or --subscribe (an empty value clears it)')
+    bad = [name for name in publish or [] if not nats.EVENT_RE.match(name)]
+    bad += [name for name in subscribe or [] if not nats.SUBSCRIPTION_RE.match(name)]
+    if bad or len(set(publish or [])) != len(publish or []) or len(set(subscribe or [])) != len(subscribe or []):
+        raise EditError('events are lowercase names (created), subscriptions <app>.<event> (orders.created), each once'
+                        + (f': {", ".join(bad)}' if bad else ''))
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    env_map = mapping(container(document.data), 'env', create=True)
+    for key, value in ((nats.PUBLISH_ENV, publish), (nats.SUBSCRIBE_ENV, subscribe)):
+        if value:
+            env_map[key] = ','.join(value)
+        elif value is not None:
+            env_map.pop(key, None)
+    active = bool(nats.published(env_map) or nats.subscribed(env_map))
+    before = document.path.read_text()
+    secret = instance / nats.SECRET_FILE
+    created = False
+    if active and not (env_map.get(nats.NKEY_ENV) and secret.is_file()):
+        # The seed goes from memory into a file that sops encrypts in place: it is never printed.
+        seed, public = nkeys.generate()
+        secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
+                                 'metadata': {'name': nats.secret_name(app), 'namespace': f'{app}-{env}'},
+                                 'type': 'Opaque', 'stringData': {nats.SEED_ENV: seed}}]))
+        try:
+            (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
+        except CommandError as error:
+            secret.unlink(missing_ok=True)
+            raise EditError(f'could not SOPS-encrypt {secret.name}; nothing was changed: {error}') from None
+        if 'sops:' not in secret.read_text():
+            secret.unlink()
+            raise EditError(f'{secret.name} was not encrypted; removed it')
+        env_map[nats.NKEY_ENV] = public
+        created = True
+    document.save()
+    try:
+        sync_env(root, env)
+    except EditError:
+        document.path.write_text(before)
+        if created:
+            secret.unlink(missing_ok=True)
+        raise
+    now = container(YamlFile(instance / 'helmrelease.yaml').data).get('env') or {}
+    print(f'[OK] {app}/{env} publishes: {", ".join(nats.published(now)) or "nothing"}; '
+          f'subscribes to: {", ".join(".".join(pair) for pair in nats.subscribed(now)) or "nothing"}')
+    return instance
+
+
+def subscribers_of(root: Path, app: str, env: str) -> list[str]:
+    """The other instances of ``env`` that subscribe to an event of ``app``."""
+    found = []
+    for other in instances_in(root, env):
+        release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
+        if other != app and any(publisher == app for publisher, _ in nats.subscribed(container(release).get('env') or {})):
+            found.append(other)
+    return found
 
 
 def callers_of(root: Path, app: str, env: str) -> list[str]:
@@ -404,6 +575,10 @@ def remove(root: Path, app: str, env: str) -> None:
     if callers:
         raise EditError(f'{app}/{env} is called by {", ".join(callers)}: remove those calls first '
                         f'(make app-calls APP=<caller> ENV={env} ARGS="--remove {app}")')
+    subscribers = subscribers_of(root, app, env)
+    if subscribers:
+        raise EditError(f'{app}/{env} publishes events that {", ".join(subscribers)} subscribe to: '
+                        f'remove those subscriptions first (make app-events APP=<subscriber> ENV={env})')
     namespace_file = instance / 'namespace.yaml'
     keeps_data = namespace_file.exists() and PRUNE_DISABLED in namespace_file.read_text()
     unit_file = root / 'clusters/home' / f'app-{app}-{env}.yaml'
@@ -533,6 +708,19 @@ def main_calls(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
+
+
+def main_events(argv: list[str] | None = None) -> int:
+    def names(text: str) -> list[str]:
+        return [name.strip() for name in text.split(',') if name.strip()]
+    p = argparse.ArgumentParser(prog='swhurl app-events', description='Set the events an instance publishes and receives')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--publish', type=names, help='comma-separated events this app publishes ("" for none)')
+    p.add_argument('--subscribe', type=names, help='comma-separated <app>.<event> it receives ("" for none)')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe), True)
 
 
 def main_sync(argv: list[str] | None = None) -> int:

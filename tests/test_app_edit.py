@@ -315,6 +315,119 @@ class EditTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('could not read the signing keys', out)
 
+    def sops(self):
+        """A runner whose sops marks the file encrypted, as the real one does, and hides the seed."""
+        from swhurl.run import FakeRunner, Result
+
+        def encrypt(args, _input):
+            path = Path(args[-1])
+            self.seeds.append(yaml.safe_load(path.read_text())['stringData']['SWHURL_EVENTS_SEED'])
+            path.write_text(path.read_text().replace(self.seeds[-1], 'ENC[...]') + 'sops:\n  age: []\n')
+            return Result(args, 0, '')
+        self.seeds = []
+        return FakeRunner().on('sops', handler=encrypt)
+
+    def with_units(self, name='orders'):
+        self.second_app(name)
+        for env in ('staging', 'prod'):
+            source = self.root / f'clusters/home/app-hello-{env}.yaml'
+            (self.root / f'clusters/home/app-{name}-{env}.yaml').write_text(source.read_text().replace('hello', name))
+        key = self.root / 'platform/nats/controller-nkey.pub'
+        key.parent.mkdir(parents=True, exist_ok=True)
+        key.write_text('UCONTROLLER\n')
+
+    def test_events_give_a_publisher_a_stream_and_a_subscriber_a_consumer_and_both_a_nats_user(self):
+        from swhurl.apps import events as nats
+        self.with_units()
+        runner = self.sops()
+        self.quiet(edit.events, self.root, 'orders', 'staging', publish=['created', 'cancelled'], runner=runner)
+        self.quiet(edit.events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
+
+        publisher, subscriber = self.env('orders'), self.env('hello')
+        self.assertEqual((publisher['SWHURL_EVENTS_PUBLISH'], publisher['SWHURL_EVENTS_URL']), ('created,cancelled', nats.URL))
+        self.assertEqual(subscriber['SWHURL_EVENTS_SUBSCRIBE'], 'orders.created')
+        for app in ('orders', 'hello'):
+            key = self.env(app)['SWHURL_EVENTS_NKEY']
+            self.assertTrue(key.startswith('U') and len(key) == 56)
+            secret = (self.root / 'apps' / app / 'staging/events.sops.yaml').read_text()
+            self.assertIn('sops:', secret)
+            self.assertFalse(any(seed in secret for seed in self.seeds), 'the seed is only ever in the encrypted file')
+            release = yaml.safe_load((self.root / 'apps' / app / 'staging/helmrelease.yaml').read_text())
+            main = release['spec']['values']['controllers']['main']
+            self.assertIn({'secretRef': {'name': f'{app}-events'}}, main['containers']['main']['envFrom'])
+            self.assertIn(f'{app}-events', main['annotations']['secret.reloader.stakater.com/reload'].split(','))
+            unit = yaml.safe_load((self.root / f'clusters/home/app-{app}-staging.yaml').read_text())['spec']
+            self.assertIn({'name': 'platform-nats'}, unit['dependsOn'])
+            self.assertEqual(unit['decryption']['provider'], 'sops')
+            listed = yaml.safe_load((self.root / 'apps' / app / 'staging/kustomization.yaml').read_text())['resources']
+            self.assertLessEqual({'events.yaml', 'events.sops.yaml'}, set(listed))
+        self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
+        self.assertEqual(len(self.seeds), 2, 'a later change reuses the key')
+        self.quiet(edit.events, self.root, 'orders', 'staging', publish=['created', 'cancelled', 'paid'], runner=runner)
+        self.assertEqual(len(self.seeds), 2)
+
+        stream, = yaml.safe_load_all((self.root / 'apps/orders/staging/events.yaml').read_text())
+        self.assertEqual((stream['kind'], stream['spec']['name'], stream['spec']['subjects'], stream['spec']['maxAge']),
+                         ('Stream', 'staging-orders', ['staging.orders.>'], '168h'))
+        consumer, = yaml.safe_load_all((self.root / 'apps/hello/staging/events.yaml').read_text())
+        self.assertEqual((consumer['kind'], consumer['spec']['streamName'], consumer['spec']['durableName'],
+                          consumer['spec']['filterSubject']),
+                         ('Consumer', 'staging-orders', 'hello_created', 'staging.orders.created'))
+
+        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
+        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
+        self.assertEqual(users['UCONTROLLER']['publish']['allow'], ['$JS.API.>'])
+        self.assertEqual(users[self.env('orders')['SWHURL_EVENTS_NKEY']], {
+            'publish': {'allow': ['staging.orders.created', 'staging.orders.cancelled', 'staging.orders.paid']},
+            'subscribe': {'allow': ['_INBOX.staging.orders.>']}})
+        self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']], {
+            'publish': {'allow': ['$JS.API.CONSUMER.INFO.staging-orders.hello_created',
+                                  '$JS.API.CONSUMER.MSG.NEXT.staging-orders.hello_created',
+                                  '$JS.ACK.staging-orders.hello_created.>']},
+            'subscribe': {'allow': ['_INBOX.staging.hello.>']}})
+        self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
+        self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging'])
+                         + policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
+        instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
+        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.event_users(self.root), [])
+
+        with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
+            edit.remove(self.root, 'orders', 'staging')
+        with self.assertRaisesRegex(edit.EditError, 'subscribes to orders.created, which orders/staging does not publish'):
+            edit.events(self.root, 'orders', 'staging', publish=['paid'], runner=runner)
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,cancelled,paid', 'a refused change is undone')
+
+        self.quiet(edit.events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
+        self.assertFalse(any(key.startswith('SWHURL_EVENTS_') for key in self.env('hello')))
+        self.assertFalse((self.root / 'apps/hello/staging/events.yaml').exists())
+        self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
+        release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
+        self.assertNotIn({'secretRef': {'name': 'hello-events'}},
+                         release['spec']['values']['controllers']['main']['containers']['main'].get('envFrom', []))
+        unit = yaml.safe_load((self.root / 'clusters/home/app-hello-staging.yaml').read_text())['spec']
+        self.assertNotIn({'name': 'platform-nats'}, unit['dependsOn'])
+        self.assertEqual(len(yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data'][
+            'values.yaml'])['config']['merge']['authorization']['users']), 2, 'the controller and orders remain')
+
+    def test_event_refusals_change_nothing(self):
+        self.with_units()
+        before = self.staging.read_text()
+        cases = (({}, 'give --publish and/or --subscribe'), ({'publish': ['Created']}, 'lowercase names'),
+                 ({'subscribe': ['created']}, '<app>.<event>'), ({'publish': ['a', 'a']}, 'each once'),
+                 ({'subscribe': ['orders.created']}, 'which orders/staging does not publish'))
+        for kwargs, message in cases:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
+                edit.events(self.root, 'hello', 'staging', runner=self.sops(), **kwargs)
+        self.assertEqual(self.staging.read_text(), before)
+        self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
+        from swhurl.run import FakeRunner
+        with self.assertRaisesRegex(edit.EditError, 'could not SOPS-encrypt'):
+            edit.events(self.root, 'hello', 'staging', publish=['created'],
+                        runner=FakeRunner().on('sops', returncode=1, stderr='no key'))
+        self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists(), 'no plaintext seed is left')
+        self.assertEqual(self.staging.read_text(), before)
+
     def test_expose_refusals(self):
         cases = (('public', None, 'needs --host'), ('public', 'x.homelab.swhurl.com', 'outside'),
                  ('authenticated-web', 'hello.example.com', 'must be under'), ('private', 'x.example.com', 'drop --host'),

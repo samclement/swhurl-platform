@@ -68,6 +68,7 @@ def fake(units=UNITS, releases=RELEASES, **extra):
 
 
 def client(runner, **kwargs):
+    kwargs.setdefault('repo_opener', lambda request: ({}, b'stack: typescript\n'))  # no test here reaches GitHub
     return TestClient(server.create_app(runner, **kwargs))
 
 
@@ -132,14 +133,16 @@ class ConnectionsTests(unittest.TestCase):
         text = client(runner).get('/apps', headers=WHO).text
         self.assertIn('title="Show only team payments">payments</a>', text)
         self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
-        self.assertIn('called by 1 · publishes 2', text)
-        self.assertIn('<div>staging: called by 1 · publishes 2</div><div>prod: none</div>', text, 'each environment has its own')
-        self.assertIn('calls 1', text)
-        self.assertIn('subscribes to 1', text)
-        self.assertIn('Staging only</span> · <a href="/apps/reports/staging/promotion">Review promotion</a>', text)
-        self.assertIn('<a class="open" href="https://staging-orders.homelab.swhurl.com" title="Open staging-orders.homelab.swhurl.com">'
-                      '<span class="sr-only">', text, 'the default host is a link, not text')
+        self.assertIn('<dt>Called by</dt><dd><a href="/apps/reports/staging">reports</a></dd>', text, 'the opened row names them')
+        self.assertIn('<dt>Publishes</dt><dd><code>created</code>, <code>paid</code></dd>', text)
+        self.assertIn('<dt>Calls</dt><dd><a href="/apps/orders/staging">orders</a></dd>', text)
+        self.assertIn('<dt>Subscribes to</dt><dd><code>orders.created</code></dd>', text)
+        self.assertIn('<span class="pill">Staging only</span>', text)
+        self.assertIn('<a href="/apps/reports/staging/promotion">Review promotion</a>', text)
+        self.assertIn('<a class="open" href="https://staging-orders.homelab.swhurl.com" title="Open staging-orders.homelab.swhurl.com">', text)
+        self.assertIn('<span class="pill">TypeScript</span>', text, 'the language, from the app\'s own repository')
         self.assertIn('ServiceName%3A%22orders%22', text, 'logs and traces from the row')
+        self.assertIn('href="https://github.com/samclement/orders"', text)
         self.assertNotIn('href="/services"', text, 'there is one list of apps, not two')
         payments = client(runner).get('/apps?team=payments', headers=WHO).text
         self.assertIn('<strong>orders</strong>', payments)
@@ -207,15 +210,20 @@ class AppsTests(unittest.TestCase):
         self.assertNotIn('<script>x</script>', text)
         self.assertIn('&lt;script&gt;', text)
 
-    def test_only_a_row_that_is_not_healthy_offers_its_action_and_the_filter_shows_those_rows(self):
+    def test_a_row_opens_itself_when_an_environment_is_not_healthy_and_the_filter_shows_those_rows(self):
         units = [unit('app-web-staging'), unit('app-web-prod', ready='False', message='boom'),
                  unit('app-idle-staging', suspend=True), unit('app-fine-staging'),
                  unit('app-wait-staging', ready='False', message="dependency 'flux-system/infra-base' is not ready")]
-        releases = [release('web-staging', 'web'), release('fine-staging', 'fine')]
+        releases = [release('web-staging', 'web'), release('fine-staging', 'fine'), release('wait-staging', 'wait'),
+                    release('idle-staging', 'idle')]
         text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
-        self.assertEqual(text.count('<form class="inline"'), 2, 'healthy and updating rows have no button')
+        for app, opened in (('web', True), ('idle', True), ('fine', False), ('wait', False)):
+            self.assertEqual(f'<details class="openrow" id="app-{app}" open>' in text, opened, app)
+            self.assertIn(f'<details class="openrow" id="app-{app}"', text, 'every row can be opened, and stays open when the page is re-read')
+        self.assertIn('<p class="reason bad">boom</p>', text)
         self.assertIn('hx-post="/units/app-web-prod/reconcile"', text)
         self.assertIn('action="/units/app-idle-staging/resume"', text)
+        self.assertNotIn('action="/units/app-idle-staging/reconcile"', text, 'a suspended instance is resumed, not reconciled')
         shown = client(fake(units=units, releases=releases)).get('/apps?show=attention', headers=WHO).text
         self.assertIn('<strong>web</strong>', shown)
         self.assertIn('<strong>wait</strong>', shown)
@@ -227,7 +235,7 @@ class AppsTests(unittest.TestCase):
         units = [unit('app-web-staging'), unit('app-web-prod'), unit('app-pending-staging')]
         releases = [release('web-staging', 'web', sqlite=True), release('web-prod', 'web')]
         text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
-        self.assertEqual(text.count('<strong class="db-kind">SQLite</strong>'), 1, 'said only where there is one')
+        self.assertEqual(text.count('<span class="pill">SQLite</span>'), 1, 'said only where there is one')
         self.assertEqual(text.count('release unknown'), 1)
 
     def test_unit_names_map_to_instances(self):
@@ -356,7 +364,8 @@ class AppSummaryTests(unittest.TestCase):
         units = [unit('app-web-staging'), unit('app-web-prod')]
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
-        self.assertIn('Differs</span> · <a href="/apps/web/staging/promotion">Review promotion</a>', text)
+        self.assertIn('<span class="pill attention">Images differ</span>', text)
+        self.assertIn('<span class="cell act"><a href="/apps/web/staging/promotion">Review promotion</a></span>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
 
     def test_every_page_names_app_instances_the_same_way(self):
@@ -443,21 +452,24 @@ class UnitsTests(unittest.TestCase):
         units = [unit('a', ['b']), unit('b', ['a']), unit('c', ['gone'])]
         self.assertEqual({u.name: u.level for u in cluster.units(fake(units=units))}, {'a': 1, 'b': 0, 'c': 0})
 
-    def test_platform_groups_units_by_layer_without_buttons(self):
+    def test_platform_groups_units_by_layer_and_a_unit_opens_to_its_details_and_actions(self):
         text = client(fake(**CHECKS)).get('/platform', headers=WHO).text
         for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps'):
-            self.assertIn(f'<tr class="group"><th colspan="4" scope="colgroup">{layer} ', text)
+            self.assertIn(f'<div class="group">{layer} ', text)
         self.assertIn('href="/units/infra-base"', text)
         self.assertIn('abc1234', text)
         self.assertIn('infra-base, platform-oauth2-proxy', text, 'what each unit waits for')
         self.assertIn('<details class="section" id="units-list" open>', text, 'a unit not Ready opens the units list')
-        self.assertIn('hx-post="/units/infra-base/reconcile" hx-target="closest td" hx-select="unset"', text,
+        self.assertIn('<details class="openrow" id="unit-infra-base">', text, 'a healthy unit stays one line until opened')
+        self.assertIn('<details class="openrow" id="unit-app-my-api-staging" open>', text, 'a unit that needs you is open')
+        self.assertIn('hx-post="/units/infra-base/reconcile" hx-target="this" hx-select="unset"', text,
                       'a unit is acted on from its row; the answer is a fragment, not a page to pick main out of')
+        self.assertIn('Safe: it applies what Git already says', text, 'each action says what it does, beside its button')
         self.assertIn('action="/units/infra-base/suspend"', text)
         self.assertIn('action="/units/app-my-api-staging/resume"', text, 'a suspended unit offers Resume alone')
         self.assertNotIn('action="/units/app-my-api-staging/suspend"', text)
         self.assertNotIn('action="/units/cluster-sources/', text, 'the root units have no actions')
-        self.assertEqual(text.count('<th>Unit</th>'), 1, 'one table, one header')
+        self.assertIn('<a class="mono" href="#unit-platform-oauth2-proxy">', text, 'needed by: a jump within the list')
         self.assertNotIn('<strong>Flux Kustomizations</strong>', text, 'the units list replaces that check group')
         self.assertIn('my-api/staging is suspended', text)
 
@@ -774,6 +786,8 @@ class ActionTests(unittest.TestCase):
         activity = c.get('/activity', headers=WHO).text
         self.assertIn('href="/jobs/7"', activity)
         self.assertIn('<span class="state updating"> Running</span>', activity, 'the state leads the row, as on every list')
+        self.assertIn('<details class="openrow" id="job-7">', activity, 'a job opens to its output without leaving the list')
+        self.assertIn('no output yet', activity)
         self.assertIn('just now', activity)
         self.assertIn('href="/units/infra-base">Back to infra-base', c.get('/jobs/7', headers=WHO).text)
 

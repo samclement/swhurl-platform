@@ -25,19 +25,26 @@
 
 <h2>Jobs</h2>
 {% if jobs %}
-<div class="scroll">
-<table class="compact">
-  <tr><th>State</th><th>Job</th><th>Result</th><th>Started</th><th>By</th></tr>
+{# One row per job; a row opens to the job's output, so reading it does not mean leaving the list. #}
+<div class="openlist jobs">
+  <div class="cols head" aria-hidden="true"><span></span><span>State</span><span>Job</span><span>Result</span><span>Started</span><span>By</span></div>
   {% for j in jobs %}
-  <tr>
-    <td>{{ st.job(j) }}<span class="{{ 'sr-only' if j.state == 'succeeded' else 'state ' ~ {'failed': 'failing'}.get(j.state, 'updating') }}"> {{ j.state | capitalize }}</span></td>
-    {% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<td>{{ j.action }} <a href="{{ link }}">{{ label }}</a></td>
-    <td><a href="/jobs/{{ j.id }}">Output of job #{{ j.id }}</a>{% if j.link %} · <a href="{{ j.link }}">pull request {{ st.icon('external') }}</a>{% endif %}</td>
-    <td class="muted nowrap" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %}</td>
-    <td class="muted">{{ j.identity }}</td>
-  </tr>
+  <details class="openrow" id="job-{{ j.id }}">
+    <summary class="cols" title="Show or hide the output of job #{{ j.id }}">
+      <span class="chev" aria-hidden="true"></span>
+      <span class="cell">{{ st.job(j) }}<span class="state {{ {'failed': 'failing', 'succeeded': 'healthy'}.get(j.state, 'updating') }}"> {{ j.state | capitalize }}</span></span>
+      {% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<span class="cell wrap">{{ j.action }} <a href="{{ link }}">{{ label }}</a></span>
+      <span class="cell" data-label="Result">{% if j.link %}<a href="{{ j.link }}">Pull request {{ st.icon('external') }}</a>{% else %}<span class="muted">—</span>{% endif %}</span>
+      <span class="cell muted" data-label="Started" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %}</span>
+      <span class="cell muted" data-label="By">{{ j.identity }}</span>
+    </summary>
+    <div class="panel">
+      <pre>{% for line in j.lines %}{{ line | short }}
+{% else %}<span class="muted">no output yet</span>{% endfor %}</pre>
+      <p class="muted"><a href="/jobs/{{ j.id }}">Job #{{ j.id }} on its own page</a>{% if j.state == 'running' %}, where its output arrives live{% endif %}.</p>
+    </div>
+  </details>
   {% endfor %}
-</table>
 </div>
 {% else %}
 <p class="muted">No jobs since the console started. A job is a reconcile, suspend or resume (from a unit's page) or a pull request (from New app or an app's page).</p>

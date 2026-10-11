@@ -215,7 +215,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                      'attention': len(states) - states.count('healthy') - states.count('updating')}
             if attention:
                 shown = [summary for summary in shown if any(row.state.key != 'healthy' for row in summary.envs.values())]
-            return {'apps': shown, 'teams': teams, 'tally': tally, 'attention': attention, 'team': team, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
+            return {'apps': shown, 'teams': teams, 'tally': tally, 'attention': attention, 'team': team,
+                    'stacks': stacks([summary.app for summary in shown]) if view != 'map' else {},
+                    'stack_names': STACK_NAMES, 'owner': contract.APP_OWNER, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
                                            env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
         return reading(request, 'apps.html', read)

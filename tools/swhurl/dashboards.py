@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import clickstack, statestore
+from swhurl import app_alerts, clickstack, statestore
 from swhurl.apps.new import NAME_RE
 from swhurl.platform import ROOT
 from swhurl.report import Report
@@ -247,6 +247,11 @@ def sync(runner: Runner, report: Report, wanted_apps: list[App], *, prune: bool 
         else:
             api.call('DELETE', f"/dashboards/{stale['id']}")
             report.ok(f'deleted {name} ({reason})')
+    # Each app's default alerts watch tiles of the dashboard as it is now: read again, since a
+    # created or updated dashboard has new tile ids.
+    current = {d['name']: d for d in api.call('GET', '/dashboards').get('data', []) if TAG in (d.get('tags') or [])}
+    app_alerts.reconcile(api, report, {app.name: current[f'App: {app.name}'] for app in wanted_apps
+                                       if f'App: {app.name}' in current}, prune=prune, dry_run=runner.dry_run)
     return report.exit_code()
 
 

@@ -177,13 +177,13 @@ def listed_channels(root: Path) -> tuple[YamlFile, list]:
 
 
 def set_decryption(root: Path) -> None:
-    """The notify unit decrypts exactly while a channel exists (make check-config requires the two to agree)."""
+    """The notify unit decrypts exactly while it holds an encrypted file (make check-config requires the two to agree)."""
     path = root / channels.UNIT_FILE
     if not path.is_file():
         return
     unit = YamlFile(path)
     spec = mapping(unit.data, 'spec')
-    wanted = bool(channels.channels(root))
+    wanted = any((root / channels.NOTIFY_DIR).glob('*.sops.yaml'))
     if wanted and 'decryption' not in spec:
         spec.insert(list(spec).index('path') + 1, 'decryption', {'provider': 'sops', 'secretRef': {'name': 'sops-age'}})
     elif not wanted and 'decryption' in spec:

@@ -19,7 +19,7 @@ BODY = {'app': 'orders', 'env': 'staging', 'key': 'event:1@notify', 'title': 'or
 ADDRESS = 'https://ntfy.sh/private-topic'
 
 
-def cluster(*, teams=None, state=None, fails=(), addresses=None):
+def cluster(*, teams=None, state=None, fails=(), addresses=None, alert_secret='webhook-secret'):
     """A fake cluster: orders-staging belongs to team payments, whose channels are ``teams['payments']``."""
     runner, saved = FakeRunner(), []
     for prefix in fails:
@@ -49,7 +49,9 @@ def cluster(*, teams=None, state=None, fails=(), addresses=None):
      .on('kubectl', '-n', 'notify', 'get', 'configmap', 'notify-outbox', stdout=json.dumps(
          {'data': {'state.json': json.dumps(state)}} if state is not None else {}))
      .on('kubectl', '-n', 'notify', 'patch', 'configmap', 'notify-outbox', handler=patch)
-     .on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': secrets})))
+     .on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': secrets + (
+         [{'metadata': {'name': 'notify-alerts'}, 'data': {'secret': base64.b64encode(alert_secret.encode()).decode()}}]
+         if alert_secret else [])})))
     return runner, saved
 
 
@@ -137,6 +139,66 @@ class CallerTests(unittest.TestCase):
         runner, _ = cluster(fails=[('kubectl', 'create')])
         client, _, _ = service_under_test(runner)
         self.assertEqual(post(client).status_code, 503)
+
+
+ALERT = {'secret': 'webhook-secret', 'state': 'ALERT', 'title': '🚨 swhurl:orders:error-logs',
+         'link': 'https://clickstack.example.test/dashboards/d1?from=1',
+         'body': 'Group: "arrayElement(ResourceAttributes, \'k8s.namespace.name\'):orders-staging"\n16 meets or exceeds 5\n'
+                 'Time Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n'}
+
+
+class AlertTests(unittest.TestCase):
+    """ClickStack's webhook: a shared secret instead of a token, and the app from the alert's name and group."""
+
+    def client(self, **kwargs):
+        runner, saved = cluster(**kwargs)
+        client, _, _ = service_under_test(runner)
+        return runner, saved, client
+
+    def test_a_firing_alert_becomes_a_high_priority_message_for_the_apps_team(self):
+        runner, saved, client = self.client()
+        with self.assertLogs('swhurl.notifications.service', 'INFO') as logs:
+            response = client.post('/v1/alert', json=ALERT)
+        self.assertEqual((response.status_code, response.json()), (202, {'channels': ['payments-phone', 'payments-desk']}))
+        entry = saved[-1]['pending'][0]
+        self.assertEqual((entry['title'], entry['priority'], entry['click'], entry['app'], entry['env']),
+                         ('orders/staging alert: error logs', 4, ALERT['link'], 'orders', 'staging'))
+        self.assertEqual(entry['message'], '16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)')
+        self.assertIn('from ClickStack for 2 channel(s)', logs.output[0])
+        self.assertEqual(client.post('/v1/alert', json=ALERT).json(), {'channels': []}, 'the same alert twice is sent once')
+        self.assertNotIn('webhook-secret', ' '.join(logs.output) + json.dumps(saved))
+
+    def test_recovery_is_a_normal_priority_message_and_an_unknown_preset_keeps_its_name(self):
+        runner, saved, client = self.client()
+        response = client.post('/v1/alert', json=ALERT | {'state': 'OK', 'title': '✅ swhurl:orders:slow-pages'})
+        self.assertEqual(response.status_code, 202)
+        entry = saved[-1]['pending'][0]
+        self.assertEqual((entry['title'], entry['priority'], entry['tags']), ('orders/staging recovered: slow-pages', 3, ['white_check_mark']))
+
+    def test_the_secret_is_required_and_compared_with_the_clusters(self):
+        runner, saved, client = self.client()
+        for body in (ALERT | {'secret': 'guess'}, ALERT | {'secret': ''}, {k: v for k, v in ALERT.items() if k != 'secret'}):
+            response = client.post('/v1/alert', json=body)
+            self.assertEqual((response.status_code, response.json()), (401, {'error': 'the alert webhook secret is required'}))
+        self.assertEqual(client.post('/v1/alert', json=ALERT, headers={'Authorization': 'Bearer checker-token'}
+                                     | {}).status_code, 202, 'a token is neither needed nor a way in without the secret')
+        self.assertEqual(client.post('/v1/alert', json=ALERT | {'secret': 'guess'},
+                                     headers={'Authorization': 'Bearer checker-token'}).status_code, 401)
+        runner, saved, client = self.client(alert_secret=None)
+        response = client.post('/v1/alert', json=ALERT)
+        self.assertEqual((response.status_code, response.json()), (503, {'error': 'the alert webhook secret is not set up'}))
+        self.assertEqual(saved, [])
+
+    def test_only_an_apps_own_alert_for_its_own_namespace_is_accepted(self):
+        runner, saved, client = self.client()
+        cases = (ALERT | {'title': '🚨 CPU high'}, ALERT | {'body': '16 meets or exceeds 5'},
+                 ALERT | {'body': ALERT['body'].replace('orders-staging', 'billing-staging')},
+                 ALERT | {'body': ALERT['body'].replace('orders-staging', 'orders-dev')}, ALERT | {'title': 7})
+        for body in cases:
+            with self.subTest(body=str(body)[:60]):
+                self.assertEqual(client.post('/v1/alert', json=body).status_code, 400)
+        self.assertEqual(client.post('/v1/alert', content=b'[]').status_code, 400)
+        self.assertEqual(saved, [])
 
 
 class AcceptTests(unittest.TestCase):

@@ -106,8 +106,9 @@ def problems(root: Path) -> list[str]:
         if missing:
             found.append(f'team {team} notifies {", ".join(missing)}, which is not a channel (make channel-add)')
     unit = root / UNIT_FILE
-    if unit.is_file() and ('decryption' in (yaml.safe_load(unit.read_text()).get('spec') or {})) != bool(known):
-        found.append(f'{UNIT_FILE} must decrypt exactly while a channel exists (make channel-add and make channel-remove set it)')
+    encrypted = any((root / NOTIFY_DIR).glob('*.sops.yaml'))
+    if unit.is_file() and ('decryption' in (yaml.safe_load(unit.read_text()).get('spec') or {})) != encrypted:
+        found.append(f'{UNIT_FILE} must decrypt exactly while {NOTIFY_DIR} holds an encrypted file (the channel commands set it)')
     path, text = routes_file(root)
     if not path.is_file() or path.read_text() != text:
         found.append(f'{ROUTES_FILE} is not what the channel files and apps/teams.yaml declare; make app-sync rewrites it')

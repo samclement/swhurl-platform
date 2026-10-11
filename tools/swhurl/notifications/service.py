@@ -4,6 +4,9 @@
     {"app": "orders", "env": "staging", "title": "...", "message": "...", "priority": "high",
      "click": "https://...", "key": "an id that makes a retry harmless"}
 
+    POST /v1/alert       from ClickStack's webhook, which proves itself with a shared secret in the body
+    {"secret": "...", "title": "🚨 swhurl:orders:error-logs", "body": "Group: ...", "link": "https://...", "state": "ALERT"}
+
 The caller is whoever Kubernetes says the token belongs to (a TokenReview for this audience only);
 nothing in the body is trusted for identity. An app sends as itself: ``app`` and ``env`` come from
 its token, its title is prefixed with them, and it is limited to ``RATE`` messages an hour. The
@@ -18,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import logging.config
@@ -34,7 +39,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.routing import Route
 
-from swhurl import statestore
+from swhurl import app_alerts, statestore
 from swhurl.apps import channels
 from swhurl.apps.contract import TEAM
 from swhurl.console.logconfig import CONFIG
@@ -151,6 +156,50 @@ def message(body: bytes, app_sender: tuple[str, str] | None = None) -> dict:
     if text['click']:
         notice['click'] = text['click']
     return {'app': text['app'], 'env': text['env'], 'key': text['key'], 'notice': notice}
+
+
+ALERT_SECRET = 'notify-alerts'
+"""The Secret (key ``secret``) ClickStack's webhook must repeat: HyperDX cannot present a token."""
+GROUP = re.compile(r"k8s\.namespace\.name'\):(?P<namespace>[a-z0-9-]+)")
+"""The namespace an alert fired for, from the "Group:" line HyperDX writes for a tile grouped by namespace."""
+
+
+def alert_secret(runner: Runner) -> str:
+    try:
+        secrets = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'secrets', '-o', 'json'],
+                              secret_output=True)['items']
+        found = next(base64.b64decode(s['data']['secret']).decode() for s in secrets if s['metadata']['name'] == ALERT_SECRET)
+    except (CommandError, KeyError, TypeError, StopIteration, ValueError):
+        raise Refused(503, 'the alert webhook secret is not set up') from None
+    runner.add_secret(found)
+    return found
+
+
+def alert(runner: Runner, body: bytes) -> dict:
+    """A ClickStack alert as a request for the outbox: which app and environment it is about (from the
+    alert's name and the group it fired for), a title in the platform's words and HyperDX's own detail."""
+    try:
+        doc = json.loads(body)
+        text = {field: doc.get(field, '') for field in ('secret', 'title', 'body', 'link', 'state')}
+        if not all(isinstance(value, str) for value in text.values()):
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise Refused(400, 'the body must be one JSON object of strings') from None
+    if not text['secret'] or not hmac.compare_digest(text['secret'].encode(), alert_secret(runner).encode()):
+        raise Refused(401, 'the alert webhook secret is required')
+    named, group = app_alerts.NAME.search(text['title']), GROUP.search(text['body'])
+    env = next((env for env in ('staging', 'prod') if named and group and group['namespace'] == f"{named['app']}-{env}"), None)
+    if not named or not env:
+        raise Refused(400, 'not an alert of an app: its name is swhurl:<app>:<preset> and its group the app\'s namespace')
+    app, firing = named['app'], text['state'] == 'ALERT'
+    label = app_alerts.LABELS.get(named['preset'], named['preset'])
+    detail = '\n'.join(line for line in text['body'].splitlines() if line.strip() and not line.startswith('Group:'))
+    notice = {'title': f"{app}/{env} {'alert' if firing else 'recovered'}: {label}", 'message': detail[:MAX_MESSAGE],
+              'priority': PRIORITIES['high' if firing else 'normal'], 'tags': ['warning' if firing else 'white_check_mark']}
+    if text['link'].startswith('https://') and len(text['link']) <= 500:
+        notice['click'] = text['link']
+    key = f"alert:{app}:{env}:{named['preset']}:{text['state']}:{hashlib.sha256(text['body'].encode()).hexdigest()[:16]}"
+    return {'app': app, 'env': env, 'key': key, 'notice': notice}
 
 
 def team_channels(runner: Runner, app: str, env: str) -> list[str]:
@@ -290,19 +339,29 @@ def create_app(runner: Runner, outbox: Outbox, limit: RateLimit | None = None) -
                  wanted['env'], who.rsplit(':', 1)[-1], len(queued))
         return JSONResponse({'channels': queued}, status_code=202)
 
-    async def endpoint(request: Request) -> Response:
-        body = await request.body()
-        if len(body) > MAX_BODY:
-            return refuse(Refused(413, f'a request is at most {MAX_BODY} bytes'))
-        try:
-            return await run_in_threadpool(notify, request, body)
-        except Refused as error:
-            return refuse(error)
+    def from_clickstack(_request: Request, body: bytes) -> Response:
+        wanted = alert(runner, body)
+        queued = outbox.accept(wanted, team_channels(runner, wanted['app'], wanted['env']))
+        log.info('Accepted "%s" about %s/%s from ClickStack for %d channel(s)', wanted['notice']['title'], wanted['app'],
+                 wanted['env'], len(queued))
+        return JSONResponse({'channels': queued}, status_code=202)
+
+    def endpoint(handler):
+        async def run(request: Request) -> Response:
+            body = await request.body()
+            if len(body) > MAX_BODY:
+                return refuse(Refused(413, f'a request is at most {MAX_BODY} bytes'))
+            try:
+                return await run_in_threadpool(handler, request, body)
+            except Refused as error:
+                return refuse(error)
+        return run
 
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')
 
-    return Starlette(routes=[Route('/v1/notify', endpoint, methods=['POST']), Route('/healthz', healthz)])
+    return Starlette(routes=[Route('/v1/notify', endpoint(notify), methods=['POST']),
+                             Route('/v1/alert', endpoint(from_clickstack), methods=['POST']), Route('/healthz', healthz)])
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:

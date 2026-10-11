@@ -7,5 +7,6 @@ resources:
   - rbac.yaml
   - routes.yaml
   - outbox.yaml
+  - secret-alerts.sops.yaml
   - networkpolicy.yaml
   - helmrelease.yaml

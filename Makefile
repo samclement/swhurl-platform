@@ -175,6 +175,10 @@ clickstack-bootstrap: ## Live: register the ClickStack admin and set the team in
 clickstack-dashboards: ## Live: a ClickStack dashboard per app in Git (create, update; delete removed apps' ones). DRY_RUN=true lists changes
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-dashboards
 
+.PHONY: clickstack-notify-webhook
+clickstack-notify-webhook: ## Live: create/update the ClickStack webhook that hands every app's default alerts to the notify service (DRY_RUN=true previews)
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-notify-webhook
+
 .PHONY: clickstack-ntfy-webhook
 clickstack-ntfy-webhook: ## Live: create/update ClickStack's reusable webhook to the platform ntfy topic (DRY_RUN=true previews)
 	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-ntfy-webhook

@@ -18,7 +18,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); migrating `hello-ts`.
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
-11. **Team platform — T0 to T2 done (11 October 2026), T3 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Apps now call each other with platform-issued tokens, in both stacks. **Next:** T3 (the console's Services page and its refusal messages). **Operator browser checks owed:** the Team select on **New app**, the team and the **Calls** form on an app page, signed in. **Throwaway repositories to delete after T5** (only the operator can): `samclement/swhurl-try-10`, `-11`, `-12` and their packages.
+11. **Team platform — T0 to T3 done (11 October 2026), T4 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. The console now has a Services page. **Next:** T4 (events on NATS), which starts with the `new-component-checklist` and one operator decision: how streams are created. **Operator browser checks owed:** the Team select on **New app**; the team and the **Calls** form on an app page; the **Services** page, signed in. **Throwaway repositories to delete after T5** (only the operator can): `samclement/swhurl-try-10`, `-11`, `-12` and their packages.
 
 ### Delivered
 
@@ -761,7 +761,7 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 
 ## 15. Team platform — planned 10 October 2026, not started
 
-**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 to T2 are done; T3 is next.
+**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 to T3 are done; T4 is next.
 
 ### Decisions (confirmed by the operator, 10 October 2026)
 
@@ -804,11 +804,10 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 - **The first promotion of an app with calls is not merged by the console:** it edits other apps' production files, which `console/merge.py` refuses to reproduce.
 - **Throwaway apps kept for T3 to T5:** `swhurl-try-10` (TypeScript, SQLite, team payments; the callee), `swhurl-try-11` (TypeScript, team insights; calls 10 and 12), `swhurl-try-12` (Kotlin, team insights; calls 10). `swhurl-try-12` was built one template commit before the log-message fix.
 
-**T3. Services page and guard rails.**
-1. `provides: {api: <path>}` in the contract (shown, not enforced).
-2. Console `/services`: one row per app from this repository's files (team, environments, calls in and out, API link) plus health from `cluster.py`; **Call this from my app** shows the `swhurl.yaml` line and the `make app-calls` command.
-3. Console messages for the three refusals (unknown dependency, promotion without a production dependency, removing a called app) match the `make` output. Tests in `test_console*.py`.
-4. Docs: `console.md`. **Operator browser check:** the page while signed in.
+**T3. Services page and guard rails. Done 11 October 2026** (`db1c886`, `4d8baaf`; [evidence](current-state.md#team-platform-t3-services-page-11-october-2026)). Behaviour is in [console](console.md#use-it) and [apps](apps.md#calling-another-app). What T4 builds on:
+- **The page reads the cluster, not Git:** `cluster.services()` takes each instance's HelmRelease variables and its namespace's team label. T4's streams can be listed the same way if the publish and subscribe declarations are variables on the release.
+- **`provides.api`** becomes `SWHURL_API_PATH` on the release: shown, never fetched or checked.
+- **The refusals needed no console code:** the console runs the same commands as `make`, and a refused command's output is the job's output.
 
 **T4. Events.**
 1. Run the `new-component-checklist` and take the stream-creation decision above.
@@ -832,7 +831,8 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 | After T1 | See the Team select on **New app** and the team on an app page | Own browser, signed in |
 | After T2 | See the **Calls** form on an app page (`swhurl-try-11/staging` calls two apps) | Own browser, signed in |
 | T4.7 | Accept one more real `swhurl-try-<n>` repository (the subscriber) until T5 | In the session |
-| T3.4, T5.3 | Browser checks while signed in | Own browser |
+| After T3 | See the **Services** page | Own browser, signed in |
+| T5.3 | Look at the scenario's trace in HyperDX | Own browser |
 | T4.1 | Stream-creation decision | In the session |
 | T5.3 | Delete the throwaway repositories and packages | Own browser or terminal |
 

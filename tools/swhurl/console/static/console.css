@@ -203,6 +203,7 @@ pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var
 .card.bare details.act[open] { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-4) var(--gap-5); margin-top: var(--gap-3); }
 .card-head > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
 .card-head > details.act form.wizard fieldset { margin-bottom: var(--gap-4); }
+.card-head > details.act form.inline { margin-top: var(--gap-3); }
 .card-body { border-top: 1px solid var(--line); padding: var(--gap-4) var(--gap-5); }
 .card-body > :last-child { margin-bottom: 0; }
 .card-body dl.plain { gap: var(--gap-2) var(--gap-5); }

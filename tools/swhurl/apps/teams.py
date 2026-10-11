@@ -3,6 +3,7 @@
     team-add NAME [--description TEXT]
     team-edit NAME [--description TEXT] [--rename NEW] [--notify CHANNEL]
     team-remove NAME [--move-apps-to OTHER]
+    team-channel NAME [--remove]                         give a team its channel, replace its address or remove it
     channel-add NAME [--transport ntfy] [--replace]      the address is read from standard input, never an argument
     channel-remove NAME
 
@@ -252,6 +253,29 @@ def channel_remove(root: Path, name: str) -> None:
     print(f'[OK] removed channel {name}')
 
 
+def team_channel(root: Path, team: str, address: str | None, transport: str = 'ntfy',
+                 runner: Runner | None = None) -> None:
+    """Give ``team`` its one channel, or a new address for the one it has; ``address`` None removes it.
+
+    The everyday command: the channel is named after the team, so nobody has to name or pick one. A
+    channel another team also notifies stays when this team lets go of it."""
+    if team not in registry(root)[1]:
+        raise EditError(f'no team {team}; registered: {", ".join(registry(root)[1])}')
+    current = (channels.team_channels(root).get(team) or [None])[0]
+    if address is None:
+        if not current:
+            raise EditError(f'team {team} has no channel to remove')
+        change(root, team, notify=[])
+        if not any(current in names for names in channels.team_channels(root).values()):
+            channel_remove(root, current)
+        return
+    if current:
+        channel_add(root, current, address, transport, replace=True, runner=runner)
+        return
+    channel_add(root, team, address, transport, replace=(root / channels.channel_file(team)).exists(), runner=runner)
+    change(root, team, notify=[team])
+
+
 def read_address() -> str:
     """One line from standard input; a terminal is prompted without echo."""
     return (getpass.getpass('Channel address (not shown): ') if sys.stdin.isatty() else sys.stdin.readline()).strip()
@@ -276,6 +300,18 @@ def main_edit(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return edit.run(lambda: change(args.root.resolve(), args.name, args.description, args.rename, args.notify), False)
+
+
+def main_team_channel(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl team-channel',
+                                description='Give a team its notification channel (address from standard input), or remove it')
+    p.add_argument('name')
+    p.add_argument('--remove', action='store_true', help='remove the team\'s channel instead')
+    p.add_argument('--transport', default='ntfy', choices=channels.TRANSPORTS)
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return edit.run(lambda: team_channel(args.root.resolve(), args.name, None if args.remove else read_address(),
+                                         args.transport, runner), False)
 
 
 def main_channel_add(argv: list[str] | None = None, runner: Runner | None = None) -> int:

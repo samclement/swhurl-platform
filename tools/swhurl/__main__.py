@@ -36,6 +36,7 @@ COMMANDS = {
     'team-add': ('swhurl.apps.teams', 'main_add', 'Register a team in apps/teams.yaml (Git edit)'),
     'team-edit': ('swhurl.apps.teams', 'main_edit', 'Change a team\'s description, name or channels; a rename relabels its apps (Git edit)'),
     'team-remove': ('swhurl.apps.teams', 'main_remove', 'Remove a team that owns no app, or move its apps to another first (Git edit)'),
+    'team-channel': ('swhurl.apps.teams', 'main_team_channel', 'Give a team its notification channel (address from standard input), replace its address or remove it (Git edit)'),
     'channel-add': ('swhurl.apps.teams', 'main_channel_add', 'Add a notification channel as an encrypted Secret; the address comes from standard input (Git edit)'),
     'channel-remove': ('swhurl.apps.teams', 'main_channel_remove', 'Remove a notification channel no team notifies (Git edit)'),
     'app-calls': ('swhurl.apps.edit', 'main_calls', 'Change which apps an instance may call; updates the callees too (Git edit)'),

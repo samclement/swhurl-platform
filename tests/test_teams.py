@@ -205,6 +205,36 @@ class TeamTests(unittest.TestCase):
         scratch.mkdir()
         self.assertEqual(channels.problems(scratch), [], 'a root without the notify unit has nothing to check')
 
+    def test_a_team_is_given_its_channel_a_new_address_and_loses_it_in_one_command_each(self):
+        runner = self.notify_unit()
+        address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
+        out = self.quiet(teams.team_channel, 'payments', address, runner=runner)
+        self.assertEqual((channels.channels(self.root), self.routes()), ({'payments': 'ntfy'}, {'payments': ['payments']}))
+        self.assertNotIn('0123456789abcdef', out)
+        first = (self.root / channels.channel_file('payments')).read_text()
+        self.assertIn('replaced', self.quiet(teams.team_channel, 'payments', address + 'x', runner=runner))
+        self.assertEqual(self.routes(), {'payments': ['payments']}, 'a new address keeps the same channel')
+        self.quiet(teams.change, 'payments', rename='billing')
+        self.quiet(teams.team_channel, 'billing', address, runner=runner)
+        self.assertEqual(channels.channels(self.root), {'payments': 'ntfy'}, 'a renamed team keeps the channel it has')
+        self.quiet(teams.team_channel, 'platform', address, runner=runner)
+        self.quiet(teams.change, 'platform', notify=['payments'])  # by hand: two teams, one channel
+        self.quiet(teams.team_channel, 'billing', None)
+        self.assertEqual((channels.channels(self.root), self.routes()), ({'payments': 'ntfy', 'platform': 'ntfy'}, {'platform': ['payments']}),
+                         'a channel another team notifies stays')
+        self.quiet(teams.team_channel, 'platform', None)
+        self.assertEqual((list(channels.channels(self.root)), self.routes()), (['platform'], {}))
+        self.assertEqual(channels.problems(self.root), [])
+        self.assertIsNotNone(first)
+        for team, value, message in (('ghost', address, 'no team ghost'), ('billing', None, 'has no channel to remove'),
+                                     ('billing', 'http://ntfy.sh/x', 'an HTTPS topic URL')):
+            with self.subTest(team=team), self.assertRaisesRegex(EditError, message):
+                teams.team_channel(self.root, team, value, runner=runner)
+        with mock.patch('sys.stdin', io.StringIO(address + '\n')), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(teams.main_team_channel(['billing', '--root', str(self.root)], runner), 0)
+            self.assertEqual(teams.main_team_channel(['billing', '--remove', '--root', str(self.root)], runner), 0)
+        self.assertEqual(self.routes(), {})
+
     def test_the_address_is_read_from_standard_input(self):
         runner = self.notify_unit()
         with mock.patch('sys.stdin', io.StringIO('https://ntfy.sh/private-topic\n')), \

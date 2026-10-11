@@ -333,7 +333,7 @@ class NewAppRouteTests(unittest.TestCase):
         c, _ = self.client(tree_fake())
         page = c.get('/new', headers=WHO).text
         self.assertIn('<option value="platform" selected>platform — The platform itself · no notification channel</option>', page)
-        self.assertIn('<option value="payments" >payments · notifies payments-phone</option>', page)
+        self.assertIn('<option value="payments" >payments · has a notification channel</option>', page)
         teams = changes.platform_teams(FakeRunner(), self.api.github)
         self.assertEqual(teams, {'platform': 'The platform itself', 'payments': ''})
         web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
@@ -916,7 +916,7 @@ class TeamsPageTests(unittest.TestCase):
         self.assertIn('The default team keeps its name', page)
         self.assertEqual(page.count('action="/teams/edit"'), 2, 'one Edit per team: its description and its name are one form')
         self.assertEqual(page.count('<details class="act" name="team-form"'), 6,
-                         'new team, per team edit and delete, new channel and new address: one open at a time')
+                         'new team, and per team edit, channel and delete: one open at a time')
         self.assertIn('href="/teams" class="here"', page)
         self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in self.runner.calls), 'the page only reads')
 
@@ -961,88 +961,68 @@ class TeamsPageTests(unittest.TestCase):
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a team change waits for review')
                 self.assertEqual(cluster.target(job.unit), (f"team {form['name']}", f"/teams#{form['name']}"))
 
-    def test_channels_show_names_and_transports_and_teams_tick_them(self):
+    def test_each_team_card_says_whether_it_has_a_channel_and_offers_to_set_replace_or_remove_it(self):
         page = self.client().get('/teams', headers=WHO).text
-        self.assertIn('<td><strong>payments-phone</strong></td>', page)
-        self.assertIn('<a href="#payments">payments</a>', page, 'who notifies it')
-        self.assertIn('<span class="muted">Notifies</span> <a class="pill" href="#channels"', page)
-        self.assertEqual(page.count('No notification channel: messages about its apps go to the platform topic only.'), 1,
-                         'the default team names none')
-        self.assertEqual(page.count('<option value="payments-phone" selected>payments-phone · ntfy</option>'), 1,
-                         'chosen for payments only')
-        self.assertEqual(page.count('<option value="spare" >spare · ntfy</option>'), 2, 'offered to each team')
-        self.assertEqual(page.count('<option value="" selected>None: the platform topic only</option>'), 1, 'the default team has none')
-        self.assertNotIn('type="checkbox" name="notify"', page, 'a team has one channel')
-        self.assertEqual(page.count('action="/channels/remove"'), 1, 'only a channel no team notifies can be removed')
-        self.assertIn('<button type="button" class="button" data-generate hidden>Generate</button>', page)
+        self.assertEqual(page.count('<span class="pill ok" title="Gets a copy of the deployment and health messages of this '
+                                    'team\'s apps">notification channel · ntfy</span>'), 1, 'payments has one')
+        self.assertEqual(page.count('No notification channel: messages about its apps go to the platform topic only.'), 1)
+        self.assertEqual(page.count('action="/team-channel/set"'), 2, 'every team can be given a channel or a new address')
+        self.assertEqual(page.count('Open new address PR'), 1)
+        self.assertEqual(page.count('Open channel PR'), 1)
+        self.assertEqual(page.count('action="/team-channel/remove"'), 1, 'only a team that has one can remove it')
+        self.assertEqual(page.count('data-generate hidden>Generate</button>'), 2)
+        self.assertNotIn('payments-phone', page, 'a channel has no name to manage: it is the team\'s')
+        self.assertNotIn('name="notify"', page)
         self.assertNotIn('ntfy.sh/', page.replace('https://ntfy.sh/your-topic', ''), 'no address is ever on the page')
         unreadable = FakeGitHub(fail={'GET /contents/platform/notify/routes.yaml': (404, 'Not Found')})
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
-        self.assertIn('No channels yet', page)
-        self.assertNotIn('name="notify_shown"', page, 'a team form that lists no channel cannot clear a team\'s list')
-
-    def test_the_chosen_channel_becomes_the_teams_one(self):
-        for chosen, wanted in (('spare', '--notify=spare'), ('', '--notify=')):
-            with self.subTest(chosen=chosen):
-                c = self.client()
-                form = {'name': 'payments', 'description': 'Orders', 'rename': 'payments', 'notify_shown': '1', 'notify': chosen}
-                self.assertEqual(c.post('/teams/edit', data=form, headers=WHO, follow_redirects=False).status_code, 303)
-                tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-                self.assertEqual(tool[3:], ('team-edit', 'payments', '--description=Orders', wanted))
-        c = self.client()
-        for bad in ('--root=/', 'spare,payments-phone'):
-            form = {'name': 'payments', 'notify_shown': '1', 'notify': bad}
-            self.assertEqual(c.post('/teams/edit', data=form, headers=WHO).status_code, 400)
-        page = c.get('/new', headers=WHO).text
-        self.assertIn('· notifies payments-phone</option>', page, 'the new-app form names each team\'s channel')
+        self.assertEqual(page.count('No notification channel'), 2, 'unreadable routes: no channel is claimed')
+        page = self.client().get('/new', headers=WHO).text
+        self.assertIn('<option value="payments" >payments · has a notification channel</option>', page)
         self.assertIn('· no notification channel</option>', page)
 
     def test_a_channels_address_reaches_only_the_commands_standard_input(self):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
-        cases = (('add', ('channel-add', 'payments-desk', '--transport=ntfy'), '[console] notify: add channel payments-desk'),
-                 ('replace', ('channel-add', 'payments-desk', '--transport=ntfy', '--replace'),
-                  '[console] notify: replace the address of channel payments-desk'))
-        for action, command, title in cases:
-            with self.subTest(action=action):
-                c = self.client()
-                received = []
-                self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl', 'channel-add'), lambda args, text, received=received: (
-                    received.append(text), Result(args, 0, '[OK] channel added; its address is not shown again\n'))[1]))
-                response = c.post(f'/channels/{action}', data={'name': 'payments-desk', 'transport': 'ntfy', 'address': f' {address} '},
-                                  headers=WHO, follow_redirects=False)
-                self.assertEqual(response.status_code, 303, response.text)
-                self.assertEqual(received, [address + '\n'])
-                tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-                self.assertEqual(tool[3:], command)
-                job = self.jobs.get(1)
-                self.assertEqual((job.state, cluster.target(job.unit)), ('succeeded', ('channel payments-desk', '/teams#channels')))
-                self.assertEqual(self.api.sent('POST /pulls')[0]['title'], title)
-                self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a channel change waits for review')
-                everywhere = '\n'.join([*job.lines, *(' '.join(call) for call in self.runner.calls), *self.runner.echoed,
-                                        json.dumps(self.api.sent('POST /pulls')), json.dumps(self.api.sent('POST /git/commits')),
-                                        c.get('/jobs/1', headers=WHO).text, c.get('/teams', headers=WHO).text])
-                self.assertNotIn('0123456789abcdef', everywhere)
-                self.assertIn('<redacted>', self.runner.redact(f'posting to {address}'))
+        c = self.client()
+        received = []
+        self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl', 'team-channel'), lambda args, text: (
+            received.append(text), Result(args, 0, '[OK] channel payments (ntfy) added; its address is not shown again\n'))[1]))
+        response = c.post('/team-channel/set', data={'name': 'payments', 'transport': 'ntfy', 'address': f' {address} '},
+                          headers=WHO, follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        self.assertEqual(received, [address + '\n'])
+        tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
+        self.assertEqual(tool[3:], ('team-channel', 'payments', '--transport=ntfy'))
+        job = self.jobs.get(1)
+        self.assertEqual((job.state, cluster.target(job.unit)), ('succeeded', ('team payments', '/teams#payments')))
+        self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: set the notification channel of payments')
+        self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a channel change waits for review')
+        everywhere = '\n'.join([*job.lines, *(' '.join(call) for call in self.runner.calls), *self.runner.echoed,
+                                json.dumps(self.api.sent('POST /pulls')), json.dumps(self.api.sent('POST /git/commits')),
+                                c.get('/jobs/1', headers=WHO).text, c.get('/teams', headers=WHO).text])
+        self.assertNotIn('0123456789abcdef', everywhere)
+        self.assertIn('<redacted>', self.runner.redact(f'posting to {address}'))
+        c = self.client()
+        self.assertEqual(c.post('/team-channel/remove', data={'name': 'payments'}, headers=WHO, follow_redirects=False).status_code, 303)
+        tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
+        self.assertEqual(tool[3:], ('team-channel', 'payments', '--remove'))
+        self.assertEqual(self.api.sent('POST /pulls')[0]['title'], '[console] teams: remove the notification channel of payments')
 
     def test_a_malformed_channel_opens_nothing_and_never_echoes_the_address(self):
         c = self.client()
-        cases = (('add', {'name': 'Bad Name', 'address': 'https://ntfy.sh/private-topic'}),
-                 ('add', {'name': 'x', 'address': 'http://ntfy.sh/private-topic'}),
-                 ('add', {'name': 'x', 'address': 'https://ntfy.sh/private-topic?x=1'}),
-                 ('add', {'name': 'x', 'address': ''}), ('replace', {'name': 'x', 'transport': 'pigeon', 'address': 'https://ntfy.sh/t'}),
+        cases = (('set', {'name': 'Bad Name', 'address': 'https://ntfy.sh/private-topic'}),
+                 ('set', {'name': 'x', 'address': 'http://ntfy.sh/private-topic'}),
+                 ('set', {'name': 'x', 'address': 'https://ntfy.sh/private-topic?x=1'}),
+                 ('set', {'name': 'x', 'address': ''}), ('set', {'name': 'x', 'transport': 'pigeon', 'address': 'https://ntfy.sh/t'}),
                  ('remove', {'name': '--root=/'}), ('explode', {'name': 'x', 'address': 'https://ntfy.sh/private-topic'}))
         for action, form in cases:
             with self.subTest(action=action, form=form):
-                response = c.post(f'/channels/{action}', data=form, headers=WHO)
+                response = c.post(f'/team-channel/{action}', data=form, headers=WHO)
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn('private-topic', response.text)
         self.assertFalse(any(call[1:3] == ('-m', 'swhurl') for call in self.runner.calls))
-        c = self.client()
-        self.assertEqual(c.post('/channels/remove', data={'name': 'spare'}, headers=WHO, follow_redirects=False).status_code, 303)
-        tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
-        self.assertEqual(tool[3:], ('channel-remove', 'spare'))
         without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
-        self.assertEqual(without_token.post('/channels/add', data={'name': 'x', 'address': 'https://ntfy.sh/t'}, headers=WHO).status_code, 409)
+        self.assertEqual(without_token.post('/team-channel/set', data={'name': 'x', 'address': 'https://ntfy.sh/t'}, headers=WHO).status_code, 409)
 
     def test_malformed_input_opens_nothing_and_a_refused_command_shows_its_words(self):
         c = self.client()

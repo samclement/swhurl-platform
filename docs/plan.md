@@ -820,7 +820,7 @@ Listed as [limits](apps.md#limits) where a user would meet them: tokens for call
 
 Stated by the operator: a new app comes with sensible default alerts, as it comes with a dashboard; they and the app's own messages go through the notify service to the app's channel; and a generated app sends to that channel with one call, pre-configured the way SQLite is.
 
-Decided by the operator: **one channel per team**, to keep management small (it may change later). An app's channel is therefore its team's: choosing the team at creation chooses the channel, and a team without one is given one on the Teams page. Per-app channels (`notify.channels` on an app) are dropped from the contract below.
+Decided by the operator: **one channel per team**, to keep management small (it may change later). An app's channel is therefore its team's: choosing the team at creation chooses the channel, and a team without one is given one on the Teams page. Per-app channels (`notify.channels` on an app) are dropped from the contract below. The console follows: a team's card has one **Channel** action (set, new address, remove) and the channel is named after the team, so there is no list of channels to name, pick or manage; `make team-channel` is the same in a terminal.
 
 | Step | Delivers | Checkable by |
 | --- | --- | --- |
@@ -829,7 +829,7 @@ Decided by the operator: **one channel per team**, to keep management small (it 
 | N4 | Default alerts: preset ClickStack rules created and removed with each app, like its dashboard, on by default; one HyperDX webhook to the service. First a spike: can the HyperDX API create alert rules, and can a webhook carry a fixed secret header (ClickStack cannot present a rotating service-account token)? | An induced error rate on a throwaway app fires and recovers on the team's channel |
 | N5 | A second adapter | The same message on two providers from one request |
 
-Open before N3: whether `notify()` works for every app whose team has a channel (proposed) or only for apps that ask at creation.
+Assumed, not yet confirmed by the operator: `notify()` works for every app whose team has a channel, with nothing to ask for at creation.
 
 ### Two planes
 
@@ -883,7 +883,7 @@ payments:
   notify: [payments-phone]        # the team's one channel
 ```
 
-Nothing is set per app: its channel is its team's, lifecycle messages and default alerts are on, and `notify()` is in every generated app (whether it must be asked for is the open question above).
+Nothing is set per app: its channel is its team's, lifecycle messages and default alerts are on, and `notify()` is in every generated app.
 
 ```
 POST $SWHURL_SERVICE_NOTIFY_URL/v1/notify      Authorization: Bearer <token for audience notify>

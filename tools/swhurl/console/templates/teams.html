@@ -2,7 +2,7 @@
 {% import "_form.html" as ui with context %}
 {% import "_status.html" as st %}
 {% block title %}Teams{% endblock %}
-{% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs[0] }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
+{% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs | first }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
 {% block main %}
 <h1>Teams</h1>
 {% call st.about() %}A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.{% endcall %}
@@ -18,12 +18,13 @@
 </table>
 {% endif %}
 
-{# One row per team: what it is and owns on the left, what you can do to it on the right. Each action
-   opens its form under its own row (one at a time) and ends in a pull request. #}
-<div class="rows" style="--acts: 3">
-  <div class="row head">
-    <div class="row-main"><span>Team</span><span>Description</span><span>Apps it owns</span></div>
-    <details class="act" name="team-form" style="--slot: 0">
+{# One card per team: who it is, then its apps as a table. A team's Edit and Delete sit at the top
+   right of its card and open their form inside it (one at a time); only the form's own button,
+   with the pull-request icon, opens a pull request. #}
+<div class="team new">
+  <div class="team-head">
+    <p class="tally">{{ teams | length }} team{{ 's' if teams | length != 1 }} <span class="muted">· {{ owned.values() | map('length') | sum }} apps</span></p>
+    <details class="act" name="team-form" style="--slot: 0; --wide: 7.5rem">
       <summary class="button">{{ st.icon('plus') }} New team</summary>
       <form class="wizard" method="post" action="/teams/add">
         <fieldset>
@@ -34,41 +35,27 @@
       </form>
     </details>
   </div>
-  {% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
-  <div class="row" id="{{ name }}">
-    <div class="row-main">
-      <span><strong>{{ name }}</strong>{% if name == default_team %} <span class="muted">(default)</span>{% endif %}</span>
-      <span>{% if description %}{{ description }}{% else %}<span class="muted">no description</span>{% endif %}
-        {% if job %}<div class="muted hint-line">{{ st.job(job) }} <a href="/jobs/{{ job.id }}">{{ job.action }} {{ job.state }}</a>{% if job.link %} · <a href="{{ job.link }}">pull request</a>{% endif %}</div>{% endif %}</span>
-      <span>{% if count %}<a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }}</a> <span class="muted">·</span> {{ apps_of(name) }}{% else %}<span class="muted">no apps</span>{% endif %}</span>
-    </div>
-    <details class="act" name="team-form" style="--slot: 2">
-      <summary class="button">{{ st.icon('pr') }} Edit</summary>
+</div>
+{% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
+<section class="team" id="{{ name }}">
+  <div class="team-head">
+    <h2>{{ name }}{% if name == default_team %} <span class="pill" title="New apps without a team go to it; it cannot be renamed or deleted">default</span>{% endif %}</h2>
+    <p class="{{ '' if description else 'muted' }}">{{ description or 'No description yet.' }}</p>
+    {% if job %}<p class="muted">{{ st.job(job) }} Last change: <a href="/jobs/{{ job.id }}">{{ job.action }} {{ job.state }}</a>{% if job.link %} · <a href="{{ job.link }}">pull request {{ st.icon('external') }}</a>{% endif %}</p>{% endif %}
+    <details class="act" name="team-form" style="--slot: 0">
+      <summary class="button">{{ st.icon('edit') }} Edit</summary>
       <form class="wizard" method="post" action="/teams/edit">
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
-          {{ ui.text_field('description-' ~ name, 'Description of ' ~ name, description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
+          {{ ui.text_field('description-' ~ name, 'Description', description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
+          {% if name != default_team %}{{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team: the same pull request relabels ' ~ ('its ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else, since it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
+          {% else %}<span class="muted hint">The default team keeps its name: new apps without a team go to it.</span>{% endif %}
         </fieldset>
-        {{ ui.submit('Open edit PR', 'Changes apps/teams.yaml only; no app changes. You review and merge it on GitHub.') }}
+        {{ ui.submit('Open edit PR', 'You review and merge it on GitHub.') }}
       </form>
     </details>
     {% if name != default_team %}
     <details class="act" name="team-form" style="--slot: 1">
-      <summary class="button">{{ st.icon('pr') }} Rename</summary>
-      <form class="wizard" method="post" action="/teams/edit">
-        <input type="hidden" name="name" value="{{ name }}">
-        <input type="hidden" name="description" value="{{ description }}">
-        <fieldset>
-          <div class="field">
-            <label for="rename-{{ name }}">Rename {{ name }} to</label>
-            <input id="rename-{{ name }}" name="rename" required placeholder="{{ name }}">
-            <span class="muted hint">The same pull request relabels {{ 'its ' ~ count ~ ' app(s) (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else: it owns no app' }}, so none is left naming the old team. Stored logs and traces keep the old name.</span>
-          </div>
-        </fieldset>
-        {{ ui.submit('Open rename PR', 'You review and merge it on GitHub.') }}
-      </form>
-    </details>
-    <details class="act" name="team-form" style="--slot: 0">
       <summary class="button danger">{{ st.icon('trash') }} Delete</summary>
       <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{ name }}{% if count %} and moving its {{ count }} app(s) to the team chosen{% endif %}?" data-confirm-label="Open delete PR">
         <input type="hidden" name="name" value="{{ name }}">
@@ -86,8 +73,26 @@
         {{ ui.submit('Open delete PR', 'You review and merge it on GitHub.') }}
       </form>
     </details>
-    {% else %}<span class="act-note muted" title="New apps without a team go to it">cannot be renamed or deleted</span>{% endif %}
+    {% endif %}
   </div>
-  {% endfor %}
-</div>
+  {% if count %}
+  <div class="scroll">
+  <table class="team-apps">
+    <tr><th>App</th><th>Language</th><th>Staging</th><th>Prod</th><th><span class="sr-only">Links</span></th></tr>
+    {% for app, envs in apps.items() %}
+    <tr>
+      <td><strong>{{ app }}</strong></td>
+      <td>{% if stacks.get(app) %}<span class="pill">{{ stack_names.get(stacks[app], stacks[app]) }}</span>{% else %}<span class="muted" title="Not read from {{ app }}'s swhurl.yaml on GitHub">—</span>{% endif %}</td>
+      {% for env in ('staging', 'prod') %}{% set row = envs.get(env) %}
+      <td>{% if row %}{{ st.state(row.state, detail=false, quiet=true) }} <a href="/apps/{{ app }}/{{ env }}" title="{{ app }}/{{ env }}: {{ row.image }}" aria-label="{{ app }}/{{ env }}, {{ row.tag or row.image }}"><code>{{ row.tag or row.image }}</code></a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      {% endfor %}
+      <td class="row-links"><a href="{{ logs_url(app) }}" title="Logs and traces of {{ app }} in HyperDX">Logs {{ st.icon('external') }}</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="team-foot"><a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }} on the Apps list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a></p>
+  {% else %}<p class="team-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{% endif %}
+</section>
+{% endfor %}
 {% endblock %}

@@ -50,6 +50,7 @@ SELF_REFRESHING = {'overview.html', 'apps.html', 'platform.html', 'activity.html
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
 HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
+STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
 STREAM_POLL = 0.25
 KEEPALIVE = 15.0
 
@@ -364,13 +365,33 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         teams_cache[:] = [(time.monotonic(), found)]
         return found, ''
 
+    stacks_cache: dict[str, tuple[float, str]] = {}
+
+    def stacks(apps: list[str]) -> dict[str, str]:
+        """Each app's stack (its language), from its own repository: kept for an hour, since an app does
+        not change language, and a failure for 5 minutes, after which the rest are not asked for either
+        (GitHub being away must not make the page wait once per app)."""
+        reachable = True
+        for app in apps:
+            cached = stacks_cache.get(app)
+            if cached and time.monotonic() - cached[0] <= (3600 if cached[1] else 300):
+                continue
+            found = ''
+            if reachable:
+                try:
+                    found = repo.app_stack(f'{contract.APP_OWNER}/{app}', **({'opener': repo_opener} if repo_opener else {}))
+                except repo.RepoError:
+                    reachable = False
+            stacks_cache[app] = (time.monotonic(), found)
+        return {app: stacks_cache[app][1] for app in apps}
+
     def teams_page(request: Request, status_code: int = 200, error: str = '') -> Response:
         """Every team with the apps that belong to it, and the changes that keep the two in step."""
         def read():
             registered, registry_error = platform_teams()
-            owned: dict[str, dict[str, list[str]]] = {}
+            owned: dict[str, dict[str, dict[str, cluster.AppRow]]] = {}  # team, app, environment
             for row in cluster.apps(runner):
-                owned.setdefault(row.team, {}).setdefault(row.instance.app, []).append(row.instance.env)
+                owned.setdefault(row.team, {}).setdefault(row.instance.app, {})[row.instance.env] = row
             # Apps whose team is not registered (or that carry none) are shown too: they are what a
             # careless change would leave behind, and the list says how to bring them back.
             unregistered = {team: apps for team, apps in owned.items() if team not in registered}
@@ -384,7 +405,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 if job.unit.startswith('team:'):
                     latest.setdefault(job.unit[5:], job)
             return {'teams': registered, 'owned': owned, 'unregistered': unregistered, 'registry_error': registry_error,
-                    'default_team': contract.DEFAULT_TEAM, 'error': error, 'team_jobs': latest}
+                    'default_team': contract.DEFAULT_TEAM, 'error': error, 'team_jobs': latest,
+                    'stacks': stacks(sorted({app for apps in owned.values() for app in apps})),
+                    'stack_names': STACK_NAMES}
         return reading(request, 'teams.html', read, status_code=status_code)
 
     async def change_team(request: Request) -> Response:

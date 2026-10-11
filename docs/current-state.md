@@ -995,3 +995,14 @@ Commits `3bff453` (code), `a155a62` (manifests, the checker's token and URL) and
 ### One channel per team (11 October 2026)
 
 Operator decision: a team has one notification channel. `make team-edit --notify` accepts one or none and `make check-apps` (rule `notify-channels`) refuses a second (`b9054b4`). The console then dropped its list of named channels: each team card has one **Channel** action (set, new address, remove) backed by `make team-channel`, and the New app form marks each team that has a channel. `make check` passed; the reworked card was seen in a local preview on made-up data (headless Chromium), with Generate filling the address. Offline only: no team has a channel at present, and the forms have not been used in a signed-in browser.
+
+## Apps send notifications, N3 (11 October 2026)
+
+Commit `21996f6` gave every instance `SWHURL_NOTIFY_URL` and a token for the audience `notify`, and made the [notify service](services.md#notify-service) accept an app's own token; the stack templates gained `notify()` (TypeScript `565d892`, Kotlin `0604668`, pinned in `e011762`). How to use it: [apps](apps.md#notifications).
+
+- `make check` passed (568 tests, eight template combinations). Both template repositories' Template workflows passed on all four question combinations; the TypeScript helper's tests also ran locally (12 passing) and the Kotlin app built and tested in a local container.
+- Rollout: `make app-sync` rewrote the eleven instances, staging and production; after `make flux-reconcile` all 22 HelmReleases were Ready and every app pod Running, each with the token volume and the variable (checked on `hello-ts/prod`).
+- A new app, end to end (`385a0b5`): `make app-repo NAME=swhurl-try-14 STACK=typescript` and `make app-new ... --team payments` created an app with nothing notification-specific asked; `make team-channel NAME=payments` gave the team a throwaway channel. `POST /notify` on the app (the template's example route, through a port-forward) answered `{"sent": true}` and the message arrived on the team's topic as `swhurl-try-14/staging: Hello from the example route`; the app's `deployed` message arrived there too.
+- Limits: with the app's own token, naming another app or `prod` got 403. Of 31 further calls, 29 were sent and 2 were not: the service answered 429 after 30 in the hour, the helper returned false and logged why, and the topic held exactly 30 of the app's messages.
+- The throwaway channel was removed again with `make team-channel NAME=payments ARGS=--remove`. `swhurl-try-14` (repository, package and staging instance) is left for the operator to remove.
+- Not exercised: the Kotlin helper on the cluster (its tests and build passed), a worker app sending, and the reworked Teams page forms in a signed-in browser.

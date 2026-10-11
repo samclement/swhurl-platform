@@ -8,7 +8,7 @@ from pathlib import Path
 
 from test_clickstack import EMAIL, URI, b64
 
-from swhurl import clickstack, dashboards
+from swhurl import app_alerts, clickstack, dashboards
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -22,8 +22,9 @@ WEB, WORKER = dashboards.App('web', 'web', ('staging', 'prod')), dashboards.App(
 class HyperDX:
     """Scripted external API and MongoDB; records each API call as (method, path, body)."""
 
-    def __init__(self, dashboards_live=(), key=ACCESS_KEY, recorded=None, writable=True):
+    def __init__(self, dashboards_live=(), key=ACCESS_KEY, recorded=None, writable=True, webhooks=(), alerts=()):
         self.live, self.key, self.calls = list(dashboards_live), key, []
+        self.webhooks, self.alerts = list(webhooks), list(alerts)
         self.recorded, self.writable, self.patches = recorded, writable, []  # the console's record (a ConfigMap)
 
     def patch(self, argv, patch):
@@ -49,7 +50,8 @@ class HyperDX:
         assert request['headers']['authorization'] == f'Bearer {ACCESS_KEY}'
         body = json.loads(request['body']) if 'body' in request else None
         self.calls.append((request['method'], path, body))
-        answer = {('GET', '/sources'): {'data': SOURCES}, ('GET', '/dashboards'): {'data': self.live}}.get(
+        answer = {('GET', '/sources'): {'data': SOURCES}, ('GET', '/dashboards'): {'data': self.live},
+                  ('GET', '/webhooks'): {'data': self.webhooks}, ('GET', '/alerts'): {'data': self.alerts}}.get(
             (request['method'], path), {'data': {}})
         return Result(argv, 0, 'RESULT ' + json.dumps({'status': 200, 'body': answer}), '')
 
@@ -62,6 +64,74 @@ def run(api, apps, dry_run=False):
     runner = api.runner(dry_run)
     code = dashboards.sync(runner, Report(out, redact=runner.redact), apps)
     return code, out.getvalue()
+
+
+def with_ids(dashboard, ident):
+    """A dashboard as HyperDX returns it: with its id and an id on every tile."""
+    return {**dashboard, 'id': ident, 'tiles': [{**tile, 'id': f"{ident}-{tile['name']}"} for tile in dashboard['tiles']]}
+
+
+class AlertTests(unittest.TestCase):
+    """Every app's default alerts follow its dashboard, through the notify service's webhook."""
+    HOOK = [{'id': 'w1', 'name': app_alerts.WEBHOOK}, {'id': 'w0', 'name': 'ntfy: platform'}]
+
+    def alert(self, app, preset, tile, dashboard='d1', **changes):
+        return {'id': f'a-{app}-{preset}', 'name': f'swhurl:{app}:{preset}', 'source': 'tile', 'dashboardId': dashboard,
+                'tileId': f'{dashboard}-{tile}', 'threshold': 5, 'thresholdType': 'above', 'interval': '5m',
+                'channel': {'type': 'webhook', 'webhookId': 'w1'}, 'state': 'OK', **changes}
+
+    def test_an_app_gets_one_alert_per_preset_on_its_dashboards_tiles(self):
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK)
+        code, out = run(api, [WEB])
+        self.assertEqual(code, 0, out)
+        created = [body for method, path, body in api.calls if (method, path) == ('POST', '/alerts')]
+        self.assertEqual([(a['name'], a['tileId'], a['threshold'], a['interval'], a['channel']) for a in created],
+                         [('swhurl:web:error-logs', 'd1-Error logs', 5, '5m', {'type': 'webhook', 'webhookId': 'w1'}),
+                          ('swhurl:web:errors', 'd1-Errors', 5, '5m', {'type': 'webhook', 'webhookId': 'w1'})])
+        self.assertTrue(all(a['source'] == 'tile' and a['dashboardId'] == 'd1' and a['thresholdType'] == 'above' for a in created))
+        self.assertIn('[OK] created swhurl:web:error-logs', out)
+
+    def test_alerts_that_match_are_left_and_the_rest_are_replaced_or_deleted(self):
+        live = [self.alert('web', 'error-logs', 'Error logs'),                       # as wanted
+                self.alert('web', 'errors', 'Errors', tileId='old-tile'),            # the dashboard was rebuilt
+                self.alert('gone', 'errors', 'Errors', dashboard='d9'),              # its app is gone
+                {'id': 'mine', 'name': 'my own alert', 'threshold': 1}]              # not ours: untouched
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK, alerts=live)
+        code, out = run(api, [WEB])
+        self.assertEqual(code, 0, out)
+        self.assertEqual([call[:2] for call in api.calls if call[0] != 'GET'],
+                         [('DELETE', '/alerts/a-web-errors'), ('POST', '/alerts'), ('DELETE', '/alerts/a-gone-errors')])
+        self.assertIn('[OK] replaced swhurl:web:errors', out)
+        self.assertIn('[OK] deleted swhurl:gone:errors: its app or tile is gone', out)
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK,
+                      alerts=[self.alert('web', 'error-logs', 'Error logs'), self.alert('web', 'errors', 'Errors')])
+        code, out = run(api, [WEB])
+        self.assertEqual(api.writes(), [])
+        self.assertIn('[OK] 1 app(s) have their default alerts', out)
+
+    def test_without_the_webhook_nothing_is_created_and_it_says_how_to_make_it(self):
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK[1:])
+        code, out = run(api, [WEB])
+        self.assertEqual((code, api.writes()), (0, []))
+        self.assertIn('[WARN] no "swhurl notify" webhook in HyperDX, so apps have no default alerts: make clickstack-notify-webhook', out)
+
+    def test_a_dry_run_and_a_cluster_with_no_app_change_nothing(self):
+        live = [self.alert('gone', 'errors', 'Errors', dashboard='d9')]
+        api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK, alerts=live)
+        code, out = run(api, [WEB], dry_run=True)
+        self.assertEqual(api.writes(), [])
+        self.assertIn('would create swhurl:web:error-logs', out)
+        self.assertIn('would delete swhurl:gone:errors', out)
+        api, out = HyperDX(webhooks=self.HOOK, alerts=live), io.StringIO()
+        runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': []}))
+        self.assertEqual(dashboards.main(['--cluster'], runner, Report(out, redact=runner.redact)), 0)
+        self.assertEqual(api.writes(), [], 'no app release found: neither dashboards nor alerts are deleted')
+
+    def test_an_alerts_name_says_which_app_and_preset_it_is(self):
+        found = app_alerts.NAME.search('🚨 swhurl:orders-api:error-logs')
+        self.assertEqual((found['app'], found['preset']), ('orders-api', 'error-logs'))
+        self.assertIsNone(app_alerts.NAME.search('🚨 my own alert'))
+        self.assertEqual(app_alerts.LABELS['errors'], 'failed requests or runs')
 
 
 class SyncTests(unittest.TestCase):
@@ -177,7 +247,8 @@ class AutomaticSyncTests(unittest.TestCase):
         runner = api.runner().on(*dashboards.RELEASES, stdout=json.dumps({'items': [production, staging]}))
         self.assertEqual(dashboards.main(['--cluster'], runner, Report(io.StringIO())), 0)
         self.assertEqual(api.writes(), [('PUT', '/dashboards/d1')])
-        self.assertIn("'new-app-prod'", api.calls[-1][2]['tiles'][0]['config']['select'][0]['where'])
+        put = next(body for method, _path, body in api.calls if method == 'PUT')
+        self.assertIn("'new-app-prod'", put['tiles'][0]['config']['select'][0]['where'])
 
     def test_discovery_excludes_shared_services_and_mismatched_names(self):
         mismatched = self.release('wrong', 'prod', unit='app-real-prod')

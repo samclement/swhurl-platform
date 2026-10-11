@@ -1,6 +1,6 @@
-# Only the notification checker and app instances may connect; anything else is refused before it
-# reaches the service, which then checks the caller's token as well. Health probes come from the node
-# and are not affected.
+# Only the notification checker, app instances and ClickStack (its alert webhook) may connect; anything
+# else is refused before it reaches the service, which then checks the caller's token or the webhook's
+# secret as well. Health probes come from the node and are not affected.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -20,6 +20,13 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: console
               app.kubernetes.io/controller: notifications
+        # ClickStack's app, which sends the alert webhook.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clickstack
         # Every app instance: its namespace carries the app label (apps/<app>/<env>/namespace.yaml).
         - namespaceSelector:
             matchExpressions:

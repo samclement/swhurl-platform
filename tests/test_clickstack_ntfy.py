@@ -98,3 +98,36 @@ class WebhookTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NotifyWebhookTests(unittest.TestCase):
+    """The webhook that hands app alerts to the notify service carries the cluster's alert secret in its body."""
+
+    def test_it_points_at_the_notify_service_and_never_shows_the_secret(self):
+        fixture = Fixture()
+        fixture.runner.on('kubectl', '-n', 'notify', 'get', 'secret', clickstack_ntfy.ALERT_SECRET,
+                          stdout=json.dumps({'data': {'secret': b64('private-alert-secret')}}))
+        output = io.StringIO()
+        code = clickstack_ntfy.main_notify([], fixture.runner, Report(output, redact=fixture.runner.redact))
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertEqual([(m, p) for m, p, _ in fixture.calls], [('GET', '/webhooks'), ('POST', '/webhooks')])
+        body = fixture.calls[-1][2]
+        self.assertEqual((body['name'], body['service'], body['url']),
+                         ('swhurl notify', 'generic', 'http://notify.notify.svc.cluster.local:8080/v1/alert'))
+        rendered = (body['body'].replace('{{title}}', 'x').replace('{{body}}', 'line one\\nline two')
+                    .replace('{{link}}', 'https://clickstack.example/d').replace('{{state}}', 'ALERT'))
+        self.assertEqual(json.loads(rendered), {'secret': 'private-alert-secret', 'title': 'x', 'body': 'line one\nline two',
+                                                'link': 'https://clickstack.example/d', 'state': 'ALERT'})
+        self.assertNotIn('private-alert-secret', output.getvalue() + ' '.join(fixture.runner.echoed))
+        self.assertIn('[OK] created swhurl notify', output.getvalue())
+        kept = Fixture([{'id': 'w1', **body}])
+        kept.runner.on('kubectl', '-n', 'notify', 'get', 'secret', clickstack_ntfy.ALERT_SECRET,
+                       stdout=json.dumps({'data': {'secret': b64('private-alert-secret')}}))
+        output = io.StringIO()
+        self.assertEqual(clickstack_ntfy.main_notify([], kept.runner, Report(output, redact=kept.runner.redact)), 0)
+        self.assertEqual([(m, p) for m, p, _ in kept.calls], [('GET', '/webhooks')])
+        missing = Fixture()
+        missing.runner.on('kubectl', '-n', 'notify', 'get', 'secret', returncode=1, stderr='NotFound')
+        output = io.StringIO()
+        self.assertEqual(clickstack_ntfy.main_notify([], missing.runner, Report(output, redact=missing.runner.redact)), 1)
+        self.assertEqual(missing.calls, [])

@@ -309,6 +309,7 @@ flowchart LR
 | Who it is from | The app and environment of the token, never the request: the message arrives titled `orders/staging: Order backlog`, and an app cannot send as another |
 | How many | 30 accepted messages an hour per instance; the next gets HTTP 429 |
 | Failure | The helper returns false (and logs why) instead of throwing: a notification must not break the request that sent it. Outside the platform, where the address is not set, it does nothing |
+| Also sent for you | [Default alerts](#alerts) on error logs and failed requests, with no code |
 | Not for | The operator's platform topic, which gets the [deployment and health messages](services.md#notification-expectations) by itself, or an app's own end users |
 
 The [request contract](services.md#notify-service) is the same one the platform's own messages use. The address and the token are the platform's: `make app-sync` rewrites them and `make check-apps` fails when they are missing (rules `identity`, `call-tokens`). `notify` cannot be an app's name.
@@ -505,6 +506,26 @@ The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX da
 The in-cluster `console-dashboards` CronJob runs every minute. It asks Kubernetes for HelmRelease records in all namespaces, then keeps only records whose Flux labels identify an `app-<name>-<env>` unit in `flux-system` and whose release name and namespace match that app and environment. This excludes shared services and manually installed releases. It does not check readiness, so discovery starts as soon as the app Flux unit creates the HelmRelease, even while Helm is still installing it. The job groups discovered environments by app and creates or updates one HyperDX dashboard named `App: <app>`; first promotion adds a production line to the dashboard created for staging. The API call is to HyperDX; dashboards are not Kubernetes resources or Git files. Each run also records each app's dashboard id in the `console/app-dashboards` ConfigMap, which is what the console's **Dashboard ↗** links read ([console](console.md#automatic-app-dashboards)). This works for console PRs and CLI changes, including auto-merges.
 
 Every tile selects the app's namespaces, so an app without an SDK still gets its log rows, and trace tiles stay empty until the app has traffic (health checks are not traced). Each run overwrites dashboards that differ from [`dashboards.py`](../tools/swhurl/dashboards.py) (an edit made in the HyperDX UI is lost on the next run; save a copy without the `swhurl-app` tag to keep it). When an app's last HelmRelease is gone, the next run deletes its dashboard. Removing one environment only drops its line. The job deletes narrowly: only a tagged dashboard named exactly `App: <app name>`, so a tagged copy such as `App: hello-ts (copy)` stays and is reported; and nothing when it finds no app release at all (a cluster still being restored, or the last app removed). `make clickstack-dashboards` synchronizes against this checkout instead and deletes every tagged dashboard whose app is not in Git, which covers those two cases; `DRY_RUN=true` previews it. A deleted dashboard that comes back (an app re-added, a HelmRelease recreated) gets a new id, so old links to it break. Both paths read the admin account's access key from MongoDB and never print it. Failures exit nonzero and retry on the next minute; `make verify-platform` fails if the job has not succeeded within five minutes. No app deployment waits on ClickStack.
+
+### Alerts
+
+Every app also gets default alerts, kept by the same job as its dashboard: nothing is declared, and they come and go with the app.
+
+| Alert | Fires when | Recovers |
+| --- | --- | --- |
+| `swhurl:<app>:error-logs` | 5 or more log lines of severity `error` or `fatal` from one environment of the app in 5 minutes (the dashboard's **Error logs** tile) | When a 5-minute window stays below that |
+| `swhurl:<app>:errors` | 5 or more failed requests (web) or failed runs (worker) in 5 minutes (the **Errors** tile; needs traces, so `telemetry: otlp`) | The same |
+
+```mermaid
+flowchart LR
+  tile[App dashboard tile<br/>per environment] --> rule[HyperDX alert<br/>swhurl:orders:error-logs]
+  rule -- "webhook swhurl notify" --> notify[Notify service]
+  notify --> channel[the team's channel]
+```
+
+A firing alert reaches the app's team's [notification channel](services.md#notification-channels) as `orders/staging alert: error logs`, high priority, with the count, the time range and a link to the dashboard; its recovery arrives as `orders/staging recovered: error logs`. A team without a channel receives nothing, so give the team one first. The operator's platform topic does not get app alerts.
+
+The rules are in [`app_alerts.py`](../tools/swhurl/app_alerts.py). Each run of the dashboard job creates the missing ones, replaces any that differ (an edit made in the HyperDX UI is lost, as for dashboards) and deletes those of apps that are gone; alerts not named `swhurl:...` are never touched, so add your own beside them. They need the `swhurl notify` webhook in HyperDX: `make clickstack-notify-webhook` creates it ([services](services.md#notify-service)), and until it exists the job warns and creates none.
 
 ## Remove an app
 

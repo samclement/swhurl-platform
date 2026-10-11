@@ -12,3 +12,4 @@ resources:
   - helmrelease.yaml
   - channel-payments.sops.yaml
   - channel-platform.sops.yaml
+  - channel-insights.sops.yaml

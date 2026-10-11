@@ -64,6 +64,7 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-10
               DATABASE_PATH: /data/app.db
+              SWHURL_ALLOWED_CALLERS: swhurl-try-11
             probes:
               readiness:
                 enabled: true

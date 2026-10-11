@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: channel-payments
+    namespace: notify
+    labels:
+        platform.swhurl.com/notify-transport: ntfy
+type: Opaque
+stringData:
+    address: ENC[AES256_GCM,data:eARZA+AZwUjK6IUkG8kGvFkacg/qQrROtFC3YZV4xgrW35NZsoVU0WkPLvlZ2bw=,iv:YZyyqAi7J9An/MiYn7gN5Q6upuNu/z9Glqfx1Bxf+Bs=,tag:PssgH5kC3iekkTKZoQ8v+g==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4NUxEQ0pyckxkZEk2TVhF
+            UEVUZGZZanhKT2oxS2d4ZTh3aDRLTm9uelNFCmRhekExVVhjWXlYQ1lnQzFJamFi
+            REQ2NkZ0ZmI0SlZyb0ZxOHhUemFDc0EKLS0tIGR0YU1rRElmZTBUT3l4STBxMTMr
+            YnM4UUZFTVdmNjA1R05wbENNaEV1TW8K9ENj4OvOSua6BqNH+2LwRm4yuiiGAqrZ
+            QtmSvUygxPi7AKfbXODRcFCXvCmZCSZkuD67KWbDoHp9t0Keci/sqg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-11T17:47:49Z"
+    mac: ENC[AES256_GCM,data:qLi/FhH6fwDMt21fatwi+Nml7bh2y35a247Qu3ORwOOnSRCKTXjKfTNWYi0RqbBC1sNLZMQonYgL3rXHOOWXhuaGGX9dMpxbf5KgZDQl1xQ/6tVm2CgHmAEPFe9ZKWJ3QSjcm7Uswp6lZufbJjW12tJoqPjWVF9kUdvkibcRuP0=,iv:cbhiFKSfGma/4vBCW+OBTm+a6Lr1Nm3IbMaepl2+cbM=,tag:zj4DGuc73RrPX4zwEnivGQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

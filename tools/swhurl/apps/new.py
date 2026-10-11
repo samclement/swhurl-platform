@@ -35,10 +35,10 @@ import yaml
 from swhurl import ROOT
 from swhurl.apps import policy
 from swhurl.apps.contract import (
+    API_ENV,
     APP,
     APP_OWNER,
     AUTH_MIDDLEWARE,
-    API_ENV,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     CHART,

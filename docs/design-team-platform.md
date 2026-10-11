@@ -40,7 +40,7 @@ No hostnames, ports, environment names, tokens or broker addresses appear in app
 | Teams and isolation | A `platform.swhurl.com/team` namespace label from a registry of team names in this repository; a ResourceQuota per namespace; a NetworkPolicy on the app's pods admitting only Traefik and declared callers | Kubernetes; k3s enforces NetworkPolicies itself |
 | Service discovery | `SWHURL_SERVICE_<NAME>_URL` pointing at the same environment's instance (built; [apps](apps.md#calling-another-app)); a **Services** page in the console | Kubernetes DNS, the console |
 | App-to-app identity | A short-lived service-account token for each callee, mounted as a file and usable only for that callee (not for the Kubernetes API); the caller's name on the callee's `SWHURL_ALLOWED_CALLERS` (built; [apps](apps.md#calling-another-app)) | Kubernetes projected tokens; the cluster's public signing keys, kept in Git and given to each web app as a variable |
-| Events | A NATS user per app, limited to publishing its own subjects and reading the ones it declared; a durable stream per publishing app; credentials in the app's SOPS Secret | NATS JetStream (the one new component) |
+| Events | A NATS user per app, limited to publishing its own subjects and reading the ones it declared; a durable stream per publishing app; the app's key seed in its own SOPS Secret (built; [apps](apps.md#events)) | NATS JetStream and its stream controller (the one new component) |
 | Persistence | Unchanged: `database: sqlite`, retained volume, nightly backup | Existing |
 | Human sign-in | Unchanged: Google through oauth2-proxy | Existing |
 | Observability | `caller.type` and `caller.id` on every request's log line and span; the team as a telemetry attribute; trace context carried in event headers; dashboards selectable by team | OTel collector, ClickStack |
@@ -55,7 +55,7 @@ No hostnames, ports, environment names, tokens or broker addresses appear in app
 
 ### How an event works
 
-Subjects are `<publishing app>.<event>`; only the owner may publish. Staging and production are separate NATS accounts, so they cannot see each other's events. Messages are CloudEvents JSON with the trace context in headers, so a trace continues from publisher to subscriber. Streams keep seven days and are not backed up: an event stream is not a system of record.
+An event is `<publishing app>.<event>`; only the owner may publish. Staging and production share one NATS and are kept apart by name (`<env>.<app>.<event>`) and per-app permission, so they cannot see each other's events. Messages are CloudEvents JSON with the trace context in headers, so a trace continues from publisher to subscriber. Streams keep seven days and are not backed up: an event stream is not a system of record.
 
 ### The Services page
 
@@ -125,5 +125,5 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 - **Signing keys are a copy.** This API server refuses anonymous requests, so an app without an API token cannot fetch the cluster's public keys; the platform keeps them in Git and gives them to each web app as a variable. If the cluster's key is rotated before the file is refreshed, calls are refused until it is; `make verify-platform` reports the difference.
 - **NetworkPolicy and HTTP-01:** a policy selecting every pod in a namespace blocks certificate issuance ([lesson in `AGENTS.md`](../AGENTS.md)); policies select the workload's pods only.
-- **NATS credentials are stored secrets,** unlike the call tokens. Rotation goes through SOPS and Reloader like any app Secret.
+- **NATS credentials are stored secrets,** unlike the call tokens: each app's key seed is in its own SOPS Secret. Replacing one means clearing and re-declaring the app's events, which makes a new key.
 - **The scenario creates real public GitHub repositories** that only the operator can delete; they are named `swhurl-try-<n>`.

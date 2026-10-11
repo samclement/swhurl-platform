@@ -1,0 +1,55 @@
+# NACK, the NATS JetStream controller: creates the streams and consumers that
+# app instances declare as manifests (apps/<app>/<env>/events.yaml), so a
+# merged change needs no command. It signs in to NATS with its own nkey, whose
+# seed is secret-controller.sops.yaml and whose public key is in users.yaml.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nats-controller
+  namespace: messaging
+spec:
+  interval: 30m
+  releaseName: nats-controller
+  dependsOn:
+    - name: nats
+  chart:
+    spec:
+      chart: nack
+      version: 0.35.0
+      sourceRef:
+        kind: HelmRepository
+        name: nats
+        namespace: flux-system
+      interval: 30m
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    jetstream:
+      nats:
+        url: nats://nats.messaging.svc.cluster.local:4222
+        nkey:
+          secret:
+            name: nats-controller-nkey
+            key: seed
+      # Keep NATS matching the manifests: a stream changed or deleted by hand is put back.
+      controlLoop: true
+    # The chart's default also lets the controller read every Secret in the cluster, for
+    # per-resource credentials this platform does not use.
+    rbacRules: |
+      rules:
+      - apiGroups: ['']
+        resources: [events]
+        verbs: [create, update, patch]
+      - apiGroups: [jetstream.nats.io]
+        resources: [streams, streams/status, consumers, consumers/status, keyvalues, keyvalues/status,
+                    objectstores, objectstores/status, accounts, accounts/status]
+        verbs: [create, get, list, watch, patch, update, delete]
+      - apiGroups: [coordination.k8s.io]
+        resources: [leases]
+        verbs: [create, get, list, watch, patch, update]

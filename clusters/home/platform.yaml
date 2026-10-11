@@ -134,6 +134,34 @@ spec:
   wait: true
   timeout: 10m
 ---
+# NATS JetStream and its stream controller: events between apps
+# (docs/services.md#nats). An app instance that declares events waits for it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-nats
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/alert: failures
+spec:
+  dependsOn:
+    - name: infra-base
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform
+  path: ./platform/nats
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  # Shared unit: deleting this Kustomization orphans (keeps) its resources.
+  # Removing a resource from Git still prunes it (prune: true).
+  deletionPolicy: Orphan
+  prune: true
+  wait: true
+  timeout: 10m
+---
 # The web console (docs/plan.md section 7). Waits for the sign-in middleware its
 # route uses; nothing waits for it.
 apiVersion: kustomize.toolkit.fluxcd.io/v1

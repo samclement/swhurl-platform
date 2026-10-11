@@ -13,6 +13,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | ClickStack | `platform-clickstack` · [`platform/clickstack`](../platform/clickstack) | `observability` | `clickstack.` | clickstack |
 | OTel collectors | `platform-otel` · [`platform/otel`](../platform/otel) | `logging` | — | opentelemetry-collector |
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
+| [NATS](#nats) | `platform-nats` · [`platform/nats`](../platform/nats) | `messaging` | — | nats, nack |
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | Flux notification Providers and Alerts, to ntfy.sh |
@@ -108,6 +109,18 @@ The collectors' `authorization` header reads `${env:CLICKSTACK_INGESTION_KEY}` a
 ## Reloader
 
 Restarts a workload when a Secret it names changes, so rotations need no manual restart. It is opt-in (`secret.reloader.stakater.com/reload: "<secret>"` on the Deployment or DaemonSet) and scoped: it watches only the namespaces listed in [`platform/reloader/helmrelease.yaml`](../platform/reloader/helmrelease.yaml) (`ingress`, `logging`, `console`), with a Role in each and no cluster-wide Secret access. `make app-new --secret-keys` adds the app's namespace and `make app-remove` takes it out; for anything else, add the namespace before opting a workload in. ConfigMaps are ignored. Current opt-ins: oauth2-proxy (`oauth2-proxy-shared-secret`), both OTel collectors (`clickstack-ingestion-key`) and the console (`console-github`). Reloader restarts by patching a pod-template annotation; a later Helm upgrade may drop it and roll the pods once more, which is harmless.
+
+## NATS
+
+The event broker: apps publish events and subscribe to each other's. One NATS server with JetStream in `messaging`, reachable only inside the cluster at `nats://nats.messaging.svc.cluster.local:4222`, and the JetStream controller (NACK) beside it.
+
+- **Staging and production share the server.** They are kept apart by name and permission: an event's subject is `<env>.<app>.<event>`, and an app's user may publish only its own declared subjects in its own environment.
+- **Who may do what** is [`users.yaml`](../platform/nats/users.yaml): one user per app instance that declares events, generated from the instances by `make app-events` and `make app-sync`. It holds public keys and permissions only, so it is plain YAML in Git. Flux upgrades the release when it changes and NATS reloads without restarting. Do not edit it by hand.
+- **Credentials.** Every client signs in with an nkey: a key pair whose public half is in `users.yaml` and whose seed is a Secret. Each app's seed is in its own `events.sops.yaml`, generated and encrypted when the app first declares events and never printed. The controller's seed is [`secret-controller.sops.yaml`](../platform/nats/secret-controller.sops.yaml) and its public key `controller-nkey.pub`; it may use the JetStream API and nothing else. There is no admin login and no default account.
+- **Streams and consumers** are manifests in each app instance (`events.yaml`), which the controller creates in NATS. It runs with `controlLoop`, so a stream changed or deleted by hand is put back. The chart's default permission to read every Secret in the cluster is removed.
+- **What is kept.** Each publishing app has one stream, limited to seven days and 64Mi, oldest first out. The server may use 1Gi of a 2Gi `local-path` volume. Streams are **not backed up**: an event stream is not a system of record, and after a loss subscribers see only new events.
+- **Network.** A NetworkPolicy admits app namespaces and the controller to port 4222, nothing else.
+- **Logs** from both pods reach ClickStack like any container's (namespace `messaging`).
 
 ## Alerts
 

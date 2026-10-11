@@ -68,6 +68,8 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
+elif argv[:2] in (['get', 'namespaces'], ['get', 'resourcequotas']) or any(a.startswith('networkpolicies') for a in argv):
+    emit({'items': []})  # isolation check: no app namespaces
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
 elif any(a.startswith('alerts.notification') for a in argv):

@@ -19,6 +19,11 @@ with Helm) and checks the resulting Kubernetes objects:
                       two processes must never write one volume (a SQLite file, for example)
   otlp-host-ip        a container that uses $(HOST_IP) (the OTLP endpoint) defines HOST_IP
                       from status.hostIP before it; otherwise the SDK gets the literal text
+  team                the Namespace names a team registered in apps/teams.yaml
+  quota               the namespace has the platform ResourceQuota, and the app's replicas (plus one
+                      during a rolling update) fit in it beside a backup pod and a certificate solver
+  network-policy      the app's pods, and only those, carry the platform NetworkPolicy: Traefik is
+                      admitted on the app port when the instance has a route, nobody otherwise
 
 for an instance of this platform (under apps/; the test fixtures are exempt), from its source:
 
@@ -60,10 +65,16 @@ from swhurl.apps.contract import (
     IMAGE_AUTOMATION_FILE,
     INSTANCE_ROOTS,
     OTLP_HOST_IP,
+    QUOTA,
+    QUOTA_HEADROOM,
     STORAGE_CLASSES,
+    TEAM,
     image_policy_name,
     in_cookie_domain,
+    network_policy,
+    quantity,
     strip_image_markers,
+    teams,
 )
 from swhurl.run import Runner
 
@@ -147,7 +158,54 @@ def pod_spec(doc: dict) -> dict | None:
     return None
 
 
-def check(docs: list[dict]) -> list[tuple[str, str]]:
+def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> list[tuple[str, str]]:
+    """The team, quota and network-policy rules for one rendered instance."""
+    violations: list[tuple[str, str]] = []
+    if labels.get(TEAM) not in known_teams:
+        violations.append(('team', f'Namespace team {labels.get(TEAM)!r} is not registered in apps/teams.yaml '
+                                   f'({", ".join(known_teams)}); set it with make app-team'))
+    releases = [d for d in docs if d['kind'] == 'HelmRelease']
+    if not releases:
+        return violations
+    app, namespace = releases[0]['metadata']['name'], releases[0]['metadata']['namespace']
+
+    quotas = [d for d in docs if d['kind'] == 'ResourceQuota']
+    if len(quotas) != 1 or quotas[0]['spec'].get('hard') != QUOTA:
+        violations.append(('quota', f'the instance needs exactly one ResourceQuota with the platform sizes {QUOTA}'))
+    needed = {key: quantity(value) for key, value in QUOTA_HEADROOM.items()}
+    for doc in docs:
+        spec = pod_spec(doc)
+        if spec is None or doc['kind'] not in ('Deployment', 'StatefulSet'):
+            continue
+        rolling = doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate'
+        pods = doc['spec'].get('replicas', 1) + (1 if rolling else 0)
+        needed['pods'] += pods
+        for container in spec['containers']:
+            resources = container.get('resources') or {}
+            for key, section, name in (('requests.cpu', 'requests', 'cpu'), ('requests.memory', 'requests', 'memory'),
+                                       ('limits.memory', 'limits', 'memory')):
+                needed[key] += pods * quantity((resources.get(section) or {}).get(name, 0))
+    over = [key for key, value in needed.items() if value > quantity(QUOTA[key])]
+    if over:
+        violations.append(('quota', f'replicas and sizes exceed the namespace quota for {", ".join(over)} '
+                                    f'(allowed {QUOTA}, less {QUOTA_HEADROOM} kept free)'))
+
+    routed = labels.get(EXPOSURE) in ('authenticated-web', 'public')
+    port = ((((releases[0]['spec'].get('values') or {}).get('service') or {}).get('main') or {}).get('ports') or {}) \
+        .get('http', {}).get('port')
+    expected = network_policy(app, namespace, port if routed else None)['spec']
+    policies = [d for d in docs if d['kind'] == 'NetworkPolicy']
+    if any(not (d['spec'].get('podSelector') or {}).get('matchLabels') for d in policies):
+        violations.append(('network-policy', 'a NetworkPolicy selects every pod in the namespace: that blocks '
+                                             "cert-manager's HTTP-01 solver; select the app's pods"))
+    elif len(policies) != 1 or policies[0]['spec'] != expected:
+        violations.append(('network-policy', "the instance needs exactly one NetworkPolicy, on the app's pods, admitting "
+                           + (f'Traefik on port {port}' if routed else 'nobody')
+                           + '; make app-expose and make app-team write it'))
+    return violations
+
+
+def check(docs: list[dict], known_teams: dict[str, str] | None = None) -> list[tuple[str, str]]:
     """Return (rule, message) violations for one rendered instance."""
     violations: list[tuple[str, str]] = []
     namespaces = [d for d in docs if d['kind'] == 'Namespace']
@@ -156,6 +214,7 @@ def check(docs: list[dict]) -> list[tuple[str, str]]:
     exposure = labels.get(EXPOSURE)
     if not env or not exposure:
         violations.append(('exposure', 'instance Namespace needs platform.swhurl.com/environment and /exposure labels'))
+    violations += isolation(docs, labels, teams() if known_teams is None else known_teams)
 
     for doc in docs:
         spec = pod_spec(doc)
@@ -322,7 +381,8 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     allowed, problems = exceptions(docs)
     if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
         problems += platform_image(instance)
-    return problems + [f'{rule}: {message}' for rule, message in check(docs) if rule not in allowed]
+    known_teams = teams(instance.resolve().parents[2])  # <root>/apps/<app>/<env>
+    return problems + [f'{rule}: {message}' for rule, message in check(docs, known_teams) if rule not in allowed]
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:

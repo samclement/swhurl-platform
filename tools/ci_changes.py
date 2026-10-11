@@ -7,11 +7,14 @@ import sys
 
 APP_INSTANCE = re.compile(r"apps/[^/]+/.+")
 APP_UNIT = re.compile(r"clusters/home/app-[^/]+\.yaml")
+# Where a new app or a first promotion registers its unit. Only check-repo reads it, and that always runs.
+REGISTRY = "clusters/home/kustomization.yaml"
 
 
 def classify(paths: list[str]) -> tuple[bool, bool]:
     """Return (app_instance_only, tooling_tests_needed); empty paths fail closed."""
-    if not paths or any(not (APP_INSTANCE.fullmatch(path) or APP_UNIT.fullmatch(path)) for path in paths):
+    if not paths or any(not (APP_INSTANCE.fullmatch(path) or APP_UNIT.fullmatch(path) or path == REGISTRY)
+                        for path in paths):
         return False, True
     # The tooling tests' sample instance is tests/fixtures/instance, which is not an app path.
     return True, False

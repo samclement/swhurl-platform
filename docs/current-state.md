@@ -875,3 +875,14 @@ Two throwaway live tests for [plan section 15](plan.md#15-team-platform--planned
 - **A certificate issued under a NetworkPolicy:** `swhurl-try-10-tls` became Ready about 30 seconds after the instance was created (ACME order `valid`), the real case T0 and T1 left unexercised.
 - **Backup under a quota:** `make backup-sqlite` backed up try-10's database (its helper pod runs in the quota-limited namespace); `make verify-platform` then passed.
 - Not exercised: the console's **Calls** form and a console-created app with `calls:` in its `swhurl.yaml` (unit-tested; needs a signed-in browser); a first promotion of an app with calls on the live cluster (unit-tested); `make app-remove` refused for a called app on the live tree (unit-tested); `make platform-signing-keys` after a real key change; the kubelet's token replacement inside a real app over more than ten minutes (proven for a plain pod in T0). `swhurl-try-12` runs the Kotlin template one commit before its log-message fix, so its "request handled" lines show `{}` placeholders.
+
+## Team platform T3: Services page (11 October 2026)
+
+[Plan section 15](plan.md#15-team-platform--planned-10-october-2026-not-started), task T3, verified at `e88387d` with console image `src-2b7311f62c1333e9`. `make check` passed at `4d8baaf` (500 tests).
+
+- **Deployed console, read through a port-forward** (so with its own service account): `/services` answered 401 without an identity header and 200 with one. It showed `swhurl-try-10` as team payments, called by `swhurl-try-11` and `swhurl-try-12`; `swhurl-try-11` as team insights calling both; `hello-ts` as team platform in staging and prod; each web instance with its address inside the cluster.
+- **Layout** checked in headless Chromium against the console run locally with `--dev` on the live cluster, with the **Call this from my app** panel closed and open.
+- **Refusals** (unit-tested): a console change the tooling refuses fails its job with the command's own message and opens no pull request, for an unknown callee, removing a called app and a scale beyond the quota.
+- `make verify-platform` passed with the console image built from the current tooling.
+- Mistake corrected: `db1c886` was pushed with a failing lint step (unsorted imports; the tests had passed). `4d8baaf` fixed it eight minutes later; CI on `db1c886` failed and on `4d8baaf` passed.
+- Not exercised: the page in a signed-in browser through Traefik and oauth2-proxy; an app with `provides.api` (no deployed app declares one; the link is unit-tested).

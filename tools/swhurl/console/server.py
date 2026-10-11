@@ -136,7 +136,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
         return page(request, 'app.html', status=status, team=ops.team_of(runner, found),
-                    calls=contract.declared_calls(status.environment), callers=contract.allowed_callers(status.environment),
+                    calls=contract.declared_calls(status.variables), callers=contract.allowed_callers(status.variables),
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,

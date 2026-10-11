@@ -35,7 +35,7 @@ import yaml
 from swhurl import ROOT
 from swhurl.apps import policy
 from swhurl.apps.contract import (
-    API_ENV,
+    API_VARIABLE,
     APP,
     APP_OWNER,
     AUTH_MIDDLEWARE,
@@ -46,7 +46,7 @@ from swhurl.apps.contract import (
     CHART_VERSION,
     COOKIE_DOMAIN,
     DATA_MOUNT,
-    DATABASE_PATH_ENV,
+    DATABASE_PATH_VARIABLE,
     DATABASES,
     DEFAULT_DATABASE_SIZE,
     DEFAULT_TEAM,
@@ -68,12 +68,12 @@ from swhurl.apps.contract import (
     ManifestError,
     add_image_markers,
     default_host,
-    identity_env,
+    identity_variables,
     image_policy_name,
     in_cookie_domain,
     manifest_defaults,
     network_policy,
-    otlp_env,
+    otlp_variables,
     resource_quota,
     secret_key_problem,
     signing_keys,
@@ -196,14 +196,14 @@ def build_values(args) -> dict:
     if args.command:
         container['command'] = shlex.split(args.command)
     # Identity first: Kubernetes expands $(SWHURL_ENV) in later values only if it is defined before them.
-    container['env'] = identity_env(args.name, args.env, args.kind == 'web',
+    container['env'] = identity_variables(args.name, args.env, args.kind == 'web',
                                     getattr(args, 'signing_keys', None) or signing_keys())
     if args.kind == 'web' and args.api_path:
-        container['env'][API_ENV] = args.api_path
+        container['env'][API_VARIABLE] = args.api_path
     if args.otlp:
-        container['env'] |= otlp_env(args.name)
+        container['env'] |= otlp_variables(args.name)
     if args.database == 'sqlite':
-        container['env'][DATABASE_PATH_ENV] = SQLITE_PATH
+        container['env'][DATABASE_PATH_VARIABLE] = SQLITE_PATH
     if args.secret_keys:
         container['envFrom'] = [{'secretRef': {'name': f'{args.name}-secret'}}]
     if args.kind == 'web':
@@ -492,7 +492,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--memory', default='32Mi')
     p.add_argument('--memory-limit', default='128Mi')
     p.add_argument('--database', choices=DATABASES,
-                   help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_ENV}; '
+                   help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_VARIABLE}; '
                         'one replica, stop-first updates')
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
     p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')

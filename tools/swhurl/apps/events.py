@@ -33,11 +33,11 @@ USERS_FILE = Path('platform/nats/users.yaml')
 CONTROLLER_KEY_FILE = Path('platform/nats/controller-nkey.pub')
 """The stream controller's public nkey; its seed is platform/nats/secret-controller.sops.yaml."""
 
-PUBLISH_ENV = 'SWHURL_EVENTS_PUBLISH'
-SUBSCRIBE_ENV = 'SWHURL_EVENTS_SUBSCRIBE'
-URL_ENV = 'SWHURL_EVENTS_URL'
-NKEY_ENV = 'SWHURL_EVENTS_NKEY'
-SEED_ENV = 'SWHURL_EVENTS_SEED'
+PUBLISH_VARIABLE = 'SWHURL_EVENTS_PUBLISH'
+SUBSCRIBE_VARIABLE = 'SWHURL_EVENTS_SUBSCRIBE'
+URL_VARIABLE = 'SWHURL_EVENTS_URL'
+NKEY_VARIABLE = 'SWHURL_EVENTS_NKEY'
+SEED_VARIABLE = 'SWHURL_EVENTS_SEED'
 EVENTS_FILE = 'events.yaml'
 SECRET_FILE = 'events.sops.yaml'
 
@@ -53,13 +53,13 @@ def secret_name(app: str) -> str:
     return f'{app}-events'
 
 
-def published(env: dict) -> list[str]:
-    return [name for name in str((env or {}).get(PUBLISH_ENV, '')).split(',') if name]
+def published(variables: dict) -> list[str]:
+    return [name for name in str((variables or {}).get(PUBLISH_VARIABLE, '')).split(',') if name]
 
 
-def subscribed(env: dict) -> list[tuple[str, str]]:
+def subscribed(variables: dict) -> list[tuple[str, str]]:
     """``(publishing app, event)`` pairs."""
-    pairs = [name.partition('.') for name in str((env or {}).get(SUBSCRIBE_ENV, '')).split(',') if name]
+    pairs = [name.partition('.') for name in str((variables or {}).get(SUBSCRIBE_VARIABLE, '')).split(',') if name]
     return [(app, event) for app, _, event in pairs]
 
 
@@ -120,8 +120,8 @@ def users_file(root: Path) -> tuple[Path, str] | None:
     for env in ('staging', 'prod'):
         for path in sorted((root / 'apps').glob(f'*/{env}/helmrelease.yaml')):
             variables = helmrelease.variables(yaml.safe_load(path.read_text()))
-            if variables.get(NKEY_ENV) and (published(variables) or subscribed(variables)):
-                users.append(user(str(variables[NKEY_ENV]), env, path.parent.parent.name, published(variables),
+            if variables.get(NKEY_VARIABLE) and (published(variables) or subscribed(variables)):
+                users.append(user(str(variables[NKEY_VARIABLE]), env, path.parent.parent.name, published(variables),
                                   subscribed(variables)))
     return root / USERS_FILE, users_configmap(users)
 

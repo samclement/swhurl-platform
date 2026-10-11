@@ -78,10 +78,10 @@ from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
-    CALLERS_ENV,
+    CALLERS_VARIABLE,
     COOKIE_DOMAIN,
-    ENV_ENV,
     ENVIRONMENT,
+    ENVIRONMENT_VARIABLE,
     EXCEPTIONS,
     EXPOSURE,
     IMAGE_AUTOMATION_FILE,
@@ -95,14 +95,14 @@ from swhurl.apps.contract import (
     TOKEN_SECONDS,
     TOKENS_VOLUME,
     allowed_callers,
+    callee_address,
+    callee_variable,
     declared_calls,
-    identity_env,
+    identity_variables,
     image_policy_name,
     in_cookie_domain,
     network_policy,
     quantity,
-    service_env,
-    service_url,
     signing_keys,
     strip_image_markers,
     teams,
@@ -243,12 +243,12 @@ def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]
     releases = [d for d in docs if d['kind'] == 'HelmRelease']
     if not releases:
         return violations
-    app, env = releases[0]['metadata']['name'], helmrelease.variables(releases[0])
-    wanted = identity_env(app, labels.get(ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
-    wrong = [key for key, value in wanted.items() if env.get(key) != value]
+    app, variables = releases[0]['metadata']['name'], helmrelease.variables(releases[0])
+    wanted = identity_variables(app, labels.get(ENVIRONMENT), helmrelease.port(releases[0]) is not None, keys)
+    wrong = [key for key, value in wanted.items() if variables.get(key) != value]
     if wrong:
         violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; make app-sync writes them'))
-    calls = declared_calls(env)
+    calls = declared_calls(variables)
     for doc in docs:
         spec = pod_spec(doc)
         if spec is None:
@@ -256,10 +256,10 @@ def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]
         where = f"{doc['kind']}/{doc['metadata']['name']}"
         for container in spec['containers']:
             names = [var['name'] for var in container.get('env') or []]
-            uses = [var['name'] for var in container.get('env') or [] if f'$({ENV_ENV})' in str(var.get('value', ''))]
-            late = [name for name in uses if ENV_ENV not in names or names.index(ENV_ENV) > names.index(name)]
+            uses = [var['name'] for var in container.get('env') or [] if f'$({ENVIRONMENT_VARIABLE})' in str(var.get('value', ''))]
+            late = [name for name in uses if ENVIRONMENT_VARIABLE not in names or names.index(ENVIRONMENT_VARIABLE) > names.index(name)]
             if late:
-                violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENV_ENV}) before it is defined'))
+                violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENVIRONMENT_VARIABLE}) before it is defined'))
         tokens = [source['serviceAccountToken'] for volume in spec.get('volumes') or []
                   for source in (volume.get('projected') or {}).get('sources') or [] if 'serviceAccountToken' in source]
         expected = [{'audience': callee, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{callee}/token'} for callee in calls]
@@ -278,12 +278,12 @@ def event_rule(docs: list[dict], release: dict, labels: dict) -> list[tuple[str,
     referenced = nats.secret_name(app) in helmrelease.secret_references(release)
     problems = []
     if not (publishes or subscribes):
-        if declared or referenced or variables.get(nats.URL_ENV) or variables.get(nats.NKEY_ENV):
+        if declared or referenced or variables.get(nats.URL_VARIABLE) or variables.get(nats.NKEY_VARIABLE):
             problems.append('declares no events but carries a stream, consumer, NATS address, key or Secret reference')
     else:
-        key = str(variables.get(nats.NKEY_ENV, ''))
-        if variables.get(nats.URL_ENV) != nats.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
-            problems.append(f'needs {nats.URL_ENV}, a public key in {nats.NKEY_ENV} and the {nats.secret_name(app)} Secret reference')
+        key = str(variables.get(nats.NKEY_VARIABLE, ''))
+        if variables.get(nats.URL_VARIABLE) != nats.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
+            problems.append(f'needs {nats.URL_VARIABLE}, a public key in {nats.NKEY_VARIABLE} and the {nats.secret_name(app)} Secret reference')
         wanted = nats.manifests(app, env, publishes, subscribes)
         def shape(doc):
             return doc['kind'], doc['metadata']['name'], doc['spec']
@@ -383,9 +383,9 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
 
 VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT,
           # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
-          ENV_ENV, CALLERS_ENV, TOKENS_VOLUME,
+          ENVIRONMENT_VARIABLE, CALLERS_VARIABLE, TOKENS_VOLUME,
           # Events too: each environment has its own declaration, key and Secret (make app-events).
-          nats.PUBLISH_ENV, nats.SUBSCRIBE_ENV, nats.URL_ENV, nats.NKEY_ENV, 'secret.reloader.stakater.com/reload'}
+          nats.PUBLISH_VARIABLE, nats.SUBSCRIBE_VARIABLE, nats.URL_VARIABLE, nats.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload'}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.
@@ -477,8 +477,8 @@ def calls(instances: list[Path]) -> dict[Path, list[str]]:
             if target is None or helmrelease.port(target) is None:
                 found.append(f'calls {callee}, which is not a web app with a {env} instance')
                 continue
-            if helmrelease.variables(release)[service_env(callee)] != service_url(callee, helmrelease.port(target)):
-                found.append(f"{service_env(callee)} is not {callee}'s address {service_url(callee, helmrelease.port(target))}")
+            if helmrelease.variables(release)[callee_variable(callee)] != callee_address(callee, helmrelease.port(target)):
+                found.append(f"{callee_variable(callee)} is not {callee}'s address {callee_address(callee, helmrelease.port(target))}")
             if app not in allowed_callers(helmrelease.variables(target)):
                 found.append(f'calls {callee}, which does not allow it')
         for caller in allowed_callers(helmrelease.variables(release)):

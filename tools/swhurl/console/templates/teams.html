@@ -5,7 +5,7 @@
 {% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs[0] }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
 {% block main %}
 <h1>Teams</h1>
-<p class="lead">A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.</p>
+{% call st.about() %}A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.{% endcall %}
 {% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
 {% if registry_error %}<p class="warn">{{ registry_error }} The teams below are the ones apps name now; descriptions and teams without apps are missing, and no app can be called unregistered.</p>{% endif %}
 

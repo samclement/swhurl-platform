@@ -264,6 +264,12 @@ class PolishTests(unittest.TestCase):
 
 
 class AssetTests(unittest.TestCase):
+    def test_a_list_page_starts_under_its_title_with_its_explanation_one_click_away(self):
+        for path in ('/', '/apps', '/platform', '/activity'):
+            text = client(fake(**CHECKS)).get(path, headers=WHO).text
+            self.assertEqual(text.count('<details class="about" id="about"><summary>'), 1, path)
+            self.assertLess(text.index('<p class="page-meta">'), text.index('<h1>'), 'the read time sits beside the title')
+
     def test_the_stylesheet_fonts_and_scripts_are_served_from_the_image(self):
         c = client(fake())
         for path, kind in (('/static/console.css', 'text/css'), ('/static/console.js', 'javascript'), ('/static/htmx.min.js', 'javascript'),

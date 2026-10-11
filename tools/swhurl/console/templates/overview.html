@@ -3,7 +3,7 @@
 {% block title %}Overview{% endblock %}
 {% block main %}
 <h1>Overview</h1>
-<p class="lead">Start here: whether anything needs you, what is waiting for your review, and what happened recently.</p>
+{% call st.about() %}Start here: whether anything needs you, what is waiting for your review, and what happened recently.{% endcall %}
 <p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
 {% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>
 {% else %}{{ st.mark('healthy') }} <strong>Everything is healthy</strong>{% endif %}</p>

@@ -61,14 +61,6 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-13
-              SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited
-              SWHURL_EVENTS_NKEY: UB3QFGGBJ7M35TWJBTRS5RTXJMWJ67CVSMD5B4MAZBTI6RBDQBA4T73Z
-              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
-            envFrom:
-            - secretRef:
-                name: swhurl-try-13-events
-        annotations:
-          secret.reloader.stakater.com/reload: swhurl-try-13-events
     persistence:
       tmp:
         type: emptyDir

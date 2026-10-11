@@ -8,5 +8,9 @@ metadata:
 data:
   routes.json: |
     {
-      "teams": {}
+      "teams": {
+        "payments": [
+          "payments-try"
+        ]
+      }
     }

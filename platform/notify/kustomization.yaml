@@ -6,3 +6,4 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - routes.yaml
+  - channel-payments-try.sops.yaml

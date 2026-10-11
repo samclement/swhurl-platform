@@ -392,6 +392,35 @@ def calls_args(form: Mapping[str, str]) -> list[str]:
     return argv
 
 
+TEAM_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
+
+
+def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str]:
+    """``(command, argv, PR title, the make line)`` for the Teams page's add, edit or remove.
+
+    Only shapes are checked here (a name is a name, a description one short line); whether the team
+    exists, still owns apps or is the default is the command's own rule, run in a clone of main."""
+    name = form.get('name', '').strip()
+    description = ' '.join(form.get('description', '').split())
+    rename, move = form.get('rename', '').strip(), form.get('move_apps_to', '').strip()
+    for label, value in (('team name', name), ('new name', rename), ('team to move apps to', move)):
+        if (value or label == 'team name') and not TEAM_NAME.fullmatch(value):
+            raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
+    if len(description) > 200:
+        raise ActionError('a description is one line of at most 200 characters')
+    if action == 'add':
+        return ('team-add', [name, f'--description={description}'], f'teams: add {name}',
+                f"make team-add NAME={name} DESCRIPTION='{description}'")
+    if action == 'edit':
+        argv = [name, f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
+        return 'team-edit', argv, f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(argv[1:])}"'
+    if action == 'remove':
+        argv = [name] + ([f'--move-apps-to={move}'] if move else [])
+        return 'team-remove', argv, f'teams: remove {name}', f'make team-remove NAME={name}' + (
+            f' ARGS="--move-apps-to {move}"' if move else '')
+    raise ActionError('no such team change')
+
+
 def events_args(form: Mapping[str, str]) -> list[str]:
     """``--publish=`` and ``--subscribe=`` for app-events. Both are always sent: the form shows the
     current lists, and what it sends replaces them (an empty field clears that list)."""

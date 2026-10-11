@@ -186,6 +186,8 @@ def target(name: str) -> tuple[str, str]:
     """How every page names a job's or problem's subject: ``(label, link)``. An app instance is always
     ``<app>/<env>`` and links to its app page, whether given as its unit (``app-<app>-<env>``) or as
     ``<app>/<env>``; anything else is a Flux unit, by name."""
+    if name.startswith('team:'):  # a change made on the Teams page
+        return f'team {name[5:]}', f'/teams#{name[5:]}'
     found = instance_of_unit(name)
     app, _, env = name.partition('/')
     found = found or (instance(app, env) if env else None)

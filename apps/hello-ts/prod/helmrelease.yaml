@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/hello-ts
-              tag: 31-5c2abb6
-              digest: sha256:8c1c4bbf9242b446ce104e728560ea4792ed5740ce9f5d44a4f23a256ce59c6c
+              tag: 36-6ec5f63
+              digest: sha256:4370e215b12120e8e72dd9edd0e3e92f231d5160ea08cb28b2febc6ab8fa8980
             resources:
               requests:
                 cpu: 10m

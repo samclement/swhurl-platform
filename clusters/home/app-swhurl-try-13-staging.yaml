@@ -7,7 +7,6 @@ spec:
   dependsOn:
   - name: infra-base
   - name: platform-image-automation
-  - name: platform-nats
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -16,7 +15,3 @@ spec:
   prune: true
   wait: true
   timeout: 3m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age

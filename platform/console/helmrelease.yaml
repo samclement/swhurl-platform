@@ -131,7 +131,7 @@ spec:
               CONSOLE_URL: https://console.${BASE_DOMAIN}
               # Messages about apps also go to the notify service, which sends them to the app's
               # team; the token below says who is sending (docs/services.md#notify-service).
-              SWHURL_SERVICE_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
             envFrom:
               - secretRef:
                   name: notification-ntfy

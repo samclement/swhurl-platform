@@ -54,6 +54,7 @@ spec:
             env:
               SWHURL_APP: swhurl-try-13
               SWHURL_ENV: staging
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               HOST_IP:
                 valueFrom:
                   fieldRef:
@@ -74,3 +75,13 @@ spec:
         type: emptyDir
         globalMounts:
         - path: /tmp
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true

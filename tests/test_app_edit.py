@@ -267,7 +267,8 @@ class EditTests(unittest.TestCase):
         self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'))
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders'))
         release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
-        self.assertNotIn('tokens', release['spec']['values']['persistence'])
+        self.assertEqual([source['serviceAccountToken']['audience'] for source in release['spec']['values']['persistence']['tokens']['sources']],
+                         ['notify'], 'only the token every instance carries for the notify service is left')
         admitted = yaml.safe_load((self.root / 'apps/orders/staging/networkpolicy.yaml').read_text())['spec']['ingress']
         self.assertEqual(admitted[0]['from'], [contract.TRAEFIK])
 

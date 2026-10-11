@@ -5,10 +5,11 @@
      "click": "https://...", "key": "an id that makes a retry harmless"}
 
 The caller is whoever Kubernetes says the token belongs to (a TokenReview for this audience only);
-nothing in the body is trusted for identity. Only the senders in ``PLATFORM_SENDERS`` are accepted,
-and they say which app a message is about. An accepted message becomes one outbox entry per channel
-of that app's team and is answered 202; entries are checkpointed in a ConfigMap before any is sent
-and delivered at least once (docs/services.md#notify-service).
+nothing in the body is trusted for identity. An app sends as itself: ``app`` and ``env`` come from
+its token, its title is prefixed with them, and it is limited to ``RATE`` messages an hour. The
+senders in ``PLATFORM_SENDERS`` say which app a message is about. An accepted message becomes one
+outbox entry per channel of that app's team and is answered 202; entries are checkpointed in a
+ConfigMap before any is sent and delivered at least once (docs/services.md#notify-service).
 
 It reads the routes, the app's namespace label and the channel addresses when a message arrives and
 when it is sent: nothing is cached, so a new channel works as soon as Flux has applied it.
@@ -20,8 +21,11 @@ import base64
 import json
 import logging
 import logging.config
+import re
 import threading
 import time
+import uuid
+from collections import deque
 
 import uvicorn
 from starlette.applications import Starlette
@@ -43,7 +47,10 @@ AUDIENCE = 'notify'
 REVIEW = ['kubectl', 'create', '--validate=false', '-f', '-', '-o', 'json']
 OUTBOX_NAME = 'notify-outbox'
 PLATFORM_SENDERS = {'system:serviceaccount:console:notification-check'}
-"""Who may send, and name the app a message is about: the notification checker."""
+"""Who may name the app a message is about: the notification checker."""
+APP_SENDER = re.compile(r'^system:serviceaccount:(?P<namespace>[a-z0-9-]+):(?P<app>[a-z0-9-]+)$')
+"""An app's own service account, ``<app>`` in ``<app>-<env>``: it sends about itself only."""
+RATE = (30, 3600)  # messages an app instance may send, per this many seconds
 MAX_BODY, MAX_TITLE, MAX_MESSAGE, MAX_KEY = 16_384, 250, 3_500, 300
 MAX_PENDING = 500
 MAX_OUTBOX_BYTES = 700_000
@@ -77,8 +84,39 @@ def caller(runner: Runner, token: str) -> str:
     return str((status.get('user') or {}).get('username', ''))
 
 
-def message(body: bytes) -> dict:
-    """The validated request: app, env and an outbox notice without a channel yet."""
+def sender(who: str) -> tuple[str, str] | None:
+    """``(app, env)`` when ``who`` is an app's own service account, None for a platform sender; 403 for anyone else."""
+    if who in PLATFORM_SENDERS:
+        return None
+    found = APP_SENDER.match(who)
+    for env in ('staging', 'prod'):
+        if found and found['namespace'] == f"{found['app']}-{env}":
+            return found['app'], env
+    log.warning('Refused a message from %s', who)
+    raise Refused(403, 'this caller may not send notifications')
+
+
+class RateLimit:
+    """At most RATE[0] accepted messages per app instance in any RATE[1] seconds (kept in memory: a
+    restart forgets, which only ever allows more)."""
+
+    def __init__(self, clock=time.time):
+        self.clock, self.sent, self.lock = clock, {}, threading.Lock()
+
+    def take(self, app: str, env: str) -> None:
+        now = self.clock()
+        with self.lock:
+            times = self.sent.setdefault((app, env), deque())
+            while times and times[0] <= now - RATE[1]:
+                times.popleft()
+            if len(times) >= RATE[0]:
+                raise Refused(429, f'{app}/{env} has sent {RATE[0]} messages in the last hour; try again later')
+            times.append(now)
+
+
+def message(body: bytes, app_sender: tuple[str, str] | None = None) -> dict:
+    """The validated request: app, env and an outbox notice without a channel yet. An app's message is
+    about itself (``app_sender``, from its token) and needs no key."""
     try:
         doc = json.loads(body)
         if not isinstance(doc, dict):
@@ -91,6 +129,12 @@ def message(body: bytes) -> dict:
     text = {field: doc.get(field, '') for field in ('app', 'env', 'title', 'message', 'click', 'key')}
     if not all(isinstance(value, str) for value in text.values()):
         raise Refused(400, 'app, env, title, message, click and key are strings')
+    if app_sender:
+        if (text['app'] or app_sender[0], text['env'] or app_sender[1]) != app_sender:
+            raise Refused(403, 'an app sends about itself only')
+        text['app'], text['env'] = app_sender
+        text['key'] = f"app:{text['app']}:{text['env']}:{text['key'] or uuid.uuid4().hex}"
+        text['title'] = f"{text['app']}/{text['env']}: {text['title'].strip()}" if text['title'].strip() else ''
     if not NAME.match(text['app']) or text['env'] not in ('staging', 'prod'):
         raise Refused(400, 'app must be an app name and env staging or prod')
     if not text['title'].strip() or len(text['title']) > MAX_TITLE or len(text['message']) > MAX_MESSAGE:
@@ -226,7 +270,9 @@ class Outbox:
                           if isinstance(error, NotificationError) else type(error).__name__)
 
 
-def create_app(runner: Runner, outbox: Outbox) -> Starlette:
+def create_app(runner: Runner, outbox: Outbox, limit: RateLimit | None = None) -> Starlette:
+    limit = limit or RateLimit()
+
     def refuse(error: Refused) -> Response:
         return JSONResponse({'error': error.reason}, status_code=error.status)
 
@@ -235,10 +281,10 @@ def create_app(runner: Runner, outbox: Outbox) -> Starlette:
         if scheme.lower() != 'bearer' or not token.strip():
             raise Refused(401, f'a service-account token for the audience {AUDIENCE} is required')
         who = caller(runner, token.strip())
-        if who not in PLATFORM_SENDERS:
-            log.warning('Refused a message from %s', who)
-            raise Refused(403, 'this caller may not send notifications')
-        wanted = message(body)
+        app_sender = sender(who)
+        wanted = message(body, app_sender)
+        if app_sender:
+            limit.take(*app_sender)
         queued = outbox.accept(wanted, team_channels(runner, wanted['app'], wanted['env']))
         log.info('Accepted "%s" about %s/%s from %s for %d channel(s)', wanted['notice']['title'], wanted['app'],
                  wanted['env'], who.rsplit(':', 1)[-1], len(queued))

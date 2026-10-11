@@ -365,7 +365,7 @@ class CopyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             token = Path(tmp) / 'token'
             token.write_text('private-token\n')
-            env = {'SWHURL_SERVICE_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080/', 'SWHURL_NOTIFY_TOKEN_FILE': str(token)}
+            env = {'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080/', 'SWHURL_NOTIFY_TOKEN_FILE': str(token)}
             with mock.patch.dict('os.environ', env), mock.patch.object(delivery.httpx, 'post', post):
                 delivery.forward(notice)
                 url, sent = requests[0]
@@ -386,7 +386,7 @@ class CopyTests(unittest.TestCase):
             with mock.patch.dict('os.environ', env | {'SWHURL_NOTIFY_TOKEN_FILE': str(token) + '.missing'}), \
                     self.assertRaisesRegex(n.NotificationError, 'no token file'):
                 delivery.forward(notice)
-        with mock.patch.dict('os.environ', {'SWHURL_SERVICE_NOTIFY_URL': ''}), self.assertRaisesRegex(n.NotificationError, 'is not set'):
+        with mock.patch.dict('os.environ', {'SWHURL_NOTIFY_URL': ''}), self.assertRaisesRegex(n.NotificationError, 'is not set'):
             delivery.forward(notice)
 
 

@@ -82,7 +82,8 @@ class GeneratorTests(unittest.TestCase):
         main = values['controllers']['main']
         self.assertEqual((main['replicas'], main['strategy']), (1, 'Recreate'))
         self.assertEqual(main['containers']['main']['env'],
-                         {'SWHURL_APP': 'notes', 'SWHURL_ENV': 'staging', 'DATABASE_PATH': '/data/app.db'})
+                         {'SWHURL_APP': 'notes', 'SWHURL_ENV': 'staging', 'DATABASE_PATH': '/data/app.db',
+                          'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'})
         data = values['persistence']['data']
         self.assertEqual((data['size'], data['storageClass'], data['globalMounts']), ('1Gi', 'local-path-retain', [{'path': '/data'}]))
         namespace = yaml.safe_load((self.tmp / 'apps/notes/staging/namespace.yaml').read_text())
@@ -139,12 +140,13 @@ class GeneratorTests(unittest.TestCase):
         def env(app):
             release = yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())
             return release['spec']['values']['controllers']['main']['containers']['main']['env']
-        self.assertEqual(list(env('web'))[:4], ['SWHURL_APP', 'SWHURL_ENV', 'SWHURL_AUTH_ISSUER', 'SWHURL_AUTH_KEYS'],
+        self.assertEqual(list(env('web'))[:5], ['SWHURL_APP', 'SWHURL_ENV', 'SWHURL_NOTIFY_URL', 'SWHURL_AUTH_ISSUER', 'SWHURL_AUTH_KEYS'],
                          'first, so $(SWHURL_ENV) expands in what follows')
         self.assertEqual((env('web')['SWHURL_APP'], env('web')['SWHURL_ENV'], env('web')['SWHURL_AUTH_KEYS']),
                          ('web', 'staging', '{"keys":[{"kid":"k1"}]}'))
         self.assertEqual(env('web')['SWHURL_API_PATH'], '/openapi.json')
-        self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging'}, 'a worker receives no calls')
+        self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging', 'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'},
+                         'a worker receives no calls')
 
     def test_calls_at_creation_reach_both_sides_or_nothing_is_left(self):
         (self.tmp / 'platform/reloader').mkdir(parents=True)

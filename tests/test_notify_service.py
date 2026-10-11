@@ -12,7 +12,8 @@ from swhurl.run import FakeRunner, Result
 NOW = 1_800_000_000.0
 CHECKER = 'system:serviceaccount:console:notification-check'
 TOKENS = {'checker-token': CHECKER, 'app-token': 'system:serviceaccount:orders-staging:orders',
-          'operator-token': 'kubernetes-admin'}
+          'other-app-token': 'system:serviceaccount:billing-prod:billing', 'operator-token': 'kubernetes-admin',
+          'console-token': 'system:serviceaccount:console:console', 'stranger-token': 'system:serviceaccount:orders-staging:default'}
 BODY = {'app': 'orders', 'env': 'staging', 'key': 'event:1@notify', 'title': 'orders/staging deployed',
         'message': 'Flux UpgradeSucceeded', 'priority': 'normal', 'click': 'https://console.example.test/apps/orders/staging'}
 ADDRESS = 'https://ntfy.sh/private-topic'
@@ -80,15 +81,57 @@ class CallerTests(unittest.TestCase):
         self.assertNotIn('token', ' '.join(' '.join(call) for call in runner.calls) + ' '.join(runner.echoed),
                          'the token goes to kubectl on standard input, never as an argument')
 
-    def test_an_app_or_a_person_may_not_send_and_nothing_in_the_body_changes_that(self):
+    def test_a_person_or_a_service_account_that_is_not_an_apps_may_not_send(self):
         runner, saved = cluster()
         client, _, _ = service_under_test(runner)
-        for token in ('app-token', 'operator-token'):
+        for token in ('operator-token', 'console-token', 'stranger-token'):
             with self.subTest(token=token), self.assertLogs('swhurl.notifications.service', 'WARNING') as logs:
                 response = post(client, token=token)
                 self.assertEqual((response.status_code, response.json()), (403, {'error': 'this caller may not send notifications'}))
                 self.assertIn(TOKENS[token], logs.output[0])
         self.assertEqual(saved, [])
+
+    def test_an_app_sends_as_itself_with_its_name_on_the_title_and_needs_no_key(self):
+        runner, saved = cluster()
+        client, _, _ = service_under_test(runner)
+        with self.assertLogs('swhurl.notifications.service', 'INFO') as logs:
+            response = post(client, {'title': ' Order backlog ', 'message': '412 waiting', 'priority': 'high'}, token='app-token')
+        self.assertEqual((response.status_code, response.json()), (202, {'channels': ['payments-phone', 'payments-desk']}))
+        entry = saved[-1]['pending'][0]
+        self.assertEqual((entry['title'], entry['message'], entry['priority'], entry['app'], entry['env']),
+                         ('orders/staging: Order backlog', '412 waiting', 4, 'orders', 'staging'))
+        self.assertRegex(entry['key'], r'^app:orders:staging:[0-9a-f]{32}@payments-phone$')
+        self.assertIn('about orders/staging from orders for 2 channel(s)', logs.output[0])
+        self.assertEqual(post(client, {'title': 'again', 'key': 'backlog-1'}, token='app-token').json()['channels'],
+                         ['payments-phone', 'payments-desk'])
+        self.assertEqual(post(client, {'title': 'again', 'key': 'backlog-1'}, token='app-token').json(), {'channels': []},
+                         'its own key makes a retry harmless')
+        self.assertEqual(post(client, {'title': 'x', 'app': 'orders', 'env': 'staging'}, token='app-token').status_code, 202)
+
+    def test_an_app_cannot_send_about_another_app_or_environment(self):
+        runner, saved = cluster()
+        client, _, _ = service_under_test(runner)
+        for body in ({'title': 'x', 'app': 'billing'}, {'title': 'x', 'env': 'prod'}, BODY | {'app': 'billing'}):
+            with self.subTest(body=body):
+                response = post(client, body, token='app-token')
+                self.assertEqual((response.status_code, response.json()), (403, {'error': 'an app sends about itself only'}))
+        self.assertEqual(post(client, {'message': 'no title'}, token='app-token').status_code, 400)
+        self.assertEqual(saved, [])
+
+    def test_an_app_is_limited_to_a_number_of_messages_an_hour_and_the_checker_is_not(self):
+        runner, _ = cluster(teams={})
+        now = [NOW]
+        outbox = service.Outbox(runner, sender=lambda *_: None, clock=lambda: now[0])
+        client = TestClient(service.create_app(runner, outbox, service.RateLimit(clock=lambda: now[0])))
+        for _ in range(service.RATE[0]):
+            self.assertEqual(post(client, {'title': 'x'}, token='app-token').status_code, 202)
+        response = post(client, {'title': 'x'}, token='app-token')
+        self.assertEqual((response.status_code, response.json()),
+                         (429, {'error': 'orders/staging has sent 30 messages in the last hour; try again later'}))
+        self.assertEqual(post(client, {'title': 'x'}, token='other-app-token').status_code, 202, 'each app has its own count')
+        self.assertEqual(post(client).status_code, 202, 'the checker is not an app')
+        now[0] += service.RATE[1] + 1
+        self.assertEqual(post(client, {'title': 'x'}, token='app-token').status_code, 202)
 
     def test_a_token_that_cannot_be_checked_is_not_trusted(self):
         runner, _ = cluster(fails=[('kubectl', 'create')])

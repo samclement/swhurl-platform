@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from swhurl.apps.calling import NOTIFY_VARIABLE
 from swhurl.apps.channels import address_problem
 from swhurl.run import Runner
 
@@ -16,7 +17,7 @@ from .errors import NotificationError
 from .evaluate import HISTORY
 from .state import save_state
 
-SERVICE_URL = 'SWHURL_SERVICE_NOTIFY_URL'
+SERVICE_URL = NOTIFY_VARIABLE  # the same variable every app instance gets
 TOKEN_FILE = '/var/run/swhurl/tokens/notify/token'
 CHANNEL_RETRY = 7200  # seconds a copy that cannot be sent stays in the outbox
 

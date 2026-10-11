@@ -36,8 +36,11 @@ from swhurl import ROOT
 from swhurl.apps import policy
 from swhurl.apps.calling import (
     API_VARIABLE,
+    NOTIFY,
+    TOKENS_VOLUME,
     identity_variables,
     signing_keys,
+    tokens_volume,
 )
 from swhurl.apps.contract import (
     APP,
@@ -116,6 +119,8 @@ def resolve(args) -> None:
 def validate(args, root: Path = ROOT) -> None:
     if not NAME_RE.match(args.name):
         raise GenerationError('NAME must be a DNS label (lowercase, digits, hyphens, max 40 chars)')
+    if args.name == NOTIFY:
+        raise GenerationError(f'{NOTIFY} is the platform\'s notify service: every app carries a token for that name; choose another')
     if args.team not in teams(root):
         raise GenerationError(f'unknown team {args.team!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
     if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
@@ -250,6 +255,7 @@ def build_values(args) -> dict:
             'retain': True,
             'globalMounts': [{'path': args.mount_path}],
         }
+    values['persistence'][TOKENS_VOLUME] = tokens_volume([])  # for the notify service; declared calls add theirs
     if args.kind == 'web':
         values['service'] = {'main': {'controller': 'main', 'ports': {'http': {'port': args.port}}}}
     if args.exposure in ('authenticated-web', 'public'):

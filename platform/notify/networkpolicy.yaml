@@ -1,5 +1,6 @@
-# Only the notification checker may connect; anything else is refused before it reaches the service,
-# which then checks the caller's token as well. Health probes come from the node and are not affected.
+# Only the notification checker and app instances may connect; anything else is refused before it
+# reaches the service, which then checks the caller's token as well. Health probes come from the node
+# and are not affected.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,5 +20,10 @@ spec:
             matchLabels:
               app.kubernetes.io/instance: console
               app.kubernetes.io/controller: notifications
+        # Every app instance: its namespace carries the app label (apps/<app>/<env>/namespace.yaml).
+        - namespaceSelector:
+            matchExpressions:
+              - key: platform.swhurl.com/app
+                operator: Exists
       ports:
         - port: 8080

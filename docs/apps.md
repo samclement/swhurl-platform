@@ -285,6 +285,34 @@ An event is named `<app>.<event>`: only its app may publish it. Each list on `ma
 
 **Rules.** A subscription must name an event that an app of the same environment publishes; removing that event or its app is refused while someone subscribes. Staging and production are separate: an app's production instance has its own key, declared with `make app-events ENV=prod` after promotion, and cannot read staging's events. A stream keeps seven days or 64Mi, whichever comes first, and is not backed up: keep anything you must not lose in the app's own database. `make check-apps` fails when the files disagree with the declaration (rules `events`, `event-users`); `make app-sync` rewrites them.
 
+## Notifications
+
+An app can send a message to its team's [notification channel](services.md#notification-channels) with one call. Nothing is declared: every instance is given the notify service's address (`SWHURL_NOTIFY_URL`) and a token file for it (`/var/run/swhurl/tokens/notify/token`, valid ten minutes, replaced by the kubelet, accepted by nothing else), and the stack templates ship the helper:
+
+```ts
+await notify("Order backlog", { message: "412 orders waiting", priority: "high" });   // TypeScript
+```
+
+```kotlin
+platform.notify("Order backlog", message = "412 orders waiting", priority = "high")    // Kotlin
+```
+
+```mermaid
+flowchart LR
+  app["orders (staging)<br/>notify('Order backlog')"] -- "its own token" --> notify[Notify service]
+  notify -- "team payments" --> channel[the team's channel]
+```
+
+| What | Rule |
+| --- | --- |
+| Where it goes | The channel of the team that owns the app. A team without a channel: the call succeeds and nothing is delivered |
+| Who it is from | The app and environment of the token, never the request: the message arrives titled `orders/staging: Order backlog`, and an app cannot send as another |
+| How many | 30 accepted messages an hour per instance; the next gets HTTP 429 |
+| Failure | The helper returns false (and logs why) instead of throwing: a notification must not break the request that sent it. Outside the platform, where the address is not set, it does nothing |
+| Not for | The operator's platform topic, which gets the [deployment and health messages](services.md#notification-expectations) by itself, or an app's own end users |
+
+The [request contract](services.md#notify-service) is the same one the platform's own messages use. The address and the token are the platform's: `make app-sync` rewrites them and `make check-apps` fails when they are missing (rules `identity`, `call-tokens`). `notify` cannot be an app's name.
+
 ## Secrets
 
 `--secret-keys API_TOKEN,DB_URL` (the console's **Secret environment variables**) writes `apps/<app>/<env>/secret.sops.yaml`: a Secret with those keys set to `REPLACE_ME`, SOPS-encrypted before the command returns (if it cannot be encrypted, it is removed, so plaintext never reaches Git). The app receives each key as an environment variable (`envFrom`), the unit decrypts it with `flux-system/sops-age`, and the namespace is added to Reloader so a changed value restarts the app.

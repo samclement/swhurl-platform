@@ -22,6 +22,11 @@ KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
 CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
 API_VARIABLE = 'SWHURL_API_PATH'
 """Where a web app serves its API description, if it says so (provides.api): shown on the console's Services page."""
+NOTIFY = 'notify'
+"""The notify service (docs/services.md#notify-service): every instance gets its address and a token
+for this audience, so its code can send a message to its team's channel. No app may have this name."""
+NOTIFY_VARIABLE = 'SWHURL_NOTIFY_URL'
+NOTIFY_URL = f'http://{NOTIFY}.{NOTIFY}.svc.cluster.local:8080'
 TOKENS_MOUNT = '/var/run/swhurl/tokens'  # the stack templates' helpers read <this>/<callee>/token
 TOKENS_VOLUME = 'tokens'
 TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
@@ -62,15 +67,21 @@ def signing_keys(root: Path = ROOT) -> str:
 
 
 def identity_variables(app: str, env: str, web: bool, keys: str) -> dict:
-    """What every instance is told about itself, and what a web app needs to check a caller's token."""
-    identity = {APP_VARIABLE: app, ENVIRONMENT_VARIABLE: env}
+    """What every instance is told about itself and where the notify service is, and what a web app
+    needs to check a caller's token."""
+    identity = {APP_VARIABLE: app, ENVIRONMENT_VARIABLE: env, NOTIFY_VARIABLE: NOTIFY_URL}
     return identity | ({ISSUER_VARIABLE: ISSUER, KEYS_VARIABLE: keys} if web else {})
 
 
+def token_audiences(callees: list[str]) -> list[str]:
+    """Whom an instance carries a token for: each app it calls, and the notify service."""
+    return [*callees, NOTIFY]
+
+
 def tokens_volume(callees: list[str]) -> dict:
-    """One token file per callee at TOKENS_MOUNT/<callee>/token, each valid for that callee only: a
+    """One token file per audience at TOKENS_MOUNT/<audience>/token, each valid for that one only: a
     token with an audience is refused by the Kubernetes API itself."""
     return {'type': 'projected',
-            'sources': [{'serviceAccountToken': {'audience': callee, 'expirationSeconds': TOKEN_SECONDS,
-                                                 'path': f'{callee}/token'}} for callee in callees],
+            'sources': [{'serviceAccountToken': {'audience': audience, 'expirationSeconds': TOKEN_SECONDS,
+                                                 'path': f'{audience}/token'}} for audience in token_audiences(callees)],
             'globalMounts': [{'path': TOKENS_MOUNT, 'readOnly': True}]}

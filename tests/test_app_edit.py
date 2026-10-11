@@ -1,6 +1,7 @@
 """app-promote, app-scale, app-remove: Git edits of generated instances, offline on a copy of the sample instance."""
 import difflib
 import io
+import json
 import shutil
 import tempfile
 import unittest
@@ -225,6 +226,94 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, "unknown team 'nobody'"):
             edit.team(self.root, 'hello', 'nobody')
         self.assertEqual((self.root / 'apps/hello/staging/namespace.yaml').read_text(), before)
+
+    def env(self, app, env='staging'):
+        release = yaml.safe_load((self.root / 'apps' / app / env / 'helmrelease.yaml').read_text())
+        return release['spec']['values']['controllers']['main']['containers']['main']['env']
+
+    def second_app(self, name='orders', port=9000):
+        """Another web app beside hello, in both environments, made from hello's files."""
+        for env in ('staging', 'prod'):
+            shutil.copytree(self.root / 'apps/hello' / env, self.root / 'apps' / name / env)
+            for path in (self.root / 'apps' / name / env).glob('*.yaml'):
+                path.write_text(path.read_text().replace('hello', name).replace('port: 8080', f'port: {port}'))
+        self.quiet(edit.sync, self.root)
+
+    def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
+        self.second_app()
+        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        self.assertEqual(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'],
+                         'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
+        release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
+        self.assertEqual(release['spec']['values']['persistence']['tokens'], contract.tokens_volume(['orders']))
+        self.assertEqual(self.env('orders')['SWHURL_ALLOWED_CALLERS'], 'hello')
+        admitted = yaml.safe_load((self.root / 'apps/orders/staging/networkpolicy.yaml').read_text())['spec']['ingress']
+        self.assertEqual(admitted, [{'from': [contract.TRAEFIK, {
+            'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'hello-staging'}},
+            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': 'hello'}}}],
+            'ports': [{'port': 9000, 'protocol': 'TCP'}]}])
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders', 'prod'), 'production is its own decision')
+        instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
+        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging'])
+                         + policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [],
+                         'calls may differ between environments')
+        self.assertEqual(policy.evaluate(self.root / 'apps/hello/staging') + policy.evaluate(self.root / 'apps/orders/staging'), [])
+
+        with self.assertRaisesRegex(edit.EditError, 'is called by hello: remove those calls first'):
+            edit.remove(self.root, 'orders', 'staging')
+        self.quiet(edit.calls, self.root, 'hello', 'staging', remove=['orders'])
+        self.assertNotIn('SWHURL_SERVICE_ORDERS_URL', self.env('hello'))
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders'))
+        release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
+        self.assertNotIn('tokens', release['spec']['values']['persistence'])
+        admitted = yaml.safe_load((self.root / 'apps/orders/staging/networkpolicy.yaml').read_text())['spec']['ingress']
+        self.assertEqual(admitted[0]['from'], [contract.TRAEFIK])
+
+    def test_calls_refusals_change_nothing(self):
+        self.second_app()
+        before = self.staging.read_text()
+        cases = (({'add': ['hello']}, 'does not declare calls to itself'), ({'add': ['nowhere']}, 'no instance nowhere/staging'),
+                 ({'remove': ['orders']}, 'does not call orders'), ({}, 'give --add and/or --remove'))
+        for kwargs, message in cases:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
+                edit.calls(self.root, 'hello', 'staging', **kwargs)
+        self.assertEqual(self.staging.read_text(), before)
+        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        with self.assertRaisesRegex(edit.EditError, 'already calls orders'):
+            edit.calls(self.root, 'hello', 'staging', add=['orders'])
+
+    def test_one_sided_calls_are_policy_violations(self):
+        self.second_app()
+        self.quiet(edit.calls, self.root, 'hello', 'staging', add=['orders'])
+        orders = self.root / 'apps/orders/staging/helmrelease.yaml'
+        orders.write_text(orders.read_text().replace('SWHURL_ALLOWED_CALLERS: hello', 'SWHURL_ALLOWED_CALLERS: stranger'))
+        instances = [self.root / 'apps/hello/staging', self.root / 'apps/orders/staging']
+        problems = policy.calls(instances)
+        self.assertIn('calls: calls orders, which does not allow it; make app-sync rewrites both sides',
+                      problems[instances[0]])
+        self.assertIn('calls: allows stranger, which does not declare a call to it; make app-sync rewrites both sides',
+                      problems[instances[1]])
+        self.quiet(edit.sync, self.root)
+        self.assertEqual(policy.calls(instances), {})
+
+    def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
+        from swhurl.apps import keys
+        from swhurl.run import FakeRunner
+        (self.root / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "old"}]}')
+        self.quiet(edit.sync, self.root)
+        self.assertEqual(self.env('hello')['SWHURL_AUTH_KEYS'], '{"keys":[{"kid":"old"}]}')
+        runner = FakeRunner().on(*keys.JWKS, stdout='{"keys": [{"kid": "new"}]}')
+        code, out = self.quiet(keys.main, ['--root', str(self.root)], runner)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(json.loads((self.root / 'apps/signing-keys.json').read_text()), {'keys': [{'kid': 'new'}]})
+        for env in ('staging', 'prod'):
+            self.assertEqual(self.env('hello', env)['SWHURL_AUTH_KEYS'], '{"keys":[{"kid":"new"}]}')
+        code, out = self.quiet(keys.main, ['--root', str(self.root)], runner)
+        self.assertIn('already holds', out)
+        code, out = self.quiet(keys.main, ['--root', str(self.root)], FakeRunner().on(*keys.JWKS, returncode=1, stderr='refused'))
+        self.assertEqual(code, 1)
+        self.assertIn('could not read the signing keys', out)
 
     def test_expose_refusals(self):
         cases = (('public', None, 'needs --host'), ('public', 'x.homelab.swhurl.com', 'outside'),

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import binascii
 import datetime as dt
+import json
 import os
 import sys
 import time
@@ -562,6 +563,29 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.ok(f'{complete} app namespace(s) have a registered team, the platform quota and a NetworkPolicy')
 
 
+def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """The token issuer and public signing keys apps were given are the cluster's own."""
+    report.section('Call identity')
+    try:
+        live = runner.json(['kubectl', 'get', '--raw', '/openid/v1/jwks'])
+        issuer = runner.json(['kubectl', 'get', '--raw', '/.well-known/openid-configuration']).get('issuer')
+    except (CommandError, AttributeError):
+        report.bad('could not read the cluster\'s token issuer or signing keys')
+        return
+    path = root / contract.SIGNING_KEYS_FILE
+    if not path.is_file():
+        report.bad(f'{contract.SIGNING_KEYS_FILE} is missing: make platform-signing-keys')
+    elif json.loads(path.read_text()) != live:
+        report.bad(f'{contract.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
+                   'them until you run make platform-signing-keys, commit and push')
+    else:
+        report.ok(f'{contract.SIGNING_KEYS_FILE} holds the cluster\'s {len(live.get("keys") or [])} signing key(s)')
+    if issuer == contract.ISSUER:
+        report.ok(f'token issuer is {issuer}')
+    else:
+        report.bad(f'token issuer is {issuer}, but apps are told {contract.ISSUER} (apps/contract.py ISSUER)')
+
+
 ALERTS = ('failures',)  # platform/alerts/alerts.yaml
 
 
@@ -671,6 +695,7 @@ CHECKS = (
     Check('ingress', frozenset({'cluster'}), check_ingress),
     Check('image-automation', frozenset({'cluster'}), check_image_automation),
     Check('isolation', frozenset({'cluster', 'host'}), check_isolation),  # reads apps/teams.yaml
+    Check('signing-keys', frozenset({'cluster', 'host'}), check_signing_keys),  # reads apps/signing-keys.json
     Check('alerts', frozenset({'cluster'}), check_alerts),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),

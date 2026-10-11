@@ -178,8 +178,10 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     if host and exposure != 'public':
         raise EditError('--host applies only to first promotion of a public app')
     persistence = mapping(values, 'persistence')
-    only(persistence, {'tmp', 'data'}, 'persistence')
+    only(persistence, {'tmp', 'data', contract.TOKENS_VOLUME}, 'persistence')
     for name, volume in persistence.items():
+        if name == contract.TOKENS_VOLUME:  # derived from the declared calls; the policy checks it
+            continue
         only(volume, {'type', 'globalMounts', 'storageClass', 'accessMode', 'size', 'retain'}, f'persistence.{name}')
         if name == 'tmp' and volume.get('type') != 'emptyDir':
             raise EditError('tmp must be an emptyDir')
@@ -277,6 +279,12 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
             labels = options.get('labels', {})
             if contract.ENVIRONMENT in labels:
                 labels[contract.ENVIRONMENT] = 'prod'
+        # What the platform derives per environment: production's own identity; its callers are
+        # worked out from the production instances that exist (edit.sync_env, after this).
+        env = values['controllers']['main']['containers']['main'].get('env') or {}
+        if contract.ENV_ENV in env:
+            env[contract.ENV_ENV] = 'prod'
+        env.pop(contract.CALLERS_ENV, None)
         if args.exposure != 'private':
             route = values['ingress']['main']
             route['hosts'][0]['host'] = args.host

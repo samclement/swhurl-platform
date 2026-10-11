@@ -24,6 +24,11 @@ with Helm) and checks the resulting Kubernetes objects:
                       during a rolling update) fit in it beside a backup pod and a certificate solver
   network-policy      the app's pods, and only those, carry the platform NetworkPolicy: Traefik is
                       admitted on the app port when the instance has a route, nobody otherwise
+  identity            the app is told who it is (SWHURL_APP, SWHURL_ENV, defined before anything that
+                      uses $(SWHURL_ENV)); a web app also gets the token issuer and the signing keys
+                      in apps/signing-keys.json
+  call-tokens         the only service-account tokens a pod carries are one per app it declares it
+                      calls, each for that audience alone and short-lived
 
 for an instance of this platform (under apps/; the test fixtures are exempt), from its source:
 
@@ -31,10 +36,15 @@ for an instance of this platform (under apps/; the test fixtures are exempt), fr
                       image its repository publishes, and staging deploys new images
                       automatically (image-automation.yaml and the setter markers). No exceptions
 
+across the instances of one environment (source manifests, not rendered):
+
+  calls               every declared call names a web app of the same environment at its real port,
+                      and an app allows exactly the callers that declare it (make app-sync rewrites both)
+
 and, across the environments of one app (source manifests, not rendered):
 
   env-drift           environments differ only in namespace, hosts, image tag/digest,
-                      replicas, resources, issuer and exposure (route and sign-in); encrypted
+                      replicas, resources, issuer, exposure (route and sign-in) and calls; encrypted
                       Secrets and the staging-only
                       image-automation.yaml (automatic deploys) are skipped
 
@@ -58,21 +68,32 @@ from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
+    CALLERS_ENV,
     COOKIE_DOMAIN,
+    ENV_ENV,
     ENVIRONMENT,
     EXCEPTIONS,
     EXPOSURE,
     IMAGE_AUTOMATION_FILE,
     INSTANCE_ROOTS,
+    NETWORK_POLICY_FILE,
     OTLP_HOST_IP,
     QUOTA,
     QUOTA_HEADROOM,
     STORAGE_CLASSES,
     TEAM,
+    TOKEN_SECONDS,
+    TOKENS_VOLUME,
+    allowed_callers,
+    declared_calls,
+    identity_env,
     image_policy_name,
     in_cookie_domain,
     network_policy,
     quantity,
+    service_env,
+    service_url,
+    signing_keys,
     strip_image_markers,
     teams,
 )
@@ -191,21 +212,66 @@ def isolation(docs: list[dict], labels: dict, known_teams: dict[str, str]) -> li
                                     f'(allowed {QUOTA}, less {QUOTA_HEADROOM} kept free)'))
 
     routed = labels.get(EXPOSURE) in ('authenticated-web', 'public')
-    port = ((((releases[0]['spec'].get('values') or {}).get('service') or {}).get('main') or {}).get('ports') or {}) \
-        .get('http', {}).get('port')
-    expected = network_policy(app, namespace, port if routed else None)['spec']
+    port = release_port(releases[0])
+    callers = allowed_callers(release_env(releases[0]))
+    expected = network_policy(app, namespace, port if routed else None, port, callers)['spec']
     policies = [d for d in docs if d['kind'] == 'NetworkPolicy']
     if any(not (d['spec'].get('podSelector') or {}).get('matchLabels') for d in policies):
         violations.append(('network-policy', 'a NetworkPolicy selects every pod in the namespace: that blocks '
                                              "cert-manager's HTTP-01 solver; select the app's pods"))
     elif len(policies) != 1 or policies[0]['spec'] != expected:
+        admitted = (['Traefik'] if routed else []) + callers
         violations.append(('network-policy', "the instance needs exactly one NetworkPolicy, on the app's pods, admitting "
-                           + (f'Traefik on port {port}' if routed else 'nobody')
-                           + '; make app-expose and make app-team write it'))
+                           + (f'{", ".join(admitted)} on port {port}' if admitted else 'nobody')
+                           + '; make app-sync writes it'))
     return violations
 
 
-def check(docs: list[dict], known_teams: dict[str, str] | None = None) -> list[tuple[str, str]]:
+def release_port(release: dict) -> int | None:
+    values = release['spec'].get('values') or {}
+    return ((((values.get('service') or {}).get('main') or {}).get('ports') or {}).get('http') or {}).get('port')
+
+
+def release_env(release: dict) -> dict:
+    values = release['spec'].get('values') or {}
+    env = (((((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {})
+           .get('env') or {})
+    return env if isinstance(env, dict) else {}
+
+
+def identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str, str]]:
+    """The identity and call-tokens rules for one rendered instance."""
+    violations: list[tuple[str, str]] = []
+    releases = [d for d in docs if d['kind'] == 'HelmRelease']
+    if not releases:
+        return violations
+    app, env = releases[0]['metadata']['name'], release_env(releases[0])
+    wanted = identity_env(app, labels.get(ENVIRONMENT), release_port(releases[0]) is not None, keys)
+    wrong = [key for key, value in wanted.items() if env.get(key) != value]
+    if wrong:
+        violations.append(('identity', f'{", ".join(wrong)} missing or not what the platform sets; make app-sync writes them'))
+    calls = declared_calls(env)
+    for doc in docs:
+        spec = pod_spec(doc)
+        if spec is None:
+            continue
+        where = f"{doc['kind']}/{doc['metadata']['name']}"
+        for container in spec['containers']:
+            names = [var['name'] for var in container.get('env') or []]
+            uses = [var['name'] for var in container.get('env') or [] if f'$({ENV_ENV})' in str(var.get('value', ''))]
+            late = [name for name in uses if ENV_ENV not in names or names.index(ENV_ENV) > names.index(name)]
+            if late:
+                violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENV_ENV}) before it is defined'))
+        tokens = [source['serviceAccountToken'] for volume in spec.get('volumes') or []
+                  for source in (volume.get('projected') or {}).get('sources') or [] if 'serviceAccountToken' in source]
+        expected = [{'audience': callee, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{callee}/token'} for callee in calls]
+        if tokens != expected:
+            violations.append(('call-tokens', f'{where} must carry one {TOKEN_SECONDS}-second token per declared call '
+                               f'({", ".join(calls) or "none declared"}), each for that audience only; make app-sync writes them'))
+    return violations
+
+
+def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str | None = None) -> list[tuple[str, str]]:
     """Return (rule, message) violations for one rendered instance."""
     violations: list[tuple[str, str]] = []
     namespaces = [d for d in docs if d['kind'] == 'Namespace']
@@ -215,6 +281,7 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None) -> list[t
     if not env or not exposure:
         violations.append(('exposure', 'instance Namespace needs platform.swhurl.com/environment and /exposure labels'))
     violations += isolation(docs, labels, teams() if known_teams is None else known_teams)
+    violations += identity(docs, labels, signing_keys() if keys is None else keys)
 
     for doc in docs:
         spec = pod_spec(doc)
@@ -293,7 +360,9 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None) -> list[t
     return violations
 
 
-VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT}
+VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT,
+          # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
+          ENV_ENV, CALLERS_ENV, TOKENS_VOLUME}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.
@@ -306,7 +375,8 @@ def flatten(node, path: str = '', varies: frozenset[str] = frozenset(VARIES)) ->
     if isinstance(node, dict):
         leaves = {}
         for key, value in node.items():
-            if key in varies or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
+            if key in varies or str(key).startswith('SWHURL_SERVICE_') \
+                    or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
                 continue
             leaves.update(flatten(value, f'{path}.{key}' if path else str(key), varies))
         return leaves
@@ -327,8 +397,11 @@ def exposure_of(instance: Path) -> str | None:
 def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
-        if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml'}:
-            continue  # automatic deploys and production-only promotion alerts are environment-specific
+        if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml',
+                                                             NETWORK_POLICY_FILE}:
+            # Automatic deploys and production-only promotion alerts are environment-specific; the
+            # NetworkPolicy follows from each environment's exposure and callers (rule network-policy).
+            continue
         for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)
@@ -357,6 +430,33 @@ def drift(environments: list[Path]) -> list[str]:
     return problems
 
 
+def calls(instances: list[Path]) -> dict[Path, list[str]]:
+    """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
+    releases = {instance: yaml.safe_load(strip_image_markers((instance / 'helmrelease.yaml').read_text())[0])
+                for instance in instances}
+    problems: dict[Path, list[str]] = {}
+    for instance, release in releases.items():
+        app, env = instance.parent.name, instance.name
+        peers = {other.parent.name: doc for other, doc in releases.items()
+                 if other.name == env and other.parent.parent == instance.parent.parent}
+        found = []
+        for callee in declared_calls(release_env(release)):
+            target = peers.get(callee)
+            if target is None or release_port(target) is None:
+                found.append(f'calls {callee}, which is not a web app with a {env} instance')
+                continue
+            if release_env(release)[service_env(callee)] != service_url(callee, release_port(target)):
+                found.append(f"{service_env(callee)} is not {callee}'s address {service_url(callee, release_port(target))}")
+            if app not in allowed_callers(release_env(target)):
+                found.append(f'calls {callee}, which does not allow it')
+        for caller in allowed_callers(release_env(release)):
+            if caller not in peers or app not in declared_calls(release_env(peers[caller])):
+                found.append(f'allows {caller}, which does not declare a call to it')
+        if found:
+            problems[instance] = [f'calls: {problem}; make app-sync rewrites both sides' for problem in found]
+    return problems
+
+
 def platform_image(instance: Path) -> list[str]:
     """Why ``<app>/<env>`` is not an app made from a stack template (rule platform-image)."""
     app, env = instance.parent.name, instance.name
@@ -381,16 +481,18 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     allowed, problems = exceptions(docs)
     if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
         problems += platform_image(instance)
-    known_teams = teams(instance.resolve().parents[2])  # <root>/apps/<app>/<env>
-    return problems + [f'{rule}: {message}' for rule, message in check(docs, known_teams) if rule not in allowed]
+    root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
+    return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))
+                       if rule not in allowed]
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
+    call_problems = calls(paths)
     for instance in paths:
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
-        problems = evaluate(instance, runner)
+        problems = evaluate(instance, runner) + call_problems.get(instance, [])
         if problems:
             failed += 1
             print(f'[BAD] {label}')

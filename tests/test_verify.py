@@ -74,6 +74,8 @@ def healthy(**overrides):
                              for app, env in INSTANCES]},
         'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
             'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
+        'jwks': json.loads((ROOT / contract.SIGNING_KEYS_FILE).read_text()),
+        'openid': {'issuer': contract.ISSUER},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
@@ -145,6 +147,8 @@ def healthy(**overrides):
             .on('kubectl', 'get', 'namespaces', '-l', 'platform.swhurl.com/app', handler=answer('app-namespaces'))
             .on('kubectl', 'get', 'resourcequotas', handler=answer('quotas'))
             .on('kubectl', 'get', 'networkpolicies.networking.k8s.io', handler=answer('network-policies'))
+            .on('kubectl', 'get', '--raw', '/openid/v1/jwks', handler=answer('jwks'))
+            .on('kubectl', 'get', '--raw', '/.well-known/openid-configuration', handler=answer('openid'))
             .on('curl', handler=github))
 
 
@@ -174,7 +178,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -363,6 +367,20 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] could not read app namespaces, ResourceQuotas or NetworkPolicies',
                       isolation(**{**good, 'quotas': Result((), 1, '', 'forbidden')}))
 
+    def test_signing_key_problems(self):
+        _, report, text = run(healthy())
+        self.assertIn("[OK] apps/signing-keys.json holds the cluster's 1 signing key(s)", report.lines, text)
+        self.assertIn(f'[OK] token issuer is {contract.ISSUER}', report.lines, text)
+        code, report, text = run(healthy(jwks={'keys': [{'kid': 'rotated'}]}))
+        self.assertEqual(code, 1, text)
+        self.assertTrue(any(line.startswith("[BAD] apps/signing-keys.json is not the cluster's signing key set")
+                            and 'make platform-signing-keys' in line for line in report.lines), text)
+        code, report, text = run(healthy(openid={'issuer': 'https://elsewhere'}))
+        self.assertEqual(code, 1, text)
+        self.assertTrue(any(line.startswith('[BAD] token issuer is https://elsewhere') for line in report.lines), text)
+        _, report, text = run(healthy(jwks=Result((), 1, '', 'forbidden')))
+        self.assertIn("[BAD] could not read the cluster's token issuer or signing keys", report.lines, text)
+
     def test_alert_problems(self):
         _, report, text = run(healthy(alerts={'items': []}))
         self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
@@ -428,7 +446,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

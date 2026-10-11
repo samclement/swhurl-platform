@@ -4,6 +4,8 @@
     app-scale APP ENV [--replicas N] [--cpu Q] [--memory Q] [--memory-limit Q]
     app-expose APP ENV --exposure E [--host H]     change who can reach an instance
     app-team APP --team T                          move an app (every environment) to a registered team
+    app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
+    app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
 Each edits files under the repository root and checks the result against the
@@ -22,13 +24,22 @@ from swhurl import ROOT
 from swhurl.apps import ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
+    CALLERS_ENV,
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
     TEAM,
+    TOKENS_VOLUME,
+    allowed_callers,
+    declared_calls,
     default_host,
+    identity_env,
     in_cookie_domain,
+    service_env,
+    service_url,
+    signing_keys,
     teams,
+    tokens_volume,
 )
 from swhurl.apps.new import NAME_RE, check_generated, depends_on, ingress_values, isolation_files
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
@@ -67,12 +78,9 @@ def container(release: dict) -> dict:
 
 def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_values: dict) -> list[tuple[Path, str]]:
     """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them."""
-    port = None
-    if 'service' in app_values:
-        port = mapping(mapping(mapping(mapping(app_values, 'service'), 'main'), 'ports'), 'http').get('port')
-        if not isinstance(port, int):
-            raise EditError('service.main.ports.http.port: expected a port number; edit custom services by hand')
-    files = isolation_files(app, f'{app}-{env}', exposure, port)
+    port = service_port(app_values)
+    callers = allowed_callers(mapping(container_of(app_values), 'env') if 'env' in container_of(app_values) else {})
+    files = isolation_files(app, f'{app}-{env}', exposure, port, callers)
     edits = [(instance / name, text) for name, text in files.items()]
     kustomization = YamlFile(instance / 'kustomization.yaml')
     resources = kustomization.data.get('resources')
@@ -83,6 +91,127 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, app_value
         resources.extend(missing)
         edits.append((kustomization.path, kustomization.render()))
     return edits
+
+
+def container_of(app_values: dict) -> dict:
+    return mapping(mapping(mapping(mapping(app_values, 'controllers'), 'main'), 'containers'), 'main')
+
+
+def service_port(app_values: dict) -> int | None:
+    """The app's HTTP port, or None for a worker."""
+    if 'service' not in app_values:
+        return None
+    port = mapping(mapping(mapping(mapping(app_values, 'service'), 'main'), 'ports'), 'http').get('port')
+    if not isinstance(port, int):
+        raise EditError('service.main.ports.http.port: expected a port number; edit custom services by hand')
+    return port
+
+
+def instances_in(root: Path, env: str) -> list[str]:
+    return sorted(p.parent.parent.name for p in (root / 'apps').glob(f'*/{env}/helmrelease.yaml'))
+
+
+def sync_env(root: Path, env: str) -> list[Path]:
+    """Rewrite what the platform derives in every instance of one environment; return the files changed.
+
+    Derived from each instance itself: who it is (SWHURL_APP, SWHURL_ENV), and for a web app the token
+    issuer and signing keys. Derived from what callers declare (their SWHURL_SERVICE_<APP>_URL
+    variables): the caller's token files and the address's port; the callee's allowed callers and
+    its NetworkPolicy. A declared call to an app with no instance in this environment is an error.
+    """
+    releases = {app: YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml') for app in instances_in(root, env)}
+    ports = {app: service_port(values(doc.data)) for app, doc in releases.items()}
+    calls = {app: declared_calls(container(doc.data).get('env') or {}) for app, doc in releases.items()}
+    for app, callees in calls.items():
+        for callee in callees:
+            if callee not in releases:
+                raise EditError(f'{app}/{env} calls {callee}, which has no {env} instance')
+            if ports[callee] is None:
+                raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
+    keys = signing_keys(root)
+    edits: list[tuple[Path, str]] = []
+    for app, doc in releases.items():
+        instance = doc.path.parent
+        app_values, main = values(doc.data), container(doc.data)
+        env_map = mapping(main, 'env', create=True)
+        for index, (key, value) in enumerate(identity_env(app, env, ports[app] is not None, keys).items()):
+            if key not in env_map:
+                env_map.insert(index, key, value)
+            elif env_map[key] != value:
+                env_map[key] = value
+        for callee in calls[app]:
+            if env_map[service_env(callee)] != service_url(callee, ports[callee]):
+                env_map[service_env(callee)] = service_url(callee, ports[callee])
+        callers = sorted(caller for caller, callees in calls.items() if app in callees)
+        if callers and env_map.get(CALLERS_ENV) != ','.join(callers):
+            env_map[CALLERS_ENV] = ','.join(callers)
+        elif not callers:
+            env_map.pop(CALLERS_ENV, None)
+        persistence = mapping(app_values, 'persistence', create=True)
+        if calls[app] and persistence.get(TOKENS_VOLUME) != tokens_volume(calls[app]):
+            persistence[TOKENS_VOLUME] = tokens_volume(calls[app])
+        elif not calls[app]:
+            persistence.pop(TOKENS_VOLUME, None)
+        exposure = mapping(mapping(YamlFile(instance / 'namespace.yaml').data, 'metadata'), 'labels').get(EXPOSURE)
+        edits.append((doc.path, doc.render()))
+        edits += isolation_edits(instance, app, env, exposure, app_values)
+    changed = [(path, text) for path, text in edits if not path.exists() or path.read_text() != text]
+    for path, text in changed:
+        path.write_text(text)
+    return [path for path, _ in changed]
+
+
+def sync(root: Path) -> Path | None:
+    changed = [path for env in ENVIRONMENTS for path in sync_env(root, env)]
+    for path in changed:
+        print(f'[OK] rewrote {path.relative_to(root)}')
+    if not changed:
+        print('[OK] every instance already has what the platform derives')
+    return None
+
+
+def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
+    """Change which apps ``app/env`` may call: its side here, the callees' side through sync_env."""
+    add, remove = add or [], remove or []
+    if not add and not remove:
+        raise EditError('give --add and/or --remove with app names')
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    env_map = mapping(container(document.data), 'env', create=True)
+    current = declared_calls(env_map)
+    for callee in add:
+        if callee == app:
+            raise EditError('an app does not declare calls to itself')
+        if callee in current:
+            raise EditError(f'{app}/{env} already calls {callee}')
+        port = service_port(values(YamlFile(instance_dir(root, callee, env) / 'helmrelease.yaml').data))
+        if port is None:
+            raise EditError(f'{callee} is a worker: it has no address to call')
+        env_map[service_env(callee)] = service_url(callee, port)
+    for callee in remove:
+        if callee not in current:
+            raise EditError(f'{app}/{env} does not call {callee}')
+        del env_map[service_env(callee)]
+    before = document.path.read_text()
+    document.save()
+    try:
+        sync_env(root, env)
+    except EditError:
+        document.path.write_text(before)
+        raise
+    now = declared_calls(mapping(container(YamlFile(instance / 'helmrelease.yaml').data), 'env'))
+    print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
+    return instance
+
+
+def callers_of(root: Path, app: str, env: str) -> list[str]:
+    """The other instances of ``env`` that declare a call to ``app``."""
+    found = []
+    for other in instances_in(root, env):
+        release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
+        if other != app and app in declared_calls(container(release).get('env') or {}):
+            found.append(other)
+    return found
 
 
 def team(root: Path, app: str, name: str) -> Path:
@@ -125,7 +254,12 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     if decision.outcome == 'same':
         raise EditError(f'{app}/prod already runs this digest; same image in both')
     if decision.outcome == 'create':
+        missing = [callee for callee in declared_calls(container(src).get('env') or {})
+                   if not (root / 'apps' / callee / target / 'helmrelease.yaml').is_file()]
+        if missing:
+            raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
         result = promotion.create(root, app, src, host=host, runner=runner)
+        sync_env(root, target)  # production's own callers and callees
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
         if container(src).get('envFrom'):
             print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
@@ -266,6 +400,10 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
 
 def remove(root: Path, app: str, env: str) -> None:
     instance = instance_dir(root, app, env)
+    callers = callers_of(root, app, env)
+    if callers:
+        raise EditError(f'{app}/{env} is called by {", ".join(callers)}: remove those calls first '
+                        f'(make app-calls APP=<caller> ENV={env} ARGS="--remove {app}")')
     namespace_file = instance / 'namespace.yaml'
     keeps_data = namespace_file.exists() and PRUNE_DISABLED in namespace_file.read_text()
     unit_file = root / 'clusters/home' / f'app-{app}-{env}.yaml'
@@ -283,6 +421,8 @@ def remove(root: Path, app: str, env: str) -> None:
         registry.write_text(''.join(kept))
         print(f'[OK] unregistered {unit_file.name} in clusters/home/kustomization.yaml')
     unwatch_namespace(root, f'{app}-{env}')
+    for path in sync_env(root, env):  # the apps it called no longer admit it
+        print(f'[OK] rewrote {path.relative_to(root)}')
     if keeps_data:
         print(f'[WARN] {app}-{env} has a retained volume: Flux keeps its namespace and claim after removal. '
               'Delete the data only on purpose: make destroy-data (docs/operations.md#lifecycle)')
@@ -380,6 +520,26 @@ def main_team(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: team(args.root.resolve(), args.app, args.team), True)
+
+
+def main_calls(argv: list[str] | None = None) -> int:
+    def names(text: str) -> list[str]:
+        return [name.strip() for name in text.split(',') if name.strip()]
+    p = argparse.ArgumentParser(prog='swhurl app-calls', description='Change which apps an instance may call')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--add', type=names, default=[], help='comma-separated apps to call (each needs this environment)')
+    p.add_argument('--remove', type=names, default=[], help='comma-separated apps to stop calling')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
+
+
+def main_sync(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-sync', description='Rewrite what the platform derives in every instance')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: sync(args.root.resolve()), False)
 
 
 def main_remove(argv: list[str] | None = None) -> int:

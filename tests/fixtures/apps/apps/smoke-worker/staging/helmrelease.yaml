@@ -53,6 +53,9 @@ spec:
             command:
             - sleep
             - '3600000'
+            env:
+              SWHURL_APP: smoke-worker
+              SWHURL_ENV: staging
     persistence:
       tmp:
         type: emptyDir

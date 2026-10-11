@@ -1,5 +1,6 @@
 """Promotion decisions use Git state and fail closed on incomplete or stale observations."""
 import dataclasses
+import json
 import shutil
 import tempfile
 import unittest
@@ -105,7 +106,9 @@ class FirstProductionTests(unittest.TestCase):
                 namespace = promotion.YamlFile(dst / 'namespace.yaml').data['metadata']
                 self.assertEqual(namespace['labels']['platform.swhurl.com/promotion-test'], 'true')
                 self.assertEqual(namespace['annotations']['custom'], '3')
-                self.assertEqual(production['spec']['values']['controllers']['main'], values['controllers']['main'])
+                expected = json.loads(json.dumps(values['controllers']['main']))
+                expected['containers']['main']['env']['SWHURL_ENV'] = 'prod'  # production's own identity
+                self.assertEqual(production['spec']['values']['controllers']['main'], expected)
                 if kind == 'web':
                     self.assertEqual(production['spec']['values']['ingress']['main']['hosts'][0]['host'],
                                      'example.homelab.swhurl.com')
@@ -135,6 +138,36 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(network['spec']['ingress'][0]['ports'], [{'port': 9000, 'protocol': 'TCP'}])
         self.assertEqual(yaml.safe_load((dst / 'resourcequota.yaml').read_text())['metadata']['namespace'], 'example-prod')
         self.assertEqual(policy.drift([dst, self.root / 'apps/example/staging']), [])
+
+    def test_first_promotion_of_a_caller_needs_its_callee_in_production_and_links_them_there(self):
+        from unittest import mock
+
+        import yaml
+
+        from swhurl.apps import edit, new, policy
+        from swhurl.run import FakeRunner
+        for name, extra in (('orders', []), ('reports', ['--calls', 'orders'])):
+            args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging',
+                                   '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
+            new.generate(args, self.root)
+        edit.calls(self.root, 'reports', 'staging', add=['orders'])
+
+        def env(app, environment):
+            release = yaml.safe_load((self.root / 'apps' / app / environment / 'helmrelease.yaml').read_text())
+            return release['spec']['values']['controllers']['main']['containers']['main']['env']
+        with mock.patch.object(policy, 'evaluate', return_value=[]):
+            with self.assertRaisesRegex(EditError, 'reports calls orders, which has no production instance: promote that first'):
+                edit.promote(self.root, 'reports', runner=FakeRunner())
+            self.assertFalse((self.root / 'apps/reports/prod').exists())
+            edit.promote(self.root, 'orders', runner=FakeRunner())
+            self.assertNotIn('SWHURL_ALLOWED_CALLERS', env('orders', 'prod'), 'nobody calls it in production yet')
+            edit.promote(self.root, 'reports', runner=FakeRunner())
+        self.assertEqual(env('reports', 'prod')['SWHURL_ENV'], 'prod')
+        self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
+        self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
+        instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]
+        self.assertEqual(policy.calls(instances), {})
+        self.assertEqual(policy.drift([self.root / 'apps/reports/prod', self.root / 'apps/reports/staging']), [])
 
     def test_unsupported_shape_and_policy_failure_write_nothing(self):
         from unittest import mock

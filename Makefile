@@ -80,6 +80,19 @@ app-team: ## APP= ARGS="--team T" Move an app (every environment) to a team in a
 	@[[ -n "$(APP)" && -n "$(ARGS)" ]] || { echo "Usage: make app-team APP=<app> ARGS='--team payments'" >&2; exit 2; }
 	$(SWHURL_APPS) app-team $(APP) $(ARGS)
 
+.PHONY: platform-signing-keys
+platform-signing-keys: ## Refresh apps/signing-keys.json from the cluster and rewrite the instances that carry it (Git edit)
+	$(SWHURL_APPS) platform-signing-keys
+
+.PHONY: app-calls
+app-calls: ## APP= ENV= ARGS="--add orders | --remove orders" Change which apps an instance may call; updates the callees (Git edit)
+	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-calls APP=<app> ENV=<env> ARGS='--add orders'" >&2; exit 2; }
+	$(SWHURL_APPS) app-calls $(APP) $(ENV) $(ARGS)
+
+.PHONY: app-sync
+app-sync: ## Rewrite what the platform derives in every instance: identity, signing keys, allowed callers (Git edit)
+	$(SWHURL_APPS) app-sync
+
 .PHONY: app-remove
 app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git edit; Flux uninstalls on push)
 	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }

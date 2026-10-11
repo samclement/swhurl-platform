@@ -78,7 +78,8 @@ class AlertTests(unittest.TestCase):
     HOOK = [{'id': 'w1', 'name': app_alerts.WEBHOOK}, {'id': 'w0', 'name': 'ntfy: platform'}]
 
     def alert(self, app, preset, tile, dashboard='d1', **changes):
-        return {'id': f'a-{app}-{preset}', 'name': f'swhurl:{app}:{preset}', 'source': 'tile', 'dashboardId': dashboard,
+        return {'id': f'a-{app}-{preset}', 'name': f'swhurl:{app}:{preset}', 'tags': ['swhurl-app', app], 'source': 'tile',
+                'dashboardId': dashboard,
                 'tileId': f'{dashboard}-{tile}', 'threshold': 5, 'thresholdType': 'above', 'interval': '5m',
                 'channel': {'type': 'webhook', 'webhookId': 'w1'}, 'state': 'OK', **changes}
 
@@ -91,10 +92,11 @@ class AlertTests(unittest.TestCase):
                          [('swhurl:web:error-logs', 'd1-Error logs', 5, '5m', {'type': 'webhook', 'webhookId': 'w1'}),
                           ('swhurl:web:errors', 'd1-Errors', 5, '5m', {'type': 'webhook', 'webhookId': 'w1'})])
         self.assertTrue(all(a['source'] == 'tile' and a['dashboardId'] == 'd1' and a['thresholdType'] == 'above' for a in created))
+        self.assertTrue(all(a['tags'] == ['swhurl-app', 'web'] for a in created), 'the app\'s name is a tag: filter the alerts page by it')
         self.assertIn('[OK] created swhurl:web:error-logs', out)
 
-    def test_alerts_that_match_are_left_and_the_rest_are_replaced_or_deleted(self):
-        live = [self.alert('web', 'error-logs', 'Error logs'),                       # as wanted
+    def test_alerts_that_match_are_left_and_the_rest_are_updated_in_place_or_deleted(self):
+        live = [self.alert('web', 'error-logs', 'Error logs', tags=['swhurl-app']),  # made before alerts carried their app's tag
                 self.alert('web', 'errors', 'Errors', tileId='old-tile'),            # the dashboard was rebuilt
                 self.alert('gone', 'errors', 'Errors', dashboard='d9'),              # its app is gone
                 {'id': 'mine', 'name': 'my own alert', 'threshold': 1}]              # not ours: untouched
@@ -102,8 +104,9 @@ class AlertTests(unittest.TestCase):
         code, out = run(api, [WEB])
         self.assertEqual(code, 0, out)
         self.assertEqual([call[:2] for call in api.calls if call[0] != 'GET'],
-                         [('DELETE', '/alerts/a-web-errors'), ('POST', '/alerts'), ('DELETE', '/alerts/a-gone-errors')])
-        self.assertIn('[OK] replaced swhurl:web:errors', out)
+                         [('PUT', '/alerts/a-web-error-logs'), ('PUT', '/alerts/a-web-errors'), ('DELETE', '/alerts/a-gone-errors')])
+        self.assertEqual(next(body for m, p, body in api.calls if (m, p) == ('PUT', '/alerts/a-web-error-logs'))['tags'], ['swhurl-app', 'web'])
+        self.assertIn('[OK] updated swhurl:web:errors', out)
         self.assertIn('[OK] deleted swhurl:gone:errors: its app or tile is gone', out)
         api = HyperDX([with_ids(dashboards.dashboard(WEB, 't1', 'l1'), 'd1')], webhooks=self.HOOK,
                       alerts=[self.alert('web', 'error-logs', 'Error logs'), self.alert('web', 'errors', 'Errors')])
@@ -136,8 +139,8 @@ class AlertTests(unittest.TestCase):
                       alerts=[self.alert('web', 'error-logs', 'Error logs'), self.alert('web', 'errors', 'Errors')])
         code, out = run(api, [tuned])
         self.assertEqual([call[:2] for call in api.calls if call[0] != 'GET'],
-                         [('DELETE', '/alerts/a-web-error-logs'), ('POST', '/alerts'), ('DELETE', '/alerts/a-web-errors')])
-        self.assertEqual(next(body for m, p, body in api.calls if m == 'POST')['threshold'], 20)
+                         [('PUT', '/alerts/a-web-error-logs'), ('DELETE', '/alerts/a-web-errors')])
+        self.assertEqual(next(body for m, p, body in api.calls if m == 'PUT')['threshold'], 20)
         self.assertIn('deleted swhurl:web:errors: its app or tile is gone, or the app switched it off', out)
         api = HyperDX([board], webhooks=self.HOOK, alerts=[self.alert('web', 'error-logs', 'Error logs')])
         run(api, [dashboards.App('web', 'web', ('staging', 'prod'), 'none')])

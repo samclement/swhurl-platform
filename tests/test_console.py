@@ -97,6 +97,56 @@ class IdentityTests(unittest.TestCase):
         self.assertIn('only binds to loopback', err.getvalue())
 
 
+class ServicesTests(unittest.TestCase):
+    def page(self):
+        def web(ns, name, env=None, host=None):
+            doc = release(ns, name)
+            values = doc['spec']['values']
+            values['service'] = {'main': {'ports': {'http': {'port': 9000}}}}
+            values['controllers']['main']['containers']['main']['env'] = env or {}
+            if host:
+                values['ingress'] = {'main': {'hosts': [{'host': host}]}}
+            return doc
+        releases = [
+            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_API_PATH': '/openapi.json'},
+                host='staging-orders.homelab.swhurl.com'),
+            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json'}),
+            web('reports-staging', 'reports', {'SWHURL_SERVICE_ORDERS_URL': 'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000'}),
+            release('job-staging', 'job'),
+        ]
+        units = [unit(f'app-{name}') for name in ('orders-staging', 'orders-prod', 'reports-staging', 'job-staging')]
+        namespaces = {'items': [{'metadata': {'name': 'orders-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
+                                {'metadata': {'name': 'reports-staging', 'labels': {'platform.swhurl.com/team': '<b>insights'}}}]}
+        runner = fake(units=units, releases=releases,
+                      **{'kubectl get namespaces -l platform.swhurl.com/app': json.dumps(namespaces)})
+        return runner, client(runner).get('/services', headers=WHO)
+
+    def test_lists_each_app_with_its_team_address_and_who_calls_whom(self):
+        runner, response = self.page()
+        self.assertEqual(response.status_code, 200, response.text)
+        text = response.text
+        self.assertIn('Team payments', text)
+        self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
+        self.assertIn('Team unknown', text, 'an app whose namespace has no team label')
+        self.assertIn('<code>http://orders.orders-staging.svc.cluster.local:9000</code>', text)
+        self.assertIn('<code>http://orders.orders-prod.svc.cluster.local:9000</code>', text)
+        self.assertIn('Called by: <a href="#reports">reports</a>', text)
+        self.assertIn('Calls: <a href="#orders">orders</a>', text)
+        self.assertIn('<a href="https://staging-orders.homelab.swhurl.com/openapi.json">', text, 'a routed app: its public API link')
+        self.assertIn('<code>http://orders.orders-prod.svc.cluster.local:9000/openapi.json</code>', text,
+                      'no route: the address inside the cluster')
+        self.assertIn('make app-calls APP=&lt;your app&gt; ENV=staging ARGS="--add orders"', text)
+        self.assertIn('A worker: nothing to call', text)
+        self.assertEqual(text.count('Call this from my app'), 2, 'offered for the two web apps only')
+        self.assertTrue(all(call[:2] == ('kubectl', 'get') or call[:4] == ('kubectl', '-n', 'flux-system', 'get')
+                            for call in runner.calls), 'the page only reads')
+        self.assertIn('href="/services" class="here"', text)
+
+    def test_unreadable_cluster_is_a_502_page(self):
+        runner = FakeRunner().on('kubectl', returncode=1, stderr='connection refused')
+        self.assertEqual(client(runner).get('/services', headers=WHO).status_code, 502)
+
+
 class AppsTests(unittest.TestCase):
     def test_lists_app_units_only_with_state_and_image(self):
         text = client(fake()).get('/apps', headers=WHO).text

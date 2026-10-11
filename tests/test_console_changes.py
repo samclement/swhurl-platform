@@ -452,6 +452,26 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])
                 self.assertEqual('Merges itself when Validate passes' in self.api.sent('POST /pulls')[0]['body'], merges)
 
+    def test_a_change_the_tooling_refuses_shows_its_own_words_and_opens_nothing(self):
+        """The console runs the same commands as make, so their refusals read the same in the job."""
+        refusals = (
+            ('/apps/hello/staging/calls', {'add': 'nowhere'}, '[ERROR] no instance nowhere/staging (missing apps/nowhere/staging/helmrelease.yaml)'),
+            ('/apps/hello/staging/remove', {}, '[ERROR] hello/staging is called by reports: remove those calls first'),
+            ('/apps/hello/prod/scale', {'replicas': '9'}, '[BAD] quota: replicas and sizes exceed the namespace quota for pods'),
+        )
+        for path, form, message in refusals:
+            with self.subTest(path=path):
+                runner = TreeRunner()
+                runner.on(sys.executable, '-m', 'swhurl', handler=lambda args, _, message=message: Result(args, 2, '', message + '\n'))
+                c, jobs = self.client(runner)
+                self.assertEqual(c.post(path, data=form, headers=WHO, follow_redirects=False).status_code, 303)
+                job = jobs.get(1)
+                self.assertEqual(job.state, 'failed')
+                self.assertIn(message, job.lines)
+                self.assertTrue(any('refused this change (see above); nothing was written to GitHub' in line for line in job.lines))
+                self.assertEqual(self.api.sent('POST /pulls'), [])
+                self.assertIn(message.split('] ')[1][:30], c.get('/jobs/1', headers=WHO).text.replace('&#39;', "'"))
+
     def test_refusals_run_nothing(self):
         runner = tree_fake()
         c, _ = self.client(runner)

@@ -5,7 +5,7 @@ import io
 import re
 from dataclasses import dataclass
 
-from swhurl.apps import ops, promotion
+from swhurl.apps import contract, ops, promotion
 from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
 from swhurl.apps.new import NAME_RE
 from swhurl.flux import WAITING_REASONS
@@ -15,6 +15,7 @@ from swhurl.verify import ready_condition, verify_platform
 
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
+APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', contract.APP, '-o', 'json']
 CONSOLE_CHECKS = frozenset({'cluster'})
 
 
@@ -196,6 +197,51 @@ def apps(runner: Runner) -> list[AppRow]:
                                image.get('tag', ''), image.get('digest', ''), release_hosts(release), ready_reason(unit),
                                ops.release_env(release)[0].get('DATABASE_PATH', '') if release else None))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
+
+
+@dataclass(frozen=True)
+class ServiceEnv:
+    """One instance as other apps see it."""
+    row: AppRow
+    address: str  # inside the cluster; '' for a worker
+    api: str  # where its API description is, if it says so
+    calls: tuple[str, ...]
+    callers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Service:
+    """One app across its environments, for the Services page."""
+    app: str
+    team: str
+    envs: dict[str, ServiceEnv]
+
+    @property
+    def callable(self) -> bool:
+        return any(env.address for env in self.envs.values())
+
+
+def services(runner: Runner) -> list[Service]:
+    """Every app with its team, addresses and who calls whom, from what runs: each instance's
+    HelmRelease (the platform's SWHURL_* variables) and its namespace's team label."""
+    releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in items(runner, RELEASES)}
+    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '')
+             for n in items(runner, APP_NAMESPACES)}
+    found: dict[str, dict[str, ServiceEnv]] = {}
+    for row in apps(runner):
+        instance = row.instance
+        release = releases.get((instance.namespace, instance.app))
+        env = ops.release_env(release)[0]
+        values = ((release or {}).get('spec') or {}).get('values') or {}
+        port = ((((values.get('service') or {}).get('main') or {}).get('ports') or {}).get('http') or {}).get('port')
+        address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
+        path = env.get(contract.API_ENV, '') if address else ''
+        api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''
+        found.setdefault(instance.app, {})[instance.env] = ServiceEnv(
+            row, address, api, tuple(contract.declared_calls(env)), tuple(contract.allowed_callers(env)))
+    return [Service(app, next((teams[e.row.instance.namespace] for e in envs.values()
+                               if teams.get(e.row.instance.namespace)), ''), envs)
+            for app, envs in sorted(found.items())]
 
 
 def units(runner: Runner) -> list[Unit]:

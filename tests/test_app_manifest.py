@@ -32,11 +32,18 @@ class ManifestTests(unittest.TestCase):
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
                'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
-               'team': 'payments'}
+               'team': 'payments', 'calls': ['orders', 'billing']}
         self.assertEqual(manifest_defaults(doc), {
             'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': False, 'exposure': 'private',
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
-            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments'})
+            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments', 'calls': ['orders', 'billing']})
+        web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
+        self.assertEqual(manifest_defaults(web)['api_path'], '/openapi.json')
+        for bad, message in (({**doc, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
+                             ({**web, 'provides': {'events': []}}, 'api only'), ({**doc, 'calls': ['Orders']}, 'distinct app names'),
+                             ({**doc, 'calls': ['a', 'a']}, 'distinct app names')):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ManifestError, message):
+                manifest_defaults(bad)
 
     def test_every_web_app_gets_the_same_startup_allowance(self):
         with self.assertRaisesRegex(ManifestError, 'unknown field.*startupSeconds'):

@@ -141,6 +141,7 @@
   <nav aria-label="Main">
     <a href="/" class="{{ 'here' if path == '/' }}">Overview</a>
     <a href="/apps" class="{{ 'here' if path.startswith('/apps') }}">Apps</a>
+    <a href="/services" class="{{ 'here' if path.startswith('/services') }}">Services</a>
     <a href="/platform" class="{{ 'here' if path.startswith('/platform') or path.startswith('/units') }}">Platform</a>
     <a href="/activity" class="{{ 'here' if path.startswith('/activity') or path.startswith('/jobs') }}">Activity{% if running_jobs %} <span class="badge" title="Jobs running now">{{ running_jobs | length }} running</span>{% endif %}</a>
   </nav>

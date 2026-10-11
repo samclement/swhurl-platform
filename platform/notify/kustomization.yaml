@@ -9,4 +9,3 @@ resources:
   - outbox.yaml
   - networkpolicy.yaml
   - helmrelease.yaml
-  - channel-payments-try.sops.yaml

@@ -1,0 +1,25 @@
+# The notification checker (console/notification-check) reads the routes and the channel addresses.
+# This namespace holds nothing else, so listing its Secrets shows channel addresses only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: notification-channels-read
+  namespace: notify
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-channels-read
+  namespace: notify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: notification-channels-read
+subjects:
+  - kind: ServiceAccount
+    name: notification-check
+    namespace: console

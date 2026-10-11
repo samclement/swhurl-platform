@@ -7,6 +7,7 @@ checkpoint may repeat it. No Kubernetes mutation except this one ConfigMap.
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import datetime as dt
 import logging
@@ -16,6 +17,7 @@ from collections.abc import Callable
 
 import httpx as httpx
 
+from swhurl.apps import channels
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
@@ -63,6 +65,24 @@ def check(runner: Runner, *, now: float, base: str, sender: Callable[[dict], Non
 DESTINATION = 'NTFY_PLATFORM_URL'  # the one platform topic; priority travels in each message
 
 
+def channel_addresses(runner: Runner) -> dict[str, str]:
+    """Each ntfy channel's address, from the channel Secrets in the notify namespace; never logged."""
+    try:
+        secrets = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'secrets', '-o', 'json'],
+                              secret_output=True)['items']
+    except (CommandError, KeyError, TypeError):
+        raise NotificationError('cannot read the channel Secrets') from None
+    found = {}
+    for secret in secrets:
+        name = secret['metadata']['name']
+        encoded = (secret.get('data') or {}).get(channels.ADDRESS_KEY)
+        if (name.startswith(channels.SECRET_PREFIX) and encoded
+                and (secret['metadata'].get('labels') or {}).get(channels.TRANSPORT) == 'ntfy'):
+            found[name.removeprefix(channels.SECRET_PREFIX)] = base64.b64decode(encoded).decode()
+            runner.add_secret(found[name.removeprefix(channels.SECRET_PREFIX)])
+    return found
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Read and evaluate without posting or saving state')
@@ -76,11 +96,20 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         from swhurl.platform import base_domain
         base = f'https://console.{base_domain()}'
 
+    addresses: dict[str, str] = {}
+
     def sender(notice: dict) -> None:
-        url = os.environ.get(DESTINATION, '')
+        if 'channel' in notice:
+            if not addresses:  # read only when a team channel has something to receive
+                addresses.update(channel_addresses(runner))
+            url = addresses.get(notice['channel'], '')
+            if not url:
+                raise NotificationError('no ntfy channel Secret with that name in the cluster')
+        else:
+            url = os.environ.get(DESTINATION, '')
+            if not url:
+                raise NotificationError(f'{DESTINATION} is missing; notification remains pending')
         runner.add_secret(url)
-        if not url:
-            raise NotificationError(f'{DESTINATION} is missing; notification remains pending')
         publish(url, notice)
 
     try:

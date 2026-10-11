@@ -48,6 +48,8 @@ across the instances of one environment (source manifests, not rendered):
 and, for the whole tree:
 
   event-users         platform/nats/users.yaml is what the instances' declarations generate
+  notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
+                      routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
 
 and, across the environments of one app (source manifests, not rendered):
 
@@ -72,7 +74,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, platform
-from swhurl.apps import events, helmrelease
+from swhurl.apps import channels, events, helmrelease
 from swhurl.apps.calling import (
     CALLERS_VARIABLE,
     ENVIRONMENT_VARIABLE,
@@ -563,6 +565,12 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         if problems:
             failed += 1
             print(f'[BAD] {events.USERS_FILE}')
+            for problem in problems:
+                print(f'       {problem}')
+        problems = channels.problems(ROOT)
+        if problems:
+            failed += 1
+            print(f'[BAD] {channels.NOTIFY_DIR}')
             for problem in problems:
                 print(f'       {problem}')
     if failed:

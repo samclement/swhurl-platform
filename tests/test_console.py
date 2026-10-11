@@ -557,7 +557,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('<span class="mark failing" aria-hidden="true"></span> <strong>Ingress</strong> <span class="muted">·</span> '
                       'Traefik does not redirect HTTP to HTTPS', response.text, 'a group of one check is that check, on one line')
-        self.assertIn('14 more checks read Secrets, run commands in pods or need your machine', response.text)
+        self.assertIn('15 more checks read Secrets, run commands in pods or need your machine', response.text)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
 
     def test_a_unit_is_what_one_read_says_it_is(self):

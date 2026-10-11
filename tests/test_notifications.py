@@ -1,4 +1,5 @@
 """Lifecycle evidence, incident clocks, durable delivery and restricted runner/RBAC."""
+import base64
 import copy
 import datetime as dt
 import json
@@ -10,6 +11,7 @@ import yaml
 
 from swhurl import ROOT, verify
 from swhurl import notifications as n
+from swhurl.notifications import delivery
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -251,11 +253,78 @@ def fake_runner(state=None, data=None, *, dry_run=False, fails=()):
     for resource, key in [('helmreleases.helm.toolkit.fluxcd.io', 'releases'),
                           ('deployments,statefulsets,daemonsets', 'workloads'), ('pods', 'pods'), ('events', 'events')]:
         runner.on('kubectl', 'get', resource, handler=response({'items': data[key]}))
+    runner.on('kubectl', 'get', 'namespaces', handler=response({'items': data.get('namespaces', [])}))
+    runner.on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=response({'items': data.get('routes', [])}))
     def patch(args, text):
         saved.append(json.loads(json.loads(text)['data']['state.json']))
         return Result(args, 0, '{}')
     runner.on('kubectl', '-n', 'console', 'patch', 'configmap', handler=patch)
     return runner, saved
+
+
+def with_team_channel(data, *names):
+    """The example app's namespace belongs to team payments, whose apps notify ``names``."""
+    data['namespaces'] = [{'metadata': {'name': 'example-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
+                          {'metadata': {'name': 'console'}}]
+    data['routes'] = [{'metadata': {'name': 'notification-routes'},
+                       'data': {'routes.json': json.dumps({'teams': {'payments': list(names)}})}}]
+    return data
+
+
+class ChannelTests(unittest.TestCase):
+    def test_an_apps_notice_is_copied_to_each_channel_of_its_team(self):
+        data = with_team_channel(healthy(), 'payments-phone', 'payments-desk')
+        state = n.evaluate(None, data, NOW, BASE)
+        data['events'] = [event(data)]
+        state = n.evaluate(state, data, NOW+60, BASE)
+        self.assertEqual([p.get('channel') for p in state['pending']], [None, 'payments-phone', 'payments-desk'])
+        self.assertEqual({p['title'] for p in state['pending']}, {'example/staging deployed'})
+        self.assertEqual(len({p['key'] for p in state['pending']}), 3)
+        again = n.evaluate(state, data, NOW+120, BASE)
+        self.assertEqual(len(again['pending']), 3, 'each copy is queued once')
+
+    def test_no_route_no_team_and_the_console_get_no_copy(self):
+        for data in (healthy(), with_team_channel(healthy()), with_team_channel(healthy(console=True), 'payments-phone')):
+            state = n.evaluate(None, data, NOW, BASE)
+            data['events'] = [event(data)]
+            state = n.evaluate(state, data, NOW+60, BASE)
+            self.assertEqual([p.get('channel') for p in state['pending']], [None])
+
+    def test_a_failing_channel_never_holds_up_the_platform_topic_and_is_given_up_after_the_retry_window(self):
+        data = with_team_channel(healthy(), 'payments-phone')
+        state = n.evaluate(None, data, NOW, BASE)
+        data['events'] = [event(data)]
+        runner, saved = fake_runner(state, data)
+        sent = []
+        def send(notice):
+            if 'channel' in notice:
+                raise n.NotificationError('ntfy delivery failed; notification remains pending')
+            sent.append(notice['title'])
+        with self.assertLogs('swhurl.notifications.delivery', 'ERROR') as logs:
+            n.check(runner, now=NOW+60, base=BASE, sender=send)
+        self.assertEqual(sent, ['example/staging deployed'])
+        self.assertEqual([p['channel'] for p in saved[-1]['pending']], ['payments-phone'])
+        self.assertIn('Channel payments-phone', logs.output[0])
+        self.assertIn('will retry', logs.output[0])
+        runner, saved = fake_runner(saved[-1], data)
+        with self.assertLogs('swhurl.notifications.delivery', 'ERROR') as logs:
+            n.check(runner, now=NOW+60+delivery.CHANNEL_RETRY, base=BASE, sender=send)
+        self.assertEqual(sent, ['example/staging deployed'], 'the platform topic is not sent twice')
+        self.assertEqual(saved[-1]['pending'], [])
+        self.assertIn('gave up', logs.output[0])
+
+    def test_channel_addresses_come_from_ntfy_channel_secrets_only_and_are_registered_as_secrets(self):
+        def secret(name, address, transport='ntfy'):
+            return {'metadata': {'name': name, 'labels': {'platform.swhurl.com/notify-transport': transport}},
+                    'data': {'address': base64.b64encode(address.encode()).decode()}}
+        runner = FakeRunner().on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': [
+            secret('channel-payments-phone', 'https://ntfy.sh/private-topic'),
+            secret('channel-later', 'https://hooks.example/x', 'slack'), secret('other', 'https://ntfy.sh/y')]}))
+        self.assertEqual(n.channel_addresses(runner), {'payments-phone': 'https://ntfy.sh/private-topic'})
+        self.assertNotIn('private-topic', runner.redact('posting to https://ntfy.sh/private-topic'))
+        failing = FakeRunner().on('kubectl', returncode=1, stderr='https://ntfy.sh/private-topic')
+        with self.assertRaisesRegex(n.NotificationError, '^cannot read the channel Secrets$'):
+            n.channel_addresses(failing)
 
 
 class DeliveryTests(unittest.TestCase):

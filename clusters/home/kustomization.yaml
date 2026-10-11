@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - infra.yaml
   - platform.yaml
+  - platform-notify.yaml
   - app-hello-ts-staging.yaml
   - app-hello-ts-prod.yaml
   - app-test-2-staging.yaml

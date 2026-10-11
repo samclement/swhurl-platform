@@ -1,0 +1,8 @@
+# Channel Secrets (channel-<name>.sops.yaml) are added and removed by make channel-add and
+# make channel-remove; routes.yaml is generated (docs/services.md#notification-channels).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - routes.yaml

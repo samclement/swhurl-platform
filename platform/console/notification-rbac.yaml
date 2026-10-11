@@ -1,4 +1,5 @@
-# No Secrets, exec, GitHub token or workload mutations. Only its own state may be patched.
+# No exec, GitHub token or workload mutations; no Secrets except the channel addresses in the notify
+# namespace (platform/notify/rbac.yaml). Only its own state may be patched.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -20,7 +21,7 @@ rules:
     resources: [deployments, statefulsets, daemonsets]
     verbs: [list]
   - apiGroups: [""]
-    resources: [pods, events]
+    resources: [pods, events, namespaces]
     verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

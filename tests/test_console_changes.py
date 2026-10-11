@@ -17,7 +17,7 @@ from starlette.testclient import TestClient
 
 from swhurl import ROOT
 from swhurl.apps import new, ops, promotion, repo
-from swhurl.console import actions, changes, server
+from swhurl.console import actions, changes, cluster, server
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -118,8 +118,24 @@ class TreeRunner(FakeRunner):
 APP_NEW_OK = Result((), 0, '[OK] wrote apps/weather-api/staging/helmrelease.yaml\n')
 
 
-def tree_fake(app_new=APP_NEW_OK, edit=None):
+def staging_app(name, variables=None, port=8080):
+    """A unit and release as the cluster lists them, for the apps the New app form offers."""
+    values = {'controllers': {'main': {'containers': {'main': {'env': variables or {}}}}}}
+    if port:
+        values['service'] = {'main': {'ports': {'http': {'port': port}}}}
+    ready = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
+    return ({'metadata': {'name': f'app-{name}-staging'}, 'spec': {}, 'status': ready},
+            {'metadata': {'namespace': f'{name}-staging', 'name': name}, 'spec': {'values': values}})
+
+
+def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
+    """``staging``: the staging_app()s that run (none by default)."""
     runner = TreeRunner(edit)
+    # Only the three lists the New app form reads; any other kubectl call is still unexpected.
+    for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
+                          (cluster.RELEASES[:3], [release for _, release in staging]),
+                          (('kubectl', 'get', 'namespaces'), [])):
+        runner.on(*prefix, stdout=json.dumps({'items': found}))
     (runner.on(sys.executable, '-m', 'swhurl', 'app-new', handler=lambda args, _: Result(
         args, app_new.returncode, app_new.stdout, app_new.stderr))
         .on(sys.executable, '-m', 'swhurl', handler=lambda args, _: Result(args, 0, '[OK] edited\n')))
@@ -300,7 +316,8 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(c.post('/new', data={'name': 'weather-api', 'image': 'ghcr.io/me/weather:1.0'},
                                 headers=WHO).status_code, 405)
         self.assertIsNone(jobs.get(1))
-        self.assertEqual(runner.calls, [])
+        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls),
+                        'it reads the apps it could connect to and changes nothing')
         self.assertEqual({(r.method, r.url.path.rsplit('/', 1)[-1]) for r in self.api.requests}, {('GET', 'teams.yaml')},
                          'the page reads the team registry and nothing else')
         self.assertEqual(len(self.api.requests), 1, 'and keeps it for five minutes')
@@ -325,6 +342,35 @@ class NewAppRouteTests(unittest.TestCase):
         page = TestClient(app_under_test(tree_fake(), github=unreadable.github)).get('/new', headers=WHO).text
         self.assertIn('Only the default team is offered', page)
         self.assertIn('<option value="platform" selected>platform</option>', page)
+
+    def test_the_form_offers_what_staging_has_to_connect_to_and_says_what_a_team_is(self):
+        staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created,paid'}), staging_app('job', port=None),
+                   staging_app('billing'))
+        c, _ = self.client(tree_fake(staging=staging))
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('name="calls" value="orders"', page)
+        self.assertIn('name="calls" value="billing"', page)
+        self.assertNotIn('name="calls" value="job"', page, 'a worker cannot be called')
+        self.assertIn('name="subscribe" value="orders.created"', page)
+        self.assertIn('name="subscribe" value="orders.paid"', page)
+        self.assertIn('It does not grant or restrict anyone\'s access', page)
+        empty = self.client(tree_fake())[0].get('/new', headers=WHO).text
+        self.assertIn('No web app is in staging yet.', empty)
+        self.assertIn('No app in staging publishes an event yet.', empty)
+
+    def test_connections_become_app_new_arguments_and_only_offered_ones_are_accepted(self):
+        offered = ({'orders', 'billing'}, {'orders.created'})
+        self.assertEqual(changes.connection_args({'calls': 'orders,billing', 'subscribe': 'orders.created',
+                                                  'publish': 'sent, failed'}, *offered),
+                         ['--calls=orders,billing', '--subscribe=orders.created', '--publish=sent,failed'])
+        self.assertEqual(changes.connection_args({}, *offered), [], 'nothing chosen adds nothing')
+        cases = (({'calls': 'stranger'}, 'not a web app, or an event, that staging has now'),
+                 ({'subscribe': 'orders.cancelled'}, 'not a web app, or an event, that staging has now'),
+                 ({'calls': '--root=/'}, 'a call names an app'), ({'publish': 'Sent'}, 'a published event a lowercase name'),
+                 ({'subscribe': 'created'}, 'a subscription <app>.<event>'))
+        for form, message in cases:
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
+                changes.connection_args(form, *offered)
 
     def test_pr_description_explains_setting_secret_values(self):
         body = changes.new_app_body('weather-api', 'staging', ['weather-api', '--env=staging', '--secret-keys=API_TOKEN,DB_URL'])
@@ -377,7 +423,8 @@ class NewAppRouteTests(unittest.TestCase):
         c = TestClient(app_under_test(runner, jobs=jobs, app_repos=app_api.config))
         self.assertIn('No GitHub token is configured', c.get('/new', headers=WHO).text)
         self.assertEqual(c.post('/new/repo', data=NEW, headers=WHO).status_code, 409)
-        self.assertEqual((runner.calls, app_api.requests), ([], []))
+        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls), 'only the form\'s reads')
+        self.assertEqual(app_api.requests, [])
 
     def test_cross_site_post_is_refused(self):
         runner = tree_fake()
@@ -850,6 +897,29 @@ class NewRepoRouteTests(unittest.TestCase):
         body = platform_api.sent('POST /pulls')[0]['body']
         self.assertIn('created https://github.com/samclement/notes from', body)
 
+    def test_a_new_app_that_connects_passes_its_choices_and_waits_for_review(self):
+        staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created'}), staging_app('billing'))
+        runner = repo_runner(tree_fake(staging=staging))
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
+        platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
+        c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
+        form = 'name=notes&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created&publish=sent'
+        response = c.post('/new/repo', content=form, headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'},
+                          follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
+        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
+        self.assertEqual(app_new[7:], ('--image=ghcr.io/samclement/notes:1-9f8e7d6@' + DIGEST, '--team=payments',
+                                       '--calls=orders,billing', '--subscribe=orders.created', '--publish=sent'))
+        self.assertEqual(platform_api.sent('POST /issues/7/labels'), [],
+                         'it changes other apps, so it is not labelled to merge itself')
+        refused = c.post('/new/repo', content='name=notes2&stack=typescript&calls=stranger',
+                         headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'})
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn('stranger: not a web app, or an event, that staging has now', refused.text)
+        self.assertEqual(len(app_api.writes()), len([w for w in app_api.writes() if 'notes2' not in w[1]]),
+                         'no repository is created for a refused form')
+
     def test_a_worker_with_sqlite_gets_no_route_and_its_answers(self):
         runner = repo_runner(tree_fake())
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
@@ -908,4 +978,5 @@ class NewRepoRouteTests(unittest.TestCase):
         c = TestClient(app_under_test(runner, jobs=actions.Jobs(runner, inline=True), github=FakeGitHub().github))
         self.assertIn('No token for creating repositories', c.get('/new', headers=WHO).text)
         self.assertEqual(c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript'}, headers=WHO).status_code, 409)
-        self.assertEqual((runner.calls, app_api.requests), ([], []))
+        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls), 'only the form\'s reads')
+        self.assertEqual(app_api.requests, [])

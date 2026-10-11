@@ -267,9 +267,20 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         teams_cache[:] = [(time.monotonic(), found)]
         return found, ''
 
+    def connectable() -> tuple[list[cluster.AppRow], list[tuple[str, cluster.AppRow]], str]:
+        """What a new app can connect to in staging: the web apps it could call, each published
+        ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders)."""
+        try:
+            staging = [row for row in cluster.apps(runner) if row.instance.env == 'staging']
+        except cluster.ReadError as problem:
+            return [], [], str(problem)
+        return ([row for row in staging if row.connections.address],
+                [(f'{row.instance.app}.{event}', row) for row in staging for event in row.connections.publishes], '')
+
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
         teams, teams_error = platform_teams()
+        callable_apps, offered_events, connections_error = connectable()
         features, features_error = {}, ''
         for stack in contract.STACKS:
             try:
@@ -280,18 +291,33 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     features=features, features_error=features_error,
                     stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER, teams=teams, teams_error=teams_error, default_team=contract.DEFAULT_TEAM,
+                    callable_apps=callable_apps, offered_events=offered_events, connections_error=connections_error,
+                    chosen_calls=[n for n in form.get('calls', '').split(',') if n],
+                    chosen_events=[n for n in form.get('subscribe', '').split(',') if n],
                     exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN, form=form, error=error,
                     github=github, app_repos=app_repos)
 
     async def new_repo(request: Request) -> Response:
-        form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
+        fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
+        form = {k: v[0] for k, v in fields.items()}
+        for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
+            form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
         if github is None or app_repos is None:
             return new_repo_form(request, 409, 'Both GitHub tokens must be configured (console-github Secret).', form)
         try:
             questions = stack_questions(form.get('stack', '').strip()) if form.get('stack', '').strip() in contract.STACKS else []
             name, stack, description, answers, extra = changes.new_repo_args(form, questions, platform_teams()[0])
+            callable_apps, offered_events, problem = connectable()
+            if problem and (form['calls'] or form['subscribe']):
+                raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
+            connections = changes.connection_args(form, {row.instance.app for row in callable_apps},
+                                                  {name for name, _ in offered_events})
         except (actions.ActionError, repo.RepoError) as error:
             return new_repo_form(request, 400, str(error), form)
+        extra += connections
+        # A call or a subscription also changes the other app (its allowed callers, the NATS users):
+        # that pull request is the other team's consent, so it waits for a review.
+        touches_others = any(arg.startswith(('--calls=', '--subscribe=')) for arg in connections)
         req = repo.Request(name, stack, contract.APP_OWNER, description, answers)
 
         def work(job: actions.Job) -> None:
@@ -304,7 +330,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             job.link = changes.open_pr(
                 runner, github, job, slug=f'new-{name}-staging', title=f'apps: add {name}/staging',
                 body=changes.new_repo_body(f'https://github.com/{req.repo}', contract.STACKS[stack], argv),
-                change=lambda clone: changes.run_app_new(runner, job, clone, argv), auto_merge=True)
+                change=lambda clone: changes.run_app_new(runner, job, clone, argv), auto_merge=not touches_others)
         try:
             job = jobs.submit('new app and repository', f'{name}/staging', request.state.identity, work)
         except actions.ActionError as error:

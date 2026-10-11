@@ -72,13 +72,33 @@ def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
     return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
 
 
+def connection_args(form: Mapping[str, str], callable_apps: set[str] | None = None,
+                    offered_events: set[str] | None = None) -> list[str]:
+    """``--calls=``, ``--subscribe=`` and ``--publish=`` for app-new, from the form's comma-separated
+    ``calls`` (apps), ``subscribe`` (``<app>.<event>``) and ``publish`` (event names). When the
+    lists the form offered are given, a choice outside them is refused here, before a repository
+    is created for an app that could not then be added."""
+    chosen = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()]
+              for field in ('calls', 'subscribe', 'publish')}
+    bad = [name for name in chosen['calls'] if not NAME_RE.match(name)]
+    bad += [name for name in chosen['subscribe'] if not events.SUBSCRIPTION_RE.match(name)]
+    bad += [name for name in chosen['publish'] if not events.EVENT_RE.match(name)]
+    if bad:
+        raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>, a published event a lowercase name')
+    missing = [name for name in chosen['calls'] if callable_apps is not None and name not in callable_apps]
+    missing += [name for name in chosen['subscribe'] if offered_events is not None and name not in offered_events]
+    if missing:
+        raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
+    return [f'--{field}={",".join(names)}' for field, names in chosen.items() if names]
+
+
 def new_repo_args(form: Mapping[str, str], questions: list[repo.Question],
                   teams: Mapping[str, str] | None = None) -> tuple[str, str, str, dict[str, str], list[str]]:
     """``(name, stack, description, template answers, extra app-new argv)`` from the New app form.
 
     ``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
     ``teams`` are the registered ones; the form's team must be among them. A worker gets no exposure
-    or host: its swhurl.yaml makes it private."""
+    or host: its swhurl.yaml makes it private. Calls and events are connection_args'."""
     name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
     description = ' '.join(form.get('description', '').split())[:200]
     if not NAME_RE.match(name):

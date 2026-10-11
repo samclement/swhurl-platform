@@ -83,10 +83,10 @@
       <span class="cell" data-label="Team">{% if a.team %}<a class="plain" href="{{ link('list', a.team, env) }}" title="Show only team {{ a.team }}">{{ a.team }}</a>{% else %}<span class="warn">unknown</span>{% endif %}</span>
       {{ env_cell(a, 'staging') }}
       {{ env_cell(a, 'prod') }}
-      <span class="cell" data-label="Promotion">{% if a.comparison == 'ahead' %}<span class="pill attention">Staging ahead</span>
-        {% elif a.comparison == 'differs' %}<span class="pill attention">Images differ</span>
-        {% elif a.comparison == 'same' %}<span class="pill">Same image</span>
-        {% elif staging %}<span class="pill">Staging only</span>
+      <span class="cell" data-label="Promotion">{% if a.comparison == 'ahead' %}<span class="pill attention" title="Staging runs a newer build than production">Prod behind</span>
+        {% elif a.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
+        {% elif a.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
+        {% elif staging %}<span class="pill" title="Not in production yet">Staging only</span>
         {% else %}<span class="muted">—</span>{% endif %}</span>
       <span class="cell act">{% if staging and a.comparison != 'same' %}<a href="/apps/{{ a.app }}/staging/promotion">Review promotion</a>{% endif %}</span>
     </summary>

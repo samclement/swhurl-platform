@@ -67,6 +67,7 @@ from swhurl.apps.contract import (
     ManifestError,
     add_image_markers,
     default_host,
+    identity_env,
     image_policy_name,
     in_cookie_domain,
     manifest_defaults,
@@ -74,6 +75,7 @@ from swhurl.apps.contract import (
     otlp_env,
     resource_quota,
     secret_key_problem,
+    signing_keys,
     teams,
 )
 from swhurl.run import CommandError, Runner
@@ -192,10 +194,13 @@ def build_values(args) -> dict:
     }
     if args.command:
         container['command'] = shlex.split(args.command)
+    # Identity first: Kubernetes expands $(SWHURL_ENV) in later values only if it is defined before them.
+    container['env'] = identity_env(args.name, args.env, args.kind == 'web',
+                                    getattr(args, 'signing_keys', None) or signing_keys())
     if args.otlp:
-        container['env'] = otlp_env(args.name)
+        container['env'] |= otlp_env(args.name)
     if args.database == 'sqlite':
-        container['env'] = {**container.get('env', {}), DATABASE_PATH_ENV: SQLITE_PATH}
+        container['env'][DATABASE_PATH_ENV] = SQLITE_PATH
     if args.secret_keys:
         container['envFrom'] = [{'secretRef': {'name': f'{args.name}-secret'}}]
     if args.kind == 'web':
@@ -269,16 +274,19 @@ def dump(docs) -> str:
     return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
 
 
-def isolation_files(app: str, namespace: str, exposure: str, port: int | None) -> dict[str, str]:
-    """The instance's quota and NetworkPolicy by file name; Traefik is admitted only when there is a route."""
+def isolation_files(app: str, namespace: str, exposure: str, port: int | None,
+                    callers: list[str] | tuple[str, ...] = ()) -> dict[str, str]:
+    """The instance's quota and NetworkPolicy by file name: Traefik is admitted only when there is a
+    route, and the apps allowed to call it (``callers``) from their own namespaces."""
     routed = port if exposure in ('authenticated-web', 'public') else None
     return {QUOTA_FILE: dump([resource_quota(app, namespace)]),
-            NETWORK_POLICY_FILE: dump([network_policy(app, namespace, routed)])}
+            NETWORK_POLICY_FILE: dump([network_policy(app, namespace, routed, port, callers)])}
 
 
 def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     resolve(args)
     validate(args, root)
+    args.signing_keys = signing_keys(root)
     namespace = f'{args.name}-{args.env}'
     unit = f'app-{args.name}-{args.env}'
     instance = root / 'apps' / args.name / args.env
@@ -486,6 +494,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
     p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')
     p.add_argument('--mount-path', default='/data')
+    p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
+                   help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
     p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,
@@ -551,6 +561,14 @@ def main(argv=None, opener: Opener = _open) -> int:
         if problem:
             raise GenerationError(problem)
         written = generate(args, args.root.resolve())
+        if args.calls:
+            from swhurl.apps import edit  # edit imports this module
+            try:
+                edit.calls(args.root.resolve(), args.name, args.env, add=args.calls)
+            except edit.EditError as error:
+                # Nothing half-made: the instance without its calls would start and fail every request.
+                edit.remove(args.root.resolve(), args.name, args.env)
+                raise GenerationError(f'--calls: {error}') from None
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 2

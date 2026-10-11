@@ -44,6 +44,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
                                             for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
         self.env['QUOTA'] = json.dumps(contract.QUOTA)
+        self.env['REPO'], self.env['ISSUER'] = str(ROOT), contract.ISSUER
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
@@ -73,6 +74,10 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
+elif argv[:3] == ['get', '--raw', '/openid/v1/jwks']:
+    print((Path(os.environ['REPO']) / 'apps/signing-keys.json').read_text())
+elif argv[:3] == ['get', '--raw', '/.well-known/openid-configuration']:
+    emit({'issuer': os.environ['ISSUER']})
 elif argv[:2] == ['get', 'namespaces']:  # isolation check: every instance in this checkout is in order
     emit({'items': [{'metadata': {'name': a + '-' + e, 'labels': {'platform.swhurl.com/app': a,
                                                                   'platform.swhurl.com/team': 'platform'}}}

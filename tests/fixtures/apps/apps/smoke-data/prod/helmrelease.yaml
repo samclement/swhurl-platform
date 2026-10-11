@@ -56,6 +56,8 @@ spec:
             - -c
             - date -u >> /data/log; exec sleep 3600000
             env:
+              SWHURL_APP: smoke-data
+              SWHURL_ENV: prod
               DATABASE_PATH: /data/app.db
         replicas: 1
         strategy: Recreate

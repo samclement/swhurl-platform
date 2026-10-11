@@ -76,6 +76,18 @@ Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-imag
 
 Rotate the ntfy topic ([alerts](services.md#alerts)) when it may have leaked: in your own terminal, `sops` both `platform/alerts/secret-failures.sops.yaml` and `secret-deploys.sops.yaml` and replace the topic (`swhurl-` and 24 hex characters, for example from `openssl rand -hex 12`) in each `address`. In `platform/console/notification-secret.sops.yaml`, set `NTFY_FAILURES_URL` and `NTFY_DEPLOYS_URL` to the corresponding topic URLs without the rendering query string. Then `make check-secrets`, commit, push, `make flux-reconcile` (both consumers must update); subscribe to the new topic in the ntfy app and unsubscribe from the old.
 
+### Signing keys
+
+Apps check each other's calls ([calling another app](apps.md#calling-another-app)) against the cluster's public service-account signing keys, kept in `apps/signing-keys.json` and written into every web app as `SWHURL_AUTH_KEYS`. They are public keys, not a Secret. k3s creates the key pair once and keeps it, so the file changes only when the cluster is rebuilt or the key is rotated by hand. Until the file follows, every call between apps is refused with 401 while browser access keeps working. `make verify-platform` (section "Call identity") reports the difference; to fix it:
+
+```
+make platform-signing-keys     # reads the keys from the cluster, rewrites the file and every web app instance
+make check-apps
+git add apps && git commit -m "apps: refresh signing keys" && git push
+```
+
+Each web app restarts with the new keys when Flux applies the commit.
+
 ## Certificate mode
 
 `CERT_ISSUER` in `platform-settings` selects the Let's Encrypt issuer for platform hosts (sign-in, ClickStack). Apps choose their own issuer.

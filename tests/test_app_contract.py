@@ -81,7 +81,8 @@ class GeneratorTests(unittest.TestCase):
         values = yaml.safe_load((self.tmp / 'apps/notes/staging/helmrelease.yaml').read_text())['spec']['values']
         main = values['controllers']['main']
         self.assertEqual((main['replicas'], main['strategy']), (1, 'Recreate'))
-        self.assertEqual(main['containers']['main']['env'], {'DATABASE_PATH': '/data/app.db'})
+        self.assertEqual(main['containers']['main']['env'],
+                         {'SWHURL_APP': 'notes', 'SWHURL_ENV': 'staging', 'DATABASE_PATH': '/data/app.db'})
         data = values['persistence']['data']
         self.assertEqual((data['size'], data['storageClass'], data['globalMounts']), ('1Gi', 'local-path-retain', [{'path': '/data'}]))
         namespace = yaml.safe_load((self.tmp / 'apps/notes/staging/namespace.yaml').read_text())
@@ -129,6 +130,41 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(self.gen('quiet', '--image', 'r/q:1', '--health-path', '/h'), 0)
         self.assertEqual(load('quiet', 'networkpolicy.yaml')['spec']['ingress'], [])
 
+    def test_every_instance_is_told_who_it_is_and_a_web_app_gets_the_issuer_and_keys(self):
+        (self.tmp / 'apps').mkdir()
+        (self.tmp / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "k1"}]}')
+        self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--otlp'), 0)
+        self.assertEqual(self.gen('job', '--image', 'r/job:1', '--kind', 'worker'), 0)
+
+        def env(app):
+            release = yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())
+            return release['spec']['values']['controllers']['main']['containers']['main']['env']
+        self.assertEqual(list(env('web'))[:4], ['SWHURL_APP', 'SWHURL_ENV', 'SWHURL_AUTH_ISSUER', 'SWHURL_AUTH_KEYS'],
+                         'first, so $(SWHURL_ENV) expands in what follows')
+        self.assertEqual((env('web')['SWHURL_APP'], env('web')['SWHURL_ENV'], env('web')['SWHURL_AUTH_KEYS']),
+                         ('web', 'staging', '{"keys":[{"kid":"k1"}]}'))
+        self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging'}, 'a worker receives no calls')
+
+    def test_calls_at_creation_reach_both_sides_or_nothing_is_left(self):
+        (self.tmp / 'platform/reloader').mkdir(parents=True)
+        self.assertEqual(self.gen('orders', '--image', 'r/orders:1', '--health-path', '/h', '--port', '9000'), 0)
+        self.assertEqual(self.gen('reports', '--image', 'r/reports:1', '--health-path', '/h', '--calls', 'orders'), 0)
+
+        def values(app):
+            return yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())['spec']['values']
+        caller = values('reports')
+        self.assertEqual(caller['controllers']['main']['containers']['main']['env']['SWHURL_SERVICE_ORDERS_URL'],
+                         'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
+        self.assertEqual(caller['persistence']['tokens'], contract.tokens_volume(['orders']))
+        self.assertEqual(values('orders')['controllers']['main']['containers']['main']['env']['SWHURL_ALLOWED_CALLERS'],
+                         'reports')
+        err = io.StringIO()
+        with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'nowhere'), 2)
+        self.assertIn('--calls: no instance nowhere/staging', err.getvalue())
+        self.assertFalse((self.tmp / 'apps/lost').exists())
+        self.assertFalse((self.tmp / 'clusters/home/app-lost-staging.yaml').exists())
+
     def test_an_unregistered_team_is_refused_before_writing(self):
         (self.tmp / 'apps').mkdir()
         (self.tmp / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n')
@@ -164,14 +200,15 @@ class GeneratorTests(unittest.TestCase):
 
         def env(app):
             release = yaml.safe_load((self.tmp / f'apps/{app}/staging/helmrelease.yaml').read_text())
-            return release['spec']['values']['controllers']['main']['containers']['main'].get('env')
+            found = release['spec']['values']['controllers']['main']['containers']['main'].get('env')
+            return {key: value for key, value in found.items() if not key.startswith('SWHURL_')}
         self.assertEqual(env('o'), {
             'HOST_IP': {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
             'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://$(HOST_IP):4318',
             'OTEL_EXPORTER_OTLP_PROTOCOL': 'http/protobuf',
             'OTEL_SERVICE_NAME': 'o',
         })
-        self.assertIsNone(env('p'), 'without --otlp nothing is written')
+        self.assertEqual(env('p'), {}, 'without --otlp nothing is written')
 
     def test_a_template_manifest_fills_its_conventions_and_derives_the_host(self):
         self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', TEMPLATE_IMAGE,
@@ -442,11 +479,25 @@ class PolicyTests(unittest.TestCase):
             self.find(d, 'NetworkPolicy')['spec']['ingress'] = [{}]
         def wrong_port(d):
             self.find(d, 'NetworkPolicy')['spec']['ingress'][0]['ports'][0]['port'] = 9999
+        def wrong_identity(d):
+            self.find(d, 'HelmRelease')['spec']['values']['controllers']['main']['containers']['main']['env'][
+                'SWHURL_ENV'] = 'prod'
+        def stale_keys(d):
+            self.find(d, 'HelmRelease')['spec']['values']['controllers']['main']['containers']['main']['env'][
+                'SWHURL_AUTH_KEYS'] = '{"keys":[]}'
+        def api_token(d):  # no audience: a token the Kubernetes API itself would accept
+            app_policy.pod_spec(self.find(d, 'Deployment')).setdefault('volumes', []).append(
+                {'name': 't', 'projected': {'sources': [{'serviceAccountToken': {'path': 'token'}}]}})
+        def env_used_before_defined(d):
+            env = self.container(d)['env']
+            env.insert(0, {'name': 'EARLY', 'value': 'http://x-$(SWHURL_ENV)'})
         cases = [('smoke-web/staging', unknown_team, 'team'), ('smoke-web/staging', no_quota, 'quota'),
                  ('smoke-web/staging', other_quota, 'quota'), ('smoke-web/staging', too_many_replicas, 'quota'),
                  ('smoke-web/staging', too_much_memory, 'quota'), ('smoke-web/staging', no_network_policy, 'network-policy'),
                  ('smoke-web/staging', every_pod, 'network-policy'), ('smoke-worker/staging', open_to_all, 'network-policy'),
-                 ('smoke-web/staging', wrong_port, 'network-policy')]
+                 ('smoke-web/staging', wrong_port, 'network-policy'), ('smoke-web/staging', wrong_identity, 'identity'),
+                 ('smoke-web/staging', stale_keys, 'identity'), ('smoke-worker/staging', api_token, 'call-tokens'),
+                 ('smoke-web/staging', env_used_before_defined, 'identity')]
         for key, mutate, rule in cases:
             with self.subTest(case=mutate.__name__):
                 docs = self.docs(key)

@@ -4,6 +4,7 @@ Both sides import these, so generated output and the check cannot drift apart.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -93,17 +94,86 @@ def resource_quota(app: str, namespace: str) -> dict:
             'spec': {'hard': dict(QUOTA)}}
 
 
-def network_policy(app: str, namespace: str, routed_port: int | None) -> dict:
-    """Who may connect to the app's pods: Traefik on the app port when the instance has a route, otherwise nobody.
+def network_policy(app: str, namespace: str, routed_port: int | None, port: int | None = None,
+                   callers: list[str] | tuple[str, ...] = ()) -> dict:
+    """Who may connect to the app's pods: Traefik on the app port when the instance has a route, the
+    apps allowed to call it (``callers``, on ``port``, from their namespace of the same environment),
+    and nobody else.
 
     It selects the app's own pods only: a policy on every pod in the namespace would also block
     cert-manager's HTTP-01 solver (port 8089) and with it certificate issuance.
     """
-    ingress = [{'from': [TRAEFIK], 'ports': [{'port': routed_port, 'protocol': 'TCP'}]}] if routed_port else []
+    sources = [TRAEFIK] if routed_port else []
+    env = namespace.removeprefix(f'{app}-')
+    sources += [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': f'{caller}-{env}'}},
+                 'podSelector': {'matchLabels': {'app.kubernetes.io/instance': caller}}} for caller in callers]
+    ingress = [{'from': sources, 'ports': [{'port': routed_port or port, 'protocol': 'TCP'}]}] if sources else []
     return {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy',
             'metadata': {'name': app, 'namespace': namespace},
             'spec': {'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}},
                      'policyTypes': ['Ingress'], 'ingress': ingress}}
+
+# Calls between apps (docs/apps.md#calling-another-app). A caller declares the apps it calls; for each
+# it gets the callee's address and a short-lived service-account token only that callee accepts. A web
+# app is told who it is, who issues tokens, the cluster's public signing keys and who may call it.
+APP_ENV = 'SWHURL_APP'
+ENV_ENV = 'SWHURL_ENV'
+ISSUER_ENV = 'SWHURL_AUTH_ISSUER'
+KEYS_ENV = 'SWHURL_AUTH_KEYS'
+CALLERS_ENV = 'SWHURL_ALLOWED_CALLERS'
+TOKENS_MOUNT = '/var/run/swhurl/tokens'  # the stack templates' helpers read <this>/<callee>/token
+TOKENS_VOLUME = 'tokens'
+TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
+ISSUER = 'https://kubernetes.default.svc.cluster.local'
+"""This cluster's service-account token issuer (make verify-platform compares it with the live one)."""
+SIGNING_KEYS_FILE = Path('apps/signing-keys.json')
+"""The cluster's public token-signing keys. Apps cannot fetch them (the API refuses anonymous
+requests), so they are kept here and given to each web app; make platform-signing-keys refreshes it."""
+_SERVICE_ENV = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
+
+
+def service_env(app: str) -> str:
+    """The variable that holds an app's address: orders-api -> SWHURL_SERVICE_ORDERS_API_URL."""
+    return f'SWHURL_SERVICE_{app.upper().replace("-", "_")}_URL'
+
+
+def service_url(app: str, port: int) -> str:
+    """The callee in the caller's own environment; Kubernetes expands $(SWHURL_ENV), which must be defined first."""
+    return f'http://{app}.{app}-$({ENV_ENV}).svc.cluster.local:{port}'
+
+
+def declared_calls(env: dict) -> list[str]:
+    """The apps a container's env says it calls, in order (app names have no underscores, so this reverses service_env)."""
+    return [match[1].lower().replace('_', '-') for key in env or {} if (match := _SERVICE_ENV.match(str(key)))]
+
+
+def allowed_callers(env: dict) -> list[str]:
+    return [name for name in str((env or {}).get(CALLERS_ENV, '')).split(',') if name]
+
+
+def signing_keys(root: Path = ROOT) -> str:
+    """The public key set as one line of JSON, from ``root`` (a scratch root falls back to this checkout); '' if absent."""
+    for base in (root, ROOT):
+        path = base / SIGNING_KEYS_FILE
+        if path.is_file():
+            return json.dumps(json.loads(path.read_text()), sort_keys=True, separators=(',', ':'))
+    return ''
+
+
+def identity_env(app: str, env: str, web: bool, keys: str) -> dict:
+    """What every instance is told about itself, and what a web app needs to check a caller's token."""
+    identity = {APP_ENV: app, ENV_ENV: env}
+    return identity | ({ISSUER_ENV: ISSUER, KEYS_ENV: keys} if web else {})
+
+
+def tokens_volume(callees: list[str]) -> dict:
+    """One token file per callee at TOKENS_MOUNT/<callee>/token, each valid for that callee only: a
+    token with an audience is refused by the Kubernetes API itself."""
+    return {'type': 'projected',
+            'sources': [{'serviceAccountToken': {'audience': callee, 'expirationSeconds': TOKEN_SECONDS,
+                                                 'path': f'{callee}/token'}} for callee in callees],
+            'globalMounts': [{'path': TOKENS_MOUNT, 'readOnly': True}]}
+
 
 # OpenTelemetry: apps with an SDK send OTLP to the collector DaemonSet on their own node,
 # which listens with host networking on 4318 (HTTP) and 4317 (gRPC) and adds the ingestion
@@ -126,7 +196,7 @@ def otlp_env(service: str) -> dict:
 # Environment names the platform sets or may set. An app's secret keys arrive through envFrom, and a
 # container's own env silently wins over envFrom, so a secret with one of these names would never be seen.
 # New platform variables use the SWHURL_ prefix. KUBERNETES_* are the API server's address for in-cluster clients.
-RESERVED_ENV_NAMES = (OTLP_HOST_IP, DATABASE_PATH_ENV)
+RESERVED_ENV_NAMES = (OTLP_HOST_IP, DATABASE_PATH_ENV)  # and every SWHURL_ name above
 RESERVED_ENV_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
 
 
@@ -168,7 +238,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'team'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -220,6 +290,12 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
             if not isinstance(resources[key], str):
                 raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
             defaults[dest] = resources[key]
+    calls = field('calls', list)
+    if calls:
+        if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \
+                or len(set(calls)) != len(calls):
+            raise fail('calls must be a list of distinct app names')
+        defaults['calls'] = calls
     if field('team', str):
         defaults['team'] = doc['team']  # checked against the registry by app-new
     field('stack', str)

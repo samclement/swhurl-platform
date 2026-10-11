@@ -3,7 +3,7 @@
 {% block title %}Platform{% endblock %}
 {% block main %}
 <h1>Platform</h1>
-<p class="lead">The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Reconcile, suspend or resume a unit from its row; open it for what it applies and what needs it.</p>
+{% call st.about() %}The cluster's building blocks: the Flux units Git applies, in the order they depend on each other, and the health checks this console can run. Reconcile, suspend or resume a unit from its row; open it for what it applies and what needs it.{% endcall %}
 {% set unhealthy = units | rejectattr('healthy') | list %}
 <p class="verdict">{% if problems %}{{ st.mark('failing') }} <strong>{{ problems | length }} {{ 'thing needs' if problems | length == 1 else 'things need' }} attention</strong>
 {% elif updating %}{{ st.mark('updating') }} <strong>Updating</strong> <span class="muted">— {{ updating | length }} unit{{ 's' if updating | length != 1 }} applying a change; normal for a few seconds after a push</span>

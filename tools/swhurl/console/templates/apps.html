@@ -14,7 +14,7 @@
 {% endmacro %}
 {% block main %}
 <h1>Apps</h1>
-<p class="lead">Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. A tag opens that environment's page, to use it, connect to it or operate it.</p>
+{% call st.about() %}Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. A tag opens that environment's page, to use it, connect to it or operate it.{% endcall %}
 <div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
   <span class="muted">Team</span>
   <a href="{{ link(view, '', env) }}" class="{{ 'here' if not team }}">all</a>

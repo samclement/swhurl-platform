@@ -34,8 +34,9 @@
   <a class="button" href="/new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> New app</a>
 </header>
 <main{% if auto_refresh %} hx-get="{{ refresh_url }}" hx-trigger="every 30s [canRefresh()]" hx-select="main" hx-target="main" hx-swap="outerHTML"{% endif %}>
-<p class="page-meta">Read at {{ read_at }}{% if auto_refresh %}, and again every 30 seconds{% endif %} <a class="button quiet" href="{{ refresh_url }}" title="Read the cluster again"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</a></p>
 {% if not github %}<p class="banner"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> <span>No GitHub token is configured, so this console can read but cannot open pull requests: every change form is unavailable.</span></p>{% endif %}
+{# Beside the page's title, not above it. #}
+<p class="page-meta">Read at {{ read_at }}{% if auto_refresh %}, and again every 30 seconds{% endif %} <a class="button quiet" href="{{ refresh_url }}" title="Read the cluster again"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh</a></p>
 {% block main %}{% endblock %}
 </main>
 <dialog id="confirm"><p></p><div class="toolbar"><button type="button" value="no">Cancel</button><button type="button" class="danger" value="yes">Continue</button></div></dialog>

@@ -3,7 +3,7 @@
 {% block title %}Activity{% endblock %}
 {% block main %}
 <h1>Activity</h1>
-<p class="lead">What the console has done, and what is waiting for you: pull requests it opened that are not merged yet, and every job started here.</p>
+{% call st.about() %}What the console has done, and what is waiting for you: pull requests it opened that are not merged yet, and every job started here.{% endcall %}
 
 <h2>Pull requests waiting for you</h2>
 {% if prs %}

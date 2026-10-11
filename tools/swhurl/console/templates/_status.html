@@ -13,3 +13,5 @@
 {# How an open console pull request gets merged, with the one control that applies now. #}
 {% macro merging(pr) %}{% set words, control = merge_mode(pr) %}<span class="merging">{{ words }}{% if control %}
   <form class="inline" method="post" action="/promotion-prs/{{ pr.number }}/{{ control }}" hx-post="/promotion-prs/{{ pr.number }}/{{ control }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Remove its auto-merge label: it then waits for you to merge it' if control == 'hold' else 'Label it auto-merge again: it merges itself once fresh checks pass' }}">{{ 'Hold' if control == 'hold' else 'Request auto-merge' }}</button></form>{% endif %}</span>{% endmacro %}
+{# What a list page is for, one click away: the list itself starts right under the title. #}
+{% macro about() %}<details class="about" id="about"><summary>{{ icon('info') }} About this page</summary><p class="lead">{{ caller() }}</p></details>{% endmacro %}

@@ -27,6 +27,35 @@ App instances are separated by namespace, and each namespace carries a team labe
 
 **Names.** A Flux unit is named `<area>-<component>` after its directory (`platform/oauth2-proxy` is `platform-oauth2-proxy`; an app instance `apps/<app>/<env>` is `app-<app>-<env>`), with one directory per unit. Namespaces are named by function (`ingress`, `observability`, `logging`, `platform-system`, `<app>-<env>`) and HelmReleases by product. `swhurl` names the project: the repository, its `GitRepository` source (`swhurl-platform`), the `tools/swhurl` package and the `platform.swhurl.com/*` label domain. `home` is the cluster (`clusters/home`), and `homelab.swhurl.com` is the parent DNS domain.
 
+## How apps work together
+
+Teams deploy apps that find and call each other, publish and receive events, keep their own data and can be followed end to end. Two rules keep that simple:
+
+- **One contract.** An app says what it needs in [`swhurl.yaml`](apps.md#swhurlyaml) (or a `make app-*` command later), and the platform generates the rest. Each capability is one field, one platform piece and one helper in the stack templates, the same in TypeScript and Kotlin.
+- **One declaration, many effects.** What an app declares is the only thing written by hand; everything on the other side is derived from it (`make app-sync`) and checked (`make check-apps`), so the two cannot drift apart.
+
+| Capability | An app declares | The platform derives | Built on |
+| --- | --- | --- | --- |
+| [Team and isolation](apps.md#teams-and-isolation) | `team:` | Namespace label, quota, a NetworkPolicy admitting Traefik and declared callers; `swhurl.team` on telemetry | Kubernetes |
+| [Calling another app](apps.md#calling-another-app) | `calls: [orders]` | The callee's address, a short-lived token only it accepts, the callee's allowed callers and network rule | Kubernetes DNS and service-account tokens |
+| [Events](apps.md#events) | `events: {publish, subscribe}` | A key, a stream or consumers, and a NATS user limited to those events | [NATS JetStream](services.md#nats) |
+| [Data](apps.md#stacks-and-features) | `database: sqlite` | A retained volume, one writer, nightly backups | local-path storage |
+| [Telemetry](apps.md#telemetry) | `telemetry: otlp` | The collector address; pod, namespace and team on every signal | OTel collectors, ClickStack |
+| Finding what exists | nothing | The console's [Services](console.md#use-it) page, read from what runs | The console |
+
+```mermaid
+flowchart LR
+  user([Browser]) --> traefik[Traefik + sign-in]
+  subgraph cluster[k3s]
+    traefik --> reports["reports<br/>team insights"]
+    reports -- "token for orders" --> orders["orders<br/>team payments · SQLite"]
+    orders -- "orders.created" --> nats[(NATS)]
+    nats --> notifier["notifier<br/>team payments · worker"]
+  end
+```
+
+One request through that chain is one trace: `reports` and `orders` each name their caller (`caller.type`, `caller.id`), and `notifier` handles the event inside the same trace. `make live-test-team-scenario` sends such a request through three deployed apps and checks what ClickStack recorded. It is a proof of the contract on one node, not of capacity.
+
 ## Flux units
 
 Arrows mean **must be Ready before**. The stack unit creates all the others; that ownership is separate from their dependencies.

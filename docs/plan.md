@@ -18,7 +18,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); migrating `hello-ts`.
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
-11. **Team platform — T0 to T4 done (11 October 2026), T5 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Apps now publish and receive events on NATS, in both stacks. **Next:** T5: a repeatable check of the whole chain (`make live-test-team-scenario`), the last behaviour moved out of the brief, the brief deleted. **Operator browser checks owed:** the Team select on **New app**; the team and the **Calls** form on an app page; the **Services** page; all signed in. **Throwaway repositories to delete after T5** (only the operator can): `samclement/swhurl-try-10`, `-11`, `-12`, `-13` and their packages.
+11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console's new forms and pages, and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a console form for events.
 
 ### Delivered
 
@@ -51,7 +51,7 @@ Numbers are kept because other docs and code comments cite them. Evidence for ea
 - **OTel deprecations:** collector 0.161.0 warns that `hostmetrics`, `kubeletstats`, `k8sobjects` and the inline `service.telemetry.resource` map are deprecated. The chart's presets generate all three names, so renaming only ours could duplicate receivers; rename each with a chart version whose preset uses the new name (chart issue #2183). `make check-otel` lists deprecated names on every chart update and fails if a rename leaves a pipeline naming a missing component. The telemetry format warning goes with chart PR #2343.
 - **Kotlin telemetry:** the agent's `jvm.memory.*` and `jvm.thread.*` metrics do not reach ClickStack (only `jvm.gc.duration`), so those dashboard panels wait. Log severity is guessed from text (a request log mentioning `traceId` reads as "trace").
 - **Not covered by observability:** no backup of telemetry, no alerts on app behaviour (error rates, latency, a stuck worker), and a collector that trusts every pod.
-- **Staging and production `hello`** differ only in namespace and host; `make check-apps` fails if they drift further. No per-instance quotas, NetworkPolicies or RBAC.
+- **Staging and production `hello`** differ only in namespace and host; `make check-apps` fails if they drift further. Each instance has a quota and a NetworkPolicy ([teams and isolation](apps.md#teams-and-isolation)); there is no per-team RBAC.
 - **Shared sign-in cookie:** everything under `homelab.swhurl.com` shares it, so public or untrusted apps must use another parent domain (none exist).
 
 ### Not yet exercised live
@@ -759,326 +759,52 @@ Add apps and environments one allowlist entry at a time, production last. Revisi
 
 Write nothing to GitHub and fail the run if: a query fails or exceeds its limits; a finding cannot be reduced to the contract's fields; the repository is not private; the issue list cannot be read in full; the token is refused. A quiet hour is not a failure: the run ends normally and writes nothing.
 
-## 15. Team platform — planned 10 October 2026, not started
+## 15. Team platform — delivered 10 to 11 October 2026
 
-**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 to T4 are done; T5 is next.
-
-### Decisions (confirmed by the operator, 10 October 2026)
-
-1. **Identity:** Kubernetes service-account tokens bound to the callee's name. No Dex; callers outside the cluster are out of scope.
-2. **Sign-in and teams:** Google through oauth2-proxy stays. A team is a name in `apps/teams.yaml`, not a set of people.
-3. **Teams are simulated:** the operator acts as each team in this one repository. The pull request is the callee's consent to a new caller.
-4. **Events:** NATS JetStream. **Persistence:** SQLite only.
-
-### Facts checked on the live cluster (10 October 2026, read-only)
-
-- Token issuer is `https://kubernetes.default.svc.cluster.local`, RS256. The API server refuses anonymous requests (HTTP 401), and only service accounts may read the signing keys (`/openid/v1/jwks`). Apps run with `automountServiceAccountToken: false`, so a callee cannot fetch the keys itself: binding the discovery role to `system:unauthenticated` was tried in T0 and changes nothing. The public keys are therefore kept in `apps/signing-keys.json` and given to each web app as `SWHURL_AUTH_KEYS`.
-- Traefik pods are in `kube-system` with `app.kubernetes.io/name=traefik`: the selector the app NetworkPolicies admit.
-- k3s `v1.34.4` enforces NetworkPolicies on app pods (proven in T0).
-
-### Tasks (run in order; one commit per task; D2 and D4 involve the operator)
-
-**D1. Walk the docs as a stranger (offline).**
-1. Read `docs/bootstrap.md` and `docs/operations.md` (Backups and recovery). List every command, tool, version, file and credential a reader needs, in order. Check each exists: `make` targets (`grep -n '^name:' Makefile`), scripts, file paths, tools named without an install line (`aws`, `age`, `sops`, `flux`, `helm`, `uv`, `kubectl`), and the Python version.
-2. Check what a new machine lacks: the bucket name and region (hard-coded in operations.md), where the age key's off-host copy lives (the docs say "location kept outside Git"; say how to ask yourself for it, not where it is), `age.agekey` placement, and the `sops-age` Secret step.
-3. Check the SQLite path: a fresh cluster creates empty claims, so `make restore-sqlite` needs the app running first and the backup files copied to `BACKUP_DIR/sqlite/<app>-<env>/`. Confirm the docs say so in order and that `restore-sqlite --dry-run` works against a copied file.
-4. Answer the Let's Encrypt rebuild question in `operations.md`: the limits that matter (duplicate certificate: 5 per week for the same hostnames; 50 certificates per registered domain per week), what a rebuild issues (the four platform and app hostnames), and the rule: use `selfsigned` or `letsencrypt-staging` while iterating, and switch to `letsencrypt-prod` once. Check the numbers against Let's Encrypt's current rate-limit page before writing them.
-5. Fix every gap in the canonical page (bootstrap.md for building, operations.md for data), not in a new page. Keep a list of what you could not verify offline.
-6. Validate: `make check`. Commit: `Close recovery documentation gaps found by a dry read`.
-
-**D2. Prepare the drill branch and machine (operator + model).**
-1. Model: create `drill/recovery` from `main`. In it, remove from `clusters/home/kustomization.yaml` and the unit files: `platform-image-automation`, `platform-console`, `platform-alerts`, `platform-flux-webhook`, and every `app-*` unit except one SQLite app chosen for the data check. Set the Git source in `clusters/home/flux-system/sources/` to the branch. Set every certificate to `selfsigned` (`make platform-certs-*` edits files only) and remove the Let's Encrypt issuers if they would be requested. Run `make check-repo` on the branch; fix only what the removals break. **Push only the branch, never `main`.**
-2. Operator (own terminal): provision the machine, install k3s per `docs/bootstrap.md` step 1, create the temporary read-only IAM user, bring the age key from its off-host copy, and install the tools the docs list. Note anything the docs did not tell you.
-3. Hand the operator the list of what to copy over (nothing else): the repository clone URL and branch, the age key, and the temporary AWS profile.
-
-**D3. Rebuild from the docs (operator, model watching and noting).** Follow `bootstrap.md` literally on the drill machine, steps 1, 3 (no new Secrets), 4, 5 and 6, with these differences: no DNS step, no router step, `drill/recovery` as the source. Time each step. At every stumble, write down the exact command and message, then fix the docs afterwards (D5). Expected: units Ready in dependency order within about 10 minutes of the first image pulls; `make install` fails on the ingestion key until the restore (as documented).
-
-**D4. Restore the data (operator + model).**
-1. MongoDB: copy the newest `clickstack-mongodb/` archive and its `.json` from S3, then follow the restore commands in `operations.md`. The restored document count must equal the metadata's. Run `make clickstack-bootstrap` and `make verify-platform`.
-2. SQLite: copy one app's newest backup from `app-sqlite/<app>-<env>/`, run `make restore-sqlite APP= ENV= DRY_RUN=true`, then with `CONFIRM=<app>/<env>`. Check the row counts against the backup's metadata; the app must start on the restored data.
-3. Pass criteria: MongoDB count and ingestion key match; SQLite checksum, table count and `integrity_check` pass; `verify-platform` passes except checks that need public DNS or the units removed from the branch (list which ones failed and why); Traefik answers on the drill machine with the self-signed certificate; HyperDX shows current logs after the collectors reconnect.
-4. Stop conditions: any step wants a real token, the live `main`, the live DNS or the live ntfy topic; any command would delete data on the live cluster. Stop and report. The drill never uses the live `KUBECONFIG`: check `kubectl config current-context` before every command.
-
-**D5. Record, fix, tear down.**
-1. Fix every doc gap D3 and D4 found, again in the canonical page. Commit: `Fix recovery documentation after the drill`.
-2. Record dated evidence in `current-state.md`: the decisions above, timings per step, the pass-criteria results, and what was **not** exercised (Let's Encrypt issuance, public DNS and router forwarding, a first login without a backup, the Google OAuth redirect on a new hostname).
-3. Update section 0: mark PR08a and the fresh-bootstrap item done or partial exactly as proven, and update the delivery table in section 3. If something failed, leave the item open and list what is left.
-4. Operator: delete the drill machine, the IAM user and the `drill/recovery` branch. List them in the evidence entry so nothing is left running.
-5. Commit: `Record the recovery drill`.
-
-### Track A: what can be proven on this host (do this before the separate machine)
-
-A throwaway k3d cluster on this host, built by following the docs from a clean shell, proves the docs and the data restore. It does **not** prove a bare-host install, independent credentials or the public side (DNS, router, Let's Encrypt), so when Track A passes, mark PR08a **partial** in section 0 and keep D2 to D5 above as the remaining separate-machine gate. D1 is shared by both tracks and runs first.
-
-**Guardrails (check at the start of every task and before every `kubectl`/`flux`/`helm` command).**
-- The drill uses its own kubeconfig, `export KUBECONFIG=$DRILL/kubeconfig` where `DRILL=$CLAUDE_JOB_DIR/tmp/drill` (create it). `kubectl config current-context` must print `k3d-drill`, never the live k3s context. If it does not, stop.
-- Never run `make flux-bootstrap`, `make flux-install`, `make host-*`, `make backup-*`, `make destroy-data` or any `make` target that reads `$HOME/.kube/config` unless `KUBECONFIG` is exported to the drill file in the same command. `git push` only the `drill/recovery` branch; never `main`.
-- The drill must not follow `main` (see the rule above): confirm in the drill Git source that the branch is `drill/recovery`.
-- Read S3 only with `aws s3 cp` (and `ls`); never `rm`, `sync --delete` or `mv`. Copy backups to `$DRILL/backups/`, never into `~/.local/state/swhurl-platform/backups`.
-- The age key is read from the repo copy (`age.agekey`, git-ignored). Never print it or any Secret value; compare by counts and checksums.
-- Resources first: the live stack already uses about 11 GiB of 31 GiB RAM and the drill adds ClickStack. Run `free -g` and `df -h /`; stop if available memory is under 12 GiB or free disk under 40 GiB.
-
-**A1. D1 (shared).** Do D1 as written. Commit as described.
-
-**A2. Drill branch (offline).** Do D2 step 1 on `drill/recovery`, keeping one SQLite app (pick from `ls apps/`; prefer the one with the most recent backup in S3: `aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/ --recursive | tail`). Verify before pushing the branch: `grep -rn "platform-image-automation\|platform-console\|platform-alerts\|platform-flux-webhook" clusters/` shows nothing on the branch; `make check-repo` passes; `git diff main --stat` lists only deletions and the source/issuer edits. Push with `git push -u origin drill/recovery`.
-
-**A3. Build the cluster (operator terminal for `sudo`).** Follow `docs/bootstrap.md` step 1 and 4 with k3d in place of the k3s installer, as the 28 September rehearsal did ([evidence](current-state.md#bootstrap-rehearsal)): rootful Podman, API bound to `127.0.0.1`, cluster name `drill`, k3s image at the live version (`kubectl version` on the live cluster shows it; do not guess). Hand the operator the exact commands, labelled "run in your own terminal" where they need `sudo`. Then, in the drill kubeconfig only: `make flux-install`, create the `sops-age` Secret from `age.agekey`, `make flux-bootstrap`, `make install`. Expected: all remaining units Ready in dependency order (about 3 minutes in the rehearsal, longer for cold image pulls); `make install` ends with the documented failures on the ingestion key and the MongoDB volume's reclaim policy. Record any other failure verbatim.
-
-**A4. Restore MongoDB.** `aws s3 cp` the newest archive and its `.json` metadata from `clickstack-mongodb/` into `$DRILL/backups/`. Follow the restore commands in `operations.md` against the drill cluster. Pass: `mongorestore`'s document count equals the metadata's; `make clickstack-bootstrap` succeeds; `make verify-platform` passes except for checks the branch cannot satisfy (list each failed check with the reason: removed units, no public DNS, no S3 backup timer on the drill host, host-only checks).
-
-**A5. Restore one SQLite app.** Copy that app's newest backup and metadata from `app-sqlite/<app>-<env>/` to `$DRILL/backups/sqlite/<app>-<env>/` and run with `BACKUP_DIR=$DRILL/backups`: `make restore-sqlite APP=<app> ENV=<env> DRY_RUN=true`, then with `CONFIRM=<app>/<env>`. Pass: checksum, table count and `integrity_check` match the metadata, and the app's pod is Ready on the restored data (compare a row count with the metadata).
-
-**A6. Record and tear down.**
-1. `k3d cluster delete drill` (names the drill cluster only; check the name first with `k3d cluster list`), delete `$DRILL`, and delete the remote branch (`git push origin --delete drill/recovery`) after confirming with the operator.
-2. Evidence in `current-state.md`: date, k3s and Flux versions, per-step timings, pass results from A3 to A5, the failed `verify-platform` checks with reasons, the doc fixes made, and the **not exercised** list (bare-host install, independent credentials, Let's Encrypt, DNS and router, first login without a backup, Google OAuth redirect on a new host).
-3. Section 0: PR08a stays **partial** (docs and data restore proven on this host; separate-machine gate open); update the delivery row in section 3 and the "not yet exercised" list to match. Commit: `Record the recovery drill on this host`.
-
-**Verification the cheaper model must run before reporting:** `kubectl --kubeconfig $DRILL/kubeconfig config current-context` is `k3d-drill`; the live cluster still shows all Flux units Ready (`KUBECONFIG=$HOME/.kube/config flux get kustomizations`) and `git log origin/main` has no commit from this work except the documentation commits; `aws s3 ls` of the bucket shows no new or removed objects; `k3d cluster list` shows no leftover drill cluster.
-
-### Out of scope
-
-Issuing real Let's Encrypt certificates, DNS and router cut-over, restoring the live cluster, a write-only backup IAM user (separate follow-up in section 0), automating the drill, and a second permanent cluster.
-
-## 14. Incident issues and agent fixes — redesigned 9 October 2026 (design B), not started
-
-**Goal.** Find application failures in telemetry, record each distinct failure once as a GitHub issue in the app's repository, and let a coding agent that works from issues propose the fix as a draft pull request. The reviewer never calls a model, merges or deploys. GitHub review, CI and the existing GitOps path remain the gates to production.
-
-**Order.** Stage B1 starts after the stage B gate of [section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started): issues carry private evidence, so the app's repository must be private first.
-
-**Decision (9 October 2026, operator).** This replaces the earlier design (A): a three-container pod that sent a redacted bundle to the Codex CLI, validated the diagnosis, kept its own state and was to grow a patch worker, a verifier and a PR broker. Design B keeps the detector and gives the record, the deduplication and the fix path to GitHub. Reasons: about a third of the code, no model credential in the cluster, and fixes arrive through the review path already trusted. The design A contract, which some code comments still cite by heading ("Handoff files", "State"), is this file at `47ff348`.
-
-**What is deployed.** Nothing: no reviewer workload, Secret, state ConfigMap, Flux unit or namespace remains.
-
-**Rollback status (9 October 2026):** the GitHub-issue design below is an archived proposal, not an approved rollout sequence while the replacement design is reconsidered. The issue writer was never implemented.
-
-### Flow
-
-```mermaid
-flowchart LR
-    subgraph cluster[Cluster]
-        cron[CronJob incident-review, hourly] --> sweep[sweep: fixed ClickHouse queries, fingerprint]
-        ch[(ClickHouse)] --> sweep
-    end
-    sweep -->|list issues labelled incident| gh[GitHub issues in the app repository]
-    sweep -->|create, update or reopen| gh
-    gh -->|label incident| agent[Coding agent in GitHub]
-    agent -->|draft PR| review[Operator review and CI]
-    review -->|merge| flux[Image build and Flux deploy]
-```
-
-Example: `hello-ts` staging throws `RangeError` seven times in an hour. The next sweep opens one issue; the sweep after finds it by fingerprint and only updates its "last seen" block. Closing it as *not planned* silences that failure for good; closing it as *completed* and seeing the failure again after the grace period reopens it.
+Teams, app-to-app calls with service discovery, and events, as a proof of the contract on one node. What it is and how it fits together: [architecture](architecture.md#how-apps-work-together). How to use each part: [teams and isolation](apps.md#teams-and-isolation), [calling another app](apps.md#calling-another-app), [events](apps.md#events), [NATS](services.md#nats), the console's [Services](console.md#use-it) page. The design brief this was built from is in Git history (`docs/design-team-platform.md`, last at `cf61a4e`).
 
 ### Decisions
 
-Taken:
+Confirmed by the operator on 10 October: service-account tokens for identity; Google sign-in stays and a team is a name, not a set of people; teams are simulated in this one repository; NATS JetStream for events; SQLite only. On 11 October: the NATS stream controller creates streams from manifests.
 
-| # | Decision | Taken |
+Taken during the work, each because the plan's first choice did not hold or a simpler one appeared:
+
+| Decision | Why |
+| --- | --- |
+| The cluster's signing keys are kept in Git and given to apps as a variable | The API server refuses anonymous requests, so an app with no API token cannot fetch them (proven in T0) |
+| The caller's declaration is the only truth; the callee's side is derived | One function (`edit.sync_env`) then serves every command, and a check can compare both sides |
+| A request without a token is a person, signed in or anonymous | A public app must answer strangers, and an app cannot tell Traefik from an allowed caller |
+| Calls and events are per environment; events do not follow a promotion | Like replicas; production gets its own key |
+| One NATS account, environments kept apart by subject name and permission | Two accounts needed a second controller credential for no extra isolation here |
+| Apps sign in to NATS with nkeys | The user list holds public keys only, so it is plain YAML, and the console (which can only encrypt) can create an app's key |
+| No template question for calls or events | The helpers are in every app and cost nothing unused; no template combination was added |
+| The Services page reads the cluster, not Git | The console image has no checkout, and what runs is what a caller needs |
+
+### Delivered
+
+| Task | Commits | Evidence |
 | --- | --- | --- |
-| 1 | Design B over design A | 9 October 2026 |
-| 2 | **Evidence is private, not minimal.** App repositories are made private (section 4), so an issue carries the stack trace, log message and request path listed in [Issue contract](#issue-contract). The reviewer refuses to write to a repository that is not private. Readers are the operator, GitHub and the coding agent's provider. This replaces the same day's first version (minimal evidence in public repositories) and the 8 October privacy sign-off. Making a repository public later would publish its issues: delete the incident issues first | 9 October 2026 |
-| 3 | The scheduled sweep stays the trigger (5 October reasoning unchanged: an alert exists only for failures someone predicted, and a broken alert path is silent). ClickStack alerts may be added later as an accelerator | 5 October 2026 |
-| 4 | The collector reuses the ClickHouse `app` account, copied into `incident-review-clickhouse` and kept equal by `make check-secrets` | 6 October 2026 |
-| 5 | Pilot failure: `GET /repeat?times=-1` in `hello-ts` staging (caught `RangeError`, 500, no restart), merged in [hello-ts#11](https://github.com/samclement/hello-ts/pull/11) | 7 October 2026 |
+| T0 proofs: call identity, NetworkPolicy | `8ee3fca`, `12a86b5` | [current state](current-state.md#team-platform-t0-call-identity-and-network-policy-proofs-10-october-2026) |
+| T1 teams and isolation | `e351e2c`, `57f2a96`, `eaca531`, `42c9478`, `3daf729` | [current state](current-state.md#team-platform-t1-teams-and-isolation-11-october-2026) |
+| T2 calls and discovery | `19f6ac3`, `16204c2`, `73d2a82`, `a2867b7`; templates `ea294aa`, `e7dd18e` | [current state](current-state.md#team-platform-t2-calls-and-discovery-11-october-2026) |
+| T3 Services page | `db1c886`, `4d8baaf` | [current state](current-state.md#team-platform-t3-services-page-11-october-2026) |
+| T4 events | `1e714ac`, `d339703`, `977dbbe`, `9ee6750`, `cf1ccc4`; templates `086161f`, `81f7d8b` | [current state](current-state.md#team-platform-t4-events-11-october-2026) |
+| T5 scenario check and documentation | this commit | [current state](current-state.md#team-platform-t5-scenario-and-documentation-11-october-2026) |
 
-Open (operator; ask, do not assume):
+### Not built
 
-| # | Decision | Proposed | Needed by |
-| --- | --- | --- | --- |
-| 6 | Identity that writes issues | A fine-grained token on your account, limited to the allowlisted app repositories with Issues: read and write (Metadata: read comes with it and is what the private check uses), as the console does for PRs. Consequence: issues are authored by you, and GitHub does not notify you of your own issues, so the first notice is the agent's reply. A GitHub App gives a bot author and notifications but adds token-minting code | Task 5 |
-| 7 | Which coding agent, and how it is triggered | Decide with a `decision-brief` at the start of stage B2; the issue and its `incident` label are the whole interface, so the choice can change later without touching the reviewer | Stage B2 |
-| 8 | Protect `main` in app repositories | Require a pull request on `main` before any agent gets write access: `hello-ts` `main` is unprotected today (checked 9 October) and a push to it deploys to staging. On a private repository this needs GitHub Pro (section 4, task P0) | Stage B2 |
-| 9 | Signals dropped from design A (`missing-telemetry`, `unexpected-service`) | Not rebuilt here: a code agent cannot fix them. Candidates for the notification checker under open work 5 | Not blocking |
+Listed as [limits](apps.md#limits) where a user would meet them: tokens for callers outside the cluster (Dex was the candidate); a signed sign-in identity inside the cluster, so a declared caller can pose as a person; egress rules; admission-time policy; per-team repositories, merges and secret values; Postgres (excluded by the operator); a console form for events; backups of event streams (on purpose).
 
-### Signals
+### Left for the operator
 
-Two signals per allowlisted app and environment, each a fixed, parameterised ClickHouse query over the previous full UTC hour, scoped by namespace, with the existing row and byte limits.
+1. **Browser checks, signed in:** the Team select on **New app**; the team and the **Calls** form on an app page; the **Services** page; the scenario's trace in HyperDX (the trace id is printed by `make live-test-team-scenario`).
+2. **Throwaway apps.** `swhurl-try-10`, `-11`, `-12` and `-13` are the only apps that exercise calls and events, and `make live-test-team-scenario` needs three such apps. When they are no longer wanted, remove them in this order (subscribers and callers before what they depend on), then delete the repositories and packages on GitHub, which only the operator can:
 
-| Signal | Source | Fires when | Fingerprint key |
-| --- | --- | --- | --- |
-| `error-logs` | `default.otel_logs`, severity `error` or `fatal` or number 17 and above (the existing query) | count is at least `error_min_count` | `ServiceName` plus exception type (`exception.type`, else pino's `err.type`); with neither, the first 80 characters of the body with digits and hex runs replaced by `#` |
-| `restarts` | Container restart telemetry already collected by the cluster OTel collector (`clusterMetrics` and `kubernetesEvents` presets in `platform/otel/helmrelease-cluster.yaml`). **Unverified:** the table, columns and whether the termination reason arrives; task 3 starts by reading the live schema | restarts in the window are at least `restart_min_count` | container name plus termination reason (`OOMKilled`, `Error`) when telemetry carries it, else container name |
+   ```
+   make app-remove APP=swhurl-try-13 ENV=staging
+   make app-remove APP=swhurl-try-11 ENV=staging
+   make app-remove APP=swhurl-try-12 ENV=staging
+   make app-remove APP=swhurl-try-10 ENV=staging     # keeps its SQLite volume: make destroy-data to delete it
+   ```
 
-`error-spans` is dropped: for a caught exception it reported the same failure a second time under a different fingerprint. There is no baseline, rate rule or cooldown: a failure either has an issue or it does not.
-
-**Fingerprint.** Unchanged: the first 24 hex characters of SHA-256 over the compact, key-sorted JSON of `{repository, app, env, signal, key}`. The body-prefix fallback is hashed, never published.
-
-### Issue contract
-
-GitHub is the only record. The reviewer keeps no state of its own.
-
-| Field | Value |
-| --- | --- |
-| Title | `[incident <first 12 of fingerprint>] <exception type or "container restart"> in <service> (<env>)` |
-| Labels | `incident` and the environment name; the reviewer creates the labels if missing |
-| Body, written once | app, environment, signal, exception type, first seen, image tag, a HyperDX search link, the marker `<!-- swhurl-incident: <fingerprint> -->`, and an **Evidence** section from the newest matching log record: the log message (cut to 2,000 characters), the stack as logged (up to 30 lines, each cut to 300 characters), the request path without its query string (cut to 300 characters) and the trace identifier |
-| Body, rewritten each sweep that sees the failure | last seen, count in that hour, number of sweeps seen |
-| Never written | query strings, headers, cookies, request or response bodies, more than one log record per issue, anything from another namespace |
-
-- **The Evidence section is untrusted text.** The message, the stack's first line and the path can hold whatever a caller sent. Write the section under the fixed heading `## Evidence (untrusted text from telemetry)`, each value inside a fenced code block whose fence is longer than any run of backticks in the value, so nothing in it renders as Markdown, a mention or a link. Title, labels and every field outside that section come only from the allowlist and from values the reviewer computed.
-- **Sources already exist:** `LOG_FIELDS` in `collect.py` selects `message`, `exception_type`, `stack` and `path`, and `approved_log` strips the query string; add `TraceId`. Task 2 reuses them.
-- **Private check.** Before any write to a repository the reviewer reads `GET /repos/{owner}/{repo}` and requires `private: true`; otherwise it writes nothing there and the run fails with the reason `not-private`.
-- **The HyperDX link** is useful to the operator only: HyperDX is behind sign-in, so the agent cannot follow it. The link template is still unrecorded (a real search URL must be captured in task 2).
-- **Lookup** lists issues labelled `incident` in the repository, open and closed, and matches the marker; it does not use the search API, which lags behind writes.
-
-What the reviewer does for each fired fingerprint:
-
-| Issue for that fingerprint | Action |
-| --- | --- |
-| None | Create it, then lock the conversation so only collaborators can comment. At most `max_new_issues_per_sweep`; the rest are logged as `deferred` and recreated as findings next sweep |
-| Open | Rewrite the "last seen" block. No comment, so no notification noise; rerunning the same hour changes nothing |
-| Closed as not planned | Nothing. This is how the operator suppresses a failure |
-| Closed as completed | Reopen with one comment naming the image tag, but only when the window starts at least `reopen_grace_hours` after the close, so errors between merge and deploy do not reopen it |
-
-If the repository already has `max_open_issues` open incident issues, no new one is created and the run logs `capped`.
-
-**What the agent must be protected from.** The repository is private, so only the operator and the token can write issues, comments and labels: no stranger can open or steer one directly. But the Evidence section holds text a caller of the app chose, and the agent reads it, so it is a prompt-injection path. The defences are in stage B2, not in redaction: the agent is told that section is data, never instructions; it can only open a draft pull request; `main` is protected (decision 8); its environment holds no secret beyond its own repository token; and the operator reviews every diff before merge.
-
-### Allowlist
-
-`tools/swhurl/incident_review/allowlist.yaml`, still a reviewed commit that nothing at run time can extend, with the loader still refusing unknown keys:
-
-```yaml
-version: 2
-defaults:
-  error_min_count: 1          # error logs in one hour before an issue is opened
-  restart_min_count: 1        # container restarts in one hour before an issue is opened
-  max_new_issues_per_sweep: 3 # across all apps; the rest wait for the next sweep
-  max_open_issues: 10         # per repository; at this many, create none
-  reopen_grace_hours: 2       # a completed issue reopens only for failures this long after the close
-apps:
-  - app: hello-ts
-    repository: samclement/hello-ts
-    environments: [staging]   # the namespace is <app>-<env>
-    signals: [error-logs, restarts]
-```
-
-### Runtime layout
-
-| Name | Value |
-| --- | --- |
-| Flux unit, namespace, workload | Unchanged: `platform-incident-review`, `incident-review`, CronJob `incident-review` at minute 17, `Forbid`, `backoffLimit: 0`, one successful and one failed Job kept |
-| Container | One, the console operator image: `timeout 120 python -m swhurl incident-review-sweep`. Non-root, read-only root, no capabilities, requests and a memory limit |
-| Secrets (SOPS, `stringData`) | `incident-review-clickhouse` (kept); `incident-review-github` (`GITHUB_TOKEN`, new, decision 6). Removed: `incident-review-openai`, `incident-review-ntfy` |
-| RBAC | `list` on HelmReleases only (the image tag). The state Role and ConfigMap are removed |
-| NetworkPolicy | Unchanged: DNS, ClickHouse 8123, the Kubernetes API, TCP 443 outside the cluster (now GitHub). No ingress |
-| Switch | `INCIDENT_REVIEW_MODE=collect-only` makes the sweep log what it would write and call GitHub for reads only |
-| Failure | Any ClickHouse or GitHub failure exits non-zero with one reason word on stdout. The host heartbeat (stale after 130 minutes) and `make verify-platform` already report it; the reviewer sends no messages of its own |
-
-GitHub calls go through the console's `GitHubAPI` client (`tools/swhurl/console/changes.py`) behind a small protocol with a fake, as the ClickHouse adapter is.
-
-### Stage B1 — the detector writes issues
-
-One commit per task, each with its documentation and `make check`. Tasks 1 to 4 are offline.
-
-| # | Task | Files | Done when |
-| --- | --- | --- | --- |
-| 1 | Issue store: the private check, list, match by marker, create and lock, rewrite the "last seen" block, reopen; the action table above as one decision function | new `incident_review/issues.py`, tests | A table-driven test maps every issue state and close reason to one action; a fake GitHub proves a second run of the same hour writes nothing and that a public repository gets no write and fails the run with `not-private` |
-| 2 | Evidence renderer: title and body from a finding, the Evidence section, link template | `incident_review/evidence.py` (from the bundle code in `collect.py`), tests | Fixtures show: message, stack, path and trace identifier appear inside fences; a value containing backticks, `@name`, `#1`, a URL or an HTML comment cannot close its fence or forge the marker; a path's query string is dropped; each length limit holds; a record with no stack or path still renders |
-| 3 | `restarts` signal, after reading the live schema and recording the table and columns here | `collect.py`, fixtures, tests | Fake-backed tests for a restart with and without a reason; the query was run once against the cluster |
-| 4 | `incident-review-sweep` command and allowlist version 2; `make incident-review-dry-run` runs it over fixtures with the fake GitHub; `make incident-review-status` lists open incident issues instead of reading state | `__main__.py`, `allowlist.py`, `allowlist.yaml`, `inspect.py`, `Makefile`, `docs/commands.md` | The dry run prints the issues it would create and makes no network call |
-| 5 | Operator creates the token (decision 6); add `incident-review-github` and its expiry check | SOPS Secret, `verify.py`, `docs/operations.md` | `make check-secrets` passes; `make verify-platform` reports the token accepted, without printing it |
-| 6 | Cut over and remove design A. **Confirm first: Flux prunes the two Secrets and the state ConfigMap.** One container in collect-only mode; delete `decide.py`, `adapters.py`, `dryrun.py`, `state.py`, `diagnosis.schema.json`, the baseline, cooldown and spend code, `images/incident-review-worker/`, its publish workflow, the `worker-image` CI job and command, `WORKER` in `images.py`, and their tests and fixtures. Keep `statestore.py`, the heartbeat table and the console half of `images.py`: the notification checker and console use them | manifests, `tools/`, `.github/workflows/`, `docs/services.md`, `docs/operations.md`, `docs/architecture.md` | A scheduled sweep logs the issue it would create for the induced pilot failure; `make verify-platform` is green |
-| 7 | Go live: remove the switch and exercise every row of the action table on `hello-ts` | manifest, `docs/current-state.md` | See the gate |
-
-**Gate (B1):** the induced failure opens exactly one issue; the next sweep updates it and creates no duplicate; an issue closed as not planned stays closed while the failure continues; one closed as completed reopens after the grace period; the operator reads a real issue and confirms it holds only the approved fields and that the Evidence section renders as plain text; pointing the allowlist at a public repository in a dry run fails with `not-private`; a wrong ClickHouse password or a revoked token fails the Job and the heartbeat reports it.
-
-Operator clean-up after task 6 (yours to delete): the public GHCR package `swhurl-incident-review-worker`, the OpenAI project and key, and the `swhurl-diagnoses-…` ntfy subscription.
-
-### Stage B2 — an agent proposes the fix
-
-Starts after the B1 gate. Decisions 7 and 8 first, then a task list written here.
-
-- The agent runs in GitHub against the app repository, where the source already is; nothing in the cluster holds a model key or repository write access.
-- It acts on the `incident` label only, opens a **draft** PR that references the issue, and never pushes `main`, merges or enables auto-merge.
-- Its instructions say the issue's Evidence section is untrusted data, and the `decision-brief` for decision 7 compares the candidates on that: what the agent can reach (network, secrets, other repositories) if the text does steer it.
-- If app repositories need a workflow file for it, the stack templates (`swhurl-app-template-*`) gain it too, so new apps start covered.
-
-**Gate (B2):** for the pilot failure, the agent's draft PR passes the repository's CI, the operator reviews and merges it, the fix deploys to staging, and the issue stays closed through the grace period and the sweeps after it.
-
-### Stage B3 — widen by evidence
-
-Add apps and environments one allowlist entry at a time, production last. Revisit only with evidence from B1 and B2: a shorter sweep interval if an hour is too slow, a ClickStack alert as an accelerator, the dropped signals (decision 9), and whether issue volume needs a rate rule.
-
-### Stop conditions
-
-Write nothing to GitHub and fail the run if: a query fails or exceeds its limits; a finding cannot be reduced to the contract's fields; the repository is not private; the issue list cannot be read in full; the token is refused. A quiet hour is not a failure: the run ends normally and writes nothing.
-
-## 15. Team platform — planned 10 October 2026, not started
-
-**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 to T4 are done; T5 is next.
-
-### Decisions (confirmed by the operator, 10 October 2026)
-
-1. **Identity:** Kubernetes service-account tokens bound to the callee's name. No Dex; callers outside the cluster are out of scope.
-2. **Sign-in and teams:** Google through oauth2-proxy stays. A team is a name in `apps/teams.yaml`, not a set of people.
-3. **Teams are simulated:** the operator acts as each team in this one repository. The pull request is the callee's consent to a new caller.
-4. **Events:** NATS JetStream. **Persistence:** SQLite only.
-
-### Facts checked on the live cluster (10 October 2026, read-only)
-
-- Token issuer is `https://kubernetes.default.svc.cluster.local`, RS256. The API server refuses anonymous requests (HTTP 401), and only service accounts may read the signing keys (`/openid/v1/jwks`). Apps run with `automountServiceAccountToken: false`, so a callee cannot fetch the keys itself: binding the discovery role to `system:unauthenticated` was tried in T0 and changes nothing. The public keys are therefore kept in `apps/signing-keys.json` and given to each web app as `SWHURL_AUTH_KEYS`.
-- Traefik pods are in `kube-system` with `app.kubernetes.io/name=traefik`: the selector the app NetworkPolicies admit.
-- k3s `v1.34.4` enforces NetworkPolicies on app pods (proven in T0).
-
-### Decision to take during the work (operator; ask, do not assume)
-
-- **T4, how streams are created:** the NATS JetStream controller (streams as manifests Flux applies; one more controller) or an idempotent `make events-apply` (nothing extra to run; a merge then needs a command, like `make clickstack-bootstrap`). Lean: the controller, because every other app change completes on merge. Use the `decision-brief` skill.
-
-### Tasks (run in order; one commit per numbered step unless stated; `make check` before each)
-
-**T0. Proofs (throwaway namespaces; nothing existing changes). Done 10 October 2026** (`8ee3fca`, `12a86b5`; [evidence](current-state.md#team-platform-t0-call-identity-and-network-policy-proofs-10-october-2026)).
-1. `live-test-call-identity` (`tools/swhurl/livetests/call_identity.py`, `FakeRunner` tests). Two namespaces labelled `platform.swhurl.com/call-identity-test=true`. Caller pod: a projected token with audience `callee`, 10-minute expiry. Callee pod: no API token, the cluster's public keys as a ConfigMap, a short inline script on the Node image the template uses. Shows: (a) the callee accepts the token using the mounted keys; (b) a token for another audience, and no token, are refused; (c) `sub` names the caller's namespace and service account; (d) the Kubernetes API answers 401 to that token; (e) after about 8 minutes the kubelet has replaced the file and the new token is accepted.
-2. `live-test-network-policy` (`livetests/network_policy.py`). One throwaway web app with a route, and a policy selecting only its pods that admits the Traefik pods on the app port. Must show: (a) Traefik reaches it and it stays Ready (probes); (b) a pod in another namespace times out; (c) a second, unselected pod in the namespace on 8089 stays reachable (stands in for the HTTP-01 solver; no certificate is requested); (d) deleting the policy lets (b) connect, proving the policy was what blocked it.
-3. Push, run both, record evidence in `current-state.md`.
-
-**T1. Teams and isolation. Done 11 October 2026** (`e351e2c`, `57f2a96`, `eaca531`, `42c9478`, `3daf729`; [evidence](current-state.md#team-platform-t1-teams-and-isolation-11-october-2026)). Behaviour is in [apps](apps.md#teams-and-isolation). What T2 builds on:
-- `contract.network_policy()` is the one place the policy is generated; `policy.isolation()` compares the rendered policy with it, so T2 extends both through that function (declared callers become extra `from` entries).
-- `edit.isolation_edits()` rewrites an instance's quota and policy; `app-expose` and `app-team` call it. `app-calls` should too.
-- The app-template chart's Deployment strategy is `Recreate` by default, so the quota rule counts no surge pod.
-- A private web app now accepts no connections at all until T2 lets it declare callers.
-- The console image has no checkout: it reads `apps/teams.yaml` from `main` through GitHub (five-minute cache). The same route serves anything else it needs from Git.
-- `make verify-platform` checks instances that exist in Git only: namespaces kept for their data after an app was removed (`test-1-staging`, `swhurl-try-6-*`) carry no quota or policy and are not flagged.
-
-**T2. Calls and discovery. Done 11 October 2026** (`19f6ac3`, `16204c2`, `73d2a82`, `a2867b7`, and the template commits `ea294aa` (TypeScript), `e7dd18e` (Kotlin); [evidence](current-state.md#team-platform-t2-calls-and-discovery-11-october-2026)). Behaviour is in [apps](apps.md#calling-another-app). What changed from the plan, and what T3 and T4 build on:
-- **Keys travel as a variable, not a file.** `SWHURL_AUTH_KEYS` holds the key set from `apps/signing-keys.json`: no ConfigMap, no volume, and a key change restarts the apps.
-- **No ServiceAccount to create.** The app-template chart already gives each release one named after the app, so a caller is `system:serviceaccount:<app>-<env>:<app>`.
-- **The caller's declaration is the truth.** Its `SWHURL_SERVICE_<APP>_URL` variables say what it calls; `edit.sync_env()` derives the callee's allowed callers and NetworkPolicy from every caller in the environment. `app-calls`, `app-new --calls`, first promotion, `app-remove` and `platform-signing-keys` all end in it. T4 should derive event permissions the same way.
-- **Calls are per environment,** like replicas (`policy.VARIES`). The address uses `$(SWHURL_ENV)`, so a promoted release needs no rewriting beyond `SWHURL_ENV`.
-- **A request without a token is a person,** signed in or anonymous: a public app must still answer strangers, and an app cannot tell Traefik from an allowed caller. `requireApp` marks app-only routes. A declared caller can therefore pose as a person (a known limit in the brief).
-- **The first promotion of an app with calls is not merged by the console:** it edits other apps' production files, which `console/merge.py` refuses to reproduce.
-- **Throwaway apps kept for T3 to T5:** `swhurl-try-10` (TypeScript, SQLite, team payments; the callee), `swhurl-try-11` (TypeScript, team insights; calls 10 and 12), `swhurl-try-12` (Kotlin, team insights; calls 10). `swhurl-try-12` was built one template commit before the log-message fix.
-
-**T3. Services page and guard rails. Done 11 October 2026** (`db1c886`, `4d8baaf`; [evidence](current-state.md#team-platform-t3-services-page-11-october-2026)). Behaviour is in [console](console.md#use-it) and [apps](apps.md#calling-another-app). What T4 builds on:
-- **The page reads the cluster, not Git:** `cluster.services()` takes each instance's HelmRelease variables and its namespace's team label. T4's streams can be listed the same way if the publish and subscribe declarations are variables on the release.
-- **`provides.api`** becomes `SWHURL_API_PATH` on the release: shown, never fetched or checked.
-- **The refusals needed no console code:** the console runs the same commands as `make`, and a refused command's output is the job's output.
-
-**T4. Events. Done 11 October 2026** (`1e714ac`, `d339703`, `977dbbe`, `9ee6750`, `cf1ccc4`, and the template commits `086161f` (TypeScript), `81f7d8b` (Kotlin); [evidence](current-state.md#team-platform-t4-events-11-october-2026)). Behaviour is in [apps](apps.md#events) and [services](services.md#nats). The operator chose the stream controller ("go", 11 October). What changed from the plan, and what T5 builds on:
-- **One NATS account, not two.** Staging and production are kept apart by subject name (`<env>.<app>.<event>`) and per-app permission. Two accounts would have needed a second controller connection and credentials for no extra isolation here.
-- **Apps sign in with nkeys, not passwords.** The server's user list holds public keys only, so it is plain YAML generated from the instances, and creating an app's key needs nothing decrypted: the console can only encrypt. `tools/swhurl/apps/nkeys.py` derives the keys in pure Python (no crypto library in the console image), pinned to RFC 8032's test vectors.
-- **No Copier question.** The events helper is in every app and loads the client only when used, so no template combination was added.
-- **Events do not follow a promotion.** Production gets its own key and declaration with `make app-events ENV=prod` after promoting.
-- **There is no console form for events;** the Services page lists them. `make app-events` or `swhurl.yaml` declares them.
-- **A new declaration takes a minute or two to work:** the kubelet refreshes NATS's mounted configuration on its own schedule. The helpers retry every five seconds until then.
-- **Throwaway apps now:** `swhurl-try-10` (publishes `visited`), `swhurl-try-11`, `swhurl-try-12` (Kotlin; publishes `visited`), `swhurl-try-13` (TypeScript worker; subscribes to both). The three-app chain T5 needs exists: a request to try-11's `/call/swhurl-try-10` calls try-10, which publishes, and try-13 receives.
-
-New component checklist: retention covered (seven days and 64Mi per stream, 1Gi for the server); no default credentials (nkeys; each seed encoded once, `make check-secrets` passes); logs reach ClickStack; `make verify-platform` has an Events section; **not backed up, on purpose**; NATS reloads its own configuration and Reloader restarts an app whose seed changes; a failed encryption leaves no plaintext (tested); both charts are pinned in their HelmReleases for Renovate, with no major-version path looked at yet; documented in services and apps.
-
-**T5. Scenario and documentation.**
-1. A repeatable check, `make live-test-team-scenario`: drives `reports` → `orders` → `orders.created` → `notifier` on the deployed apps and reads ClickStack for one trace spanning all three with `caller.id` on each hop and `swhurl.team` on each service.
-2. Move anything still only in the brief into the canonical pages, delete `design-team-platform.md`, and reduce this section to its decisions and commits.
-3. Evidence in `current-state.md`, including what was not exercised. **Operator:** look at the trace in HyperDX; delete the `swhurl-try-<n>` repositories and packages listed in the evidence entry (their instances are removed with `make app-remove` first; retained volumes need the usual confirmation).
-
-### Operator actions, in order
-
-| When | Action | How |
-| --- | --- | --- |
-| After T1 | See the Team select on **New app** and the team on an app page | Own browser, signed in |
-| After T2 | See the **Calls** form on an app page (`swhurl-try-11/staging` calls two apps) | Own browser, signed in |
-| After T3 | See the **Services** page | Own browser, signed in |
-| T5.3 | Look at the scenario's trace in HyperDX | Own browser |
-| T5.3 | Delete the throwaway repositories and packages | Own browser or terminal |
-
-### Out of scope
-
-Everything under "Out of scope, and known limits" in the [brief](design-team-platform.md#out-of-scope-and-known-limits): Postgres, outside callers, signed user identity inside the cluster, egress rules, admission-time policy, per-team repositories and team-set secrets.
+   `swhurl-try-7`, `-8` and `-9` are older leftovers with no instance here.

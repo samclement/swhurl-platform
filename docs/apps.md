@@ -488,6 +488,10 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 ## Limits
 
 - A declared caller is trusted not to forge a person: a web app cannot tell oauth2-proxy's `x-auth-request-email` header from one an allowed caller sent itself.
+- Calls and events stay inside the cluster: there is no token for a caller outside it, and NATS has no route.
+- A team cannot set its own secret values or merge its own changes: there is one encryption key and one repository, and the pull request is the other team's consent to a new caller.
+- The only database is SQLite, so an app with one runs a single replica.
+- The app policy is checked on pull requests (`make check-apps`), not at admission: a manifest applied by hand is not checked.
 - Isolation is inbound only: an app's pods accept Traefik or nobody, but may connect out to anything. There is no per-team access control: a team is a label.
 - Everything under `homelab.swhurl.com` shares the sign-in cookie.
 - Only apps made from a stack template are supported, and only staging updates automatically; production changes through a promote ([deploy a new image](#deploy-a-new-image)).

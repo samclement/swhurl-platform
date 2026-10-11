@@ -24,6 +24,7 @@ make verify-platform             # expect "Validation passed."
 | Start a new app: repository, code and staging, from the console or `make app-repo` | [Start a new app](docs/apps.md#start-a-new-app) |
 | Deploy a new version, or put an app in production | [Deploy a new image](docs/apps.md#deploy-a-new-image), [add production](docs/apps.md#add-production) |
 | Change, operate or remove an app (its whole life) | [Apps](docs/apps.md) |
+| Put an app in a team, let it call another app, or publish and receive events | [Teams and isolation](docs/apps.md#teams-and-isolation), [calling another app](docs/apps.md#calling-another-app), [events](docs/apps.md#events); the whole picture in [how apps work together](docs/architecture.md#how-apps-work-together) |
 | See apps and Flux units, or change them from a browser | [Console](docs/console.md) |
 | Understand how the console deploys itself | [Deploy a new console](docs/console.md#deploy-a-new-console) |
 | Operate, rotate a Secret, back up or troubleshoot | [Operations](docs/operations.md) |
@@ -40,7 +41,7 @@ make verify-platform             # expect "Validation passed."
 | --- | --- |
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
-| `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, the web console, with their encrypted Secrets |
+| `platform/` | oauth2-proxy (sign-in), ClickStack and its MongoDB/ClickHouse operators, OTel collectors, Reloader, NATS (events), the web console, with their encrypted Secrets |
 | `apps/<app>/<env>/` | Generated app instances (each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features)) |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/`, `host/`, `tests/` | Python operator tooling and the web console's code; host systemd timers for dynamic DNS and the daily MongoDB backup (bash); offline tests and fixtures |

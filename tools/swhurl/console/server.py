@@ -74,14 +74,18 @@ TEMPLATES.env.globals['logs_url'] = logs_url
 
 def ago(when: dt.datetime | str, now: dt.datetime | None = None) -> str:
     """A time as how long ago it was (``3 h ago``); text that is not a time is returned as it is."""
+    now = now or dt.datetime.now(dt.UTC)
     if isinstance(when, str):
         try:
+            if len(when) == 10:  # a date alone: no hour to count from
+                days = (now.date() - dt.date.fromisoformat(when)).days
+                return {0: 'today', 1: 'yesterday'}.get(days, f'{days} days ago')
             when = dt.datetime.fromisoformat(when.replace('Z', '+00:00'))
         except ValueError:
             return when
     if when.tzinfo is None:
         when = when.replace(tzinfo=dt.UTC)
-    seconds = ((now or dt.datetime.now(dt.UTC)) - when).total_seconds()
+    seconds = (now - when).total_seconds()
     if seconds < 90:
         return 'just now'
     if seconds < 90 * 60:
@@ -101,6 +105,37 @@ def follow(url: str) -> Markup:
 
 
 TEMPLATES.env.globals['follow'] = follow
+TEMPLATES.env.globals['merge_mode'] = promotion.merge_mode
+
+
+def took(job: actions.Job) -> str:
+    """How long a finished job ran."""
+    seconds = round((job.finished - job.started).total_seconds()) if job.finished else 0
+    return f'{seconds} s' if seconds < 90 else f'{round(seconds / 60)} min'
+
+
+TEMPLATES.env.filters['took'] = took
+
+
+def in_place(request: Request) -> bool:
+    """Whether a button in a list sent this (htmx): its answer then replaces the button, so you stay on the list."""
+    return request.headers.get('hx-request') == 'true'
+
+
+def started(request: Request, job: actions.Job) -> Response:
+    """The answer to starting a job: in a list, a link to it where the button was (and the page reads
+    itself again shortly); from a plain form, the job's page."""
+    if not in_place(request):
+        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+    here = urlparse(request.headers.get('hx-current-url', ''))
+    back = here.path + (f'?{here.query}' if here.query else '') if here.path.startswith('/') else '/'
+    return HTMLResponse(f'<a class="started" href="/jobs/{job.id}" {follow(back)}><span class="mark updating" aria-hidden="true">'
+                        f'</span> {escape(job.action)} started · job #{job.id}</a>')
+
+
+def refusal(error: Exception) -> Response:
+    """Why a button in a list did nothing, where the button was (htmx swaps only a 2xx answer)."""
+    return HTMLResponse(f'<span class="bad" role="alert">{escape(error)}</span>')
 
 
 class RequireIdentity(BaseHTTPMiddleware):
@@ -248,21 +283,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return lambda _request: RedirectResponse(target, status_code=301)
 
     def start(request: Request) -> Response:
-        """Start a Flux action. From a button in a list (htmx) the answer replaces the button in its
-        row, so you stay where you are; from a plain form it is the job's page."""
-        in_place = request.headers.get('hx-request') == 'true'
         try:
             job = jobs.start(request.path_params['action'], request.path_params['unit'], request.state.identity)
         except (actions.ActionError, cluster.ReadError) as error:
-            if in_place:
-                return HTMLResponse(f'<span class="bad" role="alert">{escape(error)}</span>')
+            if in_place(request):
+                return refusal(error)
             return page(request, 'error.html', status_code=409 if isinstance(error, actions.ActionError) else 502, error=str(error))
-        if in_place:
-            here = urlparse(request.headers.get('hx-current-url', ''))
-            back = here.path + (f'?{here.query}' if here.query else '') if here.path.startswith('/') else '/'
-            return HTMLResponse(f'<a class="started" href="/jobs/{job.id}" {follow(back)}><span class="mark updating" aria-hidden="true">'
-                                f'</span> {escape(job.action)} started · job #{job.id}</a>')
-        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+        return started(request, job)
 
     def job(request: Request) -> Response:
         found = jobs.get(request.path_params['id'])
@@ -485,8 +512,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         try:
             job = jobs.submit(action + ' promotion PR', f'PR #{number}', request.state.identity, work)
         except actions.ActionError as error:
-            return page(request, 'error.html', status_code=409, error=str(error))
-        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+            return refusal(error) if in_place(request) else page(request, 'error.html', status_code=409, error=str(error))
+        return started(request, job)
 
     async def change_app(request: Request) -> Response:
         """Promote, scale, change access to, change the calls of or remove an instance: a PR made by the clone's app-* command."""

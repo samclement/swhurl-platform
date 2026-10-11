@@ -381,7 +381,8 @@ class NewAppRouteTests(unittest.TestCase):
     def test_open_console_prs_are_listed_and_others_ignored(self):
         c, _ = self.client(tree_fake())
         text = c.get('/activity', headers=WHO).text
-        self.assertIn('#7 [console] apps: add weather-api staging', text)
+        self.assertIn('#7 apps: add weather-api staging</a>', text, 'every pull request here is a console one: the prefix is left out')
+        self.assertIn('By you, on GitHub', text)
         self.assertNotIn('pull/8', text)
         self.assertEqual(changes.console_prs(FakeRunner(), self.api.github)[0].opened, '2026-10-01')
         c, _ = self.client(tree_fake(), github=False)
@@ -612,10 +613,26 @@ class ChangeAppRouteTests(unittest.TestCase):
             fresh, fresh_jobs = self.client(tree_fake())
             response = fresh.get('/apps/hello/staging/promotion', headers=WHO)
             self.assertIn(pr.url, response.text)
-            self.assertIn('Hold PR', response.text)
+            self.assertIn('Held: waits for you', response.text)
+            self.assertIn('action="/promotion-prs/9/resume"', response.text)
+            self.assertNotIn('action="/promotion-prs/9/hold"', response.text, 'only the control that applies now')
             self.assertEqual(fresh_jobs.recent(), [])
         self.assertFalse(any(c[:3] == (sys.executable, '-m', 'swhurl') for c in runner.calls))
         self.assertEqual(self.api.sent('POST /pulls'), [])
+
+    def test_an_open_pr_says_who_merges_it_and_offers_the_one_control_that_applies(self):
+        def pr(branch='console/promote-hello-staging-abcdef0', labels=(), meta=None):
+            body = '<!-- swhurl-promotion ' + json.dumps(meta) + ' -->' if meta else ''
+            return changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9', branch, '2026-10-03', body, labels)
+        mode = server.promotion.merge_mode
+        self.assertEqual(mode(pr(labels=('auto-merge',), meta={'image': IMAGE})), ('Itself, once checks pass', 'hold'))
+        self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Held: waits for you', 'resume'))
+        self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})), ('By you, on GitHub', ''), 'setup is never automatic')
+        self.assertEqual(mode(pr(labels=('promotion-review-required',), meta={'image': IMAGE})),
+                         ('By you: merge verification failed', ''))
+        self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Itself, once checks pass', ''),
+                         'only a promotion can be held')
+        self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), ('By you, on GitHub', ''))
 
     def test_existing_pr_requires_explicit_replacement_for_another_image(self):
         pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',

@@ -78,6 +78,20 @@ def body_metadata(body: str) -> dict:
         return {}
 
 
+def merge_mode(pr: changes.PullRequest) -> tuple[str, str]:
+    """How an open console PR gets merged, and the one control that applies to it now:
+    ``(words, 'hold' | 'resume' | '')``. Only a promotion can be held or handed back to auto-merge."""
+    if 'promotion-review-required' in pr.labels:
+        return 'By you: merge verification failed', ''
+    promote = pr.branch.startswith('console/promote-')
+    if changes.AUTO_MERGE_LABEL in pr.labels:
+        return 'Itself, once checks pass', 'hold' if promote else ''
+    meta = body_metadata(pr.body) if promote else {}
+    if meta and not meta.get('setup'):
+        return 'Held: waits for you', 'resume'
+    return 'By you, on GitHub', ''
+
+
 def matching(pr: changes.PullRequest, app: str) -> bool:
     return re.fullmatch(rf'console/promote-{re.escape(app)}-staging-[0-9a-f]{{7,40}}', pr.branch) is not None
 

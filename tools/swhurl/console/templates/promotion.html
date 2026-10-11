@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_status.html" as st %}
 {% block title %}Promote {{ review.app }}{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › <a href="/apps/{{ review.app }}/staging">{{ review.app }}/staging</a> › Promotion</p>
@@ -6,8 +7,7 @@
 {% if prs %}
 <p class="lead">A promotion pull request is already open. Its reviewed image stays pinned when staging advances. Close it on GitHub before creating a replacement.</p>
 <ul class="items">{% for pr in prs %}<li><a href="{{ pr.url }}">#{{ pr.number }} {{ pr.title }}</a> <span class="muted">{{ pr.progress }}</span> <a href="{{ pr.checks_url or pr.url }}">Checks</a>
-<form method="post" action="/promotion-prs/{{ pr.number }}/hold"><button>Hold PR</button></form>
-<form method="post" action="/promotion-prs/{{ pr.number }}/resume"><button>Request auto-merge</button></form></li>{% endfor %}</ul>
+<div class="muted">Merged by: {{ st.merging(pr) }}</div></li>{% endfor %}</ul>
 {% elif review.outcome == 'same' %}<p class="lead">Same image in both. No promotion is needed.</p>
 {% else %}
 <p class="lead">{{ 'Create ' if review.outcome == 'create' else 'Update ' }}{{ review.app }}/prod with the staging image you reviewed.</p>

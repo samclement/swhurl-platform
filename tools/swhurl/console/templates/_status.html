@@ -10,3 +10,6 @@
 {% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text | short }}</a>{% else %}{{ p.text | short }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 {# A job running on the thing a row is about: where the row's button was, linking to the job, and re-reading the page until it ends. #}
 {% macro running(j, refresh_url) %}<a class="started" href="/jobs/{{ j.id }}" {{ follow(refresh_url) }}>{{ mark('updating') }} {{ j.action }} · job #{{ j.id }}</a>{% endmacro %}
+{# How an open console pull request gets merged, with the one control that applies now. #}
+{% macro merging(pr) %}{% set words, control = merge_mode(pr) %}<span class="merging">{{ words }}{% if control %}
+  <form class="inline" method="post" action="/promotion-prs/{{ pr.number }}/{{ control }}" hx-post="/promotion-prs/{{ pr.number }}/{{ control }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Remove its auto-merge label: it then waits for you to merge it' if control == 'hold' else 'Label it auto-merge again: it merges itself once fresh checks pass' }}">{{ 'Hold' if control == 'hold' else 'Request auto-merge' }}</button></form>{% endif %}</span>{% endmacro %}

@@ -121,6 +121,8 @@ ENV_ENV = 'SWHURL_ENV'
 ISSUER_ENV = 'SWHURL_AUTH_ISSUER'
 KEYS_ENV = 'SWHURL_AUTH_KEYS'
 CALLERS_ENV = 'SWHURL_ALLOWED_CALLERS'
+API_ENV = 'SWHURL_API_PATH'
+"""Where a web app serves its API description, if it says so (provides.api): shown on the console's Services page."""
 TOKENS_MOUNT = '/var/run/swhurl/tokens'  # the stack templates' helpers read <this>/<callee>/token
 TOKENS_VOLUME = 'tokens'
 TOKEN_SECONDS = 600  # the shortest the API server issues; the kubelet replaces the file at 80%
@@ -238,7 +240,7 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
     if doc.get('version') != MANIFEST_VERSION:
         raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
     allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls'}
+               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides'}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -290,6 +292,13 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
             if not isinstance(resources[key], str):
                 raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
             defaults[dest] = resources[key]
+    provides = field('provides', dict) or {}
+    if set(provides) - {'api'} or not isinstance(provides.get('api', '/'), str) or not provides.get('api', '/').startswith('/'):
+        raise fail('provides may set api only, a path such as /openapi.json')
+    if provides.get('api'):
+        if kind != 'web':
+            raise fail('provides.api applies to kind web only')
+        defaults['api_path'] = provides['api']
     calls = field('calls', list)
     if calls:
         if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \

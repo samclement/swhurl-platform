@@ -38,6 +38,7 @@ from swhurl.apps.contract import (
     APP,
     APP_OWNER,
     AUTH_MIDDLEWARE,
+    API_ENV,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     CHART,
@@ -197,6 +198,8 @@ def build_values(args) -> dict:
     # Identity first: Kubernetes expands $(SWHURL_ENV) in later values only if it is defined before them.
     container['env'] = identity_env(args.name, args.env, args.kind == 'web',
                                     getattr(args, 'signing_keys', None) or signing_keys())
+    if args.kind == 'web' and args.api_path:
+        container['env'][API_ENV] = args.api_path
     if args.otlp:
         container['env'] |= otlp_env(args.name)
     if args.database == 'sqlite':
@@ -494,6 +497,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
     p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')
     p.add_argument('--mount-path', default='/data')
+    p.add_argument('--api-path', metavar='PATH', help='web only: where the app serves its API description, for the Services page')
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],

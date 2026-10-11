@@ -113,6 +113,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def apps(request: Request) -> Response:
         return reading(request, 'apps.html', lambda: {'apps': cluster.summaries(cluster.apps(runner))})
 
+    def services(request: Request) -> Response:
+        return reading(request, 'services.html', lambda: {'services': cluster.services(runner)})
+
     def read_app(request: Request) -> Response:
         found = cluster.instance(request.path_params['app'], request.path_params['env'])
         status = ops.gather_status(runner, found) if found else None
@@ -403,7 +406,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return PlainTextResponse('ok\n')
 
     return Starlette(
-        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app),
+        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', services),
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
                 Route('/apps/{app}/staging/promotion', review_promotion),

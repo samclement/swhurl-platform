@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_status.html" as st %}
+{% block title %}Services{% endblock %}
+{% block main %}
+<h1>Services</h1>
+<p class="lead">Every app as other apps see it: who owns it, where it answers inside the cluster, and who calls whom. An app reaches another only after declaring the call.</p>
+{% if services %}
+<div class="scroll">
+<table class="compact apps">
+  <tr><th>Service</th>{% for env in ('staging', 'prod') %}<th>{{ env | capitalize }}</th>{% endfor %}</tr>
+  {% for s in services %}
+  <tr id="{{ s.app }}">
+    <td><strong>{{ s.app }}</strong>
+      <div class="muted hint-line">Team {{ s.team or 'unknown' }}</div>
+      {% if not s.callable %}<div class="muted hint-line">A worker: nothing to call</div>{% endif %}
+    </td>
+    {% for env in ('staging', 'prod') %}{% set e = s.envs.get(env) %}
+    <td>{% if e %}
+      <a href="/apps/{{ s.app }}/{{ env }}">{{ s.app }}/{{ env }}</a> · {{ st.state(e.row.state, detail=false) }}
+      {% if e.address %}<div><code>{{ e.address }}</code></div>{% else %}<div class="muted">no address</div>{% endif %}
+      {% if e.api %}<div>API: {% if e.api.startswith('https://') %}<a href="{{ e.api }}">{{ e.api }}</a>{% else %}<code>{{ e.api }}</code>{% endif %}</div>{% endif %}
+      <div class="muted">Calls: {% for name in e.calls %}<a href="#{{ name }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}nothing{% endfor %}</div>
+      <div class="muted">Called by: {% for name in e.callers %}<a href="#{{ name }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}nobody{% endfor %}</div>
+    {% else %}<span class="muted">not deployed</span>{% endif %}</td>
+    {% endfor %}
+  </tr>
+  {% if s.callable %}
+  <tr><td colspan="3">
+      <details class="disclose">
+        <summary>Call this from my app</summary>
+        <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
+        <pre><code>calls: [{{ s.app }}]</code></pre>
+        <p class="muted">Afterwards, your app page's <strong>Calls</strong> form, or:</p>
+        <pre><code>make app-calls APP=&lt;your app&gt; ENV=staging ARGS="--add {{ s.app }}"</code></pre>
+        <p class="muted">Then, in your code (the stack templates' helper):</p>
+        <pre><code>service("{{ s.app }}").fetch("/")        // TypeScript
+platform.call("{{ s.app }}", "/")        // Kotlin</code></pre>
+      </details>
+  </td></tr>
+  {% endif %}
+  {% endfor %}
+</table>
+</div>
+<p class="muted">Removing an app that others call is refused until those calls are removed; a first promotion waits for the apps it calls to be in production.</p>
+{% else %}
+<p class="muted">No apps yet. <a href="/new">Add one</a>.</p>
+{% endif %}
+{% endblock %}

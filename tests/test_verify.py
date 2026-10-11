@@ -21,6 +21,9 @@ TOKEN = 'github_pat_fixture_token_0001'
 OTHER = 'fixture-other-ingestion-key-9999'
 
 
+INSTANCES = [(p.parent.parent.name, p.parent.name) for p in sorted((ROOT / 'apps').glob('*/*/helmrelease.yaml'))]
+
+
 def b64(value: bytes | str) -> str:
     return base64.b64encode(value.encode() if isinstance(value, str) else value).decode()
 
@@ -64,11 +67,13 @@ def healthy(**overrides):
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}}]},
         'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
-        'app-namespaces': {'items': [{'metadata': {'name': 'w-staging', 'labels': {
-            'platform.swhurl.com/app': 'w', contract.TEAM: 'platform'}}}]},
-        'quotas': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'hard': contract.QUOTA}}]},
-        'network-policies': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {
-            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': 'w'}}}}]},
+        # The isolation check walks the instances in this checkout: answer for each of them.
+        'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
+            'platform.swhurl.com/app': app, contract.TEAM: 'platform'}}} for app, env in INSTANCES]},
+        'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
+                             for app, env in INSTANCES]},
+        'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
+            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
@@ -330,18 +335,33 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[OK] w-staging: newest image 12-abcdef0', report.lines)
 
     def test_isolation_problems(self):
-        _, report, text = run(healthy())
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        (root / 'apps/w/staging').mkdir(parents=True)
+        (root / 'apps/w/staging/helmrelease.yaml').write_text('')
+
+        def isolation(**overrides):
+            report = Report(io.StringIO())
+            verify.check_isolation(healthy(**overrides), report, root)
+            return report.lines
+        present = {'items': [{'metadata': {'name': 'w-staging', 'labels': {
+            'platform.swhurl.com/app': 'w', contract.TEAM: 'platform'}}}]}
+        good = {'app-namespaces': present,
+                'quotas': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'hard': contract.QUOTA}}]},
+                'network-policies': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {
+                    'podSelector': {'matchLabels': {'app.kubernetes.io/instance': 'w'}}}}]}}
         self.assertIn('[OK] 1 app namespace(s) have a registered team, the platform quota and a NetworkPolicy',
-                      report.lines, text)
-        namespace = {'items': [{'metadata': {'name': 'w-staging', 'labels': {'platform.swhurl.com/app': 'w'}}}]}
+                      isolation(**good))
+        namespace = {'items': [{'metadata': {'name': 'w-staging', 'labels': {'platform.swhurl.com/app': 'w'}}},
+                               # kept for its data after its app was removed: not an instance, not checked
+                               {'metadata': {'name': 'gone-prod', 'labels': {'platform.swhurl.com/app': 'gone'}}}]}
         every_pod = {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'podSelector': {}}}]}
-        code, report, text = run(healthy(**{'app-namespaces': namespace, 'quotas': {'items': []},
-                                            'network-policies': every_pod}))
-        self.assertEqual(code, 1, text)
-        self.assertIn("[BAD] w-staging: team None is not in apps/teams.yaml; no platform ResourceQuota; "
-                      "no NetworkPolicy on the app's pods", report.lines, text)
-        code, report, text = run(healthy(quotas=Result((), 1, '', 'forbidden')))
-        self.assertIn('[BAD] could not read app namespaces, ResourceQuotas or NetworkPolicies', report.lines, text)
+        lines = isolation(**{'app-namespaces': namespace, 'quotas': {'items': []}, 'network-policies': every_pod})
+        self.assertEqual(lines[1:], ["[BAD] w-staging: team None is not in apps/teams.yaml; no platform ResourceQuota; "
+                                     "no NetworkPolicy on the app's pods"])
+        self.assertIn('[BAD] w-staging: the namespace does not exist', isolation(**{'app-namespaces': {'items': []}}))
+        self.assertIn('[BAD] could not read app namespaces, ResourceQuotas or NetworkPolicies',
+                      isolation(**{**good, 'quotas': Result((), 1, '', 'forbidden')}))
 
     def test_alert_problems(self):
         _, report, text = run(healthy(alerts={'items': []}))

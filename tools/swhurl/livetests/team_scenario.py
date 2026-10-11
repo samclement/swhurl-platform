@@ -18,7 +18,7 @@ import os
 import secrets
 
 from swhurl import verify
-from swhurl.apps import contract
+from swhurl.apps import contract, helmrelease
 from swhurl.apps import events as nats
 from swhurl.apps.new import NAME_RE
 from swhurl.livetests import LiveTest, Preflight, run_live_test
@@ -31,27 +31,21 @@ def release(t: LiveTest, app: str, env: str) -> dict:
     return found
 
 
-def variables(found: dict) -> dict:
-    values = (found.get('spec') or {}).get('values') or {}
-    return ((((values.get('controllers') or {}).get('main') or {}).get('containers') or {}).get('main') or {}).get('env') or {}
-
-
 def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> None:
     for name in (caller, callee, subscriber):
         if not NAME_RE.match(name or ''):
             raise Preflight('give CALLER, CALLEE and SUBSCRIBER (app names) and optionally ENV')
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
-    if callee not in contract.declared_calls(variables(releases[caller])):
+    if callee not in contract.declared_calls(helmrelease.variables(releases[caller])):
         raise Preflight(f'{caller}/{env} does not declare a call to {callee}: make app-calls APP={caller} ENV={env} ARGS="--add {callee}"')
-    published = nats.published(variables(releases[callee]))
+    published = nats.published(helmrelease.variables(releases[callee]))
     if not published:
         raise Preflight(f'{callee}/{env} publishes no event: make app-events APP={callee} ENV={env} ARGS="--publish visited"')
     event = published[0]
-    if (callee, event) not in nats.subscribed(variables(releases[subscriber])):
+    if (callee, event) not in nats.subscribed(helmrelease.variables(releases[subscriber])):
         raise Preflight(f'{subscriber}/{env} does not subscribe to {callee}.{event}: '
                         f'make app-events APP={subscriber} ENV={env} ARGS="--subscribe {callee}.{event}"')
-    values = releases[caller]['spec']['values']
-    port = ((((values.get('service') or {}).get('main') or {}).get('ports') or {}).get('http') or {}).get('port')
+    port = helmrelease.port(releases[caller])
     if not port:
         raise Preflight(f'{caller}/{env} is a worker: the caller must be a web app')
 

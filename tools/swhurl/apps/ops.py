@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass, field
 
 from swhurl import ROOT
-from swhurl.apps import policy
+from swhurl.apps import helmrelease, policy
 from swhurl.apps.contract import AUTH_MIDDLEWARE, INSTANCE_ROOTS, TEAM
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
@@ -48,9 +48,7 @@ def image_reference(image: dict) -> str:
 
 
 def desired_image(release: dict | None) -> str:
-    image = (((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {})
-             .get('main', {}).get('containers', {}).get('main', {}).get('image') or {})
-    return image_reference(image)
+    return image_reference(helmrelease.image(release))
 
 
 def running_images(pods: dict | None) -> list[str]:
@@ -211,14 +209,13 @@ def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -
 
 def release_settings(release: dict | None) -> dict[str, str]:
     """Replicas and resources as the HelmRelease sets them (what app-scale edits)."""
-    controller = ((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main') or {}
-    resources = ((controller.get('containers') or {}).get('main') or {}).get('resources') or {}
+    controller = helmrelease.workload(release)
+    resources = helmrelease.container(release).get('resources') or {}
     found = {'replicas': str(controller.get('replicas', 1)),
              'cpu': (resources.get('requests') or {}).get('cpu'),
              'memory': (resources.get('requests') or {}).get('memory'),
              'memory_limit': (resources.get('limits') or {}).get('memory')}
-    probe = (((((controller.get('containers') or {}).get('main') or {}).get('probes') or {}).get('readiness') or {})
-             .get('spec') or {}).get('httpGet') or {}
+    probe = (((helmrelease.container(release).get('probes') or {}).get('readiness') or {}).get('spec') or {}).get('httpGet') or {}
     found |= {'health_path': probe.get('path'), 'port': probe.get('port')}
     return {k: str(v) for k, v in found.items() if v is not None} if release else {}
 
@@ -226,19 +223,13 @@ def release_settings(release: dict | None) -> dict[str, str]:
 def release_env(release: dict | None) -> tuple[dict[str, str], str]:
     """``({name: value}, secret name)``: the variables the HelmRelease sets (a ``valueFrom`` shown by its source)
     and the Secret whose keys arrive through ``envFrom``. Secret values are never read."""
-    container = (((((((release or {}).get('spec') or {}).get('values') or {}).get('controllers') or {}).get('main')
-                  or {}).get('containers') or {}).get('main') or {})
-    env = container.get('env') or {}
-    if isinstance(env, list):  # the chart also takes Kubernetes' own list form
-        env = {e.get('name'): e.get('value', e) for e in env if isinstance(e, dict)}
     shown = {}
-    for name, value in env.items():
+    for name, value in helmrelease.variables(release).items():
         if isinstance(value, dict):
             ref = (value.get('valueFrom') or {}).get('fieldRef') or {}
             value = f"from the pod ({ref['fieldPath']})" if ref.get('fieldPath') else 'from a reference'
         shown[str(name)] = str(value)
-    secrets = [(f.get('secretRef') or {}).get('name') for f in container.get('envFrom') or [] if isinstance(f, dict)]
-    return shown, next((s for s in secrets if s), '')
+    return shown, next(iter(helmrelease.secret_references(release)), '')
 
 
 def team_of(runner: Runner, instance: Instance) -> str:

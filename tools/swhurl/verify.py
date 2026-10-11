@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import contract, hooks
+from swhurl.apps import contract, helmrelease, hooks
 from swhurl.apps import events as nats
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -396,7 +396,7 @@ def check_console(runner: Runner, report: Report) -> None:
     report.section('Console')
     try:
         release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
-        tag = release['spec']['values']['controllers']['main']['containers']['main']['image']['tag']
+        tag = helmrelease.image(release)['tag']
     except (CommandError, KeyError, TypeError):
         report.bad('cannot read the console HelmRelease image tag (console/console)')
         return

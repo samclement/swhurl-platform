@@ -17,6 +17,10 @@ spec:
   path: ./platform/notify
   # Shared unit: deleting this Kustomization orphans (keeps) its resources.
   # Removing a resource from Git still prunes it (prune: true).
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   deletionPolicy: Orphan
   prune: true
   wait: true

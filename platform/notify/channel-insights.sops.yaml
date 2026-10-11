@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: channel-insights
+    namespace: notify
+    labels:
+        platform.swhurl.com/notify-transport: ntfy
+type: Opaque
+stringData:
+    address: ENC[AES256_GCM,data:7H4m1KtnvpJ5wWh1tjiWhVjLRPuqq+gIshtLvAo+03wtsH3CgyC54B9EOaSuGWJrp4eWcVCf3E0=,iv:n7/mw70mwuBUk9f7/mtfqhyE+bdP51QCOULGdEwXslw=,tag:ZBaP+HWiNkeLjUp1eUoBCQ==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBrMWR2SDZxRkl2aFhuUi85
+            UkRiV2xNUlhDZ1ovT2tBZ2Y2WkVLMjlvOUZRCnlNcjJrT2FpMW43Y2RNN09zU04y
+            WmxOeTkvdSsrWjhHYUZxbENRTmZmRjgKLS0tIDRZKzcwVERqV0RkWjlUR3FLRzJh
+            UGtEOCtIR01kQ3NBNWVTTktPUE5UQlUKE7+c3HfDCQrTK+LzRxmr9JRR0479TATd
+            TP2AOxPchBGKYrlu+Mdu8fnoZMinJyTKoETVV3wkeAlsLrVgTvgLAA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-11T19:36:37Z"
+    mac: ENC[AES256_GCM,data:Buv+j0ZnUUtNcLbFZOg984uKC304NTCzgPeNFg6O9HCrcbyZFDMYqbgH3db+KLw0LtK5TvI9fBDmJ/p59ligrYTKTg0Av0+IZ6R/PBIRM8jV0n/V4z3zsEKcfpPlz81thm+gCHbQ88VoTwAawxEnOrdk1NfMnXl8NVFla6gX0cU=,iv:Zq7Oamm8u6XaT+RCoAMKnj/zzgn6DroQdzeqmfb+928=,tag:JfIzunqnAMOA2T2+v8Kbjw==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

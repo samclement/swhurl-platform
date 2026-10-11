@@ -352,6 +352,21 @@ def expose_args(form: Mapping[str, str]) -> list[str]:
     return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
 
 
+def calls_args(form: Mapping[str, str]) -> list[str]:
+    """``--add=`` and/or ``--remove=`` (comma-separated app names) for app-calls; at least one is needed."""
+    argv = []
+    for field in ('add', 'remove'):
+        names = [name.strip() for name in form.get(field, '').split(',') if name.strip()]
+        bad = [name for name in names if not NAME_RE.match(name)]
+        if bad:
+            raise ActionError(f'{", ".join(bad)}: not an app name')
+        if names:
+            argv.append(f'--{field}={",".join(names)}')
+    if not argv:
+        raise ActionError('name at least one app to call or to stop calling')
+    return argv
+
+
 def scale_args(form: Mapping[str, str]) -> list[str]:
     """``--flag=value`` for each filled-in scale field; at least one is needed."""
     argv = []

@@ -97,6 +97,17 @@
   </form>
 </details>
 
+<details class="section disclose">
+  <summary><strong>Calls</strong> <span class="muted">— calls {{ calls | join(', ') or 'no other app' }}; called by {{ callers | join(', ') or 'no other app' }}</span></summary>
+  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
+    <fieldset>
+      {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
+      {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=calls | join(', '), hint='App names, comma-separated.') }}
+    </fieldset>
+    {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
+  </form>
+</details>
+
 <h2>Recent jobs</h2>
 {% if unit_jobs %}
 <ul class="items">

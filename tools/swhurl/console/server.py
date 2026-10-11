@@ -133,6 +133,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
         return page(request, 'app.html', status=status, team=ops.team_of(runner, found),
+                    calls=contract.declared_calls(status.environment), callers=contract.allowed_callers(status.environment),
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
@@ -329,10 +330,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     async def change_app(request: Request) -> Response:
-        """Promote, scale, change access to or remove an instance: a PR made by the clone's app-* command."""
+        """Promote, scale, change access to, change the calls of or remove an instance: a PR made by the clone's app-* command."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = cluster.instance(app, env)
-        if found is None or change not in ('promote', 'scale', 'expose', 'remove'):
+        if found is None or change not in ('promote', 'scale', 'expose', 'calls', 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
@@ -360,6 +361,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             elif change == 'expose':
                 command, argv, target = 'app-expose', [app, env, *changes.expose_args(form)], f'{app}/{env}'
                 title, make = f'apps: change access to {app}/{env}', f'make app-expose APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+            elif change == 'calls':
+                command, argv, target = 'app-calls', [app, env, *changes.calls_args(form)], f'{app}/{env}'
+                title, make = f'apps: change what {app}/{env} calls', f'make app-calls APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
                 title, make = f'apps: remove {app}/{env}', f'make app-remove APP={app} ENV={env}'

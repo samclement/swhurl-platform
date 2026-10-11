@@ -8,3 +8,5 @@
 {% macro job(j) %}{{ mark({'running': 'updating', 'succeeded': 'healthy', 'failed': 'failing'}.get(j.state, 'updating')) }}{% endmacro %}
 {% macro check(level) %}{{ mark({'ok': 'healthy', 'bad': 'failing'}.get(level, 'warn')) }}{% endmacro %}
 {% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text | short }}</a>{% else %}{{ p.text | short }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}
+{# A job running on the thing a row is about: where the row's button was, linking to the job, and re-reading the page until it ends. #}
+{% macro running(j, refresh_url) %}<a class="started" href="/jobs/{{ j.id }}" {{ follow(refresh_url) }}>{{ mark('updating') }} {{ j.action }} · job #{{ j.id }}</a>{% endmacro %}

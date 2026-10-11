@@ -40,6 +40,7 @@ from .delivery import deliver, publish
 from .errors import NotificationError
 
 AUDIENCE = 'notify'
+REVIEW = ['kubectl', 'create', '--validate=false', '-f', '-', '-o', 'json']
 OUTBOX_NAME = 'notify-outbox'
 PLATFORM_SENDERS = {'system:serviceaccount:console:notification-check'}
 """Who may send, and name the app a message is about: the notification checker."""
@@ -66,7 +67,8 @@ def caller(runner: Runner, token: str) -> str:
               'spec': {'token': token, 'audiences': [AUDIENCE]}}
     try:
         # The reply repeats the token, so it is never logged; the request goes on standard input.
-        status = runner.json(['kubectl', 'create', '-f', '-', '-o', 'json'], input=json.dumps(review),
+        # Client-side validation would list CRDs, which this ServiceAccount may not: the API validates.
+        status = runner.json(REVIEW, input=json.dumps(review),
                              secret_output=True)['status']
     except (CommandError, KeyError, TypeError, ValueError):
         raise Refused(503, 'cannot check the token with Kubernetes') from None

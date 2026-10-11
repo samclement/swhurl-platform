@@ -253,11 +253,11 @@ class GatherStatusTests(unittest.TestCase):
                              'OTEL_SERVICE_NAME': 'web'},
                      'envFrom': [{'secretRef': {'name': 'web-secret'}}]}
         release = {'spec': {'values': {'controllers': {'main': {'containers': {'main': container}}}}}}
-        self.assertEqual(app_ops.release_env(release),
+        self.assertEqual(app_ops.shown_variables(release),
                          ({'HOST_IP': 'from the pod (status.hostIP)', 'OTEL_SERVICE_NAME': 'web'}, 'web-secret'))
         container['env'] = [{'name': 'A', 'value': '1'}]
-        self.assertEqual(app_ops.release_env(release)[0], {'A': '1'})
-        self.assertEqual(app_ops.release_env(None), ({}, ''))
+        self.assertEqual(app_ops.shown_variables(release)[0], {'A': '1'})
+        self.assertEqual(app_ops.shown_variables(None), ({}, ''))
 
     def test_missing_unit_is_none_and_missing_release_is_none(self):
         self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), app_ops.Instance('web', 'prod')))

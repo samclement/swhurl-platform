@@ -210,8 +210,8 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment != expected | {
             'kustomization.yaml'}:
         raise EditError('first promotion refuses additional resources or files')
-    env = container.get('env', {})
-    if any(isinstance(v, dict) and 'valueFrom' in v and k != contract.OTLP_HOST_IP for k, v in env.items()):
+    variables = container.get('env', {})
+    if any(isinstance(v, dict) and 'valueFrom' in v and k != contract.OTLP_HOST_IP for k, v in variables.items()):
         raise EditError('custom environment references need a reviewed production deployment in Git')
     args = new.parser().parse_args([app, '--env', 'prod', '--image', ops.image_reference(image_of(source)),
                                     '--kind', kind, '--exposure', exposure])
@@ -285,12 +285,12 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         # What the platform derives per environment: production's own identity; its callers are
         # worked out from the production instances that exist (edit.sync_env, after this).
         main, workload = helmrelease.container(release), helmrelease.workload(release)
-        env = main.get('env') or {}
-        if contract.ENV_ENV in env:
-            env[contract.ENV_ENV] = 'prod'
-        env.pop(contract.CALLERS_ENV, None)
-        for key in (nats.PUBLISH_ENV, nats.SUBSCRIBE_ENV, nats.URL_ENV, nats.NKEY_ENV):
-            env.pop(key, None)
+        variables = main.get('env') or {}
+        if contract.ENVIRONMENT_VARIABLE in variables:
+            variables[contract.ENVIRONMENT_VARIABLE] = 'prod'
+        variables.pop(contract.CALLERS_VARIABLE, None)
+        for key in (nats.PUBLISH_VARIABLE, nats.SUBSCRIBE_VARIABLE, nats.URL_VARIABLE, nats.NKEY_VARIABLE):
+            variables.pop(key, None)
         staging_key = {'secretRef': {'name': nats.secret_name(app)}}
         if staging_key in main.get('envFrom', []):
             main['envFrom'].remove(staging_key)

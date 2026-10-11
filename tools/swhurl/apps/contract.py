@@ -21,7 +21,7 @@ CHART_REPOSITORY = 'bjw-s'
 DATABASES = ('sqlite',)
 DATA_MOUNT = '/data'
 SQLITE_PATH = f'{DATA_MOUNT}/app.db'
-DATABASE_PATH_ENV = 'DATABASE_PATH'
+DATABASE_PATH_VARIABLE = 'DATABASE_PATH'
 DEFAULT_DATABASE_SIZE = '1Gi'
 # How long an instance may take to become Ready before its unit and HelmRelease report failure
 # (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
@@ -116,12 +116,12 @@ def network_policy(app: str, namespace: str, routed_port: int | None, port: int 
 # Calls between apps (docs/apps.md#calling-another-app). A caller declares the apps it calls; for each
 # it gets the callee's address and a short-lived service-account token only that callee accepts. A web
 # app is told who it is, who issues tokens, the cluster's public signing keys and who may call it.
-APP_ENV = 'SWHURL_APP'
-ENV_ENV = 'SWHURL_ENV'
-ISSUER_ENV = 'SWHURL_AUTH_ISSUER'
-KEYS_ENV = 'SWHURL_AUTH_KEYS'
-CALLERS_ENV = 'SWHURL_ALLOWED_CALLERS'
-API_ENV = 'SWHURL_API_PATH'
+APP_VARIABLE = 'SWHURL_APP'
+ENVIRONMENT_VARIABLE = 'SWHURL_ENV'
+ISSUER_VARIABLE = 'SWHURL_AUTH_ISSUER'
+KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
+CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
+API_VARIABLE = 'SWHURL_API_PATH'
 """Where a web app serves its API description, if it says so (provides.api): shown on the console's Services page."""
 TOKENS_MOUNT = '/var/run/swhurl/tokens'  # the stack templates' helpers read <this>/<callee>/token
 TOKENS_VOLUME = 'tokens'
@@ -131,26 +131,26 @@ ISSUER = 'https://kubernetes.default.svc.cluster.local'
 SIGNING_KEYS_FILE = Path('apps/signing-keys.json')
 """The cluster's public token-signing keys. Apps cannot fetch them (the API refuses anonymous
 requests), so they are kept here and given to each web app; make platform-signing-keys refreshes it."""
-_SERVICE_ENV = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
+_CALLEE_VARIABLE = re.compile(r'^SWHURL_SERVICE_([A-Z0-9_]+)_URL$')
 
 
-def service_env(app: str) -> str:
+def callee_variable(app: str) -> str:
     """The variable that holds an app's address: orders-api -> SWHURL_SERVICE_ORDERS_API_URL."""
     return f'SWHURL_SERVICE_{app.upper().replace("-", "_")}_URL'
 
 
-def service_url(app: str, port: int) -> str:
+def callee_address(app: str, port: int) -> str:
     """The callee in the caller's own environment; Kubernetes expands $(SWHURL_ENV), which must be defined first."""
-    return f'http://{app}.{app}-$({ENV_ENV}).svc.cluster.local:{port}'
+    return f'http://{app}.{app}-$({ENVIRONMENT_VARIABLE}).svc.cluster.local:{port}'
 
 
-def declared_calls(env: dict) -> list[str]:
-    """The apps a container's env says it calls, in order (app names have no underscores, so this reverses service_env)."""
-    return [match[1].lower().replace('_', '-') for key in env or {} if (match := _SERVICE_ENV.match(str(key)))]
+def declared_calls(variables: dict) -> list[str]:
+    """The apps a container's variables say it calls, in order (app names have no underscores, so this reverses callee_variable)."""
+    return [match[1].lower().replace('_', '-') for key in variables or {} if (match := _CALLEE_VARIABLE.match(str(key)))]
 
 
-def allowed_callers(env: dict) -> list[str]:
-    return [name for name in str((env or {}).get(CALLERS_ENV, '')).split(',') if name]
+def allowed_callers(variables: dict) -> list[str]:
+    return [name for name in str((variables or {}).get(CALLERS_VARIABLE, '')).split(',') if name]
 
 
 def signing_keys(root: Path = ROOT) -> str:
@@ -162,10 +162,10 @@ def signing_keys(root: Path = ROOT) -> str:
     return ''
 
 
-def identity_env(app: str, env: str, web: bool, keys: str) -> dict:
+def identity_variables(app: str, env: str, web: bool, keys: str) -> dict:
     """What every instance is told about itself, and what a web app needs to check a caller's token."""
-    identity = {APP_ENV: app, ENV_ENV: env}
-    return identity | ({ISSUER_ENV: ISSUER, KEYS_ENV: keys} if web else {})
+    identity = {APP_VARIABLE: app, ENVIRONMENT_VARIABLE: env}
+    return identity | ({ISSUER_VARIABLE: ISSUER, KEYS_VARIABLE: keys} if web else {})
 
 
 def tokens_volume(callees: list[str]) -> dict:
@@ -185,7 +185,7 @@ OTLP_ENDPOINT = f'http://$({OTLP_HOST_IP}):4318'
 OTLP_PROTOCOL = 'http/protobuf'
 
 
-def otlp_env(service: str) -> dict:
+def otlp_variables(service: str) -> dict:
     """The container env that points an app's OpenTelemetry SDK at the cluster collector."""
     return {
         OTLP_HOST_IP: {'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}},
@@ -198,8 +198,8 @@ def otlp_env(service: str) -> dict:
 # Environment names the platform sets or may set. An app's secret keys arrive through envFrom, and a
 # container's own env silently wins over envFrom, so a secret with one of these names would never be seen.
 # New platform variables use the SWHURL_ prefix. KUBERNETES_* are the API server's address for in-cluster clients.
-RESERVED_ENV_NAMES = (OTLP_HOST_IP, DATABASE_PATH_ENV)  # and every SWHURL_ name above
-RESERVED_ENV_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
+RESERVED_VARIABLE_NAMES = (OTLP_HOST_IP, DATABASE_PATH_VARIABLE)  # and every SWHURL_ name above
+RESERVED_VARIABLE_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
 
 
 def secret_key_problem(keys: list[str]) -> str:
@@ -207,10 +207,10 @@ def secret_key_problem(keys: list[str]) -> str:
     bad = [k for k in keys if not re.fullmatch(r'[A-Z_][A-Z0-9_]*', k)]
     if bad:
         return f'secret keys must be environment variable names (A-Z, 0-9, _): {", ".join(bad)}'
-    reserved = [k for k in keys if k in RESERVED_ENV_NAMES or k.startswith(RESERVED_ENV_PREFIXES)]
+    reserved = [k for k in keys if k in RESERVED_VARIABLE_NAMES or k.startswith(RESERVED_VARIABLE_PREFIXES)]
     if reserved:
-        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(RESERVED_ENV_NAMES)} '
-                f'and names starting {", ".join(RESERVED_ENV_PREFIXES)}); choose another name')
+        return (f'reserved for the platform: {", ".join(reserved)} (the platform sets {", ".join(RESERVED_VARIABLE_NAMES)} '
+                f'and names starting {", ".join(RESERVED_VARIABLE_PREFIXES)}); choose another name')
     duplicates = sorted({k for k in keys if keys.count(k) > 1})
     if duplicates:
         return f'secret keys repeated: {", ".join(duplicates)}'

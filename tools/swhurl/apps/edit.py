@@ -26,19 +26,19 @@ from swhurl.apps import events as nats
 from swhurl.apps import helmrelease, nkeys, ops, promotion
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
-    CALLERS_ENV,
+    CALLERS_VARIABLE,
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
     TEAM,
     TOKENS_VOLUME,
     allowed_callers,
+    callee_address,
+    callee_variable,
     declared_calls,
     default_host,
-    identity_env,
+    identity_variables,
     in_cookie_domain,
-    service_env,
-    service_url,
     signing_keys,
     teams,
     tokens_volume,
@@ -122,8 +122,8 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     ``publishers`` maps each app of this environment to the events it publishes.
     """
     main, workload = container(release), controller(release)
-    env_map = mapping(main, 'env', create=True)
-    publishes, subscribes = nats.published(env_map), nats.subscribed(env_map)
+    variables = mapping(main, 'env', create=True)
+    publishes, subscribes = nats.published(variables), nats.subscribed(variables)
     for publisher, event in subscribes:
         if event not in publishers.get(publisher, []):
             raise EditError(f'{app}/{env} subscribes to {publisher}.{event}, which {publisher}/{env} does not publish')
@@ -140,10 +140,10 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     dependencies = unit_spec.get('dependsOn') or []
     edits: list[tuple[Path, str]] = []
     if publishes or subscribes:
-        if not env_map.get(nats.NKEY_ENV) or not (instance / nats.SECRET_FILE).is_file():
+        if not variables.get(nats.NKEY_VARIABLE) or not (instance / nats.SECRET_FILE).is_file():
             raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
-        if env_map.get(nats.URL_ENV) != nats.URL:
-            env_map[nats.URL_ENV] = nats.URL
+        if variables.get(nats.URL_VARIABLE) != nats.URL:
+            variables[nats.URL_VARIABLE] = nats.URL
         if refs is None:
             main['envFrom'] = [reference]
         elif reference not in refs:
@@ -155,11 +155,11 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
         if 'decryption' not in unit_spec:
             unit_spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
         edits.append((instance / nats.EVENTS_FILE, dump(nats.manifests(app, env, publishes, subscribes))))
-        user = nats.user(str(env_map[nats.NKEY_ENV]), env, app, publishes, subscribes)
+        user = nats.user(str(variables[nats.NKEY_VARIABLE]), env, app, publishes, subscribes)
         listed, unlisted = (nats.SECRET_FILE, nats.EVENTS_FILE), ()
     else:
-        for key in (nats.URL_ENV, nats.NKEY_ENV):
-            env_map.pop(key, None)
+        for key in (nats.URL_VARIABLE, nats.NKEY_VARIABLE):
+            variables.pop(key, None)
         if refs is not None and reference in refs:
             refs.remove(reference)
             if not refs:
@@ -213,7 +213,7 @@ def sync_env(root: Path, env: str) -> list[Path]:
     """
     releases = {app: YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml') for app in instances_in(root, env)}
     ports = {app: service_port(values(doc.data)) for app, doc in releases.items()}
-    calls = {app: declared_calls(container(doc.data).get('env') or {}) for app, doc in releases.items()}
+    calls = {app: declared_calls(helmrelease.variables(doc.data)) for app, doc in releases.items()}
     for app, callees in calls.items():
         for callee in callees:
             if callee not in releases:
@@ -221,26 +221,26 @@ def sync_env(root: Path, env: str) -> list[Path]:
             if ports[callee] is None:
                 raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
     keys = signing_keys(root)
-    publishers = {app: nats.published(container(doc.data).get('env') or {}) for app, doc in releases.items()}
+    publishers = {app: nats.published(helmrelease.variables(doc.data)) for app, doc in releases.items()}
     edits: list[tuple[Path, str]] = []
     deletions: list[Path] = []
     for app, doc in releases.items():
         instance = doc.path.parent
         app_values, main = values(doc.data), container(doc.data)
-        env_map = mapping(main, 'env', create=True)
-        for index, (key, value) in enumerate(identity_env(app, env, ports[app] is not None, keys).items()):
-            if key not in env_map:
-                env_map.insert(index, key, value)
-            elif env_map[key] != value:
-                env_map[key] = value
+        variables = mapping(main, 'env', create=True)
+        for index, (key, value) in enumerate(identity_variables(app, env, ports[app] is not None, keys).items()):
+            if key not in variables:
+                variables.insert(index, key, value)
+            elif variables[key] != value:
+                variables[key] = value
         for callee in calls[app]:
-            if env_map[service_env(callee)] != service_url(callee, ports[callee]):
-                env_map[service_env(callee)] = service_url(callee, ports[callee])
+            if variables[callee_variable(callee)] != callee_address(callee, ports[callee]):
+                variables[callee_variable(callee)] = callee_address(callee, ports[callee])
         callers = sorted(caller for caller, callees in calls.items() if app in callees)
-        if callers and env_map.get(CALLERS_ENV) != ','.join(callers):
-            env_map[CALLERS_ENV] = ','.join(callers)
+        if callers and variables.get(CALLERS_VARIABLE) != ','.join(callers):
+            variables[CALLERS_VARIABLE] = ','.join(callers)
         elif not callers:
-            env_map.pop(CALLERS_ENV, None)
+            variables.pop(CALLERS_VARIABLE, None)
         persistence = mapping(app_values, 'persistence', create=True)
         if calls[app] and persistence.get(TOKENS_VOLUME) != tokens_volume(calls[app]):
             persistence[TOKENS_VOLUME] = tokens_volume(calls[app])
@@ -281,8 +281,8 @@ def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remov
         raise EditError('give --add and/or --remove with app names')
     instance = instance_dir(root, app, env)
     document = YamlFile(instance / 'helmrelease.yaml')
-    env_map = mapping(container(document.data), 'env', create=True)
-    current = declared_calls(env_map)
+    variables = mapping(container(document.data), 'env', create=True)
+    current = declared_calls(variables)
     for callee in add:
         if callee == app:
             raise EditError('an app does not declare calls to itself')
@@ -291,11 +291,11 @@ def calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remov
         port = service_port(values(YamlFile(instance_dir(root, callee, env) / 'helmrelease.yaml').data))
         if port is None:
             raise EditError(f'{callee} is a worker: it has no address to call')
-        env_map[service_env(callee)] = service_url(callee, port)
+        variables[callee_variable(callee)] = callee_address(callee, port)
     for callee in remove:
         if callee not in current:
             raise EditError(f'{app}/{env} does not call {callee}')
-        del env_map[service_env(callee)]
+        del variables[callee_variable(callee)]
     before = document.path.read_text()
     document.save()
     try:
@@ -321,22 +321,22 @@ def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, 
                         + (f': {", ".join(bad)}' if bad else ''))
     instance = instance_dir(root, app, env)
     document = YamlFile(instance / 'helmrelease.yaml')
-    env_map = mapping(container(document.data), 'env', create=True)
-    for key, value in ((nats.PUBLISH_ENV, publish), (nats.SUBSCRIBE_ENV, subscribe)):
+    variables = mapping(container(document.data), 'env', create=True)
+    for key, value in ((nats.PUBLISH_VARIABLE, publish), (nats.SUBSCRIBE_VARIABLE, subscribe)):
         if value:
-            env_map[key] = ','.join(value)
+            variables[key] = ','.join(value)
         elif value is not None:
-            env_map.pop(key, None)
-    active = bool(nats.published(env_map) or nats.subscribed(env_map))
+            variables.pop(key, None)
+    active = bool(nats.published(variables) or nats.subscribed(variables))
     before = document.path.read_text()
     secret = instance / nats.SECRET_FILE
     created = False
-    if active and not (env_map.get(nats.NKEY_ENV) and secret.is_file()):
+    if active and not (variables.get(nats.NKEY_VARIABLE) and secret.is_file()):
         # The seed goes from memory into a file that sops encrypts in place: it is never printed.
         seed, public = nkeys.generate()
         secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
                                  'metadata': {'name': nats.secret_name(app), 'namespace': f'{app}-{env}'},
-                                 'type': 'Opaque', 'stringData': {nats.SEED_ENV: seed}}]))
+                                 'type': 'Opaque', 'stringData': {nats.SEED_VARIABLE: seed}}]))
         try:
             (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
         except CommandError as error:
@@ -345,7 +345,7 @@ def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, 
         if 'sops:' not in secret.read_text():
             secret.unlink()
             raise EditError(f'{secret.name} was not encrypted; removed it')
-        env_map[nats.NKEY_ENV] = public
+        variables[nats.NKEY_VARIABLE] = public
         created = True
     document.save()
     try:
@@ -355,7 +355,7 @@ def events(root: Path, app: str, env: str, *, publish: list[str] | None = None, 
         if created:
             secret.unlink(missing_ok=True)
         raise
-    now = container(YamlFile(instance / 'helmrelease.yaml').data).get('env') or {}
+    now = helmrelease.variables(YamlFile(instance / 'helmrelease.yaml').data)
     print(f'[OK] {app}/{env} publishes: {", ".join(nats.published(now)) or "nothing"}; '
           f'subscribes to: {", ".join(".".join(pair) for pair in nats.subscribed(now)) or "nothing"}')
     return instance
@@ -366,7 +366,7 @@ def subscribers_of(root: Path, app: str, env: str) -> list[str]:
     found = []
     for other in instances_in(root, env):
         release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
-        if other != app and any(publisher == app for publisher, _ in nats.subscribed(container(release).get('env') or {})):
+        if other != app and any(publisher == app for publisher, _ in nats.subscribed(helmrelease.variables(release))):
             found.append(other)
     return found
 
@@ -376,7 +376,7 @@ def callers_of(root: Path, app: str, env: str) -> list[str]:
     found = []
     for other in instances_in(root, env):
         release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
-        if other != app and app in declared_calls(container(release).get('env') or {}):
+        if other != app and app in declared_calls(helmrelease.variables(release)):
             found.append(other)
     return found
 
@@ -420,7 +420,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     if decision.outcome == 'same':
         raise EditError(f'{app}/prod already runs this digest; same image in both')
     if decision.outcome == 'create':
-        missing = [callee for callee in declared_calls(container(src).get('env') or {})
+        missing = [callee for callee in declared_calls(helmrelease.variables(src))
                    if not (root / 'apps' / callee / target / 'helmrelease.yaml').is_file()]
         if missing:
             raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')

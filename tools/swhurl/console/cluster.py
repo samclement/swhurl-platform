@@ -223,14 +223,14 @@ def services(runner: Runner) -> list[Service]:
     for row in apps(runner):
         instance = row.instance
         release = releases.get((instance.namespace, instance.app))
-        env = helmrelease.variables(release)
+        variables = helmrelease.variables(release)
         port = helmrelease.port(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
-        path = env.get(contract.API_ENV, '') if address else ''
+        path = variables.get(contract.API_VARIABLE, '') if address else ''
         api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''
         found.setdefault(instance.app, {})[instance.env] = ServiceEnv(
-            row, address, api, tuple(contract.declared_calls(env)), tuple(contract.allowed_callers(env)),
-            tuple(nats.published(env)), tuple('.'.join(pair) for pair in nats.subscribed(env)))
+            row, address, api, tuple(contract.declared_calls(variables)), tuple(contract.allowed_callers(variables)),
+            tuple(nats.published(variables)), tuple('.'.join(pair) for pair in nats.subscribed(variables)))
     return [Service(app, next((teams[e.row.instance.namespace] for e in envs.values()
                                if teams.get(e.row.instance.namespace)), ''), envs)
             for app, envs in sorted(found.items())]

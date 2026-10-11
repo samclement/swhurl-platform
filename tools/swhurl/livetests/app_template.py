@@ -95,9 +95,9 @@ def body(t: LiveTest) -> None:
     deploy = (t.get('-n', ns, 'get', 'deploy', 'smoke-data') or {}).get('spec') or {}
     container = deploy.get('template', {}).get('spec', {}).get('containers', [{}])[0]
     t.check('@sha256:' in container.get('image', ''), 'prod image pinned by digest', 'prod image not digest-pinned')
-    env = {v.get('name'): v.get('value') for v in container.get('env') or []}
-    t.check(env.get('DATABASE_PATH') == '/data/app.db', 'DATABASE_PATH points into the volume',
-            f"DATABASE_PATH is {env.get('DATABASE_PATH')!r}")
+    variables = {v.get('name'): v.get('value') for v in container.get('env') or []}
+    t.check(variables.get('DATABASE_PATH') == '/data/app.db', 'DATABASE_PATH points into the volume',
+            f"DATABASE_PATH is {variables.get('DATABASE_PATH')!r}")
     t.check(deploy.get('replicas') == 1 and (deploy.get('strategy') or {}).get('type') == 'Recreate',
             'one replica, stop-first updates (single writer)', f"replicas {deploy.get('replicas')}, strategy {deploy.get('strategy')}")
 

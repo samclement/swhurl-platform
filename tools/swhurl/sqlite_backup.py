@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import platform, retention
-from swhurl.apps.contract import DATABASE_PATH_ENV
+from swhurl.apps.contract import DATABASE_PATH_VARIABLE
 from swhurl.recovery import BackupSettings, RecoveryError, private_files, sha256, upload
 from swhurl.run import CommandError, Runner
 
@@ -64,8 +64,8 @@ def find(runner: Runner) -> list[Database]:
     for deploy in deployments:
         spec = deploy['spec']['template']['spec']
         for container in spec.get('containers') or []:
-            env = {v.get('name'): v.get('value') for v in container.get('env') or []}
-            path = env.get(DATABASE_PATH_ENV)
+            variables = {v.get('name'): v.get('value') for v in container.get('env') or []}
+            path = variables.get(DATABASE_PATH_VARIABLE)
             if not path:
                 continue
             claims = {v['name']: v['persistentVolumeClaim']['claimName'] for v in spec.get('volumes') or []
@@ -74,7 +74,7 @@ def find(runner: Runner) -> list[Database]:
                       if m['name'] in claims and path.startswith(m['mountPath'].rstrip('/') + '/')]
             if not mounts:
                 raise RecoveryError(f"{deploy['metadata']['namespace']}/{deploy['metadata']['name']}: "
-                                    f'{DATABASE_PATH_ENV}={path} is not on a mounted claim')
+                                    f'{DATABASE_PATH_VARIABLE}={path} is not on a mounted claim')
             uid = (spec.get('securityContext') or {}).get('runAsUser', 65532)
             found.append(Database(deploy['metadata']['namespace'], deploy['metadata']['name'],
                                   claims[mounts[0]['name']], mounts[0]['mountPath'], path, uid))

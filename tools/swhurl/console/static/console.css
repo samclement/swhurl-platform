@@ -319,10 +319,28 @@ form.wizard details.optional[open] > summary { margin-bottom: var(--gap-3); }
           border: 1px solid var(--line); border-radius: var(--radius); }
 .choice input { margin-top: 5px; }
 .choice:has(input:checked) { border-color: var(--accent); }
-.new-app { display: grid; grid-template-columns: minmax(0, 38em) minmax(0, 22em); gap: var(--gap-5); align-items: start; }
+/* A form that is a page (New app): one card per step, a field per row with its label on the left. */
+form.wizard.cards { background: none; border: 0; padding: 0; }
+form.wizard.cards .card { --acts: 0; }
+.card-head h2 .step { color: var(--muted); font-weight: 400; margin-right: var(--gap-1); }
+.card-head h2 .pill { margin-left: var(--gap-1); }
+.rows .field { max-width: 52rem; display: grid; grid-template-columns: 9rem minmax(0, 1fr); column-gap: var(--gap-5); margin-bottom: var(--gap-4); }
+.rows .field > label:first-child, .rows .field > .label { grid-column: 1; grid-row: 1 / span 4; margin: 0; padding-top: 7px; }
+.rows .field > :not(:first-child) { grid-column: 2; }
+.rows > :last-child { margin-bottom: 0; }
+.rows input:not([type=checkbox]):not([type=radio]) { max-width: 28rem; }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--gap-2); }
+.choices.small { grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); }
+.choices .choice { margin: 0; background: var(--bg); }
+.choices.small .choice .muted { display: block; }
+.choices .pill { margin-left: 2px; }
+.card-head > details.act > .rows > p { margin: 0; max-width: 52rem; }
+ol.steps { list-style: none; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--gap-3) var(--gap-5); counter-reset: step; }
+ol.steps li { counter-increment: step; font-size: var(--size-detail); }
+ol.steps li > span:first-child { display: block; color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2px; }
+ol.steps li > span:first-child::before { content: counter(step) " · "; }
+form.wizard .card-body > .submit { border-top: 0; padding-top: 0; }
 .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26em), 1fr)); gap: var(--gap-4); align-items: start; max-width: 62em; margin-bottom: var(--gap-3); }
-aside.summary { position: sticky; top: var(--gap-4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-3) var(--gap-4); }
-aside.summary h2 { margin-top: 0; }
 
 /* The map of apps. A call is the accent (you can follow it); an event is neutral and dashed. */
 svg.map { max-width: 100%; height: auto; font-family: var(--sans); }
@@ -334,13 +352,14 @@ svg.map path { fill: none; stroke: var(--text); stroke-width: 1.5; }
 svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
 
 /* Narrow screens: one column, labels above values, tables as stacked rows. */
-@media (max-width: 900px) { .new-app { grid-template-columns: minmax(0, 1fr); } aside.summary { position: static; } }
 @media (max-width: 700px) {
   header.site { padding-top: var(--gap-2); gap: 0 var(--gap-4); }
   header.site nav { order: 3; flex-basis: 100%; margin-inline: calc(-1 * var(--gap-4)); padding-inline: var(--gap-2); }
   header.site nav a { padding: var(--gap-2); }
   dl { grid-template-columns: minmax(0, 1fr); gap: 0; }
   dl dt { margin-top: var(--gap-2); } dl dt:first-child { margin-top: 0; }
+  .rows .field { grid-template-columns: minmax(0, 1fr); } .rows .field > label:first-child, .rows .field > .label { grid-row: auto; padding-top: 0; margin-bottom: var(--gap-1); }
+  .rows .field > :not(:first-child) { grid-column: 1; }
   form.wizard { padding: var(--gap-3); } form.wizard .pair { grid-template-columns: minmax(0, 1fr); }
   .cols.head { display: none; }
   .openlist .cols { grid-template-columns: 1rem minmax(0, 1fr); gap: var(--gap-1) var(--gap-2); padding: var(--gap-3); }

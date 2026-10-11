@@ -515,7 +515,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 features[stack], features_error = [], str(problem)
         return page(request, 'new_repo.html', status_code=status_code,
                     features=features, features_error=features_error,
-                    stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
+                    stacks=contract.STACKS, stack_names=STACK_NAMES, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER, teams=teams, teams_error=teams_error, default_team=contract.DEFAULT_TEAM,
                     team_channels=platform_channels()[1],
                     callable_apps=callable_apps, offered_events=offered_events, connections_error=connections_error,

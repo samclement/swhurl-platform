@@ -1,109 +1,154 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
+{% import "_status.html" as st %}
 {% block title %}New app{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › New app</p>
 <h1>New app</h1>
-<p class="lead">The console creates the repository <code>{{ owner }}/&lt;name&gt;</code> from the stack's template, waits for its first image, then opens a pull request that adds it to staging. Nothing changes on the cluster until you merge that PR; after that, every push to the repository's <code>main</code> deploys to staging. <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app">How it works</a></p>
+{% call st.about() %}The console creates the repository <code>{{ owner }}/&lt;name&gt;</code> from the stack's template, waits for its first image, then opens a pull request that adds it to staging. Nothing changes on the cluster until you merge that PR; after that, every push to the repository's <code>main</code> deploys to staging. <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app">How it works</a>{% endcall %}
 
 {% if not github or not app_repos %}<p class="bad">{% if not app_repos %}No token for creating repositories is configured (<code>APP_REPOS_TOKEN</code>{% else %}No GitHub token is configured (<code>GITHUB_TOKEN</code>{% endif %} in Secret <code>console/console-github</code>), so this cannot run.</p>{% endif %}
 {% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
 
-<div class="new-app">
-<form class="wizard" method="post" action="/new/repo">
-  <fieldset>
-    <legend><span class="step">1</span> The app</legend>
-    <div class="field">
-      <label for="name">Name</label>
-      <input id="name" name="name" required pattern="[a-z]([a-z0-9-]{0,38}[a-z0-9])?" title="Lowercase letters, digits and hyphens; starts with a letter; at most 40 characters" value="{{ form.name or '' }}" placeholder="weather-api">
-      <span class="muted hint">The repository <code>{{ owner }}/&lt;name&gt;</code> (it must not exist yet), the image and the namespace <code>&lt;name&gt;-staging</code>.</span>
+{# One card per step, as on an app's page: what the step decides at the top, then one choice per row
+   with its label on the left. The last card says what the button will do, and holds the button. #}
+<form class="wizard cards" method="post" action="/new/repo">
+  <section class="card">
+    <div class="card-head">
+      <h2><span class="step">1</span> The app</h2>
+      <p class="muted">Its name, the stack it is built from and the team that owns it.</p>
     </div>
-    <div class="field">
-      <span class="label">Stack</span>
-      {% for key, template in stacks.items() %}
-      <label class="choice"><input type="radio" name="stack" value="{{ key }}" {{ 'checked' if (form.stack or 'typescript') == key }}>
-        <span><strong>{{ key }}</strong><br><span class="muted">{{ stack_text.get(key, '') }} From <a href="https://github.com/{{ template }}">{{ template }}</a>.</span></span></label>
-      {% endfor %}
+    <div class="card-body rows">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" required pattern="[a-z]([a-z0-9-]{0,38}[a-z0-9])?" title="Lowercase letters, digits and hyphens; starts with a letter; at most 40 characters" value="{{ form.name or '' }}" placeholder="weather-api">
+        <span class="muted hint">The repository <code>{{ owner }}/&lt;name&gt;</code> (it must not exist yet), the image and the namespace <code>&lt;name&gt;-staging</code>.</span>
+      </div>
+      <div class="field">
+        <span class="label">Stack</span>
+        <div class="choices">
+          {% for key, template in stacks.items() %}
+          <label class="choice"><input type="radio" name="stack" value="{{ key }}" {{ 'checked' if (form.stack or 'typescript') == key }}>
+            <span><strong>{{ stack_names.get(key, key) }}</strong><br><span class="muted">{{ stack_text.get(key, '') }}</span></span></label>
+          {% endfor %}
+        </div>
+        <span class="muted hint">Templates: {% for key, template in stacks.items() %}<a href="https://github.com/{{ template }}">{{ template }}</a>{{ ', ' if not loop.last }}{% endfor %}.</span>
+      </div>
+      {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
+      <div class="field">
+        <span class="label">Owning team</span>
+        <div class="choices">
+          {% for name, text in teams.items() %}
+          <label class="choice"><input type="radio" name="team" value="{{ name }}" {{ 'checked' if (form.team or default_team) == name }}>
+            <span><strong>{{ name }}</strong>{% if name == default_team %} <span class="pill">default</span>{% endif %} {% if team_channels.get(name) %}<span class="pill ok" title="The app's deployment and health messages also go to this team's channel">notification channel</span>{% else %}<span class="pill" title="Messages about the app go to the platform topic only">no notification channel</span>{% endif %}{% if text %}<br><span class="muted">{{ text }}</span>{% endif %}</span></label>
+          {% endfor %}
+        </div>
+        <span class="muted hint">A label saying who owns the app: it groups and filters the Apps list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+      </div>
     </div>
-    {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
-    <div class="field">
-      <label for="team">Owning team</label>
-      <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}{% if team_channels.get(name) %} · has a notification channel{% else %} · no notification channel{% endif %}</option>{% endfor %}</select>
-      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. The app's deployment and health messages also go to the team's notification channel, if it has one; give a team one on the <a href="/teams">Teams</a> page. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
-    </div>
-  </fieldset>
+  </section>
 
   {% for stack, questions in features.items() %}
-  <fieldset class="features" data-stack="{{ stack }}">
-    <legend><span class="step">2</span> What it is</legend>
-    {% for q in questions %}
-    <div class="field">
-      <span class="label">{{ q.name | capitalize }}</span>
-      <div class="segmented">{% for c in q.choices %}<label><input type="radio" name="feature-{{ q.name }}" value="{{ c }}" {{ 'checked' if (form['feature-' ~ q.name] or q.default) == c }}> {{ c }}</label>{% endfor %}</div>
-      <span class="muted hint">{{ q.help }}</span>
+  <section class="card features" data-stack="{{ stack }}">
+    <div class="card-head">
+      <h2><span class="step">2</span> What it is</h2>
+      <p class="muted">The features the {{ stack_names.get(stack, stack) }} template offers.</p>
     </div>
-    {% else %}
-    <p class="muted">This stack offers no features to choose.</p>
-    {% endfor %}
-  </fieldset>
+    <div class="card-body rows">
+      {% for q in questions %}
+      <div class="field">
+        <span class="label">{{ q.name | capitalize }}</span>
+        <div><div class="segmented">{% for c in q.choices %}<label><input type="radio" name="feature-{{ q.name }}" value="{{ c }}" {{ 'checked' if (form['feature-' ~ q.name] or q.default) == c }}> {{ c }}</label>{% endfor %}</div></div>
+        <span class="muted hint">{{ q.help }}</span>
+      </div>
+      {% else %}
+      <p class="muted">This stack offers no features to choose.</p>
+      {% endfor %}
+    </div>
+  </section>
   {% endfor %}
   {% if features_error %}<p class="warn">{{ features_error }} The template's defaults will be used.</p>{% endif %}
 
-  <fieldset id="reach">
-    <legend><span class="step">3</span> Who can reach it</legend>
-    {{ ui.exposure_choices(form.exposure or 'authenticated-web', 'authenticated-web', 'default') }}
-    {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
-  </fieldset>
-  <p class="muted" id="worker-note" hidden>A worker has no web address: it is private, and no other app can connect to it.</p>
-
-  <details class="optional" id="connections" {{ 'open' if chosen_calls or chosen_events or form.publish }}>
-    <summary><span class="step">4</span> Connects to <span class="muted">— optional: apps it calls, events it receives and publishes. Can be set later.</span></summary>
-  <fieldset>
-    {% if connections_error %}<p class="warn">The apps in staging could not be read ({{ connections_error }}), so none are offered. Add calls and events from the app's page later.</p>{% endif %}
-    <div class="field">
-      <span class="label">Apps it calls</span>
-      {% for row in callable_apps %}
-      <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
-        <span><strong>{{ row.instance.app }}</strong> <span class="muted">· team {{ row.team or 'unknown' }}</span></span></label>
-      {% else %}<span class="muted">No web app is in staging yet.</span>{% endfor %}
-      <span class="muted hint">The new app gets each one's address and a short-lived token only that app accepts; each one starts admitting the new app. Any other app is blocked. Web apps in staging are offered; production is declared after promoting.</span>
+  <section class="card" id="reach">
+    <div class="card-head">
+      <h2><span class="step">3</span> Who can reach it</h2>
+      <p class="muted">Its web address in staging, and who may open it.</p>
     </div>
-    <div class="field">
-      <span class="label">Events it receives</span>
-      {% for name, row in offered_events %}
-      <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
-        <span><code>{{ name }}</code> <span class="muted">· from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
-      {% else %}<span class="muted">No app in staging publishes an event yet.</span>{% endfor %}
-      <span class="muted hint">The new app may read exactly these, from the oldest event still kept (seven days).</span>
+    <div class="card-body rows">
+      <div class="field">
+        <span class="label">Access</span>
+        <div class="choices">{{ ui.exposure_choices(form.exposure or 'authenticated-web', 'authenticated-web', 'default') }}</div>
+      </div>
+      {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
     </div>
-    {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
-    <span class="muted hint">Each can be changed later on the app's page. Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</span>
-  </fieldset>
-  </details>
+  </section>
+  <section class="card" id="worker-note" hidden>
+    <div class="card-head">
+      <h2><span class="step">3</span> Who can reach it</h2>
+      <p class="muted">A worker has no web address: it is private, and no other app can connect to it.</p>
+    </div>
+  </section>
 
-  {{ ui.submit('Create repository and open pull request', 'About three minutes: the first image is built before the PR opens.') }}
+  <section class="card" id="connections" style="--acts: 1; --pitch: 9.5rem">
+    <div class="card-head">
+      <h2><span class="step">4</span> Connects to <span class="pill">optional</span></h2>
+      <p class="muted">The apps it calls, and the events it receives and publishes. Each can be set later on the app's page.</p>
+      <details class="act" style="--slot: 0; --wide: 9rem" {{ 'open' if chosen_calls or chosen_events or form.publish }}>
+        <summary class="button">{{ st.icon('plus') }} Connections</summary>
+        <div class="rows">
+          {% if connections_error %}<p class="warn">The apps in staging could not be read ({{ connections_error }}), so none are offered. Add calls and events from the app's page later.</p>{% endif %}
+          <div class="field">
+            <span class="label">Apps it calls</span>
+            <div class="choices small">
+              {% for row in callable_apps %}
+              <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
+                <span><strong>{{ row.instance.app }}</strong> <span class="muted">team {{ row.team or 'unknown' }}</span></span></label>
+              {% else %}<span class="muted">No web app is in staging yet.</span>{% endfor %}
+            </div>
+            <span class="muted hint">The new app gets each one's address and a short-lived token only that app accepts; each one starts admitting the new app. Any other app is blocked. Web apps in staging are offered; production is declared after promoting.</span>
+          </div>
+          <div class="field">
+            <span class="label">Events it receives</span>
+            <div class="choices small">
+              {% for name, row in offered_events %}
+              <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
+                <span><code>{{ name }}</code> <span class="muted">from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
+              {% else %}<span class="muted">No app in staging publishes an event yet.</span>{% endfor %}
+            </div>
+            <span class="muted hint">The new app may read exactly these, from the oldest event still kept (seven days).</span>
+          </div>
+          {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
+          <p class="muted">Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="card" aria-live="polite">
+    <div class="card-head">
+      <h2>What happens</h2>
+      <p class="muted">About three minutes, shown step by step on the job page. Production comes later, with <strong>Promote to prod</strong>.</p>
+    </div>
+    <ol class="card-body steps">
+      <li><span>Repository</span>Creates the public repository <code id="s-repo">{{ owner }}/&lt;name&gt;</code> from the stack's template.</li>
+      <li><span>First build</span>Checks the app and publishes <code id="s-image">ghcr.io/{{ owner }}/&lt;name&gt;</code>.</li>
+      <li><span>Pull request</span>Adds <code id="s-instance">&lt;name&gt;/staging</code> here, set up from the app's <code>swhurl.yaml</code> and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events.</li>
+      <li><span>After you merge</span>Every push to the app's <code>main</code> deploys to staging.</li>
+    </ol>
+    <div class="card-body">
+      {{ ui.submit('Create repository and open pull request', 'Creates a real public repository; nothing changes on the cluster until you merge the pull request.') }}
+    </div>
+  </section>
 </form>
 
-<aside class="summary" aria-live="polite">
-  <h2>What happens</h2>
-  <ol>
-    <li>Creates the public repository <code id="s-repo">{{ owner }}/&lt;name&gt;</code> from the stack's template.</li>
-    <li>Its first build checks the app and publishes <code id="s-image">ghcr.io/{{ owner }}/&lt;name&gt;</code>.</li>
-    <li>Opens a pull request here adding <code id="s-instance">&lt;name&gt;/staging</code>, set up from the app's <code>swhurl.yaml</code> and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events.</li>
-    <li>After you merge it, every push to the app's <code>main</code> deploys to staging.</li>
-  </ol>
-  <p class="muted">The job page shows each step. Production comes later, with <strong>Promote to prod</strong>.</p>
-</aside>
-</div>
-
 <script>
-// Optional: shows the chosen stack's features, hides "Who can reach it" for a worker, and keeps the
-// summary in step with the name. Without it every field shows and the server applies the same rules.
+// Optional: shows the chosen stack's features, swaps "Who can reach it" for a note on a worker, and keeps
+// "What happens" in step with the name. Without it every field shows and the server applies the same rules.
 (() => {
   const form = document.querySelector('form.wizard');
   const showFeatures = () => {
     const stack = (form.elements.stack && form.elements.stack.value) || '';
-    document.querySelectorAll('fieldset.features').forEach((f) => { f.hidden = f.dataset.stack !== stack; });
+    document.querySelectorAll('.card.features').forEach((f) => { f.hidden = f.dataset.stack !== stack; });
     const kind = form.elements['feature-kind'];
     const worker = !!kind && kind.value === 'worker';
     document.getElementById('reach').hidden = worker;

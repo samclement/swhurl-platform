@@ -234,8 +234,38 @@ class PolishTests(unittest.TestCase):
         jobs._jobs[3] = actions.Job(3, 'reconcile', 'app-web-prod', 'sam@swhurl.com', jobs.now())
         job = c.get('/jobs/3', headers=WHO).text
         self.assertIn('<a href="/activity">Activity</a> › Job #3', job)
-        self.assertIn('↻ Refresh</a>', job)
-        self.assertRegex(job, r'Updated \d\d:\d\d ·')
+        self.assertIn('Refresh</a>', job)
+        self.assertRegex(job, r'Read at \d\d:\d\d')
+        self.assertNotIn('hx-trigger', job, 'a job page streams its own output; it is not re-read on a timer')
+        overview = c.get('/apps', headers=WHO).text
+        self.assertIn('hx-trigger="every 30s [canRefresh()]"', overview, 'pages that only show state re-read themselves')
+        self.assertIn('and again every 30 seconds', overview)
+        self.assertIn('/static/console.css?v=', overview)
+
+
+class AssetTests(unittest.TestCase):
+    def test_the_stylesheet_fonts_and_scripts_are_served_from_the_image(self):
+        c = client(fake())
+        for path, kind in (('/static/console.css', 'text/css'), ('/static/console.js', 'javascript'), ('/static/htmx.min.js', 'javascript'),
+                           ('/static/fonts/ibm-plex-sans-latin-400-normal.woff2', 'font/woff2')):
+            with self.subTest(path=path):
+                response = c.get(path, headers=WHO)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(kind, response.headers['content-type'])
+        self.assertEqual(c.get('/static/console.css').status_code, 401, 'nothing is served without an identity')
+        page = c.get('/apps', headers=WHO).text
+        self.assertNotIn('<style>', page, 'one cached stylesheet, not a copy in every page')
+        self.assertNotRegex(page, r'https?://(?!github\.com)[a-z0-9.-]+/[^"]*\.(css|js|woff2)', 'no asset comes from another host')
+
+    def test_a_state_is_a_shape_and_a_word_and_only_problems_are_loud(self):
+        units = [unit('app-web-staging'), unit('app-api-staging', ready='False', message='boom')]
+        releases = [release('web-staging', 'web'), release('api-staging', 'api')]
+        page = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
+        self.assertIn('<span class="status failing"><span class="mark failing" aria-hidden="true"></span><span class="state failing">Failing</span>', page)
+        self.assertIn('<span class="state healthy sr-only">Healthy</span>', page, 'in a list, healthy is the mark alone; the word stays for screen readers')
+        self.assertLess(page.index('<strong>api</strong>'), page.index('<strong>web</strong>'), 'what needs attention is listed first')
+        self.assertIn('1 needs attention', page)
+        self.assertIn('<strong>1</strong>&nbsp;healthy', page)
 
 
 class StateTests(unittest.TestCase):
@@ -356,7 +386,8 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('search?where=ServiceName%3A%22web%22', text)
         self.assertIn('action="/apps/web/prod/remove"', text)
         self.assertIn('<section class="danger">', text)
-        self.assertIn('<strong>Failing</strong>', text, 'a failing pod makes the verdict')
+        self.assertIn('<span class="status failing">', text, 'a failing pod makes the verdict')
+        self.assertIn('<span class="state failing">Failing</span>', text)
         self.assertNotIn('/promote', text, 'promote is offered only on staging')
         self.assertIn('https://web.homelab.swhurl.com', text)
         self.assertIn('CrashLoopBackOff', text)

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
+{% import "_status.html" as st %}
 {% block title %}Teams{% endblock %}
 {% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs[0] }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
 {% block main %}
@@ -7,7 +8,6 @@
 <p class="lead">A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.</p>
 {% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
 {% if registry_error %}<p class="warn">{{ registry_error }} The teams below are the ones apps name now; descriptions and teams without apps are missing, and no app can be called unregistered.</p>{% endif %}
-{% if not github %}<p class="bad">No GitHub token is configured, so pull requests cannot be opened.</p>{% endif %}
 
 {% if unregistered %}
 <h2 class="bad">Apps without a registered team</h2>
@@ -29,7 +29,7 @@
   </tr>
   <tr><td colspan="2">
     <details class="disclose">
-      <summary>Edit {{ name }}</summary>
+      <summary>{{ st.icon('pr') }} Edit {{ name }}</summary>
       <form class="wizard" method="post" action="/teams/edit">
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
@@ -42,8 +42,8 @@
     </details>
     {% if name != default_team %}
     <details class="disclose">
-      <summary>Delete {{ name }}</summary>
-      <form class="wizard" method="post" action="/teams/remove">
+      <summary>{{ st.icon('trash') }} Delete {{ name }}</summary>
+      <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{ name }}{% if count %} and moving its {{ count }} app(s) to the team chosen{% endif %}?" data-confirm-label="Open delete PR">
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
           {% if count %}

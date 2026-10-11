@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import re
 import sys
@@ -25,7 +26,8 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response, StreamingResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from swhurl.apps import contract, new, ops, repo
@@ -37,6 +39,12 @@ IDENTITY_HEADER = 'X-Auth-Request-Email'
 DEV_IDENTITY = 'operator@localhost (dev)'
 LOOPBACK = ('127.0.0.1', '::1', 'localhost')
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / 'templates')
+STATIC = Path(__file__).parent / 'static'
+# In every asset URL, so a new console image is never served with an old stylesheet from a browser's cache.
+ASSETS = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(STATIC.rglob('*')) if p.is_file())).hexdigest()[:12]
+TEMPLATES.env.globals['assets'] = ASSETS
+# Pages that only show state re-read themselves; pages with forms never change under you.
+SELF_REFRESHING = {'overview.html', 'apps.html', 'platform.html', 'activity.html'}
 # A Ready status ('True', 'False', 'Unknown') as a CSS class.
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
@@ -84,6 +92,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                        read_at=dt.datetime.now().astimezone().strftime('%H:%M'),
                        running_jobs=[j for j in jobs.recent() if j.state == 'running'])
         context.setdefault('github', github)
+        context.update(auto_refresh=name in SELF_REFRESHING and status_code == 200,
+                       refresh_url=request.url.path + (f'?{request.url.query}' if request.url.query else ''))
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)
 
     def reading(request: Request, name: str, read, **context) -> Response:
@@ -119,7 +129,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             rows = cluster.apps(runner)
             summaries = cluster.summaries(rows)
             teams = sorted({summary.team for summary in summaries if summary.team})
-            return {'apps': [summary for summary in summaries if not team or summary.team == team], 'teams': teams,
+            shown = [summary for summary in summaries if not team or summary.team == team]
+            # What needs you comes first; within each group, by name.
+            shown.sort(key=lambda summary: (all(row.state.key == 'healthy' for row in summary.envs.values()), summary.app))
+            states = [row.state.key for summary in shown for row in summary.envs.values()]
+            return {'apps': shown, 'teams': teams,
+                    'tally': {'healthy': states.count('healthy'), 'updating': states.count('updating'),
+                              'attention': len(states) - states.count('healthy') - states.count('updating')},
                     'team': team, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
                                            env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
@@ -500,6 +516,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
                 Route('/jobs/{id:int}/events', job_events),
                 Route('/new', new_repo_form), Route('/new/repo', new_repo, methods=['POST']),
+                Mount('/static', StaticFiles(directory=STATIC), name='static'),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
         middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])
 

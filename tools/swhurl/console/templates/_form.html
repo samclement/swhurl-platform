@@ -21,7 +21,7 @@
 {# The submit row: primary button and a note on what happens next. #}
 {% macro submit(label, note) %}
 <div class="submit">
-  <button class="primary" {{ 'disabled' if not github }}>{{ label }}</button>
+  <button class="primary" {{ 'disabled' if not github }}><svg class="icon" aria-hidden="true"><use href="#i-pr"/></svg> {{ label }}</button>
   <span class="muted">{{ note }}</span>
 </div>
 {% endmacro %}

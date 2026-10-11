@@ -12,7 +12,7 @@
 <div class="new-app">
 <form class="wizard" method="post" action="/new/repo">
   <fieldset>
-    <legend>App</legend>
+    <legend><span class="step">1</span> The app</legend>
     <div class="field">
       <label for="name">Name</label>
       <input id="name" name="name" required pattern="[a-z]([a-z0-9-]{0,38}[a-z0-9])?" title="Lowercase letters, digits and hyphens; starts with a letter; at most 40 characters" value="{{ form.name or '' }}" placeholder="weather-api">
@@ -35,7 +35,7 @@
 
   {% for stack, questions in features.items() %}
   <fieldset class="features" data-stack="{{ stack }}">
-    <legend>Features</legend>
+    <legend><span class="step">2</span> What it is</legend>
     {% for q in questions %}
     <div class="field">
       <span class="label">{{ q.name | capitalize }}</span>
@@ -50,14 +50,15 @@
   {% if features_error %}<p class="warn">{{ features_error }} The template's defaults will be used.</p>{% endif %}
 
   <fieldset id="reach">
-    <legend>Who can reach it</legend>
+    <legend><span class="step">3</span> Who can reach it</legend>
     {{ ui.exposure_choices(form.exposure or 'authenticated-web', 'authenticated-web', 'default') }}
     {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
   </fieldset>
   <p class="muted" id="worker-note" hidden>A worker has no web address: it is private, and no other app can connect to it.</p>
 
-  <fieldset id="connections">
-    <legend>Connects to</legend>
+  <details class="optional" id="connections" {{ 'open' if chosen_calls or chosen_events or form.publish }}>
+    <summary><span class="step">4</span> Connects to <span class="muted">— optional: apps it calls, events it receives and publishes. Can be set later.</span></summary>
+  <fieldset>
     {% if connections_error %}<p class="warn">The apps in staging could not be read ({{ connections_error }}), so none are offered. Add calls and events from the app's page later.</p>{% endif %}
     <div class="field">
       <span class="label">Apps it calls</span>
@@ -78,6 +79,7 @@
     {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
     <span class="muted hint">Each can be changed later on the app's page. Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</span>
   </fieldset>
+  </details>
 
   {{ ui.submit('Create repository and open pull request', 'About three minutes: the first image is built before the PR opens.') }}
 </form>

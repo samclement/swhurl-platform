@@ -130,12 +130,16 @@ class ConnectionsTests(unittest.TestCase):
     def test_the_list_shows_each_apps_team_and_connections_and_filters_by_team(self):
         runner = self.cluster()
         text = client(runner).get('/apps', headers=WHO).text
-        self.assertIn('Team payments', text)
+        self.assertIn('title="Show only team payments">payments</a>', text)
         self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
         self.assertIn('called by 1 · publishes 2', text)
-        self.assertIn('<div class="muted">calls 1</div>', text)
-        self.assertIn('<div class="muted">subscribes to 1</div>', text)
-        self.assertIn('Not in production · <a href="/apps/reports/staging/promotion">review promotion</a>', text)
+        self.assertIn('<div>staging: called by 1 · publishes 2</div><div>prod: none</div>', text, 'each environment has its own')
+        self.assertIn('calls 1', text)
+        self.assertIn('subscribes to 1', text)
+        self.assertIn('Staging only</span> · <a href="/apps/reports/staging/promotion">Review promotion</a>', text)
+        self.assertIn('<a class="open" href="https://staging-orders.homelab.swhurl.com" title="Open staging-orders.homelab.swhurl.com">'
+                      '<span class="sr-only">', text, 'the default host is a link, not text')
+        self.assertIn('ServiceName%3A%22orders%22', text, 'logs and traces from the row')
         self.assertNotIn('href="/services"', text, 'there is one list of apps, not two')
         payments = client(runner).get('/apps?team=payments', headers=WHO).text
         self.assertIn('<strong>orders</strong>', payments)
@@ -202,6 +206,22 @@ class AppsTests(unittest.TestCase):
         text = client(fake(units=units)).get('/apps', headers=WHO).text
         self.assertNotIn('<script>x</script>', text)
         self.assertIn('&lt;script&gt;', text)
+
+    def test_only_a_row_that_is_not_healthy_offers_its_action_and_the_filter_shows_those_rows(self):
+        units = [unit('app-web-staging'), unit('app-web-prod', ready='False', message='boom'),
+                 unit('app-idle-staging', suspend=True), unit('app-fine-staging'),
+                 unit('app-wait-staging', ready='False', message="dependency 'flux-system/infra-base' is not ready")]
+        releases = [release('web-staging', 'web'), release('fine-staging', 'fine')]
+        text = client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
+        self.assertEqual(text.count('<form class="inline"'), 2, 'healthy and updating rows have no button')
+        self.assertIn('hx-post="/units/app-web-prod/reconcile"', text)
+        self.assertIn('action="/units/app-idle-staging/resume"', text)
+        shown = client(fake(units=units, releases=releases)).get('/apps?show=attention', headers=WHO).text
+        self.assertIn('<strong>web</strong>', shown)
+        self.assertIn('<strong>wait</strong>', shown)
+        self.assertNotIn('<strong>fine</strong>', shown)
+        self.assertIn('Every environment is healthy', client(fake(units=[unit('app-fine-staging')], releases=releases)).get(
+            '/apps?show=attention', headers=WHO).text)
 
     def test_database_is_visible_per_environment_and_unknown_without_a_release(self):
         units = [unit('app-web-staging'), unit('app-web-prod'), unit('app-pending-staging')]
@@ -330,8 +350,7 @@ class AppSummaryTests(unittest.TestCase):
         units = [unit('app-web-staging'), unit('app-web-prod')]
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
-        self.assertIn('Staging and prod differ', text)
-        self.assertIn('Staging and prod differ · <a href="/apps/web/staging/promotion">review promotion</a>', text)
+        self.assertIn('Differs</span> · <a href="/apps/web/staging/promotion">Review promotion</a>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
 
     def test_every_page_names_app_instances_the_same_way(self):
@@ -592,6 +611,18 @@ class ActionTests(unittest.TestCase):
         jobs.start('resume', 'infra-base', 'sam@swhurl.com')
         self.assertEqual(jobs.get(1).state, 'failed')
         self.assertIn('timed out after 10m waiting for Kustomization infra-base', jobs.get(1).lines[-1])
+
+    def test_a_button_in_a_list_gets_its_answer_in_place_instead_of_the_job_page(self):
+        runner = fake()
+        c, jobs, _ = operate(runner)
+        started = c.post('/units/infra-base/reconcile', headers={**ORIGIN, 'HX-Request': 'true'}, follow_redirects=False)
+        self.assertEqual(started.status_code, 200)
+        self.assertIn('<a class="started" href="/jobs/1">', started.text)
+        self.assertIn('reconcile started · job #1', started.text)
+        refused = c.post('/units/cluster-stack/reconcile', headers={**ORIGIN, 'HX-Request': 'true'})
+        self.assertEqual(refused.status_code, 200, 'htmx swaps only a 2xx answer, so the refusal is one')
+        self.assertIn('<span class="bad" role="alert">cluster-stack is applied by make flux-bootstrap', refused.text)
+        self.assertEqual(c.post('/units/infra-base/reconcile', headers=ORIGIN, follow_redirects=False).status_code, 303)
 
     def test_reconciling_a_suspended_unit_is_refused(self):
         runner = fake()

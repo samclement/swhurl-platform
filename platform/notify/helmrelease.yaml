@@ -1,0 +1,92 @@
+# The notify service: accepts messages about apps and delivers them to the channels of the app's
+# team (docs/services.md#notify-service). It runs the console image; the publish workflow and
+# make console-image pin the lines marked "# image: console" together with the console's.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: notify
+  namespace: notify
+spec:
+  interval: 30m
+  timeout: 5m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # The app hardening, except that the service mounts its ServiceAccount's token (rbac.yaml):
+    # it asks Kubernetes who a caller is and reads the routes, channels and its own outbox.
+    defaultPodOptions:
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        # One pod owns the outbox: never two at once.
+        replicas: 1
+        strategy: Recreate
+        # The chart creates this ServiceAccount; rbac.yaml binds it.
+        serviceAccount:
+          name: notify
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/swhurl-console
+              tag: src-37fb5c8394d8f574 # image: console
+              digest: sha256:152740ab2a372ed96f1a9dd0742a5c3068e8783b07e683f6bd336bf0afd6b02b # image: console
+            command: [python, -m, swhurl, notify-serve]
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 192Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+    persistence:
+      tmp:
+        type: emptyDir
+        sizeLimit: 64Mi
+        globalMounts:
+        - path: /tmp
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080

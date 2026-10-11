@@ -52,6 +52,10 @@ CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
               {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]}),
           'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': [{'metadata': {'name': 'p'}}]})}
 CHECKS['kubectl -n console get cronjob console-notifications'] = CHECKS['kubectl -n console get cronjob console-dashboards']
+CHECKS['kubectl -n console get helmrelease console'] = json.dumps({'spec': {'values': {'controllers': {'main': {'containers': {
+    'main': {'image': {'tag': 'src-abc'}}}}}}}})
+CHECKS['kubectl -n notify get deployment notify'] = json.dumps({'status': {'readyReplicas': 1}, 'spec': {'template': {'spec': {
+    'containers': [{'image': 'ghcr.io/samclement/swhurl-console:src-abc@sha256:abc'}]}}}})
 """Answers for the cluster-only platform checks (Overview and Platform run them)."""
 
 
@@ -547,6 +551,8 @@ class PlatformTests(unittest.TestCase):
         runner = fake(**{'kubectl -n console get cronjob console-dashboards': CHECKS['kubectl -n console get cronjob console-dashboards'],
                          'kubectl -n console get cronjob console-notifications': CHECKS['kubectl -n console get cronjob console-notifications'],
                          'kubectl get --raw=/version': '{}',
+                         **{key: CHECKS[key] for key in ('kubectl -n console get helmrelease console',
+                                                         'kubectl -n notify get deployment notify')},
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
                          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':
                              json.dumps({'items': []}),

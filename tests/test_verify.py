@@ -58,6 +58,8 @@ def healthy(**overrides):
         'deployments': {'items': []},
         'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
             'tag': CONSOLE_TAG}}}}}}}},
+        'notify': {'spec': {'template': {'spec': {'containers': [{'image': f'ghcr.io/samclement/swhurl-console:{CONSOLE_TAG}@sha256:abc'}]}}},
+                   'status': {'readyReplicas': 1}},
         'git-diff': Result((), 0),
         'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
         'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
@@ -141,6 +143,7 @@ def healthy(**overrides):
             .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
             .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments'))
             .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
+            .on('kubectl', '-n', 'notify', 'get', 'deployment', 'notify', handler=answer('notify'))
             .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
             .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
             .on('kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
@@ -190,7 +193,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -433,6 +436,19 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
                       '(make reconcile UNIT=platform-notify)', report.lines, text)
 
+    def test_notify_service_problems(self):
+        _, report, text = run(healthy())
+        self.assertIn(f'[OK] the notify service is running {CONSOLE_TAG}, as the console', report.lines, text)
+        stopped = {'spec': {'template': {'spec': {'containers': [{'image': f'x:{CONSOLE_TAG}'}]}}}, 'status': {}}
+        _, report, text = run(healthy(notify=stopped))
+        self.assertTrue(any(line.startswith('[BAD] the notify service is not running') for line in report.lines), text)
+        other = {'spec': {'template': {'spec': {'containers': [{'image': 'x:src-old@sha256:abc'}]}}}, 'status': {'readyReplicas': 1}}
+        _, report, text = run(healthy(notify=other))
+        self.assertIn(f"[WARN] the notify service runs src-old, not the console's {CONSOLE_TAG}: make console-image pins both, "
+                      'then commit and push', report.lines, text)
+        _, report, text = run(healthy(notify=Result((), 1, '', 'NotFound')))
+        self.assertTrue(any(line.startswith('[BAD] cannot read the notify service (notify/notify)') for line in report.lines), text)
+
     def test_image_webhook_problems(self):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
         events = ['package', 'registry_package']
@@ -489,7 +505,7 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts', 'Notify service'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)

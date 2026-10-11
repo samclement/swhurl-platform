@@ -1,25 +1,67 @@
-# The notification checker (console/notification-check) reads the routes and the channel addresses.
-# This namespace holds nothing else, so listing its Secrets shows channel addresses only.
+# The notify service reads the routes and the channel addresses, keeps its outbox, looks up an app's
+# namespace for its team and asks Kubernetes whose token a caller presented. This namespace holds
+# nothing else, so listing its Secrets shows channel addresses only. The chart creates the
+# ServiceAccount (helmrelease.yaml); this file binds it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: notification-channels-read
+  name: notify
   namespace: notify
 rules:
   - apiGroups: [""]
     resources: [configmaps, secrets]
     verbs: [list]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [notify-outbox]
+    verbs: [get, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: notification-channels-read
+  name: notify
   namespace: notify
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: notification-channels-read
+  name: notify
 subjects:
   - kind: ServiceAccount
-    name: notification-check
-    namespace: console
+    name: notify
+    namespace: notify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-notify-namespaces
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-notify-namespaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-notify-namespaces
+subjects:
+  - kind: ServiceAccount
+    name: notify
+    namespace: notify
+---
+# TokenReview only (the built-in system:auth-delegator role): who does this token belong to?
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-notify-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: notify
+    namespace: notify

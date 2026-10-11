@@ -12,3 +12,4 @@ resources:
   - app-test-4-staging.yaml
   - app-swhurl-try-10-staging.yaml
   - app-swhurl-try-11-staging.yaml
+  - app-swhurl-try-12-staging.yaml

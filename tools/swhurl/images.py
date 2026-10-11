@@ -43,8 +43,9 @@ class Image:
     pins: tuple[tuple[Path, str | None], ...]
 
 
+NOTIFY_RELEASE = Path('platform/notify/helmrelease.yaml')
 CONSOLE = Image('console', REPOSITORY, platform.CONSOLE_IMAGE_INPUTS, 'Publish console image',
-                ((RELEASE, None),))
+                ((RELEASE, None), (NOTIFY_RELEASE, 'console')))  # the notify service runs the same image
 
 
 class ImageError(Exception):

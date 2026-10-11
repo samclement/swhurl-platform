@@ -1,9 +1,10 @@
 """Lifecycle evidence, incident clocks, durable delivery and restricted runner/RBAC."""
-import base64
 import copy
 import datetime as dt
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import httpx
@@ -48,6 +49,12 @@ def event(data, reason='UpgradeSucceeded', when=NOW+1, uid='ev1'):
             'reportingComponent': 'helm-controller', 'reason': reason, 'message': 'upgrade success'}
 
 
+def own(state):
+    """The notices for the platform topic: what the lifecycle and incident rules decide. Each one about
+    an app also has a copy for the notify service (CopyTests)."""
+    return [notice for notice in state['pending'] if 'about' not in notice]
+
+
 def acknowledged(state, now):
     state = copy.deepcopy(state)
     for notice in state['pending']:
@@ -63,17 +70,17 @@ class LifecycleTests(unittest.TestCase):
         data['events'] = [event(data)]
         data['workloads'][0]['status']['readyReplicas'] = 0
         state = n.evaluate(state, data, NOW+60, BASE)
-        self.assertEqual(state['pending'], [])
+        self.assertEqual(own(state), [])
         data['workloads'][0]['status']['readyReplicas'] = 1
         state = n.evaluate(state, data, NOW+120, BASE)
-        self.assertEqual(state['pending'][0]['title'], 'example/staging deployed')
+        self.assertEqual(own(state)[0]['title'], 'example/staging deployed')
 
     def test_scale_to_zero_does_not_claim_an_image_was_deployed(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)
         data['releases'][0]['spec']['values']['controllers']['main']['replicas'] = 0
         data['events'] = [event(data)]
-        self.assertEqual(n.evaluate(state, data, NOW+60, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+60, BASE)), [])
 
     def test_same_pass_upgrade_failure_and_rollback_are_combined(self):
         data = healthy()
@@ -81,8 +88,8 @@ class LifecycleTests(unittest.TestCase):
         data['events'] = [event(data, 'UpgradeFailed', uid='fail'),
                           event(data, 'RollbackSucceeded', when=NOW+2, uid='rollback')]
         state = n.evaluate(state, data, NOW+60, BASE)
-        self.assertEqual([x['title'] for x in state['pending']], ['example/staging rolled back'])
-        self.assertIn('requested upgrade failed', state['pending'][0]['message'])
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging rolled back'])
+        self.assertIn('requested upgrade failed', own(state)[0]['message'])
 
     def test_app_template_fixtures_use_the_same_discovery(self):
         data = healthy()
@@ -94,8 +101,8 @@ class LifecycleTests(unittest.TestCase):
         data = healthy()
         data['events'] = [event(data, when=NOW-1)]
         state = n.evaluate(None, data, NOW, BASE)
-        self.assertEqual(state['pending'], [])
-        self.assertEqual(n.evaluate(state, data, NOW+60, BASE)['pending'], [])
+        self.assertEqual(own(state), [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+60, BASE)), [])
 
     def test_lifecycle_titles_environments_and_priorities(self):
         for console in (False, True):
@@ -105,7 +112,7 @@ class LifecycleTests(unittest.TestCase):
                     state = n.evaluate(None, data, NOW, BASE)
                     data['events'] = [event(data, reason)]
                     state = n.evaluate(state, data, NOW+60, BASE)
-                    self.assertEqual(len(state['pending']), 1)
+                    self.assertEqual(len(own(state)), 1)
                     notice = state['pending'][0]
                     title = 'console' if console else 'example/staging'
                     self.assertEqual(notice['title'], f'{title} {action}')
@@ -113,7 +120,7 @@ class LifecycleTests(unittest.TestCase):
                     if reason == 'UpgradeSucceeded':
                         self.assertIn(PIN, notice['message'])
                     state = acknowledged(state, NOW+60)
-                    self.assertEqual(n.evaluate(state, data, NOW+120, BASE)['pending'], [])
+                    self.assertEqual(own(n.evaluate(state, data, NOW+120, BASE)), [])
 
     def test_filters_tests_pushes_other_controllers_unmanaged_and_old_uids(self):
         data = healthy()
@@ -127,7 +134,7 @@ class LifecycleTests(unittest.TestCase):
         old = event(data, uid='old')
         old['involvedObject']['uid'] = 'old-release'
         data['events'] += [alien, unmanaged, old]
-        self.assertEqual(n.evaluate(state, data, NOW+60, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+60, BASE)), [])
 
     def test_uninstall_survives_unit_namespace_and_event_removal_and_keeps_storage_context(self):
         data = healthy()
@@ -135,18 +142,18 @@ class LifecycleTests(unittest.TestCase):
         state = n.evaluate(None, data, NOW, BASE)
         removed = {k: [] for k in data}
         state = n.evaluate(state, removed, NOW+60, BASE)
-        self.assertEqual([x['title'] for x in state['pending']], ['example/staging uninstalled'])
-        self.assertIn('Storage is retained', state['pending'][0]['message'])
-        self.assertEqual(state['pending'][0]['click'], f'{BASE}/activity')
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging uninstalled'])
+        self.assertIn('Storage is retained', own(state)[0]['message'])
+        self.assertEqual(own(state)[0]['click'], f'{BASE}/activity')
         state = acknowledged(state, NOW+60)
-        self.assertEqual(n.evaluate(state, removed, NOW+120, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, removed, NOW+120, BASE)), [])
 
     def test_removal_does_not_announce_while_release_finalizer_is_pending(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)
         data['units'] = []
         data['releases'][0]['metadata']['deletionTimestamp'] = '2026-10-03T12:00:30Z'
-        self.assertEqual(n.evaluate(state, data, NOW+600, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+600, BASE)), [])
 
     def test_failure_retries_are_grouped_and_not_duplicated_by_health(self):
         data = healthy()
@@ -154,11 +161,11 @@ class LifecycleTests(unittest.TestCase):
         state = n.evaluate(None, data, NOW, BASE)
         data['events'] = [event(data, 'UpgradeFailed')]
         state = n.evaluate(state, data, NOW+60, BASE)
-        self.assertEqual([x['title'] for x in state['pending']], ['example/staging deployment failed'])
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging deployment failed'])
         state = acknowledged(state, NOW+60)
         data['events'][0]['count'] = 2
         data['events'][0]['lastTimestamp'] = dt.datetime.fromtimestamp(NOW+350, dt.UTC).isoformat()
-        self.assertEqual(n.evaluate(state, data, NOW+400, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+400, BASE)), [])
 
 
 class IncidentTests(unittest.TestCase):
@@ -167,27 +174,27 @@ class IncidentTests(unittest.TestCase):
         data['workloads'][0]['status']['readyReplicas'] = 0
         state = n.evaluate(None, data, NOW, BASE)
         state = n.evaluate(state, data, NOW+299, BASE)
-        self.assertEqual(state['pending'], [])
+        self.assertEqual(own(state), [])
         state = n.evaluate(state, data, NOW+300, BASE)
-        self.assertEqual(state['pending'][0]['title'], 'example/staging unhealthy')
+        self.assertEqual(own(state)[0]['title'], 'example/staging unhealthy')
         state = acknowledged(state, NOW+300)
-        self.assertEqual(n.evaluate(state, data, NOW+3899, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+3899, BASE)), [])
         state = n.evaluate(state, data, NOW+3900, BASE)
-        self.assertEqual(len(state['pending']), 1)
+        self.assertEqual(len(own(state)), 1)
         state = acknowledged(state, NOW+3900)
         data['workloads'][0]['status']['readyReplicas'] = 1
         state = n.evaluate(state, data, NOW+4000, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+4119, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+4119, BASE)), [])
         state = n.evaluate(state, data, NOW+4120, BASE)
-        self.assertEqual(state['pending'][0]['title'], 'example/staging recovered')
+        self.assertEqual(own(state)[0]['title'], 'example/staging recovered')
 
     def test_console_allowance_and_flapping(self):
         data = healthy(True)
         data['workloads'][0]['status']['readyReplicas'] = 0
         state = n.evaluate(None, data, NOW, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+599, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+599, BASE)), [])
         state = n.evaluate(state, data, NOW+600, BASE)
-        self.assertEqual(state['pending'][0]['title'], 'console unhealthy')
+        self.assertEqual(own(state)[0]['title'], 'console unhealthy')
         state = acknowledged(state, NOW+600)
         data['workloads'][0]['status']['readyReplicas'] = 1
         state = n.evaluate(state, data, NOW+700, BASE)
@@ -195,26 +202,26 @@ class IncidentTests(unittest.TestCase):
         state = n.evaluate(state, data, NOW+800, BASE)
         data['workloads'][0]['status']['readyReplicas'] = 1
         state = n.evaluate(state, data, NOW+850, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+969, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+969, BASE)), [])
 
     def test_stopped_suspended_and_blocked(self):
         data = healthy()
         data['releases'][0]['spec']['values']['controllers']['main']['replicas'] = 0
         data['workloads'][0]['status']['readyReplicas'] = 0
         state = n.evaluate(None, data, NOW, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+1000, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+1000, BASE)), [])
         data = healthy()
         data['units'][0]['spec']['suspend'] = True
         data['releases'][0]['status']['conditions'][0]['status'] = 'False'
         state = n.evaluate(None, data, NOW, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+1000, BASE)['pending'], [])
+        self.assertEqual(own(n.evaluate(state, data, NOW+1000, BASE)), [])
         data['workloads'][0]['status']['readyReplicas'] = 0
         state = n.evaluate(state, data, NOW+1100, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+1400, BASE)['pending'][0]['title'], 'example/staging unhealthy')
+        self.assertEqual(own(n.evaluate(state, data, NOW+1400, BASE))[0]['title'], 'example/staging unhealthy')
         data = healthy()
         data['units'][0]['status']['conditions'][0]['status'] = 'False'
         state = n.evaluate(None, data, NOW, BASE)
-        self.assertEqual(n.evaluate(state, data, NOW+300, BASE)['pending'][0]['title'],
+        self.assertEqual(own(n.evaluate(state, data, NOW+300, BASE))[0]['title'],
                          'example/staging deployment stalled')
 
     def test_old_healthy_image_stalls_and_git_only_revision_does_not_reset_clock(self):
@@ -223,7 +230,7 @@ class IncidentTests(unittest.TestCase):
         state = n.evaluate(None, data, NOW, BASE)
         data['units'][0]['status']['lastAppliedRevision'] = 'unrelated-docs-commit'
         state = n.evaluate(state, data, NOW+300, BASE)
-        self.assertEqual(state['pending'][0]['title'], 'example/staging deployment stalled')
+        self.assertEqual(own(state)[0]['title'], 'example/staging deployment stalled')
 
     def test_completed_rollback_recovers_availability_without_claiming_requested_image_deployed(self):
         data = healthy()
@@ -236,7 +243,7 @@ class IncidentTests(unittest.TestCase):
         state = acknowledged(n.evaluate(state, data, NOW+60, BASE), NOW+60)
         state = n.evaluate(state, data, NOW+120, BASE)
         state = n.evaluate(state, data, NOW+240, BASE)
-        self.assertEqual([x['title'] for x in state['pending']], ['example/staging recovered'])
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging recovered'])
 
 
 def fake_runner(state=None, data=None, *, dry_run=False, fails=()):
@@ -253,8 +260,6 @@ def fake_runner(state=None, data=None, *, dry_run=False, fails=()):
     for resource, key in [('helmreleases.helm.toolkit.fluxcd.io', 'releases'),
                           ('deployments,statefulsets,daemonsets', 'workloads'), ('pods', 'pods'), ('events', 'events')]:
         runner.on('kubectl', 'get', resource, handler=response({'items': data[key]}))
-    runner.on('kubectl', 'get', 'namespaces', handler=response({'items': data.get('namespaces', [])}))
-    runner.on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=response({'items': data.get('routes', [])}))
     def patch(args, text):
         saved.append(json.loads(json.loads(text)['data']['state.json']))
         return Result(args, 0, '{}')
@@ -262,74 +267,132 @@ def fake_runner(state=None, data=None, *, dry_run=False, fails=()):
     return runner, saved
 
 
-def with_team_channel(data, *names):
-    """The example app's namespace belongs to team payments, whose apps notify ``names``."""
-    data['namespaces'] = [{'metadata': {'name': 'example-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
-                          {'metadata': {'name': 'console'}}]
-    data['routes'] = [{'metadata': {'name': 'notification-routes'},
-                       'data': {'routes.json': json.dumps({'teams': {'payments': list(names)}})}}]
-    return data
+class CopyTests(unittest.TestCase):
+    """Every notice about an app has a copy for the notify service, which knows the team's channels."""
 
-
-class ChannelTests(unittest.TestCase):
-    def test_an_apps_notice_is_copied_to_each_channel_of_its_team(self):
-        data = with_team_channel(healthy(), 'payments-phone', 'payments-desk')
-        state = n.evaluate(None, data, NOW, BASE)
+    def queued(self, console=False):
+        data = healthy(console=console)
+        state = n.evaluate(None, data, NOW, BASE, True)
         data['events'] = [event(data)]
-        state = n.evaluate(state, data, NOW+60, BASE)
-        self.assertEqual([p.get('channel') for p in state['pending']], [None, 'payments-phone', 'payments-desk'])
+        return data, n.evaluate(state, data, NOW+60, BASE, True)
+
+    def test_an_apps_notice_has_one_copy_for_the_notify_service_and_the_consoles_has_none(self):
+        data, state = self.queued()
+        self.assertEqual([p.get('about') for p in state['pending']], [None, ['example', 'staging']])
         self.assertEqual({p['title'] for p in state['pending']}, {'example/staging deployed'})
-        self.assertEqual(len({p['key'] for p in state['pending']}), 3)
-        again = n.evaluate(state, data, NOW+120, BASE)
-        self.assertEqual(len(again['pending']), 3, 'each copy is queued once')
-
-    def test_no_route_no_team_and_the_console_get_no_copy(self):
-        for data in (healthy(), with_team_channel(healthy()), with_team_channel(healthy(console=True), 'payments-phone')):
-            state = n.evaluate(None, data, NOW, BASE)
-            data['events'] = [event(data)]
-            state = n.evaluate(state, data, NOW+60, BASE)
-            self.assertEqual([p.get('channel') for p in state['pending']], [None])
-
-    def test_a_failing_channel_never_holds_up_the_platform_topic_and_is_given_up_after_the_retry_window(self):
-        data = with_team_channel(healthy(), 'payments-phone')
+        self.assertEqual(state['pending'][1]['key'], state['pending'][0]['key'] + '@notify')
+        self.assertEqual(len(n.evaluate(state, data, NOW+120, BASE, True)['pending']), 2, 'each is queued once')
+        _, state = self.queued(console=True)
+        self.assertEqual([p.get('about') for p in state['pending']], [None])
+        data = healthy()
         state = n.evaluate(None, data, NOW, BASE)
         data['events'] = [event(data)]
+        self.assertEqual([p.get('about') for p in n.evaluate(state, data, NOW+60, BASE)['pending']], [None],
+                         'a checker with no notify service configured queues no copy')
+
+    def test_a_copy_that_is_not_accepted_never_holds_up_the_platform_topic_and_is_given_up_after_the_retry_window(self):
+        data, _ = self.queued()
+        state = n.evaluate(None, healthy(), NOW, BASE, True)
         runner, saved = fake_runner(state, data)
         sent = []
+
         def send(notice):
-            if 'channel' in notice:
-                raise n.NotificationError('ntfy delivery failed; notification remains pending')
+            if 'about' in notice:
+                raise n.NotificationError('notify service unreachable')
             sent.append(notice['title'])
         with self.assertLogs('swhurl.notifications.delivery', 'ERROR') as logs:
-            n.check(runner, now=NOW+60, base=BASE, sender=send)
+            n.check(runner, now=NOW+60, base=BASE, copies=True, sender=send)
         self.assertEqual(sent, ['example/staging deployed'])
-        self.assertEqual([p['channel'] for p in saved[-1]['pending']], ['payments-phone'])
-        self.assertIn('Channel payments-phone', logs.output[0])
-        self.assertIn('will retry', logs.output[0])
+        self.assertEqual([p['about'] for p in saved[-1]['pending']], [['example', 'staging']])
+        self.assertIn('notify service: notify service unreachable (will retry)', logs.output[0])
         runner, saved = fake_runner(saved[-1], data)
         with self.assertLogs('swhurl.notifications.delivery', 'ERROR') as logs:
-            n.check(runner, now=NOW+60+delivery.CHANNEL_RETRY, base=BASE, sender=send)
-        self.assertEqual(sent, ['example/staging deployed'], 'the platform topic is not sent twice')
-        self.assertEqual(saved[-1]['pending'], [])
+            n.check(runner, now=NOW+60+delivery.CHANNEL_RETRY, base=BASE, copies=True, sender=send)
+        self.assertEqual([p for p in saved[-1]['pending'] if 'about' in p], [])
         self.assertIn('gave up', logs.output[0])
 
-    def test_channel_addresses_come_from_ntfy_channel_secrets_only_and_are_registered_as_secrets(self):
-        def secret(name, address, transport='ntfy'):
-            return {'metadata': {'name': name, 'labels': {'platform.swhurl.com/notify-transport': transport}},
-                    'data': {'address': base64.b64encode(address.encode()).decode()}}
-        runner = FakeRunner().on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': [
-            secret('channel-payments-phone', 'https://ntfy.sh/private-topic'),
-            secret('channel-later', 'https://hooks.example/x', 'slack'), secret('other', 'https://ntfy.sh/y')]}))
-        self.assertEqual(n.channel_addresses(runner), {'payments-phone': 'https://ntfy.sh/private-topic'})
-        self.assertNotIn('private-topic', runner.redact('posting to https://ntfy.sh/private-topic'))
-        failing = FakeRunner().on('kubectl', returncode=1, stderr='https://ntfy.sh/private-topic')
-        with self.assertRaisesRegex(n.NotificationError, '^cannot read the channel Secrets$'):
-            n.channel_addresses(failing)
+    def test_the_operator_hears_when_the_notify_service_stops_accepting_and_when_it_does_again(self):
+        data, _ = self.queued()
+        state = n.evaluate(None, healthy(), NOW, BASE, True)
+        tried, sent = [], []
+
+        def refuse(notice):
+            if 'about' in notice:
+                tried.append(notice['key'])
+                raise n.NotificationError('notify service answered 503')
+            sent.append(notice['title'])
+        when = NOW + 60
+        with self.assertLogs('swhurl.notifications.delivery', 'ERROR'):
+            for _ in range(7):  # one pass a minute: the copy stays in the outbox and is tried again
+                runner, saved = fake_runner(state, data)
+                n.check(runner, now=when, base=BASE, copies=True, sender=refuse)
+                state, when = saved[-1], when + 60
+        self.assertEqual(sent, ['example/staging deployed', 'notify service unreachable'])
+        self.assertEqual(len(tried), 7)
+        runner, saved = fake_runner(state, healthy())
+        n.check(runner, now=when, base=BASE, copies=True, sender=lambda notice: sent.append(notice['title']))
+        self.assertEqual(saved[-1]['notify_service'], {})
+        self.assertEqual([p['title'] for p in saved[-1]['pending']], ['notify service recovered'],
+                         'the first accepted copy ends the incident; its message goes out on the next pass')
+        runner, saved = fake_runner(saved[-1], healthy())
+        n.check(runner, now=when+60, base=BASE, copies=True, sender=lambda notice: sent.append(notice['title']))
+        self.assertEqual(sent[-2:], ['example/staging deployed', 'notify service recovered'])
+        self.assertEqual((saved[-1]['notify_service'], saved[-1]['pending']), ({}, []))
+
+    def test_one_refusal_ends_the_pass_for_the_other_copies(self):
+        data, _ = self.queued()
+        data['events'].append(event(data, uid='ev2', when=NOW+2))
+        runner, saved = fake_runner(n.evaluate(None, healthy(), NOW, BASE, True), data)
+        tried = []
+
+        def refuse(notice):
+            if 'about' in notice:
+                tried.append(notice['key'])
+                raise n.NotificationError('notify service unreachable')
+        with self.assertLogs('swhurl.notifications.delivery', 'ERROR'):
+            n.check(runner, now=NOW+60, base=BASE, copies=True, sender=refuse)
+        self.assertEqual(len(tried), 1, 'the second copy is not sent to a service that just refused')
+        self.assertEqual(len(saved[-1]['pending']), 2)
+
+    def test_forwarding_names_the_app_and_proves_who_sends_with_the_token_file(self):
+        requests = []
+
+        def post(url, **kwargs):
+            requests.append((url, kwargs))
+            return httpx.Response(requests[-1][1]['json'].get('status', 202))
+        notice = {'key': 'event:1@notify', 'about': ['orders', 'prod'], 'title': 'orders/prod unhealthy', 'message': 'm',
+                  'priority': 4, 'click': 'https://console.example.test/apps/orders/prod', 'tags': ['warning'], 'queued': NOW}
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / 'token'
+            token.write_text('private-token\n')
+            env = {'SWHURL_SERVICE_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080/', 'SWHURL_NOTIFY_TOKEN_FILE': str(token)}
+            with mock.patch.dict('os.environ', env), mock.patch.object(delivery.httpx, 'post', post):
+                delivery.forward(notice)
+                url, sent = requests[0]
+                self.assertEqual(url, 'http://notify.notify.svc.cluster.local:8080/v1/notify')
+                self.assertEqual(sent['headers'], {'Authorization': 'Bearer private-token'})
+                self.assertEqual(sent['json'], {'app': 'orders', 'env': 'prod', 'key': 'event:1@notify', 'priority': 'high',
+                                                'title': 'orders/prod unhealthy', 'message': 'm',
+                                                'click': 'https://console.example.test/apps/orders/prod'})
+                with mock.patch.object(delivery.httpx, 'post', lambda *a, **k: httpx.Response(403)), \
+                        self.assertRaisesRegex(n.NotificationError, '^notify service answered 403$'):
+                    delivery.forward(notice)
+
+                def down(*_args, **_kwargs):
+                    raise httpx.ConnectError('private-token')
+                with mock.patch.object(delivery.httpx, 'post', down), \
+                        self.assertRaisesRegex(n.NotificationError, '^notify service unreachable$'):
+                    delivery.forward(notice)
+            with mock.patch.dict('os.environ', env | {'SWHURL_NOTIFY_TOKEN_FILE': str(token) + '.missing'}), \
+                    self.assertRaisesRegex(n.NotificationError, 'no token file'):
+                delivery.forward(notice)
+        with mock.patch.dict('os.environ', {'SWHURL_SERVICE_NOTIFY_URL': ''}), self.assertRaisesRegex(n.NotificationError, 'is not set'):
+            delivery.forward(notice)
 
 
 class DeliveryTests(unittest.TestCase):
     def test_outbox_saved_before_send_and_checkpointed_after_acceptance(self):
-        data = healthy()
+        data = healthy(console=True)  # one notice: the console's has no copy for the notify service
         state = n.evaluate(None, data, NOW, BASE)
         data['events'] = [event(data)]
         runner, saved = fake_runner(state, data)
@@ -341,7 +404,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c])
 
     def test_send_failure_keeps_pending_for_next_run_and_never_acknowledges(self):
-        data = healthy()
+        data = healthy(console=True)  # one notice: the console's has no copy for the notify service
         state = n.evaluate(None, data, NOW, BASE)
         data['events'] = [event(data)]
         runner, saved = fake_runner(state, data)

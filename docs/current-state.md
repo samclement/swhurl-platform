@@ -928,3 +928,13 @@ Verified at `d6b846a` with the console image built from it; `make check` passed 
 - **Teams** (`d6b846a`): the deployed `/teams` page answered 401 without an identity and, with one, listed `platform` (default) with `hello-ts`, `test-2`, `test-3` and `test-4`, `payments` with `swhurl-try-10` and `swhurl-try-13`, and `insights` with `swhurl-try-11` and `swhurl-try-12`, each with its description from `apps/teams.yaml`. It showed no unregistered apps, three edit forms and two delete forms (none for the default team).
 - A local run without a GitHub token first flagged `payments` and `insights` as unregistered, because the registry could not be read; the page now says the registry is unreadable and raises no alarm (tested).
 - Not exercised: any team change or new app with connections as a real pull request from the console (the commands and the routes' arguments are unit-tested; `make team-add`, `team-edit` and `team-remove` have not been run on the real tree); either page in a signed-in browser.
+
+## Console look and interaction (11 October 2026)
+
+At `dea9df3` (console image `src-8c80dbfd3496193e`, deployed by the publish workflow in `c30b328`): Validate and Publish console image passed; `make verify-platform` passed. Through a port-forward to the deployed console, `/`, `/apps`, the map, `/teams`, `/platform`, `/new`, `/activity`, `/static/console.css`, `/static/htmx.min.js` and a font returned 200 with an identity header and 401 without; `http://console.homelab.swhurl.com/` redirected to https and https redirected to Google sign-in, also for `/static/console.css`.
+
+Before the push, a local `console --dev` against the live cluster was driven in headless Chromium (Playwright 1.58): the three IBM Plex faces loaded from `/static`; **Suspend** on `/units/platform-nats` opened the dialog with the unit's name, and Cancel and Esc sent no request; the team filter on Apps swapped the list without a page load; the Apps page re-read itself after 30 seconds; app, New app, Teams and Platform pages had no horizontal scroll at 390 px; light and dark were both read from screenshots.
+
+The deploy made the console answer "no available server" for 15 seconds (old pod stopped 12:29:52 UTC, new pod Ready 12:30:07): one replica with the chart's default `Recreate` strategy.
+
+Not exercised: the dialog's **Continue** path, any change form (the local console had no GitHub token), and the pages in a signed-in browser on the real host.

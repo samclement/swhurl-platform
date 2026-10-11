@@ -64,6 +64,7 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-11
               SWHURL_SERVICE_SWHURL_TRY_10_URL: http://swhurl-try-10.swhurl-try-10-$(SWHURL_ENV).svc.cluster.local:8080
+              SWHURL_SERVICE_SWHURL_TRY_12_URL: http://swhurl-try-12.swhurl-try-12-$(SWHURL_ENV).svc.cluster.local:8080
             probes:
               readiness:
                 enabled: true
@@ -100,6 +101,10 @@ spec:
             audience: swhurl-try-10
             expirationSeconds: 600
             path: swhurl-try-10/token
+        - serviceAccountToken:
+            audience: swhurl-try-12
+            expirationSeconds: 600
+            path: swhurl-try-12/token
         globalMounts:
         - path: /var/run/swhurl/tokens
           readOnly: true

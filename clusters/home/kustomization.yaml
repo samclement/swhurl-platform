@@ -16,3 +16,4 @@ resources:
   - app-swhurl-try-12-staging.yaml
   - app-swhurl-try-13-staging.yaml
   - app-swhurl-try-10-prod.yaml
+  - app-test-4-prod.yaml

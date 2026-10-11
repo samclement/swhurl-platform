@@ -17,13 +17,18 @@ class CIChangeClassificationTests(unittest.TestCase):
         self.assertEqual(classify(['apps/hello/staging/helmrelease.yaml']), (True, False))
 
     def test_mixed_and_unclassifiable_changes_run_everything(self):
-        for paths in ([], ['README.md'], ['apps/weather/staging/helmrelease.yaml', 'clusters/home/kustomization.yaml']):
+        for paths in ([], ['README.md'], ['apps/weather/staging/helmrelease.yaml', 'clusters/home/platform.yaml']):
             with self.subTest(paths=paths):
                 self.assertEqual(classify(paths), (False, True))
 
     def test_only_app_unit_files_are_accepted_from_cluster_root(self):
         self.assertEqual(classify(['clusters/home/app-weather-prod.yaml']), (True, False))
         self.assertEqual(classify(['clusters/home/app-weather-prod.yml']), (False, True))
+
+    def test_a_new_instance_registering_its_unit_is_app_only(self):
+        self.assertEqual(classify(['apps/weather/prod/helmrelease.yaml', 'clusters/home/app-weather-prod.yaml',
+                                   'clusters/home/kustomization.yaml']), (True, False))
+        self.assertEqual(classify(['clusters/home/flux-system/kustomization.yaml']), (False, True))
 
 
 if __name__ == '__main__':

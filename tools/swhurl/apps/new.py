@@ -573,9 +573,9 @@ def main(argv=None, opener: Opener = _open) -> int:
             from swhurl.apps import edit  # edit imports this module
             try:
                 if args.calls:
-                    edit.calls(args.root.resolve(), args.name, args.env, add=args.calls)
+                    edit.set_calls(args.root.resolve(), args.name, args.env, add=args.calls)
                 if args.publish or args.subscribe:
-                    edit.events(args.root.resolve(), args.name, args.env, publish=args.publish or None,
+                    edit.set_events(args.root.resolve(), args.name, args.env, publish=args.publish or None,
                                 subscribe=args.subscribe or None)
             except edit.EditError as error:
                 # Nothing half-made: the instance without its calls or events would start and fail.

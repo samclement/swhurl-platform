@@ -137,7 +137,7 @@ class ConnectionsTests(unittest.TestCase):
         self.assertIn('<dt>Publishes</dt><dd><code>created</code>, <code>paid</code></dd>', text)
         self.assertIn('<dt>Calls</dt><dd><a href="/apps/orders/staging">orders</a></dd>', text)
         self.assertIn('<dt>Subscribes to</dt><dd><code>orders.created</code></dd>', text)
-        self.assertIn('<span class="pill">Staging only</span>', text)
+        self.assertIn('>Staging only</span>', text)
         self.assertIn('<a href="/apps/reports/staging/promotion">Review promotion</a>', text)
         self.assertIn('<a class="open" href="https://staging-orders.homelab.swhurl.com" title="Open staging-orders.homelab.swhurl.com">', text)
         self.assertIn('<span class="pill">TypeScript</span>', text, 'the language, from the app\'s own repository')
@@ -364,9 +364,22 @@ class AppSummaryTests(unittest.TestCase):
         units = [unit('app-web-staging'), unit('app-web-prod')]
         releases = [release('web-staging', 'web', tag='2.0'), release('web-prod', 'web', tag='1.0')]
         text = client(fake(units=units, releases=releases), github=changes.GitHub('x/y', 'token')).get('/apps', headers=WHO).text
-        self.assertIn('<span class="pill attention">Images differ</span>', text)
+        self.assertIn('>Images differ</span>', text)
         self.assertIn('<span class="cell act"><a href="/apps/web/staging/promotion">Review promotion</a></span>', text)
         self.assertNotIn('/staging/promote', text, 'review the exact running image on the app page first')
+
+    def test_promotion_is_one_of_four_labels_each_with_its_own_colour(self):
+        def page(staging_tag, prod_tag):
+            units = [unit('app-web-staging')] + ([unit('app-web-prod')] if prod_tag else [])
+            releases = [release('web-staging', 'web', tag=staging_tag)] + ([release('web-prod', 'web', tag=prod_tag)] if prod_tag else [])
+            return client(fake(units=units, releases=releases)).get('/apps', headers=WHO).text
+        for tags, label in ((('5-aaaaaaa', None), '<span class="pill" title="Not in production yet">Staging only</span>'),
+                            (('5-aaaaaaa', '5-aaaaaaa'), 'class="pill ok" title="Staging and production run the same image">In sync</span>'),
+                            (('5-aaaaaaa', '4-bbbbbbb'), 'class="pill attention" title="Staging runs a newer build than production">Prod behind</span>'),
+                            (('4-bbbbbbb', '5-aaaaaaa'), '>Images differ</span>')):
+            with self.subTest(tags=tags):
+                self.assertIn(label, page(*tags))
+        self.assertNotIn('Review promotion', page('5-aaaaaaa', '5-aaaaaaa'), 'nothing to promote when in sync')
 
     def test_every_page_names_app_instances_the_same_way(self):
         self.assertEqual(cluster.target('app-hello-staging'), ('hello/staging', '/apps/hello/staging'))

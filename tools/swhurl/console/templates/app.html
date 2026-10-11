@@ -108,7 +108,7 @@ events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... } 
   {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
   <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
   {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
-  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="muted">Same image in both</span>
+  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
   {% elif i.env == 'prod' and summary and 'staging' not in summary.envs %}<span class="muted">Promotion requires a staging instance.</span>{% endif %}
 </div>
 <details class="section">

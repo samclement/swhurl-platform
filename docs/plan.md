@@ -19,7 +19,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
 11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console (restructured the same day: one Apps list with a map, and Use, Connect and Operate on each app page), and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a signed sign-in identity inside the cluster.
-12. **App notification service: N1 and N2 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026-not-started)). Next: N3, ClickStack alerts through the service (starts with a spike on the HyperDX alerts API). Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
+12. **App notification service: N1 and N2 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026)). Next: N3, ClickStack alerts through the service (starts with a spike on the HyperDX alerts API). Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
 
 ### Delivered
 
@@ -810,7 +810,7 @@ Listed as [limits](apps.md#limits) where a user would meet them: tokens for call
 
    `swhurl-try-7`, `-8` and `-9` are older leftovers with no instance here.
 
-## 16. App notification service — designed 11 October 2026, not started
+## 16. App notification service — designed 11 October 2026
 
 **Goal.** Keep cluster-operations alerts for the operator, and give apps a platform service that sends their notifications to destinations chosen per team or app: lifecycle messages, ClickStack alerts and messages the app sends itself. Start with ntfy; adding a provider must not change any app.
 

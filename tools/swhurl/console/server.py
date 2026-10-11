@@ -252,6 +252,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=row.connections if row else cluster.Connections(), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
+                    stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,

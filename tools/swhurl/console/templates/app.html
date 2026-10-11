@@ -5,182 +5,217 @@
 {% set row = summary.envs.get(i.env) if summary else none %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
+{% set c = connections %}
 <p class="crumbs"><a href="/apps">Apps</a> › {{ i.app }}</p>
-<h1>{{ i.app }}</h1>
+<h1>{{ i.app }}{% if stack %} <span class="pill" title="The stack in {{ i.app }}'s swhurl.yaml">{{ stack_names.get(stack, stack) }}</span>{% endif %}</h1>
 <nav class="tabs" aria-label="Environment">
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}
 </nav>
 
-<p class="verdict">{{ st.state(state) }}
-  <span class="muted"> · {{ i.app }}/{{ i.env }} · team {{ team or 'unknown' }}</span></p>
-
-{% if status.problems %}
-<h2 class="bad">Failing pods</h2>
-<table class="compact">
-  <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
-  {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>
-  {% if p.hint %}<tr><td></td><td colspan="2"><strong>Fix:</strong> {{ p.hint }}</td></tr>{% endif %}{% endfor %}
-</table>
-{% endif %}
-
-<nav class="anchors" aria-label="On this page"><a href="#use">Use</a><a href="#connect">Connect</a><a href="#operate">Operate</a></nav>
-
-<h2 class="part" id="use">Use</h2>
-{% if status.routes %}
-<div class="toolbar">
-  <a class="button primary" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>
-  {% for host in status.routes %}<a href="https://{{ host }}">https://{{ host }}</a>{% endfor %}
-</div>
-{% set reach = exposures.get(status.exposure, status.exposure) %}<p class="muted {{ 'warn' if status.exposure == 'public' else '' }}">{{ reach[:1] | upper }}{{ reach[1:] }}. <span class="muted">Change it under Operate → Who can reach it.</span></p>
-{% else %}
-<p class="muted">No web address: {{ 'a worker, with nothing to open' if not connections.address else 'private, reachable only by the apps that declare a call to it' }}.</p>
-{% endif %}
-
-<h2 class="part" id="connect">Connect</h2>
-<dl>
-  <dt>Address</dt>
-  <dd>{% if connections.address %}<code>{{ connections.address }}</code> <span class="muted">inside the cluster, for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
-  {% if connections.api %}<dt>API</dt><dd>{% if connections.api.startswith('https://') %}<a href="{{ connections.api }}">{{ connections.api }}</a>{% else %}<code>{{ connections.api }}</code>{% endif %}</dd>{% endif %}
-  <dt>Calls</dt>
-  <dd>{% for name in connections.calls %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
-  <dt>Called by</dt>
-  <dd>{% for name in connections.callers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nobody</span>{% endfor %}</dd>
-  <dt>Publishes</dt>
-  <dd>{% for name in connections.publishes %}<code>{{ i.app }}.{{ name }}</code>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
-  {% if connections.subscribers %}<dt>Its subscribers</dt>
-  <dd>{% for event, name in connections.subscribers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a> <span class="muted">({{ event }})</span>{{ ', ' if not loop.last }}{% endfor %}</dd>{% endif %}
-  <dt>Subscribes to</dt>
-  <dd>{% for name in connections.subscribes %}<a href="/apps/{{ name.split('.')[0] }}/{{ i.env }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
-</dl>
-{% if connections.address %}
-<details class="section disclose help">
-  <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
-  <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
-  <pre><code>calls: [{{ i.app }}]</code></pre>
-  <p class="muted">Afterwards, your app page's <strong>Change calls</strong> form, or:</p>
-  <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
-  <p class="muted">Then, in your code (the stack templates' helper):</p>
-  <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
-platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
-</details>
-{% endif %}
-{% if connections.publishes %}
-<details class="section disclose help">
-  <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
-  <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
-  <pre><code>events: {subscribe: [{{ i.app }}.{{ connections.publishes[0] }}]}</code></pre>
-  <p class="muted">Afterwards, your app page's <strong>Change events</strong> form, or:</p>
-  <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--subscribe {{ i.app }}.{{ connections.publishes[0] }}"</code></pre>
-  <p class="muted">Then, in your code:</p>
-  <pre><code>subscribe("{{ i.app }}.{{ connections.publishes[0] }}", async (event) => { ... })        // TypeScript
-events.subscribe("{{ i.app }}.{{ connections.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>
-</details>
-{% endif %}
-<p class="muted">Every change form on this page opens a pull request made by <code>main</code>'s own <code>make app-*</code> command; eligible promotions merge automatically after checks; other changes wait for your review.</p>
-<details class="section disclose">
-  <summary>{{ st.icon('pr') }} <strong>Change calls</strong> <span class="muted">— which apps {{ i.app }}/{{ i.env }} may call</span></summary>
-  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
-    <fieldset>
-      {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
-      {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=connections.calls | join(', '), hint='App names, comma-separated.') }}
-    </fieldset>
-    {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
-  </form>
-</details>
-<details class="section disclose">
-  <summary>{{ st.icon('pr') }} <strong>Change events</strong> <span class="muted">— what {{ i.app }}/{{ i.env }} publishes and receives</span></summary>
-  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/events">
-    <fieldset>
-      {{ ui.text_field('events_publish', 'Publishes', connections.publishes | join(', '), name='publish', placeholder='created, cancelled', hint='Event names, comma-separated. Other apps see them as ' ~ i.app ~ '.<event>. What you send replaces the list; empty publishes nothing.') }}
-      {{ ui.text_field('events_subscribe', 'Subscribes to', connections.subscribes | join(', '), name='subscribe', placeholder='orders.created', hint='<app>.<event>, comma-separated. Each must be published by an app with a ' ~ i.env ~ ' instance. Empty subscribes to nothing.') }}
-    </fieldset>
-    {{ ui.submit('Open events PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
-  </form>
-</details>
-
-<h2 class="part" id="operate">Operate</h2>
-<p class="muted">Runs <code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image }}</code>
-  · {% for r in status.replicas %}{{ r.ready }}/{{ r.wanted }} ready{{ ', ' if not loop.last }}{% else %}no replicas{% endfor %}
-  · Database: {% if not status.release %}unknown{% elif status.variables.get('DATABASE_PATH') %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</p>
-<div class="toolbar">
-  <a class="button" href="{{ logs }}">Logs and traces {{ st.icon('external') }}</a>
-  {% if dashboard %}<a class="button" href="{{ dashboard }}" title="The App: {{ i.app }} dashboard in HyperDX: staging and production as separate lines">Dashboard {{ st.icon('external') }}</a>{% endif %}
-  <form method="post" action="/units/{{ i.unit }}/reconcile"><button>Reconcile</button></form>
-  {% if i.env == 'staging' and summary and summary.comparison != 'same' %}
-  <a class="button" href="/apps/{{ i.app }}/staging/promotion">Review promotion</a>
-  {% if promotion_problem %}<span class="muted">{{ promotion_problem }}</span>{% endif %}
-  {% elif i.env == 'staging' and summary and summary.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
-  {% elif i.env == 'prod' and summary and 'staging' not in summary.envs %}<span class="muted">Promotion requires a staging instance.</span>{% endif %}
-</div>
-<details class="section">
-  <summary><strong>Details</strong> <span class="muted">— Git, Flux, Helm, image, replicas, routes, TLS, environment (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
-<dl>
-  <dt>Git</dt>
-  <dd class="mono">desired {{ status.desired_revision.split(':')[-1] | short }}, applied {{ status.applied_revision.split(':')[-1] | short }}
-    {% if not status.applied %}<span class="warn">not yet applied</span>{% endif %}</dd>
-  <dt>Flux unit</dt>
-  <dd><a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="{{ status.unit[0] | state }}">{{ status.unit[0] }}</span> <span class="muted">{{ status.unit[1] | short }}</span></dd>
-  <dt>Release</dt>
-  <dd>{% if status.release %}<span class="{{ status.release[0] | state }}">{{ status.release[0] }}</span> <span class="muted">{{ status.release[1] | short }}</span>
-      {% else %}<span class="bad">not found</span>{% endif %}</dd>
-  <dt>Image</dt>
-  {% if status.image_state == 'matches' %}
-  <dd><span class="mono">{{ status.desired_image | short }}</span><br><span class="ok">running: matches desired</span></dd>
-  {% else %}
-  <dd class="mono">desired {{ status.desired_image | short }}<br>running {{ (status.running_images | join(', ') or 'none') | short }}
-      {% if status.image_state == 'different' %}<br><span class="bad">different image: a rollout in progress or failing</span>
-      {% elif status.image_state == 'unpinned' %}<br><span class="muted">Git pins no digest, so this cannot be compared</span>{% endif %}</dd>
+{# What this environment is, at a glance: one fact per column. #}
+<section class="card" aria-label="Summary">
+  <div class="card-body facts">
+    <div><span>State</span><span class="verdict">{{ st.state(state, detail=false) }}</span></div>
+    <div><span>Team</span>{% if team %}<a href="/apps?team={{ team }}" title="The apps of team {{ team }}">{{ team }}</a>{% else %}<span class="warn">unknown</span>{% endif %}</div>
+    <div><span>Image</span><code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image | short }}</code></div>
+    <div><span>Replicas</span>{% for r in status.replicas %}<span class="{{ '' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">none</span>{% endfor %}</div>
+    <div><span>Database</span>{% if not status.release %}<span class="muted">unknown</span>{% elif status.variables.get('DATABASE_PATH') %}<span class="pill">SQLite</span>{% else %}<span class="muted">none</span>{% endif %}</div>
+    <div><span>Promotion</span>{% if summary and summary.comparison == 'ahead' %}<span class="pill attention" title="Staging runs a newer build than production">Prod behind</span>
+      {% elif summary and summary.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
+      {% elif summary and summary.comparison == 'same' %}<span class="pill ok" title="Staging and production run the same image">In sync</span>
+      {% elif i.env == 'staging' %}<span class="pill" title="Not in production yet">Staging only</span>
+      {% else %}<span class="muted">—</span>{% endif %}</div>
+  </div>
+  {% if state.detail %}<div class="card-body"><p class="reason {{ 'bad' if state.key == 'failing' else 'muted' }}">{{ state.detail | short }}</p></div>{% endif %}
+  {% if status.problems %}
+  <div class="card-body">
+    <h3 class="bad">Failing pods</h3>
+    <table class="compact">
+      <tr><th>Pod</th><th>Reason</th><th>Message</th></tr>
+      {% for p in status.problems %}<tr><td class="mono">{{ p.pod }}</td><td class="bad">{{ p.reason }}</td><td class="muted">{{ p.message }}</td></tr>
+      {% if p.hint %}<tr><td></td><td colspan="2"><strong>Fix:</strong> {{ p.hint }}</td></tr>{% endif %}{% endfor %}
+    </table>
+  </div>
   {% endif %}
-  <dt>Replicas</dt>
-  <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }}</span> {{ r.workload }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
-  <dt>Who can reach it</dt>
-  <dd class="{{ 'warn' if status.exposure == 'public' else '' }}">{{ exposures.get(status.exposure, status.exposure) }}</dd>
-  <dt>Routes</dt>
-  <dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }}</a></div>{% else %}<span class="muted">private (no route)</span>{% endfor %}</dd>
-  <dt>TLS</dt>
-  <dd>{% for name, ready in status.certificates %}<div><span class="{{ ready | state }}">{{ ready }}</span> {{ name }}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
-  <dt>Provided by the platform</dt>
-  <dd>{% for name, value in status.variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
-  {% if status.variables.get('DATABASE_PATH') %}<dt>SQLite file</dt><dd><code>{{ status.variables['DATABASE_PATH'] }}</code></dd>{% endif %}
-  <dt>Your secrets</dt>
-  <dd>{% if status.secret %}every key of the Secret <code>{{ status.secret }}</code>, as a variable of the same name. Names and values are in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a> (encrypted; edit with <code>sops</code>){% else %}<span class="muted">none</span>{% endif %}</dd>
-  <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>
-</dl>
-</details>
+</section>
 
-<details class="section disclose">
-  <summary>{{ st.icon('pr') }} <strong>Scale</strong> <span class="muted">— replicas, CPU and memory</span></summary>
-  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
-    <fieldset>
-      <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-      <span class="muted hint">Empty fields keep their current value, shown in grey.</span>
-    </fieldset>
-    {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
-  </form>
-</details>
-<details class="section disclose">
-  <summary>{{ st.icon('pr') }} <strong>Who can reach it</strong> <span class="muted">— signed in, public or private, and the host</span></summary>
-  <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
-    <fieldset>
-      {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
-      {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
-                       hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
-    </fieldset>
-    {{ ui.submit('Open access PR', 'Private removes the web address.') }}
-  </form>
-</details>
+<nav class="anchors" aria-label="On this page"><a href="#use">Use</a><a href="#connect">Connect</a><a href="#operate">Operate</a><a href="#jobs">Jobs</a></nav>
 
+{# Each part is a card: its facts one per line, its changes at the top right. A change opens its form in
+   the card (one at a time); the form's own button, with the pull-request icon, opens the pull request. #}
+<section class="card" id="use" style="--acts: {{ 2 if status.routes else 1 }}; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Use</h2>
+    <p class="muted">Its web address, and who can reach it.</p>
+    {% if status.routes %}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>{% endif %}
+    <details class="act" name="app-form" style="--slot: {{ 1 if status.routes else 0 }}; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Change access</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/expose">
+        <fieldset>
+          {{ ui.exposure_choices(status.exposure, status.exposure, 'now') }}
+          {{ ui.text_field('expose_host', 'Host', name='host', placeholder=status.routes[0] if status.routes else 'derived from the name',
+                           hint='Leave empty to keep the current host (or, for a signed-in app, derive one). A public app needs a host outside ' ~ domain ~ '. Staging and production may differ.') }}
+        </fieldset>
+        {{ ui.submit('Open access PR', 'Private removes the web address. You review and merge it on GitHub.') }}
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Web address</dt><dd>{% for host in status.routes %}<div><a href="https://{{ host }}">https://{{ host }} {{ st.icon('external') }}</a></div>{% else %}<span class="muted">none: {{ 'a worker, with nothing to open' if not c.address else 'private, reachable only by the apps that declare a call to it' }}</span>{% endfor %}</dd>
+      <dt>Who can reach it</dt><dd class="{{ 'warn' if status.exposure == 'public' else '' }}">{% set reach = exposures.get(status.exposure, status.exposure) %}{{ reach[:1] | upper }}{{ reach[1:] }}</dd>
+      <dt>TLS certificate</dt><dd>{% for name, ready in status.certificates %}<div>{{ st.check('ok' if ready == 'True' else 'bad') }} {{ name }}{% if ready != 'True' %} <span class="bad">not ready</span>{% endif %}</div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+    </dl>
+  </div>
+</section>
 
-<h2>Recent jobs</h2>
-{% if unit_jobs %}
-<ul class="items">
-  {% for j in unit_jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">{{ j.action }}</a> <span class="muted">{{ j.state }} · by {{ j.identity }} · {{ j.started.strftime('%H:%M') }} UTC{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</span></li>{% endfor %}
-</ul>
+<section class="card" id="connect" style="--acts: 2; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Connect</h2>
+    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}.</p>
+    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Change calls</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
+        <fieldset>
+          {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
+          {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=c.calls | join(', '), hint='App names, comma-separated.') }}
+        </fieldset>
+        {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
+      </form>
+    </details>
+    <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Change events</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/events">
+        <fieldset>
+          {{ ui.text_field('events_publish', 'Publishes', c.publishes | join(', '), name='publish', placeholder='created, cancelled', hint='Event names, comma-separated. Other apps see them as ' ~ i.app ~ '.<event>. What you send replaces the list; empty publishes nothing.') }}
+          {{ ui.text_field('events_subscribe', 'Subscribes to', c.subscribes | join(', '), name='subscribe', placeholder='orders.created', hint='<app>.<event>, comma-separated. Each must be published by an app with a ' ~ i.env ~ ' instance. Empty subscribes to nothing.') }}
+        </fieldset>
+        {{ ui.submit('Open events PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>In the cluster</dt>
+      <dd>{% if c.address %}<code>{{ c.address }}</code> <span class="muted">for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
+      {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
+      <dt>Calls</dt>
+      <dd>{% for name in c.calls %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
+      <dt>Called by</dt>
+      <dd>{% for name in c.callers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nobody</span>{% endfor %}</dd>
+      <dt>Publishes</dt>
+      <dd>{% for name in c.publishes %}<code>{{ i.app }}.{{ name }}</code>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
+      {% if c.subscribers %}<dt>Its subscribers</dt>
+      <dd>{% for event, name in c.subscribers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a> <span class="muted">({{ event }})</span>{{ ', ' if not loop.last }}{% endfor %}</dd>{% endif %}
+      <dt>Subscribes to</dt>
+      <dd>{% for name in c.subscribes %}<a href="/apps/{{ name.split('.')[0] }}/{{ i.env }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
+    </dl>
+    {% if c.address %}
+    <details class="disclose help" id="how-to-call">
+      <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
+      <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
+      <pre><code>calls: [{{ i.app }}]</code></pre>
+      <p class="muted">Afterwards, your app page's <strong>Change calls</strong>, or:</p>
+      <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
+      <p class="muted">Then, in your code (the stack templates' helper):</p>
+      <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
+platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
+    </details>
+    {% endif %}
+    {% if c.publishes %}
+    <details class="disclose help" id="how-to-subscribe">
+      <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
+      <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
+      <pre><code>events: {subscribe: [{{ i.app }}.{{ c.publishes[0] }}]}</code></pre>
+      <p class="muted">Afterwards, your app page's <strong>Change events</strong>, or:</p>
+      <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--subscribe {{ i.app }}.{{ c.publishes[0] }}"</code></pre>
+      <p class="muted">Then, in your code:</p>
+      <pre><code>subscribe("{{ i.app }}.{{ c.publishes[0] }}", async (event) => { ... })        // TypeScript
+events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>
+    </details>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" id="operate" style="--acts: 1; --pitch: 9.5rem">
+  <div class="card-head">
+    <h2>Operate</h2>
+    <p class="muted">What runs, whether it matches Git, and how to change it.</p>
+    <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Scale</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
+        <fieldset>
+          <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
+          <span class="muted hint">Replicas, CPU and memory. Empty fields keep their current value, shown in grey.</span>
+        </fieldset>
+        {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
+      </form>
+    </details>
+  </div>
+  <div class="card-body">
+    <dl class="plain">
+      <dt>Image</dt>
+      {% if status.image_state == 'matches' %}
+      <dd><span class="mono">{{ status.desired_image | short }}</span> <span class="ok">running: matches Git</span></dd>
+      {% else %}
+      <dd><div class="mono">Git wants {{ status.desired_image | short }}</div><div class="mono">running {{ (status.running_images | join(', ') or 'none') | short }}</div>
+          {% if status.image_state == 'different' %}<div class="bad">different image: a rollout in progress or failing</div>
+          {% elif status.image_state == 'unpinned' %}<div class="muted">Git pins no digest, so this cannot be compared</div>{% endif %}</dd>
+      {% endif %}
+      <dt>Replicas</dt>
+      <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span> <span class="muted">{{ r.workload }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+      <dt>Git revision</dt>
+      <dd><span class="mono">{{ status.applied_revision.split(':')[-1] | short }}</span> applied{% if not status.applied %} <span class="warn">· Git has {{ status.desired_revision.split(':')[-1] | short }}, not yet applied</span>{% endif %}</dd>
+      <dt>Flux unit</dt>
+      <dd>{{ st.check('ok' if status.unit[0] == 'True' else 'bad') }} <a class="mono" href="/units/{{ i.unit }}">{{ i.unit }}</a> <span class="muted">{{ status.unit[1] | short }}</span></dd>
+      <dt>Helm release</dt>
+      <dd>{% if status.release %}{{ st.check('ok' if status.release[0] == 'True' else 'bad') }} <span class="muted">{{ status.release[1] | short }}</span>{% else %}<span class="bad">not found</span>{% endif %}</dd>
+      <dt>Database</dt>
+      <dd>{% if status.variables.get('DATABASE_PATH') %}<span class="pill">SQLite</span> <code>{{ status.variables['DATABASE_PATH'] }}</code>{% elif not status.release %}<span class="muted">unknown</span>{% else %}<span class="muted">none</span>{% endif %}</dd>
+      <dt>Namespace</dt><dd class="mono">{{ i.namespace }}</dd>
+      <dt>Observe</dt>
+      <dd><a href="{{ logs }}">Logs and traces {{ st.icon('external') }}</a>{% if dashboard %} <span class="muted">·</span> <a href="{{ dashboard }}" title="The App: {{ i.app }} dashboard in HyperDX: staging and production as separate lines">Dashboard {{ st.icon('external') }}</a>{% endif %} <span class="muted">·</span> <a href="https://github.com/{{ owner }}/{{ i.app }}">Repository {{ st.icon('external') }}</a></dd>
+    </dl>
+    <details class="section" id="environment">
+      <summary><strong>Environment</strong> <span class="muted">— the variables the platform sets, and your secrets (as <code>make app-status APP={{ i.app }} ENV={{ i.env }}</code>)</span></summary>
+      <dl class="plain">
+        <dt>From the platform</dt>
+        <dd>{% for name, value in status.variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+        <dt>Your secrets</dt>
+        <dd>{% if status.secret %}every key of the Secret <code>{{ status.secret }}</code>, as a variable of the same name. Names and values are in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a> (encrypted; edit with <code>sops</code>){% else %}<span class="muted">none</span>{% endif %}</dd>
+      </dl>
+    </details>
+  </div>
+  <div class="card-body">
+    {% set job = running_jobs | selectattr('unit', 'in', (i.unit, i.app ~ '/' ~ i.env)) | first %}
+    <div class="action-row">
+      {% if job %}<span>{{ st.running(job, refresh_url) }}</span>
+      {% elif status.unit_suspended %}<form method="post" action="/units/{{ i.unit }}/resume" hx-post="/units/{{ i.unit }}/resume" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Resume</button></form>
+      <span class="muted">Apply Git changes to this instance again, starting with a reconcile.</span>
+      {% else %}<form method="post" action="/units/{{ i.unit }}/reconcile" hx-post="/units/{{ i.unit }}/reconcile" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button>Reconcile</button></form>
+      <span class="muted">Fetch Git and apply this instance now instead of at the next check. Safe: it applies what Git already says.</span>{% endif %}
+    </div>
+    {% if i.env == 'staging' %}
+    <div class="action-row">
+      {% if summary and summary.comparison == 'same' %}<span class="pill ok">In sync</span><span class="muted">Production runs this image: there is nothing to promote.</span>
+      {% else %}<span class="go"><a href="/apps/{{ i.app }}/staging/promotion">Review promotion</a></span>
+      <span class="muted">{{ promotion_problem or 'See exactly what would go to production, then promote it. Nothing changes until you confirm there.' }}</span>{% endif %}
+    </div>
+    {% elif summary and 'staging' not in summary.envs %}<p class="muted">Promotion requires a staging instance.</p>{% endif %}
+  </div>
+</section>
+
+<h2 id="jobs" class="part">Jobs on {{ i.app }}/{{ i.env }}</h2>
+{% if unit_jobs %}{{ st.jobs_list(unit_jobs) }}
 {% else %}<p class="muted">None since the console started.</p>{% endif %}
 
-<section class="danger">
-  <h2>Uninstall</h2>
-  <p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
-  <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove" data-confirm="Open a pull request removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('trash') }} Open uninstall PR</button></form>
+<section class="card danger" style="--acts: 0; margin-top: var(--gap-6)">
+  <div class="card-head">
+    <h2>Uninstall</h2>
+    <p class="muted">Opens a pull request that removes {{ i.app }}/{{ i.env }}. Once merged, Flux deletes it; a retained volume and its namespace are kept.</p>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/remove" data-confirm="Open a pull request removing {{ i.app }}/{{ i.env }}? Once merged, Flux uninstalls it; a retained volume and its namespace are kept." data-confirm-label="Open uninstall PR"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('pr') }} Open uninstall PR</button></form>
+  </div>
 </section>
 {% endblock %}

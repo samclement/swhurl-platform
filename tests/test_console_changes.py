@@ -896,20 +896,38 @@ class TeamsPageTests(unittest.TestCase):
 
     def test_shows_each_team_with_its_apps_and_the_apps_left_without_one(self):
         page = self.client().get('/teams', headers=WHO).text
-        self.assertIn('<strong>platform</strong> <span class="muted">(default)</span>', page)
+        self.assertIn('<h2>platform <span class="pill"', page)
         self.assertIn('The platform itself', page)
-        self.assertIn('<a href="/apps/billing/staging">billing</a>', page)
-        self.assertIn('<a href="/apps?team=payments">2 apps</a>', page)
+        self.assertIn('<a href="/apps/billing/staging" title="billing/staging:', page, 'each app, with what runs where')
+        self.assertIn('<a href="/apps?team=payments">2 apps on the Apps list</a>', page)
         self.assertIn('Apps without a registered team', page)
         self.assertIn('<td>retired</td>', page)
         self.assertIn('<a href="/apps/ghost/staging">ghost</a>', page)
         self.assertIn('Move its 2 app(s) to', page, 'a team with apps is deleted only by moving them')
         self.assertEqual(page.count('action="/teams/remove"'), 1, 'the default team has no delete form')
-        self.assertEqual(page.count('name="rename"'), 1, 'nor a rename form')
-        self.assertIn('cannot be renamed or deleted', page)
-        self.assertEqual(page.count('<details class="act" name="team-form"'), 5, 'new, and per team edit, rename, delete: one open at a time')
+        self.assertEqual(page.count('name="rename"'), 1, 'nor a name to change')
+        self.assertIn('The default team keeps its name', page)
+        self.assertEqual(page.count('action="/teams/edit"'), 2, 'one Edit per team: its description and its name are one form')
+        self.assertEqual(page.count('<details class="act" name="team-form"'), 4, 'new, and per team edit and delete: one open at a time')
         self.assertIn('href="/teams" class="here"', page)
         self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in self.runner.calls), 'the page only reads')
+
+    def test_an_apps_language_comes_from_its_own_repository_and_is_asked_for_once(self):
+        asked = []
+
+        def opener(request):
+            asked.append(request.full_url)
+            if 'ghost' in request.full_url:
+                raise OSError('GitHub is away')
+            return {}, b'version: 1\nstack: kotlin\n'
+        c = self.client(repo_opener=opener)
+        page = c.get('/teams', headers=WHO).text
+        self.assertEqual(asked[0], 'https://raw.githubusercontent.com/samclement/billing/HEAD/swhurl.yaml')
+        self.assertEqual(page.count('<span class="pill">Kotlin</span>'), 1, 'billing; orders is not asked for once GitHub fails')
+        self.assertEqual(len(asked), 2, 'after one failure the rest are not asked for: the page must not wait once per app')
+        c.get('/teams', headers=WHO)
+        self.assertEqual(len(asked), 2, 'kept: an app does not change language')
+        self.assertEqual(repo.app_stack('x/y', lambda request: ({}, b'')), '', 'a repository that names no stack')
 
     def test_changes_run_the_clones_team_commands_and_wait_for_review(self):
         cases = (
@@ -961,8 +979,8 @@ class TeamsPageTests(unittest.TestCase):
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertIn('no app can be called unregistered', page)
         self.assertNotIn('Apps without a registered team', page)
-        self.assertIn('<strong>payments</strong>', page, 'the teams apps name are still shown')
-        self.assertIn('<strong>retired</strong>', page)
+        self.assertIn('<section class="team" id="payments">', page, 'the teams apps name are still shown')
+        self.assertIn('<section class="team" id="retired">', page)
 
 
 class NewRepoRouteTests(unittest.TestCase):

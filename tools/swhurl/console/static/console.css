@@ -190,25 +190,36 @@ ul.items li:last-child { border-bottom: 0; }
 pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-3); overflow-x: auto;
       line-height: 1.5; white-space: pre-wrap; margin: var(--gap-2) 0; }
 
-/* Rows: a list whose rows carry their own actions. What a thing is sits on the left; what you can do
-   to it is a button on the right, always in the same place (--slot counts from the right edge,
-   --acts is how many a row can have). An action's form opens under its own row. */
-.rows { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-2); }
-.row { position: relative; border-bottom: 1px solid var(--line); scroll-margin-top: 3.5rem; }
-.row:last-child { border-bottom: 0; }
-.row:target { box-shadow: inset 2px 0 0 var(--accent); }
-.row-main { display: grid; grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1.3fr); gap: 2px var(--gap-4); align-items: baseline;
-            min-height: 2.875rem; padding: 10px calc(var(--acts, 0) * 6.75rem + var(--gap-3)) 10px var(--gap-3); }
-.row.head .row-main { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.row > details.act > summary { position: absolute; top: 7px; right: calc(var(--slot, 0) * 6.75rem + var(--gap-2)); width: 6.25rem;
-                               justify-content: center; white-space: nowrap; list-style: none; }
-.row > details.act > summary::-webkit-details-marker { display: none; }
-.row.head > details.act > summary { width: auto; }
-.row > details.act[open] > summary { border-color: var(--accent); background: var(--sunk); }
-.row > details.act[open] { border-top: 1px dashed var(--line); padding: var(--gap-3) var(--gap-3) var(--gap-4); }
-.row > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
-.row > details.act form.wizard fieldset { margin-bottom: var(--gap-3); }
-.row > .act-note { position: absolute; top: 12px; right: var(--gap-3); }
+/* Cards with their own actions (Teams): who it is at the top, with its actions at the top right,
+   always in the same place (--slot counts from the right edge); then what it owns, as a table.
+   An action's form opens inside its card, under the heading. */
+.team { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-4);
+        scroll-margin-top: 3.5rem; }
+.team:target { border-color: var(--accent); }
+.team.new { background: none; border: 0; margin-bottom: var(--gap-2); }
+.team.new .team-head { padding: 0; min-height: 2.25rem; }
+.team-head { position: relative; padding: var(--gap-4) var(--gap-5); }
+.team-head h2 { margin: 0 14rem var(--gap-1) 0; font-size: 1.125rem; }
+.team-head p { margin: 0 14rem 0 0; max-width: 46em; }
+.team-head p + p { margin-top: var(--gap-1); }
+.team-head > details.act > summary { position: absolute; top: var(--gap-3); right: calc(var(--slot, 0) * 6.5rem + var(--gap-4));
+                                     width: var(--wide, 6rem); justify-content: center; white-space: nowrap; list-style: none; }
+.team.new .team-head > details.act > summary { top: 0; right: 0; }
+.team-head > details.act > summary::-webkit-details-marker { display: none; }
+.team-head > details.act[open] > summary { border-color: var(--accent); background: var(--sunk); }
+.team-head > details.act[open] { margin-top: var(--gap-4); padding-top: var(--gap-4); border-top: 1px dashed var(--line); }
+.team.new details.act[open] { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-4) var(--gap-5); margin-top: var(--gap-3); }
+.team-head > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
+.team-head > details.act form.wizard fieldset { margin-bottom: var(--gap-4); }
+table.team-apps { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; table-layout: fixed; }
+table.team-apps th, table.team-apps td { padding: 10px var(--gap-3); vertical-align: baseline; white-space: nowrap; }
+table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-5); width: 30%; }
+table.team-apps th:nth-child(2) { width: 16%; } table.team-apps th:nth-child(5) { width: 6rem; }
+table.team-apps td:last-child { padding-right: var(--gap-5); }
+table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
+.team-foot { margin: 0; padding: var(--gap-2) var(--gap-5); font-size: var(--size-detail); }
+.pill { display: inline-block; font-size: var(--size-label); font-weight: 600; line-height: 1.5; padding: 0 var(--gap-2); border-radius: 10px;
+        border: 1px solid var(--line); background: var(--sunk); color: var(--text); vertical-align: 0.1em; white-space: nowrap; }
 
 /* Disclosure: a section that opens. One that changes something (a form, ending in a pull
    request) is a solid row; one that only explains is a dashed row. */
@@ -283,13 +294,14 @@ svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   table.apps td[data-label]::before { content: attr(data-label); position: absolute; left: var(--gap-3); top: 5px; color: var(--muted); font-size: var(--size-label);
                                       font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .action-row { flex-direction: column; } .action-row form { width: 100%; }
-  .row-main { grid-template-columns: minmax(0, 1fr); padding-right: var(--gap-3); }
-  .row.head .row-main span + span { display: none; }
-  .row > details.act { display: inline-block; margin: 0 0 var(--gap-2) var(--gap-3); }
-  .row > details.act[open] { display: block; margin: 0; }
-  .row > details.act > summary, .row > .act-note { position: static; width: auto; }
-  .row > .act-note { display: block; padding: 0 var(--gap-3) var(--gap-2); }
-  .page-meta { float: none; justify-content: flex-end; margin: 0; }
+  .team-head { padding: var(--gap-3); } .team-head h2, .team-head p { margin-right: 0; }
+  .team-head > details.act { display: inline-block; margin: var(--gap-3) var(--gap-2) 0 0; }
+  .team-head > details.act[open] { display: block; margin-right: 0; }
+  .team-head > details.act > summary { position: static; width: auto; }
+  .team.new .team-head > details.act { margin-top: var(--gap-2); }
+  table.team-apps { table-layout: auto; min-width: 30rem; }
+  table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-3); width: auto; }
+  .team-foot { padding-inline: var(--gap-3); }
   .filters .gap { margin-left: 0; }
   .filters { row-gap: var(--gap-2); }
 }

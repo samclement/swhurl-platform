@@ -11,3 +11,5 @@ teams:
     - payments
   insights:
     description: Reporting (team platform scenario)
+    notify:
+    - insights

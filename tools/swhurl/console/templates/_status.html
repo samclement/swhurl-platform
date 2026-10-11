@@ -15,3 +15,26 @@
   <form class="inline" method="post" action="/promotion-prs/{{ pr.number }}/{{ control }}" hx-post="/promotion-prs/{{ pr.number }}/{{ control }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Remove its auto-merge label: it then waits for you to merge it' if control == 'hold' else 'Label it auto-merge again: it merges itself once fresh checks pass' }}">{{ 'Hold' if control == 'hold' else 'Request auto-merge' }}</button></form>{% endif %}</span>{% endmacro %}
 {# What a list page is for, one click away: the list itself starts right under the title. #}
 {% macro about() %}<details class="about" id="about"><summary>{{ icon('info') }} About this page</summary><p class="lead">{{ caller() }}</p></details>{% endmacro %}
+{% macro jobs_list(jobs) %}
+{# One row per job; a row opens to the job's output, so reading it does not mean leaving the list. #}
+<div class="openlist jobs">
+  <div class="cols head" aria-hidden="true"><span></span><span>State</span><span>Job</span><span>Result</span><span>Started</span><span>By</span></div>
+  {% for j in jobs %}
+  <details class="openrow" id="job-{{ j.id }}">
+    <summary class="cols" title="Show or hide the output of job #{{ j.id }}">
+      <span class="chev" aria-hidden="true"></span>
+      <span class="cell">{{ job(j) }}<span class="state {{ {'failed': 'failing', 'succeeded': 'healthy'}.get(j.state, 'updating') }}"> {{ j.state | capitalize }}</span></span>
+      {% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<span class="cell wrap">{{ j.action }} <a href="{{ link }}">{{ label }}</a></span>
+      <span class="cell" data-label="Result">{% if j.link %}<a href="{{ j.link }}">Pull request {{ icon('external') }}</a>{% else %}<span class="muted">—</span>{% endif %}</span>
+      <span class="cell muted" data-label="Started" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %}</span>
+      <span class="cell muted" data-label="By">{{ j.identity }}</span>
+    </summary>
+    <div class="panel">
+      <pre>{% for line in j.lines %}{{ line | short }}
+{% else %}<span class="muted">no output yet</span>{% endfor %}</pre>
+      <p class="muted"><a href="/jobs/{{ j.id }}">Job #{{ j.id }} on its own page</a>{% if j.state == 'running' %}, where its output arrives live{% endif %}.</p>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% endmacro %}

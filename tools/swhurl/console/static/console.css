@@ -180,34 +180,58 @@ ul.items li:last-child { border-bottom: 0; }
 pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-3); overflow-x: auto;
       line-height: 1.5; white-space: pre-wrap; margin: var(--gap-2) 0; }
 
-/* Cards with their own actions (Teams): who it is at the top, with its actions at the top right,
-   always in the same place (--slot counts from the right edge); then what it owns, as a table.
-   An action's form opens inside its card, under the heading. */
-.team { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-4);
+/* Cards with their own actions (a team, each part of an app's page): what it is at the top, with
+   its actions at the top right, always in the same place (--slot counts from the right edge, one
+   --pitch apart); then its facts, one per line or per column. An action's form opens inside its
+   card, under the heading; only the form's own button opens a pull request. */
+.card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-4);
         scroll-margin-top: 3.5rem; }
-.team:target { border-color: var(--accent); }
-.team.new { background: none; border: 0; margin-bottom: var(--gap-2); }
-.team.new .team-head { padding: 0; min-height: 2.25rem; }
-.team-head { position: relative; padding: var(--gap-4) var(--gap-5); }
-.team-head h2 { margin: 0 14rem var(--gap-1) 0; font-size: 1.125rem; }
-.team-head p { margin: 0 14rem 0 0; max-width: 46em; }
-.team-head p + p { margin-top: var(--gap-1); }
-.team-head > details.act > summary { position: absolute; top: var(--gap-3); right: calc(var(--slot, 0) * 6.5rem + var(--gap-4));
-                                     width: var(--wide, 6rem); justify-content: center; white-space: nowrap; list-style: none; }
-.team.new .team-head > details.act > summary { top: 0; right: 0; }
-.team-head > details.act > summary::-webkit-details-marker { display: none; }
-.team-head > details.act[open] > summary { border-color: var(--accent); background: var(--sunk); }
-.team-head > details.act[open] { margin-top: var(--gap-4); padding-top: var(--gap-4); border-top: 1px dashed var(--line); }
-.team.new details.act[open] { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-4) var(--gap-5); margin-top: var(--gap-3); }
-.team-head > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
-.team-head > details.act form.wizard fieldset { margin-bottom: var(--gap-4); }
+.card:target { border-color: var(--accent); }
+.card.bare { background: none; border: 0; margin-bottom: var(--gap-2); }
+.card.bare .card-head { padding: 0; min-height: 2.25rem; }
+.card-head { position: relative; padding: var(--gap-4) var(--gap-5); }
+.card-head h2 { margin: 0 calc(var(--acts, 2) * var(--pitch, 6.5rem) + var(--gap-3)) var(--gap-1) 0; font-size: 1.125rem; }
+.card-head p { margin: 0 calc(var(--acts, 2) * var(--pitch, 6.5rem) + var(--gap-3)) 0 0; max-width: 46em; }
+.card-head p + p { margin-top: var(--gap-1); }
+.card-head > details.act > summary, .card-head > a.act {
+  position: absolute; top: var(--gap-3); right: calc(var(--slot, 0) * var(--pitch, 6.5rem) + var(--gap-4));
+  width: var(--wide, 6rem); justify-content: center; white-space: nowrap; list-style: none; }
+.card.bare .card-head > details.act > summary { top: 0; right: 0; }
+.card-head > details.act > summary::-webkit-details-marker { display: none; }
+.card-head > details.act[open] > summary { border-color: var(--accent); background: var(--sunk); }
+.card-head > details.act[open] { margin-top: var(--gap-4); padding-top: var(--gap-4); border-top: 1px dashed var(--line); }
+.card.bare details.act[open] { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-4) var(--gap-5); margin-top: var(--gap-3); }
+.card-head > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
+.card-head > details.act form.wizard fieldset { margin-bottom: var(--gap-4); }
+.card-body { border-top: 1px solid var(--line); padding: var(--gap-4) var(--gap-5); }
+.card-body > :last-child { margin-bottom: 0; }
+.card-body dl.plain { gap: var(--gap-2) var(--gap-5); }
+.card-body dl.plain dt { min-width: 8rem; }
+.card-body .action-row { max-width: 46em; }
+.card-body details.disclose.help { margin: var(--gap-3) 0 0; }
+.card-body .action-row > span.pill, .card-body .action-row > span.go, .card-body .action-row > span:first-child { flex: none; width: 10em; }
+.card-body .action-row > span.pill { width: auto; margin-right: calc(10em - 5.2em); }
+.card > .card-body:first-child { border-top: 0; }
+.facts .verdict { font-size: inherit; }
+.anchors + .card { margin-top: var(--gap-4); }
+.card-body p.reason { margin: 0; font-size: var(--size-detail); }
+.card-body h3 { margin: 0 0 var(--gap-2); font-size: var(--size-body); }
+.card-body details.section { margin: var(--gap-3) 0 0; } .card-body details.section dl.plain { margin-top: var(--gap-2); }
+.card.danger { border-color: color-mix(in oklch, var(--critical) 35%, var(--line)); }
+.card.danger h2 { color: var(--critical); }
+/* The facts that sum a thing up, side by side: a label above each. */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--gap-3) var(--gap-5); }
+.facts > div > span:first-child { display: block; color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em;
+                                  text-transform: uppercase; margin-bottom: 2px; }
+h1 .pill { vertical-align: 0.35em; margin-left: var(--gap-2); }
+h1 + .tabs { margin-top: var(--gap-2); }
 table.team-apps { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; table-layout: fixed; }
 table.team-apps th, table.team-apps td { padding: 10px var(--gap-3); vertical-align: baseline; white-space: nowrap; }
 table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-5); width: 30%; }
 table.team-apps th:nth-child(2) { width: 16%; } table.team-apps th:nth-child(5) { width: 12rem; }
 table.team-apps td:last-child { padding-right: var(--gap-5); }
 table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
-.team-foot { margin: 0; padding: var(--gap-2) var(--gap-5); font-size: var(--size-detail); }
+.card-foot { margin: 0; padding: var(--gap-2) var(--gap-5); font-size: var(--size-detail); }
 .pill { display: inline-block; font-size: var(--size-label); font-weight: 600; line-height: 1.5; padding: 0 var(--gap-2); border-radius: 10px;
         border: 1px solid var(--line); background: var(--sunk); color: var(--muted); vertical-align: 0.1em; white-space: nowrap; }
 
@@ -262,8 +286,6 @@ details.disclose > summary:hover strong, details.disclose > summary:hover { colo
 details.disclose[open] { padding-bottom: var(--gap-3); }
 details.disclose.help { border-style: dashed; background: none; }
 details.disclose form.wizard { border: 0; padding: var(--gap-2) 0 0; background: none; }
-section.danger { margin-top: var(--gap-6); border-top: 1px solid var(--line); padding-top: var(--gap-2); }
-section.danger h2 { color: var(--critical); margin-top: var(--gap-3); }
 
 /* Forms: one column, label above field, one line of help. */
 form.wizard { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-4) var(--gap-5); }
@@ -324,14 +346,14 @@ svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   details.openrow .cell.act { text-align: left; } details.openrow .cell.act:empty { display: none; }
   .panel, .openlist.apps .panel { grid-template-columns: minmax(0, 1fr); padding: var(--gap-3); }
   .action-row { flex-direction: column; } .action-row form { width: 100%; }
-  .team-head { padding: var(--gap-3); } .team-head h2, .team-head p { margin-right: 0; }
-  .team-head > details.act { display: inline-block; margin: var(--gap-3) var(--gap-2) 0 0; }
-  .team-head > details.act[open] { display: block; margin-right: 0; }
-  .team-head > details.act > summary { position: static; width: auto; }
-  .team.new .team-head > details.act { margin-top: var(--gap-2); }
+  .card-head, .card-body { padding: var(--gap-3); } .card-head h2, .card-head p { margin-right: 0; }
+  .card-head > details.act, .card-head > a.act { display: inline-flex; margin: var(--gap-3) var(--gap-2) 0 0; }
+  .card-head > details.act[open] { display: block; margin-right: 0; }
+  .card-head > details.act > summary, .card-head > a.act { position: static; width: auto; }
+  .card.bare .card-head > details.act { margin-top: var(--gap-2); }
   table.team-apps { table-layout: auto; min-width: 30rem; }
   table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-3); width: auto; }
-  .team-foot { padding-inline: var(--gap-3); }
+  .card-foot { padding-inline: var(--gap-3); }
   .filters .gap { margin-left: 0; }
   .filters { row-gap: var(--gap-2); }
 }

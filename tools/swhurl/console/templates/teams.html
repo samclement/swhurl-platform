@@ -21,8 +21,8 @@
 {# One card per team: who it is, then its apps as a table. A team's Edit and Delete sit at the top
    right of its card and open their form inside it (one at a time); only the form's own button,
    with the pull-request icon, opens a pull request. #}
-<div class="team new">
-  <div class="team-head">
+<div class="card bare">
+  <div class="card-head">
     <p class="tally">{{ teams | length }} team{{ 's' if teams | length != 1 }} <span class="muted">· {{ owned.values() | map('length') | sum }} apps</span></p>
     <details class="act" name="team-form" style="--slot: 0; --wide: 7.5rem">
       <summary class="button">{{ st.icon('plus') }} New team</summary>
@@ -37,8 +37,8 @@
   </div>
 </div>
 {% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
-<section class="team" id="{{ name }}">
-  <div class="team-head">
+<section class="card" id="{{ name }}">
+  <div class="card-head">
     <h2>{{ name }}{% if name == default_team %} <span class="pill" title="New apps without a team go to it; it cannot be renamed or deleted">default</span>{% endif %}</h2>
     <p class="{{ '' if description else 'muted' }}">{{ description or 'No description yet.' }}</p>
     {% if job %}<p class="muted">{{ st.job(job) }} Last change: <a href="/jobs/{{ job.id }}">{{ job.action }} {{ job.state }}</a>{% if job.link %} · <a href="{{ job.link }}">pull request {{ st.icon('external') }}</a>{% endif %}</p>{% endif %}
@@ -91,8 +91,8 @@
     {% endfor %}
   </table>
   </div>
-  <p class="team-foot"><a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }} on the Apps list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a></p>
-  {% else %}<p class="team-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{% endif %}
+  <p class="card-foot"><a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }} on the Apps list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a></p>
+  {% else %}<p class="card-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{% endif %}
 </section>
 {% endfor %}
 {% endblock %}

@@ -980,8 +980,8 @@ class TeamsPageTests(unittest.TestCase):
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertIn('no app can be called unregistered', page)
         self.assertNotIn('Apps without a registered team', page)
-        self.assertIn('<section class="team" id="payments">', page, 'the teams apps name are still shown')
-        self.assertIn('<section class="team" id="retired">', page)
+        self.assertIn('<section class="card" id="payments">', page, 'the teams apps name are still shown')
+        self.assertIn('<section class="card" id="retired">', page)
 
 
 class NewRepoRouteTests(unittest.TestCase):

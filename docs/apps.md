@@ -183,7 +183,18 @@ Set it with `--exposure` at creation, and change it later with `make app-expose 
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. Set it at creation (`team:` in `swhurl.yaml`, `--team`, or the console's team select; default `platform`) and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. To add a team, add its name and a description to the file. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. Set it at creation (`team:` in `swhurl.yaml`, `--team`, or the console's team select; default `platform`) and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+
+Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
+
+| Change | What keeps apps from being orphaned |
+| --- | --- |
+| Rename a team | The same change relabels every app that belongs to it |
+| Remove a team that owns apps | Refused, unless the same change moves them to another team (`--move-apps-to`) |
+| Remove or rename `platform` | Refused: it is the default for an app created without a team |
+| An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `make app-team` |
+
+Logs and traces already stored keep the team name they were written with; only new data carries a new name.
 
 Each instance carries two generated files beside its HelmRelease:
 

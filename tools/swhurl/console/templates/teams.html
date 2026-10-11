@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% import "_form.html" as ui with context %}
+{% block title %}Teams{% endblock %}
+{% macro apps_of(team) %}{% for app, envs in (owned.get(team) or {}).items() %}<a href="/apps/{{ app }}/{{ envs[0] }}">{{ app }}</a> <span class="muted">({{ envs | join(', ') }})</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">no apps</span>{% endfor %}{% endmacro %}
+{% block main %}
+<h1>Teams</h1>
+<p class="lead">A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.</p>
+{% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
+{% if registry_error %}<p class="warn">{{ registry_error }} The teams below are the ones apps name now; descriptions and teams without apps are missing, and no app can be called unregistered.</p>{% endif %}
+{% if not github %}<p class="bad">No GitHub token is configured, so pull requests cannot be opened.</p>{% endif %}
+
+{% if unregistered %}
+<h2 class="bad">Apps without a registered team</h2>
+<p class="muted">These apps name a team that is not in <code>apps/teams.yaml</code> (or none). <code>make check-apps</code> fails until each is fixed: register the team below, or move the app with <code>make app-team APP=&lt;app&gt; ARGS="--team &lt;team&gt;"</code>.</p>
+<table class="compact">
+  <tr><th>Team named</th><th>Apps</th></tr>
+  {% for team, apps in unregistered.items() %}<tr><td>{{ team or 'none' }}</td><td>{{ apps_of(team) }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<div class="scroll">
+<table class="compact apps">
+  <tr><th>Team</th><th>Apps it owns</th></tr>
+  {% for name, description in teams.items() %}{% set count = (owned.get(name) or {}) | length %}
+  <tr id="{{ name }}">
+    <td><strong>{{ name }}</strong>{% if name == default_team %} <span class="muted">(default)</span>{% endif %}
+      <div class="muted hint-line">{{ description or 'no description' }}</div></td>
+    <td>{{ apps_of(name) }}{% if count %} · <a href="/apps?team={{ name }}">list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a>{% endif %}</td>
+  </tr>
+  <tr><td colspan="2">
+    <details class="disclose">
+      <summary>Edit {{ name }}</summary>
+      <form class="wizard" method="post" action="/teams/edit">
+        <input type="hidden" name="name" value="{{ name }}">
+        <fieldset>
+          {{ ui.text_field('description-' ~ name, 'Description', description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
+          {% if name != default_team %}{{ ui.text_field('rename-' ~ name, 'Rename to', '', name, 'Optional. The same pull request relabels ' ~ ('its ' ~ count ~ ' app(s)' if count else 'nothing else: it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
+          {% else %}<span class="muted hint">The default team cannot be renamed: new apps without a team go to it.</span>{% endif %}
+        </fieldset>
+        {{ ui.submit('Open edit PR', 'You review and merge it on GitHub.') }}
+      </form>
+    </details>
+    {% if name != default_team %}
+    <details class="disclose">
+      <summary>Delete {{ name }}</summary>
+      <form class="wizard" method="post" action="/teams/remove">
+        <input type="hidden" name="name" value="{{ name }}">
+        <fieldset>
+          {% if count %}
+          <div class="field">
+            <label for="move-{{ name }}">Move its {{ count }} app(s) to</label>
+            <select id="move-{{ name }}" name="move_apps_to" required>
+              {% for other in teams if other != name %}<option value="{{ other }}" {{ 'selected' if other == default_team }}>{{ other }}</option>{% endfor %}
+            </select>
+            <span class="muted hint">A team that owns apps is not deleted on its own: the same pull request moves {{ (owned.get(name) or {}) | join(', ') }} first, so no app is left without a team.</span>
+          </div>
+          {% else %}<span class="muted hint">It owns no app, so nothing else changes. An open pull request for a new app in this team would fail its checks until it names another.</span>{% endif %}
+        </fieldset>
+        {{ ui.submit('Open delete PR', 'You review and merge it on GitHub.') }}
+      </form>
+    </details>
+    {% endif %}
+  </td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>New team</h2>
+<form class="wizard" method="post" action="/teams/add">
+  <fieldset>
+    {{ ui.text_field('new-name', 'Name', '', 'billing', 'Lowercase letters, digits and hyphens; at most 40 characters.', name='name') }}
+    {{ ui.text_field('new-description', 'Description', '', 'What the team owns', 'Optional. One line.', name='description') }}
+  </fieldset>
+  {{ ui.submit('Open new team PR', 'Once merged, the team can be chosen on New app and with make app-team.') }}
+</form>
+{% endblock %}

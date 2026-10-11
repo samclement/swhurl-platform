@@ -864,6 +864,88 @@ class AppReposTests(unittest.TestCase):
         self.assertIn(add, str(late.exception))
 
 
+class TeamsPageTests(unittest.TestCase):
+    """The Teams page: the registry on main beside the apps that run, and changes as pull requests."""
+
+    def client(self, namespaces=None, **kwargs):
+        staging = (staging_app('orders'), staging_app('billing'), staging_app('ghost'))
+        self.runner = tree_fake(staging=staging)
+        labels = namespaces or {'orders-staging': 'payments', 'billing-staging': 'payments', 'ghost-staging': 'retired'}
+        self.runner._rules.insert(0, (('kubectl', 'get', 'namespaces'), Result((), 0, json.dumps({'items': [
+            {'metadata': {'name': name, 'labels': {'platform.swhurl.com/team': team}}} for name, team in labels.items()]}))))
+        self.jobs = actions.Jobs(self.runner, audit=lambda line: None, inline=True)
+        self.api = FakeGitHub()
+        return TestClient(app_under_test(self.runner, jobs=self.jobs, github=self.api.github, **kwargs))
+
+    def test_shows_each_team_with_its_apps_and_the_apps_left_without_one(self):
+        page = self.client().get('/teams', headers=WHO).text
+        self.assertIn('<strong>platform</strong> <span class="muted">(default)</span>', page)
+        self.assertIn('The platform itself', page)
+        self.assertIn('<a href="/apps/billing/staging">billing</a>', page)
+        self.assertIn('<a href="/apps?team=payments">list</a>', page)
+        self.assertIn('Apps without a registered team', page)
+        self.assertIn('<td>retired</td>', page)
+        self.assertIn('<a href="/apps/ghost/staging">ghost</a>', page)
+        self.assertIn('Move its 2 app(s) to', page, 'a team with apps is deleted only by moving them')
+        self.assertEqual(page.count('action="/teams/remove"'), 1, 'the default team has no delete form')
+        self.assertIn('The default team cannot be renamed', page)
+        self.assertIn('href="/teams" class="here"', page)
+        self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in self.runner.calls), 'the page only reads')
+
+    def test_changes_run_the_clones_team_commands_and_wait_for_review(self):
+        cases = (
+            ('add', {'name': 'billing', 'description': ' Invoices  and\nrefunds '},
+             ('team-add', 'billing', '--description=Invoices and refunds'), '[console] teams: add billing'),
+            ('edit', {'name': 'payments', 'description': 'Orders', 'rename': 'orders'},
+             ('team-edit', 'payments', '--description=Orders', '--rename=orders'), '[console] teams: change payments'),
+            ('edit', {'name': 'payments', 'description': '', 'rename': ''},
+             ('team-edit', 'payments', '--description='), '[console] teams: change payments'),
+            ('remove', {'name': 'payments', 'move_apps_to': 'platform'},
+             ('team-remove', 'payments', '--move-apps-to=platform'), '[console] teams: remove payments'),
+        )
+        for action, form, command, title in cases:
+            with self.subTest(action=action, form=form):
+                c = self.client()
+                response = c.post(f'/teams/{action}', data=form, headers=WHO, follow_redirects=False)
+                self.assertEqual(response.status_code, 303, response.text)
+                tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
+                self.assertEqual(tool[3:], command)
+                job = self.jobs.get(1)
+                self.assertEqual((job.state, job.link), ('succeeded', 'https://github.com/x/pull/7'))
+                self.assertEqual(self.api.sent('POST /pulls')[0]['title'], title)
+                self.assertEqual(self.api.sent('POST /issues/7/labels'), [], 'a team change waits for review')
+                self.assertEqual(cluster.target(job.unit), (f"team {form['name']}", f"/teams#{form['name']}"))
+
+    def test_malformed_input_opens_nothing_and_a_refused_command_shows_its_words(self):
+        c = self.client()
+        for action, form in (('add', {'name': 'Bad Name'}), ('add', {'name': ''}), ('edit', {'name': 'a', 'rename': '--root=/'}),
+                             ('remove', {'name': 'a', 'move_apps_to': 'x y'}), ('add', {'name': 'a', 'description': 'd' * 201}),
+                             ('explode', {'name': 'a'})):
+            with self.subTest(action=action, form=form):
+                self.assertEqual(c.post(f'/teams/{action}', data=form, headers=WHO).status_code, 400)
+        self.assertFalse(any(call[1:3] == ('-m', 'swhurl') for call in self.runner.calls))
+        message = '[ERROR] team payments still owns billing, orders: move them with --move-apps-to <team>'
+        c = self.client()
+        self.runner._rules.insert(0, ((sys.executable, '-m', 'swhurl'), Result((), 2, '', message + '\n')))
+        c.post('/teams/remove', data={'name': 'payments'}, headers=WHO)
+        job = self.jobs.get(1)
+        self.assertEqual(job.state, 'failed')
+        self.assertIn(message, job.lines)
+        self.assertEqual(self.api.sent('POST /pulls'), [])
+        without_token = TestClient(app_under_test(tree_fake(), jobs=actions.Jobs(tree_fake(), audit=lambda line: None, inline=True)))
+        self.assertEqual(without_token.post('/teams/add', data={'name': 'billing'}, headers=WHO).status_code, 409)
+        self.assertIn('pull requests cannot be opened', without_token.get('/teams', headers=WHO).text)
+
+    def test_an_unreadable_registry_is_said_so_and_raises_no_false_alarm(self):
+        self.client()
+        unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
+        page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
+        self.assertIn('no app can be called unregistered', page)
+        self.assertNotIn('Apps without a registered team', page)
+        self.assertIn('<strong>payments</strong>', page, 'the teams apps name are still shown')
+        self.assertIn('<strong>retired</strong>', page)
+
+
 class NewRepoRouteTests(unittest.TestCase):
     def test_the_form_creates_the_repository_then_opens_the_platform_pr(self):
         runner = repo_runner(tree_fake())

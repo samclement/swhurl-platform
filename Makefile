@@ -84,6 +84,21 @@ app-team: ## APP= ARGS="--team T" Move an app (every environment) to a team in a
 platform-signing-keys: ## Refresh apps/signing-keys.json from the cluster and rewrite the instances that carry it (Git edit)
 	$(SWHURL_APPS) platform-signing-keys
 
+.PHONY: team-add
+team-add: ## NAME= [DESCRIPTION=] Register a team in apps/teams.yaml (Git edit)
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-add NAME=<team> [DESCRIPTION='what it owns']" >&2; exit 2; }
+	$(SWHURL_APPS) team-add $(NAME) --description "$(DESCRIPTION)"
+
+.PHONY: team-edit
+team-edit: ## NAME= ARGS="--description TEXT | --rename NEW" Change a team; a rename relabels its apps (Git edit)
+	@[[ -n "$(NAME)" && -n "$(ARGS)" ]] || { echo "Usage: make team-edit NAME=<team> ARGS='--rename new-name'" >&2; exit 2; }
+	$(SWHURL_APPS) team-edit $(NAME) $(ARGS)
+
+.PHONY: team-remove
+team-remove: ## NAME= [ARGS="--move-apps-to OTHER"] Remove a team; refused while it owns apps unless they are moved (Git edit)
+	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-remove NAME=<team> [ARGS='--move-apps-to other']" >&2; exit 2; }
+	$(SWHURL_APPS) team-remove $(NAME) $(ARGS)
+
 .PHONY: app-calls
 app-calls: ## APP= ENV= ARGS="--add orders | --remove orders" Change which apps an instance may call; updates the callees (Git edit)
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-calls APP=<app> ENV=<env> ARGS='--add orders'" >&2; exit 2; }

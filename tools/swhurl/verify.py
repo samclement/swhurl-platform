@@ -631,7 +631,7 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad('could not read the notification routes and channels (make reconcile UNIT=platform-notify)')
         return
     routes = channels.team_channels(root)
-    if live != {'teams': routes}:
+    if live != channels.routes(root):
         report.bad('the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
                    'and make flux-reconcile')
     else:

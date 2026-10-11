@@ -299,6 +299,10 @@ form.wizard input:not([type=checkbox]):not([type=radio]), form.wizard select {
 form.wizard select { width: auto; min-width: 14em; }
 form.wizard .hint { display: block; margin: var(--gap-1) 0 0; }
 form.wizard [hidden] { display: none; }
+form.wizard .with-button { display: flex; gap: var(--gap-2); }
+form.wizard .with-button > input { flex: 1; min-width: 0; }
+form.wizard .generated { margin: var(--gap-2) 0 0; padding: var(--gap-2) var(--gap-3); border: 1px dashed var(--line); border-radius: var(--radius); overflow-wrap: anywhere; }
+form.wizard .field > label.check + label.check { margin-top: var(--gap-1); }
 form.wizard .check { display: flex; gap: var(--gap-2); align-items: center; font-weight: 500; }
 form.wizard .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gap-4); }
 form.wizard .submit { display: flex; flex-wrap: wrap; gap: var(--gap-3); align-items: center; border-top: 1px solid var(--line); padding-top: var(--gap-4); }

@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -32,7 +33,7 @@ import httpx
 import yaml
 
 from swhurl import platform
-from swhurl.apps import events, repo
+from swhurl.apps import channels, events, repo
 from swhurl.apps.contract import (
     DEFAULT_TEAM,
     EXPOSURES,
@@ -350,9 +351,10 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str]) -> None:
-    """The clone's own tooling (``app-new``, ``app-promote``, ...): its rules, policy check and SOPS recipients."""
-    result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False,
+def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None) -> None:
+    """The clone's own tooling (``app-new``, ``app-promote``, ...): its rules, policy check and SOPS recipients.
+    ``input`` is its standard input: the one way a secret reaches it (never an argument, never in the job's lines)."""
+    result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False, input=input,
                         env={'PYTHONPATH': str(clone / 'tools')})
     job.lines += (result.stdout + result.stderr).splitlines()
     if result.returncode:
@@ -395,6 +397,44 @@ def calls_args(form: Mapping[str, str]) -> list[str]:
 TEAM_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
 
 
+def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """``(each channel's transport, each team's channels)`` from the generated routes on ``main``: names
+    only. The console never reads a channel's address (docs/services.md#notification-channels)."""
+    api = GitHubAPI(runner, github)
+    try:
+        listing = api.json('GET', f'/contents/{channels.ROUTES_FILE.as_posix()}?ref={BASE}')
+        configmap = yaml.safe_load(base64.b64decode(listing.get('content', ''))) or {}
+        routes = json.loads(configmap['data'][channels.ROUTES_KEY])
+        return ({str(name): str(transport) for name, transport in routes.get('channels', {}).items()},
+                {str(team): [str(name) for name in names] for team, names in routes.get('teams', {}).items()})
+    except (ValueError, AttributeError, KeyError, TypeError, yaml.YAMLError) as error:
+        raise ActionError(f'cannot read {channels.ROUTES_FILE}: {type(error).__name__}') from None
+    finally:
+        api.client.close()
+
+
+def channel_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str, str | None]:
+    """``(command, argv, PR title, the make line, standard input)`` for a channel's add, replace or remove.
+
+    The address is the credential: it is returned only as the command's standard input, and no
+    message built here repeats it."""
+    name = form.get('name', '').strip()
+    if not TEAM_NAME.fullmatch(name):
+        raise ActionError('channel name: lowercase letters, digits and hyphens, at most 40 characters')
+    if action == 'remove':
+        return 'channel-remove', [name], f'notify: remove channel {name}', f'make channel-remove NAME={name}', None
+    if action not in ('add', 'replace'):
+        raise ActionError('no such channel change')
+    transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
+    problem = channels.address_problem(transport, address)
+    if problem:
+        raise ActionError(f'channel address: {problem}')
+    argv = [name, f'--transport={transport}'] + (['--replace'] if action == 'replace' else [])
+    return ('channel-add', argv, f'notify: {"replace the address of" if action == "replace" else "add"} channel {name}',
+            f'make channel-add NAME={name}' + (' ARGS=--replace' if action == 'replace' else '')
+            + '    # the address was entered on the console and is only in the encrypted file', address + '\n')
+
+
 def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str]:
     """``(command, argv, PR title, the make line)`` for the Teams page's add, edit or remove.
 
@@ -413,6 +453,11 @@ def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], s
                 f"make team-add NAME={name} DESCRIPTION='{description}'")
     if action == 'edit':
         argv = [name, f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
+        if 'notify_shown' in form:  # the form listed the channels: what is ticked replaces the team's list
+            notify = [channel for channel in form.get('notify', '').split(',') if channel]
+            if not all(TEAM_NAME.fullmatch(channel) for channel in notify):
+                raise ActionError('channel names: lowercase letters, digits and hyphens')
+            argv.append(f'--notify={",".join(notify)}')
         return 'team-edit', argv, f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(argv[1:])}"'
     if action == 'remove':
         argv = [name] + ([f'--move-apps-to={move}'] if move else [])

@@ -228,6 +228,7 @@ def channel_add(root: Path, name: str, address: str, transport: str = 'ntfy', re
         resources.append(path.name)
         document.save()
     set_decryption(root)
+    write_routes(root)
     print(f'[OK] channel {name} ({transport}) {"replaced" if before is not None else "added"}; its address is not shown again')
 
 
@@ -245,6 +246,7 @@ def channel_remove(root: Path, name: str) -> None:
         document.save()
     path.unlink()
     set_decryption(root)
+    write_routes(root)
     print(f'[OK] removed channel {name}')
 
 

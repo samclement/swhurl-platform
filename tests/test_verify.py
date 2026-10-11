@@ -83,7 +83,7 @@ def healthy(**overrides):
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-platform'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-platform'}}]},
         'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
-            {'teams': channels.team_channels(ROOT)})}}]},
+            channels.routes(ROOT))}}]},
         'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.channels(ROOT))),
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
         'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'], 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},

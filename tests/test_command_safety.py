@@ -44,7 +44,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
                                             for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
         self.env['QUOTA'] = json.dumps(contract.QUOTA)
-        self.env['ROUTES'] = json.dumps({'teams': channels.team_channels(ROOT)})
+        self.env['ROUTES'] = json.dumps(channels.routes(ROOT))
         self.env['CHANNEL_SECRETS'] = '\n'.join(f'secret/channel-{name}' for name in channels.channels(ROOT))
         self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):

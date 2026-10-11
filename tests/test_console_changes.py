@@ -325,15 +325,15 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIsNone(jobs.get(1))
         self.assertTrue(all(call[0] == 'kubectl' and 'get' in call for call in runner.calls),
                         'it reads the apps it could connect to and changes nothing')
-        self.assertEqual({(r.method, r.url.path.rsplit('/', 1)[-1]) for r in self.api.requests}, {('GET', 'teams.yaml')},
-                         'the page reads the team registry and nothing else')
-        self.assertEqual(len(self.api.requests), 1, 'and keeps it for five minutes')
+        self.assertEqual({(r.method, r.url.path.rsplit('/', 1)[-1]) for r in self.api.requests}, {('GET', 'teams.yaml'), ('GET', 'routes.yaml')},
+                         'the page reads the team registry and each team\'s channel, and nothing else')
+        self.assertEqual(len(self.api.requests), 2, 'and keeps both for five minutes')
 
     def test_the_team_is_chosen_from_the_registry_on_main(self):
         c, _ = self.client(tree_fake())
         page = c.get('/new', headers=WHO).text
-        self.assertIn('<option value="platform" selected>platform — The platform itself</option>', page)
-        self.assertIn('<option value="payments" >payments</option>', page)
+        self.assertIn('<option value="platform" selected>platform — The platform itself · no notification channel</option>', page)
+        self.assertIn('<option value="payments" >payments · notifies payments-phone</option>', page)
         teams = changes.platform_teams(FakeRunner(), self.api.github)
         self.assertEqual(teams, {'platform': 'The platform itself', 'payments': ''})
         web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
@@ -348,7 +348,7 @@ class NewAppRouteTests(unittest.TestCase):
         unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
         page = TestClient(app_under_test(tree_fake(), github=unreadable.github)).get('/new', headers=WHO).text
         self.assertIn('Only the default team is offered', page)
-        self.assertIn('<option value="platform" selected>platform</option>', page)
+        self.assertIn('<option value="platform" selected>platform · no notification channel</option>', page)
 
     def test_the_form_offers_what_staging_has_to_connect_to_and_says_what_a_team_is(self):
         staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created,paid'}), staging_app('job', port=None),
@@ -968,8 +968,11 @@ class TeamsPageTests(unittest.TestCase):
         self.assertIn('<span class="muted">Notifies</span> <a class="pill" href="#channels"', page)
         self.assertEqual(page.count('No notification channel: messages about its apps go to the platform topic only.'), 1,
                          'the default team names none')
-        self.assertEqual(page.count('name="notify" value="payments-phone" checked'), 1, 'ticked for payments only')
-        self.assertEqual(page.count('name="notify" value="spare" >'), 2, 'offered to each team')
+        self.assertEqual(page.count('<option value="payments-phone" selected>payments-phone · ntfy</option>'), 1,
+                         'chosen for payments only')
+        self.assertEqual(page.count('<option value="spare" >spare · ntfy</option>'), 2, 'offered to each team')
+        self.assertEqual(page.count('<option value="" selected>None: the platform topic only</option>'), 1, 'the default team has none')
+        self.assertNotIn('type="checkbox" name="notify"', page, 'a team has one channel')
         self.assertEqual(page.count('action="/channels/remove"'), 1, 'only a channel no team notifies can be removed')
         self.assertIn('<button type="button" class="button" data-generate hidden>Generate</button>', page)
         self.assertNotIn('ntfy.sh/', page.replace('https://ntfy.sh/your-topic', ''), 'no address is ever on the page')
@@ -978,17 +981,21 @@ class TeamsPageTests(unittest.TestCase):
         self.assertIn('No channels yet', page)
         self.assertNotIn('name="notify_shown"', page, 'a team form that lists no channel cannot clear a team\'s list')
 
-    def test_ticked_channels_replace_the_teams_list(self):
-        for ticked, wanted in ((['spare', 'payments-phone'], '--notify=spare,payments-phone'), ([], '--notify=')):
-            with self.subTest(ticked=ticked):
+    def test_the_chosen_channel_becomes_the_teams_one(self):
+        for chosen, wanted in (('spare', '--notify=spare'), ('', '--notify=')):
+            with self.subTest(chosen=chosen):
                 c = self.client()
-                form = {'name': 'payments', 'description': 'Orders', 'rename': 'payments', 'notify_shown': '1', 'notify': ticked}
+                form = {'name': 'payments', 'description': 'Orders', 'rename': 'payments', 'notify_shown': '1', 'notify': chosen}
                 self.assertEqual(c.post('/teams/edit', data=form, headers=WHO, follow_redirects=False).status_code, 303)
                 tool = next(call for call in self.runner.calls if call[1:3] == ('-m', 'swhurl'))
                 self.assertEqual(tool[3:], ('team-edit', 'payments', '--description=Orders', wanted))
         c = self.client()
-        bad = {'name': 'payments', 'notify_shown': '1', 'notify': ['--root=/']}
-        self.assertEqual(c.post('/teams/edit', data=bad, headers=WHO).status_code, 400)
+        for bad in ('--root=/', 'spare,payments-phone'):
+            form = {'name': 'payments', 'notify_shown': '1', 'notify': bad}
+            self.assertEqual(c.post('/teams/edit', data=form, headers=WHO).status_code, 400)
+        page = c.get('/new', headers=WHO).text
+        self.assertIn('· notifies payments-phone</option>', page, 'the new-app form names each team\'s channel')
+        self.assertIn('· no notification channel</option>', page)
 
     def test_a_channels_address_reaches_only_the_commands_standard_input(self):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'

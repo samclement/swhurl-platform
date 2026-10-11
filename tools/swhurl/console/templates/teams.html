@@ -64,10 +64,14 @@
           {% else %}<span class="muted hint">The default team keeps its name: new apps without a team go to it.</span>{% endif %}
           {% if channels %}
           <div class="field">
-            <span class="label">Notification channels</span>
+            <label for="notify-{{ name }}">Notification channel</label>
             <input type="hidden" name="notify_shown" value="1">
-            {% for channel, transport in channels.items() %}<label class="check"><input type="checkbox" name="notify" value="{{ channel }}" {{ 'checked' if channel in team_channels.get(name, []) }}> {{ channel }} <span class="muted">· {{ transport }}</span></label>{% endfor %}
-            <span class="muted hint">Each ticked channel gets a copy of the deployment and health messages of every app this team owns. The platform topic still gets them all.</span>
+            {% set current = team_channels.get(name, []) | first %}
+            <select id="notify-{{ name }}" name="notify">
+              <option value="" {{ 'selected' if not current }}>None: the platform topic only</option>
+              {% for channel, transport in channels.items() %}<option value="{{ channel }}" {{ 'selected' if channel == current }}>{{ channel }} · {{ transport }}</option>{% endfor %}
+            </select>
+            <span class="muted hint">A team has one channel. It gets a copy of the deployment and health messages of every app this team owns; the platform topic still gets them all.</span>
           </div>
           {% endif %}
         </fieldset>
@@ -127,11 +131,11 @@
       <summary class="button">{{ st.icon('plus') }} New channel</summary>
       <form class="wizard" method="post" action="/channels/add" autocomplete="off">
         <fieldset>
-          {{ ui.text_field('channel-name', 'Name', '', 'payments-phone', 'Lowercase letters, digits and hyphens; at most 40 characters. This is what teams tick; it is not secret.', name='name') }}
+          {{ ui.text_field('channel-name', 'Name', '', 'payments-phone', 'Lowercase letters, digits and hyphens; at most 40 characters. This is what a team chooses; it is not secret.', name='name') }}
           <input type="hidden" name="transport" value="ntfy">
           {{ address_field('channel-address') }}
         </fieldset>
-        {{ ui.submit('Open new channel PR', 'Adds one encrypted file. Once merged, tick the channel in a team\'s Edit form.') }}
+        {{ ui.submit('Open new channel PR', 'Adds one encrypted file. Once merged, choose the channel in a team\'s Edit form.') }}
       </form>
     </details>
     {% if channels %}
@@ -166,13 +170,13 @@
         <form class="inline" method="post" action="/channels/remove" data-confirm="Open a pull request removing channel {{ channel }}? No team notifies it." data-confirm-label="Open remove PR">
           <input type="hidden" name="name" value="{{ channel }}"><button class="danger" {{ 'disabled' if not github }}>{{ st.icon('trash') }} Remove</button>
         </form>
-        {% else %}<span class="muted" title="Untick it in each team's Edit form first">in use</span>{% endif %}
+        {% else %}<span class="muted" title="Choose another channel, or none, in each team's Edit form first">in use</span>{% endif %}
       </td>
     </tr>
     {% endfor %}
   </table>
   </div>
-  <p class="card-foot muted">A channel a team notifies cannot be removed: untick it in the team's Edit form first.</p>
+  <p class="card-foot muted">A channel a team notifies cannot be removed: choose another, or none, in the team's Edit form first.</p>
   {% else %}<p class="card-foot muted">No channels yet: messages about every app go to the platform topic only.</p>{% endif %}
 </section>
 {% endblock %}

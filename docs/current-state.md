@@ -991,3 +991,7 @@ Commits `3bff453` (code), `a155a62` (manifests, the checker's token and URL) and
 - When copies were first switched on, the checker also offered the service its copies of two `swhurl-try-13` deployments from the previous two hours (the platform topic had them already); no channel existed then, so nothing was delivered late. A team with a channel at that moment would have received them.
 - `make verify-platform`: the notify service runs the console's image; the channel checks passed. The throwaway channel, its route and the memory change were then removed again.
 - Not exercised: the notify service being down (the checker's retries, `notify service unreachable` and its recovery are unit-tested; inducing it would page the operator), a pod restart with entries in the outbox, a channel that cannot be reached, and a full outbox.
+
+### One channel per team (11 October 2026)
+
+Operator decision: a team has one notification channel. `make team-edit --notify` and the console's team **Edit** form (now a select, not ticks) accept one or none, `make check-apps` (rule `notify-channels`) refuses a second, and the New app form names each team's channel beside it. `make check` passed (565 tests). Offline only: no team has a channel at present, and the changed forms have not been used in a signed-in browser.

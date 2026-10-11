@@ -159,13 +159,23 @@ class TeamTests(unittest.TestCase):
             self.quiet(teams.channel_add, name, 'https://ntfy.sh/topic', runner=runner)
         with self.assertRaisesRegex(EditError, 'no channel ghost; channels: payments-desk, payments-phone'):
             teams.change(self.root, 'payments', notify=['ghost'])
-        self.quiet(teams.change, 'payments', notify=['payments-phone', 'payments-desk', 'payments-phone'])
-        self.assertEqual(self.routes(), {'payments': ['payments-phone', 'payments-desk']})
+        with self.assertRaisesRegex(EditError, 'a team notifies one channel, not 2: choose one of payments-phone, payments-desk'):
+            teams.change(self.root, 'payments', notify=['payments-phone', 'payments-desk', 'payments-phone'])
+        self.quiet(teams.change, 'payments', notify=['payments-phone', 'payments-phone'])
+        self.assertEqual(self.routes(), {'payments': ['payments-phone']})
         self.assertEqual(channels.problems(self.root), [])
+        registry = self.root / 'apps/teams.yaml'
+        one = registry.read_text()
+        registry.write_text(one.replace('- payments-phone', '- payments-phone\n    - payments-desk'))
+        teams.write_routes(self.root)
+        self.assertEqual(channels.problems(self.root), ['notify-channels: team payments notifies 2 channels; a team has one '
+                                                        '(make team-edit NAME=payments ARGS="--notify <channel>")'])
+        registry.write_text(one)
+        teams.write_routes(self.root)
         with self.assertRaisesRegex(EditError, 'channel payments-phone is notified by payments'):
             teams.channel_remove(self.root, 'payments-phone')
         self.quiet(teams.change, 'payments', rename='billing')
-        self.assertEqual(self.routes(), {'billing': ['payments-phone', 'payments-desk']})
+        self.assertEqual(self.routes(), {'billing': ['payments-phone']})
         self.quiet(teams.change, 'billing', notify=['payments-desk'])
         self.quiet(teams.channel_remove, 'payments-phone')
         self.assertEqual(channels.channels(self.root), {'payments-desk': 'ntfy'})

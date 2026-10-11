@@ -453,11 +453,11 @@ def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], s
                 f"make team-add NAME={name} DESCRIPTION='{description}'")
     if action == 'edit':
         argv = [name, f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
-        if 'notify_shown' in form:  # the form listed the channels: what is ticked replaces the team's list
-            notify = [channel for channel in form.get('notify', '').split(',') if channel]
-            if not all(TEAM_NAME.fullmatch(channel) for channel in notify):
-                raise ActionError('channel names: lowercase letters, digits and hyphens')
-            argv.append(f'--notify={",".join(notify)}')
+        if 'notify_shown' in form:  # the form offered the channels: the one chosen (or none) is the team's
+            notify = form.get('notify', '')
+            if notify and not TEAM_NAME.fullmatch(notify):
+                raise ActionError('channel name: lowercase letters, digits and hyphens')
+            argv.append(f'--notify={notify}')
         return 'team-edit', argv, f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(argv[1:])}"'
     if action == 'remove':
         argv = [name] + ([f'--move-apps-to={move}'] if move else [])

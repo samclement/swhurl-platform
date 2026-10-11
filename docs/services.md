@@ -176,14 +176,14 @@ Pending messages are checkpointed before posting and removed only after ntfy acc
 
 ### Notification channels
 
-A team's apps can also notify the team. A **channel** is a named destination, and a team lists the channels that get a copy of its apps' [lifecycle and health messages](#notification-expectations). For example, giving team `payments` its own ntfy topic:
+A team's apps can also notify the team. A **channel** is a named destination, and a team names the one channel that gets a copy of its apps' [lifecycle and health messages](#notification-expectations). For example, giving team `payments` its own ntfy topic:
 
 ```
 make channel-add NAME=payments-phone                          # prompts for https://ntfy.sh/<topic>, not shown
 make team-edit NAME=payments ARGS="--notify payments-phone"
 ```
 
-The console's [Teams page](console.md#use-it) does the same as pull requests: **New channel** (its **Generate** button makes a random topic in your browser and shows the link to subscribe with before you submit), then tick the channel in the team's **Edit** form.
+The console's [Teams page](console.md#use-it) does the same as pull requests: **New channel** (its **Generate** button makes a random topic in your browser and shows the link to subscribe with before you submit), then choose the channel in the team's **Edit** form.
 
 ```mermaid
 flowchart LR
@@ -200,7 +200,7 @@ flowchart LR
 | Part | Where | Notes |
 | --- | --- | --- |
 | Channel | [`platform/notify/channel-<name>.sops.yaml`](../platform/notify): Secret `notify/channel-<name>` | Its transport is a plain label (`ntfy` is the only one); its address is the credential and is encrypted. One file per channel, so adding one decrypts nothing |
-| Team's channels | `notify:` on the team in [`apps/teams.yaml`](../apps/teams.yaml) | Every app of the team, in every environment. A team without `notify` gets no copy |
+| Team's channel | `notify:` on the team in [`apps/teams.yaml`](../apps/teams.yaml) | One channel per team (the commands and rule `notify-channels` refuse a second), for every app of the team in every environment. A team without `notify` gets no copy. Two teams may name the same channel |
 | Routes | [`platform/notify/routes.yaml`](../platform/notify/routes.yaml): ConfigMap `notify/notification-routes` | Generated from the channel files and the registry, names only: never edit it. `make app-sync` rewrites it and `make check-apps` (rule `notify-channels`) fails when it, a team's list or the channel files disagree |
 
 **Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channels, so nothing secret changes hands. A lost or leaked address is replaced with `make channel-add NAME=<channel> ARGS=--replace`; `make channel-remove` is refused while a team notifies the channel.

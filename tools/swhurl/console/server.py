@@ -449,8 +449,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         action = request.path_params['action']
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
-        fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
-        form = {k: v[0] for k, v in fields.items()} | {'notify': ','.join(fields.get('notify', []))}
+        form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
         try:
             command, argv, title, make = changes.team_change(action, form)
         except actions.ActionError as error:
@@ -521,6 +520,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     features=features, features_error=features_error,
                     stacks=contract.STACKS, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER, teams=teams, teams_error=teams_error, default_team=contract.DEFAULT_TEAM,
+                    team_channels=platform_channels()[1],
                     callable_apps=callable_apps, offered_events=offered_events, connections_error=connections_error,
                     chosen_calls=[n for n in form.get('calls', '').split(',') if n],
                     chosen_events=[n for n in form.get('subscribe', '').split(',') if n],

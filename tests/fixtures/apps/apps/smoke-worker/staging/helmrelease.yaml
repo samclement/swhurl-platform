@@ -56,8 +56,19 @@ spec:
             env:
               SWHURL_APP: smoke-worker
               SWHURL_ENV: staging
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
     persistence:
       tmp:
         type: emptyDir
         globalMounts:
         - path: /tmp
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true

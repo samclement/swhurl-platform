@@ -58,6 +58,7 @@ spec:
             env:
               SWHURL_APP: smoke-data
               SWHURL_ENV: prod
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               DATABASE_PATH: /data/app.db
         replicas: 1
         strategy: Recreate
@@ -74,3 +75,13 @@ spec:
         retain: true
         globalMounts:
         - path: /data
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true

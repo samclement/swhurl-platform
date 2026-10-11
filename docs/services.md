@@ -210,7 +210,7 @@ flowchart LR
 
 ### Notify service
 
-One small service, `notify` in the `notify` namespace, turns a message about an app into deliveries to the channels of the app's team. It runs the console's image ([`service.py`](../tools/swhurl/notifications/service.py)); its only caller today is the notification checker.
+One small service, `notify` in the `notify` namespace, turns a message about an app into deliveries to the channels of the app's team. It runs the console's image ([`service.py`](../tools/swhurl/notifications/service.py)); its callers are the notification checker and the [apps themselves](apps.md#notifications).
 
 ```
 POST http://notify.notify.svc.cluster.local:8080/v1/notify      Authorization: Bearer <token for the audience notify>
@@ -223,18 +223,19 @@ POST http://notify.notify.svc.cluster.local:8080/v1/notify      Authorization: B
 | `202 {"channels": ["payments-phone"]}` | Saved in the outbox for these channels and delivered from there. An empty list is normal: the app's team notifies no channel, the app is unknown, or this `key` was already accepted |
 | `400`, `413` | The body is not what the table below allows; the reason is in `error` |
 | `401` | No token, or one Kubernetes does not vouch for with the audience `notify` |
-| `403` | A real token of a caller that may not send: today everyone but the checker, apps included |
+| `403` | A real token of a caller that may not send (a person, the console, any service account that is not an app's own), or an app naming another app or environment |
+| `429` | An app instance has had 30 messages accepted in the last hour |
 | `503` | The token, the routes or the outbox could not be read or saved: nothing was accepted, so send it again |
 
 | Field | Rule |
 | --- | --- |
-| `app`, `env` | The app the message is about; `env` is `staging` or `prod`. Its namespace's team label decides the channels |
-| `key` | Required, at most 300 characters. The same key is delivered once per channel, so a retry is harmless (remembered for two hours after delivery) |
-| `title`, `message` | A title of at most 250 characters; a message of at most 3,500 |
+| `app`, `env` | The app the message is about; `env` is `staging` or `prod`. Its namespace's team label decides the channels. An app leaves them out: they come from its token, and naming anything else is refused |
+| `key` | The same key is delivered once per channel, so a retry is harmless (remembered for two hours after delivery). Required from the checker; optional from an app, which gets a random one |
+| `title`, `message` | A title of at most 250 characters; a message of at most 3,500. An app's title is delivered as `<app>/<env>: <title>`, so the team sees who sent it |
 | `priority` | `normal` (default) or `high` |
 | `click` | Optional `https://` link opened from the notification |
 
-**Who a caller is.** The service asks Kubernetes (a `TokenReview`, restricted to the audience `notify`) whose token it was given; nothing in the body is trusted for identity. The checker's pod carries such a token as a file, valid ten minutes and for this audience only, so the Kubernetes API and every other service refuse it. A NetworkPolicy also admits only the checker's pods. Senders are listed in `PLATFORM_SENDERS`; an app sending its own messages is [planned](plan.md#16-app-notification-service--designed-11-october-2026), and until then an app's token gets 403.
+**Who a caller is.** The service asks Kubernetes (a `TokenReview`, restricted to the audience `notify`) whose token it was given; nothing in the body is trusted for identity. The checker's pod carries such a token as a file, valid ten minutes and for this audience only, so the Kubernetes API and every other service refuse it. Two kinds of caller are accepted. The checker (`PLATFORM_SENDERS`) says which app a message is about. An app's own service account, `<app>` in the namespace `<app>-<env>`, sends about itself only: every instance carries such a token ([apps](apps.md#notifications)). A NetworkPolicy admits only the checker's pods and app namespaces.
 
 **Outbox.** An accepted message is one entry per channel in the `notify/notify-outbox` ConfigMap, written before 202 is answered and before anything is sent (Flux owns the object, the service owns its `state.json`, as for the [checker's state](#current-notification-behavior)). Delivery starts at once and is retried every 30 seconds; a new pod sends what the last one accepted. Delivery is at least once. The outbox holds at most 500 entries and answers 503 beyond that. Routes, the app's team and channel addresses are read when a message arrives and when it is sent, never cached, so a new channel works as soon as Flux has applied it.
 

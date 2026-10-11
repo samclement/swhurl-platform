@@ -214,10 +214,8 @@ def sync_env(root: Path, env: str) -> list[Path]:
         elif not callers:
             variables.pop(CALLERS_VARIABLE, None)
         persistence = mapping(app_values, 'persistence', create=True)
-        if calls[app] and persistence.get(TOKENS_VOLUME) != tokens_volume(calls[app]):
+        if persistence.get(TOKENS_VOLUME) != tokens_volume(calls[app]):
             persistence[TOKENS_VOLUME] = tokens_volume(calls[app])
-        elif not calls[app]:
-            persistence.pop(TOKENS_VOLUME, None)
         exposure = mapping(mapping(YamlFile(instance / 'namespace.yaml').data, 'metadata'), 'labels').get(EXPOSURE)
         event_files, listed, unlisted, user = event_edits(root, instance, app, env, doc.data, publishers)
         if user:

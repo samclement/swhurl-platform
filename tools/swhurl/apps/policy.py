@@ -86,6 +86,7 @@ from swhurl.apps.calling import (
     declared_calls,
     identity_variables,
     signing_keys,
+    token_audiences,
 )
 from swhurl.apps.contract import (
     APP_OWNER,
@@ -265,10 +266,12 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
                 violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENVIRONMENT_VARIABLE}) before it is defined'))
         tokens = [source['serviceAccountToken'] for volume in spec.get('volumes') or []
                   for source in (volume.get('projected') or {}).get('sources') or [] if 'serviceAccountToken' in source]
-        expected = [{'audience': callee, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{callee}/token'} for callee in calls]
+        expected = [{'audience': audience, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{audience}/token'}
+                    for audience in token_audiences(calls)]
         if tokens != expected:
             violations.append(('call-tokens', f'{where} must carry one {TOKEN_SECONDS}-second token per declared call '
-                               f'({", ".join(calls) or "none declared"}), each for that audience only; make app-sync writes them'))
+                               f'({", ".join(calls) or "none declared"}) and one for the notify service, each for that '
+                               'audience only; make app-sync writes them'))
     violations += check_events(docs, releases[0], labels)
     return violations
 

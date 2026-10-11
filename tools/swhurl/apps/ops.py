@@ -15,7 +15,11 @@ from dataclasses import dataclass, field
 
 from swhurl import ROOT
 from swhurl.apps import helmrelease, policy
-from swhurl.apps.contract import AUTH_MIDDLEWARE, INSTANCE_ROOTS, TEAM
+from swhurl.apps.contract import (
+    AUTH_MIDDLEWARE,
+    INSTANCE_ROOTS,
+    TEAM,
+)
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 

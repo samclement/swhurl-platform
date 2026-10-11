@@ -13,7 +13,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import contract, edit, new, ops, policy
+from swhurl.apps import calling, contract, derive, edit, new, ops, policy
 from swhurl.run import CommandError
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
@@ -66,14 +66,14 @@ class EditTests(unittest.TestCase):
             edit.promote(self.root, 'hello', 'staging', 'prod')
 
     def test_promotion_refuses_a_source_that_moved_after_review_without_writing(self):
-        reviewed = ops.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        reviewed = ops.image_reference(derive.container(derive.load_release(self.staging.parent))['image'])
         self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
-            edit.container(edit.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
+            derive.container(derive.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
         before = self.prod.read_bytes()
         with self.assertRaisesRegex(edit.EditError, 'changed since it was reviewed'):
             edit.promote(self.root, 'hello', 'staging', 'prod', expect_image=reviewed)
         self.assertEqual(self.prod.read_bytes(), before)
-        current = ops.image_reference(edit.container(edit.load_release(self.staging.parent))['image'])
+        current = ops.image_reference(derive.container(derive.load_release(self.staging.parent))['image'])
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod', expect_image=current)
         self.assertIn('tag: 1.28-alpine', self.prod.read_text())
 
@@ -113,7 +113,7 @@ class EditTests(unittest.TestCase):
     def test_promote_preserves_target_quotes_and_manual_comments(self):
         text = self.prod.read_text().replace('tag: 1.27-alpine', 'tag: "1.27-alpine"  # release approved')
         self.prod.write_text('# production settings\n' + text)
-        old_digest = edit.container(edit.load_release(self.staging.parent))['image']['digest']
+        old_digest = derive.container(derive.load_release(self.staging.parent))['image']['digest']
         self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', "tag: '1.28-alpine'").replace(old_digest, NEW_DIGEST))
         before = self.prod.read_text()
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
@@ -155,7 +155,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(contract.strip_image_markers(text)[1], 'hello-staging')
         before = self.prod.read_text()
         self.staging.write_text(text.replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
-            edit.container(edit.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
+            derive.container(derive.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertIn('tag: 1.28-alpine\n', self.prod.read_text(), 'production gets the tag, never the markers')
         self.assertNotIn('imagepolicy', self.prod.read_text())
@@ -166,7 +166,7 @@ class EditTests(unittest.TestCase):
 
     def state(self, env):
         instance = self.root / 'apps/hello' / env
-        values = edit.load_release(instance)['spec']['values']
+        values = derive.load_release(instance)['spec']['values']
         route = (values.get('ingress') or {}).get('main')
         namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
         unit = yaml.safe_load((self.root / f'clusters/home/app-hello-{env}.yaml').read_text())
@@ -238,7 +238,7 @@ class EditTests(unittest.TestCase):
             shutil.copytree(self.root / 'apps/hello' / env, self.root / 'apps' / name / env)
             for path in (self.root / 'apps' / name / env).glob('*.yaml'):
                 path.write_text(path.read_text().replace('hello', name).replace('port: 8080', f'port: {port}'))
-        self.quiet(edit.sync, self.root)
+        self.quiet(derive.sync, self.root)
 
     def test_calls_give_the_caller_an_address_and_token_and_the_callee_an_allowed_caller(self):
         self.second_app()
@@ -246,7 +246,7 @@ class EditTests(unittest.TestCase):
         self.assertEqual(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'],
                          'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
         release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
-        self.assertEqual(release['spec']['values']['persistence']['tokens'], contract.tokens_volume(['orders']))
+        self.assertEqual(release['spec']['values']['persistence']['tokens'], calling.tokens_volume(['orders']))
         self.assertEqual(self.env('orders')['SWHURL_ALLOWED_CALLERS'], 'hello')
         admitted = yaml.safe_load((self.root / 'apps/orders/staging/networkpolicy.yaml').read_text())['spec']['ingress']
         self.assertEqual(admitted, [{'from': [contract.TRAEFIK, {
@@ -295,14 +295,14 @@ class EditTests(unittest.TestCase):
                       problems[instances[0]])
         self.assertIn('calls: allows stranger, which does not declare a call to it; make app-sync rewrites both sides',
                       problems[instances[1]])
-        self.quiet(edit.sync, self.root)
+        self.quiet(derive.sync, self.root)
         self.assertEqual(policy.check_calls(instances), {})
 
     def test_signing_keys_refresh_rewrites_the_file_and_every_web_app(self):
         from swhurl.apps import keys
         from swhurl.run import FakeRunner
         (self.root / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "old"}]}')
-        self.quiet(edit.sync, self.root)
+        self.quiet(derive.sync, self.root)
         self.assertEqual(self.env('hello')['SWHURL_AUTH_KEYS'], '{"keys":[{"kid":"old"}]}')
         runner = FakeRunner().on(*keys.JWKS, stdout='{"keys": [{"kid": "new"}]}')
         code, out = self.quiet(keys.main, ['--root', str(self.root)], runner)
@@ -455,7 +455,7 @@ class EditTests(unittest.TestCase):
         text = text.replace('secretName: hello-tls', 'secretName: "custom-tls"')
         self.staging.write_text(text)
         self.expose('staging', 'public', 'hello.example.com')
-        route = edit.load_release(self.staging.parent)['spec']['values']['ingress']['main']
+        route = derive.load_release(self.staging.parent)['spec']['values']['ingress']['main']
         self.assertEqual(route['labels'], {'owner': 'sam'})
         self.assertEqual(route['tls'][0]['secretName'], 'custom-tls')
         self.assertEqual(route['annotations']['traefik.ingress.kubernetes.io/router.middlewares'],

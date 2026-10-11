@@ -19,7 +19,11 @@ from io import StringIO
 from pathlib import Path
 
 from swhurl.apps import new, policy, promotion, repo
-from swhurl.apps.contract import MANIFEST_FILE, STACK_REVISIONS, STACKS
+from swhurl.apps.contract import (
+    MANIFEST_FILE,
+    STACK_REVISIONS,
+    STACKS,
+)
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner

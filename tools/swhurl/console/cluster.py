@@ -5,8 +5,11 @@ import io
 import re
 from dataclasses import dataclass
 
-from swhurl.apps import contract, events, helmrelease, ops, promotion
-from swhurl.apps.contract import AUTO_DEPLOY_TAG_PATTERN, ENVIRONMENTS
+from swhurl.apps import calling, contract, events, helmrelease, ops, promotion
+from swhurl.apps.contract import (
+    AUTO_DEPLOY_TAG_PATTERN,
+    ENVIRONMENTS,
+)
 from swhurl.apps.new import NAME_RE
 from swhurl.flux import WAITING_REASONS
 from swhurl.report import Entry, Report
@@ -225,10 +228,10 @@ def services(runner: Runner) -> list[Service]:
         variables = helmrelease.variables(release)
         port = helmrelease.port(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
-        path = variables.get(contract.API_VARIABLE, '') if address else ''
+        path = variables.get(calling.API_VARIABLE, '') if address else ''
         api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''
         found.setdefault(instance.app, {})[instance.env] = ServiceEnv(
-            row, address, api, tuple(contract.declared_calls(variables)), tuple(contract.allowed_callers(variables)),
+            row, address, api, tuple(calling.declared_calls(variables)), tuple(calling.allowed_callers(variables)),
             tuple(events.published(variables)), tuple('.'.join(pair) for pair in events.subscribed(variables)))
     return [Service(app, next((teams[e.row.instance.namespace] for e in envs.values()
                                if teams.get(e.row.instance.namespace)), ''), envs)

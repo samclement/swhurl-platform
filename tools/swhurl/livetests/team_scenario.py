@@ -18,7 +18,7 @@ import os
 import secrets
 
 from swhurl import verify
-from swhurl.apps import contract, events, helmrelease
+from swhurl.apps import calling, contract, events, helmrelease
 from swhurl.apps.new import NAME_RE
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
@@ -35,7 +35,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
         if not NAME_RE.match(name or ''):
             raise Preflight('give CALLER, CALLEE and SUBSCRIBER (app names) and optionally ENV')
     releases = {app: release(t, app, env) for app in (caller, callee, subscriber)}
-    if callee not in contract.declared_calls(helmrelease.variables(releases[caller])):
+    if callee not in calling.declared_calls(helmrelease.variables(releases[caller])):
         raise Preflight(f'{caller}/{env} does not declare a call to {callee}: make app-calls APP={caller} ENV={env} ARGS="--add {callee}"')
     published = events.published(helmrelease.variables(releases[callee]))
     if not published:

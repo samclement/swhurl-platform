@@ -12,7 +12,10 @@ import yaml
 from swhurl import ROOT
 from swhurl.apps import contract
 from swhurl.apps import new as app_new
-from swhurl.apps.contract import ManifestError, manifest_defaults
+from swhurl.apps.contract import (
+    ManifestError,
+    manifest_defaults,
+)
 
 WEB = {'version': 1, 'stack': 'typescript', 'kind': 'web', 'port': 8080, 'healthPath': '/healthz', 'uid': 65532,
        'telemetry': 'otlp', 'autoDeploy': True}

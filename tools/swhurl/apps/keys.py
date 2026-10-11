@@ -17,8 +17,10 @@ import json
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import edit
-from swhurl.apps.contract import SIGNING_KEYS_FILE
+from swhurl.apps import derive, edit
+from swhurl.apps.calling import (
+    SIGNING_KEYS_FILE,
+)
 from swhurl.run import CommandError, Runner
 
 JWKS = ['kubectl', 'get', '--raw', '/openid/v1/jwks']
@@ -44,4 +46,4 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         return 0
     path.write_text(json.dumps(live, indent=2, sort_keys=True) + '\n')
     print(f'[OK] wrote {SIGNING_KEYS_FILE} ({len(live["keys"])} key(s))')
-    return edit.run(lambda: edit.sync(root), False)
+    return edit.run(lambda: derive.sync(root), False)

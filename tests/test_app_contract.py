@@ -14,7 +14,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import contract, promotion
+from swhurl.apps import calling, contract, promotion
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.run import CommandError, FakeRunner, Result
@@ -156,7 +156,7 @@ class GeneratorTests(unittest.TestCase):
         caller = values('reports')
         self.assertEqual(caller['controllers']['main']['containers']['main']['env']['SWHURL_SERVICE_ORDERS_URL'],
                          'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000')
-        self.assertEqual(caller['persistence']['tokens'], contract.tokens_volume(['orders']))
+        self.assertEqual(caller['persistence']['tokens'], calling.tokens_volume(['orders']))
         self.assertEqual(values('orders')['controllers']['main']['containers']['main']['env']['SWHURL_ALLOWED_CALLERS'],
                          'reports')
         err = io.StringIO()

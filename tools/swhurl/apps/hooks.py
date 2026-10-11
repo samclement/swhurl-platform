@@ -21,7 +21,9 @@ from pathlib import Path
 import yaml
 
 from swhurl import platform
-from swhurl.apps.contract import IMAGE_AUTOMATION_FILE
+from swhurl.apps.contract import (
+    IMAGE_AUTOMATION_FILE,
+)
 from swhurl.run import CommandError, Runner
 
 ROOT = platform.ROOT

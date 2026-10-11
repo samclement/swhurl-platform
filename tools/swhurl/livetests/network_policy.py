@@ -11,7 +11,9 @@ and removes them.
 """
 from __future__ import annotations
 
-from swhurl.apps.contract import COOKIE_DOMAIN
+from swhurl.apps.contract import (
+    COOKIE_DOMAIN,
+)
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 from swhurl.platform import label
 

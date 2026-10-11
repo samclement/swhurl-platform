@@ -7,7 +7,9 @@ from unittest import mock
 from test_app_repo import COPIER_YML
 
 from swhurl.apps import repo, templates_check
-from swhurl.apps.contract import STACK_REVISIONS
+from swhurl.apps.contract import (
+    STACK_REVISIONS,
+)
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 

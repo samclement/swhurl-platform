@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import platform, retention
-from swhurl.apps.contract import DATABASE_PATH_VARIABLE
+from swhurl.apps.contract import (
+    DATABASE_PATH_VARIABLE,
+)
 from swhurl.recovery import BackupSettings, RecoveryError, private_files, sha256, upload
 from swhurl.run import CommandError, Runner
 

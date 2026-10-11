@@ -29,6 +29,14 @@ data:
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-10.>
+          - nkey: UAJUO75UCZ2KQUCMEXSZIJPHME3WN26A6NEA5772V2JGY5FUBQLGHYU6
+            permissions:
+              publish:
+                allow:
+                - staging.swhurl-try-12.visited
+              subscribe:
+                allow:
+                - _INBOX.staging.swhurl-try-12.>
           - nkey: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
             permissions:
               publish:
@@ -36,6 +44,9 @@ data:
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>
+                - $JS.API.CONSUMER.INFO.staging-swhurl-try-12.swhurl-try-13_visited
+                - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-12.swhurl-try-13_visited
+                - $JS.ACK.staging-swhurl-try-12.swhurl-try-13_visited.>
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-13.>

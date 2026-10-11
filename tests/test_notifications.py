@@ -75,6 +75,24 @@ class LifecycleTests(unittest.TestCase):
         state = n.evaluate(state, data, NOW+120, BASE)
         self.assertEqual(own(state)[0]['title'], 'example/staging deployed')
 
+    def test_deployment_is_announced_while_the_unit_waits_on_its_dependencies(self):
+        data = healthy()
+        state = n.evaluate(None, data, NOW, BASE)
+        data['events'] = [event(data)]
+        data['units'][0]['status']['conditions'][0].update(status='False', reason='DependencyNotReady')
+        with self.assertNoLogs('swhurl.notifications.evaluate'):
+            state = n.evaluate(state, data, NOW+60, BASE)
+        self.assertEqual(own(state)[0]['title'], 'example/staging deployed')
+
+    def test_a_held_deployment_logs_why(self):
+        data = healthy()
+        state = n.evaluate(None, data, NOW, BASE)
+        data['events'] = [event(data)]
+        data['workloads'][0]['status']['readyReplicas'] = 0
+        with self.assertLogs('swhurl.notifications.evaluate', 'INFO') as logs:
+            n.evaluate(state, data, NOW+60, BASE)
+        self.assertIn('Holding example/staging deployed: Deployment/example 0/1 Ready', logs.output[0])
+
     def test_scale_to_zero_does_not_claim_an_image_was_deployed(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import logging
 import re
 
 from swhurl.apps import ops
@@ -112,7 +113,9 @@ def incident(state: dict, record: dict, fault: str | None, *, title: str, detail
         record.clear()
 
 
-def health(entry: dict, release: dict | None, data: dict) -> tuple[str | None, str]:
+def health(entry: dict, release: dict | None, data: dict, *, unit: bool = True) -> tuple[str | None, str]:
+    """``unit=False`` leaves the Flux unit out: any push to main has it wait on its dependencies for a
+    few seconds, which says nothing about a release Helm has finished."""
     if release is None:
         if (entry['unit_object'].get('spec') or {}).get('suspend'):
             return None, 'No release yet and deployment reconciliation is suspended'
@@ -162,7 +165,7 @@ def health(entry: dict, release: dict | None, data: dict) -> tuple[str | None, s
         # An automatic rollback deliberately restores the old healthy image. The rollback event tells the operator.
         if ready.get('reason') != 'RollbackSucceeded':
             return 'deployment stalled', 'Running image differs from the requested digest'
-    if unit_ready != 'True':
+    if unit and unit_ready != 'True':
         return 'deployment stalled', 'Flux unit is blocked or has not finished applying the request'
     return '', 'Workload is Ready and deployment is current'
 
@@ -223,9 +226,11 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: b
         if action is None and reason not in FAILURES:
             continue
         if action == 'deployed' and key in current:
-            fault, _detail = health(current[key], releases.get(key), data)
+            fault, detail = health(current[key], releases.get(key), data, unit=False)
             if fault not in {'', 'suspended'}:
-                continue  # a custom release may disable Helm's wait; still require readiness evidence
+                # A custom release may disable Helm's wait; still require readiness evidence.
+                logging.getLogger(__name__).info('Holding %s deployed: %s', entry['title'], detail or fault)
+                continue
         controller = event.get('reportingComponent') or (event.get('source') or {}).get('component', '')
         expected = 'helm-controller' if kind == 'HelmRelease' else 'kustomize-controller'
         if controller != expected:

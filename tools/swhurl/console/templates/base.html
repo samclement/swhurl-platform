@@ -123,6 +123,18 @@
   table.apps td { vertical-align: top; }
   table.apps th:first-child { width: 22%; }
   .hint-line { font-size: 13px; margin: 2px 0 6px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 8px 0 14px; font-size: 14px; }
+  .filters a { color: var(--muted); text-decoration: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: 12px; }
+  .filters a.here { color: var(--text); border-color: var(--accent); }
+  .filters .gap { margin-left: auto; }
+  h2.part { margin-top: 28px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  svg.map { max-width: 100%; height: auto; }
+  svg.map rect { fill: var(--panel); stroke: var(--line); }
+  svg.map a:hover rect { stroke: var(--accent); }
+  svg.map text { fill: var(--text); font-size: 14px; }
+  svg.map text.sub { fill: var(--muted); font-size: 12px; }
+  svg.map path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 8px; }
   .toolbar form { margin: 0; }
   .toolbar button, .toolbar .button { font-size: 14px; padding: 4px 12px; }
@@ -141,7 +153,6 @@
   <nav aria-label="Main">
     <a href="/" class="{{ 'here' if path == '/' }}">Overview</a>
     <a href="/apps" class="{{ 'here' if path.startswith('/apps') }}">Apps</a>
-    <a href="/services" class="{{ 'here' if path.startswith('/services') }}">Services</a>
     <a href="/platform" class="{{ 'here' if path.startswith('/platform') or path.startswith('/units') }}">Platform</a>
     <a href="/activity" class="{{ 'here' if path.startswith('/activity') or path.startswith('/jobs') }}">Activity{% if running_jobs %} <span class="badge" title="Jobs running now">{{ running_jobs | length }} running</span>{% endif %}</a>
   </nav>

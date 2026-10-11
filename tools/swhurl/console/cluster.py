@@ -60,6 +60,25 @@ def state_of(ready: tuple[str, str], suspended: bool = False, reason: str = '') 
 
 
 @dataclass(frozen=True)
+class Connections:
+    """How an instance and the other apps of its environment reach each other."""
+    address: str = ''  # inside the cluster; '' for a worker
+    api: str = ''  # where its API description is, if it says so
+    calls: tuple[str, ...] = ()
+    callers: tuple[str, ...] = ()
+    publishes: tuple[str, ...] = ()  # its own event names
+    subscribes: tuple[str, ...] = ()  # <app>.<event>
+    subscribers: tuple[tuple[str, str], ...] = ()  # (its event, the app receiving it)
+
+    @property
+    def summary(self) -> str:
+        """One line for a list: only what there is."""
+        parts = [(len(self.calls), 'calls {}'), (len(self.callers), 'called by {}'), (len(self.publishes), 'publishes {}'),
+                 (len(self.subscribes), 'subscribes to {}')]
+        return ' · '.join(text.format(count) for count, text in parts if count)
+
+
+@dataclass(frozen=True)
 class AppRow:
     instance: ops.Instance
     ready: tuple[str, str]
@@ -70,6 +89,8 @@ class AppRow:
     hosts: tuple[str, ...] = ()
     reason: str = ''
     database_path: str | None = None  # None: release missing; empty: no SQLite configured
+    team: str = ''  # from the namespace label; '' when unknown
+    connections: Connections = Connections()
 
     @property
     def state(self) -> State:
@@ -84,6 +105,10 @@ class AppSummary:
     """One app across its environments, for the Apps list."""
     app: str
     envs: dict[str, AppRow]
+
+    @property
+    def team(self) -> str:
+        return next((row.team for row in self.envs.values() if row.team), '')
     comparison: str  # 'same', 'ahead' (staging has a newer run), 'differs', or '' with one environment
 
 
@@ -177,65 +202,96 @@ def items(runner: Runner, args: list[str]) -> list[dict]:
 
 
 def apps(runner: Runner) -> list[AppRow]:
+    """Every app instance, from what runs: its Flux unit, its HelmRelease (image, hosts and the
+    platform's SWHURL_* variables, which say who it calls and what events it handles) and its
+    namespace's team label."""
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in items(runner, RELEASES)}
+    try:
+        teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '')
+                 for n in items(runner, APP_NAMESPACES)}
+    except ReadError:  # an account that may not list namespaces still gets the rest
+        teams = {}
+    found = [(instance, unit, releases.get((instance.namespace, instance.app)))
+             for unit in items(runner, UNITS) if (instance := instance_of_unit(unit['metadata']['name']))]
+    subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
+                  for publisher, event in events.subscribed(helmrelease.variables(release))]
     rows = []
-    for unit in items(runner, UNITS):
-        found = instance_of_unit(unit['metadata']['name'])
-        if found:
-            release = releases.get((found.namespace, found.app))
-            image = helmrelease.image(release)
-            rows.append(AppRow(found, ready_condition(unit), bool(unit['spec'].get('suspend')),
-                               ops.desired_image(release) if release else 'no HelmRelease',
-                               image.get('tag', ''), image.get('digest', ''), helmrelease.hosts(release), ready_reason(unit),
-                               str(helmrelease.variables(release).get('DATABASE_PATH', '')) if release else None))
+    for instance, unit, release in found:
+        variables, port, image = helmrelease.variables(release), helmrelease.port(release), helmrelease.image(release)
+        hosts = helmrelease.hosts(release)
+        address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
+        path = str(variables.get(calling.API_VARIABLE, '')) if address else ''
+        connections = Connections(
+            address, (f'https://{hosts[0]}{path}' if hosts else address + path) if path else '',
+            tuple(calling.declared_calls(variables)), tuple(calling.allowed_callers(variables)),
+            tuple(events.published(variables)), tuple('.'.join(pair) for pair in events.subscribed(variables)),
+            tuple((event, subscriber) for env, publisher, event, subscriber in subscribed
+                  if (env, publisher) == (instance.env, instance.app)))
+        rows.append(AppRow(instance, ready_condition(unit), bool(unit['spec'].get('suspend')),
+                           ops.desired_image(release) if release else 'no HelmRelease',
+                           image.get('tag', ''), image.get('digest', ''), hosts, ready_reason(unit),
+                           str(variables.get('DATABASE_PATH', '')) if release else None,
+                           teams.get(instance.namespace, ''), connections))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 
 @dataclass(frozen=True)
-class ServiceEnv:
-    """One instance as other apps see it."""
+class MapNode:
     row: AppRow
-    address: str  # inside the cluster; '' for a worker
-    api: str  # where its API description is, if it says so
-    calls: tuple[str, ...]
-    callers: tuple[str, ...]
-    publishes: tuple[str, ...] = ()  # event names
-    subscribes: tuple[str, ...] = ()  # <app>.<event>
+    x: int
+    y: int
 
 
 @dataclass(frozen=True)
-class Service:
-    """One app across its environments, for the Services page."""
-    app: str
-    team: str
-    envs: dict[str, ServiceEnv]
-
-    @property
-    def callable(self) -> bool:
-        return any(env.address for env in self.envs.values())
+class AppMap:
+    """The apps of one environment as boxes, with a line for every call and every event subscription."""
+    nodes: list[MapNode]
+    edges: list[tuple[str, str, str, str]]  # (kind: call or event, SVG path, from, to)
+    width: int
+    height: int
+    box: tuple[int, int] = (210, 56)
 
 
-def services(runner: Runner) -> list[Service]:
-    """Every app with its team, addresses and who calls whom, from what runs: each instance's
-    HelmRelease (the platform's SWHURL_* variables) and its namespace's team label."""
-    releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in items(runner, RELEASES)}
-    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '')
-             for n in items(runner, APP_NAMESPACES)}
-    found: dict[str, dict[str, ServiceEnv]] = {}
-    for row in apps(runner):
-        instance = row.instance
-        release = releases.get((instance.namespace, instance.app))
-        variables = helmrelease.variables(release)
-        port = helmrelease.port(release)
-        address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
-        path = variables.get(calling.API_VARIABLE, '') if address else ''
-        api = (f'https://{row.hosts[0]}{path}' if row.hosts else address + path) if path else ''
-        found.setdefault(instance.app, {})[instance.env] = ServiceEnv(
-            row, address, api, tuple(calling.declared_calls(variables)), tuple(calling.allowed_callers(variables)),
-            tuple(events.published(variables)), tuple('.'.join(pair) for pair in events.subscribed(variables)))
-    return [Service(app, next((teams[e.row.instance.namespace] for e in envs.values()
-                               if teams.get(e.row.instance.namespace)), ''), envs)
-            for app, envs in sorted(found.items())]
+def app_map(rows: list[AppRow], env: str) -> AppMap:
+    """Lay the apps out left to right in the direction requests and events travel: an app sits one
+    column right of the furthest app that calls it or whose events it receives."""
+    here = {row.instance.app: row for row in rows if row.instance.env == env}
+    links = [('call', app, callee) for app, row in here.items() for callee in row.connections.calls if callee in here]
+    links += [('event', name.split('.')[0], app) for app, row in here.items() for name in row.connections.subscribes
+              if name.split('.')[0] in here]
+    sources: dict[str, set[str]] = {app: set() for app in here}
+    for _, source, target in links:
+        sources[target].add(source)
+    columns: dict[str, int] = {}
+
+    def column(app: str, seen: frozenset[str] = frozenset()) -> int:
+        if app not in columns:
+            columns[app] = 1 + max((column(s, seen | {app}) for s in sources[app] if s not in seen), default=-1)
+        return columns[app]
+    width, height, gap_x, gap_y, margin = 210, 56, 110, 20, 12
+    filled: dict[int, int] = {}
+    position: dict[str, tuple[int, int]] = {}
+    # Connected apps first, so the apps nothing links to gather at the bottom of the first column.
+    for app in sorted(here, key=lambda a: (not (sources[a] or any(a == s for _, s, _ in links)), a)):
+        level = column(app)
+        position[app] = (margin + level * (width + gap_x), margin + filled.get(level, 0) * (height + gap_y))
+        filled[level] = filled.get(level, 0) + 1
+    edges, lowest = [], 0
+    for kind, source, target in links:
+        (x1, y1), (x2, y2) = position[source], position[target]
+        offset = -8 if kind == 'call' else 10  # a call and an event between the same two apps stay apart
+        start, end = (x1 + width, y1 + height // 2 + offset), (x2, y2 + height // 2 + offset)
+        bend = max(40, abs(end[0] - start[0]) // 2)
+        # A line that skips a column would run behind the boxes between: send it under them instead.
+        skipped = abs(columns[target] - columns[source]) - 1
+        dip = (height // 2 + 14 + 10 * skipped + (0 if kind == 'call' else 8)) if skipped > 0 else 0
+        lowest = max(lowest, max(start[1], end[1]) + dip)
+        edges.append((kind, f'M {start[0]} {start[1]} C {start[0] + bend} {start[1] + dip * 2}, '
+                            f'{end[0] - bend} {end[1] + dip * 2}, {end[0]} {end[1]}', source, target))
+    return AppMap([MapNode(here[app], x, y) for app, (x, y) in sorted(position.items())], edges,
+                  margin * 2 + (max(filled, default=0) + 1) * (width + gap_x) - gap_x,
+                  max(margin * 2 + max(filled.values(), default=1) * (height + gap_y) - gap_y, lowest + margin),
+                  (width, height))
 
 
 def units(runner: Runner) -> list[Unit]:

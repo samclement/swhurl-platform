@@ -1,30 +1,58 @@
 {% extends "base.html" %}
 {% import "_status.html" as st %}
 {% block title %}Apps{% endblock %}
+{% macro link(view_, team_, env_) %}/apps?{{ {'view': view_, 'team': team_, 'env': env_} | urlencode }}{% endmacro %}
 {% block main %}
 <h1>Apps</h1>
-<p class="lead">Each app and what runs in staging and production. Open an environment to see its health or change it through a pull request.</p>
-{% if apps %}
+<p class="lead">Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. Open an environment to use it, connect to it or operate it.</p>
+<div class="filters">
+  <span class="muted">Team</span>
+  <a href="{{ link(view, '', env) }}" class="{{ 'here' if not team }}">all</a>
+  {% for name in teams %}<a href="{{ link(view, name, env) }}" class="{{ 'here' if team == name }}">{{ name }}</a>{% endfor %}
+  <span class="gap muted">View</span>
+  <a href="{{ link('list', team, env) }}" class="{{ 'here' if view == 'list' }}">List</a>
+  <a href="{{ link('map', team, env) }}" class="{{ 'here' if view == 'map' }}">Map</a>
+</div>
+{% if view == 'map' %}
+<div class="filters">
+  <span class="muted">Environment</span>
+  {% for name in ('staging', 'prod') %}<a href="{{ link('map', team, name) }}" class="{{ 'here' if env == name }}">{{ name }}</a>{% endfor %}
+  <span class="gap muted">A solid line is a call, from caller to callee. A dashed line is an event, from publisher to subscriber.</span>
+</div>
+{% if map.nodes %}
+<div class="scroll">
+<svg class="map" role="img" aria-label="Apps in {{ env }} and how they reach each other" width="{{ map.width }}" height="{{ map.height }}" viewBox="0 0 {{ map.width }} {{ map.height }}">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--muted); stroke: none"/></marker></defs>
+  {% for kind, path, source, target in map.edges %}<path class="{{ kind }}" d="{{ path }}" marker-end="url(#arrow)"><title>{{ source }} {{ 'calls' if kind == 'call' else 'publishes an event to' }} {{ target }}</title></path>
+  {% endfor %}
+  {% for node in map.nodes %}{% set a = node.row.instance %}
+  <a href="/apps/{{ a.app }}/{{ a.env }}"><rect x="{{ node.x }}" y="{{ node.y }}" width="{{ map.box[0] }}" height="{{ map.box[1] }}" rx="6"/>
+    <text x="{{ node.x + 12 }}" y="{{ node.y + 23 }}">{{ a.app }}</text>
+    <text class="sub" x="{{ node.x + 12 }}" y="{{ node.y + 43 }}">{{ node.row.team or 'no team' }} · {{ node.row.state.label }}{{ '' if node.row.connections.address else ' · worker' }}</text></a>
+  {% endfor %}
+</svg>
+</div>
+{% else %}<p class="muted">No app is deployed in {{ env }}{% if team %} for team {{ team }}{% endif %}.</p>{% endif %}
+{% elif apps %}
 <div class="scroll">
 <table class="compact apps">
   <tr><th>App</th>{% for env in ('staging', 'prod') %}<th>{{ env | capitalize }}</th>{% endfor %}</tr>
   {% for a in apps %}
   <tr>
     <td><strong>{{ a.app }}</strong>
-      {% if a.comparison == 'ahead' %}<div class="warn hint-line">Staging is ahead of prod</div>
-      {% elif a.comparison == 'differs' %}<div class="muted hint-line">Staging and prod differ</div>
-      {% elif a.comparison == 'same' %}<div class="muted hint-line">Same image in both</div>{% endif %}
-      {% if 'staging' in a.envs and a.comparison != 'same' %}
-      <a class="button" href="/apps/{{ a.app }}/staging/promotion">Review promotion</a>
-      {% endif %}
+      <div class="muted hint-line">Team {{ a.team or 'unknown' }}</div>
+      {% if a.comparison == 'ahead' %}<div class="warn hint-line">Staging is ahead of prod · <a href="/apps/{{ a.app }}/staging/promotion">review promotion</a></div>
+      {% elif a.comparison == 'differs' %}<div class="muted hint-line">Staging and prod differ · <a href="/apps/{{ a.app }}/staging/promotion">review promotion</a></div>
+      {% elif a.comparison == 'same' %}<div class="muted hint-line">Same image in both</div>
+      {% elif 'staging' in a.envs %}<div class="muted hint-line">Not in production · <a href="/apps/{{ a.app }}/staging/promotion">review promotion</a></div>{% endif %}
     </td>
     {% for env in ('staging', 'prod') %}{% set row = a.envs.get(env) %}
     <td>{% if row %}
       <a href="/apps/{{ a.app }}/{{ env }}">{{ a.app }}/{{ env }}</a> · {{ st.state(row.state, detail=false) }}
-      <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code></div>
-      <div class="muted">Database: {% if row.database_path is none %}unknown{% elif row.database_path %}<strong class="db-kind">SQLite</strong>{% else %}No SQLite{% endif %}</div>
+      <div><code title="{{ row.image }}">{{ row.tag or row.image }}</code>{% if row.database_path %} · <strong class="db-kind">SQLite</strong>{% elif row.database_path is none %} · <span class="muted">release unknown</span>{% endif %}</div>
       {% if row.state.detail and row.state.key != 'suspended' %}<div class="muted">{{ row.state.detail | short }}</div>{% endif %}
       {% for host in row.hosts %}<div class="muted">{{ host }}</div>{% else %}<div class="muted">no web address</div>{% endfor %}
+      {% if row.connections.summary %}<div class="muted">{{ row.connections.summary }}</div>{% endif %}
     {% else %}<span class="muted">not deployed</span>{% endif %}</td>
     {% endfor %}
   </tr>
@@ -32,6 +60,6 @@
 </table>
 </div>
 {% else %}
-<p class="muted">No apps yet. <a href="/new">Add one</a>: the console opens a pull request that deploys it to staging.</p>
+<p class="muted">No apps yet{% if team %} for team {{ team }}{% endif %}. <a href="/new">Add one</a>: the console opens a pull request that deploys it to staging.</p>
 {% endif %}
 {% endblock %}

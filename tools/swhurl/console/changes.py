@@ -32,7 +32,7 @@ import httpx
 import yaml
 
 from swhurl import platform
-from swhurl.apps import repo
+from swhurl.apps import events, repo
 from swhurl.apps.contract import (
     DEFAULT_TEAM,
     EXPOSURES,
@@ -370,6 +370,18 @@ def calls_args(form: Mapping[str, str]) -> list[str]:
     if not argv:
         raise ActionError('name at least one app to call or to stop calling')
     return argv
+
+
+def events_args(form: Mapping[str, str]) -> list[str]:
+    """``--publish=`` and ``--subscribe=`` for app-events. Both are always sent: the form shows the
+    current lists, and what it sends replaces them (an empty field clears that list)."""
+    lists = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()]
+             for field in ('publish', 'subscribe')}
+    bad = [name for name in lists['publish'] if not events.EVENT_RE.match(name)]
+    bad += [name for name in lists['subscribe'] if not events.SUBSCRIPTION_RE.match(name)]
+    if bad:
+        raise ActionError(f'{", ".join(bad)}: an event is a lowercase name (created), a subscription <app>.<event> (orders.created)')
+    return [f'--{field}={",".join(names)}' for field, names in lists.items()]
 
 
 def scale_args(form: Mapping[str, str]) -> list[str]:

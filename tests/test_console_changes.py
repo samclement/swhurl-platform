@@ -142,6 +142,14 @@ class FormTests(unittest.TestCase):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.expose_args(form)
 
+    def test_events_form_replaces_both_lists(self):
+        self.assertEqual(changes.events_args({'publish': 'created, paid', 'subscribe': 'orders.created'}),
+                         ['--publish=created,paid', '--subscribe=orders.created'])
+        self.assertEqual(changes.events_args({}), ['--publish=', '--subscribe='], 'empty fields clear the lists')
+        for form in ({'publish': '--root=/'}, {'subscribe': 'orders'}, {'publish': 'a.b'}):
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'an event is a lowercase name'):
+                changes.events_args(form)
+
     def test_only_console_branches(self):
         self.assertEqual(changes.branch_name('new-weather-api-staging', 'abc1234'), 'console/new-weather-api-staging-abc1234')
         for slug, rev in (('x', 'main'), ('../main', 'abc1234'), ('X', 'abc1234'), ('x y', 'abc1234')):
@@ -423,6 +431,9 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/staging/calls', {'add': 'orders, billing', 'remove': ''},
              ('app-calls', 'hello', 'staging', '--add=orders,billing'), 'hello/staging',
              'console/calls-hello-staging-abc1234', '[console] apps: change what hello/staging calls'),
+            ('/apps/hello/staging/events', {'publish': 'created, paid', 'subscribe': ''},
+             ('app-events', 'hello', 'staging', '--publish=created,paid', '--subscribe='), 'hello/staging',
+             'console/events-hello-staging-abc1234', '[console] apps: change the events of hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):
@@ -478,6 +489,8 @@ class ChangeAppRouteTests(unittest.TestCase):
         for path, form, code in (('/apps/hello/prod/promote', {}, 400), ('/apps/hello/prod/scale', {}, 400),
                                  ('/apps/hello/prod/scale', {'replicas': '2; rm'}, 400), ('/apps/hello/prod/delete', {}, 404),
                                  ('/apps/hello/prod/calls', {}, 400), ('/apps/hello/prod/calls', {'add': '--root=/'}, 400),
+                                 ('/apps/hello/prod/events', {'publish': 'Created'}, 400),
+                                 ('/apps/hello/prod/events', {'subscribe': 'created'}, 400),
                                  ('/apps/Hello/prod/remove', {}, 404), ('/apps/hello/dev/remove', {}, 404)):
             with self.subTest(path=path, form=form):
                 self.assertEqual(c.post(path, data=form, headers=WHO).status_code, code)

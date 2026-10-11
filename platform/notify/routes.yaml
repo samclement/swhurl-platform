@@ -8,6 +8,12 @@ metadata:
 data:
   routes.json: |
     {
-      "channels": {},
-      "teams": {}
+      "channels": {
+        "platform": "ntfy"
+      },
+      "teams": {
+        "platform": [
+          "platform"
+        ]
+      }
     }

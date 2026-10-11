@@ -23,7 +23,7 @@ For a navigable map of the repository's change path, system boundaries, and impl
 | App instance | One app in one environment, with its namespace, release, route, Secret and data | `apps/<app>/<env>/` |
 | Environment | Deployment settings and promotion policy (`staging`, `prod`); not a namespace or trust boundary by itself | Instance values |
 
-There is no tenancy model: app instances are separated only by namespace.
+App instances are separated by namespace, and each namespace carries a team label, a quota and a NetworkPolicy that admits Traefik or nobody to the app's pods ([teams and isolation](apps.md#teams-and-isolation)). A team is a label, not an access boundary: there is no per-team RBAC.
 
 **Names.** A Flux unit is named `<area>-<component>` after its directory (`platform/oauth2-proxy` is `platform-oauth2-proxy`; an app instance `apps/<app>/<env>` is `app-<app>-<env>`), with one directory per unit. Namespaces are named by function (`ingress`, `observability`, `logging`, `platform-system`, `<app>-<env>`) and HelmReleases by product. `swhurl` names the project: the repository, its `GitRepository` source (`swhurl-platform`), the `tools/swhurl` package and the `platform.swhurl.com/*` label domain. `home` is the cluster (`clusters/home`), and `homelab.swhurl.com` is the parent DNS domain.
 

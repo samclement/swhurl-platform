@@ -18,7 +18,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); migrating `hello-ts`.
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
-11. **Team platform — T0 done 10 October 2026, T1 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Both proofs passed; the signing keys are handed to apps as a file because the API refuses anonymous reads. **Next:** T1 (teams and isolation), on the operator's go-ahead; it is the first task that changes existing app instances.
+11. **Team platform — T0 and T1 done (11 October 2026), T2 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Every instance now has a team, a quota and a NetworkPolicy. **Next:** T2 (calls and discovery): signing keys as a file, `calls:` and `make app-calls`, the helper and verifier in both stack templates. It creates real `swhurl-try-<n>` repositories at step 6. **Operator browser check owed from T1:** the Team select on **New app** and the team on an app page, signed in.
 
 ### Delivered
 
@@ -761,7 +761,7 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 
 ## 15. Team platform — planned 10 October 2026, not started
 
-**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 is done; T1 waits for the operator's go-ahead.
+**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 and T1 are done; T2 is next.
 
 ### Decisions (confirmed by the operator, 10 October 2026)
 
@@ -787,13 +787,13 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 2. `live-test-network-policy` (`livetests/network_policy.py`). One throwaway web app with a route, and a policy selecting only its pods that admits the Traefik pods on the app port. Must show: (a) Traefik reaches it and it stays Ready (probes); (b) a pod in another namespace times out; (c) a second, unselected pod in the namespace on 8089 stays reachable (stands in for the HTTP-01 solver; no certificate is requested); (d) deleting the policy lets (b) connect, proving the policy was what blocked it.
 3. Push, run both, record evidence in `current-state.md`.
 
-**T1. Teams and isolation.**
-1. Contract: `apps/teams.yaml` (name, description; seed `platform`, `payments`, `insights`); optional `team` in `manifest_defaults` (`contract.py`) and `--team` on `app-new` (default `platform`); `make app-team APP= ARGS=--team=` for existing apps (`edit.py`). Generated per instance: the `platform.swhurl.com/team` namespace label, `resourcequota.yaml` (one fixed size in `contract.py`, large enough for a rolling update at current limits) and `networkpolicy.yaml` (workload pods only; Traefik admitted when the exposure has a route, nothing otherwise). `app-expose`, `app-scale`, `app-promote` and `app-remove` keep the three in step. No template revision: the console passes the flag.
-2. Policy (`policy.py`, `make check-apps`): `team-known`, `quota-present`, `network-policy-present`, `network-policy-workload-only` (refuses `podSelector: {}`).
-3. Console: a team select on **New app**; the team on the app page and list.
-4. Telemetry: the collector copies the namespace's team label to a `swhurl.team` resource attribute (`platform/otel`, `make check-otel`); document the filter in `apps.md`.
-5. Roll out: apply to `test-4/staging` only, push, reconcile, check it through Traefik and from another namespace; then the remaining instances in one commit. `make verify-platform` gains a check that every managed app namespace has the label, quota and policy.
-6. Docs: `apps.md` (teams, who can reach it, limits, policy), `commands.md`, `console.md`, `architecture.md`. Evidence in `current-state.md`.
+**T1. Teams and isolation. Done 11 October 2026** (`e351e2c`, `57f2a96`, `eaca531`, `42c9478`, `3daf729`; [evidence](current-state.md#team-platform-t1-teams-and-isolation-11-october-2026)). Behaviour is in [apps](apps.md#teams-and-isolation). What T2 builds on:
+- `contract.network_policy()` is the one place the policy is generated; `policy.isolation()` compares the rendered policy with it, so T2 extends both through that function (declared callers become extra `from` entries).
+- `edit.isolation_edits()` rewrites an instance's quota and policy; `app-expose` and `app-team` call it. `app-calls` should too.
+- The app-template chart's Deployment strategy is `Recreate` by default, so the quota rule counts no surge pod.
+- A private web app now accepts no connections at all until T2 lets it declare callers.
+- The console image has no checkout: it reads `apps/teams.yaml` from `main` through GitHub (five-minute cache). The same route serves anything else it needs from Git.
+- `make verify-platform` checks instances that exist in Git only: namespaces kept for their data after an app was removed (`test-1-staging`, `swhurl-try-6-*`) carry no quota or policy and are not flagged.
 
 **T2. Calls and discovery.**
 1. Platform keys: the cluster's public signing keys in one file in Git (`apps/signing-keys.json`, refreshed by a `make` target that only edits the file), written by the generator into each web instance as a ConfigMap mounted read-only. `make verify-platform` fails when the file differs from the live keys, and `make check-apps` when an instance's copy differs from the file. Document in `operations.md` that rotating the cluster's service-account key means refreshing the file first.
@@ -829,7 +829,7 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 
 | When | Action | How |
 | --- | --- | --- |
-| After T0 | Read the two proofs and say go | In the session |
+| After T1 | See the Team select on **New app** and the team on an app page | Own browser, signed in |
 | T2.6, T4.7 | Accept three real `swhurl-try-<n>` repositories until T5 | In the session |
 | T3.4, T5.3 | Browser checks while signed in | Own browser |
 | T4.1 | Stream-creation decision | In the session |

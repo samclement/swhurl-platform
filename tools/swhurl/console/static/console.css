@@ -96,15 +96,15 @@ h2.part { scroll-margin-top: 3.5rem; }
 
 /* Actions: one family, four weights. Filled is the page's main action; bordered is everything
    else you can do; quiet is for small things beside content; danger removes or stops something. */
-button, a.button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 0.875rem; line-height: 1.3;
+button, a.button, summary.button { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 0.875rem; line-height: 1.3;
                    padding: 6px var(--gap-3); border-radius: var(--radius); cursor: pointer; text-decoration: none;
                    border: 1px solid var(--line); background: var(--panel); color: var(--text); }
-button:hover, a.button:hover { border-color: var(--accent); }
+button:hover, a.button:hover, summary.button:hover { border-color: var(--accent); }
 button.primary, a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 button.primary:hover, a.button.primary:hover { filter: brightness(1.08); }
 button.quiet, a.button.quiet { border-color: transparent; background: none; color: var(--accent); padding-inline: 4px; }
-button.risky, button.danger, a.button.danger { color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--line)); }
-button.risky:hover, button.danger:hover { border-color: var(--critical); background: color-mix(in oklch, var(--critical) 8%, var(--panel)); }
+button.risky, button.danger, a.button.danger, summary.button.danger { color: var(--critical); border-color: color-mix(in oklch, var(--critical) 45%, var(--line)); }
+button.risky:hover, button.danger:hover, summary.button.danger:hover { border-color: var(--critical); background: color-mix(in oklch, var(--critical) 8%, var(--panel)); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 form.actions { display: flex; gap: 6px; margin-top: 6px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: var(--gap-2); align-items: center; margin: var(--gap-3) 0 var(--gap-2); }
@@ -165,6 +165,26 @@ ul.items li:last-child { border-bottom: 0; }
 .hash { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
 pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-3); overflow-x: auto;
       line-height: 1.5; white-space: pre-wrap; margin: var(--gap-2) 0; }
+
+/* Rows: a list whose rows carry their own actions. What a thing is sits on the left; what you can do
+   to it is a button on the right, always in the same place (--slot counts from the right edge,
+   --acts is how many a row can have). An action's form opens under its own row. */
+.rows { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-2); }
+.row { position: relative; border-bottom: 1px solid var(--line); scroll-margin-top: 3.5rem; }
+.row:last-child { border-bottom: 0; }
+.row:target { box-shadow: inset 2px 0 0 var(--accent); }
+.row-main { display: grid; grid-template-columns: 10rem minmax(0, 1fr) minmax(0, 1.3fr); gap: 2px var(--gap-4); align-items: baseline;
+            min-height: 2.875rem; padding: 10px calc(var(--acts, 0) * 6.75rem + var(--gap-3)) 10px var(--gap-3); }
+.row.head .row-main { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.row > details.act > summary { position: absolute; top: 7px; right: calc(var(--slot, 0) * 6.75rem + var(--gap-2)); width: 6.25rem;
+                               justify-content: center; white-space: nowrap; list-style: none; }
+.row > details.act > summary::-webkit-details-marker { display: none; }
+.row.head > details.act > summary { width: auto; }
+.row > details.act[open] > summary { border-color: var(--accent); background: var(--sunk); }
+.row > details.act[open] { border-top: 1px dashed var(--line); padding: var(--gap-3) var(--gap-3) var(--gap-4); }
+.row > details.act form.wizard { border: 0; padding: 0; background: none; max-width: 40em; }
+.row > details.act form.wizard fieldset { margin-bottom: var(--gap-3); }
+.row > .act-note { position: absolute; top: 12px; right: var(--gap-3); }
 
 /* Disclosure: a section that opens. One that changes something (a form, ending in a pull
    request) is a solid row; one that only explains is a dashed row. */
@@ -237,6 +257,12 @@ svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   table.apps td[data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--size-label);
                                       font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .action-row { flex-direction: column; } .action-row form { width: 100%; }
+  .row-main { grid-template-columns: minmax(0, 1fr); padding-right: var(--gap-3); }
+  .row.head .row-main span + span { display: none; }
+  .row > details.act { display: inline-block; margin: 0 0 var(--gap-2) var(--gap-3); }
+  .row > details.act[open] { display: block; margin: 0; }
+  .row > details.act > summary, .row > .act-note { position: static; width: auto; }
+  .row > .act-note { display: block; padding: 0 var(--gap-3) var(--gap-2); }
   .filters .gap { margin-left: 0; }
   .filters { row-gap: var(--gap-2); }
 }

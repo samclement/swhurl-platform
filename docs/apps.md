@@ -28,7 +28,7 @@ All require sign-in. `hello-ts` is a TypeScript app made before the templates us
 
 From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose who can reach it, and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+**In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose its team, who can reach it and what it connects to (apps to call, events to receive and publish), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 
 ### What happens, and when
 

@@ -27,9 +27,9 @@
     </div>
     {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
     <div class="field">
-      <label for="team">Team</label>
+      <label for="team">Owning team</label>
       <select id="team" name="team">{% for name, text in teams.items() %}<option value="{{ name }}" {{ 'selected' if (form.team or default_team) == name }}>{{ name }}{% if text %} — {{ text }}{% endif %}</option>{% endfor %}</select>
-      <span class="muted hint">Who owns the app. Teams are registered in <code>apps/teams.yaml</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+      <span class="muted hint">A label saying who owns the app. It shows on the Apps list and map, filters them, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. To add a team, add it to <code>apps/teams.yaml</code>; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
     </div>
   </fieldset>
 
@@ -56,6 +56,29 @@
   </fieldset>
   <p class="muted" id="worker-note" hidden>A worker has no web address: it is private, and no other app can connect to it.</p>
 
+  <fieldset id="connections">
+    <legend>Connects to</legend>
+    {% if connections_error %}<p class="warn">The apps in staging could not be read ({{ connections_error }}), so none are offered. Add calls and events from the app's page later.</p>{% endif %}
+    <div class="field">
+      <span class="label">Apps it calls</span>
+      {% for row in callable_apps %}
+      <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
+        <span><strong>{{ row.instance.app }}</strong> <span class="muted">· team {{ row.team or 'unknown' }}</span></span></label>
+      {% else %}<span class="muted">No web app is in staging yet.</span>{% endfor %}
+      <span class="muted hint">The new app gets each one's address and a short-lived token only that app accepts; each one starts admitting the new app. Any other app is blocked. Web apps in staging are offered; production is declared after promoting.</span>
+    </div>
+    <div class="field">
+      <span class="label">Events it receives</span>
+      {% for name, row in offered_events %}
+      <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
+        <span><code>{{ name }}</code> <span class="muted">· from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
+      {% else %}<span class="muted">No app in staging publishes an event yet.</span>{% endfor %}
+      <span class="muted hint">The new app may read exactly these, from the oldest event still kept (seven days).</span>
+    </div>
+    {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
+    <span class="muted hint">Each can be changed later on the app's page. Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</span>
+  </fieldset>
+
   {{ ui.submit('Create repository and open pull request', 'About three minutes: the first image is built before the PR opens.') }}
 </form>
 
@@ -64,7 +87,7 @@
   <ol>
     <li>Creates the public repository <code id="s-repo">{{ owner }}/&lt;name&gt;</code> from the stack's template.</li>
     <li>Its first build checks the app and publishes <code id="s-image">ghcr.io/{{ owner }}/&lt;name&gt;</code>.</li>
-    <li>Opens a pull request here adding <code id="s-instance">&lt;name&gt;/staging</code>, set up from the app's <code>swhurl.yaml</code>.</li>
+    <li>Opens a pull request here adding <code id="s-instance">&lt;name&gt;/staging</code>, set up from the app's <code>swhurl.yaml</code> and what you chose under <strong>Connects to</strong>: the apps it calls start admitting it, and it gets a key for its events.</li>
     <li>After you merge it, every push to the app's <code>main</code> deploys to staging.</li>
   </ol>
   <p class="muted">The job page shows each step. Production comes later, with <strong>Promote to prod</strong>.</p>

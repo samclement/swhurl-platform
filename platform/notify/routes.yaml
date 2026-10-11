@@ -8,6 +8,12 @@ metadata:
 data:
   routes.json: |
     {
-      "channels": {},
-      "teams": {}
+      "channels": {
+        "payments-try": "ntfy"
+      },
+      "teams": {
+        "payments": [
+          "payments-try"
+        ]
+      }
     }

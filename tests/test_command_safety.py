@@ -6,6 +6,7 @@ stderr. Branch-by-branch behaviour is unit-tested with FakeRunner elsewhere.
 """
 import base64
 import datetime as dt
+import json
 import os
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, flux, platform
+from swhurl.apps import contract
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -39,6 +41,9 @@ class CommandSafetyTests(unittest.TestCase):
         # The console image tag is this checkout's commit, so the real git diff finds no change.
         self.env['CONSOLE_TAG'] = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True,
                                                  text=True, check=True).stdout.strip()
+        self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
+                                            for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
+        self.env['QUOTA'] = json.dumps(contract.QUOTA)
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3
@@ -68,8 +73,17 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
-elif argv[:2] in (['get', 'namespaces'], ['get', 'resourcequotas']) or any(a.startswith('networkpolicies') for a in argv):
-    emit({'items': []})  # isolation check: no app namespaces
+elif argv[:2] == ['get', 'namespaces']:  # isolation check: every instance in this checkout is in order
+    emit({'items': [{'metadata': {'name': a + '-' + e, 'labels': {'platform.swhurl.com/app': a,
+                                                                  'platform.swhurl.com/team': 'platform'}}}
+                    for a, e in json.loads(os.environ['INSTANCES'])]})
+elif argv[:2] == ['get', 'resourcequotas']:
+    emit({'items': [{'metadata': {'namespace': a + '-' + e}, 'spec': {'hard': json.loads(os.environ['QUOTA'])}}
+                    for a, e in json.loads(os.environ['INSTANCES'])]})
+elif any(a.startswith('networkpolicies') for a in argv):
+    emit({'items': [{'metadata': {'namespace': a + '-' + e},
+                     'spec': {'podSelector': {'matchLabels': {'app.kubernetes.io/instance': a}}}}
+                    for a, e in json.loads(os.environ['INSTANCES'])]})
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
 elif any(a.startswith('alerts.notification') for a in argv):

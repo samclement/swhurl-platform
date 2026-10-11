@@ -522,7 +522,10 @@ def check_image_automation(runner: Runner, report: Report) -> None:
 
 
 def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Every app namespace has a registered team, the platform quota and a NetworkPolicy on the app's pods."""
+    """Every instance in Git has, live, a registered team, the platform quota and a NetworkPolicy on the app's pods.
+
+    Namespaces kept for their data after an app was removed are not instances and are not checked.
+    """
     report.section('App isolation')
     try:
         namespaces = runner.json(['kubectl', 'get', 'namespaces', '-l', APP_LABEL, '-o', 'json'])['items']
@@ -533,10 +536,14 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad('could not read app namespaces, ResourceQuotas or NetworkPolicies')
         return
     known = contract.teams(root)
+    live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
     complete = 0
-    for namespace in sorted(namespaces, key=lambda n: n['metadata']['name']):
-        name, labels = namespace['metadata']['name'], namespace['metadata'].get('labels') or {}
-        app = labels.get(APP_LABEL)
+    for instance in sorted(p.parent for p in (root / 'apps').glob('*/*/helmrelease.yaml')):
+        app, name = instance.parent.name, f'{instance.parent.name}-{instance.name}'
+        if name not in live:
+            report.bad(f'{name}: the namespace does not exist')
+            continue
+        labels = live[name]
         problems = []
         if labels.get(contract.TEAM) not in known:
             problems.append(f'team {labels.get(contract.TEAM)!r} is not in {contract.TEAMS_FILE}')

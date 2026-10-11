@@ -16,7 +16,10 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps.contract import APP, COOKIE_DOMAIN
+from swhurl.apps.contract import (
+    APP,
+    COOKIE_DOMAIN,
+)
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 FIXTURES = Path('tests/fixtures/apps')

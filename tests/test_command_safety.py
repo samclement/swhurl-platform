@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, flux, platform
-from swhurl.apps import contract
+from swhurl.apps import calling, contract
 
 KEY = 'fixture-private-ingestion-token'
 OTHER_KEY = 'fixture-other-private-token'
@@ -44,7 +44,7 @@ class CommandSafetyTests(unittest.TestCase):
         self.env['INSTANCES'] = json.dumps([(p.parent.parent.name, p.parent.name)
                                             for p in (ROOT / 'apps').glob('*/*/helmrelease.yaml')])
         self.env['QUOTA'] = json.dumps(contract.QUOTA)
-        self.env['REPO'], self.env['ISSUER'] = str(ROOT), contract.ISSUER
+        self.env['REPO'], self.env['ISSUER'] = str(ROOT), calling.ISSUER
         for name in ('kubectl', 'flux', 'aws', 'curl', 'gh', 'systemctl'):
             path = self.bin / name
             path.write_text('''#!/usr/bin/env python3

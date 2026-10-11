@@ -4,7 +4,9 @@ import unittest
 import urllib.error
 
 from swhurl.apps import repo
-from swhurl.apps.contract import STACK_REVISIONS
+from swhurl.apps.contract import (
+    STACK_REVISIONS,
+)
 from swhurl.run import FakeRunner, Result
 
 DIGEST = 'sha256:' + 'c' * 64

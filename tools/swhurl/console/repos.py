@@ -30,7 +30,11 @@ import httpx
 
 from swhurl import platform
 from swhurl.apps import hooks, repo
-from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, STACKS
+from swhurl.apps.contract import (
+    APP_OWNER,
+    APP_WORKFLOW,
+    STACKS,
+)
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 

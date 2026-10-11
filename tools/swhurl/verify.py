@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import contract, events, helmrelease, hooks
+from swhurl.apps import calling, contract, events, helmrelease, hooks
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -572,18 +572,18 @@ def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> Non
     except (CommandError, AttributeError):
         report.bad('could not read the cluster\'s token issuer or signing keys')
         return
-    path = root / contract.SIGNING_KEYS_FILE
+    path = root / calling.SIGNING_KEYS_FILE
     if not path.is_file():
-        report.bad(f'{contract.SIGNING_KEYS_FILE} is missing: make platform-signing-keys')
+        report.bad(f'{calling.SIGNING_KEYS_FILE} is missing: make platform-signing-keys')
     elif json.loads(path.read_text()) != live:
-        report.bad(f'{contract.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
+        report.bad(f'{calling.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
                    'them until you run make platform-signing-keys, commit and push')
     else:
-        report.ok(f'{contract.SIGNING_KEYS_FILE} holds the cluster\'s {len(live.get("keys") or [])} signing key(s)')
-    if issuer == contract.ISSUER:
+        report.ok(f'{calling.SIGNING_KEYS_FILE} holds the cluster\'s {len(live.get("keys") or [])} signing key(s)')
+    if issuer == calling.ISSUER:
         report.ok(f'token issuer is {issuer}')
     else:
-        report.bad(f'token issuer is {issuer}, but apps are told {contract.ISSUER} (apps/contract.py ISSUER)')
+        report.bad(f'token issuer is {issuer}, but apps are told {calling.ISSUER} (apps/calling.py ISSUER)')
 
 
 def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:

@@ -34,8 +34,12 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import policy
-from swhurl.apps.contract import (
+from swhurl.apps.calling import (
     API_VARIABLE,
+    identity_variables,
+    signing_keys,
+)
+from swhurl.apps.contract import (
     APP,
     APP_OWNER,
     AUTH_MIDDLEWARE,
@@ -68,7 +72,6 @@ from swhurl.apps.contract import (
     ManifestError,
     add_image_markers,
     default_host,
-    identity_variables,
     image_policy_name,
     in_cookie_domain,
     manifest_defaults,
@@ -76,7 +79,6 @@ from swhurl.apps.contract import (
     otlp_variables,
     resource_quota,
     secret_key_problem,
-    signing_keys,
     teams,
 )
 from swhurl.run import CommandError, Runner

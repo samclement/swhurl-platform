@@ -33,7 +33,12 @@ import yaml
 
 from swhurl import platform
 from swhurl.apps import repo
-from swhurl.apps.contract import DEFAULT_TEAM, EXPOSURES, STACKS, TEAMS_FILE
+from swhurl.apps.contract import (
+    DEFAULT_TEAM,
+    EXPOSURES,
+    STACKS,
+    TEAMS_FILE,
+)
 from swhurl.apps.new import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner

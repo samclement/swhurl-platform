@@ -34,7 +34,13 @@ from pathlib import Path
 import yaml
 
 from swhurl.apps import hooks
-from swhurl.apps.contract import APP_OWNER, APP_WORKFLOW, COPIER, STACK_REVISIONS, STACKS
+from swhurl.apps.contract import (
+    APP_OWNER,
+    APP_WORKFLOW,
+    COPIER,
+    STACK_REVISIONS,
+    STACKS,
+)
 from swhurl.apps.new import NAME_RE
 from swhurl.run import CommandError, Runner
 

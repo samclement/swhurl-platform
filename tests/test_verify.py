@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT, clickstack, flux, platform, verify
-from swhurl.apps import contract
+from swhurl.apps import calling, contract
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -78,8 +78,8 @@ def healthy(**overrides):
         'nats-controller': {'status': {'readyReplicas': 1}},
         'streams': {'items': [{'kind': 'Stream', 'metadata': {'namespace': 'w-staging', 'name': 'staging-w'},
                                'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}]},
-        'jwks': json.loads((ROOT / contract.SIGNING_KEYS_FILE).read_text()),
-        'openid': {'issuer': contract.ISSUER},
+        'jwks': json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text()),
+        'openid': {'issuer': calling.ISSUER},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
         'providers': {'items': [{'metadata': {'name': 'ntfy-failures'}}, {'metadata': {'name': 'ntfy-deploys'}}]},
         'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
@@ -377,7 +377,7 @@ class ConsoleTokenTests(unittest.TestCase):
     def test_signing_key_problems(self):
         _, report, text = run(healthy())
         self.assertIn("[OK] apps/signing-keys.json holds the cluster's 1 signing key(s)", report.lines, text)
-        self.assertIn(f'[OK] token issuer is {contract.ISSUER}', report.lines, text)
+        self.assertIn(f'[OK] token issuer is {calling.ISSUER}', report.lines, text)
         code, report, text = run(healthy(jwks={'keys': [{'kid': 'rotated'}]}))
         self.assertEqual(code, 1, text)
         self.assertTrue(any(line.startswith("[BAD] apps/signing-keys.json is not the cluster's signing key set")

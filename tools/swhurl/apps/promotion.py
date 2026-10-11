@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import contract, events, helmrelease, ops
+from swhurl.apps import calling, contract, events, helmrelease, ops
 from swhurl.apps.new import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -178,9 +178,9 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     if host and exposure != 'public':
         raise EditError('--host applies only to first promotion of a public app')
     persistence = mapping(values, 'persistence')
-    only(persistence, {'tmp', 'data', contract.TOKENS_VOLUME}, 'persistence')
+    only(persistence, {'tmp', 'data', calling.TOKENS_VOLUME}, 'persistence')
     for name, volume in persistence.items():
-        if name == contract.TOKENS_VOLUME:  # derived from the declared calls; the policy checks it
+        if name == calling.TOKENS_VOLUME:  # derived from the declared calls; the policy checks it
             continue
         only(volume, {'type', 'globalMounts', 'storageClass', 'accessMode', 'size', 'retain'}, f'persistence.{name}')
         if name == 'tmp' and volume.get('type') != 'emptyDir':
@@ -282,12 +282,12 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
             if contract.ENVIRONMENT in labels:
                 labels[contract.ENVIRONMENT] = 'prod'
         # What the platform derives per environment: production's own identity; its callers are
-        # worked out from the production instances that exist (edit.sync_env, after this).
+        # worked out from the production instances that exist (derive.sync_env, after this).
         main, workload = helmrelease.container(release), helmrelease.workload(release)
         variables = main.get('env') or {}
-        if contract.ENVIRONMENT_VARIABLE in variables:
-            variables[contract.ENVIRONMENT_VARIABLE] = 'prod'
-        variables.pop(contract.CALLERS_VARIABLE, None)
+        if calling.ENVIRONMENT_VARIABLE in variables:
+            variables[calling.ENVIRONMENT_VARIABLE] = 'prod'
+        variables.pop(calling.CALLERS_VARIABLE, None)
         for key in (events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE):
             variables.pop(key, None)
         staging_key = {'secretRef': {'name': events.secret_name(app)}}

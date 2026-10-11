@@ -73,14 +73,24 @@ import yaml
 
 from swhurl import ROOT, platform
 from swhurl.apps import events, helmrelease
+from swhurl.apps.calling import (
+    CALLERS_VARIABLE,
+    ENVIRONMENT_VARIABLE,
+    TOKEN_SECONDS,
+    TOKENS_VOLUME,
+    allowed_callers,
+    callee_address,
+    callee_variable,
+    declared_calls,
+    identity_variables,
+    signing_keys,
+)
 from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
-    CALLERS_VARIABLE,
     COOKIE_DOMAIN,
     ENVIRONMENT,
-    ENVIRONMENT_VARIABLE,
     EXCEPTIONS,
     EXPOSURE,
     IMAGE_AUTOMATION_FILE,
@@ -91,18 +101,10 @@ from swhurl.apps.contract import (
     QUOTA_HEADROOM,
     STORAGE_CLASSES,
     TEAM,
-    TOKEN_SECONDS,
-    TOKENS_VOLUME,
-    allowed_callers,
-    callee_address,
-    callee_variable,
-    declared_calls,
-    identity_variables,
     image_policy_name,
     in_cookie_domain,
     network_policy,
     quantity,
-    signing_keys,
     strip_image_markers,
     teams,
 )

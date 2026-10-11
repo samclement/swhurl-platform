@@ -938,3 +938,13 @@ Before the push, a local `console --dev` against the live cluster was driven in 
 The deploy made the console answer "no available server" for 15 seconds (old pod stopped 12:29:52 UTC, new pod Ready 12:30:07): one replica with the chart's default `Recreate` strategy.
 
 Not exercised: the dialog's **Continue** path, any change form (the local console had no GitHub token), and the pages in a signed-in browser on the real host.
+
+## Console list pages (11 October 2026)
+
+At `6409ea0` (console image `src-f74903fd63b68621`, pinned by the publish workflow in `9f398fb`; steps in `d995913`, `57ac0a5`, `2db6790`, `1c75879`, `6409ea0`): Validate and Publish console image passed; `make flux-reconcile` and `make verify-platform` passed and the console Deployment rolled out on that digest. Through a port-forward to the deployed console with an identity header, `/`, `/apps`, `/teams`, `/platform` and `/activity` returned 200 and carried the new markup: **About this page** on each, the Promotion column on Apps, eight in-row team forms on Teams (New team, and Edit, Rename and Delete per team; the default team has only Edit), four layer groups in one units table "all at `9f398fb`" on Platform. `http://console.homelab.swhurl.com/apps` redirected to https and https to Google sign-in.
+
+Before the pushes, a local `console --dev` against the live cluster was driven in headless Chromium (Playwright): on Platform, **Suspend** on `platform-nats` opened the dialog naming the unit and Cancel left the row unchanged; **Reconcile** on the same row answered in the row ("reconcile started · job #1") without leaving `/platform`, the page read itself again 10 seconds later with the units section still open, and the audit log recorded the job as succeeded; on Teams, opening Delete closed Edit (one form at a time). Apps showed 8 apps in about 330 px of rows (840 px before), and while a push was reconciling showed the Updating rows with their reason and no button. Apps and Teams were read at 500 px.
+
+Found while reviewing and fixed in `2db6790`: Platform once listed a unit as failing ("Reconciliation in progress") beside a units summary saying all healthy, because the checks and the units list read the cluster a moment apart; what needs attention now comes from the units read alone (tested).
+
+Not exercised: the pull-request table and **Hold** / **Request auto-merge** on Activity against real open pull requests (rendered from made-up records; `merge_mode` is unit-tested), the in-row **Reconcile** and **Resume** on Apps (no environment was failing or suspended; the same code path as Platform), submitting a team form from the new rows (the forms post the same fields as before, tested), and everything in a real signed-in browser session.

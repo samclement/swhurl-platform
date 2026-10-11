@@ -74,6 +74,10 @@ elif any(a.startswith('imageupdateautomations') for a in argv):
     emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
+elif argv[:3] == ['-n', 'messaging', 'get']:
+    emit({'status': {'readyReplicas': 1}})
+elif len(argv) > 1 and argv[0] == 'get' and argv[1].startswith('streams.jetstream'):
+    emit({'items': []})
 elif argv[:3] == ['get', '--raw', '/openid/v1/jwks']:
     print((Path(os.environ['REPO']) / 'apps/signing-keys.json').read_text())
 elif argv[:3] == ['get', '--raw', '/.well-known/openid-configuration']:

@@ -74,6 +74,10 @@ def healthy(**overrides):
                              for app, env in INSTANCES]},
         'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
             'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
+        'nats': {'status': {'readyReplicas': 1}},
+        'nats-controller': {'status': {'readyReplicas': 1}},
+        'streams': {'items': [{'kind': 'Stream', 'metadata': {'namespace': 'w-staging', 'name': 'staging-w'},
+                               'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}]},
         'jwks': json.loads((ROOT / contract.SIGNING_KEYS_FILE).read_text()),
         'openid': {'issuer': contract.ISSUER},
         'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-failures'}}}]},
@@ -147,6 +151,9 @@ def healthy(**overrides):
             .on('kubectl', 'get', 'namespaces', '-l', 'platform.swhurl.com/app', handler=answer('app-namespaces'))
             .on('kubectl', 'get', 'resourcequotas', handler=answer('quotas'))
             .on('kubectl', 'get', 'networkpolicies.networking.k8s.io', handler=answer('network-policies'))
+            .on('kubectl', '-n', 'messaging', 'get', 'statefulset', 'nats', handler=answer('nats'))
+            .on('kubectl', '-n', 'messaging', 'get', 'deployment', 'nats-controller', handler=answer('nats-controller'))
+            .on('kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io', handler=answer('streams'))
             .on('kubectl', 'get', '--raw', '/openid/v1/jwks', handler=answer('jwks'))
             .on('kubectl', 'get', '--raw', '/.well-known/openid-configuration', handler=answer('openid'))
             .on('curl', handler=github))
@@ -178,7 +185,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== Events ==', '\n== Alerts ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -381,6 +388,21 @@ class ConsoleTokenTests(unittest.TestCase):
         _, report, text = run(healthy(jwks=Result((), 1, '', 'forbidden')))
         self.assertIn("[BAD] could not read the cluster's token issuer or signing keys", report.lines, text)
 
+    def test_event_problems(self):
+        _, report, text = run(healthy())
+        self.assertIn('[OK] NATS is running', report.lines, text)
+        self.assertIn('[OK] 1 declared stream(s) and consumer(s) exist in NATS', report.lines, text)
+        code, report, text = run(healthy(nats={'status': {}}))
+        self.assertEqual(code, 1, text)
+        self.assertTrue(any(line.startswith('[BAD] NATS is not running') for line in report.lines), text)
+        pending = {'items': [{'kind': 'Consumer', 'metadata': {'namespace': 'w-staging', 'name': 'orders-created'},
+                              'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'stream not found'}]}}]}
+        code, report, text = run(healthy(streams=pending))
+        self.assertEqual(code, 1, text)
+        self.assertIn('[BAD] Consumer w-staging/orders-created: stream not found', report.lines, text)
+        _, report, text = run(healthy(streams=Result((), 1, '', 'no such resource')))
+        self.assertIn('[BAD] could not read NATS, its controller, or the streams and consumers', report.lines, text)
+
     def test_alert_problems(self):
         _, report, text = run(healthy(alerts={'items': []}))
         self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
@@ -446,7 +468,7 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts'] + ['App dashboards', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

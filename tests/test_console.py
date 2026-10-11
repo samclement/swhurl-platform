@@ -110,10 +110,12 @@ class ServicesTests(unittest.TestCase):
         releases = [
             web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_API_PATH': '/openapi.json'},
                 host='staging-orders.homelab.swhurl.com'),
-            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json'}),
+            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json', 'SWHURL_EVENTS_PUBLISH': 'created,paid'}),
             web('reports-staging', 'reports', {'SWHURL_SERVICE_ORDERS_URL': 'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000'}),
             release('job-staging', 'job'),
         ]
+        releases[-1]['spec']['values']['controllers']['main']['containers']['main']['env'] = {
+            'SWHURL_EVENTS_SUBSCRIBE': 'orders.created'}
         units = [unit(f'app-{name}') for name in ('orders-staging', 'orders-prod', 'reports-staging', 'job-staging')]
         namespaces = {'items': [{'metadata': {'name': 'orders-staging', 'labels': {'platform.swhurl.com/team': 'payments'}}},
                                 {'metadata': {'name': 'reports-staging', 'labels': {'platform.swhurl.com/team': '<b>insights'}}}]}
@@ -137,6 +139,8 @@ class ServicesTests(unittest.TestCase):
                       'no route: the address inside the cluster')
         self.assertIn('make app-calls APP=&lt;your app&gt; ENV=staging ARGS="--add orders"', text)
         self.assertIn('A worker: nothing to call', text)
+        self.assertIn('Publishes: <code>orders.created</code>, <code>orders.paid</code>', text)
+        self.assertIn('Subscribes to: <a href="#orders"><code>orders.created</code></a>', text)
         self.assertEqual(text.count('Call this from my app'), 2, 'offered for the two web apps only')
         self.assertTrue(all(call[:2] == ('kubectl', 'get') or call[:4] == ('kubectl', '-n', 'flux-system', 'get')
                             for call in runner.calls), 'the page only reads')
@@ -408,7 +412,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('<strong>Ingress</strong> · <span class="bad">1 of 1 not passing</span>', response.text)
         self.assertIn('Traefik does not redirect HTTP to HTTPS', response.text)
-        self.assertIn('13 more checks read Secrets, run commands in pods or need your machine', response.text)
+        self.assertIn('14 more checks read Secrets, run commands in pods or need your machine', response.text)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
 
     def test_unreachable_cluster_is_a_502(self):

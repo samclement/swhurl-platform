@@ -29,7 +29,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Health, Secrets, certificate mode, lifecycle, chart updates, backups, troubleshooting | `docs/operations.md` |
 | Every `make` target | `docs/commands.md` |
 | Shared services, settings, keys, known issues | `docs/services.md` |
-| App lifecycle: template, create, access, teams and isolation, secrets, telemetry, deploy, dependency updates, promote, operate, remove; app policy | `docs/apps.md` |
+| App lifecycle: template, create, access, teams and isolation, calling another app, secrets, telemetry, deploy, dependency updates, promote, operate, remove; app policy | `docs/apps.md` |
 | Web console: use, deploy, token, protection | `docs/console.md` |
 | Flux units, dependencies, ownership, deletion, how changes reach the cluster | `docs/architecture.md` |
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |
@@ -40,7 +40,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 
 - Do: `make flux-reconcile`, `make verify-platform`, `make app-*`, `make check-secrets`, `make clickstack-bootstrap` and `make clickstack-dashboards` (idempotent), and the throwaway live tests (`live-test-lifecycle`, `live-test-reloader`, `live-test-app-template`, `live-test-restore-mongodb`). Push fixture changes before running live tests: they reconcile from Git.
 - Don't: delete Flux units or namespaces as a reset (there is no teardown), or `kubectl apply` resources that Flux owns.
-- `platform-certs-*`, `app-new`, `app-promote`, `app-scale`, `app-expose`, `app-team`, `app-remove` and `console-image` only edit files: commit and push before reconciling. After changing `tools/`, `images/console/` or the lock file, the publish run deploys the console itself with a bot commit to `main` ([console](docs/console.md#deploy-a-new-console)): `git pull --rebase` before the next push; `make console-image` is the manual fallback. `make verify-platform` warns until the new image runs.
+- `platform-certs-*`, `app-new`, `app-promote`, `app-scale`, `app-expose`, `app-team`, `app-calls`, `app-sync`, `platform-signing-keys`, `app-remove` and `console-image` only edit files: commit and push before reconciling. After changing `tools/`, `images/console/` or the lock file, the publish run deploys the console itself with a bot commit to `main` ([console](docs/console.md#deploy-a-new-console)): `git pull --rebase` before the next push; `make console-image` is the manual fallback. `make verify-platform` warns until the new image runs.
 - `host-dns` and `host-backup` install system units with `sudo`: the operator runs them in their own terminal. The units run scripts from this checkout, so only template changes need a reinstall.
 - Root units in `clusters/home/flux-system/kustomizations.yaml` are not reconciled by Flux: apply changes with `make flux-bootstrap`.
 - Flux controllers come from `make flux-install` (`FLUX_VERSION` in `tools/swhurl/flux.py`, patches in `clusters/home/flux-system/install`); never plain `flux install`, which drops the patches.
@@ -59,6 +59,9 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - **systemd unit templates** (`host/templates/systemd/`): `Exec*=` lines expand `$` and `%` themselves; write `$$` and `%%` for the shell. A `+` prefix runs that line as root despite `User=`.
 - **Route 53** returns a wildcard record's name as `\052.homelab.swhurl.com.`; compare after mapping `\052` to `*`.
 - **NetworkPolicy and HTTP-01:** cert-manager runs its challenge solver pods in the Ingress's namespace (port 8089); a policy selecting every pod there (`podSelector: {}`) blocks issuance with a 502. Select the workload's pods only (`make check-apps` rule `network-policy`). A pod can always reach itself, so test a policy from a different pod.
+- **Calls between apps:** the k3s API server refuses anonymous requests (401 even with RBAC for `system:unauthenticated`), so apps cannot fetch the token-signing keys: they live in `apps/signing-keys.json` and reach apps as `SWHURL_AUTH_KEYS`. A projected service-account token without an `audience` is a real API credential: rule `call-tokens` allows only audience-bound ones. `SWHURL_ENV` must come before any variable using `$(SWHURL_ENV)`. The caller's `SWHURL_SERVICE_*` variables are the truth; everything on the callee is derived (`make app-sync`).
+- **logback's `JsonEncoder`** writes the message template and its arguments apart: `log.info("x {}", y)` reaches ClickStack as `x {}`. Build the string in the call.
+- **zsh does not split `$VAR` into words:** a command kept in a variable fails with "no such file"; put multi-step live checks in a `bash` script.
 - **OTel node metrics** on k3s use host networking and the kubelet at `127.0.0.1:10250`.
 - **Reloader** only acts in namespaces listed in its HelmRelease; add the namespace before opting a workload in (`make app-new --secret-keys` does).
 - **`nginx-unprivileged`** listens on IPv4 only with a read-only root; use `127.0.0.1` inside the pod.

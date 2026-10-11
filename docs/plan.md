@@ -18,7 +18,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 8. **Optional cleanup** (deleting needs confirmation; repository and package deletion is yours): `samclement/swhurl-try-6` (repository, package, staging and prod instances, retained volumes; restoring those volumes is unexercised, though the same SQLite restore shape has live evidence); migrating `hello-ts`.
 9. **Incident reviewer follow-up.** The GitHub-issue redesign in [section 14](#14-incident-issues-and-agent-fixes--redesigned-9-october-2026-design-b-not-started) remains unimplemented and on hold. The collect-only reviewer was suspended (`82b9a8f`), then its resources and tooling were removed (`77f3b3b`). Its empty Flux unit and namespace are removed. Decide separately whether to revoke the unused OpenAI key, and delete the worker GHCR package and ntfy subscription. Shared notification storage and console behavior stay in place.
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
-11. **Team platform — T0 and T1 done (11 October 2026), T2 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Every instance now has a team, a quota and a NetworkPolicy. **Next:** T2 (calls and discovery): signing keys as a file, `calls:` and `make app-calls`, the helper and verifier in both stack templates. It creates real `swhurl-try-<n>` repositories at step 6. **Operator browser check owed from T1:** the Team select on **New app** and the team on an app page, signed in.
+11. **Team platform — T0 to T2 done (11 October 2026), T3 not started** ([section 15](#15-team-platform--planned-10-october-2026-not-started); design in the [brief](design-team-platform.md)): teams, app-to-app calls with service discovery, and events, in tasks T0 to T5. Apps now call each other with platform-issued tokens, in both stacks. **Next:** T3 (the console's Services page and its refusal messages). **Operator browser checks owed:** the Team select on **New app**, the team and the **Calls** form on an app page, signed in. **Throwaway repositories to delete after T5** (only the operator can): `samclement/swhurl-try-10`, `-11`, `-12` and their packages.
 
 ### Delivered
 
@@ -761,7 +761,7 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 
 ## 15. Team platform — planned 10 October 2026, not started
 
-**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 and T1 are done; T2 is next.
+**Goal.** Build the [team platform design brief](design-team-platform.md) in six increments, each leaving the platform working: teams and isolation, app-to-app calls with discovery, a Services page, events, and a three-app scenario that proves them. The brief holds the design and its limits; this section holds the order of work. T0 to T2 are done; T3 is next.
 
 ### Decisions (confirmed by the operator, 10 October 2026)
 
@@ -772,7 +772,7 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 
 ### Facts checked on the live cluster (10 October 2026, read-only)
 
-- Token issuer is `https://kubernetes.default.svc.cluster.local`, RS256. The API server refuses anonymous requests (HTTP 401), and only service accounts may read the signing keys (`/openid/v1/jwks`). Apps run with `automountServiceAccountToken: false`, so a callee cannot fetch the keys itself: binding the discovery role to `system:unauthenticated` was tried in T0 and changes nothing. The public keys are therefore handed to each app as a file (T2.1).
+- Token issuer is `https://kubernetes.default.svc.cluster.local`, RS256. The API server refuses anonymous requests (HTTP 401), and only service accounts may read the signing keys (`/openid/v1/jwks`). Apps run with `automountServiceAccountToken: false`, so a callee cannot fetch the keys itself: binding the discovery role to `system:unauthenticated` was tried in T0 and changes nothing. The public keys are therefore kept in `apps/signing-keys.json` and given to each web app as `SWHURL_AUTH_KEYS`.
 - Traefik pods are in `kube-system` with `app.kubernetes.io/name=traefik`: the selector the app NetworkPolicies admit.
 - k3s `v1.34.4` enforces NetworkPolicies on app pods (proven in T0).
 
@@ -795,14 +795,14 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 - The console image has no checkout: it reads `apps/teams.yaml` from `main` through GitHub (five-minute cache). The same route serves anything else it needs from Git.
 - `make verify-platform` checks instances that exist in Git only: namespaces kept for their data after an app was removed (`test-1-staging`, `swhurl-try-6-*`) carry no quota or policy and are not flagged.
 
-**T2. Calls and discovery.**
-1. Platform keys: the cluster's public signing keys in one file in Git (`apps/signing-keys.json`, refreshed by a `make` target that only edits the file), written by the generator into each web instance as a ConfigMap mounted read-only. `make verify-platform` fails when the file differs from the live keys, and `make check-apps` when an instance's copy differs from the file. Document in `operations.md` that rotating the cluster's service-account key means refreshing the file first.
-2. Contract and generator: `calls` (list of app names) in `swhurl.yaml` and `make app-calls APP= ENV= ARGS="--add orders | --remove orders"` (`edit.py`), which edits **both** instances in one change. Caller: a ServiceAccount named after the app (automount stays off), `SWHURL_SERVICE_<NAME>_URL`, and a projected token file per callee at `/var/run/swhurl/tokens/<callee>` (audience = callee name). Callee: the caller on `SWHURL_ALLOWED_CALLERS` and in its NetworkPolicy. Every web instance: `SWHURL_APP`, `SWHURL_ENV`, the issuer and the path of the keys file. After creation this repository is the truth, as with exposure.
-3. Policy: `calls-target-exists`, `calls-symmetric` (address, token, allowed list and network rule agree), `token-audience-is-app` (the only tokens a pod may carry). `app-promote` stops, naming the app, when a dependency has no production instance; `app-remove` refuses while others call the app.
-4. Templates (both stacks, one revision each; no new Copier question): `service(name)` client (address, token re-read from file, trace headers, timeout); a verifier on every route except the health path (signature against the keys file, re-read when it changes; issuer, audience = own name, caller's namespace = an allowed app in the same environment; 401 otherwise); `caller.type` and `caller.id` on log lines and spans, with `user` from `x-auth-request-email` when there is no bearer token; verification off when the issuer variable is absent (local development), stated in the README. Tests use a locally generated key. Pin the revisions in `STACK_REVISIONS`; `make check-templates`.
-5. Console: a **Calls** form on the app page (pull request through `changes.py`).
-6. Live: create `swhurl-try-<n>` twice from the new TypeScript revision (`orders` with SQLite, `reports`), link them, and show: the call succeeds with `caller.id` in ClickStack; an unlinked third pod is blocked; with the network rule removed by hand in a throwaway copy, the app answers 401. One Kotlin app repeats the call in either direction. **Operator:** these are real public repositories; they stay until T5.
-7. Docs: `apps.md` (new "Calling another app" section, `swhurl.yaml`, reserved names, policy), `services.md` (the binding), `commands.md`, template READMEs.
+**T2. Calls and discovery. Done 11 October 2026** (`19f6ac3`, `16204c2`, `73d2a82`, `a2867b7`, and the template commits `ea294aa` (TypeScript), `e7dd18e` (Kotlin); [evidence](current-state.md#team-platform-t2-calls-and-discovery-11-october-2026)). Behaviour is in [apps](apps.md#calling-another-app). What changed from the plan, and what T3 and T4 build on:
+- **Keys travel as a variable, not a file.** `SWHURL_AUTH_KEYS` holds the key set from `apps/signing-keys.json`: no ConfigMap, no volume, and a key change restarts the apps.
+- **No ServiceAccount to create.** The app-template chart already gives each release one named after the app, so a caller is `system:serviceaccount:<app>-<env>:<app>`.
+- **The caller's declaration is the truth.** Its `SWHURL_SERVICE_<APP>_URL` variables say what it calls; `edit.sync_env()` derives the callee's allowed callers and NetworkPolicy from every caller in the environment. `app-calls`, `app-new --calls`, first promotion, `app-remove` and `platform-signing-keys` all end in it. T4 should derive event permissions the same way.
+- **Calls are per environment,** like replicas (`policy.VARIES`). The address uses `$(SWHURL_ENV)`, so a promoted release needs no rewriting beyond `SWHURL_ENV`.
+- **A request without a token is a person,** signed in or anonymous: a public app must still answer strangers, and an app cannot tell Traefik from an allowed caller. `requireApp` marks app-only routes. A declared caller can therefore pose as a person (a known limit in the brief).
+- **The first promotion of an app with calls is not merged by the console:** it edits other apps' production files, which `console/merge.py` refuses to reproduce.
+- **Throwaway apps kept for T3 to T5:** `swhurl-try-10` (TypeScript, SQLite, team payments; the callee), `swhurl-try-11` (TypeScript, team insights; calls 10 and 12), `swhurl-try-12` (Kotlin, team insights; calls 10). `swhurl-try-12` was built one template commit before the log-message fix.
 
 **T3. Services page and guard rails.**
 1. `provides: {api: <path>}` in the contract (shown, not enforced).
@@ -830,7 +830,8 @@ Write nothing to GitHub and fail the run if: a query fails or exceeds its limits
 | When | Action | How |
 | --- | --- | --- |
 | After T1 | See the Team select on **New app** and the team on an app page | Own browser, signed in |
-| T2.6, T4.7 | Accept three real `swhurl-try-<n>` repositories until T5 | In the session |
+| After T2 | See the **Calls** form on an app page (`swhurl-try-11/staging` calls two apps) | Own browser, signed in |
+| T4.7 | Accept one more real `swhurl-try-<n>` repository (the subscriber) until T5 | In the session |
 | T3.4, T5.3 | Browser checks while signed in | Own browser |
 | T4.1 | Stream-creation decision | In the session |
 | T5.3 | Delete the throwaway repositories and packages | Own browser or terminal |

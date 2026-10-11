@@ -38,8 +38,8 @@ No hostnames, ports, environment names, tokens or broker addresses appear in app
 | Capability | The platform generates | Built on |
 | --- | --- | --- |
 | Teams and isolation | A `platform.swhurl.com/team` namespace label from a registry of team names in this repository; a ResourceQuota per namespace; a NetworkPolicy on the app's pods admitting only Traefik and declared callers | Kubernetes; k3s enforces NetworkPolicies itself |
-| Service discovery | `SWHURL_SERVICE_<NAME>_URL` pointing at the same environment's instance; a **Services** page in the console | Kubernetes DNS, the console |
-| App-to-app identity | A short-lived service-account token for each callee, mounted as a file and usable only for that callee (not for the Kubernetes API); the caller's name on the callee's `SWHURL_ALLOWED_CALLERS` | Kubernetes projected tokens; the cluster's public signing keys, handed to each app as a file |
+| Service discovery | `SWHURL_SERVICE_<NAME>_URL` pointing at the same environment's instance (built; [apps](apps.md#calling-another-app)); a **Services** page in the console | Kubernetes DNS, the console |
+| App-to-app identity | A short-lived service-account token for each callee, mounted as a file and usable only for that callee (not for the Kubernetes API); the caller's name on the callee's `SWHURL_ALLOWED_CALLERS` (built; [apps](apps.md#calling-another-app)) | Kubernetes projected tokens; the cluster's public signing keys, kept in Git and given to each web app as a variable |
 | Events | A NATS user per app, limited to publishing its own subjects and reading the ones it declared; a durable stream per publishing app; credentials in the app's SOPS Secret | NATS JetStream (the one new component) |
 | Persistence | Unchanged: `database: sqlite`, retained volume, nightly backup | Existing |
 | Human sign-in | Unchanged: Google through oauth2-proxy | Existing |
@@ -51,7 +51,7 @@ No hostnames, ports, environment names, tokens or broker addresses appear in app
 1. `reports` declares `calls: [orders]`. A pull request to this repository (console form or `make` command) changes both instances: `reports` gets the address and a token file for audience `orders`; `orders` gets `reports` on its allowed list and in its NetworkPolicy.
 2. At run time the helper reads the address and the token, and sends `Authorization: Bearer <token>` with trace headers and a timeout.
 3. `orders` checks the signature against the cluster's keys, that the audience is `orders`, and that the caller's namespace is an allowed app in its own environment. It refuses with 401 otherwise, and logs `caller.type=app caller.id=reports`.
-4. A browser request arrives through oauth2-proxy as today and is logged `caller.type=user caller.id=<email>`.
+4. A request without a token is a person: through oauth2-proxy it is logged `caller.type=user caller.id=<email>`, on a public app `caller.type=anonymous`.
 
 ### How an event works
 
@@ -115,7 +115,7 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 - **Postgres** (excluded by the operator) and scaling an app with a database beyond one replica.
 - **Outside callers with tokens** (Dex).
-- **Forged user headers from a declared caller.** An app admitted by `calls:` could send `x-auth-request-email` itself. Closing it means apps verifying a signed sign-in token; a later increment.
+- **A declared caller can pose as a person.** An app admitted by `calls:` could leave out its token, or send `x-auth-request-email` itself; routes meant only for apps ask for an app caller, but the rest cannot tell it from Traefik. Closing it means apps verifying a signed sign-in token; a later increment.
 - **Egress rules.** Only inbound traffic is restricted; apps can still reach anything outbound.
 - **Admission-time policy.** Rules stay in `make check-apps` on pull requests.
 - **Per-team repositories and self-service merges.** Teams are labels, and the pull request is the callee's consent to a new caller.
@@ -123,7 +123,7 @@ Increments 2 and 4 each need a new revision of both stack templates.
 
 ## Risks
 
-- **Signing keys are a copy.** This API server refuses anonymous requests, so an app without an API token cannot fetch the cluster's public keys; the platform hands them to each app as a file kept in Git. If the cluster's key is rotated before the file is refreshed, calls are refused until it is; `make verify-platform` reports the difference.
+- **Signing keys are a copy.** This API server refuses anonymous requests, so an app without an API token cannot fetch the cluster's public keys; the platform keeps them in Git and gives them to each web app as a variable. If the cluster's key is rotated before the file is refreshed, calls are refused until it is; `make verify-platform` reports the difference.
 - **NetworkPolicy and HTTP-01:** a policy selecting every pod in a namespace blocks certificate issuance ([lesson in `AGENTS.md`](../AGENTS.md)); policies select the workload's pods only.
 - **NATS credentials are stored secrets,** unlike the call tokens. Rotation goes through SOPS and Reloader like any app Secret.
 - **The scenario creates real public GitHub repositories** that only the operator can delete; they are named `swhurl-try-<n>`.

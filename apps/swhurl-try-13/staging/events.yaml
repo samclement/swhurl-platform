@@ -1,0 +1,13 @@
+apiVersion: jetstream.nats.io/v1beta2
+kind: Consumer
+metadata:
+  name: swhurl-try-10-visited
+  namespace: swhurl-try-13-staging
+spec:
+  streamName: staging-swhurl-try-10
+  durableName: swhurl-try-13_visited
+  filterSubject: staging.swhurl-try-10.visited
+  ackPolicy: explicit
+  deliverPolicy: all
+  ackWait: 30s
+  maxDeliver: 5

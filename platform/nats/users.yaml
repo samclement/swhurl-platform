@@ -29,3 +29,13 @@ data:
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-10.>
+          - nkey: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
+            permissions:
+              publish:
+                allow:
+                - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
+                - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
+                - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>
+              subscribe:
+                allow:
+                - _INBOX.staging.swhurl-try-13.>

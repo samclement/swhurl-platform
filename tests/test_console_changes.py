@@ -332,8 +332,11 @@ class NewAppRouteTests(unittest.TestCase):
     def test_the_team_is_chosen_from_the_registry_on_main(self):
         c, _ = self.client(tree_fake())
         page = c.get('/new', headers=WHO).text
-        self.assertIn('<option value="platform" selected>platform — The platform itself · no notification channel</option>', page)
-        self.assertIn('<option value="payments" >payments · has a notification channel</option>', page)
+        self.assertIn('name="team" value="platform" checked', page)
+        self.assertIn('<span class="muted">The platform itself</span>', page)
+        self.assertIn('name="team" value="payments" >', page)
+        self.assertEqual((page.count('>notification channel</span>'), page.count('>no notification channel</span>')), (1, 1),
+                         'each team is marked with whether it has a channel')
         teams = changes.platform_teams(FakeRunner(), self.api.github)
         self.assertEqual(teams, {'platform': 'The platform itself', 'payments': ''})
         web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
@@ -348,7 +351,8 @@ class NewAppRouteTests(unittest.TestCase):
         unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
         page = TestClient(app_under_test(tree_fake(), github=unreadable.github)).get('/new', headers=WHO).text
         self.assertIn('Only the default team is offered', page)
-        self.assertIn('<option value="platform" selected>platform · no notification channel</option>', page)
+        self.assertIn('name="team" value="platform" checked', page)
+        self.assertEqual(page.count('name="team"'), 1)
 
     def test_the_form_offers_what_staging_has_to_connect_to_and_says_what_a_team_is(self):
         staging = (staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created,paid'}), staging_app('job', port=None),
@@ -978,8 +982,8 @@ class TeamsPageTests(unittest.TestCase):
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertEqual(page.count('No notification channel'), 2, 'unreadable routes: no channel is claimed')
         page = self.client().get('/new', headers=WHO).text
-        self.assertIn('<option value="payments" >payments · has a notification channel</option>', page)
-        self.assertIn('· no notification channel</option>', page)
+        self.assertEqual(page.count('>notification channel</span>'), 1, 'payments, on New app')
+        self.assertIn('>no notification channel</span>', page)
 
     def test_a_channels_address_reaches_only_the_commands_standard_input(self):
         address = 'https://ntfy.sh/swhurl-0123456789abcdef01234567'
@@ -1139,7 +1143,7 @@ class NewRepoRouteTests(unittest.TestCase):
         page = c.get('/new', headers=WHO).text
         self.assertIn('name="stack" value="kotlin"', page)
         self.assertIn('Kotlin on Micronaut', page)
-        self.assertEqual(page.count('<fieldset class="features"'), 2, 'one Features set per stack')
+        self.assertEqual(page.count('<section class="card features"'), 2, 'one Features set per stack')
         c.post('/new/repo', data={'name': 'notes', 'stack': 'kotlin', 'feature-kind': 'web', 'feature-database': 'sqlite'},
                headers=WHO)
         self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))

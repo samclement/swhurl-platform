@@ -98,7 +98,10 @@ elif any(a.startswith('networkpolicies') for a in argv):
 elif argv[:2] == ['get', 'deployments']:  # backup-sqlite discovery: no app has a SQLite database
     emit({'items': []})
 elif argv[:3] == ['-n', 'notify', 'get']:
-    if 'configmaps' in argv:
+    if 'deployment' in argv:
+        emit({'spec': {'template': {'spec': {'containers': [{'image': 'ghcr.io/x/swhurl-console:' + os.environ['CONSOLE_TAG']}]}}},
+              'status': {'readyReplicas': 1}})
+    elif 'configmaps' in argv:
         emit({'items': [{'metadata': {'name': 'notification-routes'}, 'data': {'routes.json': os.environ['ROUTES']}}]})
     else:
         print(os.environ['CHANNEL_SECRETS'])

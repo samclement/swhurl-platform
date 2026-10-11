@@ -17,7 +17,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
 | [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | The Flux notification Provider and Alert, to ntfy.sh |
-| [Notification channels](#notification-channels) | `platform-notify` · [`platform/notify`](../platform/notify) | `notify` | — | plain manifests (channel Secrets and the generated routes) |
+| [Notify service](#notify-service) and [notification channels](#notification-channels) | `platform-notify` · [`platform/notify`](../platform/notify) | `notify` | — | app-template, the console's image; channel Secrets and the generated routes as plain manifests |
 | [Push webhook](#push-webhook) and [image webhook](#image-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (two Flux `Receiver`s) |
 
 Hosts are under `BASE_DOMAIN` (`homelab.swhurl.com`). Chart versions are pinned in each HelmRelease and updated by Renovate ([chart updates](operations.md#chart-updates)).
@@ -145,7 +145,7 @@ The console's title is `console`. A successful Git revert or promotion of an old
 
 ### Current notification behavior
 
-**Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads application Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap, plus the [channel](#notification-channels) routes and addresses in the `notify` namespace.
+**Checker:** [`notifications` package](../tools/swhurl/notifications/__init__.py) reads Kubernetes once a minute as `console/notification-check`, through the bounded `console-notifications` CronJob in the [console HelmRelease](../platform/console/helmrelease.yaml). It discovers instances from app Flux paths (`./apps/<app>/<env>`, plus authorised app-template fixtures), not a manually maintained app list. It reads release events, desired/current release status, main-workload replicas and running images. It never reads Secrets, pod logs or GitHub credentials and cannot modify workloads. Its dedicated [RBAC](../platform/console/notification-rbac.yaml) permits list-only discovery and get/patch of one ConfigMap. It hands every message about an app to the [notify service](#notify-service) as well, which knows the [channels](#notification-channels) of the app's team.
 
 ```mermaid
 flowchart LR
@@ -189,11 +189,12 @@ The console's [Teams page](console.md#use-it) does the same as pull requests: **
 flowchart LR
     teams[apps/teams.yaml<br/>payments: notify payments-phone] -->|generated| routes[notify/notification-routes]
     add[make channel-add] -->|encrypts| secret[notify/channel-payments-phone]
-    routes --> checker[Notification checker]
-    secret --> checker
-    ns[App namespace<br/>team label] --> checker
-    checker -->|every message| platform[platform topic]
-    checker -->|copy| phone[payments-phone topic]
+    checker[Notification checker] -->|every message| platform[platform topic]
+    checker -->|"copy, about orders/staging"| notify[Notify service]
+    routes --> notify
+    secret --> notify
+    ns[App namespace<br/>team label] --> notify
+    notify --> phone[payments-phone topic]
 ```
 
 | Part | Where | Notes |
@@ -204,9 +205,43 @@ flowchart LR
 
 **Channels are write-only.** Whoever creates a channel supplies its address and subscribes to it themselves; the platform stores it and never shows it again, in the tooling, the console or a log. A new app in a team gets the team's channels, so nothing secret changes hands. A lost or leaked address is replaced with `make channel-add NAME=<channel> ARGS=--replace`; `make channel-remove` is refused while a team notifies the channel.
 
-**What a channel receives.** A copy of each message about the team's apps, with the same title, priority and link. The platform topic still receives every message, and the console's own messages, the notification monitor and the [Flux failure Alert](#current-notification-behavior) go only there. The checker reads each app's team from its namespace label and the channel addresses from the `notify` namespace, which holds nothing else.
+**What a channel receives.** A copy of each message about the team's apps, with the same title, priority and link. The platform topic still receives every message, and the console's own messages, the notification monitor and the [Flux failure Alert](#current-notification-behavior) go only there. The [notify service](#notify-service) reads each app's team from its namespace label and the channel addresses from the `notify` namespace, which holds nothing else.
 
-**When a channel cannot be reached.** Its copy stays in the outbox and is retried every minute for two hours, then dropped with an error in the checker's logs; it never delays the platform topic or other channels. The same happens to a channel whose Secret is missing. `make verify-platform` (check `channels`) fails when the routes in the cluster are not Git's or a channel has no Secret.
+**When a channel cannot be reached.** Its copy stays in the notify service's outbox and is retried for two hours, then dropped with an error in the service's logs; it never delays other channels or the platform topic. The same happens to a channel whose Secret is missing. `make verify-platform` (check `channels`) fails when the routes in the cluster are not Git's or a channel has no Secret.
+
+### Notify service
+
+One small service, `notify` in the `notify` namespace, turns a message about an app into deliveries to the channels of the app's team. It runs the console's image ([`service.py`](../tools/swhurl/notifications/service.py)); its only caller today is the notification checker.
+
+```
+POST http://notify.notify.svc.cluster.local:8080/v1/notify      Authorization: Bearer <token for the audience notify>
+{"app": "orders", "env": "staging", "key": "event:abc@notify", "title": "orders/staging deployed",
+ "message": "Flux UpgradeSucceeded ...", "priority": "normal", "click": "https://console.../apps/orders/staging"}
+```
+
+| Answer | Meaning |
+| --- | --- |
+| `202 {"channels": ["payments-phone"]}` | Saved in the outbox for these channels and delivered from there. An empty list is normal: the app's team notifies no channel, the app is unknown, or this `key` was already accepted |
+| `400`, `413` | The body is not what the table below allows; the reason is in `error` |
+| `401` | No token, or one Kubernetes does not vouch for with the audience `notify` |
+| `403` | A real token of a caller that may not send: today everyone but the checker, apps included |
+| `503` | The token, the routes or the outbox could not be read or saved: nothing was accepted, so send it again |
+
+| Field | Rule |
+| --- | --- |
+| `app`, `env` | The app the message is about; `env` is `staging` or `prod`. Its namespace's team label decides the channels |
+| `key` | Required, at most 300 characters. The same key is delivered once per channel, so a retry is harmless (remembered for two hours after delivery) |
+| `title`, `message` | A title of at most 250 characters; a message of at most 3,500 |
+| `priority` | `normal` (default) or `high` |
+| `click` | Optional `https://` link opened from the notification |
+
+**Who a caller is.** The service asks Kubernetes (a `TokenReview`, restricted to the audience `notify`) whose token it was given; nothing in the body is trusted for identity. The checker's pod carries such a token as a file, valid ten minutes and for this audience only, so the Kubernetes API and every other service refuse it. A NetworkPolicy also admits only the checker's pods. Senders are listed in `PLATFORM_SENDERS`; an app sending its own messages is [planned](plan.md#16-app-notification-service--designed-11-october-2026-not-started), and until then an app's token gets 403.
+
+**Outbox.** An accepted message is one entry per channel in the `notify/notify-outbox` ConfigMap, written before 202 is answered and before anything is sent (Flux owns the object, the service owns its `state.json`, as for the [checker's state](#current-notification-behavior)). Delivery starts at once and is retried every 30 seconds; a new pod sends what the last one accepted. Delivery is at least once. The outbox holds at most 500 entries and answers 503 beyond that. Routes, the app's team and channel addresses are read when a message arrives and when it is sent, never cached, so a new channel works as soon as Flux has applied it.
+
+**When the service is down.** The checker keeps each copy in its own outbox and offers it again every minute for two hours; the platform topic is unaffected because the checker posts there itself. After five minutes of refusals the operator gets `notify service unreachable` on the platform topic, a reminder every hour, and `notify service recovered` when a copy is accepted again. `make verify-platform` (check `notify-service`, also on the console's Platform page) fails when the Deployment is not running and warns when it runs another image than the console.
+
+**Access.** Its ServiceAccount may list ConfigMaps and Secrets in `notify`, read and patch its outbox, read a namespace and create TokenReviews ([`rbac.yaml`](../platform/notify/rbac.yaml)). It holds no GitHub token and cannot change a workload. Logs reach ClickStack through the node collector: one line per accepted message (title, app, sender, number of channels), per delivery and per refusal, never a token or an address.
 
 ## Incident reviewer
 

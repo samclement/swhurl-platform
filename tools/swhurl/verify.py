@@ -645,6 +645,28 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.ok(f'{len(known)} channel(s) have their Secret')
 
 
+def check_notify_service(runner: Runner, report: Report) -> None:
+    """The notify service is running, on the image the console runs (one pin moves both)."""
+    report.section('Notify service')
+    try:
+        deployment = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'deployment', 'notify', '-o', 'json'])
+        running = deployment['spec']['template']['spec']['containers'][0]['image']
+        ready = (deployment.get('status') or {}).get('readyReplicas', 0)
+        console = helmrelease.image(runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json']))
+    except (CommandError, KeyError, TypeError, IndexError):
+        report.bad('cannot read the notify service (notify/notify): teams get no copies of their apps\' messages '
+                   '(make reconcile UNIT=platform-notify)')
+        return
+    if not ready:
+        report.bad('the notify service is not running: teams get no copies of their apps\' messages '
+                   '(kubectl -n notify get pods; make reconcile UNIT=platform-notify)')
+    elif f":{console.get('tag')}" not in running:
+        report.warn(f"the notify service runs {running.split('@')[0].rsplit(':', 1)[-1]}, not the console's "
+                    f"{console.get('tag')}: make console-image pins both, then commit and push")
+    else:
+        report.ok(f"the notify service is running {console.get('tag')}, as the console")
+
+
 ALERTS = ('failures',)  # platform/alerts/alerts.yaml
 
 
@@ -758,6 +780,7 @@ CHECKS = (
     Check('events', frozenset({'cluster', 'host'}), check_events),  # reads platform/nats/users.yaml
     Check('alerts', frozenset({'cluster'}), check_alerts),
     Check('channels', frozenset({'cluster', 'host'}), check_channels),  # reads apps/teams.yaml and platform/notify
+    Check('notify-service', frozenset({'cluster'}), check_notify_service),
     Check('retention', frozenset({'cluster', 'exec'}), check_retention),
     Check('backups', frozenset({'host'}), check_backups),
     Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),

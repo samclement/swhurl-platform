@@ -6,3 +6,6 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - routes.yaml
+  - outbox.yaml
+  - networkpolicy.yaml
+  - helmrelease.yaml

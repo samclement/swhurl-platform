@@ -1,0 +1,9 @@
+# Flux owns the object metadata, never data.state.json. The notify service owns that field, so
+# reconciliation preserves what it has accepted and not yet delivered.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notify-outbox
+  namespace: notify
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge

@@ -129,6 +129,9 @@ spec:
             command: [timeout, "50", python, -m, swhurl, notifications-check]
             env:
               CONSOLE_URL: https://console.${BASE_DOMAIN}
+              # Messages about apps also go to the notify service, which sends them to the app's
+              # team; the token below says who is sending (docs/services.md#notify-service).
+              SWHURL_SERVICE_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
             envFrom:
               - secretRef:
                   name: notification-ntfy
@@ -149,6 +152,20 @@ spec:
         sizeLimit: 1Gi
         globalMounts:
         - path: /tmp
+      # The checker's token for the notify service: valid for that audience only, so the Kubernetes
+      # API and every other service refuse it.
+      notify-token:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: token
+        advancedMounts:
+          notifications:
+            main:
+            - path: /var/run/swhurl/tokens/notify
+              readOnly: true
     service:
       main:
         controller: main

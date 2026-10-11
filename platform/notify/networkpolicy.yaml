@@ -1,0 +1,23 @@
+# Only the notification checker may connect; anything else is refused before it reaches the service,
+# which then checks the caller's token as well. Health probes come from the node and are not affected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notify-only-from-senders
+  namespace: notify
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: notify
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: console
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: console
+              app.kubernetes.io/controller: notifications
+      ports:
+        - port: 8080

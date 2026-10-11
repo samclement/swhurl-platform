@@ -8,5 +8,3 @@ metadata:
     platform.swhurl.com/environment: staging
     platform.swhurl.com/exposure: private
     platform.swhurl.com/team: payments
-  annotations:
-    platform.swhurl.com/alerts: error-logs=20,errors=none

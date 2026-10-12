@@ -1046,3 +1046,14 @@ Commit `74e0f30` (console image `src-e9e0d0fe12edd96d`, pinned in `7804a4b`) lay
 
 - `make check` passed (590 tests), Validate and the publish run passed on `74e0f30`; after `make flux-reconcile`, `make verify-platform` passed and the running pod holds the new template.
 - Seen in a local `console --dev` without tokens at 1280 and 500 pixels wide, with **Connections** closed and open. Not exercised: the page on the live host signed in (the pod answers 401 without the sign-in headers), and a submit from the new form.
+
+## Connections as rows (12 October 2026)
+
+Commit `69cab4d` (console image `src-1789b54424f538b3`, pinned in `264c060`) is stage 1 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-october-2026): a connection is one row on the app page and the Apps list, and the Connect card adds from a picker and removes per row.
+
+- `make check` passed (593 tests); Validate and the publish run passed on `69cab4d`; after `make flux-reconcile`, `make verify-platform` passed with the console on the new image.
+- Through a port-forward to the live console with the sign-in header: `/apps/swhurl-try-12/staging` lists four connections (two with **Remove**) and neither old form; `/apps` shows the same table for four instances; without the header it answers 401; a removal of a connection another app declared is refused (400), and a POST without the console's `Origin` is refused (403).
+- **Remove** on `swhurl-try-13/staging`'s subscription to `swhurl-try-12.visited` opened pull request #55 (`make app-events … --remove-subscribe=swhurl-try-12.visited`; the instance's `events.yaml` and HelmRelease, and `platform/nats/users.yaml`). It was closed unmerged and its branch deleted.
+- Seen in a local `console --dev` at 1280 pixels: the table, and **Connect to an app** open for a worker.
+- Not exercised: **Connect to an app** and **Publish an event** opening a real pull request (their arguments and routes are unit-tested); a merged connection change; the pages in a signed-in browser; a narrow screen.
+- Stage 0 (the library and sync-trigger spike) deployed nothing; its findings are in the plan.

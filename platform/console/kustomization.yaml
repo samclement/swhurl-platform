@@ -6,6 +6,7 @@ resources:
   - dashboard-state.yaml
   - notification-rbac.yaml
   - notification-state.yaml
+  - jobs-state.yaml
   - notification-secret.sops.yaml
   - networkpolicy.yaml
   - secret.sops.yaml

@@ -58,6 +58,7 @@ def healthy(**overrides):
         'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
         'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
         'deployments': {'items': []},
+        'console-jobs': {'data': {}},
         'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
             'tag': CONSOLE_TAG}}}}}}}},
         'notify': {'spec': {'template': {'spec': {'containers': [{'image': f'ghcr.io/samclement/swhurl-console:{CONSOLE_TAG}@sha256:abc'}]}}},
@@ -145,6 +146,7 @@ def healthy(**overrides):
             .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
             .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments'))
             .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
+            .on('kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', handler=answer('console-jobs'))
             .on('kubectl', '-n', 'notify', 'get', 'deployment', 'notify', handler=answer('notify'))
             .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
             .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
@@ -295,6 +297,12 @@ class ConsoleCheckTests(unittest.TestCase):
                 exit_code, report, text = run(healthy(**{'git-diff': Result((), code)}))
                 self.assertEqual(exit_code, 0, text)
                 self.assertTrue(any(line.startswith('[WARN]') and expected in line for line in report.lines), text)
+
+    def test_a_missing_job_record_fails(self):
+        exit_code, report, text = run(healthy(**{'console-jobs': Result((), 1, '', 'NotFound')}))
+        self.assertEqual(exit_code, 1, text)
+        self.assertIn('[BAD] console/console-jobs is missing: the console forgets its jobs on restart '
+                      '(make reconcile UNIT=platform-console)', report.lines)
 
     def test_publish_workflow_hashes_the_same_inputs_in_the_same_order(self):
         workflow = (ROOT / '.github/workflows/publish-console.yml').read_text()

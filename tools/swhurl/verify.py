@@ -404,6 +404,10 @@ def check_console(runner: Runner, report: Report) -> None:
     except (CommandError, KeyError, TypeError):
         report.bad('cannot read the console HelmRelease image tag (console/console)')
         return
+    try:  # where the console keeps its jobs across a restart (console/jobstore.py)
+        runner.json(['kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', '-o', 'json'])
+    except CommandError:
+        report.bad('console/console-jobs is missing: the console forgets its jobs on restart (make reconcile UNIT=platform-console)')
     label = tag if tag.startswith('src-') else tag[:7]
     if tag.startswith('src-'):
         try:

@@ -143,6 +143,11 @@ class AppRepos:
         """The webhook that tells Flux when this repository publishes an image."""
         self._call('POST', f'{self._writable(name)}/hooks', hooks.hook_body(self.image_webhook_token, host))
 
+    def head(self, name: str) -> str:
+        """The newest commit on the repository's main branch; '' if there is no such repository or branch."""
+        reply = self._call('GET', f'/repos/{self.owner}/{name}/git/ref/heads/main', ok=(404, 409))
+        return reply.json()['object']['sha'] if reply.status_code == 200 else ''
+
     def run_for(self, name: str, commit: str) -> dict | None:
         """The app workflow's run for ``commit``, if it has started."""
         runs = self._call('GET', f'/repos/{self.owner}/{name}/actions/runs?head_sha={commit}&per_page=20').json()
@@ -188,7 +193,25 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
         job.lines.append(f'Pushed {commit[:7]}; waiting for its {APP_WORKFLOW} run (checks, build, publish)')
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    return published_image(repos, job, req, commit, sleep=sleep, clock=clock, opener=opener)
 
+
+def finish_app_repo(repos: AppRepos, job: Job, req: repo.Request, *, sleep: Callable[[float], None] = time.sleep,
+                    clock: Callable[[], float] = time.monotonic, opener: repo.Opener = repo._open) -> str:
+    """The image of a repository an earlier job created and did not finish with: the one its newest
+    commit on main publishes, waited for like a first image. Nothing is written to the repository."""
+    req.check()
+    commit = repos.head(req.name)
+    if not commit:
+        raise ActionError(f'{req.repo} does not exist on GitHub: the earlier job stopped before creating it. '
+                          'Start again from New app (nothing was created)')
+    job.lines.append(f'{req.repo} exists; its newest commit is {commit[:7]}. Waiting for its {APP_WORKFLOW} run')
+    return published_image(repos, job, req, commit, sleep=sleep, clock=clock, opener=opener)
+
+
+def published_image(repos: AppRepos, job: Job, req: repo.Request, commit: str, *, sleep: Callable[[float], None],
+                    clock: Callable[[], float], opener: repo.Opener) -> str:
+    """Wait for ``commit``'s app workflow run and return the image it published, ``REPO:<run>-<sha>@sha256:…``."""
     deadline, state = clock() + FIRST_RUN_TIMEOUT, ''
     while True:
         run = repos.run_for(req.name, commit)

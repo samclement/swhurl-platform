@@ -943,7 +943,8 @@ class ActionTests(unittest.TestCase):
         self.assertIn("new EventSource('/jobs/7/events?after=0')", page)
         self.assertIn('<noscript><meta http-equiv="refresh" content="2"></noscript>', page)
         self.assertIn('output updates live', page)
-        self.assertNotIn('location.reload()', page)
+        self.assertIn('es.onerror = () => { es.close(); setTimeout(() => location.reload(), 3000); };', page,
+                      'a restart cuts the stream: the page is read again from the pod that answers')
         jobs._jobs[7].state, jobs._jobs[7].finished = 'succeeded', jobs.now()
         finished = c.get('/jobs/7', headers=WHO).text
         self.assertNotIn('EventSource', finished)

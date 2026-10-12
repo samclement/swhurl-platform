@@ -1,24 +1,33 @@
 {% extends "base.html" %}
 {% import "_status.html" as st %}
 {% block title %}Job {{ job.id }}{% endblock %}
-{% block head %}{% if job.state == 'running' %}<noscript><meta http-equiv="refresh" content="2"></noscript>{% endif %}{% endblock %}
+{# A job this console runs sends its output as it arrives; one another console pod is finishing (a restart) is read again every few seconds. #}
+{% block head %}{% if job.state == 'running' %}{% if job.live %}<noscript><meta http-equiv="refresh" content="2"></noscript>{% else %}<meta http-equiv="refresh" content="3">{% endif %}{% endif %}{% endblock %}
 {% block main %}
 {% set label, link = (job.unit, job.link or '/activity') if job.unit.startswith('PR #') else target(job.unit) %}
 <p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
-  · <span id="job-mark">{{ st.job(job) }}</span> <span id="job-state" class="state {{ {'succeeded': 'healthy', 'failed': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
+  · <span id="job-mark">{{ st.job(job) }}</span> <span id="job-state" class="state {{ {'succeeded': 'healthy', 'failed': 'failing', 'interrupted': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
 <p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC<span id="job-live">{% if not job.finished %}; output updates live{% endif %}</span><span id="job-finished">{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }} UTC{% endif %}</span>.</p>
 <p id="job-link"{% if not job.link %} hidden{% endif %}><a id="job-link-anchor" href="{{ job.link }}">{{ job.link }}</a></p>
 <pre id="log">{% for line in job.lines %}{{ line | short }}
 {% else %}<span id="empty">waiting for output…</span>{% endfor %}</pre>
+{% if can_resume %}
+<form class="action-row" method="post" action="/jobs/{{ job.id }}/resume" data-confirm="Finish creating {{ job.unit }}? It uses the repository this job created and the choices made then (team, access, connections), waits for its image and opens the platform pull request. No second repository is created." data-confirm-label="Finish creating the app">
+  <button class="primary">Finish creating this app</button>
+  <span class="muted">This job stopped before opening the platform pull request. Finishing it creates no second repository: it uses the one made here, with the same choices, and opens that pull request.</span>
+</form>
+{% endif %}
 <p><a href="{{ link }}">Back to {{ label }}</a> · <a href="/activity">All activity</a></p>
-{% if job.state == 'running' %}<script>
+{% if job.state == 'running' and job.live %}<script>
   const out = document.querySelector('#log');
   const es = new EventSource('/jobs/{{ job.id }}/events?after={{ job.lines | length }}');
   es.addEventListener('line', e => {
     document.querySelector('#empty')?.remove();
     out.insertAdjacentHTML('beforeend', JSON.parse(e.data).html + '\n');
   });
+  // The console restarting cuts this stream; the page is read again, from whichever pod now answers.
+  es.onerror = () => { es.close(); setTimeout(() => location.reload(), 3000); };
   es.addEventListener('done', e => {
     es.close();
     const final = JSON.parse(e.data);

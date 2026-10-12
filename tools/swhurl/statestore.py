@@ -20,3 +20,17 @@ def write_key(runner: Runner, *, namespace: str, name: str, key: str, raw: str, 
     runner.run(['kubectl', '-n', namespace, 'patch', 'configmap', name,
                 '--type=merge', '--patch-file=/dev/stdin', f'--field-manager={field_manager}'],
                input=json.dumps({'data': {key: raw}}), mutating=True)
+
+
+def read_keys(runner: Runner, *, namespace: str, name: str) -> dict[str, str]:
+    """Every key of the ConfigMap; empty when it holds none yet."""
+    doc = runner.json(['kubectl', '-n', namespace, 'get', 'configmap', name, '-o', 'json']) or {}
+    return {key: value for key, value in (doc.get('data') or {}).items() if value}
+
+
+def write_keys(runner: Runner, *, namespace: str, name: str, data: dict[str, str | None], field_manager: str) -> None:
+    """Set several keys in one patch; a key given as None is removed. Other keys are left as they are,
+    so two writers that each keep to their own keys never undo each other."""
+    runner.run(['kubectl', '-n', namespace, 'patch', 'configmap', name,
+                '--type=merge', '--patch-file=/dev/stdin', f'--field-manager={field_manager}'],
+               input=json.dumps({'data': data}), mutating=True)

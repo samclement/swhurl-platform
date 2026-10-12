@@ -1,0 +1,35 @@
+# The console's record of its jobs (tools/swhurl/console/jobstore.py): one key per job, written by the
+# pod that runs it, so a restart neither loses the Activity list nor hides a job that was cut short.
+# Flux owns the object metadata, never data: normal reconciliation keeps the records.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: console-jobs
+  namespace: console
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: Merge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: platform-console-jobs
+  namespace: console
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [console-jobs]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-console-jobs
+  namespace: console
+subjects:
+  - kind: ServiceAccount
+    name: console
+    namespace: console
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: platform-console-jobs

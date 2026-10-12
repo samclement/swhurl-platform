@@ -45,6 +45,10 @@ spec:
         # Restart when the GitHub token changes (namespace console is in platform-reloader's list).
         annotations:
           secret.reloader.stakater.com/reload: console-github
+        # A pod being replaced finishes its running jobs first (the longest waits ten minutes for an
+        # app's first build, then opens a pull request); actions.DRAIN stays inside this.
+        pod:
+          terminationGracePeriodSeconds: 900
         containers:
           main:
             image: &operator-image

@@ -16,7 +16,7 @@
 {% if jobs %}
 <h2>Jobs</h2>
 <ul class="items">
-  {% for j in jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">#{{ j.id }} {{ j.action }}</a> <span class="muted">{{ j.state }}{% if j.state == 'failed' %}: its output says why{% endif %}</span>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</li>{% endfor %}
+  {% for j in jobs %}<li>{{ st.job(j) }} <a href="/jobs/{{ j.id }}">#{{ j.id }} {{ j.action }}</a> <span class="muted">{{ j.state }}{% if j.state == 'failed' %}: its output says why{% elif j.state == 'interrupted' %}: the console restarted; its page offers to finish it{% endif %}</span>{% if j.link %} · <a href="{{ j.link }}">pull request</a>{% endif %}</li>{% endfor %}
 </ul>
 {% endif %}
 <p><a href="/activity">All activity</a></p>

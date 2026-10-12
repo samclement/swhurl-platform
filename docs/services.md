@@ -81,7 +81,7 @@ When the body changes, `LogAttributes.log.record.original` retains the complete 
 
 **Volume.** HyperDX's own traces are sampled at 10% (`OTEL_TRACES_SAMPLER_ARG` in `hyperdx.config`). Host metrics are scraped every 30 s, kubelet metrics and cluster state every 60 s (`collection_interval` in the two OTel HelmReleases). ClickStack's scrape of ClickHouse's own metrics (about half of all metric rows) stays at 30 s: the chart's `global.otelCollector.customConfig` is merged below the remote configuration HyperDX pushes over OpAMP, which defines that receiver, so it has no effect there. These cut stored rows, not ClickHouse's CPU, which is dominated by merging many tiny inserts ([current state](current-state.md#steps-2-and-3-and-the-final-comparison)).
 
-In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:hello-ts-prod AND LogAttributes.method:GET`; open a result to see fields, its original line and any linked trace. `make verify-logs` reports fresh format/severity/trace coverage for every running container without printing bodies or attribute values; quiet containers are reported separately. It also includes events and host timers that logged within the selected window (`MINUTES=`, default 15). The systemd/k3s journal is not collected.
+In ClickStack's Logs source, try `LogAttributes.log.parser:json`, or `ResourceAttributes.k8s.namespace.name:demo-orders-prod AND LogAttributes.method:GET`; open a result to see fields, its original line and any linked trace. `make verify-logs` reports fresh format/severity/trace coverage for every running container without printing bodies or attribute values; quiet containers are reported separately. It also includes events and host timers that logged within the selected window (`MINUTES=`, default 15). The systemd/k3s journal is not collected.
 
 **Sign-in.** `https://clickstack.<BASE_DOMAIN>` sits behind Google sign-in, then HyperDX's own login. HyperDX has no setting for its first account: `make clickstack-bootstrap` registers `CLICKSTACK_ADMIN_EMAIL` with `CLICKSTACK_ADMIN_PASSWORD` while no team exists, and HyperDX closes registration once one does (`make verify-platform` checks that it is closed). Read the password with `sops -d --extract '["stringData"]["CLICKSTACK_ADMIN_PASSWORD"]' platform/clickstack/secret.sops.yaml`. Invite further users from the UI.
 
@@ -129,7 +129,7 @@ The event broker: apps publish events and subscribe to each other's ([events](ap
 
 ### Notification expectations
 
-Every managed app environment (staging and production), the console and the authorised app-template fixtures use the same lifecycle/health contract. For example, `hello-ts/staging deployed` means Helm completed the install/upgrade with its readiness checks; pushing the image pin to Git does not notify. Application error rates, latency, business events and other app-specific alerts belong to the operator's ClickStack rules.
+Every managed app environment (staging and production), the console and the authorised app-template fixtures use the same lifecycle/health contract. For example, `demo-shop/staging deployed` means Helm completed the install/upgrade with its readiness checks; pushing the image pin to Git does not notify. Application error rates, latency, business events and other app-specific alerts belong to the operator's ClickStack rules.
 
 | Event | Send when | Message and priority |
 | --- | --- | --- |

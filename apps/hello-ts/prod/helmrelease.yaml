@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: hello-ts
   namespace: hello-ts-prod
+  annotations:
+    platform.swhurl.com/offers: b4de9e0
 spec:
   interval: 30m
   timeout: 3m
@@ -37,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/hello-ts
-              tag: 36-6ec5f63
-              digest: sha256:4370e215b12120e8e72dd9edd0e3e92f231d5160ea08cb28b2febc6ab8fa8980
+              tag: 38-b4de9e0
+              digest: sha256:b0c72294148722aafe18df68830696b0939d4b6dee3b588a14f21f8178417316
             resources:
               requests:
                 cpu: 10m
@@ -64,6 +66,7 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: hello-ts
+              SWHURL_API_PATH: /openapi.json
             probes:
               readiness:
                 enabled: true

@@ -26,7 +26,7 @@
 {% macro choices(callable_apps, offered_events, chosen_calls, chosen_events, env, who='The new app', problem='') %}
 {% if problem %}<p class="warn">The apps in {{ env }} could not be read ({{ problem }}), so none are offered.</p>{% endif %}
 <div class="field">
-  <span class="label">Apps it calls</span>
+  <span class="label">Apps/Services it calls</span>
   <div class="choices small">
     {% for row in callable_apps %}
     <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>

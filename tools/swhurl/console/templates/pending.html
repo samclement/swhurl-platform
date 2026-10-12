@@ -3,7 +3,7 @@
 {% block title %}{{ label }}{% endblock %}
 {% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
 {% block main %}
-<p class="crumbs"><a href="/apps">Apps</a> › {{ label.split('/')[0] }}</p>
+<p class="crumbs"><a href="/apps">Apps/Services</a> › {{ label.split('/')[0] }}</p>
 <h1>{{ label }}</h1>
 <p class="verdict">{{ st.mark('updating') }} <strong>{{ 'Deployment pending' if in_git else 'Not created yet' }}</strong> <span class="muted">— {{ 'waiting for Flux to apply Git' if in_git else 'waiting for its pull request' }}</span></p>
 <p class="lead">The app appears once its pull request is merged and Flux applies it. Eligible PRs merge automatically after checks; setup and held PRs need review. If it is already in Git, check its Flux unit for deployment progress. It refreshes every 10 seconds.</p>

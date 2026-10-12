@@ -26,7 +26,7 @@
   <a class="brand" href="/">swhurl console</a>
   <nav aria-label="Main">
     <a href="/" class="{{ 'here' if path == '/' }}"{% if path == '/' %} aria-current="page"{% endif %}>Overview</a>
-    <a href="/apps" class="{{ 'here' if path.startswith('/apps') or path.startswith('/new') }}">Apps</a>
+    <a href="/apps" class="{{ 'here' if path.startswith('/apps') or path.startswith('/new') }}">Apps/Services</a>
     <a href="/catalogue" class="{{ 'here' if path.startswith('/catalogue') }}">Catalogue</a>
     <a href="/teams" class="{{ 'here' if path.startswith('/teams') }}">Teams</a>
     <a href="/platform" class="{{ 'here' if path.startswith('/platform') or path.startswith('/units') }}">Platform</a>

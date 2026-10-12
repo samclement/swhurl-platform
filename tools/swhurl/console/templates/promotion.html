@@ -2,7 +2,7 @@
 {% import "_status.html" as st %}
 {% block title %}Promote {{ review.app }}{% endblock %}
 {% block main %}
-<p class="crumbs"><a href="/apps">Apps</a> › <a href="/apps/{{ review.app }}/staging">{{ review.app }}/staging</a> › Promotion</p>
+<p class="crumbs"><a href="/apps">Apps/Services</a> › <a href="/apps/{{ review.app }}/staging">{{ review.app }}/staging</a> › Promotion</p>
 <h1>Promote to production</h1>
 {% if prs %}
 <p class="lead">A promotion pull request is already open. Its reviewed image stays pinned when staging advances. Close it on GitHub before creating a replacement.</p>

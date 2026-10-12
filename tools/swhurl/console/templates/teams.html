@@ -16,15 +16,15 @@
 {% endmacro %}
 {% block main %}
 <h1>Teams</h1>
-{% call st.about() %}A team is a name that says who owns an app. It shows on the <a href="/apps">Apps</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.{% endcall %}
+{% call st.about() %}A team is a name that says who owns an app. It shows on the <a href="/apps">Apps/Services</a> list and map, filters them, and is on each app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access.{% endcall %}
 {% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
 {% if registry_error %}<p class="warn">{{ registry_error }} The teams below are the ones apps name now; descriptions and teams without apps are missing, and no app can be called unregistered.</p>{% endif %}
 
 {% if unregistered %}
-<h2 class="bad">Apps without a registered team</h2>
+<h2 class="bad">Apps/Services without a registered team</h2>
 <p class="muted">These apps name a team that is not in <code>apps/teams.yaml</code> (or none). <code>make check-apps</code> fails until each is fixed: register the team below, or move the app with <code>make app-team APP=&lt;app&gt; ARGS="--team &lt;team&gt;"</code>.</p>
 <table class="compact">
-  <tr><th>Team named</th><th>Apps</th></tr>
+  <tr><th>Team named</th><th>Apps/Services</th></tr>
   {% for team, apps in unregistered.items() %}<tr><td>{{ team or 'none' }}</td><td>{{ apps_of(team) }}</td></tr>{% endfor %}
 </table>
 {% endif %}
@@ -120,7 +120,7 @@
     {% endfor %}
   </table>
   </div>
-  <p class="card-foot"><a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }} on the Apps list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a></p>
+  <p class="card-foot"><a href="/apps?team={{ name }}">{{ count }} app{{ 's' if count != 1 }} on the Apps/Services list</a> · <a href="/apps?view=map&amp;team={{ name }}">map</a></p>
   {% else %}<p class="card-foot muted">No apps yet. <a href="/new">New app</a> lets you choose this team.</p>{% endif %}
 </section>
 {% endfor %}

@@ -43,11 +43,11 @@ class Instance:
 
     def folder(self, root: Path, base: Path = INSTANCE_ROOTS[0]) -> Path:
         """Its manifests, in the checkout at ``root``."""
-        return root / base / self.app / self.env
+        return instance_folder(root, self.app, self.env, base)
 
     def unit_file(self, root: Path) -> Path:
         """The file holding its Flux unit, in the checkout at ``root``."""
-        return root / UNITS / f'{self.unit}.yaml'
+        return instance_unit_file(root, self.app, self.env)
 
     @classmethod
     def named(cls, app: object, env: object) -> Instance | None:
@@ -73,6 +73,17 @@ class Instance:
         if len(parts) < 3 or Path(*parts[:-2]) not in INSTANCE_ROOTS:
             return None
         return cls.named(parts[-2], parts[-1])
+
+
+def instance_folder(root: Path, app: str, env: str, base: Path = INSTANCE_ROOTS[0]) -> Path:
+    """Where an instance's manifests are (or would be) in the checkout at ``root``. For the commands that
+    still pass ``app`` and ``env`` as text and say themselves what is wrong with them: nothing is checked here."""
+    return root / base / app / env
+
+
+def instance_unit_file(root: Path, app: str, env: str) -> Path:
+    """Where an instance's Flux unit is (or would be) in the checkout at ``root``; as unchecked as ``instance_folder``."""
+    return root / UNITS / f'app-{app}-{env}.yaml'
 
 
 def instances(folder: Path) -> list[Instance]:

@@ -287,7 +287,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             prs += [pr for pr in open_prs()[0] if found.env == 'prod' and promotion.matching(pr, found.app)]
             in_git = False
             if not pending and not prs and github:
-                in_git = promotion.main_tree(runner, github, lambda root: (root / 'apps' / found.app / found.env).exists())
+                in_git = promotion.main_tree(runner, github, lambda root: found.folder(root).exists())
             if pending or prs or in_git:
                 return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=in_git)
         if status is None:

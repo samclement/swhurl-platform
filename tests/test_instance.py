@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl.apps.instance import ENVIRONMENTS, Instance, instances
+from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file, instances
 
 
 class InstanceTests(unittest.TestCase):
@@ -13,6 +13,9 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(found.folder(root), root / 'apps/demo-orders/staging')
         self.assertEqual(found.folder(root, Path('tests/fixtures/apps/apps')), root / 'tests/fixtures/apps/apps/demo-orders/staging')
         self.assertEqual(found.unit_file(root), root / 'clusters/home/app-demo-orders-staging.yaml')
+        self.assertEqual((instance_folder(root, 'Not A Name', 'dev'), instance_unit_file(root, 'x', 'dev')),
+                         (root / 'apps/Not A Name/dev', root / 'clusters/home/app-x-dev.yaml'),
+                         'the layout alone, for commands that say themselves what is wrong with a name')
 
     def test_an_instance_is_always_a_valid_one(self):
         for app, env in (('Hello', 'prod'), ('hello', 'dev'), ('', 'prod'), ('-x', 'prod'), ('x-', 'prod'), ('1x', 'prod'),

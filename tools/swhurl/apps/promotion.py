@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import calling, contract, events, helmrelease, offers, ops
-from swhurl.apps.instance import NAME_RE
+from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
 
@@ -49,7 +49,7 @@ def read(root: Path, app: str) -> tuple[dict, dict | None]:
     base = root / 'apps' / app
     source = YamlFile(base / 'staging/helmrelease.yaml').data
     target_dir = base / 'prod'
-    unit = root / 'clusters/home' / f'app-{app}-prod.yaml'
+    unit = instance_unit_file(root, app, 'prod')
     if target_dir.exists() or unit.exists():
         # A partial target is a problem to repair, never evidence that production is missing.
         target = YamlFile(target_dir / 'helmrelease.yaml').data
@@ -61,7 +61,7 @@ def read(root: Path, app: str) -> tuple[dict, dict | None]:
 def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -> str:
     """Hash effective configuration and resource files; never return Secret contents."""
     files = {}
-    instance = root / 'apps' / app / env
+    instance = instance_folder(root, app, env)
     for path in sorted(instance.rglob('*')):
         if not path.is_file():
             continue
@@ -73,7 +73,7 @@ def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -
             files[path.name] = json.dumps(doc, sort_keys=True, default=str)
         else:
             files[path.relative_to(instance).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    unit = root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    unit = instance_unit_file(root, app, env)
     if unit.exists():
         files['unit'] = hashlib.sha256(unit.read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
@@ -142,7 +142,7 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     only(container, {'image', 'resources', 'securityContext', 'probes', 'command', 'args', 'env', 'envFrom'}, 'container.main')
     pod = mapping(values, 'defaultPodOptions')
     only(pod, {'automountServiceAccountToken', 'securityContext', 'labels', 'annotations'}, 'defaultPodOptions')
-    instance = root / 'apps' / app / 'staging'
+    instance = instance_folder(root, app, 'staging')
     namespace = YamlFile(instance / 'namespace.yaml').data
     ordinary(namespace, 'namespace')
     only(namespace, {'apiVersion', 'kind', 'metadata'}, 'namespace')
@@ -253,7 +253,7 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         raise EditError(str(error)) from None
     runner = runner or Runner()
     reviewed_config = fingerprint(root, app, 'staging')
-    if (root / 'apps' / app / 'prod').exists() or (root / 'clusters/home' / f'app-{app}-prod.yaml').exists():
+    if instance_folder(root, app, 'prod').exists() or instance_unit_file(root, app, 'prod').exists():
         raise EditError('production already exists; refresh and review it again')
     support = ('clusters/home/kustomization.yaml', 'platform/reloader/helmrelease.yaml', '.sops.yaml')
     original_support = {rel: (root / rel).read_bytes() if (root / rel).exists() else None for rel in support}
@@ -269,9 +269,9 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
             written = new.generate(args, work, runner)
         except new.GenerationError as error:
             raise EditError(str(error)) from None
-        dst = work / 'apps' / app / 'prod'
+        dst = instance_folder(work, app, 'prod')
         generated_ns = json.loads(json.dumps(YamlFile(dst / 'namespace.yaml').data))
-        source_ns = json.loads(json.dumps(YamlFile(root / 'apps' / app / 'staging/namespace.yaml').data))
+        source_ns = json.loads(json.dumps(YamlFile(instance_folder(root, app, 'staging') / 'namespace.yaml').data))
         generated_ns['metadata']['labels'] = {**source_ns['metadata'].get('labels', {}),
                                                **generated_ns['metadata']['labels']}
         generated_ns['metadata']['annotations'] = {**source_ns['metadata'].get('annotations', {}),
@@ -329,8 +329,8 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
             raise EditError('production policy refused: ' + '; '.join(problems))
         current_support = {rel: (root / rel).read_bytes() if (root / rel).exists() else None for rel in support}
         if (fingerprint(root, app, 'staging') != reviewed_config or current_support != original_support
-                or (root / 'apps' / app / 'prod').exists()
-                or (root / 'clusters/home' / f'app-{app}-prod.yaml').exists()):
+                or instance_folder(root, app, 'prod').exists()
+                or instance_unit_file(root, app, 'prod').exists()):
             raise EditError('configuration changed while preparing production; refresh and review it again')
         files = [*written, work / 'clusters/home/kustomization.yaml']
         reloader = work / 'platform/reloader/helmrelease.yaml'
@@ -350,6 +350,6 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
                     (root / rel).unlink(missing_ok=True)
                 else:
                     (root / rel).write_bytes(content)
-            shutil.rmtree(root / 'apps' / app / 'prod', ignore_errors=True)
+            shutil.rmtree(instance_folder(root, app, 'prod'), ignore_errors=True)
             raise
-    return root / 'apps' / app / 'prod'
+    return instance_folder(root, app, 'prod')

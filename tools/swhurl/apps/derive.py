@@ -34,7 +34,15 @@ from swhurl.apps.calling import (
 from swhurl.apps.contract import (
     EXPOSURE,
 )
-from swhurl.apps.instance import ENVIRONMENTS, INSTANCE_ROOTS, NAME_RE, Instance, instances
+from swhurl.apps.instance import (
+    ENVIRONMENTS,
+    INSTANCE_ROOTS,
+    NAME_RE,
+    Instance,
+    instance_folder,
+    instance_unit_file,
+    instances,
+)
 from swhurl.apps.new import (
     dump,
     isolation_files,
@@ -46,7 +54,7 @@ from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 def instance_dir(root: Path, app: str, env: str) -> Path:
     if not NAME_RE.match(app) or env not in ENVIRONMENTS:
         raise EditError(f'no instance {app}/{env}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}')
-    path = root / 'apps' / app / env
+    path = instance_folder(root, app, env)
     if not (path / 'helmrelease.yaml').is_file():
         raise EditError(f'no instance {app}/{env} (missing {path.relative_to(root)}/helmrelease.yaml)')
     return path
@@ -107,7 +115,7 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     refs = main.get('envFrom')
     annotations = workload.get('annotations') or {}
     reloads = [name for name in str(annotations.get(RELOAD, '')).split(',') if name]
-    unit_path = root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    unit_path = instance_unit_file(root, app, env)
     if not (publishes or subscribes) and not unit_path.is_file():
         unit_path = None  # an instance without its unit (a test tree) has nothing to undo there
     unit = YamlFile(unit_path) if unit_path else None
@@ -249,7 +257,7 @@ def subscribers_of(root: Path, app: str, env: str) -> list[str]:
     """The other instances of ``env`` that subscribe to an event of ``app``."""
     found = []
     for other in instances_in(root, env):
-        release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
+        release = YamlFile(instance_folder(root, other, env) / 'helmrelease.yaml').data
         if other != app and any(publisher == app for publisher, _ in events.subscribed(helmrelease.variables(release))):
             found.append(other)
     return found
@@ -258,7 +266,7 @@ def callers_of(root: Path, app: str, env: str) -> list[str]:
     """The other instances of ``env`` that declare a call to ``app``."""
     found = []
     for other in instances_in(root, env):
-        release = YamlFile(root / 'apps' / other / env / 'helmrelease.yaml').data
+        release = YamlFile(instance_folder(root, other, env) / 'helmrelease.yaml').data
         if other != app and app in declared_calls(helmrelease.variables(release)):
             found.append(other)
     return found

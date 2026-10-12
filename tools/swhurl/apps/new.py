@@ -82,7 +82,7 @@ from swhurl.apps.contract import (
     secret_key_problem,
     teams,
 )
-from swhurl.apps.instance import ENVIRONMENTS, NAME_RE
+from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.run import CommandError, Runner
 
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
@@ -303,10 +303,10 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     resolve(args)
     validate(args, root)
     args.signing_keys = signing_keys(root)
-    namespace = f'{args.name}-{args.env}'
-    unit = f'app-{args.name}-{args.env}'
-    instance = root / 'apps' / args.name / args.env
-    unit_file = root / 'clusters/home' / f'app-{args.name}-{args.env}.yaml'
+    created = Instance(args.name, args.env)  # validate() has refused any other name
+    namespace, unit = created.namespace, created.unit
+    instance = instance_folder(root, args.name, args.env)
+    unit_file = instance_unit_file(root, args.name, args.env)
     for path in (instance, unit_file):
         if path.exists():
             raise GenerationError(f'{path} already exists; refusing to overwrite')
@@ -615,7 +615,7 @@ def main(argv=None, opener: Opener = _open) -> int:
     if args.secret_keys:
         print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
     if args.policy_check:
-        return check_generated(args.root.resolve() / 'apps' / args.name / args.env)
+        return check_generated(instance_folder(args.root.resolve(), args.name, args.env))
     print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')
     return 0
 

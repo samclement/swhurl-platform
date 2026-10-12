@@ -14,6 +14,7 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import calling, helmrelease, new, offers, promotion
+from swhurl.apps.instance import instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
@@ -39,7 +40,7 @@ def review_metadata(body: str) -> dict:
 
 
 def scope(base: Path, candidate: Path, files: list[str], app: str, env: str) -> None:
-    unit = f'clusters/home/app-{app}-{env}.yaml'
+    unit = instance_unit_file(Path(), app, env).as_posix()
     registry = 'clusters/home/kustomization.yaml'
     for path in files:
         if path.endswith('.sops.yaml') or not (path.startswith(f'apps/{app}/{env}/') or path in (unit, registry)):
@@ -50,7 +51,7 @@ def scope(base: Path, candidate: Path, files: list[str], app: str, env: str) -> 
         old = yaml.safe_load((base / registry).read_text())
         updated = yaml.safe_load((candidate / registry).read_text())
         expected = json.loads(json.dumps(old))
-        expected['resources'].append(f'app-{app}-{env}.yaml')
+        expected['resources'].append(instance_unit_file(Path(), app, env).name)
         if updated != expected:
             raise Hold('unit registration changes more than this app')
 
@@ -66,7 +67,7 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
     if inputs_hash(base) != meta.get('inputs'):
         raise Hold('promotion tooling, policy, chart or platform settings changed; review again')
     source, target = promotion.read(base, app)
-    actual = promotion.YamlFile(candidate / 'apps' / app / 'prod/helmrelease.yaml').data
+    actual = promotion.YamlFile(instance_folder(candidate, app, 'prod') / 'helmrelease.yaml').data
     if promotion.ops.image_reference(promotion.image_of(actual)) != meta.get('image'):
         raise Hold('PR no longer pins the reviewed image')
     if target is not None:
@@ -87,16 +88,16 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
         carried = sorted(path for path in files if path.startswith(f'apps/{app}/prod/{offers.OFFERS_DIR}/'))
         if carried:
             try:
-                found = offers.read(candidate / 'apps' / app / 'prod')
+                found = offers.read(instance_folder(candidate, app, 'prod'))
                 commit = offers.commit_of(reviewed.get('tag', ''))
             except offers.OfferError as error:
                 raise Hold(f'promotion carries offers that cannot be used: {error}') from None
             if found is None or found.commit != commit:
                 raise Hold('promotion carries offers that are not from the reviewed image')
-            staging = offers.read(base / 'apps' / app / 'staging')
+            staging = offers.read(instance_folder(base, app, 'staging'))
             if staging and staging.commit == commit and any(
-                    (candidate / path).read_bytes() != (base / 'apps' / app / 'staging' / offers.OFFERS_DIR / Path(path).name).read_bytes()
-                    for path in carried if (base / 'apps' / app / 'staging' / offers.OFFERS_DIR / Path(path).name).is_file()):
+                    (candidate / path).read_bytes() != (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).read_bytes()
+                    for path in carried if (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).is_file()):
                 raise Hold("promotion carries offers that differ from staging's")
             expected.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
             # Where the image serves its API description goes with its documents (staging's value).
@@ -119,8 +120,8 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
         source = json.loads(json.dumps(source))
         helmrelease.container(source)['image'] = new.parse_image(meta['image'])
         promotion.create(work, app, source, runner=runner)
-        expected_files = sorted([p.relative_to(work).as_posix() for p in (work / 'apps' / app / 'prod').iterdir()]
-                                + [f'clusters/home/app-{app}-prod.yaml', 'clusters/home/kustomization.yaml'])
+        expected_files = sorted([p.relative_to(work).as_posix() for p in instance_folder(work, app, 'prod').iterdir()]
+                                + [instance_unit_file(Path(), app, 'prod').as_posix(), 'clusters/home/kustomization.yaml'])
         if sorted(files) != expected_files:
             raise Hold('first promotion has unexpected files')
         for rel in expected_files:
@@ -181,7 +182,7 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
             scope(base, candidate, files, app, 'prod' if action == 'promote' else 'staging')
             if action == 'promote':
                 check_promotion(base, candidate, app, pr.get('body') or '', files, runner)
-            elif (base / 'apps' / app / 'staging').exists():
+            elif instance_folder(base, app, 'staging').exists():
                 raise Hold('new-app PR overwrites an existing staging instance')
             # A promotion's files are pinned above to the reviewed image or conversion, so only the checks
             # that read app instances can change. A new app's unit is only read by the tests: run them all.

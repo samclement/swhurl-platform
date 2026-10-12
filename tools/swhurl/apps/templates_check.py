@@ -25,7 +25,7 @@ from swhurl.apps.contract import (
     STACKS,
     teams,
 )
-from swhurl.apps.instance import ENVIRONMENTS
+from swhurl.apps.instance import ENVIRONMENTS, instance_folder
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -78,7 +78,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
         if code:
             report.bad(f'{label}: app-new refused its {MANIFEST_FILE} for {env}: {output.strip()}')
             return False
-        instances.append(root / 'apps' / NAME / env)
+        instances.append(instance_folder(root, NAME, env))
     problems = [f'{path.name}: {p}' for path in instances for p in policy.evaluate(path, runner)]
     problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
     if problems:

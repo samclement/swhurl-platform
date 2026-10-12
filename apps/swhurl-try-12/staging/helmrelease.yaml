@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: swhurl-try-12
   namespace: swhurl-try-12-staging
+  annotations:
+    platform.swhurl.com/offers: fc221e3
 spec:
   interval: 30m
   timeout: 3m
@@ -69,6 +71,7 @@ spec:
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UAJUO75UCZ2KQUCMEXSZIJPHME3WN26A6NEA5772V2JGY5FUBQLGHYU6
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              SWHURL_API_PATH: /openapi.yaml
             probes:
               readiness:
                 enabled: true

@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import datetime as dt
 import hashlib
 import json
+import logging
+import os
 import re
 import sys
 import time
@@ -35,7 +38,7 @@ from swhurl import ROOT, dashboards
 from swhurl.apps import contract, new, ops, repo
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.yaml_file import EditError
-from swhurl.console import actions, catalogue, changes, cluster, logconfig, promotion, repos
+from swhurl.console import actions, catalogue, changes, cluster, jobstore, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -55,6 +58,7 @@ HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
 STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
 STREAM_POLL = 0.25
 KEEPALIVE = 15.0
+NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
 
 
 def short_hashes(text: object) -> Markup:
@@ -164,11 +168,18 @@ class RequireIdentity(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def job_store(runner: Runner, dev_identity: str | None) -> jobstore.JobStore | None:
+    """Jobs are remembered outside the pod only by the console in the cluster: a local --dev console
+    reads the same cluster, and must not write there or be taken for a pod that went away."""
+    pod = os.environ.get('HOSTNAME', '')
+    return jobstore.JobStore(runner, pod) if os.environ.get('KUBERNETES_SERVICE_HOST') and pod and not dev_identity else None
+
+
 def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None,
                github: changes.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
                repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
     """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
-    jobs = jobs or actions.Jobs(runner)
+    jobs = jobs or actions.Jobs(runner, store=job_store(runner, dev_identity))
     github = github or changes.github_from_env(runner)
     app_repos = app_repos or repos.token_from_env(runner)
 
@@ -351,13 +362,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def job(request: Request) -> Response:
         found = jobs.get(request.path_params['id'])
         if found is None:
-            return page(request, 'error.html', status_code=404, error='No such job (jobs are kept in memory only).')
-        return page(request, 'job.html', job=found)
+            return page(request, 'error.html', status_code=404, error='No such job (only the newest jobs are kept).')
+        return page(request, 'job.html', job=found, can_resume=bool(resumable(found) and github and app_repos))
 
     async def job_events(request: Request) -> Response:
         found = jobs.get(request.path_params['id'])
-        if found is None:
-            return PlainTextResponse('No such job.\n', status_code=404)
+        if found is None or not found.live:  # another pod's job: its page re-reads itself instead
+            return PlainTextResponse('No such job here.\n', status_code=404)
 
         # EventSource supplies Last-Event-ID on reconnect. The query is the
         # initial page's already-rendered line count.
@@ -596,21 +607,63 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         touches_others = any(arg.startswith(('--calls=', '--subscribe=')) for arg in connections)
         req = repo.Request(name, stack, contract.APP_OWNER, description, answers)
 
-        def work(job: actions.Job) -> None:
-            client = repos.AppRepos(runner, app_repos)
-            try:
-                image = repos.create_app_repo(runner, client, job, req, **({'opener': repo_opener} if repo_opener else {}))
-            finally:
-                client.close()
-            argv = [name, f'--from-repo={req.repo}', '--env=staging', f'--image={image}', *extra]
-            job.link = changes.open_pr(
-                runner, github, job, slug=f'new-{name}-staging', title=f'apps: add {name}/staging',
-                body=changes.new_repo_body(f'https://github.com/{req.repo}', contract.STACKS[stack], argv),
-                change=lambda clone: changes.run_app_new(runner, job, clone, argv), auto_merge=not touches_others)
         try:
-            job = jobs.submit('new app and repository', f'{name}/staging', request.state.identity, work)
+            job = jobs.submit('new app and repository', f'{name}/staging', request.state.identity,
+                              new_app_work(req, extra, touches_others, create=True),
+                              resume={'kind': NEW_APP, 'name': name, 'stack': stack, 'description': description,
+                                      'answers': answers, 'extra': extra, 'touches_others': touches_others})
         except actions.ActionError as error:
             return new_repo_form(request, 409, str(error), form)
+        return RedirectResponse(f'/jobs/{job.id}', status_code=303)
+
+    def new_app_work(req: repo.Request, extra: list[str], touches_others: bool, *, create: bool):
+        """Create the app's repository (or, finishing an earlier job, find the one it created), wait for
+        its image and open the platform pull request that adds its staging instance."""
+        def work(job: actions.Job) -> None:
+            client = repos.AppRepos(runner, app_repos)
+            opener = {'opener': repo_opener} if repo_opener else {}
+            try:
+                image = (repos.create_app_repo(runner, client, job, req, **opener) if create
+                         else repos.finish_app_repo(client, job, req, **opener))
+            finally:
+                client.close()
+            argv = [req.name, f'--from-repo={req.repo}', '--env=staging', f'--image={image}', *extra]
+            job.link = changes.open_pr(
+                runner, github, job, slug=f'new-{req.name}-staging', title=f'apps: add {req.name}/staging',
+                body=changes.new_repo_body(f'https://github.com/{req.repo}', contract.STACKS[req.stack], argv),
+                change=lambda clone: changes.run_app_new(runner, job, clone, argv), auto_merge=not touches_others)
+        return work
+
+    def resumable(found: actions.Job) -> dict | None:
+        """What is needed to finish ``found``, if it is a new-app job that ended without its pull request
+        and no later job has taken its place."""
+        told = found.resume or {}
+        if found.state not in ('failed', 'interrupted') or found.link or told.get('kind') != NEW_APP:
+            return None
+        later = any(j.unit == found.unit and j.id > found.id and j.state in ('running', 'succeeded') for j in jobs.recent())
+        return None if later else told
+
+    def resume_job(request: Request) -> Response:
+        """Finish a new-app job that stopped after creating its repository: the same choices, no second repository."""
+        found = jobs.get(request.path_params['id'])
+        told = resumable(found) if found else None
+        if told is None:
+            return page(request, 'error.html', status_code=404, error='No such job, or nothing of it is left to finish.')
+        if github is None or app_repos is None:
+            return page(request, 'error.html', status_code=409, error='Both GitHub tokens must be configured (console-github Secret).')
+        try:
+            name, stack, extra = str(told['name']), str(told['stack']), [str(arg) for arg in told['extra']]
+            if not Instance.named(name, 'staging') or stack not in contract.STACKS or not all(arg.startswith('--') for arg in extra):
+                raise ValueError(name)
+            req = repo.Request(name, stack, contract.APP_OWNER, str(told.get('description') or ''),
+                               {str(k): str(v) for k, v in (told.get('answers') or {}).items()})
+            job = jobs.submit('finish new app', found.unit, request.state.identity,
+                              new_app_work(req, extra, bool(told.get('touches_others')), create=False), resume=dict(told))
+        except (KeyError, TypeError, ValueError):
+            return page(request, 'error.html', status_code=409, error='The record of that job cannot be used to finish it; '
+                        'add the app with the make app-new line in docs/apps.md.')
+        except actions.ActionError as error:
+            return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
     def review_promotion(request: Request) -> Response:
@@ -741,6 +794,16 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')
 
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        """On the way down (a new image, a changed token), finish the running jobs before the pod goes."""
+        yield
+        running = [j for j in jobs.recent() if j.live and j.state == 'running']
+        if running:
+            logging.getLogger('swhurl.console.jobs').info('Stopping: waiting for %d running job(s) to finish', len(running))
+        if not await asyncio.to_thread(jobs.drain):
+            logging.getLogger('swhurl.console.jobs').error('Stopping with jobs still running: they will show as interrupted')
+
     return Starlette(
         routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')), Route('/catalogue', catalogue_page), Route('/catalogue/{env}/use', use_offer, methods=['POST']),
                 Route('/teams', teams_page), Route('/teams/{action}', change_team, methods=['POST']),
@@ -750,11 +813,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/apps/{app}/staging/promotion', review_promotion),
                 Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
-                Route('/jobs/{id:int}/events', job_events),
+                Route('/jobs/{id:int}/events', job_events), Route('/jobs/{id:int}/resume', resume_job, methods=['POST']),
                 Route('/new', new_repo_form), Route('/new/repo', new_repo, methods=['POST']),
                 Mount('/static', StaticFiles(directory=STATIC), name='static'),
                 Route('/apps/{app}/{env}/{change}', change_app, methods=['POST'])],
-        middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)])
+        middleware=[Middleware(RequireIdentity, dev_identity=dev_identity)], lifespan=lifespan)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -773,6 +836,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'[ERROR] --dev serves a fixed identity; it only binds to loopback, not {args.host}', file=sys.stderr)
         return 2
     import uvicorn
+    # Open job pages (event streams) are cut after 20 seconds of a shutdown; the jobs themselves are waited for (lifespan).
     uvicorn.run(create_app(Runner(), dev_identity=DEV_IDENTITY if args.dev else None),
-                host=args.host, port=args.port, log_level='info', log_config=logconfig.CONFIG)
+                host=args.host, port=args.port, log_level='info', log_config=logconfig.CONFIG, timeout_graceful_shutdown=20)
     return 0

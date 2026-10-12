@@ -121,6 +121,8 @@ elif 'console-github' in argv:
     emit({'data': {'GITHUB_TOKEN': base64.b64encode(b'fixture-github-token').decode()}})
 elif 'cronjob' in argv and any(n in argv for n in ('console-dashboards', 'console-notifications')):
     emit({'spec': {}, 'status': {'lastSuccessfulTime': datetime.datetime.now(datetime.timezone.utc).isoformat()}})
+elif 'console-jobs' in argv:
+    emit({'data': {}})
 elif 'helmrelease' in argv and 'console' in argv:
     emit({'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
         'tag': os.environ['CONSOLE_TAG']}}}}}}}})

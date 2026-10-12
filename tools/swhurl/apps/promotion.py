@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import calling, contract, events, helmrelease, offers, ops
+from swhurl.apps import calling, contract, events, helmrelease, offers, ops, state
 from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -88,12 +88,7 @@ def source_problem(status: ops.InstanceStatus | None, image: str, revision: str)
         # Any commit to main (another app's deploy, a console change) is "newer" until Flux has applied it here.
         return ('Flux is still applying the latest commit on main to staging (a change landed moments ago, perhaps '
                 "another app's); wait a few seconds, refresh and promote again")
-    healthy = (not status.unit_suspended and not status.release_suspended and not status.problems
-               and status.unit[0] == 'True' and status.release and status.release[0] == 'True'
-               and status.desired_revision and status.applied_revision and status.applied
-               and status.replicas and all(r.wanted and r.ready == r.wanted for r in status.replicas)
-               and status.image_state == 'matches')
-    return '' if healthy else 'staging must be healthy and running the reviewed digest before promotion'
+    return '' if state.runs(status) else 'staging must be healthy and running the reviewed digest before promotion'
 
 
 def only(value: dict, allowed: set[str], where: str) -> None:

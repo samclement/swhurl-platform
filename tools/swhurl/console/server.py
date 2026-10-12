@@ -36,7 +36,9 @@ from starlette.templating import Jinja2Templates
 
 from swhurl import ROOT, dashboards
 from swhurl.apps import contract, new, ops, repo
+from swhurl.apps import promotion as gate
 from swhurl.apps.instance import ENVIRONMENTS, Instance
+from swhurl.apps.state import verdict
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import actions, catalogue, changes, cluster, jobstore, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
@@ -276,7 +278,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         kind, team = request.query_params.get('kind', ''), request.query_params.get('team', '')
 
         def read():
-            rows = cluster.apps(runner)
+            rows = cluster.apps(runner, states=False)
             found = catalogue.entries(rows, env, described)
             shown = [e for e in found if (not kind or e.kind == kind) and (not team or e.team == team)]
             # An app that only uses is listed while no kind is chosen: it offers neither.
@@ -304,7 +306,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
-        promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
+        promotion_problem = gate.source_problem(status, status.desired_image, status.applied_revision)
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=row.connections if row else cluster.Connections(), connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
@@ -312,7 +314,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
-                    summary=summary, state=cluster.instance_state(status, summary.envs.get(found.env) if summary else None), unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
+                    summary=summary, state=verdict(status), unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
 
     def app(request: Request) -> Response:
         try:
@@ -554,7 +556,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders).
         For an existing ``app``, without itself and what it is connected to already."""
         try:
-            rows = [row for row in cluster.apps(runner) if row.instance.env == env]
+            rows = [row for row in cluster.apps(runner, states=False) if row.instance.env == env]
         except cluster.ReadError as problem:
             return [], [], str(problem)
         mine = next((row.connections for row in rows if row.instance.app == app), cluster.Connections())
@@ -721,7 +723,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     raise actions.ActionError('refresh the staging app page and review the image before promotion')
                 previous = promotion.existing(runner, github, app, image)
                 if not previous:
-                    problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
+                    problem = gate.source_problem(ops.gather_status(runner, found), image, revision)
                     if problem:
                         raise actions.ActionError(problem)
                 command, argv, target = 'app-promote', [app, f'--expect-image={image}'], f'{app}/prod'
@@ -763,7 +765,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     job.link = previous.url
                     job.lines.append('Reusing the existing promotion pull request')
                     return
-                problem = cluster.promotion_problem(ops.gather_status(runner, found), image, revision)
+                problem = gate.source_problem(ops.gather_status(runner, found), image, revision)
                 if problem:
                     raise actions.ActionError(problem)
                 job.link = promotion.open_pr(runner, github, job, app, form)

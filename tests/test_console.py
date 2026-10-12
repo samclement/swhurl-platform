@@ -11,6 +11,7 @@ from unittest import mock
 
 from starlette.testclient import TestClient
 
+from swhurl.apps import state
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
 from swhurl.run import FakeRunner, Result
@@ -30,7 +31,19 @@ def release(ns, name, tag='1.0', sqlite=False):
     if sqlite:
         container['env'] = {'DATABASE_PATH': '/data/app.db'}
     return {'metadata': {'namespace': ns, 'name': name}, 'spec': {'values': {'controllers': {'main': {
-        'containers': {'main': container}}}}}}
+        'containers': {'main': container}}}}}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True', 'message': 'ok'}]}}
+
+
+def running(releases):
+    """The pods and workloads of releases that run as asked: one ready replica each."""
+    def owned(item, **more):
+        meta = item['metadata']
+        return {'metadata': {'namespace': meta['namespace'], 'name': meta['name'],
+                             'labels': {'app.kubernetes.io/instance': meta['name']}}, **more}
+    pods = [owned(r, status={'containerStatuses': [{'name': 'main', 'ready': True, 'imageID': 'docker.io/x/web@sha256:abc'}]})
+            for r in releases]
+    workloads = [owned(r, kind='Deployment', spec={'replicas': 1}, status={'readyReplicas': 1}) for r in releases]
+    return {'items': pods}, {'items': workloads}
 
 
 UNITS = [unit('cluster-sources'), unit('infra-base'), unit('platform-oauth2-proxy', ['infra-base']),
@@ -70,6 +83,11 @@ def fake(units=UNITS, releases=RELEASES, **extra):
     runner.on(*cluster.RELEASES[:3], stdout=json.dumps({'items': releases}))
     for prefix, stdout in extra.items():
         runner.on(*prefix.split(), stdout=stdout)
+    # What an instance's state is judged from, unless the test says otherwise: everything runs as asked.
+    pods, workloads = running(releases)
+    runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REV}}}))
+    runner.on(*cluster.PODS[:4], stdout=json.dumps(pods))
+    runner.on(*cluster.WORKLOADS[:4], stdout=json.dumps(workloads))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     return runner
 
@@ -513,21 +531,40 @@ class StateTests(unittest.TestCase):
                  ({'unit_suspended': True}, 'suspended'), ({'release_suspended': True}, 'suspended'))
         for overrides, expected in cases:
             with self.subTest(overrides=overrides):
-                self.assertEqual(cluster.instance_state(self.status(**overrides), None).key, expected)
+                self.assertEqual(state.verdict(self.status(**overrides)).key, expected)
 
     def test_a_ready_unit_with_no_release_is_not_a_healthy_app(self):
-        row = cluster.AppRow(Instance('web', 'prod'), ('True', ''), False, 'no HelmRelease')
-        self.assertEqual(row.state.key, 'unknown')
+        row = cluster.apps(fake(units=[unit('app-web-prod')], releases=[]))[0]
+        self.assertEqual((row.state.key, row.image), ('unknown', 'no HelmRelease'))
+
+    def test_the_list_and_the_page_give_one_verdict_from_the_same_facts(self):
+        units, releases = [unit('app-web-prod')], [release('web-prod', 'web')]
+        pods, workloads = running(releases)
+        workloads['items'][0]['status']['readyReplicas'] = 0
+        runner = fake(units=units, releases=releases, **{
+            'kubectl get pods --all-namespaces': json.dumps(pods), 'kubectl -n web-prod get pods': json.dumps(pods),
+            'kubectl get deploy,statefulset,daemonset --all-namespaces': json.dumps(workloads),
+            'kubectl -n web-prod get deploy,statefulset,daemonset': json.dumps(workloads),
+            'kubectl -n flux-system get kustomization app-web-prod': json.dumps(units[0]),
+            'kubectl -n web-prod get helmrelease web': json.dumps(releases[0]),
+            'kubectl -n web-prod get ingress': '{}', 'kubectl -n web-prod get certificate': '{}'})
+        listed = cluster.apps(runner)[0].state
+        self.assertEqual(listed, state.State('updating', 'waiting for the requested replicas to be ready'),
+                         'a Ready unit is not a healthy app while its replicas are not ready')
+        self.assertEqual(state.verdict(cluster.ops.gather_status(runner, Instance('web', 'prod'))), listed)
+        page = client(runner).get('/apps/web/prod', headers=WHO).text
+        self.assertIn('<span class="state updating">Updating</span>', page)
+        self.assertIn('<span class="state updating', client(runner).get('/apps', headers=WHO).text)
 
     def test_one_vocabulary_and_waiting_is_updating_not_failing(self):
-        state = cluster.state_of
-        self.assertEqual(state(('True', 'Applied')), cluster.State('healthy'))
-        self.assertEqual(state(('False', "dependency 'flux-system/platform-oauth2-proxy' is not ready"), reason='DependencyNotReady'),
-                         cluster.State('updating', 'waiting for platform-oauth2-proxy'))
-        self.assertEqual(state(('False', 'Reconciliation in progress'), reason='Progressing').key, 'updating')
-        self.assertEqual(state(('Unknown', 'Running health checks')).key, 'updating')
-        self.assertEqual(state(('False', 'health check failed'), reason='HealthCheckFailed'), cluster.State('failing', 'health check failed'))
-        self.assertEqual(state(('True', ''), suspended=True).key, 'suspended')
+        unit_state = state.unit_state
+        self.assertEqual(unit_state(('True', 'Applied')), state.State('healthy'))
+        self.assertEqual(unit_state(('False', "dependency 'flux-system/platform-oauth2-proxy' is not ready"), reason='DependencyNotReady'),
+                         state.State('updating', 'waiting for platform-oauth2-proxy'))
+        self.assertEqual(unit_state(('False', 'Reconciliation in progress'), reason='Progressing').key, 'updating')
+        self.assertEqual(unit_state(('Unknown', 'Running health checks')).key, 'updating')
+        self.assertEqual(unit_state(('False', 'health check failed'), reason='HealthCheckFailed'), state.State('failing', 'health check failed'))
+        self.assertEqual(unit_state(('True', ''), suspended=True).key, 'suspended')
 
     def test_a_dependency_wait_is_not_a_problem(self):
         waiting = unit('app-web-prod', ready='False', message="dependency 'flux-system/infra-base' is not ready")
@@ -539,7 +576,7 @@ class StateTests(unittest.TestCase):
 
 class AppSummaryTests(unittest.TestCase):
     def row(self, env, tag, digest='', app='hello-ts'):
-        return cluster.AppRow(Instance(app, env), ('True', ''), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
+        return cluster.AppRow(Instance(app, env), state.State('healthy'), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
 
     def test_compares_staging_with_prod(self):
         cases = {('5-aaaaaaa', 'sha256:1', '4-bbbbbbb', 'sha256:2'): 'ahead',

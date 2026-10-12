@@ -3,16 +3,17 @@ from __future__ import annotations
 
 import io
 import re
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from swhurl.apps import calling, contract, events, helmrelease, offers, ops, promotion
+from swhurl.apps import calling, contract, events, helmrelease, offers, ops
 from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
 )
 from swhurl.apps.instance import Instance
-from swhurl.flux import WAITING_REASONS
+from swhurl.apps.state import State, ready_reason, unit_state, verdict
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition, verify_platform
@@ -20,44 +21,14 @@ from swhurl.verify import ready_condition, verify_platform
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']
 APP_NAMESPACES = ['kubectl', 'get', 'namespaces', '-l', contract.APP, '-o', 'json']
+SOURCE = ['kubectl', '-n', 'flux-system', 'get', 'gitrepository', ops.SOURCE, '-o', 'json']
+PODS = ['kubectl', 'get', 'pods', '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
+WORKLOADS = ['kubectl', 'get', ops.WORKLOAD_KINDS, '--all-namespaces', '-l', ops.INSTANCE_LABEL, '-o', 'json']
 CONSOLE_CHECKS = frozenset({'cluster'})
 
 
 class ReadError(Exception):
     """The cluster could not be read; the message is already redacted."""
-
-
-@dataclass(frozen=True)
-class State:
-    """The one status vocabulary every page uses (each shown with its own mark, not colour alone)."""
-    key: str  # healthy, updating, failing, suspended, unknown or stopped
-    detail: str = ''
-
-    @property
-    def label(self) -> str:
-        return self.key.capitalize()
-
-
-DEPENDENCY = re.compile(r"dependency '(?:[^/']+/)?([^']+)' is not ready")
-
-
-def ready_reason(obj: dict) -> str:
-    return next((c.get('reason', '') for c in (obj.get('status') or {}).get('conditions') or []
-                 if c.get('type') == 'Ready'), '')
-
-
-def state_of(ready: tuple[str, str], suspended: bool = False, reason: str = '') -> State:
-    """A Flux object's state. Waiting for a dependency or applying a change is Updating, not Failing:
-    every push re-checks every unit, and dependents wait a few seconds meanwhile."""
-    status, message = ready
-    if suspended:
-        return State('suspended', 'Git changes are not applied until it is resumed')
-    if status == 'True':
-        return State('healthy')
-    waiting = DEPENDENCY.search(message or '')
-    if status == 'Unknown' or reason in WAITING_REASONS or waiting:
-        return State('updating', f'waiting for {waiting[1]}' if waiting else (message or 'applying a change'))
-    return State('failing', message)
 
 
 @dataclass(frozen=True)
@@ -84,23 +55,15 @@ class Connections:
 @dataclass(frozen=True)
 class AppRow:
     instance: Instance
-    ready: tuple[str, str]
-    suspended: bool
+    state: State  # the verdict the app page gives from the same facts (apps/state.py)
+    suspended: bool  # its Flux unit: what the row's button resumes
     image: str
     tag: str = ''
     digest: str = ''
     hosts: tuple[str, ...] = ()
-    reason: str = ''
     database_path: str | None = None  # None: release missing; empty: no SQLite configured
     team: str = ''  # from the namespace label; '' when unknown
     connections: Connections = Connections()
-
-    @property
-    def state(self) -> State:
-        state = state_of(self.ready, self.suspended, self.reason)
-        if state.key == 'healthy' and self.image == 'no HelmRelease':
-            return State('unknown', 'the app release is missing')
-        return state
 
 
 @dataclass(frozen=True)
@@ -150,7 +113,7 @@ class Unit:
 
     @property
     def state(self) -> State:
-        return state_of(self.ready, self.suspended, self.reason)
+        return unit_state(self.ready, self.suspended, self.reason)
 
     @property
     def layer(self) -> str:
@@ -194,10 +157,15 @@ def items(runner: Runner, args: list[str]) -> list[dict]:
         raise ReadError(str(error)) from None
 
 
-def apps(runner: Runner) -> list[AppRow]:
+NOT_READ = State('unknown', 'its state was not read for this page')
+
+
+def apps(runner: Runner, states: bool = True) -> list[AppRow]:
     """Every app instance, from what runs: its Flux unit, its HelmRelease (image, hosts and the
-    platform's SWHURL_* variables, which say who it calls and what events it handles) and its
-    namespace's team label."""
+    platform's SWHURL_* variables, which say who it calls and what events it handles), its
+    namespace's team label, and its state from the same facts as its own page (the Git source,
+    its pods and its workloads). ``states=False`` skips those three reads for a page that shows
+    no state: every row is then Unknown and says why."""
     releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in items(runner, RELEASES)}
     try:
         teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '')
@@ -206,6 +174,16 @@ def apps(runner: Runner) -> list[AppRow]:
         teams = {}
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in items(runner, UNITS) if (instance := Instance.of_unit(unit['metadata']['name']))]
+    try:
+        source = (runner.json(SOURCE) or {}) if states else {}
+    except CommandError as error:
+        raise ReadError(str(error)) from None
+    owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
+    for kind, args in (('pods', PODS), ('workloads', WORKLOADS)):
+        owned[kind] = defaultdict(list)
+        for item in items(runner, args) if states else ():
+            metadata = item['metadata']
+            owned[kind][metadata.get('namespace', ''), (metadata.get('labels') or {}).get(ops.INSTANCE_LABEL, '')].append(item)
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
                   for publisher, event in events.subscribed(helmrelease.variables(release))]
     rows = []
@@ -224,9 +202,12 @@ def apps(runner: Runner) -> list[AppRow]:
             links.rows(calls, callers, publishes, subscribes, subscribers,
                        {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env}),
             str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
-        rows.append(AppRow(instance, ready_condition(unit), bool(unit['spec'].get('suspend')),
+        mine = (instance.namespace, instance.app)
+        status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},
+                               {'items': owned['workloads'][mine]})
+        rows.append(AppRow(instance, verdict(status) if states else NOT_READ, status.unit_suspended,
                            ops.desired_image(release) if release else 'no HelmRelease',
-                           image.get('tag', ''), image.get('digest', ''), hosts, ready_reason(unit),
+                           image.get('tag', ''), image.get('digest', ''), hosts,
                            str(variables.get('DATABASE_PATH', '')) if release else None,
                            teams.get(instance.namespace, ''), connections))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
@@ -363,47 +344,6 @@ def updating(found: list[Unit]) -> list[Problem]:
     return out
 
 
-def instance_state(status: ops.InstanceStatus, row: AppRow | None) -> State:
-    """An app instance's state from what its page shows, worst first."""
-    if status.unit_suspended or row and row.suspended:
-        return State('suspended', 'Git changes are not applied until its Flux unit is resumed')
-    if status.release_suspended:
-        return State('suspended', 'the Helm release is suspended')
-    if status.problems:
-        return State('failing', f'{len(status.problems)} pod(s) failing; see below')
-    unit = state_of(status.unit, reason=row.reason if row else '')
-    if unit.key == 'failing':
-        return unit
-    if status.release and status.release[0] == 'False':
-        return State('failing', status.release[1])
-    if unit.key == 'updating':
-        return unit
-    if status.release is None:
-        return State('unknown', 'the app release is missing')
-    if not status.desired_revision or not status.applied_revision:
-        return State('unknown', 'the desired or applied Git revision is missing')
-    if not status.applied:
-        return State('updating', 'a Git change is not applied yet')
-    if status.image_state == 'different':
-        return State('updating', 'a new image is rolling out (or failing to)')
-    if status.release and status.release[0] != 'True':
-        return State('updating', status.release[1])
-    if not status.replicas or any(r.wanted is None for r in status.replicas):
-        return State('unknown', 'workload replica counts are missing')
-    if any(r.ready != r.wanted for r in status.replicas):
-        return State('updating', 'waiting for the requested replicas to be ready')
-    if all(r.wanted == 0 for r in status.replicas):
-        return State('stopped', 'scaled to zero replicas')
-    if status.image_state == 'none':
-        return State('unknown', 'no running image could be observed')
-    return State('healthy')
-
-
-def promotion_problem(status: ops.InstanceStatus | None, image: str, revision: str) -> str:
-    """Why a reviewed staging image cannot be promoted, or an empty string."""
-    return promotion.source_problem(status, image, revision)
-
-
 @dataclass(frozen=True)
 class Problem:
     level: str  # a mark: failing, warn, suspended or updating
@@ -424,7 +364,7 @@ def problems(checks: Checks, found: list[Unit]) -> list[Problem]:
                     continue
                 out.append(Problem('failing' if entry.level == 'bad' else 'warn', entry.message))
     for u in found:
-        failing = state_of(u.ready, reason=u.reason)  # suspended or not; waiting is not failing: updating() lists it
+        failing = unit_state(u.ready, reason=u.reason)  # suspended or not; waiting is not failing: updating() lists it
         if failing.key == 'failing':
             label, link = target(u.name)
             out.append(Problem('failing', f'{label} is not Ready' + (f': {failing.detail}' if failing.detail else ''), link))

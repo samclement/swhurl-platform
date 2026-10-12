@@ -138,11 +138,14 @@ def staging_app(name, variables=None, port=8080):
 def tree_fake(app_new=APP_NEW_OK, edit=None, staging=()):
     """``staging``: the staging_app()s that run (none by default)."""
     runner = TreeRunner(edit)
-    # Only the three lists the New app form reads; any other kubectl call is still unexpected.
+    # Only the three lists the New app form reads, and what the Teams page judges each app's state from;
+    # any other kubectl call is still unexpected.
     for prefix, found in ((cluster.UNITS[:5], [unit for unit, _ in staging]),
                           (cluster.RELEASES[:3], [release for _, release in staging]),
-                          (('kubectl', 'get', 'namespaces'), [])):
+                          (('kubectl', 'get', 'namespaces'), []),
+                          (cluster.PODS[:4], []), (cluster.WORKLOADS[:4], [])):
         runner.on(*prefix, stdout=json.dumps({'items': found}))
+    runner.on(*cluster.SOURCE[:6], stdout=json.dumps({'status': {'artifact': {'revision': REVISION}}}))
     runner.on('kubectl', '-n', 'console', 'get', 'configmap', 'app-dashboards', stdout='')  # no dashboard recorded
     (runner.on(sys.executable, '-m', 'swhurl', 'app-new', handler=lambda args, _: Result(
         args, app_new.returncode, app_new.stdout, app_new.stderr))

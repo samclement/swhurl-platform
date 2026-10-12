@@ -4,7 +4,7 @@ metadata:
   name: demo-orders
   namespace: demo-orders-staging
   annotations:
-    platform.swhurl.com/offers: 5d9feb4
+    platform.swhurl.com/offers: 868c731
 spec:
   interval: 30m
   timeout: 3m
@@ -68,7 +68,7 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: demo-orders
               DATABASE_PATH: /data/app.db
-              SWHURL_EVENTS_PUBLISH: visited
+              SWHURL_EVENTS_PUBLISH: created
               SWHURL_EVENTS_NKEY: UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
               SWHURL_ALLOWED_CALLERS: demo-shop

@@ -18,50 +18,14 @@
             "type": "string"
           },
           "caller": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "app",
-                  "user",
-                  "anonymous"
-                ]
-              },
-              "id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "type",
-              "id"
-            ]
+            "$ref": "#/components/schemas/Caller"
           },
           "visits": {
-            "type": "integer",
-            "description": "How many times it was asked, when the app keeps a database"
+            "type": "integer"
           },
-          "event": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "type": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type",
-              "id"
-            ],
-            "description": "The event this request published, if any"
+          "orders": {
+            "type": "integer",
+            "description": "How many orders it holds (the latest 1000 are kept)"
           },
           "traceId": {
             "type": [
@@ -74,8 +38,112 @@
           "message",
           "service",
           "caller",
-          "event",
+          "visits",
+          "orders",
           "traceId"
+        ]
+      },
+      "Caller": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "app",
+              "user",
+              "anonymous"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "3f0c7d0e-6f0f-4b3e-9d4f-0a8f6d1c2b3a"
+          },
+          "item": {
+            "type": "string",
+            "example": "tea"
+          },
+          "quantity": {
+            "type": "integer",
+            "example": 2
+          },
+          "placedBy": {
+            "type": "string",
+            "description": "The app that placed it",
+            "example": "demo-shop"
+          },
+          "at": {
+            "type": "string",
+            "description": "When it was placed (ISO 8601)",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "item",
+          "quantity",
+          "placedBy",
+          "at"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "NewOrder": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "example": "tea"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "example": 2
+          }
+        },
+        "required": [
+          "item",
+          "quantity"
+        ]
+      },
+      "Orders": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          }
+        },
+        "required": [
+          "orders"
         ]
       }
     },
@@ -84,7 +152,7 @@
   "paths": {
     "/": {
       "get": {
-        "summary": "Say hello and name the caller",
+        "summary": "Say hello and how many orders there are",
         "responses": {
           "200": {
             "description": "A greeting",
@@ -92,6 +160,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Hello"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Place an order (apps only)",
+        "description": "Only another app may place an order: it declares a call to demo-orders and sends the token the platform gives it. A person, signed in or not, is answered 401. Each order is published as the event demo-orders.created.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order, as stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller is not an app allowed to call this one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "The latest orders, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to `limit` orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Orders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "summary": "One order",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such order (only the latest 1000 are kept)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

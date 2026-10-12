@@ -22,9 +22,10 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
+from swhurl import ROOT, backupset, clickstack, flux, images, platform, recovery, sqlite_backup
 from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
+from swhurl.backupset import BackupError, BackupSet
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner, SharedReads
 from swhurl.settings import SettingsError, load_settings
@@ -250,31 +251,37 @@ def check_registration(runner: Runner, report: Report) -> None:
     else:
         report.bad('no team yet: HyperDX registration is open (run: make clickstack-bootstrap)')
 
+def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],
+                     now: dt.datetime | None, what: str, hint: str, run: str, prefix: str = '') -> None:
+    """The set's newest backup, on this host and under ``uri``, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
+    now = now or dt.datetime.now(dt.UTC)
+    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
+    places = [(str(backups.directory), lambda: backups.age(now))]
+    if uri:
+        places.append((uri, lambda: backups.age(now, backupset.remote_names(runner, uri))))
+    for where, read in places:
+        try:
+            age = read()
+        except (CommandError, BackupError, TypeError) as error:
+            report.bad(f'{prefix}cannot list backups in {where}: {error}')
+            continue
+        if age is None:
+            report.bad(f'{prefix}no {what} backup in {where} (run: {run})')
+        elif age > limit:
+            report.bad(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.0f} h old; '
+                       f'check: {hint}')
+        else:
+            report.ok(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.1f} h old')
+
+
 def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
                   now: dt.datetime | None = None) -> None:
     """The newest MongoDB backup, locally and off-host, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
     env = os.environ if env is None else env
     report.section('Backups')
-    now = now or dt.datetime.now(dt.UTC)
-    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    backup_dir = Path(env.get('BACKUP_DIR') or recovery.DEFAULT_BACKUP_DIR)
-    places = [(str(backup_dir), lambda: [p.name for p in backup_dir.iterdir()] if backup_dir.is_dir() else [])]
-    uri = env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI)
-    if uri:
-        places.append((uri, lambda: recovery.remote_names(runner, uri)))
-    for where, names in places:
-        try:
-            taken = recovery.newest(names())
-        except (CommandError, recovery.RecoveryError, TypeError) as error:
-            report.bad(f'cannot list backups in {where}: {error}')
-            continue
-        if taken is None:
-            report.bad(f'no MongoDB backup in {where} (run: make backup-mongodb)')
-        elif now - taken > limit:
-            report.bad(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
-                       'check: systemctl status swhurl-backup-mongodb')
-        else:
-            report.ok(f'newest MongoDB backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
+    check_backup_set(runner, report, recovery.backups(backupset.backup_dir(env)),
+                     env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
+                     run='make backup-mongodb', hint='systemctl status swhurl-backup-mongodb')
 
 
 def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
@@ -284,40 +291,18 @@ def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] 
     report.section('App SQLite backups')
     try:
         databases = sqlite_backup.find(runner)
-    except (CommandError, recovery.RecoveryError, KeyError, TypeError) as error:
+    except (CommandError, BackupError, KeyError, TypeError) as error:
         report.bad(f'cannot find app SQLite databases: {error}')
         return
     if not databases:
         report.ok('no app has a SQLite database')
         return
-    now = now or dt.datetime.now(dt.UTC)
-    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    backup_dir = Path(env.get('BACKUP_DIR') or recovery.DEFAULT_BACKUP_DIR)
     uri = env.get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
-
-    def newest(names: list[str]) -> dt.datetime | None:
-        times = [dt.datetime.strptime(m[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.UTC)
-                 for m in map(sqlite_backup.PATTERN.match, names) if m]
-        return max(times) if times else None
-
     for db in databases:
-        local = backup_dir / 'sqlite' / db.namespace
-        places = [(str(local), lambda local=local: [p.name for p in local.iterdir()] if local.is_dir() else [])]
-        if uri:
-            places.append((f'{uri}{db.namespace}/', lambda ns=db.namespace: recovery.remote_names(runner, f'{uri}{ns}/')))
-        for where, names in places:
-            try:
-                taken = newest(names())
-            except (CommandError, recovery.RecoveryError, TypeError) as error:
-                report.bad(f'{db.name}: cannot list backups in {where}: {error}')
-                continue
-            if taken is None:
-                report.bad(f'{db.name}: no SQLite backup in {where} (run: make backup-sqlite)')
-            elif now - taken > limit:
-                report.bad(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.0f} h old; '
-                           'check: systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')
-            else:
-                report.ok(f'{db.name}: newest SQLite backup in {where} is {(now - taken).total_seconds() / 3600:.1f} h old')
+        check_backup_set(runner, report, sqlite_backup.backups(backupset.backup_dir(env), db.namespace),
+                         f'{uri}{db.namespace}/' if uri else '', env=env, now=now, what='SQLite',
+                         run='make backup-sqlite', prefix=f'{db.name}: ',
+                         hint='systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')
 
 
 def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:

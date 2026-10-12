@@ -11,15 +11,15 @@ Needs the age key (AGE_KEY_FILE, default ./age.agekey). Deletes the namespace an
 """
 from __future__ import annotations
 
-import datetime as dt
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
-from swhurl import ROOT, platform
+from swhurl import backupset, platform
+from swhurl.backupset import BackupError
 from swhurl.livetests import LiveTest, Preflight, run_live_test
-from swhurl.recovery import BackupSettings, RecoveryError, sops_recipient
+from swhurl.recovery import BackupSettings, sops_recipient
 from swhurl.sqlite_backup import IMAGE, backup_one
 from swhurl.sqlite_restore import database, restore
 
@@ -62,7 +62,7 @@ def sql(t: LiveTest, statement: str, path: str = DB) -> str:
 
 
 def body(t: LiveTest) -> None:
-    age_key = Path(os.environ.get('AGE_KEY_FILE') or ROOT / platform.AGE_KEY)
+    age_key = backupset.age_key(os.environ)
     if not os.access(age_key, os.R_OK):
         raise Preflight(f'Cannot read the age key {age_key} (set AGE_KEY_FILE)')
     if t.get('get', 'namespace', NS):
@@ -88,7 +88,7 @@ def body(t: LiveTest) -> None:
 
     t.step('Backup, then change the live data')
     db = database(t.runner, NS)
-    stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
+    stamp = backupset.stamp()
     archive = backup_one(t.runner, db, BackupSettings(backup_dir=scratch, recipient=sops_recipient()),
                          stamp=stamp, out=t.report.line)
     sql(t, "INSERT INTO notes(body) VALUES ('three'); DELETE FROM notes WHERE body = 'one';")
@@ -97,7 +97,7 @@ def body(t: LiveTest) -> None:
     t.step('Restore')
     try:
         aside = restore(t.runner, db, archive, age_key, stamp=stamp, out=t.report.line, sleep=t.sleep)
-    except RecoveryError as error:
+    except BackupError as error:
         t.report.bad(str(error))
         return
     t.check(sql(t, ROWS) == 'one,two', 'restored database holds one, two',

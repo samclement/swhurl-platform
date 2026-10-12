@@ -21,61 +21,37 @@ its checks never replaces the live database. DRY_RUN=true checks the backup and 
 from __future__ import annotations
 
 import contextlib
-import datetime as dt
 import json
 import os
 import posixpath
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import ROOT, platform
+from swhurl import backupset
 from swhurl.apps.instance import Instance
-from swhurl.recovery import DEFAULT_BACKUP_DIR, RecoveryError, sha256
+from swhurl.backupset import BackupError
 from swhurl.run import CommandError, Runner
-from swhurl.sqlite_backup import Database, find, plain_fingerprint, pod_manifest
+from swhurl.sqlite_backup import Database, backups, backups_in, find, plain_fingerprint, pod_manifest
 
 HELM_NAME = 'helm.toolkit.fluxcd.io/name'
 
 
-@dataclass
-class RestoreSettings:
-    backup_dir: Path
-    age_key: Path
-    backup_file: Path | None = None
-
-    @classmethod
-    def from_env(cls, env: dict[str, str] | os._Environ) -> RestoreSettings:
-        return cls(
-            backup_dir=Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR),
-            age_key=Path(env.get('AGE_KEY_FILE') or env.get('SOPS_AGE_KEY_FILE') or ROOT / platform.AGE_KEY),
-            backup_file=Path(env['BACKUP_FILE']) if env.get('BACKUP_FILE') else None,
-        )
-
-    def archive(self, namespace: str) -> Path:
-        if self.backup_file:
-            return self.backup_file
-        directory = self.backup_dir / 'sqlite' / namespace
-        candidates = sorted(directory.glob('sqlite-*.db.age')) if directory.is_dir() else []
-        if not candidates:
-            raise RecoveryError(f'no backup in {directory} (set BACKUP_FILE, or copy one from S3 there)')
-        return candidates[-1]  # names sort by their UTC stamp
+def newest(backup_dir: Path, namespace: str) -> Path:
+    """The newest backup of the instance in ``namespace``."""
+    archives = backups(backup_dir, namespace)
+    archive = archives.newest()
+    if archive is None:
+        raise BackupError(f'no backup in {archives.directory} (set BACKUP_FILE, or copy one from S3 there)')
+    return archive
 
 
 def checked_metadata(db: Database, archive: Path) -> dict:
     """The backup's metadata, after checking the archive is intact and belongs to ``db``."""
-    if not archive.is_file():
-        raise RecoveryError(f'{archive} does not exist')
-    metadata_path = archive.with_name(archive.name.replace('.db.age', '.json'))
-    if not metadata_path.is_file():
-        raise RecoveryError(f'missing backup metadata: {metadata_path}')
-    metadata = json.loads(metadata_path.read_text())
-    if sha256(archive) != metadata.get('sha256'):
-        raise RecoveryError(f'{archive.name}: checksum does not match its metadata')
+    metadata = backups_in(archive.parent).read(archive)
     if metadata.get('source') != db.name:
-        raise RecoveryError(f'{archive.name} is a backup of {metadata.get("source")}, not {db.name}')
+        raise BackupError(f'{archive.name} is a backup of {metadata.get("source")}, not {db.name}')
     return metadata
 
 
@@ -89,7 +65,7 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
     """Restore ``archive`` into ``db``'s claim; return where the replaced files were kept (app's path)."""
     metadata = checked_metadata(db, archive)
     if not os.access(age_key, os.R_OK):
-        raise RecoveryError(f'cannot read the age key {age_key} (set AGE_KEY_FILE)')
+        raise BackupError(f'cannot read the age key {age_key} (set AGE_KEY_FILE)')
     ns = db.namespace
     pod = f'sqlite-restore-{db.app}'[:63]
     incoming = db.in_pod + '.restore'
@@ -124,7 +100,7 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
                 break
             sleep(2)
         else:
-            raise RecoveryError(f'{db.name}: the app\'s pods did not stop within 3 minutes')
+            raise BackupError(f'{db.name}: the app\'s pods did not stop within 3 minutes')
         out(f'[OK] Stopped deployment/{db.app}')
 
         runner.run(['kubectl', 'apply', '-f', '-'], input=json.dumps(pod_manifest(db, pod)), mutating=True)
@@ -145,7 +121,7 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
             if tables != str(metadata.get('tables')) else []
         if problems:
             runner.run([*exec_pod, 'rm', '-f', incoming], check=False, mutating=True)
-            raise RecoveryError(f'{db.name}: the restored copy failed its checks ({"; ".join(problems)}); '
+            raise BackupError(f'{db.name}: the restored copy failed its checks ({"; ".join(problems)}); '
                                 'the database is unchanged')
         runner.run([*exec_pod, 'sh', '-c',
                     'set -e; mkdir "$2"; for f in "$1" "$1-wal" "$1-shm"; do [ ! -e "$f" ] || mv "$f" "$2/"; done; '
@@ -161,7 +137,7 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
 def database(runner: Runner, namespace: str) -> Database:
     found = [db for db in find(runner) if db.namespace == namespace]
     if len(found) != 1:
-        raise RecoveryError(f'expected one SQLite database in {namespace}, found {len(found)}')
+        raise BackupError(f'expected one SQLite database in {namespace}, found {len(found)}')
     return found[0]
 
 
@@ -181,11 +157,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
               f'Re-run with CONFIRM={app}/{env}', file=sys.stderr)
         return 2
     try:
-        settings = RestoreSettings.from_env(os.environ)
         db = database(runner, instance.namespace)
-        restore(runner, db, settings.archive(db.namespace), settings.age_key,
-                stamp=dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ'))
-    except (RecoveryError, CommandError, ValueError) as error:
+        named = os.environ.get('BACKUP_FILE')
+        archive = Path(named) if named else newest(backupset.backup_dir(os.environ), db.namespace)
+        restore(runner, db, archive, backupset.age_key(os.environ), stamp=backupset.stamp())
+    except (BackupError, CommandError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
     return 0

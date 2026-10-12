@@ -34,7 +34,7 @@ from ruamel.yaml.comments import CommentedMap
 from swhurl import ROOT
 from swhurl.apps import channels, derive, edit
 from swhurl.apps.contract import TEAM, TEAMS_FILE
-from swhurl.apps.instance import ENVIRONMENTS
+from swhurl.apps.instance import ENVIRONMENTS, instance_folder
 from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -53,7 +53,7 @@ def apps_of(root: Path) -> dict[str, list[str]]:
     found: dict[str, set[str]] = {}
     for env in ENVIRONMENTS:
         for app in derive.instances_in(root, env):
-            labels = mapping(mapping(YamlFile(root / 'apps' / app / env / 'namespace.yaml').data, 'metadata'), 'labels')
+            labels = mapping(mapping(YamlFile(instance_folder(root, app, env) / 'namespace.yaml').data, 'metadata'), 'labels')
             found.setdefault(str(labels.get(TEAM, '')), set()).add(app)
     return {team: sorted(apps) for team, apps in found.items()}
 

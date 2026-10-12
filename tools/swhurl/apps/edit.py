@@ -54,7 +54,7 @@ from swhurl.apps.derive import (
     sync_env,
     values,
 )
-from swhurl.apps.instance import ENVIRONMENTS, Instance
+from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.new import (
     check_generated,
     depends_on,
@@ -280,17 +280,17 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
 def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
     """Production offers what the image it now runs offers: staging's documents, read for that image."""
     try:
-        found = offers.read(root / 'apps' / app / 'staging')
+        found = offers.read(instance_folder(root, app, 'staging'))
     except offers.OfferError as error:
         raise EditError(f'{app}/staging: {error}') from None
     if found:
-        tag = str(helmrelease.image(YamlFile(root / 'apps' / app / 'staging' / 'helmrelease.yaml').data).get('tag', ''))
+        tag = str(helmrelease.image(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get('tag', ''))
         if offers.IMAGE_COMMIT.match(tag) and offers.commit_of(tag) != found.commit:
             raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
                             f'(make app-offers APP={app} ENV=staging; the Offers workflow does it after each new image)')
-    folder = root / 'apps' / app / 'staging' / offers.OFFERS_DIR
+    folder = instance_folder(root, app, 'staging') / offers.OFFERS_DIR
     files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events))} if found else {}
-    served = str(helmrelease.variables(YamlFile(root / 'apps' / app / 'staging' / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
+    served = str(helmrelease.variables(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
     return write_offers(root, app, 'prod', found.repository if found else '', found.commit if found else '', files,
                         list(found.described) if found and found.described is not None else None,
                         api_path=served if found else '', runner=runner)
@@ -300,7 +300,7 @@ def set_team(root: Path, app: str, name: str) -> Path:
     """Move every environment of an app to a team, and give each its quota and NetworkPolicy if it lacks them."""
     if name not in teams(root):
         raise EditError(f'unknown team {name!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
-    found = [env for env in ENVIRONMENTS if (root / 'apps' / app / env / 'helmrelease.yaml').is_file()]
+    found = [env for env in ENVIRONMENTS if (instance_folder(root, app, env) / 'helmrelease.yaml').is_file()]
     if not found:
         instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
     edits: list[tuple[Path, str]] = []
@@ -318,19 +318,19 @@ def set_team(root: Path, app: str, name: str) -> Path:
     for path, text in edits:
         path.write_text(text)
     print(f'[OK] {app}: team {name} ({", ".join(found)})')
-    return root / 'apps' / app / found[0]
+    return instance_folder(root, app, found[0])
 
 
 def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, none: bool = False,
                default: bool = False) -> Path:
     """Change an app's default alerts in every environment: a threshold or ``none`` per alert (``changes``),
     no alert at all, or back to the defaults. The dashboard job replaces the alerts within a minute."""
-    found = [env for env in ENVIRONMENTS if (root / 'apps' / app / env / 'namespace.yaml').is_file()]
+    found = [env for env in ENVIRONMENTS if (instance_folder(root, app, env) / 'namespace.yaml').is_file()]
     if not found:
         instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
     if sum((bool(changes), none, default)) != 1:
         raise EditError('give thresholds (--error-logs, --errors), or --none, or --default')
-    namespaces = [YamlFile(root / 'apps' / app / env / 'namespace.yaml') for env in found]
+    namespaces = [YamlFile(instance_folder(root, app, env) / 'namespace.yaml') for env in found]
     current = next((str(annotations[app_alerts.ANNOTATION]) for n in namespaces
                     if app_alerts.ANNOTATION in (annotations := mapping(n.data, 'metadata').get('annotations') or {})), '')
     try:
@@ -358,7 +358,7 @@ def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, n
         raise EditError(f'{app} already has those alert settings')
     described = ', '.join(f'{key} {"none" if value is None else f">= {value}"}' for key, value in app_alerts.thresholds(spec).items())
     print(f'[OK] {app}: alerts {described} ({", ".join(found)})')
-    return root / 'apps' / app / found[0]
+    return instance_folder(root, app, found[0])
 
 
 def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
@@ -376,19 +376,19 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         raise EditError(f'{app}/prod already runs this digest; same image in both')
     if decision.outcome == 'create':
         missing = [callee for callee in declared_calls(helmrelease.variables(src))
-                   if not (root / 'apps' / callee / target / 'helmrelease.yaml').is_file()]
+                   if not (instance_folder(root, callee, target) / 'helmrelease.yaml').is_file()]
         if missing:
             raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
         result = promotion.create(root, app, src, host=host, runner=runner)
         sync_env(root, target)  # production's own callers and callees
         carry_offers(root, app, runner=runner)
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
-        if (root / 'apps' / app / target / 'secret.sops.yaml').is_file():  # not the events key, which is made here
+        if (instance_folder(root, app, target) / 'secret.sops.yaml').is_file():  # not the events key, which is made here
             print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
         return result
     if host:
         raise EditError('--host applies only to first production; change existing routes with app-expose')
-    document = YamlFile(root / 'apps' / app / 'prod/helmrelease.yaml')
+    document = YamlFile(instance_folder(root, app, 'prod') / 'helmrelease.yaml')
     current = mapping(container(document.data), 'image')
     image = promotion.image_of(src)
     current.update({k: str(image[k]) for k in ('tag', 'digest') if k in image})
@@ -402,7 +402,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         document.path.write_text(before)
         raise
     print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
-    return root / 'apps' / app / 'prod'
+    return instance_folder(root, app, 'prod')
 
 
 def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: str | None = None,
@@ -456,7 +456,7 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
             if value.yaml_anchor() or getattr(value, 'merge', None):
                 raise EditError('main ingress uses a YAML anchor or merge; edit shared settings by hand')
     current_host = route['hosts'][0]['host'] if route else None
-    namespace_path, unit_path = instance / 'namespace.yaml', root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    namespace_path, unit_path = instance / 'namespace.yaml', instance_unit_file(root, app, env)
     namespace, unit = YamlFile(namespace_path), YamlFile(unit_path)
     labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
     unit_spec = mapping(unit.data, 'spec')
@@ -538,7 +538,7 @@ def remove(root: Path, app: str, env: str) -> None:
                         f'remove those subscriptions first (make app-events APP=<subscriber> ENV={env})')
     namespace_file = instance / 'namespace.yaml'
     keeps_data = namespace_file.exists() and PRUNE_DISABLED in namespace_file.read_text()
-    unit_file = root / 'clusters/home' / f'app-{app}-{env}.yaml'
+    unit_file = instance_unit_file(root, app, env)
     shutil.rmtree(instance)
     print(f'[OK] removed {instance.relative_to(root)}/')
     if not any((root / 'apps' / app).iterdir()):
@@ -716,7 +716,7 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
         return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener), True)
     failed = 0
     for app in instances_in(root, args.all):
-        image = helmrelease.image(YamlFile(root / 'apps' / app / args.all / 'helmrelease.yaml').data)
+        image = helmrelease.image(YamlFile(instance_folder(root, app, args.all) / 'helmrelease.yaml').data)
         if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
             continue  # not built from an app repository (a fixture, a pinned third-party image)
         try:

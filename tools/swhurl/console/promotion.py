@@ -11,7 +11,7 @@ from pathlib import Path
 
 from swhurl import platform
 from swhurl.apps import helmrelease, ops, promotion
-from swhurl.apps.instance import Instance
+from swhurl.apps.instance import Instance, instance_folder
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
 from swhurl.console.actions import ActionError, Job
@@ -46,7 +46,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     problem = promotion.source_problem(status, decision.image, status.applied_revision)
     if problem:
         raise ActionError(problem)
-    namespace = promotion.YamlFile(root / 'apps' / app / 'staging/namespace.yaml').data
+    namespace = promotion.YamlFile(instance_folder(root, app, 'staging') / 'namespace.yaml').data
     exposure = namespace.get('metadata', {}).get('labels', {}).get(promotion.contract.EXPOSURE)
     if exposure not in promotion.contract.EXPOSURES:
         raise EditError('staging needs a supported exposure label')

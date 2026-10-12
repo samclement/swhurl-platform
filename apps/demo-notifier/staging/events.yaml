@@ -1,0 +1,13 @@
+apiVersion: jetstream.nats.io/v1beta2
+kind: Consumer
+metadata:
+  name: demo-orders-created
+  namespace: demo-notifier-staging
+spec:
+  streamName: staging-demo-orders
+  durableName: demo-notifier_created
+  filterSubject: staging.demo-orders.created
+  ackPolicy: explicit
+  deliverPolicy: all
+  ackWait: 30s
+  maxDeliver: 5

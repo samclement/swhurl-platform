@@ -21,6 +21,16 @@ data:
               subscribe:
                 allow:
                 - _INBOX.>
+          - nkey: UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI
+            permissions:
+              publish:
+                allow:
+                - $JS.API.CONSUMER.INFO.staging-demo-orders.demo-notifier_created
+                - $JS.API.CONSUMER.MSG.NEXT.staging-demo-orders.demo-notifier_created
+                - $JS.ACK.staging-demo-orders.demo-notifier_created.>
+              subscribe:
+                allow:
+                - _INBOX.staging.demo-notifier.>
           - nkey: UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G
             permissions:
               publish:

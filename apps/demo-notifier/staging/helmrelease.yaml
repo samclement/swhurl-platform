@@ -1,0 +1,87 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: demo-notifier
+  namespace: demo-notifier-staging
+spec:
+  interval: 30m
+  timeout: 3m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 1
+  upgrade:
+    remediation:
+      retries: 1
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/demo-notifier
+              tag: 1-eb6b030 # {"$imagepolicy": "flux-system:demo-notifier-staging:tag"}
+              digest: sha256:b21e44bbc789a52eb20dc8a31b7ae04f89616e71d488df76e5e929998d7fdb5f # {"$imagepolicy": "flux-system:demo-notifier-staging:digest"}
+            resources:
+              requests:
+                cpu: 100m
+                memory: 192Mi
+              limits:
+                memory: 384Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            env:
+              SWHURL_APP: demo-notifier
+              SWHURL_ENV: staging
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: demo-notifier
+              SWHURL_EVENTS_SUBSCRIBE: demo-orders.created
+              SWHURL_EVENTS_NKEY: UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+            envFrom:
+            - secretRef:
+                name: demo-notifier-events
+        annotations:
+          secret.reloader.stakater.com/reload: demo-notifier-events
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true

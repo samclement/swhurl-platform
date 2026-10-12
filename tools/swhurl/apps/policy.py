@@ -76,6 +76,7 @@ import yaml
 from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import channels, events, helmrelease, offers
 from swhurl.apps.calling import (
+    API_VARIABLE,
     CALLERS_VARIABLE,
     ENVIRONMENT_VARIABLE,
     TOKEN_SECONDS,
@@ -398,8 +399,9 @@ VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-m
           ENVIRONMENT_VARIABLE, CALLERS_VARIABLE, TOKENS_VOLUME,
           # Events too: each environment has its own declaration, key and Secret (make app-events).
           events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload',
-          # What an instance offers is read for the image it runs (make app-offers; promotion carries it).
-          offers.ANNOTATION}
+          # What an instance offers, and where it serves its API description, is read for the image it runs
+          # (make app-offers; promotion carries it).
+          offers.ANNOTATION, API_VARIABLE}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.

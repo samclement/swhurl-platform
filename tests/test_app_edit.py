@@ -613,6 +613,10 @@ components:
         self.assertEqual(len(self.seeds), 2, 'production has its own key')
         self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
         self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [], 'offers follow each image')
+        release = self.root / 'apps/orders/staging/helmrelease.yaml'
+        release.write_text(release.read_text().replace('SWHURL_APP: orders', 'SWHURL_APP: orders\n              SWHURL_API_PATH: /openapi.json', 1))
+        self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [],
+                         'staging describes its API before production runs that image')
 
     def test_event_refusals_change_nothing(self):
         self.with_units()

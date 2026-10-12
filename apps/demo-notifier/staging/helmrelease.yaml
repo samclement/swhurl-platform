@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-notifier
-              tag: 1-eb6b030 # {"$imagepolicy": "flux-system:demo-notifier-staging:tag"}
-              digest: sha256:b21e44bbc789a52eb20dc8a31b7ae04f89616e71d488df76e5e929998d7fdb5f # {"$imagepolicy": "flux-system:demo-notifier-staging:digest"}
+              tag: 3-4c6bf37 # {"$imagepolicy": "flux-system:demo-notifier-staging:tag"}
+              digest: sha256:dda0d525d89e29c887e0f02ff941240bef79c9d19f63f9fa94dd498175c15559 # {"$imagepolicy": "flux-system:demo-notifier-staging:digest"}
             resources:
               requests:
                 cpu: 100m

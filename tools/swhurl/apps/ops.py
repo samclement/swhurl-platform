@@ -20,11 +20,14 @@ from swhurl.apps.contract import (
     TEAM,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance
+from swhurl.apps.state import ready_reason, verdict
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 
 ACTIONS = ('status', 'logs', 'reconcile', 'check')
 WORKLOAD_KINDS = 'deploy,statefulset,daemonset'
+SOURCE = 'swhurl-platform'  # the GitRepository every instance's unit applies
+INSTANCE_LABEL = 'app.kubernetes.io/instance'  # on an instance's pods and workloads: the app's name
 
 
 
@@ -106,6 +109,7 @@ class InstanceStatus:
     secret: str = ''  # the Secret whose keys become variables (envFrom), if any
     unit_suspended: bool = False
     release_suspended: bool = False
+    unit_reason: str = ''  # the unit's Ready reason: tells waiting from failing
 
     @property
     def applied(self) -> bool:
@@ -119,12 +123,16 @@ class InstanceStatus:
         a rollout in progress or failing), 'none' (no pod running) or 'unpinned' (Git pins no digest,
         so only the tag is known and nothing can be compared).
         """
-        if not self.running_images:
-            return 'none'
-        if '@' not in self.desired_image:
-            return 'unpinned'
-        want = self.desired_image.split('@', 1)[1]
-        return 'matches' if all(image.endswith('@' + want) for image in self.running_images) else 'different'
+        return image_state(self.desired_image, self.running_images)
+
+
+def image_state(desired: str, running: list[str]) -> str:
+    if not running:
+        return 'none'
+    if '@' not in desired:
+        return 'unpinned'
+    want = desired.split('@', 1)[1]
+    return 'matches' if all(image.endswith('@' + want) for image in running) else 'different'
 
 
 EXPOSURE_LABELS = {'private': 'private (no route)', 'authenticated-web': 'signed-in (Google sign-in)',
@@ -239,13 +247,21 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     unit = get(runner, '-n', 'flux-system', 'get', 'kustomization', instance.unit)
     if unit is None:
         return None
-    source = get(runner, '-n', 'flux-system', 'get', 'gitrepository', 'swhurl-platform') or {}
+    source = get(runner, '-n', 'flux-system', 'get', 'gitrepository', SOURCE) or {}
     release = get(runner, '-n', ns, 'get', 'helmrelease', instance.app)
-    selector = f'app.kubernetes.io/instance={instance.app}'
+    selector = f'{INSTANCE_LABEL}={instance.app}'
     pods = get(runner, '-n', ns, 'get', 'pods', '-l', selector)
     workloads = get(runner, '-n', ns, 'get', WORKLOAD_KINDS, '-l', selector)
-    ingresses = app_routes((get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', []))
+    ingresses = (get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', [])
     certificates = (get(runner, '-n', ns, 'get', 'certificate') or {}).get('items', [])
+    return status_of(instance, unit, source, release, pods, workloads, ingresses, certificates)
+
+
+def status_of(instance: Instance, unit: dict, source: dict, release: dict | None, pods: dict | None,
+              workloads: dict | None, ingresses: list[dict] = (), certificates: list[dict] = ()) -> InstanceStatus:
+    """The facts, from the objects as the cluster returns them: the instance's unit, the Git source, its release,
+    and its own pods and workloads. A reader that only wants the verdict (``state.verdict``) may leave the routes out."""
+    ingresses = app_routes(list(ingresses))
     return InstanceStatus(
         instance=instance,
         desired_revision=((source.get('status') or {}).get('artifact') or {}).get('revision', ''),
@@ -264,6 +280,7 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
         secret=shown_variables(release)[1],
         unit_suspended=bool((unit.get('spec') or {}).get('suspend')),
         release_suspended=bool(((release or {}).get('spec') or {}).get('suspend')),
+        unit_reason=ready_reason(unit),
     )
 
 
@@ -272,6 +289,7 @@ def status_lines(found: InstanceStatus, team: str = '') -> list[str]:
     note = '' if found.applied else '  <- not yet applied'
     lines = [
         f'Instance   {instance.app}/{instance.env} (namespace {instance.namespace})',
+        'State      ' + ': '.join(filter(None, (verdict(found).label, verdict(found).detail))),
         f"Git        desired {found.desired_revision.split(':')[-1]}, "
         f"applied {found.applied_revision.split(':')[-1]}{note}",
         f'Flux unit  {found.unit[0]}: {found.unit[1]}',

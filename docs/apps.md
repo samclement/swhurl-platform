@@ -548,7 +548,7 @@ On **later promotions**, production already exists, so the reviewed PR changes o
 ## Operate an instance
 
 ```bash
-make app-status APP=demo-orders ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
+make app-status APP=demo-orders ENV=prod     # state, Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
 make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
 make app-check APP=demo-orders ENV=prod      # the app policy, offline

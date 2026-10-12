@@ -64,6 +64,7 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.splitlines(), [
             'Instance   web/prod (namespace web-prod)',
+            'State      Healthy',
             'Git        desired abc123, applied abc123',
             f'Flux unit  True: Applied revision: {REV}',
             'Release    True: Helm upgrade succeeded',

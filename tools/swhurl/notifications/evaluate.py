@@ -159,7 +159,7 @@ def health(entry: dict, release: dict | None, data: dict, *, unit: bool = True) 
     unit_ready = ready_condition(entry['unit_object'])[0]
     image = ops.desired_image(release)
     running = ops.running_images({'items': pods})
-    if '@' in image and (not running or any(not im.endswith('@' + image.split('@', 1)[1]) for im in running)):
+    if '@' in image and ops.image_state(image, running) != 'matches':
         # An automatic rollback deliberately restores the old healthy image. The rollback event tells the operator.
         if ready.get('reason') != 'RollbackSucceeded':
             return 'deployment stalled', 'Running image differs from the requested digest'

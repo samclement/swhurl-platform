@@ -1118,3 +1118,12 @@ The operator merged four of the five stage 5 pull requests (`swhurl-try-10`, `-1
 ## swhurl-try-15 removed (12 October 2026)
 
 Commit `41ecd70`: `make app-events APP=swhurl-try-13 ENV=staging ARGS="--remove-subscribe swhurl-try-15.greeted"`, then `make app-remove APP=swhurl-try-15 ENV=staging`. After the reconcile its namespace, Flux unit and image automation are gone, `swhurl-try-13` runs 1/1 subscribed to `swhurl-try-10.visited` and `swhurl-try-12.visited`, and `make verify-platform` passes. Validate's first run failed in the OTel job on a chart download and passed when that job was run again. The GitHub repository and container package `samclement/swhurl-try-15` remain for the operator to delete.
+
+## No default team (12 October 2026)
+
+Step 1 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-2026), commit `99eb619` (console image `src-4f9a7e2f44b07611`, pinned in `6a500bc`).
+
+- `make check` passed (603 tests); Validate and the publish run passed; `make verify-platform` passed on the new image.
+- Through a port-forward to the live console with the sign-in header: New app offers `platform`, `payments`, `insights` and `demo` with none preselected and no "default" mark; Teams shows four cards, each with a delete form. A New app form posted without a team answered 400 with "choose the team that owns the app: one of platform, payments, insights, demo", and no repository was created.
+- Nothing about the running apps changed: the four apps of `platform` keep their label, and `demo` owns nothing yet.
+- Not exercised: the New app form in a browser (the radio group is `required`, so a browser stops the submit before the server does); a team renamed or removed that used to be the default.

@@ -279,9 +279,10 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
 
 def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str], input: str | None = None) -> None:
     """The clone's own tooling (``app-new``, ``app-promote``, ...): its rules, policy check and SOPS recipients.
-    ``input`` is its standard input: the one way a secret reaches it (never an argument, never in the job's lines)."""
+    ``input`` is its standard input: the one way a secret reaches it (never an argument, never in the job's lines).
+    It writes no bytecode: every file it leaves in the clone becomes part of the commit."""
     result = runner.run([sys.executable, '-m', 'swhurl', command, *argv], cwd=clone, check=False, input=input,
-                        env={'PYTHONPATH': str(clone / 'tools')})
+                        env={'PYTHONPATH': str(clone / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
     job.lines += (result.stdout + result.stderr).splitlines()
     if result.returncode:
         raise ActionError(f'{command} refused this change (see above); nothing was written to GitHub')

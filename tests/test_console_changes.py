@@ -20,7 +20,7 @@ from swhurl.apps import channels, new, ops, promotion, repo
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
 from swhurl.console import promotion as console_promotion
-from swhurl.run import CommandError, FakeRunner, Result
+from swhurl.run import CommandError, FakeRunner, Result, Runner
 
 TOKEN = 'github_pat_fixture_0123456789abcdef'
 HEAD = 'abc1234' + '0' * 33
@@ -251,6 +251,23 @@ class FormTests(unittest.TestCase):
                          (changes.Command('team-channel', ('payments', '--remove')),))
         with self.assertRaisesRegex(actions.ActionError, 'no such channel change'):
             changes.Change.to_channel('rotate', {'name': 'payments'})
+
+    def test_the_clone_s_tooling_leaves_only_the_files_it_means_to(self):
+        """A real interpreter on a small clone: without the setting, its bytecode would join the commit."""
+        with tempfile.TemporaryDirectory() as tmp:
+            clone = Path(tmp)
+            (clone / 'tools/swhurl').mkdir(parents=True)
+            (clone / 'tools/swhurl/__init__.py').write_text('')
+            (clone / 'tools/swhurl/helper.py').write_text('WORD = "edited"\n')
+            (clone / 'tools/swhurl/__main__.py').write_text(
+                'import sys\nfrom pathlib import Path\nfrom swhurl.helper import WORD\n'
+                'Path("out.txt").write_text(WORD + " " + " ".join(sys.argv[1:]))\nprint("[OK]", WORD)\n')
+            before = changes.snapshot(clone)
+            job = actions.Job(1, 'scale', 'hello/staging', 'sam@swhurl.com', None)
+            changes.Change.to_instance('scale', Instance('hello', 'staging'), {'replicas': '2'}).apply(Runner(), job, clone)
+            self.assertEqual(job.lines, ['[OK] edited'])
+            self.assertEqual((clone / 'out.txt').read_text(), 'edited app-scale hello staging --replicas=2')
+            self.assertEqual(sorted(changes.snapshot(clone).keys() - before.keys()), ['out.txt'])
 
     def test_only_console_branches(self):
         self.assertEqual(changes.branch_name('new-weather-api-staging', 'abc1234'), 'console/new-weather-api-staging-abc1234')

@@ -98,7 +98,6 @@ from swhurl.apps.contract import (
     EXCEPTIONS,
     EXPOSURE,
     IMAGE_AUTOMATION_FILE,
-    INSTANCE_ROOTS,
     NETWORK_POLICY_FILE,
     OTLP_HOST_IP,
     QUOTA,
@@ -112,6 +111,7 @@ from swhurl.apps.contract import (
     strip_image_markers,
     teams,
 )
+from swhurl.apps.instance import INSTANCE_ROOTS
 from swhurl.run import Runner
 
 EXCEPTIONS_KEY = EXCEPTIONS

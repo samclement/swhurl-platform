@@ -39,7 +39,7 @@ from swhurl.apps.contract import (
     STACKS,
     TEAMS_FILE,
 )
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import NAME_RE
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 

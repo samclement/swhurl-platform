@@ -57,7 +57,6 @@ from swhurl.apps.contract import (
     DATABASES,
     DEFAULT_DATABASE_SIZE,
     ENVIRONMENT,
-    ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
     FAIL_AFTER,
@@ -83,9 +82,9 @@ from swhurl.apps.contract import (
     secret_key_problem,
     teams,
 )
+from swhurl.apps.instance import ENVIRONMENTS, NAME_RE
 from swhurl.run import CommandError, Runner
 
-NAME_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
 
 

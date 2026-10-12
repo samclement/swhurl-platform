@@ -32,11 +32,10 @@ from swhurl.apps.calling import (
     tokens_volume,
 )
 from swhurl.apps.contract import (
-    ENVIRONMENTS,
     EXPOSURE,
 )
+from swhurl.apps.instance import ENVIRONMENTS, NAME_RE
 from swhurl.apps.new import (
-    NAME_RE,
     dump,
     isolation_files,
     watch_namespace,

@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 
 from swhurl import ROOT
 from swhurl.apps import channels, new, ops, promotion, repo
+from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result
@@ -586,7 +587,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_promotion_refuses_missing_or_stale_review_and_unhealthy_staging(self):
-        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         cases = (({}, good, 'review the image'),
                  ({**PROMOTION, 'image': IMAGE.replace('2.0', '1.0')}, good, 'changed'),
                  ({**PROMOTION, 'revision': 'old'}, good, 'changed'),
@@ -607,7 +608,7 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_promotion_rechecks_staging_when_the_background_job_starts(self):
-        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         c, jobs = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', side_effect=[good, replace(good, desired_image='new')]):
             response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO, follow_redirects=False)
@@ -626,7 +627,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_review_page_submits_the_displayed_image_revision_and_configuration(self):
-        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         c, _ = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', return_value=good):
             response = c.get('/apps/hello/staging/promotion', headers=WHO)
@@ -694,7 +695,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_staging_movement_after_generation_still_opens_nothing(self):
-        good = ops.gather_status(staging_reads(FakeRunner()), ops.Instance('hello', 'staging'))
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         c, jobs = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', side_effect=[good, good, replace(good, desired_image='new')]):
             c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)

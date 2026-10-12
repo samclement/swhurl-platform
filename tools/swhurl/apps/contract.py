@@ -37,7 +37,6 @@ COOKIE_DOMAIN = base_domain()
 AUTH_MIDDLEWARE = 'ingress-oauth-auth-shared@kubernetescrd'
 
 EXPOSURES = ('private', 'authenticated-web', 'public')
-ENVIRONMENTS = ('staging', 'prod')
 RETAINED_STORAGE_CLASS = 'local-path-retain'
 STORAGE_CLASSES = {'local-path', RETAINED_STORAGE_CLASS}
 
@@ -334,7 +333,6 @@ def strip_image_markers(text: str) -> tuple[str, str | None]:
     return _MARKER.sub('', text), (policies.pop() if len(policies) == 1 else None)
 
 
-INSTANCE_ROOTS = (Path('apps'), Path('tests/fixtures/apps/apps'))
 """Where instances live: the real ones and the generated test fixtures."""
 
 

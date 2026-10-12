@@ -1198,3 +1198,14 @@ The console's **Start a new app** for `test-1` created the repository `samclemen
 
 - `make app-status APP=test-1 ENV=staging`: release installed, the first image running and matching, 1/1 ready, team `insights`, signed-in access. Signed out, `https://staging-test-1.homelab.swhurl.com/` answers 302 and `http://` 301; its certificate is Ready. `make verify-platform` passed.
 - **Open:** a console deploy ends any running job without a trace, and an interrupted new-app job cannot be resumed from the console.
+
+## Console jobs across a restart (12 October 2026)
+
+`9713d2a`, console image `src-6605e9ecf1f5e6fa` (deployed as `597be21`): a console pod being replaced finishes its running jobs first, jobs are remembered in `console/console-jobs`, and an unfinished new app can be finished from its job page ([console](console.md#jobs-and-restarts)). The console's pod has `terminationGracePeriodSeconds: 900`; `make verify-platform` passed.
+
+Exercised with reconciles of `platform-reloader`, started through a port-forward as the operator:
+
+- **Recorded:** job 1 succeeded and its record (6 lines, the pod's name as owner) was in the ConfigMap.
+- **Finished first:** job 2 was started and its pod deleted at once. The record said `running` a second later; the pod went away about 6 seconds after, with the job `succeeded` and written by that pod. The pod that replaced it listed jobs 1 and 2 on Activity and served `/jobs/2`.
+- **Interrupted:** job 3 was started and its pod killed with `--grace-period=0 --force`. The next pod marked it `interrupted`, kept its 3 lines of output and said so on its page; job 4, on the same unit, then ran normally and continued the numbering.
+- **Not exercised:** **Finish creating this app** on a real interrupted new-app job (it would create a real repository; covered by `make test`), a job long enough to hold a pod for minutes, and a job page left open in a browser across the restart.

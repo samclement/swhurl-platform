@@ -35,11 +35,12 @@ import yaml
 from swhurl import platform
 from swhurl.apps import channels, events, repo
 from swhurl.apps.contract import (
+    APP_OWNER,
     EXPOSURES,
     STACKS,
     TEAMS_FILE,
 )
-from swhurl.apps.instance import NAME_RE
+from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.console.actions import ActionError, Job
 from swhurl.run import Runner
 
@@ -72,74 +73,6 @@ def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
     return {str(name): (entry or {}).get('description', '') for name, entry in registered.items()}
 
 
-def connection_args(form: Mapping[str, str], callable_apps: set[str] | None = None,
-                    offered_events: set[str] | None = None) -> list[str]:
-    """``--calls=``, ``--subscribe=`` and ``--publish=`` for app-new, from the form's comma-separated
-    ``calls`` (apps), ``subscribe`` (``<app>.<event>``) and ``publish`` (event names). When the
-    lists the form offered are given, a choice outside them is refused here, before a repository
-    is created for an app that could not then be added."""
-    chosen = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()]
-              for field in ('calls', 'subscribe', 'publish')}
-    bad = [name for name in chosen['calls'] if not NAME_RE.match(name)]
-    bad += [name for name in chosen['subscribe'] if not events.SUBSCRIPTION_RE.match(name)]
-    bad += [name for name in chosen['publish'] if not events.EVENT_RE.match(name)]
-    if bad:
-        raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>, a published event a lowercase name')
-    missing = [name for name in chosen['calls'] if callable_apps is not None and name not in callable_apps]
-    missing += [name for name in chosen['subscribe'] if offered_events is not None and name not in offered_events]
-    if missing:
-        raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
-    return [f'--{field}={",".join(names)}' for field, names in chosen.items() if names]
-
-
-def new_repo_args(form: Mapping[str, str], questions: list[repo.Question],
-                  teams: Mapping[str, str] | None = None) -> tuple[str, str, str, dict[str, str], list[str]]:
-    """``(name, stack, description, template answers, extra app-new argv)`` from the New app form.
-
-    ``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
-    ``teams`` are the registered ones; the form's team must be among them. A worker gets no exposure
-    or host: its swhurl.yaml makes it private. Calls and events are connection_args'."""
-    name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
-    description = ' '.join(form.get('description', '').split())[:200]
-    if not NAME_RE.match(name):
-        raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
-    if stack not in STACKS:
-        raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
-    answers = {}
-    for question in questions:
-        value = form.get(f'feature-{question.name}', '').strip() or question.default
-        if value not in question.choices:
-            raise ActionError(f'{question.name} must be one of {", ".join(question.choices)}')
-        answers[question.name] = value
-    extra = []
-    team = form.get('team', '').strip()
-    if not teams:
-        raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
-    if team not in teams:
-        raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
-    extra.append(f'--team={team}')
-    if answers.get('kind') == 'worker':
-        if form.get('host', '').strip():
-            raise ActionError('a worker has no web address; leave Host empty')
-        return name, stack, description, answers, extra
-    exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
-    if exposure:
-        if exposure not in EXPOSURES:
-            raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
-        extra.append(f'--exposure={exposure}')
-    if host:
-        if not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', host):
-            raise ActionError(f'host {host!r} is not a DNS name')
-        extra.append(f'--host={host}')
-    return name, stack, description, answers, extra
-
-
-def new_repo_body(repo_url: str, template: str, argv: list[str]) -> str:
-    name = argv[0]
-    return (f'The console created {repo_url} from [{template}](https://github.com/{template}) and waited for its first '
-            f'image.\n\n' + new_app_body(name, 'staging', argv))
-
-
 @dataclass(frozen=True)
 class GitHub:
     repo: str
@@ -156,18 +89,6 @@ def github_from_env(runner: Runner, env: Mapping[str, str] | None = None) -> Git
         return None
     runner.add_secret(token)
     return GitHub(env.get('CONSOLE_REPO') or DEFAULT_REPO, token)
-
-
-def new_app_body(name: str, env: str, argv: list[str]) -> str:
-    """The new-app PR's description: how it was made and, with secret keys, how to set their values."""
-    body = f'Generated by the console with:\n\n    make app-new NAME={name} ARGS="{" ".join(argv[1:])}"'
-    keys = next((a.split('=', 1)[1] for a in argv if a.startswith('--secret-keys=')), '')
-    if keys:
-        body += (f'\n\n**Before merging, set the secret values** ({keys.replace(",", ", ")}). Each is `REPLACE_ME` in '
-                 f'an encrypted file. On this branch:\n\n    sops apps/{name}/{env}/secret.sops.yaml\n\n'
-                 'Replace each `REPLACE_ME` with the real value, save, then commit and push. '
-                 'The values stay encrypted in Git; the app receives them as environment variables.')
-    return body
 
 
 def branch_name(slug: str, revision: str) -> str:
@@ -366,58 +287,9 @@ def run_tool(runner: Runner, job: Job, clone: Path, command: str, argv: list[str
         raise ActionError(f'{command} refused this change (see above); nothing was written to GitHub')
 
 
-def run_app_new(runner: Runner, job: Job, clone: Path, argv: list[str]) -> None:
-    run_tool(runner, job, clone, 'app-new', argv)
-
-
 SCALE_FIELDS = (('replicas', 'replicas', 'Replicas'), ('cpu', 'cpu', 'CPU request'),
                 ('memory', 'memory', 'Memory request'), ('memory_limit', 'memory-limit', 'Memory limit'))
-
-
-def expose_args(form: Mapping[str, str]) -> list[str]:
-    """``--exposure=`` and an optional ``--host=`` for app-expose."""
-    exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
-    if exposure not in EXPOSURES:
-        raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
-    if host and not re.fullmatch(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+', host):
-        raise ActionError(f'host {host!r} is not a DNS name')
-    return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
-
-
-def connect_commands(app: str, env: str, form: Mapping[str, str], callable_apps: set[str] | None = None,
-                     offered_events: set[str] | None = None) -> list[tuple[str, list[str]]]:
-    """The app-calls and app-events commands that add what the Connect forms chose: comma-separated
-    ``calls`` (apps), ``subscribe`` (``<app>.<event>``) and ``publish`` (event names). Both run in
-    one clone, so one pull request carries them. Choices are checked as connection_args checks them."""
-    chosen = {field.split('=')[0][2:]: field.split('=', 1)[1] for field in connection_args(form, callable_apps, offered_events)}
-    commands = []
-    if 'calls' in chosen:
-        commands.append(('app-calls', [app, env, f'--add={chosen["calls"]}']))
-    added = [f'--add-{field}={chosen[field]}' for field in ('subscribe', 'publish') if field in chosen]
-    if added:
-        commands.append(('app-events', [app, env, *added]))
-    if not commands:
-        raise ActionError('choose an app to call, an event to receive or an event to publish')
-    return commands
-
-
-def disconnect_commands(app: str, env: str, form: Mapping[str, str]) -> list[tuple[str, list[str]]]:
-    """The command that removes one connection this app declared: the row's ``role``, ``app`` and ``event``."""
-    role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
-    if role == 'calls' and NAME_RE.match(other):
-        return [('app-calls', [app, env, f'--remove={other}'])]
-    if role == 'subscribes' and events.SUBSCRIPTION_RE.match(f'{other}.{event}'):
-        return [('app-events', [app, env, f'--remove-subscribe={other}.{event}'])]
-    if role == 'publishes' and events.EVENT_RE.match(event):
-        return [('app-events', [app, env, f'--remove-publish={event}'])]
-    raise ActionError('no such connection to remove: only the app that declared one can remove it')
-
-
-def as_make(commands: list[tuple[str, list[str]]]) -> str:
-    """The same change as the operator would type it."""
-    return ' && '.join(f'make {command} APP={argv[0]} ENV={argv[1]} ARGS="{" ".join(argv[2:])}"' for command, argv in commands)
-
-
+HOST_RE = re.compile(r'[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+')
 TEAM_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
 
 
@@ -437,64 +309,306 @@ def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], d
         api.client.close()
 
 
-def team_channel_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str, str | None]:
-    """``(command, argv, PR title, the make line, standard input)`` for giving a team its channel
-    (or a new address for it), or removing it.
-
-    The address is the credential: it is returned only as the command's standard input, and no
-    message built here repeats it."""
-    name = form.get('name', '').strip()
-    if not TEAM_NAME.fullmatch(name):
-        raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
-    if action == 'remove':
-        return ('team-channel', [name, '--remove'], f'teams: remove the notification channel of {name}',
-                f'make team-channel NAME={name} ARGS=--remove', None)
-    if action != 'set':
-        raise ActionError('no such channel change')
-    transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
-    problem = channels.address_problem(transport, address)
-    if problem:
-        raise ActionError(f'channel address: {problem}')
-    return ('team-channel', [name, f'--transport={transport}'], f'teams: set the notification channel of {name}',
-            f'make team-channel NAME={name}    # the address was entered on the console and is only in the encrypted file',
-            address + '\n')
+def checked_host(host: str) -> str:
+    """``host`` if it is empty or a DNS name."""
+    if host and not HOST_RE.fullmatch(host):
+        raise ActionError(f'host {host!r} is not a DNS name')
+    return host
 
 
-def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], str, str]:
-    """``(command, argv, PR title, the make line)`` for the Teams page's add, edit or remove.
-
-    Only shapes are checked here (a name is a name, a description one short line); whether the team
-    exists, still owns apps or is the default is the command's own rule, run in a clone of main."""
-    name = form.get('name', '').strip()
-    description = ' '.join(form.get('description', '').split())
-    rename, move = form.get('rename', '').strip(), form.get('move_apps_to', '').strip()
-    for label, value in (('team name', name), ('new name', rename), ('team to move apps to', move)):
-        if (value or label == 'team name') and not TEAM_NAME.fullmatch(value):
-            raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
-    if len(description) > 200:
-        raise ActionError('a description is one line of at most 200 characters')
-    if action == 'add':
-        return ('team-add', [name, f'--description={description}'], f'teams: add {name}',
-                f"make team-add NAME={name} DESCRIPTION='{description}'")
-    if action == 'edit':
-        argv = [name, f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
-        return 'team-edit', argv, f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(argv[1:])}"'
-    if action == 'remove':
-        argv = [name] + ([f'--move-apps-to={move}'] if move else [])
-        return 'team-remove', argv, f'teams: remove {name}', f'make team-remove NAME={name}' + (
-            f' ARGS="--move-apps-to {move}"' if move else '')
-    raise ActionError('no such team change')
-
-
-def scale_args(form: Mapping[str, str]) -> list[str]:
+def scale_flags(form: Mapping[str, str]) -> list[str]:
     """``--flag=value`` for each filled-in scale field; at least one is needed."""
-    argv = []
+    flags = []
     for field, flag, label in SCALE_FIELDS:
         value = form.get(field, '').strip()
         if value:
             if not re.fullmatch(r'[0-9A-Za-z.]{1,12}', value):
                 raise ActionError(f'{label} {value!r} is not a number or quantity')
-            argv.append(f'--{flag}={value}')
-    if not argv:
+            flags.append(f'--{flag}={value}')
+    if not flags:
         raise ActionError('change at least one of replicas, CPU, memory or memory limit')
-    return argv
+    return flags
+
+
+def expose_flags(form: Mapping[str, str]) -> list[str]:
+    """``--exposure=`` and an optional ``--host=`` for app-expose."""
+    exposure, host = form.get('exposure', '').strip(), checked_host(form.get('host', '').strip())
+    if exposure not in EXPOSURES:
+        raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+    return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
+
+
+@dataclass(frozen=True)
+class Connections:
+    """What a form chose to connect an app to: apps to call, ``<app>.<event>`` to receive and
+    events to publish, each a comma-separated field of that name."""
+    calls: tuple[str, ...] = ()
+    subscribe: tuple[str, ...] = ()
+    publish: tuple[str, ...] = ()
+
+    @classmethod
+    def from_form(cls, form: Mapping[str, str]) -> Connections:
+        chosen = cls(*(tuple(name.strip() for name in form.get(field, '').split(',') if name.strip())
+                       for field in ('calls', 'subscribe', 'publish')))
+        bad = [name for name in chosen.calls if not NAME_RE.match(name)]
+        bad += [name for name in chosen.subscribe if not events.SUBSCRIPTION_RE.match(name)]
+        bad += [name for name in chosen.publish if not events.EVENT_RE.match(name)]
+        if bad:
+            raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>, a published event a lowercase name')
+        return chosen
+
+    @property
+    def touches_others(self) -> bool:
+        """A call or a subscription also changes the other app: its allowed callers, the NATS users."""
+        return bool(self.calls or self.subscribe)
+
+    def check_offered(self, callable_apps: set[str], offered_events: set[str]) -> None:
+        """Refuse a choice outside the lists the form offered, before a repository is created for an
+        app that could not then be added."""
+        missing = [name for name in self.calls if name not in callable_apps]
+        missing += [name for name in self.subscribe if name not in offered_events]
+        if missing:
+            raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
+
+    def new_app_flags(self) -> list[str]:
+        """``--calls=``, ``--subscribe=`` and ``--publish=`` for app-new."""
+        return [f'--{field}={",".join(names)}' for field, names in
+                (('calls', self.calls), ('subscribe', self.subscribe), ('publish', self.publish)) if names]
+
+    def adding(self, app: str, env: str) -> tuple[Command, ...]:
+        """The app-calls and app-events commands that add these to an instance; one clone runs both,
+        so one pull request carries them."""
+        commands = []
+        if self.calls:
+            commands.append(Command('app-calls', (app, env, f'--add={",".join(self.calls)}')))
+        added = [f'--add-{field}={",".join(names)}' for field, names in
+                 (('subscribe', self.subscribe), ('publish', self.publish)) if names]
+        if added:
+            commands.append(Command('app-events', (app, env, *added)))
+        if not commands:
+            raise ActionError('choose an app to call, an event to receive or an event to publish')
+        return tuple(commands)
+
+
+def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]:
+    """The command that removes one connection this app declared: the row's ``role``, ``app`` and ``event``."""
+    role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
+    if role == 'calls' and NAME_RE.match(other):
+        return (Command('app-calls', (app, env, f'--remove={other}')),)
+    if role == 'subscribes' and events.SUBSCRIPTION_RE.match(f'{other}.{event}'):
+        return (Command('app-events', (app, env, f'--remove-subscribe={other}.{event}')),)
+    if role == 'publishes' and events.EVENT_RE.match(event):
+        return (Command('app-events', (app, env, f'--remove-publish={event}')),)
+    raise ActionError('no such connection to remove: only the app that declared one can remove it')
+
+
+@dataclass(frozen=True)
+class Command:
+    """One command of the clone's own tooling. ``input`` is its standard input: the one way a secret
+    reaches it (never an argument, never in a message)."""
+    name: str
+    argv: tuple[str, ...]
+    input: str | None = dataclass_field(default=None, repr=False)
+
+    def as_make(self) -> str:
+        """An app-* command on an instance as the operator would type it."""
+        flags = f' ARGS="{" ".join(self.argv[2:])}"' if self.argv[2:] else ''
+        return f'make {self.name} APP={self.argv[0]} ENV={self.argv[1]}{flags}'
+
+
+INSTANCE_CHANGES = {'scale': 'scale', 'expose': 'change access to', 'connect': 'change the connections of',
+                    'disconnect': 'change the connections of', 'remove': 'remove'}
+"""Each change the app page can propose for an instance, and its pull request's verb. A promotion
+is not among them: its pull request is built from a review (console/promotion.py)."""
+
+
+@dataclass(frozen=True)
+class Change:
+    """One change the console proposes as a pull request: the commands a clone of ``main`` runs,
+    the pull request's wording, the job it runs as and how it is merged. Built from a form by
+    ``to_instance``, ``to_team``, ``to_channel`` or ``NewApp.change``; a route handler only submits it."""
+    kind: str  # the job's name
+    target: str  # the job's unit: ``<app>/<env>`` or ``team:<name>``
+    slug: str  # the branch is console/<slug>-<commit>
+    title: str
+    commands: tuple[Command, ...]
+    make: str  # the same change as the operator would type it
+    auto_merge: bool = False
+    touches_others: bool = False  # it also changes another app, whose team reviews it
+    preface: str = ''
+
+    @property
+    def body(self) -> str:
+        return f'{self.preface}Generated by the console with:\n\n    {self.make}'
+
+    @classmethod
+    def to_instance(cls, kind: str, instance: Instance, form: Mapping[str, str]) -> Change:
+        """Scale, change access to, connect, disconnect or remove ``instance``. Only shapes are
+        checked here; whether the change is allowed is the command's own rule, run in the clone."""
+        app, env, touches_others = instance.app, instance.env, False
+        if kind == 'scale':
+            commands: tuple[Command, ...] = (Command('app-scale', (app, env, *scale_flags(form))),)
+        elif kind == 'expose':
+            commands = (Command('app-expose', (app, env, *expose_flags(form))),)
+        elif kind == 'connect':
+            chosen = Connections.from_form(form)
+            commands, touches_others = chosen.adding(app, env), chosen.touches_others
+        elif kind == 'disconnect':
+            commands = removing(app, env, form)
+        elif kind == 'remove':
+            commands = (Command('app-remove', (app, env)),)
+        else:
+            raise ActionError('no such change')
+        return cls(kind, f'{app}/{env}', f'{kind}-{app}-{env}', f'apps: {INSTANCE_CHANGES[kind]} {app}/{env}', commands,
+                   ' && '.join(command.as_make() for command in commands), touches_others=touches_others)
+
+    @classmethod
+    def to_team(cls, action: str, form: Mapping[str, str]) -> Change:
+        """The Teams page's add, edit or remove.
+
+        Only shapes are checked here (a name is a name, a description one short line); whether the team
+        exists, still owns apps or is the default is the command's own rule, run in a clone of main."""
+        name = form.get('name', '').strip()
+        description = ' '.join(form.get('description', '').split())
+        rename, move = form.get('rename', '').strip(), form.get('move_apps_to', '').strip()
+        for label, value in (('team name', name), ('new name', rename), ('team to move apps to', move)):
+            if (value or label == 'team name') and not TEAM_NAME.fullmatch(value):
+                raise ActionError(f'{label}: lowercase letters, digits and hyphens, at most 40 characters')
+        if len(description) > 200:
+            raise ActionError('a description is one line of at most 200 characters')
+        if action == 'add':
+            flags, title = [f'--description={description}'], f'teams: add {name}'
+            make = f"make team-add NAME={name} DESCRIPTION='{description}'"
+        elif action == 'edit':
+            flags = [f'--description={description}'] + ([f'--rename={rename}'] if rename and rename != name else [])
+            title, make = f'teams: change {name}', f'make team-edit NAME={name} ARGS="{" ".join(flags)}"'
+        elif action == 'remove':
+            flags, title = ([f'--move-apps-to={move}'] if move else []), f'teams: remove {name}'
+            make = f'make team-remove NAME={name}' + (f' ARGS="--move-apps-to {move}"' if move else '')
+        else:
+            raise ActionError('no such team change')
+        return cls(f'team {action}', f'team:{name}', f'team-{action}-{name}', title,
+                   (Command(f'team-{action}', (name, *flags)),), make)
+
+    @classmethod
+    def to_channel(cls, action: str, form: Mapping[str, str]) -> Change:
+        """Give a team its notification channel (or a new address for it), or remove it.
+
+        The address is the credential: it is only the command's standard input, and no wording built
+        here repeats it."""
+        name = form.get('name', '').strip()
+        if not TEAM_NAME.fullmatch(name):
+            raise ActionError('team name: lowercase letters, digits and hyphens, at most 40 characters')
+        if action == 'remove':
+            command, title = Command('team-channel', (name, '--remove')), f'teams: remove the notification channel of {name}'
+            make = f'make team-channel NAME={name} ARGS=--remove'
+        elif action == 'set':
+            transport, address = form.get('transport', 'ntfy').strip(), form.get('address', '').strip()
+            problem = channels.address_problem(transport, address)
+            if problem:
+                raise ActionError(f'channel address: {problem}')
+            command = Command('team-channel', (name, f'--transport={transport}'), input=address + '\n')
+            title = f'teams: set the notification channel of {name}'
+            make = f'make team-channel NAME={name}    # the address was entered on the console and is only in the encrypted file'
+        else:
+            raise ActionError('no such channel change')
+        return cls(f'channel {action}', f'team:{name}', f'team-channel-{action}-{name}', title, (command,), make)
+
+    def apply(self, runner: Runner, job: Job, clone: Path) -> None:
+        for command in self.commands:
+            run_tool(runner, job, clone, command.name, list(command.argv), input=command.input)
+
+    def open(self, runner: Runner, github: GitHub, job: Job) -> str:
+        """Open the pull request; returns its URL."""
+        return open_pr(runner, github, job, slug=self.slug, title=self.title, body=self.body,
+                       change=lambda clone: self.apply(runner, job, clone), auto_merge=self.auto_merge)
+
+
+NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
+
+
+@dataclass(frozen=True)
+class NewApp:
+    """The New app form's choices: the repository to create and the app-new flags for its staging
+    instance. ``record`` is what a job keeps to finish the work later, and ``from_record`` reads it back."""
+    name: str
+    stack: str
+    description: str
+    answers: Mapping[str, str]
+    flags: tuple[str, ...]
+    touches_others: bool = False
+
+    @classmethod
+    def from_form(cls, form: Mapping[str, str], questions: list[repo.Question], teams: Mapping[str, str] | None,
+                  callable_apps: set[str] | None = None, offered_events: set[str] | None = None) -> NewApp:
+        """``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
+        ``teams`` are the registered ones; the form's team must be among them. A worker gets no exposure
+        or host: its swhurl.yaml makes it private. When the lists the form offered are given, a call or
+        subscription outside them is refused."""
+        name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
+        description = ' '.join(form.get('description', '').split())[:200]
+        if not NAME_RE.match(name):
+            raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
+        if stack not in STACKS:
+            raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
+        answers = {}
+        for question in questions:
+            value = form.get(f'feature-{question.name}', '').strip() or question.default
+            if value not in question.choices:
+                raise ActionError(f'{question.name} must be one of {", ".join(question.choices)}')
+            answers[question.name] = value
+        team = form.get('team', '').strip()
+        if not teams:
+            raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
+        if team not in teams:
+            raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
+        flags = [f'--team={team}']
+        exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
+        if answers.get('kind') == 'worker':
+            if host:
+                raise ActionError('a worker has no web address; leave Host empty')
+        else:
+            if exposure:
+                if exposure not in EXPOSURES:
+                    raise ActionError(f'exposure must be one of {", ".join(EXPOSURES)}')
+                flags.append(f'--exposure={exposure}')
+            if checked_host(host):
+                flags.append(f'--host={host}')
+        chosen = Connections.from_form(form)
+        if callable_apps is not None and offered_events is not None:
+            chosen.check_offered(callable_apps, offered_events)
+        return cls(name, stack, description, answers, (*flags, *chosen.new_app_flags()), chosen.touches_others)
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> NewApp:
+        """The choices a job kept; ``ValueError``, ``KeyError`` or ``TypeError`` if they cannot be used."""
+        name, stack, flags = str(record['name']), str(record['stack']), tuple(str(flag) for flag in record['extra'])
+        if not NAME_RE.match(name) or stack not in STACKS or not all(flag.startswith('--') for flag in flags):
+            raise ValueError(name)
+        return cls(name, stack, str(record.get('description') or ''),
+                   {str(k): str(v) for k, v in (record.get('answers') or {}).items()}, flags, bool(record.get('touches_others')))
+
+    @property
+    def record(self) -> dict[str, Any]:
+        return {'kind': NEW_APP, 'name': self.name, 'stack': self.stack, 'description': self.description,
+                'answers': dict(self.answers), 'extra': list(self.flags), 'touches_others': self.touches_others}
+
+    @property
+    def target(self) -> str:
+        return f'{self.name}/staging'
+
+    @property
+    def request(self) -> repo.Request:
+        return repo.Request(self.name, self.stack, APP_OWNER, self.description, dict(self.answers))
+
+    def change(self, image: str) -> Change:
+        """The pull request that adds the staging instance, once the repository has published ``image``.
+        It merges itself unless it changes another app: that pull request is the other team's consent."""
+        made = self.request
+        argv = (self.name, f'--from-repo={made.repo}', '--env=staging', f'--image={image}', *self.flags)
+        template = STACKS[self.stack]
+        return Change('new app and repository', self.target, f'new-{self.name}-staging', f'apps: add {self.target}',
+                      (Command('app-new', argv),), f'make app-new NAME={self.name} ARGS="{" ".join(argv[1:])}"',
+                      auto_merge=not self.touches_others, touches_others=self.touches_others,
+                      preface=(f'The console created https://github.com/{made.repo} from [{template}](https://github.com/{template}) '
+                               'and waited for its first image.\n\n'))

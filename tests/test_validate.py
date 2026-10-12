@@ -1,11 +1,12 @@
 """check-repo reports every problem in one run, offline, with FakeRunner."""
 import io
+import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import platform, validate
+from swhurl import ROOT, platform, validate
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -55,6 +56,31 @@ class ValidateTests(unittest.TestCase):
         out = io.StringIO()
         self.assertEqual(validate.validate(self.runner(), Report(out), self.root), 0, out.getvalue())
         self.assertIn('Validation passed for 2 active render entrypoints.', out.getvalue())
+
+
+class UnitTableTests(unittest.TestCase):
+    """The architecture page's Flux units table is checked against the units Git defines."""
+
+    def check(self, edit):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in (platform.CLUSTER, platform.UNITS_DOC):
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (shutil.copytree if (ROOT / rel).is_dir() else shutil.copyfile)(ROOT / rel, root / rel)
+            (root / platform.UNITS_DOC).write_text(edit((root / platform.UNITS_DOC).read_text()))
+            validate.check_unit_table(Report(io.StringIO()), root)
+
+    def test_the_table_as_it_is_passes_and_each_kind_of_drift_is_named(self):
+        self.check(lambda text: text)
+        for edit, problem in (
+                (lambda t: t.replace('| `platform-reloader` |', '| `platform-reloder` |'),
+                 'platform-reloader is not in the table\n  platform-reloder is in the table but not in Git'),
+                (lambda t: re.sub(r'(?m)^(\| `platform-nats` \|.*)\| SOPS \|$', r'\1| |', t), 'platform-nats: Inputs omits SOPS'),
+                (lambda t: t.replace('| `infra-traefik` | k3s Traefik `HelmChartConfig` | — | |', '| `infra-traefik` | x | — | settings |'),
+                 'infra-traefik: Inputs names settings')):
+            with self.assertRaises(validate.ValidationError) as raised:
+                self.check(edit)
+            self.assertIn(problem, str(raised.exception))
 
 
 class SubstitutionTests(unittest.TestCase):

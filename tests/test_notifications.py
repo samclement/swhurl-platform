@@ -10,7 +10,7 @@ from unittest import mock
 import httpx
 import yaml
 
-from swhurl import ROOT, verify
+from swhurl import ROOT, platform, verify
 from swhurl import notifications as n
 from swhurl.notifications import delivery
 from swhurl.report import Report
@@ -507,17 +507,10 @@ class WiringTests(unittest.TestCase):
         kustomizations = [s for s in sources if s['kind'] == 'Kustomization']
         self.assertEqual(kustomizations, [{'kind': 'Kustomization', 'name': '*',
                          'matchLabels': {'platform.swhurl.com/alert': 'failures'}}])
-        for file in ('clusters/home/infra.yaml', 'clusters/home/platform.yaml', 'clusters/home/platform-notify.yaml',
-                     'clusters/home/flux-system/kustomizations.yaml'):
-            for unit in yaml.safe_load_all((ROOT/file).read_text()):
-                labels = unit['metadata'].get('labels', {})
-                if unit['metadata']['name'] == 'platform-console':
-                    self.assertNotIn('platform.swhurl.com/alert', labels)
-                else:
-                    self.assertEqual(labels.get('platform.swhurl.com/alert'), 'failures')
-        for file in (ROOT/'clusters/home').glob('app-*.yaml'):
-            for unit in yaml.safe_load_all(file.read_text()):
-                self.assertNotIn('platform.swhurl.com/alert', unit['metadata'].get('labels', {}))
+        for unit in platform.units():  # every unit Git defines, whichever file holds it
+            with self.subTest(unit=unit.name):
+                alerted = not unit.is_app and unit.name != 'platform-console'
+                self.assertEqual(unit.labels.get('platform.swhurl.com/alert'), 'failures' if alerted else None)
         for path in (ROOT / 'apps').glob('*/prod/kustomization.yaml'):
             self.assertNotIn('production-alert.yaml', yaml.safe_load(path.read_text())['resources'])
 

@@ -15,26 +15,16 @@ from swhurl.run import Runner
 
 class ManifestPolicyTests(unittest.TestCase):
     def test_shared_flux_units_orphan_on_deletion_and_apps_prune(self):
-        units = {}
-        for path in [ROOT / 'clusters/home/flux-system/kustomizations.yaml', *sorted((ROOT / 'clusters/home').glob('*.yaml'))]:
-            for doc in yaml.safe_load_all(path.read_text()):
-                if doc and doc.get('kind') == 'Kustomization' and 'spec' in doc:
-                    units[doc['metadata']['name']] = doc['spec'].get('deletionPolicy', 'MirrorPrune')
-        for name, policy in units.items():
-            with self.subTest(unit=name):
-                expected = 'MirrorPrune' if name.startswith('app-') else 'Orphan'
-                self.assertEqual(policy, expected)
+        units = platform.units()
+        for unit in units:
+            with self.subTest(unit=unit.name):
+                self.assertEqual(unit.spec.get('deletionPolicy', 'MirrorPrune'), 'MirrorPrune' if unit.is_app else 'Orphan')
         for name in ('infra-cert-manager', 'infra-issuers', 'platform-clickstack', 'platform-otel'):
-            self.assertIn(name, units)
+            self.assertIn(name, [unit.name for unit in units])
 
     def test_flux_units_decouple_apps_and_order_issuers(self):
-        deps, specs = {}, {}
-        for path in sorted((ROOT / 'clusters/home').glob('*.yaml')):
-            for doc in yaml.safe_load_all(path.read_text()):
-                if doc and doc.get('kind') == 'Kustomization' and 'spec' in doc:
-                    name = doc['metadata']['name']
-                    deps[name] = {d['name'] for d in doc['spec'].get('dependsOn', [])}
-                    specs[name] = doc['spec']
+        units = platform.units()
+        deps = {unit.name: set(unit.depends_on) for unit in units}
         for name, required in deps.items():
             self.assertLessEqual(required, set(deps), f'{name} depends on an unknown unit')
 
@@ -48,10 +38,23 @@ class ManifestPolicyTests(unittest.TestCase):
         for app in (n for n in deps if n.startswith('app-')):
             self.assertFalse(closure(app) & {'platform-clickstack', 'platform-otel'},
                              f'{app} must not wait for observability')
-        for name, spec in specs.items():
-            encrypted = any((ROOT / spec['path']).rglob('*.sops.yaml'))
-            with self.subTest(unit=name):
-                self.assertEqual('decryption' in spec, encrypted, 'decryption must match encrypted Secrets in the path')
+        for unit in units:
+            with self.subTest(unit=unit.name):
+                self.assertEqual(unit.decrypts, any((ROOT / unit.path).rglob('*.sops.yaml')),
+                                 'decryption must match encrypted Secrets in the path')
+
+    def test_names_the_tooling_types_exist_in_git(self):
+        """A unit or namespace named in the tooling is one Git defines: a rename fails here, not on the cluster."""
+        from swhurl.apps import channels, events
+        from swhurl.console import jobstore
+        from swhurl.notifications import heartbeat, state
+        named = set()
+        for path in (ROOT / 'tools/swhurl').rglob('*.py'):
+            named |= set(re.findall(r"'((?:cluster|infra|platform)-[a-z0-9-]+)'", path.read_text()))
+        other = {'platform-settings', 'platform-system', 'platform-certs', 'platform-signing-keys'}  # not units
+        self.assertLessEqual(named - other, {unit.name for unit in platform.units()})
+        self.assertLessEqual({events.NAMESPACE, channels.NAMESPACE, jobstore.NAMESPACE, state.STATE_NAMESPACE,
+                              heartbeat.CRONJOB_NAMESPACE, 'platform-system'}, platform.namespaces())
 
     def test_platform_hosts_come_from_base_domain(self):
         """Platform manifests name the domain only through ${BASE_DOMAIN}; units using a setting substitute it."""
@@ -198,10 +201,10 @@ class ClickStackRenderTests(unittest.TestCase):
     def test_only_the_flux_webhook_route_skips_sign_in(self):
         """Raw platform Ingresses need sign-in, except GitHub's webhook to Flux's receiver (chart Ingresses: other tests)."""
         unauthenticated = []
-        for _, unit in platform.flux_unit_documents():
-            if not unit['spec']['path'].startswith('./platform/'):
+        for unit in platform.units():
+            if unit.path.parts[0] != 'platform':
                 continue
-            for path in sorted((ROOT / unit['spec']['path']).rglob('*.yaml')):
+            for path in sorted((ROOT / unit.path).rglob('*.yaml')):
                 for doc in yaml.safe_load_all(path.read_text()):
                     if doc and doc.get('kind') == 'Ingress' and 'router.middlewares' not in str(doc['metadata']):
                         unauthenticated.append(doc)

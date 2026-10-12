@@ -75,7 +75,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | Target | Does | Touches |
 | --- | --- | --- |
 | `check` | `check-repo`, `test`, `check-apps`, `check-templates`, `check-otel`, `check-lint` in parallel: everything CI runs. Run before every push | Local |
-| `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links | Local |
+| `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links, and compare the [Flux units table](architecture.md#flux-units) with the units in Git | Local |
 | `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment, test classes in parallel) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
 | `check-templates` | Render every combination of each stack template's questions; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; needs `sops` for a template that declares events) |

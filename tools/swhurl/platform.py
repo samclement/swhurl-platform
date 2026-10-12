@@ -1,11 +1,13 @@
 """Facts about this platform that more than one command needs.
 
-Repository paths, label names, shared ClickStack queries, and discovery of the
-Flux units defined in Git. Keep one copy here rather than a constant per module.
+Repository paths, label names, and the inventory of what Git defines: the Flux units (``units``)
+and the namespaces their manifests declare (``namespaces``). Code, tests and the doc check read
+the inventory rather than retyping a unit's name, file or inputs.
 """
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -14,6 +16,7 @@ from swhurl import ROOT
 
 # Repository paths (relative to the repository root).
 CLUSTER = Path('clusters/home')
+UNITS_DOC = Path('docs/architecture.md')  # its Flux units table is checked against units() (make check-repo)
 ROOT_UNITS = CLUSTER / 'flux-system/kustomizations.yaml'
 SOURCES = CLUSTER / 'flux-system/sources'
 SETTINGS = SOURCES / 'configmap-platform-settings.yaml'
@@ -70,12 +73,43 @@ def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:
                 yield path, doc
 
 
+@dataclass(frozen=True)
+class Unit:
+    """One Flux unit (GLOSSARY.md) as Git defines it."""
+    name: str
+    file: Path  # the file that defines it, from the repository root
+    path: Path  # the directory it applies, from the repository root
+    depends_on: tuple[str, ...]
+    substitutes: bool  # its manifests get the platform settings (${...})
+    decrypts: bool  # it decrypts SOPS Secrets
+    labels: dict
+    spec: dict
+
+    @property
+    def is_app(self) -> bool:
+        """An app instance's unit (``app-<app>-<env>``) rather than a shared one."""
+        return self.name.startswith('app-')
+
+
+def units(root: Path = ROOT) -> list[Unit]:
+    """Every Flux unit defined in Git: the two root units, the shared ones, then one per app instance."""
+    found = []
+    for file, doc in flux_unit_documents(root):
+        spec = doc.get('spec') or {}
+        found.append(Unit(doc['metadata']['name'], file.relative_to(root), Path(spec.get('path', '')),
+                          tuple(d['name'] for d in spec.get('dependsOn') or []), 'postBuild' in spec,
+                          'decryption' in spec, doc['metadata'].get('labels') or {}, spec))
+    return found
+
+
+def namespaces(root: Path = ROOT) -> set[str]:
+    """The namespaces the shared units' manifests declare (an app instance's is its own: ``<app>-<env>``)."""
+    return {doc['metadata']['name'] for unit in units(root) if not unit.is_app
+            for file in sorted((root / unit.path).rglob('*.yaml'))
+            for doc in yaml.safe_load_all(file.read_text()) if isinstance(doc, dict) and doc.get('kind') == 'Namespace'}
+
+
 def decrypted_secret_files(root: Path = ROOT) -> dict[str, list[Path]]:
     """For each unit that decrypts SOPS, the encrypted Secret files under its path."""
-    found = {}
-    for _, unit in flux_unit_documents(root):
-        spec = unit.get('spec') or {}
-        if 'decryption' in spec:
-            path = root / spec['path']
-            found[unit['metadata']['name']] = sorted(p.relative_to(root) for p in path.rglob('*.sops.y*ml'))
-    return found
+    return {unit.name: sorted(p.relative_to(root) for p in (root / unit.path).rglob('*.sops.y*ml'))
+            for unit in units(root) if unit.decrypts}

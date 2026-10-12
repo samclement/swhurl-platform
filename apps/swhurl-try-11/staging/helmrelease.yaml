@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: swhurl-try-11
   namespace: swhurl-try-11-staging
+  annotations:
+    platform.swhurl.com/offers: b986351
 spec:
   interval: 30m
   timeout: 3m
@@ -66,6 +68,7 @@ spec:
               OTEL_SERVICE_NAME: swhurl-try-11
               SWHURL_SERVICE_SWHURL_TRY_10_URL: http://swhurl-try-10.swhurl-try-10-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_SERVICE_SWHURL_TRY_12_URL: http://swhurl-try-12.swhurl-try-12-$(SWHURL_ENV).svc.cluster.local:8080
+              SWHURL_API_PATH: /openapi.json
             probes:
               readiness:
                 enabled: true

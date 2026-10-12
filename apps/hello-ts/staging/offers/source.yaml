@@ -1,0 +1,4 @@
+# Read from the app's repository by make app-offers: do not edit.
+repository: samclement/hello-ts
+commit: b4de9e0
+api: openapi.json

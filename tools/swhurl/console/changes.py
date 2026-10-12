@@ -310,9 +310,14 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
         job.lines += [f'{"D" if p not in after else "A" if p not in before else "M"} {p}' for p in changed]
-        if auto_merge and any(p.endswith('.sops.yaml') for p in changed):
+        encrypted = [p for p in changed if p.endswith('.sops.yaml')]
+        if auto_merge and encrypted:
             auto_merge = False
-            job.lines.append('Not merging automatically: set the Secret values on the branch first, then merge it yourself')
+            if all(Path(p).name == events.SECRET_FILE for p in encrypted):  # generated whole: nothing is left to fill in
+                job.lines.append("Not merging automatically: it adds the app's events key, generated and encrypted here with "
+                                 'nothing to set; review it, then merge it yourself')
+            else:
+                job.lines.append('Not merging automatically: set the Secret values on the branch first, then merge it yourself')
         if verify:
             verify()
         if runner.dry_run:

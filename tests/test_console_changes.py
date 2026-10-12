@@ -234,6 +234,17 @@ class OpenPrTests(unittest.TestCase):
         self.assertNotIn('Merges itself', api.sent('POST /pulls')[0]['body'])
         self.assertIn('Not merging automatically: set the Secret values on the branch first, then merge it yourself', job.lines)
 
+        def with_events_key(tree):  # an app that publishes or subscribes: its NATS key is generated whole
+            (tree / 'apps/x/prod').mkdir(parents=True)
+            (tree / 'apps/x/prod/events.sops.yaml').write_text('sops: {}\n')
+        api, job, runner = FakeGitHub(), actions.Job(1, 'promote', 'x/prod', 'sam@swhurl.com', None), tree_fake(edit=with_events_key)
+        changes.open_pr(runner, api.github, job, slug='promote-x-staging', title='t', body='b', auto_merge=True,
+                        change=lambda tree: changes.run_app_new(runner, job, tree, ['x']))
+        self.assertEqual(api.sent('POST /issues/7/labels'), [], 'still reviewed by a person')
+        self.assertIn("Not merging automatically: it adds the app's events key, generated and encrypted here with nothing to set; "
+                      'review it, then merge it yourself', job.lines)
+        self.assertFalse(any('set the Secret values' in line for line in job.lines))
+
         api = FakeGitHub(fail={'POST /issues/7/labels': (403, 'Resource not accessible')})
         job, runner = actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake()
         url = changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,

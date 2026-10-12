@@ -1127,3 +1127,24 @@ Step 1 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-20
 - Through a port-forward to the live console with the sign-in header: New app offers `platform`, `payments`, `insights` and `demo` with none preselected and no "default" mark; Teams shows four cards, each with a delete form. A New app form posted without a team answered 400 with "choose the team that owns the app: one of platform, payments, insights, demo", and no repository was created.
 - Nothing about the running apps changed: the four apps of `platform` keep their label, and `demo` owns nothing yet.
 - Not exercised: the New app form in a browser (the radio group is `required`, so a browser stops the submit before the server does); a team renamed or removed that used to be the default.
+
+## Demo apps (12 October 2026)
+
+Step 2 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-2026). Four public repositories, made with `make app-repo` and all in team `demo`: `samclement/demo-orders`, `demo-shop`, `demo-shopper` (TypeScript) and `demo-notifier` (Kotlin). Platform commits `8978bdb`, `34abb24`, `b086699`.
+
+- **Running:** each is 1/1 in staging on its own code; `demo-orders` is also in production (`b086699`, retained volume bound, certificate Ready), where `/` answers and `POST /orders` from a person answers 401.
+- **Traffic:** `demo-shopper` visits every half minute. In one minute the shop's log shows three `POST /buy` (201) and three `GET /` from the app `demo-shopper`, and demo-orders' shows three `POST /orders` (201) and three `GET /orders` from the app `demo-shop`.
+- **Events:** each order is published as `demo-orders.created` and `demo-notifier` logs it; none failed to publish. `demo-orders`' published list went from the template's `visited` to `created` through the Offers workflow, with nobody involved.
+- **Telemetry in ClickStack, last ten minutes:** spans, logs and metrics for all four apps, every span carrying team `demo`; `demo-orders`' server spans name the caller (`app:demo-shop`); one trace runs `demo-shopper → demo-shop → demo-orders → demo-notifier`. A dashboard is recorded for each app.
+- **Notification:** a purchase of 12 biscuits through the shop as a signed-in person (port-forward with the sign-in header) made `demo-notifier` log "team told about a big order: 12 biscuits, placed through demo-shop. (accepted: true)". That sent one real message to the `platform` channel. The steady traffic buys one to three and notifies nobody.
+- **Catalogue:** for team `demo`, "2 APIs · 1 events · 3 described by their app", each with its repository's description.
+- **Backups:** `make verify-platform` reported no SQLite backup for the two new `demo-orders` databases; `make backup-sqlite` made and uploaded one for each, and the check passes.
+
+Faults found and fixed on the way:
+
+- **The first Kotlin subscriber received nothing.** The Java NATS client reads the stream's description before binding to its consumer and was refused ("Permissions Violation for Publish to $JS.API.STREAM.INFO.staging-demo-orders"). A subscriber may now read the description of the streams it reads (`b46a563`); the refusals stopped once NATS loaded the list.
+- **A first promotion of an app that describes itself was refused** ("the release is annotated … but the instance keeps no offers/"): production was made from staging's release, annotation included, before it had the documents (`b086699`).
+- `app-promote` printed "Set production secrets" for an app whose only Secret is its events key (`b086699`).
+
+Not exercised: the shop in a signed-in browser; the notification arriving on a phone (the service accepted it); `demo-shop`, `demo-shopper` and `demo-notifier` in production; a first promotion of a described app through the console and its merge gate.
+

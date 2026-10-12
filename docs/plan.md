@@ -21,7 +21,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console (restructured the same day: one Apps list with a map, and Use, Connect and Operate on each app page), and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a signed sign-in identity inside the cluster.
 12. **App notification service: N1 to N4 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026)). Goals and order revised on 11 October ([end goal](#end-goal-and-revised-order-11-october-2026)). The end goal is met and the follow-ups are done; left is N5 (a second provider). The `swhurl-try-14` instance is removed; its GitHub repository and package are yours to delete. Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
 13. **Connections and contracts: delivered 12 October 2026** ([section 17](#17-connections-and-contracts--designed-12-october-2026)): all five stages, with the five existing apps on the features and `hello-ts` promoted with its API description. Operator: delete the throwaway `samclement/swhurl-try-15` GitHub repository and its `swhurl-try-15` container package (its instance was removed on 12 October); look at the catalogue in a signed-in browser. Not exercised: a described app's promotion merging itself; a document refused on a real app; a promotion that changes what an app publishes. Later, if wanted: live state per connection, typed clients from the documents, a breaking-change check in the app's CI, private app repositories.
-14. **Demo team and apps: step 1 of 6 done 12 October 2026** ([section 18](#18-demo-team-and-apps--decided-12-october-2026)). Next: step 2, create `demo-orders`, `demo-shop` and `demo-notifier` (three public repositories).
+14. **Demo team and apps: steps 1 and 2 of 6 done 12 October 2026** ([section 18](#18-demo-team-and-apps--decided-12-october-2026)). Next: step 3, move the docs' examples from `hello-ts` to the demo apps and write the walkthrough; then step 4 removes the four old apps (confirm `test-3`'s data first).
 
 ### Delivered
 
@@ -1015,11 +1015,12 @@ The `platform` team was the built-in default for an app created without a team, 
 | `demo-orders` | TypeScript, web, SQLite | A described API (OpenAPI), a described event `created` (AsyncAPI), a database with backups |
 | `demo-shop` | TypeScript, web, signed-in | Calling `demo-orders` with a platform-issued token; who the caller is |
 | `demo-notifier` | Kotlin, worker | Receiving `demo-orders.created`; a team notification; the second stack |
+| `demo-shopper` | TypeScript, worker | One app calling another as itself: every half minute it buys one to three of something from `demo-shop` and looks at the shop, so the demo always has traffic (about four requests and two events a minute) |
 
 | # | Step | State |
 | --- | --- | --- |
 | 1 | No default team: `--team` (or `team:` in `swhurl.yaml`) is required, New app preselects none, every team can be renamed or removed; team `demo` registered, notifying the `platform` channel; test fixtures belong to `demo` | Done 12 Oct |
-| 2 | Create the three apps in `demo`, connect them, promote `demo-orders`, verify each feature live | Not started |
+| 2 | Create the apps in `demo`, connect them, promote `demo-orders`, verify each feature live. A fourth app, `demo-shopper`, was added at the operator's request for light automated traffic | Done 12 Oct ([current state](current-state.md)) |
 | 3 | Move the docs' examples from `hello-ts` to the demo apps; a short walkthrough | Not started |
 | 4 | Remove `hello-ts`, `test-2`, `test-3`, `test-4`, production first. `test-3` has SQLite data on retained volumes in both environments: say which before anything is deleted | Not started |
 | 5 | Remove the empty `platform` team | Not started |

@@ -1,0 +1,15 @@
+apiVersion: jetstream.nats.io/v1beta2
+kind: Stream
+metadata:
+  name: staging-demo-orders
+  namespace: demo-orders-staging
+spec:
+  name: staging-demo-orders
+  subjects:
+  - staging.demo-orders.>
+  storage: file
+  replicas: 1
+  retention: limits
+  discard: old
+  maxAge: 168h
+  maxBytes: 67108864

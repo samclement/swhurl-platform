@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: demo-orders-events
+    namespace: demo-orders-staging
+type: Opaque
+stringData:
+    SWHURL_EVENTS_SEED: ENC[AES256_GCM,data:EvpMWWGUrs1lFXtPFhmdH0/ROboQudYfKwPuhRZlaRI0S+f/FSdxAKjnxKiZJE1lHM8NaffUHjg12w==,iv:m3dg8xBdXcfpDveGB3lEyeVHQjlIPORJOeFr2feXAfs=,tag:0AWQKitW/PpzePV4Sff1BQ==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhMVVqaFlPMEF5L0Qzd1dU
+            NC9iSUpKUHhxRlprQkhTWi9Wak82c1kzRVdrCnVLN29wa0c0REt4bkdZeFU3YmxR
+            bjZneXg2WE4xUGlpZ3lMb3hQRnozZ0EKLS0tIG9JR21uTkFyVU9tdWNaWEZKc3Qw
+            RlFrTzVUeEpjN0dhOGQ0TDBpbmZvOHMKNrFteeC29XRY505zRUuMKmVxqaaXgGdn
+            /qdvDISwkBWGAJ8wAjDr5nXveEwCUPqTmtQ1InZIOVfgExfjntYyKQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-12T12:38:52Z"
+    mac: ENC[AES256_GCM,data:aysdvXF+3W31NZ1IwUvPNJhFZPPAiu/Qggoou/bPYJ3Y4xGo9Jgi/RIVjtgp+U58YvkPBNU0pBm0cjvhxbWec/RutdIVJ789asi4BNYkqUZo0XG06kKKJZgw+w2rJFa9vcCugHyPH84cZa8Fzk3ZCErjCxTSQoiwnq+r6ZKSBNQ=,iv:gbsSHY9a9xChowiER4ZwvhSQB883yK8no0T/5c3PszI=,tag:jeakl0OuzDiS8uL5Z+hcwA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

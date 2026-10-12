@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-shopper-staging
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: demo-shopper
+    platform.swhurl.com/environment: staging
+    platform.swhurl.com/exposure: private
+    platform.swhurl.com/team: demo

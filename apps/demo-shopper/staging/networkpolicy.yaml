@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-shopper
+  namespace: demo-shopper-staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: demo-shopper
+  policyTypes:
+  - Ingress
+  ingress: []

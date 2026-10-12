@@ -1,0 +1,104 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "demo-shop",
+    "version": "0.1.0",
+    "description": "Demo: the shop people open; it places orders by calling demo-orders with a platform token"
+  },
+  "components": {
+    "schemas": {
+      "Hello": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "hello from demo-shop"
+          },
+          "service": {
+            "type": "string"
+          },
+          "caller": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "app",
+                  "user",
+                  "anonymous"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "visits": {
+            "type": "integer",
+            "description": "How many times it was asked, when the app keeps a database"
+          },
+          "event": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "description": "The event this request published, if any"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "service",
+          "caller",
+          "event",
+          "traceId"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Say hello and name the caller",
+        "responses": {
+          "200": {
+            "description": "A greeting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Hello"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

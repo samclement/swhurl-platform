@@ -42,8 +42,13 @@ class ManifestTests(unittest.TestCase):
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments', 'calls': ['orders', 'billing']})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
         self.assertEqual(manifest_defaults(web)['api_path'], '/openapi.json')
+        manifest_defaults({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
+        manifest_defaults({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})
         for bad, message in (({**doc, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
-                             ({**web, 'provides': {'events': []}}, 'api only'), ({**doc, 'calls': ['Orders']}, 'distinct app names'),
+                             ({**web, 'provides': {'events': []}}, 'apiFile and eventsFile only'),
+                             ({**web, 'provides': {'apiFile': '../x'}}, 'a file in the repository, such as openapi.json'),
+                             ({**web, 'provides': {'eventsFile': '/etc/x'}}, 'such as asyncapi.yaml'),
+                             ({**doc, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only'), ({**doc, 'calls': ['Orders']}, 'distinct app names'),
                              ({**doc, 'calls': ['a', 'a']}, 'distinct app names')):
             with self.subTest(bad=bad), self.assertRaisesRegex(ManifestError, message):
                 manifest_defaults(bad)

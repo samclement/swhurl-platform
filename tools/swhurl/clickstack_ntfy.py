@@ -8,28 +8,21 @@ from __future__ import annotations
 
 import base64
 import json
-from urllib.parse import urlsplit
 
 from swhurl import app_alerts, clickstack, dashboards
 from swhurl.apps import calling, channels
+from swhurl.notifications.errors import NotificationError
+from swhurl.notifications.notice import ntfy_target, platform_topic
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 NAME = 'ntfy: platform'
 DESCRIPTION = 'ClickStack alerts to the platform ntfy topic'
-NTFY_SECRET = ['kubectl', '-n', 'console', 'get', 'secret', 'notification-ntfy', '-o', 'json']
 ALERT_SECRET = 'notify-alerts'  # the notify service compares against the same Secret (notifications/service.py)
 
 
 def destination(runner: Runner) -> dict:
-    data = runner.json(NTFY_SECRET, secret_output=True)['data']
-    url = base64.b64decode(data['NTFY_PLATFORM_URL']).decode()
-    runner.add_secret(url)
-    parts = urlsplit(url)
-    topic = parts.path.removeprefix('/')
-    if (parts.scheme, parts.netloc) != ('https', 'ntfy.sh') or not topic or '/' in topic or parts.query or parts.fragment:
-        raise ValueError('the platform ntfy destination must be a single https://ntfy.sh/<topic> URL')
-    runner.add_secret(topic)
+    server, topic = ntfy_target(platform_topic(runner))
     # HyperDX JSON-escapes each string variable before applying this template.
     # The condition sets high priority on firing and normal priority on recovery.
     # Put the conditional before another field: `{{/if}}}` is parsed by
@@ -38,7 +31,7 @@ def destination(runner: Runner) -> dict:
             + json.dumps({'topic': topic, 'title': 'ClickStack: {{title}}',
                           'message': '{{body}}', 'click': '{{link}}'}, separators=(',', ':'))[1:])
     runner.add_secret(body)
-    return {'name': NAME, 'service': 'generic', 'url': 'https://ntfy.sh/',
+    return {'name': NAME, 'service': 'generic', 'url': f'{server}/',
             'description': DESCRIPTION, 'body': body}
 
 
@@ -92,7 +85,7 @@ def sync(runner: Runner, report: Report, destination=destination, section: str =
             api.call('POST', '/webhooks', wanted)
         report.ok(f'{action}d {name}')
         return report.exit_code()
-    except (CommandError, KeyError, ValueError) as exc:
+    except (CommandError, KeyError, ValueError, NotificationError) as exc:
         report.bad(runner.redact(str(exc)))
         return report.exit_code()
 

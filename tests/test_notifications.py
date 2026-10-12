@@ -13,6 +13,8 @@ import yaml
 from swhurl import ROOT, platform, verify
 from swhurl import notifications as n
 from swhurl.notifications import delivery
+from swhurl.notifications.notice import Notice, Ntfy
+from swhurl.notifications.notice import forward as forward_copy
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -375,37 +377,40 @@ class CopyTests(unittest.TestCase):
     def test_forwarding_names_the_app_and_proves_who_sends_with_the_token_file(self):
         requests = []
 
-        def post(url, **kwargs):
-            requests.append((url, kwargs))
-            return httpx.Response(requests[-1][1]['json'].get('status', 202))
-        notice = {'key': 'event:1@notify', 'about': ['orders', 'prod'], 'title': 'orders/prod unhealthy', 'message': 'm',
-                  'priority': 4, 'click': 'https://console.example.test/apps/orders/prod', 'tags': ['warning'], 'queued': NOW}
+        def accept(request):
+            requests.append(request)
+            return httpx.Response(202)
+
+        entry = {'key': 'event:1@notify', 'about': ['orders', 'prod'], 'title': 'orders/prod unhealthy', 'message': 'm',
+                 'priority': 4, 'click': 'https://console.example.test/apps/orders/prod', 'tags': ['warning'], 'queued': NOW}
+
+        def forward(handler=accept):
+            forward_copy(Notice.of(entry), *entry['about'], entry['key'], transport=httpx.MockTransport(handler))
+
+        def down(_request):
+            raise httpx.ConnectError('private-token')
+
         with tempfile.TemporaryDirectory() as tmp:
             token = Path(tmp) / 'token'
             token.write_text('private-token\n')
             env = {'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080/', 'SWHURL_NOTIFY_TOKEN_FILE': str(token)}
-            with mock.patch.dict('os.environ', env), mock.patch.object(delivery.httpx, 'post', post):
-                delivery.forward(notice)
-                url, sent = requests[0]
-                self.assertEqual(url, 'http://notify.notify.svc.cluster.local:8080/v1/notify')
-                self.assertEqual(sent['headers'], {'Authorization': 'Bearer private-token'})
-                self.assertEqual(sent['json'], {'app': 'orders', 'env': 'prod', 'key': 'event:1@notify', 'priority': 'high',
-                                                'title': 'orders/prod unhealthy', 'message': 'm',
-                                                'click': 'https://console.example.test/apps/orders/prod'})
-                with mock.patch.object(delivery.httpx, 'post', lambda *a, **k: httpx.Response(403)), \
-                        self.assertRaisesRegex(n.NotificationError, '^notify service answered 403$'):
-                    delivery.forward(notice)
-
-                def down(*_args, **_kwargs):
-                    raise httpx.ConnectError('private-token')
-                with mock.patch.object(delivery.httpx, 'post', down), \
-                        self.assertRaisesRegex(n.NotificationError, '^notify service unreachable$'):
-                    delivery.forward(notice)
+            with mock.patch.dict('os.environ', env):
+                forward()
+                self.assertEqual(str(requests[0].url), 'http://notify.notify.svc.cluster.local:8080/v1/notify')
+                self.assertEqual(requests[0].headers['authorization'], 'Bearer private-token')
+                self.assertEqual(json.loads(requests[0].content),
+                                 {'app': 'orders', 'env': 'prod', 'key': 'event:1@notify', 'priority': 'high',
+                                  'title': 'orders/prod unhealthy', 'message': 'm',
+                                  'click': 'https://console.example.test/apps/orders/prod'})
+                with self.assertRaisesRegex(n.NotificationError, '^notify service answered 403$'):
+                    forward(lambda _request: httpx.Response(403))
+                with self.assertRaisesRegex(n.NotificationError, '^notify service unreachable$'):
+                    forward(down)
             with mock.patch.dict('os.environ', env | {'SWHURL_NOTIFY_TOKEN_FILE': str(token) + '.missing'}), \
                     self.assertRaisesRegex(n.NotificationError, 'no token file'):
-                delivery.forward(notice)
+                forward()
         with mock.patch.dict('os.environ', {'SWHURL_NOTIFY_URL': ''}), self.assertRaisesRegex(n.NotificationError, 'is not set'):
-            delivery.forward(notice)
+            forward()
 
 
 class DeliveryTests(unittest.TestCase):
@@ -477,11 +482,9 @@ class DeliveryTests(unittest.TestCase):
 
     def test_http_errors_do_not_expose_destination_or_response(self):
         url = 'https://ntfy.example/private-secret-topic'
-        request = httpx.Request('POST', url)
-        response = httpx.Response(401, request=request, text='private-secret-response')
-        with mock.patch.object(n.httpx, 'post', return_value=response):
-            with self.assertRaises(n.NotificationError) as error:
-                n.publish(url, {'title': 'test', 'message': 'test'})
+        refuse = httpx.MockTransport(lambda _request: httpx.Response(401, text='private-secret-response'))
+        with self.assertRaises(n.NotificationError) as error:
+            Ntfy(refuse)(url, Notice('test', 'test'))
         self.assertNotIn('private-secret', str(error.exception))
 
 

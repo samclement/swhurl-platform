@@ -7,8 +7,6 @@ unsuspended, because a missing or suspended job is reported as stale.
 from __future__ import annotations
 
 import argparse
-import base64
-import binascii
 import datetime as dt
 import json
 import logging
@@ -23,8 +21,8 @@ from pathlib import Path
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
-from .delivery import publish
 from .errors import NotificationError
+from .notice import Notice, Ntfy, Sender, platform_topic
 
 CRONJOB_NAME = 'console-notifications'
 CRONJOB_NAMESPACE = 'console'
@@ -39,8 +37,6 @@ class Watched:
 
 
 WATCHED = (Watched('notification checker', CRONJOB_NAMESPACE, CRONJOB_NAME, 600),)
-SECRET_NAME = 'notification-ntfy'
-SECRET_KEY = 'NTFY_PLATFORM_URL'
 REMINDER_SECONDS = 3600
 EMPTY = {'alerting_since': None, 'last_alert': None}
 STATE_PATH = Path.home() / '.local/state/swhurl-platform/notification-heartbeat.json'
@@ -149,19 +145,6 @@ def save_state(path: Path, states: dict) -> None:
                 pass
 
 
-def destination(runner: Runner) -> str:
-    doc = runner.json(['kubectl', '-n', CRONJOB_NAMESPACE, 'get', 'secret', SECRET_NAME, '-o', 'json'])
-    try:
-        raw = base64.b64decode(doc['data'][SECRET_KEY], validate=True)
-        value = raw.decode()
-    except (KeyError, TypeError, ValueError, UnicodeDecodeError, binascii.Error):
-        raise NotificationError('notification destination is unavailable') from None
-    if not value:
-        raise NotificationError('notification destination is empty')
-    runner.add_secret(value)
-    return value
-
-
 def get_cronjob(runner: Runner, watched: Watched = WATCHED[0]) -> dict | None:
     command = ['kubectl', '-n', watched.namespace, 'get', 'cronjob', watched.name, '-o', 'json']
     result = runner.run(command, check=False, secret_output=True)
@@ -181,7 +164,7 @@ def get_cronjob(runner: Runner, watched: Watched = WATCHED[0]) -> dict | None:
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, *,
          now: float | None = None, state_path: Path | None = None,
-         watched: tuple[Watched, ...] | None = None) -> int:
+         watched: tuple[Watched, ...] | None = None, sender: Sender | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Read and decide without posting or saving state')
     parser.add_argument('--max-age', type=parse_duration, default=None,
@@ -209,19 +192,16 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, *,
             if action == 'none':
                 log.info('Heartbeat for %s: %s', job.label, 'stale; reminder not due' if reason else 'fresh')
                 continue
-            title = f'{job.label} recovered' if action == 'recover' else f'{job.label} stale'
-            message = (f'The {job.name} CronJob is healthy again.' if action == 'recover' else
-                       f'The {job.name} CronJob is stale: {reason}. Check with make verify-platform.')
-            priority = 3 if action == 'recover' else 4
+            notice = (Notice(f'{job.label} recovered', f'The {job.name} CronJob is healthy again.') if action == 'recover' else
+                      Notice(f'{job.label} stale', f'The {job.name} CronJob is stale: {reason}. Check with make verify-platform.',
+                             high=True))
             if runner.dry_run:
-                log.info('Would notify: %s (priority %d)', title, priority)
+                log.info('Would notify: %s (priority %d)', notice.title, notice.fields()['priority'])
                 continue
-            url = destination(runner)
-            publish(url, {'title': title, 'message': message, 'priority': priority,
-                          'tags': ['white_check_mark'] if action == 'recover' else ['warning']})
+            (sender or Ntfy())(platform_topic(runner), notice)
             states[key] = updated
             save_state(path, states)
-            log.info('Notification heartbeat sent: %s', title)
+            log.info('Notification heartbeat sent: %s', notice.title)
         except (CommandError, NotificationError, OSError, ValueError) as error:
             log.error('%s', runner.redact(str(error)) if isinstance(error, NotificationError)
                       else f'cannot read {job.label}')

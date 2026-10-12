@@ -10,6 +10,7 @@ from swhurl.apps.instance import Instance
 from swhurl.run import Runner
 from swhurl.verify import ready_condition
 
+from .notice import Notice
 from .state import empty_state
 
 GRACE = 300
@@ -74,8 +75,7 @@ def enqueue(state: dict, key: str, title: str, message: str, *, high: bool, clic
     for copy_key, extra in ((key, {}), *([(f'{key}@notify', {'about': about})] if about else [])):
         if copy_key in state['seen'] or any(n['key'] == copy_key for n in state['pending']):
             continue
-        state['pending'].append({'key': copy_key, 'title': title, 'message': message, 'priority': 4 if high else 3,
-                                 'tags': ['warning' if high else 'white_check_mark'], 'click': click, 'queued': now} | extra)
+        state['pending'].append(Notice(title, message, high, click).fields() | {'key': copy_key, 'queued': now} | extra)
 
 
 def link(base: str, entry: dict, *, removed: bool = False) -> str:

@@ -41,7 +41,7 @@ from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import verdict
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import actions, catalogue, changes, cluster, jobstore, logconfig, promotion, repos
-from swhurl.run import CommandError, Runner
+from swhurl.run import CommandError, Runner, SharedReads
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
 DEV_IDENTITY = 'operator@localhost (dev)'
@@ -184,6 +184,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     jobs = jobs or actions.Jobs(runner, store=job_store(runner, dev_identity))
     github = github or changes.github_from_env(runner)
     app_repos = app_repos or repos.token_from_env(runner)
+    # From here every handler reads through this: within one page (``reading`` and the app page) a
+    # read runs once and independent reads run at once; a POST and a job get the runner unchanged.
+    runner = SharedReads(runner)
 
     def platform_file(path: str) -> str | None:
         """A file of this repository's main branch, through the console's GitHub token."""
@@ -223,7 +226,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def reading(request: Request, name: str, read, **context) -> Response:
         try:
-            return page(request, name, **context, **read())
+            with runner.once():
+                found = read()
+            return page(request, name, **context, **found)
         except cluster.ReadError as error:
             return page(request, 'error.html', status_code=502, error=str(error))
 
@@ -238,9 +243,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def overview(request: Request) -> Response:
         def read():
-            checks, found = cluster.platform_checks(runner), cluster.units(runner)
-            prs, prs_error = open_prs()
-            return {'checks': checks, 'units': found, 'apps': cluster.apps(runner), 'problems': cluster.problems(checks, found),
+            checks, found, (prs, prs_error), rows = runner.together(
+                lambda: cluster.platform_checks(runner), lambda: cluster.units(runner), open_prs, lambda: cluster.apps(runner))
+            return {'checks': checks, 'units': found, 'apps': rows, 'problems': cluster.problems(checks, found),
                     'updating': cluster.updating(found),
                     'prs': prs, 'prs_error': prs_error, 'recent': [j for j in jobs.recent() if j.state != 'running'][:5]}
         return reading(request, 'overview.html', read)
@@ -290,7 +295,8 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def read_app(request: Request) -> Response:
         found = Instance.named(request.path_params['app'], request.path_params['env'])
-        status = ops.gather_status(runner, found) if found else None
+        status, rows = runner.together(lambda: ops.gather_status(runner, found),
+                                       lambda: cluster.apps(runner)) if found else (None, [])
         if status is None and found:
             # Created here but not applied yet: say so instead of "no such app" (its links appear at once).
             label = f'{found.app}/{found.env}'
@@ -305,7 +311,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 return page(request, 'pending.html', label=label, jobs=pending, prs=prs, prs_error=prs_error, in_git=in_git)
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
-        summary = next((a for a in cluster.summaries(cluster.apps(runner)) if a.app == found.app), None)
+        summary = next((a for a in cluster.summaries(rows) if a.app == found.app), None)
         promotion_problem = gate.source_problem(status, status.desired_image, status.applied_revision)
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
@@ -318,13 +324,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def app(request: Request) -> Response:
         try:
-            return read_app(request)
+            with runner.once():
+                return read_app(request)
         except (CommandError, cluster.ReadError, actions.ActionError, EditError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
 
     def platform(request: Request) -> Response:
         def read():
-            checks, found = cluster.platform_checks(runner), cluster.units(runner)
+            checks, found = runner.together(lambda: cluster.platform_checks(runner), lambda: cluster.units(runner))
             layers = [(title, text, [u for u in found if u.layer == title])
                       for title, text in [(t, d) for _, t, d in cluster.LAYERS] + [(cluster.OTHER_LAYER, '')]]
             revisions = Counter(u.revision for u in found if u.revision).most_common(1)

@@ -14,7 +14,7 @@ from starlette.testclient import TestClient
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
-from swhurl.run import FakeRunner, Result
+from swhurl.run import FakeRunner, Result, SharedReads
 
 REV = 'main@sha1:abc1234def'
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com'}
@@ -565,6 +565,22 @@ class StateTests(unittest.TestCase):
         self.assertEqual(unit_state(('Unknown', 'Running health checks')).key, 'updating')
         self.assertEqual(unit_state(('False', 'health check failed'), reason='HealthCheckFailed'), state.State('failing', 'health check failed'))
         self.assertEqual(unit_state(('True', ''), suspended=True).key, 'suspended')
+
+    def test_a_page_reads_each_thing_once_and_reports_checks_in_their_order(self):
+        for path in ('/', '/platform', '/apps', '/apps/web/prod'):
+            with self.subTest(path):
+                runner = fake(**CHECKS, **{
+                    'kubectl -n flux-system get kustomization app-web-prod': json.dumps(unit('app-web-prod')),
+                    'kubectl -n web-prod get': '{}'})
+                self.assertEqual(client(runner).get(path, headers=WHO).status_code, 200)
+                self.assertEqual(len(runner.calls), len(set(runner.calls)), 'no cluster read is made twice for one page')
+        runner = fake(**CHECKS)
+        apart = cluster.platform_checks(runner)
+        shared = SharedReads(runner)
+        with shared.once():
+            at_once = cluster.platform_checks(shared)
+        self.assertEqual(at_once, apart, 'checks run at once are reported as when run one after another')
+        self.assertGreater(apart.count, 3)
 
     def test_a_dependency_wait_is_not_a_problem(self):
         waiting = unit('app-web-prod', ready='False', message="dependency 'flux-system/infra-base' is not ready")

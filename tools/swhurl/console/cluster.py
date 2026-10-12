@@ -1,6 +1,7 @@
 """What the console reads from the cluster: read-only, through a Runner, no Secrets and no exec."""
 from __future__ import annotations
 
+import functools
 import io
 import re
 from collections import defaultdict
@@ -166,22 +167,29 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
     namespace's team label, and its state from the same facts as its own page (the Git source,
     its pods and its workloads). ``states=False`` skips those three reads for a page that shows
     no state: every row is then Unknown and says why."""
-    releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in items(runner, RELEASES)}
-    try:
-        teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '')
-                 for n in items(runner, APP_NAMESPACES)}
-    except ReadError:  # an account that may not list namespaces still gets the rest
-        teams = {}
+    def namespaces() -> list[dict]:
+        try:
+            return items(runner, APP_NAMESPACES)
+        except ReadError:  # an account that may not list namespaces still gets the rest
+            return []
+
+    def git_source() -> dict:
+        try:
+            return runner.json(SOURCE) or {}
+        except CommandError as error:
+            raise ReadError(str(error)) from None
+    lists = [functools.partial(items, runner, RELEASES), namespaces, functools.partial(items, runner, UNITS)]
+    judged = [git_source, functools.partial(items, runner, PODS), functools.partial(items, runner, WORKLOADS)]
+    read = runner.together(*lists, *(judged if states else ()))
+    releases = {(r['metadata']['namespace'], r['metadata']['name']): r for r in read[0]}
+    teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '') for n in read[1]}
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
-             for unit in items(runner, UNITS) if (instance := Instance.of_unit(unit['metadata']['name']))]
-    try:
-        source = (runner.json(SOURCE) or {}) if states else {}
-    except CommandError as error:
-        raise ReadError(str(error)) from None
+             for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
+    source = read[3] if states else {}
     owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
-    for kind, args in (('pods', PODS), ('workloads', WORKLOADS)):
+    for kind, listed in (('pods', read[4:5]), ('workloads', read[5:6])):
         owned[kind] = defaultdict(list)
-        for item in items(runner, args) if states else ():
+        for item in listed[0] if listed else ():
             metadata = item['metadata']
             owned[kind][metadata.get('namespace', ''), (metadata.get('labels') or {}).get(ops.INSTANCE_LABEL, '')].append(item)
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found

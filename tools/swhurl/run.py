@@ -14,6 +14,7 @@ Every call to kubectl, flux, helm, sops, age or git goes through a
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import json
 import os
 import shlex
@@ -21,6 +22,7 @@ import signal
 import subprocess
 import threading
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -156,6 +158,11 @@ class Runner:
         text = self.output(args, **kwargs)
         return json.loads(text) if text.strip() else None
 
+    def together(self, *reads: Callable[[], Any]) -> list[Any]:
+        """The answers of independent reads, in the order given. Here they run one after another;
+        :class:`SharedReads` runs them at once."""
+        return [read() for read in reads]
+
     def attached(self, args: Sequence[str | Path], *, mutating: bool = False) -> int:
         """Run with the terminal attached (output streams live) and return the exit code.
 
@@ -289,6 +296,75 @@ class Runner:
 
 
 Response = Result | Callable[[tuple[str, ...], str | None], Result]
+
+
+READ_SLOTS = threading.BoundedSemaphore(3)
+"""How many reads run at once in this process, whoever asks: each is a kubectl process of up to
+about 56 MB in the console's pod, which has 256 Mi."""
+
+
+def is_read(argv: tuple[str, ...]) -> bool:
+    """``kubectl get ...`` or ``kubectl -n <namespace> get ...``: nothing else is shared."""
+    return argv[:1] == ('kubectl',) and (argv[3:4] if argv[1:2] == ('-n',) else argv[1:2]) == ('get',)
+
+
+class SharedReads:
+    """A runner for a reader that asks many independent things, such as one console page.
+
+    Inside ``once()``, an identical ``kubectl get`` runs once and every asker gets that answer
+    (so a page cannot disagree with itself), and ``together`` runs its reads at once instead of
+    one after another. Outside ``once()``, and for everything that is not such a read, it is the
+    runner it wraps: nothing is remembered from one page to the next, and nothing that changes
+    the cluster is ever shared.
+    """
+
+    def __init__(self, runner: Runner):
+        self._runner = runner
+        self._answers: contextvars.ContextVar[dict | None] = contextvars.ContextVar('answers', default=None)
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._runner, name)
+
+    @contextlib.contextmanager
+    def once(self) -> Iterator[None]:
+        token = self._answers.set({})
+        try:
+            yield
+        finally:
+            self._answers.reset(token)
+
+    def run(self, args: Sequence[str | Path], **kwargs: Any) -> Result:
+        argv, answers = tuple(str(a) for a in args), self._answers.get()
+        if answers is None or not is_read(argv) or kwargs.keys() - {'check'}:
+            return self._runner.run(args, **kwargs)
+        key = (argv, kwargs.get('check', True))
+        with self._lock:
+            answer, first = answers.get(key), key not in answers
+            if first:
+                answer = answers[key] = Future()
+        if first:
+            try:
+                with READ_SLOTS:
+                    answer.set_result(self._runner.run(argv, **kwargs))
+            except BaseException as error:  # every asker gets the failure, as each would have alone
+                answer.set_exception(error)
+        return answer.result()
+
+    def output(self, args: Sequence[str | Path], **kwargs: Any) -> str:
+        return self.run(args, **kwargs).stdout
+
+    def json(self, args: Sequence[str | Path], **kwargs: Any) -> Any:
+        text = self.output(args, **kwargs)
+        return json.loads(text) if text.strip() else None
+
+    def together(self, *reads: Callable[[], Any]) -> list[Any]:
+        """All of them finish; the first failure in the order given is raised, as it would be one after another."""
+        if self._answers.get() is None or len(reads) < 2:
+            return [read() for read in reads]
+        with ThreadPoolExecutor(max_workers=len(reads)) as pool:
+            started = [pool.submit(contextvars.copy_context().run, read) for read in reads]
+        return [each.result() for each in started]
 
 
 class FakeRunner(Runner):

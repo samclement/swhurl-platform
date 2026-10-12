@@ -3,13 +3,14 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 import unittest
 
 from swhurl import ROOT
 from swhurl import __main__ as cli
 from swhurl.report import Report
-from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner
+from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner, SharedReads
 
 SECRET = 'fixture-secret-token-value'
 
@@ -236,6 +237,74 @@ class CliTests(unittest.TestCase):
         for name, (module, function, _) in cli.COMMANDS.items():
             with self.subTest(command=name):
                 self.assertTrue(callable(getattr(importlib.import_module(module), function)))
+
+
+class SharedReadsTests(unittest.TestCase):
+    """One page's reads: an identical read once, independent reads at once, nothing kept afterwards."""
+    GET = ['kubectl', '-n', 'web-prod', 'get', 'pods', '-o', 'json']
+
+    def test_an_identical_read_runs_once_inside_a_page_and_again_on_the_next(self):
+        fake = FakeRunner().on('kubectl', stdout='{"items": []}')
+        reads = SharedReads(fake)
+        with reads.once():
+            self.assertEqual([reads.json(self.GET), reads.json(self.GET)], [{'items': []}] * 2)
+            self.assertEqual(len(fake.calls), 1)
+            reads.run(['kubectl', 'get', 'pods'])
+            self.assertEqual(len(fake.calls), 2, 'another read is another command')
+        with reads.once():
+            reads.json(self.GET)
+        reads.json(self.GET)
+        reads.json(self.GET)
+        self.assertEqual(len(fake.calls), 5, 'nothing is remembered between pages, or outside one')
+
+    def test_only_kubectl_get_is_shared(self):
+        fake = FakeRunner().on('kubectl').on('flux')
+        reads = SharedReads(fake)
+        with reads.once():
+            for argv in (['kubectl', '-n', 'flux-system', 'patch', 'kustomization/x'], ['flux', 'get', 'all'],
+                         ['kubectl', '-n', 'x', 'exec', 'pod', '--', 'tool', 'get'], ['kubectl', 'delete', 'pod', 'get']):
+                reads.run(argv)
+                reads.run(argv)
+            reads.run(self.GET, input='x')
+            reads.run(self.GET, input='x')
+        self.assertEqual(len(fake.calls), 10)
+
+    def test_a_failed_read_fails_for_every_asker(self):
+        reads = SharedReads(FakeRunner().on('kubectl', returncode=1, stderr='Forbidden'))
+        with reads.once():
+            for _ in range(2):
+                with self.assertRaisesRegex(CommandError, 'Forbidden'):
+                    reads.json(self.GET)
+            self.assertEqual(reads.run(self.GET, check=False).returncode, 1)
+
+    def test_together_runs_at_once_keeps_the_order_and_raises_the_first_failure(self):
+        fake = FakeRunner().on('kubectl', stdout='{}')
+        reads = SharedReads(fake)
+        both = threading.Barrier(2, timeout=5)  # passes only if two reads are in flight at the same moment
+
+        def read(name):
+            both.wait()
+            reads.json(self.GET)
+            return name
+
+        def fail():
+            raise ValueError('second')
+        with reads.once():
+            self.assertEqual(reads.together(lambda: read('a'), lambda: read('b')), ['a', 'b'])
+            self.assertEqual(len(fake.calls), 1, 'reads started together still share one answer')
+            with self.assertRaisesRegex(ValueError, 'second'):
+                reads.together(lambda: 'first', fail, lambda: (_ for _ in ()).throw(KeyError('third')))
+        self.assertEqual(reads.together(lambda: 1, lambda: 2), [1, 2], 'outside a page: one after another')
+        self.assertEqual(FakeRunner().together(lambda: 1, lambda: 2), [1, 2], 'a plain runner: one after another')
+
+    def test_everything_else_is_the_runner_it_wraps(self):
+        fake = FakeRunner(dry_run=True)
+        fake.add_secret('hunter2')
+        reads = SharedReads(fake)
+        self.assertTrue(reads.dry_run)
+        self.assertEqual(reads.redact('x hunter2'), 'x <redacted>')
+        reads.run(['kubectl', 'delete', 'pod', 'x'], mutating=True)
+        self.assertEqual(fake.calls, [], 'a dry run still plans a change instead of making it')
 
 
 if __name__ == '__main__':

@@ -64,6 +64,14 @@ class Report:
     def line(self, message: str = '') -> None:
         self._emit(message)
 
+    def merge(self, other: Report) -> None:
+        """Add what ``other`` reported, as if it had been reported here (for checks run apart, then shown in order)."""
+        for line in other.lines:
+            self._emit(line)
+        self.entries += other.entries
+        self.failures += other.failures
+        self.warnings += other.warnings
+
     @property
     def passed(self) -> bool:
         return self.failures == 0

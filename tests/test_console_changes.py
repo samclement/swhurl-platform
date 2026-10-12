@@ -514,6 +514,9 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/staging/disconnect', {'role': 'subscribes', 'app': 'orders', 'event': 'created'},
              ('app-events', 'hello', 'staging', '--remove-subscribe=orders.created'), 'hello/staging',
              'console/disconnect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
+            ('/catalogue/staging/use', {'app': 'hello', 'publish': 'created'},  # the catalogue's choice of app: the same change
+             ('app-events', 'hello', 'staging', '--add-publish=created'), 'hello/staging',
+             'console/connect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):
@@ -572,6 +575,8 @@ class ChangeAppRouteTests(unittest.TestCase):
                                  ('/apps/hello/prod/connect', {'publish': 'Created'}, 400),
                                  ('/apps/hello/prod/connect', {'subscribe': 'created'}, 400),
                                  ('/apps/hello/prod/disconnect', {'role': 'called-by', 'app': 'orders'}, 400),
+                                 ('/catalogue/prod/use', {'calls': 'orders'}, 400), ('/catalogue/prod/use', {'app': '../hello', 'calls': 'orders'}, 404),
+                                 ('/catalogue/dev/use', {'app': 'hello', 'calls': 'orders'}, 404),
                                  ('/apps/hello/prod/calls', {}, 404), ('/apps/hello/prod/events', {}, 404),
                                  ('/apps/Hello/prod/remove', {}, 404), ('/apps/hello/dev/remove', {}, 404)):
             with self.subTest(path=path, form=form):

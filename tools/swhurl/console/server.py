@@ -264,10 +264,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         kind, team = request.query_params.get('kind', ''), request.query_params.get('team', '')
 
         def read():
-            found = catalogue.entries(cluster.apps(runner), env, described)
-            return {'entries': [e for e in found if (not kind or e.kind == kind) and (not team or e.team == team)],
-                    'teams': sorted({e.team for e in found if e.team}), 'env': env, 'kind': kind if kind in ('api', 'event') else '',
-                    'team': team, 'owner': contract.APP_OWNER}
+            rows = cluster.apps(runner)
+            found = catalogue.entries(rows, env, described)
+            shown = [e for e in found if (not kind or e.kind == kind) and (not team or e.team == team)]
+            # An app that only uses is listed while no kind is chosen: it offers neither.
+            grouped = [g for g in catalogue.groups(rows, env, shown) if (g.entries or not kind) and (not team or g.team == team)]
+            return {'entries': shown, 'groups': grouped, 'team_of': {g.app: g.team for g in catalogue.groups(rows, env, [])},
+                    'teams': sorted({row.team for row in rows if row.instance.env == env and row.team}), 'env': env,
+                    'kind': kind if kind in ('api', 'event') else '', 'team': team, 'owner': contract.APP_OWNER}
         return reading(request, 'catalogue.html', read)
 
     def read_app(request: Request) -> Response:
@@ -721,6 +725,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
+    async def use_offer(request: Request) -> Response:
+        """The catalogue's Use: the app chosen there connects, as its own Connect to an app would."""
+        chosen = parse_qs((await request.body()).decode()).get('app', [''])[0]
+        if not chosen:
+            return page(request, 'error.html', status_code=400, error='Choose the app that will use it.')
+        request.path_params.update(app=chosen, change='connect')
+        return await change_app(request)
+
     def activity(request: Request) -> Response:
         prs, prs_error = open_prs()
         return page(request, 'activity.html', jobs=jobs.recent(), prs=prs, prs_error=prs_error)
@@ -729,7 +741,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return PlainTextResponse('ok\n')
 
     return Starlette(
-        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')), Route('/catalogue', catalogue_page),
+        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')), Route('/catalogue', catalogue_page), Route('/catalogue/{env}/use', use_offer, methods=['POST']),
                 Route('/teams', teams_page), Route('/teams/{action}', change_team, methods=['POST']),
                 Route('/team-channel/{action}', change_channel, methods=['POST']),
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),

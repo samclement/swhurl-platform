@@ -1,6 +1,7 @@
 """The catalogue: what the apps of one environment offer each other (docs/console.md#use-it).
 
-One entry per web app (its API) and per published event, whether or not the app describes it. The
+One group per app, with what it uses; in it one entry for its API (a web app) and one per event it
+publishes, whether or not the app describes it. The
 facts come from the cluster, as every page's do (who runs, who publishes what, who uses it); the
 descriptions come from the documents kept beside each instance in Git (apps/<app>/<env>/offers/,
 docs/apps.md#what-an-app-offers), read through ``Documents`` and kept in memory per commit.
@@ -76,6 +77,42 @@ class Documents:
 
 
 @dataclass(frozen=True)
+class Field:
+    """One field of an event's payload, as a row: nested fields carry their path (``caller.id``)."""
+    name: str
+    type: str
+    required: bool
+    meaning: str = ''
+
+
+def _type(schema: dict) -> str:
+    """A JSON Schema's type as a few words: ``string (date-time)``, ``string or null``, ``one of a, b``."""
+    if isinstance(schema.get('enum'), list) and schema['enum']:
+        return 'one of ' + ', '.join(str(value) for value in schema['enum'])
+    kind = schema.get('type')
+    said = ' or '.join(str(each) for each in kind) if isinstance(kind, list) else str(kind or 'any')
+    if said == 'array' and isinstance(schema.get('items'), dict):
+        said = f'list of {_type(schema["items"])}'
+    return f'{said} ({schema["format"]})' if schema.get('format') else said
+
+
+def fields(schema: object, prefix: str = '', needed: bool = True) -> tuple[Field, ...]:
+    """A payload schema's fields, one row each, nested objects and lists of objects below their parent.
+    Empty for a schema that is not an object with properties: the page then shows the schema alone."""
+    if not isinstance(schema, dict) or not isinstance(schema.get('properties'), dict):
+        return ()
+    required = schema.get('required') if isinstance(schema.get('required'), list) else []
+    found: list[Field] = []
+    for name, each in schema['properties'].items():
+        each = each if isinstance(each, dict) else {}
+        must = needed and name in required
+        found.append(Field(prefix + str(name), _type(each), must, str(each.get('description') or '')))
+        found.extend(fields(each, f'{prefix}{name}.', must))
+        found.extend(fields(each.get('items'), f'{prefix}{name}[].', must))
+    return tuple(found)
+
+
+@dataclass(frozen=True)
 class Entry:
     kind: str  # api or event
     name: str  # the app, or <app>.<event>
@@ -88,6 +125,7 @@ class Entry:
     link: str = ''  # an API: where its description is served
     operations: tuple[tuple[str, str, str], ...] = ()
     schema: str = ''  # an event: its payload's JSON Schema, printed
+    fields: tuple[Field, ...] = ()  # the same, one row per field
     example: str = ''
     commit: str = ''
     problem: str = ''
@@ -96,6 +134,20 @@ class Entry:
     @property
     def event(self) -> str:
         return self.name.partition('.')[2]
+
+    @property
+    def sample_path(self) -> str:
+        """A route of this API to show in a code sample: its first GET without a parameter, else ``/``."""
+        return next((path for method, path, _ in self.operations if method == 'GET' and '{' not in path and path != '/'), '/')
+
+
+@dataclass(frozen=True)
+class Group:
+    """One app of the environment: what it uses, and what it offers (nothing, for an app that only uses)."""
+    app: str
+    team: str
+    uses: tuple[tuple[str, str], ...] = ()  # (api or event, its entry's name)
+    entries: tuple[Entry, ...] = ()
 
 
 def _printed(value: object) -> str:
@@ -123,7 +175,17 @@ def entries(rows: list[AppRow], env: str, documents: Documents) -> list[Entry]:
             event = by_name.get(name)
             users = tuple(subscriber for published, subscriber in c.subscribers if published == name)
             found.append(Entry('event', f'{app}.{name}', app, row.team, event.description if event else '', event is not None, users,
-                               schema=_printed(event.payload) if event else '', example=_printed(event.example) if event else '',
+                               schema=_printed(event.payload) if event else '', fields=fields(event.payload) if event else (), example=_printed(event.example) if event else '',
                                commit=c.offers, problem=described.problem,
                                could_use=tuple((other, team) for other, team in others if other != app and other not in users)))
     return found
+
+
+def groups(rows: list[AppRow], env: str, found: list[Entry]) -> list[Group]:
+    """``found`` (entries, filtered or not) by app: the apps that offer something first, then those that
+    only use; each with what it calls and receives, so both directions are on one page."""
+    here = sorted((row for row in rows if row.instance.env == env), key=lambda row: row.instance.app)
+    made = [Group(row.instance.app, row.team,
+                  tuple(('api', name) for name in row.connections.calls) + tuple(('event', name) for name in row.connections.subscribes),
+                  tuple(e for e in found if e.app == row.instance.app)) for row in here]
+    return sorted(made, key=lambda group: not group.entries)

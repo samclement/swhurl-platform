@@ -79,3 +79,11 @@ data:
               subscribe:
                 allow:
                 - _INBOX.prod.demo-orders.>
+          - nkey: UB5OTUGYUKWSQVCUQUMY5RE4P6KGHTUAEBQ76SWYQJ42IGP44PJE3PDR
+            permissions:
+              publish:
+                allow:
+                - prod.swhurl-try-12.>
+              subscribe:
+                allow:
+                - _INBOX.prod.swhurl-try-12.>

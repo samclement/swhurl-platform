@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import helmrelease, new, offers, promotion
+from swhurl.apps import calling, helmrelease, new, offers, promotion
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
@@ -99,6 +99,10 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
                     for path in carried if (base / 'apps' / app / 'staging' / offers.OFFERS_DIR / Path(path).name).is_file()):
                 raise Hold("promotion carries offers that differ from staging's")
             expected.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
+            # Where the image serves its API description goes with its documents (staging's value).
+            served = helmrelease.variables(source).get(calling.API_VARIABLE)
+            if served and helmrelease.port(expected) is not None:
+                helmrelease.container(expected).setdefault('env', {})[calling.API_VARIABLE] = served
         if actual != expected or sorted(files) != sorted([release, *carried]):
             raise Hold('later promotion changes more than the image pin and what the image offers')
         return

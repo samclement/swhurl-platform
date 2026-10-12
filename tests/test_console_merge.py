@@ -136,7 +136,8 @@ class MergeTests(unittest.TestCase):
         from swhurl.apps import edit
         api = 'openapi: 3.0.1\npaths: {}\n'
         with contextlib.redirect_stdout(io.StringIO()):
-            edit.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None)
+            edit.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None,
+                              api_path='/openapi.yaml')  # production gets where the image serves it, too
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'
         self.files = ['apps/example/prod/helmrelease.yaml', 'apps/example/prod/offers/openapi.yaml', 'apps/example/prod/offers/source.yaml']

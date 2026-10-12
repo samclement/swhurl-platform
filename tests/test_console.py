@@ -322,10 +322,11 @@ channels:
         self.assertIn('An order was &lt;b&gt;accepted&lt;/b&gt;', text, 'what an app says about itself is escaped')
         self.assertIn('<tr><td><code>id</code></td><td>string</td><td>yes</td><td>—</td></tr>', text, 'the payload, one row per field')
         self.assertIn('&#34;required&#34;: [', text, 'the full schema is still there, closed')
-        self.assertIn('<a class="name" href="/apps/reports/staging">reports</a>', text)
+        self.assertIn('<section class="card" id="app-reports">', text, 'one card per app')
+        self.assertIn('<h2><a href="/apps/reports/staging">reports</a></h2>', text)
         self.assertIn('href="/catalogue?env=staging#api-orders" title="Show orders in the catalogue">API orders</a>', text, 'what reports uses')
         self.assertIn('href="/catalogue?env=staging#event-orders.created" title="Show orders.created in the catalogue">event orders.created</a>', text)
-        self.assertIn('<span class="muted none">offers nothing</span>', text, 'job only uses')
+        self.assertIn('Offers nothing: no API and no event.', text, 'job only uses')
         self.assertEqual(text.count('<form class="inline use" method="post" action="/catalogue/staging/use"'), 4, 'one form per offer')
         self.assertIn('<input type="hidden" name="subscribe" value="orders.paid">', text)
         self.assertIn('<input type="hidden" name="calls" value="orders">', text)
@@ -340,7 +341,7 @@ channels:
         self.assertIn('<a href="/catalogue" class="here">Catalogue</a>', text)
         events = c.get('/catalogue?kind=event&team=payments', headers=WHO).text
         self.assertIn('0 APIs · 2 events', events)
-        self.assertNotIn('offers nothing', events, 'a kind was chosen: apps that offer neither are left out')
+        self.assertNotIn('Offers nothing', events, 'a kind was chosen: apps that offer neither are left out')
         self.assertIn('Nothing is offered in prod by team nobody', c.get('/catalogue?env=prod&team=nobody', headers=WHO).text)
         self.assertEqual(c.get('/catalogue').status_code, 401)
 

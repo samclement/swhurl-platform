@@ -239,8 +239,16 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         if names:
             defaults[dest] = names
     provides = field('provides', dict) or {}
-    if set(provides) - {'api'} or not isinstance(provides.get('api', '/'), str) or not provides.get('api', '/').startswith('/'):
-        raise fail('provides may set api only, a path such as /openapi.json')
+    if set(provides) - {'api', 'apiFile', 'eventsFile'} or not isinstance(provides.get('api', '/'), str) \
+            or not provides.get('api', '/').startswith('/'):
+        raise fail('provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only')
+    for key in ('apiFile', 'eventsFile'):
+        # Where the app's repository keeps its OpenAPI and AsyncAPI documents: what it offers other apps.
+        path = provides.get(key)
+        if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
+            raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
+    if provides.get('apiFile') and kind != 'web':
+        raise fail('provides.apiFile applies to kind web only')
     if provides.get('api'):
         if kind != 'web':
             raise fail('provides.api applies to kind web only')
@@ -269,8 +277,8 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': '565d892eb91644748107cac9e69bf98cc43578e0',
-    'kotlin': '060466805c138215e027e784ff3baac617d6726d',
+    'typescript': '8e8e71fe6fdbaa9c6da4325eebff9b10eba1ea9a',
+    'kotlin': 'aecf9a73876ec31ca691f550facab80b5b91f85a',
 }
 STACK_DESCRIPTIONS = {
     'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',

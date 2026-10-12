@@ -1057,3 +1057,14 @@ Commit `69cab4d` (console image `src-1789b54424f538b3`, pinned in `264c060`) is 
 - Seen in a local `console --dev` at 1280 pixels: the table, and **Connect to an app** open for a worker.
 - Not exercised: **Connect to an app** and **Publish an event** opening a real pull request (their arguments and routes are unit-tested); a merged connection change; the pages in a signed-in browser; a narrow screen.
 - Stage 0 (the library and sync-trigger spike) deployed nothing; its findings are in the plan.
+
+## API and event descriptions in the stack templates (12 October 2026)
+
+Stage 2 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-october-2026). Template releases `v0.2.0`: TypeScript `8e8e71fe6fdbaa9c6da4325eebff9b10eba1ea9a` (PR #29), Kotlin `aecf9a73876ec31ca691f550facab80b5b91f85a` (PR #21), pinned in `STACK_REVISIONS`. What the features give an app: [stacks and features](apps.md#stacks-and-features).
+
+- Both Template workflows passed their seven sets of answers on the pull request and again on `main` (type-check or compile, tests, image build, smoke test).
+- `make check-templates` passes all 32 combinations (two stacks × kind × database × api × events).
+- Locally, the image with every feature on answered `/healthz`, `/` and its description (`/openapi.json` for TypeScript, `/openapi.yaml` for Kotlin) with 200 and an unknown path with 404, read-only with a writable `/tmp`.
+- A description with quotes, `&` and `$` renders into valid documents and compiling code in both stacks.
+- Not exercised: a new app created from the console or `make app-repo` with either feature; an event published to NATS by a `v0.2.0` app; Renovate's Copier update of an existing app; the New app form's two new rows in a browser.
+

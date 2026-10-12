@@ -15,14 +15,44 @@ An app's life, and where each step is described. Every app comes from a stack te
 | Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-scale`, `app-reconcile` | [Operate an instance](#operate-an-instance) |
 | Remove | **Uninstall** | `make app-remove` | [Remove an app](#remove-an-app) |
 
-## Current instances
+## The demo apps
 
-| Instance | Host | Image |
-| --- | --- | --- |
-| `hello-ts/staging` | `staging-hello-ts.homelab.swhurl.com` | [`samclement/hello-ts`](https://github.com/samclement/hello-ts); deployed automatically on each push |
-| `hello-ts/prod` | `hello-ts.homelab.swhurl.com` | changes only through a promote |
+Four small apps, owned by team `demo`, show how apps on the platform work together. They run all the time, and a little traffic flows through them, so every page that describes an app (the console, a dashboard, a trace) has something real to show. Each repository's README says what it demonstrates and where in its code.
 
-All require sign-in. `hello-ts` is a TypeScript app made before the templates used Copier, sending traces and metrics to ClickStack as `ServiceName` `hello-ts`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+```mermaid
+flowchart LR
+  person(["you, signed in"]) -- "POST /buy" --> shop
+  shopper["demo-shopper<br/>worker: buys every 30 s"] -- "call, as the app demo-shopper" --> shop["demo-shop<br/>web, signed-in"]
+  shop -- "call, with a token only<br/>demo-orders accepts" --> orders["demo-orders<br/>web, SQLite"]
+  orders -. "event demo-orders.created" .-> notifier["demo-notifier<br/>Kotlin worker"]
+  notifier -- "an order of 10 or more" --> team(["team demo's<br/>notification channel"])
+```
+
+| App | Stack | Where | What it shows | Read about it |
+| --- | --- | --- | --- | --- |
+| [`demo-orders`](https://github.com/samclement/demo-orders) | TypeScript, web, SQLite | staging, prod | An API only other apps may use; its API and its event described in its own repository; a database the platform keeps and backs up | [Calling another app](#calling-another-app), [what an app offers](#what-an-app-offers), [backups](operations.md#backups-and-recovery) |
+| [`demo-shop`](https://github.com/samclement/demo-shop) | TypeScript, web | staging | Calling another app with a platform-issued token; telling a signed-in person from an app | [Calling another app](#calling-another-app), [who can reach it](#who-can-reach-it) |
+| [`demo-shopper`](https://github.com/samclement/demo-shopper) | TypeScript, worker | staging | A worker; an app calling another as itself; the steady traffic | [Stacks and features](#stacks-and-features) |
+| [`demo-notifier`](https://github.com/samclement/demo-notifier) | Kotlin, worker | staging | Receiving another app's event; a message to the team; the second stack | [Events](#events), [notifications](#notifications) |
+
+All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com`, `https://staging-demo-orders.homelab.swhurl.com` and `https://demo-orders.homelab.swhurl.com`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+
+**See it work.** Each step is something you can open:
+
+| To see | Do this |
+| --- | --- |
+| The apps and how they are connected | Console → **Apps** → **Map**: two solid lines (calls) and one dashed (the event) |
+| What each offers, and its routes or payload | Console → **Catalogue** → team `demo`; open `demo-orders.created` for its schema and an example |
+| A purchase | Open `https://staging-demo-shop.homelab.swhurl.com/`: `latestOrders` shows what `demo-shopper` bought seconds ago |
+| That only apps may place orders | Signed in, `POST https://staging-demo-orders.homelab.swhurl.com/orders` answers 401: you are a person, not `demo-shop` |
+| One request through every app | Console → `demo-shop/staging` → **Logs and traces**: one trace runs `demo-shopper` → `demo-shop` → `demo-orders` → `demo-notifier` |
+| Traffic and errors over time | Console → any demo app → **Dashboard** |
+| A team notification | Signed in, `POST https://staging-demo-shop.homelab.swhurl.com/buy?item=tea&quantity=12`: ten or more makes `demo-notifier` tell the team's channel |
+| A promotion | Console → `demo-shop/staging` → **Review promotion** (it needs `demo-orders` in production, which it has) |
+
+**The traffic.** `demo-shopper` visits the shop every half minute: about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it: `make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 0"`, commit and push.
+
+**Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Use it from an app**; to start an app like one of them, choose the same stack and features in **New app** and copy what its README points at.
 
 ## Start a new app
 
@@ -122,7 +152,7 @@ Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tm
 
 Renovate's [Copier manager](https://docs.renovatebot.com/modules/manager/copier/) reads `.copier-answers.yml`, finds newer template version tags and runs Copier to update generated files with the saved answers. Template repositories publish immutable `v…` tags only after their combination checks pass. Copier updates always require manual review, even for minor releases: inspect app edits and resolve conflicts before merging. The installed Renovate GitHub App needs workflow-write permission when an update changes a workflow pin (it already writes workflow updates in the template repos). A CLI token without that scope cannot push such a branch; the ordinary reviewed SSH Git route can bootstrap it without credential changes. The app's Container workflow checks the PR and publishes an image only after merging to `main`, which deploys to staging. Promotion remains explicit.
 
-Existing Copier apps whose answers record an untagged commit need one bootstrap update on a clean branch: `uvx copier@9.18.2 update --skip-answered --defaults --vcs-ref v0.1.0`. Review and commit the generated diff, then open a PR and wait for Container checks. Do not edit `_commit` manually. Apps without Copier answers, including `hello-ts`, keep their current workflow; migration is optional.
+Existing Copier apps whose answers record an untagged commit need one bootstrap update on a clean branch: `uvx copier@9.18.2 update --skip-answered --defaults --vcs-ref v0.1.0`. Review and commit the generated diff, then open a PR and wait for Container checks. Do not edit `_commit` manually. An app made before the templates used Copier has no answers file: render the template over it once (`copier copy --overwrite --vcs-ref <tag>` with its answers) and port its own code, after which Renovate proposes updates as for any other app.
 
 Platform rendering remains exhaustive while cheap. On 3 October 2026 the eight combinations took 21.7 s with a cold uv dependency cache and 26.1 s warm on the operator host; each run still clones templates and fetches charts, so network variance dominates this pair. Representative warm GitHub template jobs took 42–75 s for TypeScript and 28–62 s for Kotlin, including SQLite restarts. An earlier cold Kotlin app build took 6 min 31 s from console form to PR ([evidence](current-state.md)). PRs and main run seven sets of answers per stack (listed in each Template workflow); there is no separate scheduled matrix. Platform rendering stays exhaustive. A third stack adds its catalogue repository and pin, template/build checks and runtime conformance evidence; it adds no language build dependencies here.
 
@@ -183,11 +213,11 @@ events: {publish: [created], subscribe: [orders.created]}   # optional   --publi
 | `authenticated-web` | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
-Set it with `--exposure` at creation, and change it later with `make app-expose APP=hello-ts ENV=staging ARGS="--exposure public --host hello-ts.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+Set it with `--exposure` at creation, and change it later with `make app-expose APP=demo-shop ENV=staging ARGS="--exposure public --host demo-shop.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, `team:` in `swhurl.yaml`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, `team:` in `swhurl.yaml`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
 
@@ -212,37 +242,37 @@ The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), nev
 
 ## Calling another app
 
-An app says which apps it calls, and the platform gives it their address and a credential, and tells each callee who may call it. For example, `reports` calling `orders`:
+An app says which apps it calls, and the platform gives it their address and a credential, and tells each callee who may call it. For example, `demo-shop` calling `demo-orders`:
 
 ```
-make app-calls APP=reports ENV=staging ARGS="--add orders"     # or calls: [orders] in swhurl.yaml at creation
+make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or calls: [demo-orders] in swhurl.yaml at creation
 ```
 
 ```mermaid
 flowchart LR
-  subgraph reports-staging
-    reports["reports<br/>SWHURL_SERVICE_ORDERS_URL<br/>token file for orders"]
+  subgraph demo-shop-staging
+    shop["demo-shop<br/>SWHURL_SERVICE_DEMO_ORDERS_URL<br/>token file for demo-orders"]
   end
-  subgraph orders-staging
-    orders["orders<br/>SWHURL_ALLOWED_CALLERS=reports<br/>NetworkPolicy admits reports"]
+  subgraph demo-orders-staging
+    orders["demo-orders<br/>SWHURL_ALLOWED_CALLERS=demo-shop<br/>NetworkPolicy admits demo-shop"]
   end
-  reports -- "Authorization: Bearer token" --> orders
+  shop -- "Authorization: Bearer token" --> orders
 ```
 
 One command changes both instances in one commit:
 
 | Side | What is written | Why |
 | --- | --- | --- |
-| Caller | `SWHURL_SERVICE_ORDERS_URL` (`http://orders.orders-$(SWHURL_ENV).svc.cluster.local:<port>`) | The callee in the caller's own environment: staging calls staging, production calls production |
-| Caller | A token file at `/var/run/swhurl/tokens/orders/token` | A service-account token Kubernetes issues for the audience `orders` only, valid 10 minutes and replaced by the kubelet before it expires. The Kubernetes API itself refuses it, and so does any app other than `orders` |
-| Callee | `SWHURL_ALLOWED_CALLERS=reports` | Who it accepts |
-| Callee | Its NetworkPolicy admits `reports`' pods | Anything undeclared is blocked before it reaches the app |
+| Caller | `SWHURL_SERVICE_DEMO_ORDERS_URL` (`http://demo-orders.demo-orders-$(SWHURL_ENV).svc.cluster.local:<port>`) | The callee in the caller's own environment: staging calls staging, production calls production |
+| Caller | A token file at `/var/run/swhurl/tokens/demo-orders/token` | A service-account token Kubernetes issues for the audience `demo-orders` only, valid 10 minutes and replaced by the kubelet before it expires. The Kubernetes API itself refuses it, and so does any app other than `demo-orders` |
+| Callee | `SWHURL_ALLOWED_CALLERS=demo-shop` | Who it accepts |
+| Callee | Its NetworkPolicy admits `demo-shop`' pods | Anything undeclared is blocked before it reaches the app |
 
 Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every web app gets what it needs to check a token: `SWHURL_AUTH_ISSUER` and `SWHURL_AUTH_KEYS`, the cluster's public signing keys. Apps cannot fetch those keys themselves (the API server refuses anonymous requests and apps carry no API token), so they are kept in [`apps/signing-keys.json`](../apps/signing-keys.json); `make verify-platform` fails if they differ from the cluster's, and `make platform-signing-keys` refreshes them ([operations](operations.md#signing-keys)).
 
 **What the app does.** The stack templates ship both halves; an app's own code only names the callee:
 
-- **Calling:** `service("orders")` reads the address and the token file (again on every call, since it is replaced) and sends `Authorization: Bearer <token>`.
+- **Calling:** `service("demo-orders")` reads the address and the token file (again on every call, since it is replaced) and sends `Authorization: Bearer <token>`.
 - **Being called:** a request that carries a token must carry a good one, or it gets 401: signed by a key in `SWHURL_AUTH_KEYS`, issued by `SWHURL_AUTH_ISSUER` for the audience `SWHURL_APP`, unexpired, and belonging to `system:serviceaccount:<caller>-<SWHURL_ENV>:<caller>` for a caller in `SWHURL_ALLOWED_CALLERS`. A request without a token is a person: signed in when it carries oauth2-proxy's `x-auth-request-email`, anonymous otherwise (a public app). A route meant only for apps asks for an app caller and answers 401 to anyone else. Logs and spans carry `caller.type` (`app`, `user` or `anonymous`) and `caller.id`.
 
 **Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload and an example) and a button to use it from one of your apps. The **Apps** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call and an event, whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
@@ -251,25 +281,25 @@ Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every we
 
 ## Events
 
-An app can publish events and receive other apps' events without knowing who is on the other side. The broker is NATS JetStream ([services](services.md#nats)). For example, `orders` publishing and `notifier` receiving:
+An app can publish events and receive other apps' events without knowing who is on the other side. The broker is NATS JetStream ([services](services.md#nats)). For example, `demo-orders` publishing `created` and `demo-notifier` receiving it:
 
 ```
-make app-events APP=orders   ENV=staging ARGS="--publish created,cancelled"
-make app-events APP=notifier ENV=staging ARGS="--subscribe orders.created"
+make app-events APP=demo-notifier ENV=staging ARGS="--add-subscribe demo-orders.created"   # or the Catalogue's Use it from an app
 ```
 
-or, before an app is created, in its `swhurl.yaml`:
+or, before the subscriber is created, in its `swhurl.yaml`:
 
 ```yaml
 events:
-  publish: [created, cancelled]
-  subscribe: [orders.created]      # <app>.<event>
+  subscribe: [demo-orders.created]      # <app>.<event>
 ```
+
+What `demo-orders` publishes is not declared on the platform at all: it [describes its events](#what-an-app-offers) in its own `asyncapi.yaml`, and the platform reads that. An app that does not describe them declares the list instead: `make app-events APP=<app> ENV=staging ARGS="--publish created,cancelled"`, or `events: {publish: [created, cancelled]}` in `swhurl.yaml`.
 
 ```mermaid
 flowchart LR
-  orders["orders<br/>publish created"] -- "staging.orders.created" --> stream[("stream staging-orders<br/>7 days, 64Mi")]
-  stream -- "consumer notifier_created" --> notifier["notifier<br/>subscribe orders.created"]
+  orders["demo-orders<br/>publish created"] -- "staging.demo-orders.created" --> stream[("stream staging-demo-orders<br/>7 days, 64Mi")]
+  stream -- "consumer demo-notifier_created" --> notifier["demo-notifier<br/>subscribe demo-orders.created"]
 ```
 
 An event is named `<app>.<event>`: only its app may publish it. `--publish` and `--subscribe` replace a whole list (`""` clears it); `--add-publish`, `--remove-publish`, `--add-subscribe` and `--remove-subscribe` change one name and keep the rest, as `make app-calls` does and as the console's Connect card runs them. What the command writes, in one commit:
@@ -282,7 +312,7 @@ An event is named `<app>.<event>`: only its app may publish it. `--publish` and 
 | `platform/nats/users.yaml` | The instance's NATS user | A publisher may publish anything under its own name (`<env>.<app>.>`), so a new image can send a new event before the platform has read its description; it may fetch and acknowledge exactly the events it subscribes to, and read the description of the streams they are in (the Java client asks for it) |
 | The instance's Flux unit | Waits for `platform-nats` | The manifests need the controller's resource types |
 
-**What the app does.** The stack templates' `events` feature ships the helper: `events.publish("created", data)` and `events.subscribe("orders.created", handler)`. An event travels as a [CloudEvents](https://cloudevents.io) JSON envelope with the trace context in its headers, so the subscriber's work joins the publisher's trace. A handler that throws gets the event again, up to five times. A new subscription starts from the oldest event the stream still holds, and a subscriber that was down receives what it missed when it returns.
+**What the app does.** The stack templates' `events` feature ships the helper: `events.publish("created", data)` and `events.subscribe("demo-orders.created", handler)`. An event travels as a [CloudEvents](https://cloudevents.io) JSON envelope with the trace context in its headers, so the subscriber's work joins the publisher's trace. A handler that throws gets the event again, up to five times. A new subscription starts from the oldest event the stream still holds, and a subscriber that was down receives what it missed when it returns.
 
 **When it takes effect.** After the commit is applied, NATS learns the app's user within a minute or two (the time Kubernetes takes to refresh the server's mounted configuration). An app that starts sooner is refused at first; the helper keeps trying every five seconds and logs each try.
 
@@ -304,11 +334,11 @@ The platform reads them for the image an instance runs, so staging and productio
 ```mermaid
 flowchart LR
   push["push to the app's main"] --> image["image 8-b2c3d4e"]
-  image -->|"Flux commits the new tag"| staging["apps/orders/staging<br/>helmrelease.yaml"]
+  image -->|"Flux commits the new tag"| staging["apps/demo-orders/staging<br/>helmrelease.yaml"]
   staging -->|"Offers workflow:<br/>make app-offers --all staging"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
-  read --> kept["apps/orders/staging/offers/<br/>source.yaml, openapi.json, asyncapi.yaml"]
+  read --> kept["apps/demo-orders/staging/offers/<br/>source.yaml, openapi.json, asyncapi.yaml"]
   read --> publishes["SWHURL_EVENTS_PUBLISH<br/>from asyncapi.yaml"]
-  kept -->|"make app-promote"| prod["apps/orders/prod/offers/"]
+  kept -->|"make app-promote"| prod["apps/demo-orders/prod/offers/"]
 ```
 
 | What | Where | Why |
@@ -318,7 +348,7 @@ flowchart LR
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 
-**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). After every new staging image: the [Offers workflow](../.github/workflows/offers.yml) runs on Flux's tag commit, reads every staging instance, checks the app policy and commits what changed to `main`. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents, the commit and where the API description is served still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=orders ENV=staging`.
+**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). After every new staging image: the [Offers workflow](../.github/workflows/offers.yml) runs on Flux's tag commit, reads every staging instance, checks the app policy and commits what changed to `main`. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents, the commit and where the API description is served still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=demo-orders ENV=staging`.
 
 **A new event works at once.** The new image starts a minute or two before the workflow has read its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
 
@@ -518,11 +548,11 @@ On **later promotions**, production already exists, so the reviewed PR changes o
 ## Operate an instance
 
 ```bash
-make app-status APP=hello-ts ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
-make app-logs APP=hello-ts ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
-make app-reconcile APP=hello-ts ENV=prod  # fetch Git and reconcile this instance's unit now
-make app-check APP=hello-ts ENV=prod      # the app policy, offline
-make app-scale APP=hello-ts ENV=prod ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
+make app-status APP=demo-orders ENV=prod     # Git revision applied?, running image matches?, replicas, who can reach it, route, TLS, failures
+make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
+make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
+make app-check APP=demo-orders ENV=prod      # the app policy, offline
+make app-scale APP=demo-shop ENV=staging ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
 ```
 
 The console's app page shows what `make app-status` shows and offers **Reconcile** and **Scale** (as a pull request). `app-scale`, `app-expose` and `app-promote` accept handwritten YAML using the app-template structure. They retain comments (including Flux image automation markers), quotation styles, key order, flow collections and consistent indentation. For example, scaling `memory: "128Mi" # measured limit` to 256Mi keeps the quotes and comment. Later promotion changes only the target image tag/digest; first promotion has the [supported conversion boundary](#promote-to-production). Exposure edits the main host, TLS host, sign-in middleware, Namespace label and required Flux dependencies; it keeps other annotations, middleware, paths, TLS secret names and extra dependencies.

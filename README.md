@@ -1,6 +1,6 @@
 # Swhurl Platform
 
-GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as `hello-ts.homelab.swhurl.com`. A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
+GitOps source for a single-node k3s homelab. Flux reconciles everything in this repo onto the cluster: shared infrastructure (cert-manager, Traefik settings, storage), shared services (Google sign-in, ClickStack observability, OpenTelemetry collectors, Reloader) and app instances such as the [demo apps](docs/apps.md#the-demo-apps). A signed-in web console at `console.homelab.swhurl.com` shows it all and turns changes into pull requests.
 
 The cluster is live. What has been verified on it, and when, is in [current state](docs/current-state.md); what is left to build is in [the plan](docs/plan.md), section 0.
 
@@ -21,6 +21,7 @@ make verify-platform             # expect "Validation passed."
 
 | I want to… | Read |
 | --- | --- |
+| See how apps work together, on four running examples | [The demo apps](docs/apps.md#the-demo-apps) |
 | Start a new app: repository, code and staging, from the console or `make app-repo` | [Start a new app](docs/apps.md#start-a-new-app) |
 | Deploy a new version, or put an app in production | [Deploy a new image](docs/apps.md#deploy-a-new-image), [add production](docs/apps.md#add-production) |
 | Change, operate or remove an app (its whole life) | [Apps](docs/apps.md) |

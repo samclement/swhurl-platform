@@ -1245,3 +1245,11 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **Same decisions as before, on the real apps:** run offline with the old tooling (`cb221b7`) and the new one over this repository, what the drift rule reads was identical for all 12 instances (with and without differing exposure), and the production release a first promotion would create was byte-identical for all 9 apps (production removed in a scratch copy, policy check stubbed).
 - **Offline:** `make check` passed (634 tests; `check-apps` for every instance, including the three apps that have a production instance; every template combination).
 - **Not exercised:** a real promotion, first or later, through the new code on the cluster, and the auto-merge gate on a real pull request (both covered by `make test`).
+
+## One inventory of Flux units and namespaces (12 October 2026)
+
+`e4c41c3` gives the Flux units and the namespaces Git defines one reader (`platform.units()`, `platform.namespaces()` in [`platform.py`](../tools/swhurl/platform.py)). The tests that parsed unit files by hand use it, a test fails when the tooling names a unit or namespace Git does not define, and `make check-repo` compares the [Flux units table](architecture.md#flux-units) with Git. Nothing on the cluster changed. Console image `src-a39c85a66db30499` (deployed as `5d2adb1`); Validate passed on the commit, and after `make flux-reconcile`, `make verify-platform` passed with no warning.
+
+- **The doc check found a fault on its first run:** the table listed `platform-otel` as taking settings; the unit has no substitution. Corrected; `make check-repo` now prints `docs/architecture.md lists the 17 shared Flux units and their inputs`.
+- **Offline:** `make test` passed (636 tests); `check-apps`, `check-templates` and `check-otel` passed on the same tree before a fix to one new test.
+- **Left as they were:** namespace and workload names typed into `kubectl` calls (`flux-system`, `console`, `console-notifications`). `verify.py` cannot import the notification modules that name them (an import cycle through `ops`), which is candidate 8's to undo.

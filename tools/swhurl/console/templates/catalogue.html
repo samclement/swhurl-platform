@@ -4,7 +4,7 @@
 {% block main %}
 {% macro link(e, k, t='') %}/catalogue?env={{ e }}{% if k %}&kind={{ k }}{% endif %}{% if t %}&team={{ t }}{% endif %}{% endmacro %}
 <h1>Catalogue</h1>
-{% call st.about() %}What the apps of one environment offer each other: every web app's API and every event an app publishes, with what its own repository says about it (its OpenAPI and AsyncAPI documents, read for the image it runs). Rows are grouped by app; each app's heading says what it uses in turn, and apps that only use are listed last. Open a row for its routes or its payload's fields and an example, and for who uses it. <strong>Open connection PR</strong> opens a pull request that lets the app you choose call the API or receive the event; you review and merge it on GitHub.{% endcall %}
+{% call st.about() %}What the apps of one environment offer each other: every web app's API and every event an app publishes, with what its own repository says about it (its OpenAPI and AsyncAPI documents, read for the image it runs). One card per app: its heading says what it uses in turn, and apps that only use are listed last. Open a row for its routes or its payload's fields and an example, and for who uses it. <strong>Open connection PR</strong> opens a pull request that lets the app you choose call the API or receive the event; you review and merge it on GitHub.{% endcall %}
 <div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
   <span class="muted">Environment</span>
   {% for name in ('staging', 'prod') %}<a href="{{ link(name, kind, team) }}" class="{{ 'here' if env == name }}">{{ name }}</a>{% endfor %}
@@ -19,15 +19,17 @@
 {% macro use(kind, name) %}<a class="pill" href="/catalogue?env={{ env }}#{{ kind }}-{{ name }}" title="Show {{ name }} in the catalogue">{{ 'API' if kind == 'api' else 'event' }} {{ name }}</a>{% endmacro %}
 {% if groups %}
 <p class="tally">{{ entries | selectattr('kind', 'equalto', 'api') | list | length }} APIs · {{ entries | selectattr('kind', 'equalto', 'event') | list | length }} events · {{ entries | selectattr('described') | list | length }} described by their app</p>
-<div class="openlist catalogue">
-  <div class="cols head" aria-hidden="true"><span></span><span>Kind</span><span>Offer</span><span>What it is</span><span>Used by</span></div>
-  {% for g in groups %}
-  <div class="group" id="app-{{ g.app }}">
-    <a class="name" href="/apps/{{ g.app }}/{{ env }}">{{ g.app }}</a>
-    <span class="muted">team {{ g.team or 'unknown' }}</span>
-    <span class="uses"><span class="label">Uses</span>{% for kind, name in g.uses %}{{ use(kind, name) }}{% else %}<span class="muted">nothing</span>{% endfor %}</span>
-    {% if not g.entries %}<span class="muted none">offers nothing</span>{% endif %}
+{# One card per app, as on Teams: who it is and what it uses, then what it offers as rows that open. #}
+{% for g in groups %}
+<section class="card" id="app-{{ g.app }}">
+  <div class="card-head" style="--acts: 0">
+    <h2><a href="/apps/{{ g.app }}/{{ env }}">{{ g.app }}</a></h2>
+    <p class="muted">team {{ g.team or 'unknown' }}</p>
+    <p class="uses"><span class="muted">Uses</span> {% for kind, name in g.uses %}{{ use(kind, name) }} {% else %}<span class="muted">nothing</span>{% endfor %}</p>
   </div>
+  {% if g.entries %}
+  <div class="openlist catalogue">
+  <div class="cols head" aria-hidden="true"><span></span><span>Kind</span><span>Offer</span><span>What it is</span><span>Used by</span></div>
   {% for e in g.entries %}
   <details class="openrow" id="{{ e.kind }}-{{ e.name }}">
     <summary class="cols" title="Show or hide what {{ e.name }} offers and who uses it">
@@ -111,8 +113,10 @@ events.subscribe("{{ e.name }}") { event -> ... }</code></pre>{% endif %}
     </div>
   </details>
   {% endfor %}
-  {% endfor %}
-</div>
+  </div>
+  {% else %}<p class="card-foot muted" style="border-top: 1px solid var(--line)">Offers nothing: no API and no event.</p>{% endif %}
+</section>
+{% endfor %}
 {% else %}
 <p class="muted">Nothing is offered in {{ env }}{% if team %} by team {{ team }}{% endif %}{% if kind %} of this kind{% endif %}: no web app runs there and no app publishes an event.</p>
 {% endif %}

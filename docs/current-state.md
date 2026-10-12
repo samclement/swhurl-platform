@@ -1165,3 +1165,11 @@ Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-oct
 - The Teams page and New app list teams in alphabetical order.
 - The namespaces `test-3-staging` and `test-3-prod`, each holding only its leftover TLS Secret, were deleted with `kubectl delete ns` on the operator's word. `test-1-staging` was not: it holds a retained 1Gi claim (`pvc-0b74a34c…`) from an app removed on 2 October, with no backup.
 - Later the same day, on the operator's word: `make destroy-data TARGET=pvc/test-1-staging/test-1` (after its `DRY_RUN=true` checks passed) deleted that claim, its volume and host data, and `kubectl delete ns test-1-staging` removed the namespace, which then held only a leftover TLS Secret. No namespace or volume of a removed app remains.
+
+## Catalogue grouped by app (12 October 2026)
+
+`eaff883`, console image `src-0d306200c6ff68b5` (deployed by the publish workflow as `97ead8d`). After `make flux-reconcile` the console rolled out and `make verify-platform` passed.
+
+- **Staging catalogue, read through a port-forward with the identity header:** one group per app (`demo-orders`, `demo-shop`, `swhurl-try-10` to `-12`), each heading with its team and what it uses (`demo-shop` uses API `demo-orders`); the three apps that only use (`demo-notifier`, `demo-shopper`, `swhurl-try-13`) listed last as offering nothing. `demo-orders.created` shows its payload as five field rows with the example beside it and the full JSON Schema closed; the code sample for `demo-orders` uses `/orders`. Each of the 8 offers has one **Add an app** form posting to `/catalogue/staging/use`.
+- **Entry points:** signed out, `https://console.homelab.swhurl.com/catalogue` answers 302 and `http://` 301; a signed-out POST to `/catalogue/staging/use` answers 302; a POST without an `Origin` is refused with 403.
+- **Not exercised:** a connection pull request opened from the new form in a real signed-in browser (the route is the app page's own Connect change, covered by `make test`), and the page in a browser on the live host (screenshots were taken from a local `console --dev` against the cluster, desktop and phone width).

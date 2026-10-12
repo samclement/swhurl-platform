@@ -1089,3 +1089,12 @@ Stages 3 and 4 of [plan section 17](plan.md#17-connections-and-contracts--design
 - `make check` passed (603 tests) before each push; Validate and the publish run passed; `make verify-platform` passed on the new image.
 - Not exercised: a promotion carrying offers (`swhurl-try-15` has no production instance); a refused document on a real app; a Kotlin app with the features; the catalogue and the Use dialog in a signed-in browser, and on a narrow screen.
 
+## Existing apps onto the features: pull requests (12 October 2026)
+
+Stage 5 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-october-2026). Nothing is merged: each pull request is the operator's to review.
+
+- `copier update --vcs-ref v0.2.1` applied without conflicts to `swhurl-try-10` (with `api=openapi events=asyncapi`), `swhurl-try-11` (`api=openapi`), `swhurl-try-13` (no feature: a worker that only receives) and the Kotlin `swhurl-try-12` (`api=openapi events=asyncapi`), each made from an untagged template commit. `hello-ts`, which had no Copier answers, was rendered from the template with `api=openapi` and its `/repeat` route ported as a described route.
+- Locally the TypeScript apps type-check, build and pass their tests (17, 13, 11 and 14); `swhurl-try-12` passes `./gradlew check` in the JDK image (16 tests). Each pull request's Container check passed.
+- The platform now sets `SWHURL_API_PATH` from `provides.api` when it reads an app's offers, so an app that starts describing its API later gets the console's link without `--api-path`.
+- Not exercised: any of the five merged and deployed; the Offers workflow describing an app that existed before.
+

@@ -26,6 +26,7 @@ from pathlib import Path
 from swhurl import ROOT, app_alerts
 from swhurl.apps import events, helmrelease, nkeys, offers, ops, promotion
 from swhurl.apps.calling import (
+    API_VARIABLE,
     callee_address,
     callee_variable,
     declared_calls,
@@ -181,10 +182,11 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
 
 
 def write_offers(root: Path, app: str, env: str, repository: str, commit: str, files: dict[str, str],
-                 described: list[offers.Event] | None, *, runner: Runner | None = None) -> bool:
+                 described: list[offers.Event] | None, *, api_path: str = '', runner: Runner | None = None) -> bool:
     """Keep an instance's offers (``files``: name in the offers directory -> text) and what follows from
     them: the release's annotation, and with an events document the events it publishes. Returns whether
     anything changed. Without files the directory and annotation go; what it publishes is left as it is.
+    ``api_path`` is where a web app says it serves its description (provides.api): kept as SWHURL_API_PATH.
     A refusal (an event another app still receives is gone) leaves everything as it was."""
     instance = instance_dir(root, app, env)
     folder = instance / offers.OFFERS_DIR
@@ -214,6 +216,10 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
         del annotations[offers.ANNOTATION]
         if not annotations:
             del metadata['annotations']
+        document.save()
+    variables = mapping(container(document.data), 'env', create=True)
+    if api_path and service_port(values(document.data)) is not None and variables.get(API_VARIABLE) != api_path:
+        variables[API_VARIABLE] = api_path
         document.save()
     names = [event.name for event in described] if described is not None else None
     if names is not None and names != events.published(helmrelease.variables(document.data)):
@@ -262,7 +268,9 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
                 files[offers.EVENTS_NAME] = text
     except offers.OfferError as error:
         raise EditError(str(error)) from None
-    changed = write_offers(root, app, env, repository, commit, files, described, runner=runner)
+    served = provides.get('api')
+    served = served if isinstance(served, str) and re.fullmatch(r'/[A-Za-z0-9_./-]*', served) else ''
+    changed = write_offers(root, app, env, repository, commit, files, described, api_path=served, runner=runner)
     what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n != offers.EVENTS_NAME), ''),
                                    described is not None and f'events: {", ".join(e.name for e in described) or "none"}']))
     print(f'[OK] {app}/{env} at {commit} offers {what or "nothing"}' + ('' if changed else ' (unchanged)'))
@@ -282,8 +290,10 @@ def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
                             f'(make app-offers APP={app} ENV=staging; the Offers workflow does it after each new image)')
     folder = root / 'apps' / app / 'staging' / offers.OFFERS_DIR
     files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events))} if found else {}
+    served = str(helmrelease.variables(YamlFile(root / 'apps' / app / 'staging' / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
     return write_offers(root, app, 'prod', found.repository if found else '', found.commit if found else '', files,
-                        list(found.described) if found and found.described is not None else None, runner=runner)
+                        list(found.described) if found and found.described is not None else None,
+                        api_path=served if found else '', runner=runner)
 
 
 def set_team(root: Path, app: str, name: str) -> Path:

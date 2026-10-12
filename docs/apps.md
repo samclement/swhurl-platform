@@ -315,6 +315,7 @@ flowchart LR
 | What | Where | Why |
 | --- | --- | --- |
 | The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
+| Where the running app serves its API description | `SWHURL_API_PATH`, from `provides.api` | The console links it; an app that starts describing itself later gets it without `--api-path` |
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 

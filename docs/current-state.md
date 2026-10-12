@@ -1098,3 +1098,11 @@ Stage 5 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-o
 - The platform now sets `SWHURL_API_PATH` from `provides.api` when it reads an app's offers, so an app that starts describing its API later gets the console's link without `--api-path`.
 - Not exercised: any of the five merged and deployed; the Offers workflow describing an app that existed before.
 
+## Existing apps merged; two faults found (12 October 2026)
+
+The operator merged four of the five stage 5 pull requests (`swhurl-try-10`, `-11`, `-13`, `hello-ts`); `swhurl-try-12` #4 is open. Each image deployed to staging by itself.
+
+- **Fault: the Offers workflow failed five times** (11:08 to 11:14 UTC). `SWHURL_API_PATH`, set when offers are read (`9ef063a`), was not among the settings environments may differ in, so `env-drift` failed the policy for `hello-ts` and `swhurl-try-10`, which have production instances, and nothing was committed. The earlier proof used `swhurl-try-15`, which has none. Fixed in `92e1b01`; the next run committed `b615ca4` (offers for `hello-ts`, `swhurl-try-10` and `swhurl-try-11`). `make check-apps` passes for 17 instances and the live catalogue shows "8 APIs · 4 events · 7 described by their app", including `hello-ts`'s `/repeat`.
+- **Fault: a promotion of `hello-ts` was refused** at 11:14:28 UTC with "staging must be healthy and running the reviewed digest". Staging was healthy: Flux's commit for `swhurl-try-12` had landed about four seconds earlier, so the latest commit on `main` was not yet applied to `hello-ts`. The refusal stands; it now says that Flux is still applying the latest commit and to try again (`92e1b01`, console image `src-947d4a352ffac475`).
+- A trial `make app-promote APP=hello-ts` in the checkout (reverted, nothing committed) changed `apps/hello-ts/prod/helmrelease.yaml`, added `apps/hello-ts/prod/offers/` and passed the policy. Not exercised: that promotion made from the console and merged.
+

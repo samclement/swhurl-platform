@@ -1068,3 +1068,13 @@ Stage 2 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-o
 - A description with quotes, `&` and `$` renders into valid documents and compiling code in both stacks.
 - Not exercised: a new app created from the console or `make app-repo` with either feature; an event published to NATS by a `v0.2.0` app; Renovate's Copier update of an existing app; the New app form's two new rows in a browser.
 
+## What an app offers: intake (12 October 2026)
+
+Stage 3 of [plan section 17](plan.md#17-connections-and-contracts--designed-12-october-2026), commit `7e4b9d5` (console image `src-8a8270ed1e39074d`, pinned in `4cb6258`). How it works: [what an app offers](apps.md#what-an-app-offers). Template releases `v0.2.1` (TypeScript `f6733259e330106cbadb34e3f37cfed9c0a62698`, Kotlin `aaba44f91a67ccb3c3451675bae2ecabc7c2500e`) no longer list the example event in `swhurl.yaml`.
+
+- `make check` passed (599 tests); Validate and the publish run passed; `make verify-platform` passed with the console on the new image.
+- **NATS permission:** after the reconcile the server's configuration holds `staging.swhurl-try-10.>` and `staging.swhurl-try-12.>`. A request to `swhurl-try-10` (port-forward) published `swhurl-try-10.visited`, and `swhurl-try-13`'s log shows that event's id within five seconds.
+- **`make app-offers ARGS="--all staging"`** against GitHub read all eight staging apps at their images' short commits; none names documents yet, so each "offers nothing (unchanged)". The Offers workflow (run by hand, `38220656216`) printed the same and committed nothing.
+- **Found while releasing:** a TypeScript Template job on `main` hung for 30 minutes. Every app imported `ajv` and `yaml` at start-up, the worker test allowed one second for three runs, and on failure it left its child running. Fixed in template PR #32 (lazy import, a ten-second wait, the worker always stopped, a 20-minute job limit in the TypeScript `app.yml`); the Kotlin `app.yml` has no job limit.
+- Not exercised: an app that names documents (none exists): creation with the features, the workflow after a real image commit, a new event stored before its document is read, a refused document, a promotion carrying offers through the auto-merge gate, and the app page's **Describes itself** line. Each is unit-tested.
+

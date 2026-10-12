@@ -7,6 +7,7 @@ from unittest import mock
 
 from swhurl import ROOT
 from swhurl.apps import ops as app_ops
+from swhurl.apps.instance import Instance
 from swhurl.run import CommandError, FakeRunner, Result
 
 REV = 'main@sha1:abc123'
@@ -124,7 +125,7 @@ class StatusTests(unittest.TestCase):
 
 class ImageStateTests(unittest.TestCase):
     def found(self, desired, running):
-        instance = app_ops.Instance('web', 'prod')
+        instance = Instance('web', 'prod')
         return app_ops.InstanceStatus(instance, REV, REV, ('True', ''), None, desired, running, [], [], [], [])
 
     def test_compared_by_digest_because_running_images_have_no_tag(self):
@@ -172,7 +173,7 @@ class RunningImagesTests(unittest.TestCase):
         alias = 'sha256:' + '0' * 64  # the same content, first pulled under another index digest
         pods = {'items': [self.pod(f'ghcr.io/x/app:15-74b90c4@{index}', f'ghcr.io/x/app@{alias}')]}
         self.assertEqual(app_ops.running_images(pods), [f'ghcr.io/x/app@{index}'])
-        found = app_ops.InstanceStatus(app_ops.Instance('app', 'staging'), REV, REV, ('True', ''), None,
+        found = app_ops.InstanceStatus(Instance('app', 'staging'), REV, REV, ('True', ''), None,
                                        f'ghcr.io/x/app:15-74b90c4@{index}', app_ops.running_images(pods), [], [], [], [])
         self.assertEqual(found.image_state, 'matches')
 
@@ -197,7 +198,7 @@ class HintTests(unittest.TestCase):
         if last:
             status['lastState'] = {'terminated': {'reason': last}}
         pods = {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [status]}}]}
-        (found,) = app_ops.problems(pods, app_ops.Instance('web', 'prod'), self.SETTINGS)
+        (found,) = app_ops.problems(pods, Instance('web', 'prod'), self.SETTINGS)
         return found
 
     def test_each_common_failure_names_its_fix(self):
@@ -219,7 +220,7 @@ class HintTests(unittest.TestCase):
 
     def test_unknown_reasons_have_no_hint_and_status_prints_hints(self):
         self.assertEqual(self.problem({'waiting': {'reason': 'SomethingNew'}}).hint, '')
-        instance = app_ops.Instance('web', 'prod')
+        instance = Instance('web', 'prod')
         found = app_ops.InstanceStatus(instance, REV, REV, ('True', ''), None, 'x:1', [], [], [], [],
                                        [self.problem({'waiting': {'reason': 'ImagePullBackOff'}})])
         self.assertTrue(any(line.startswith('    fix: The node cannot pull') for line in app_ops.status_lines(found)))
@@ -240,7 +241,7 @@ class LiveExposureTests(unittest.TestCase):
 
 class GatherStatusTests(unittest.TestCase):
     def test_structured_status_matches_what_is_printed(self):
-        found = app_ops.gather_status(cluster(), app_ops.Instance('web', 'prod'))
+        found = app_ops.gather_status(cluster(), Instance('web', 'prod'))
         self.assertTrue(found.applied)
         self.assertEqual(found.unit, ('True', f'Applied revision: {REV}'))
         self.assertEqual(found.running_images, [f'docker.io/x/web@{DIGEST}'])
@@ -260,8 +261,8 @@ class GatherStatusTests(unittest.TestCase):
         self.assertEqual(app_ops.shown_variables(None), ({}, ''))
 
     def test_missing_unit_is_none_and_missing_release_is_none(self):
-        self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), app_ops.Instance('web', 'prod')))
-        found = app_ops.gather_status(cluster(helmrelease=None), app_ops.Instance('web', 'prod'))
+        self.assertIsNone(app_ops.gather_status(cluster(kustomization=None), Instance('web', 'prod')))
+        found = app_ops.gather_status(cluster(helmrelease=None), Instance('web', 'prod'))
         self.assertIsNone(found.release)
 
 

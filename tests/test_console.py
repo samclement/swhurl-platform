@@ -11,6 +11,7 @@ from unittest import mock
 
 from starlette.testclient import TestClient
 
+from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
 from swhurl.run import FakeRunner, Result
 
@@ -435,11 +436,6 @@ class AppsTests(unittest.TestCase):
         self.assertEqual(text.count('<span class="pill">SQLite</span>'), 1, 'said only where there is one')
         self.assertEqual(text.count('release unknown'), 1)
 
-    def test_unit_names_map_to_instances(self):
-        self.assertEqual(cluster.instance_of_unit('app-my-api-staging'), cluster.ops.Instance('my-api', 'staging'))
-        for name in ('infra-base', 'app-web-dev', 'app-prod', 'app-Web-prod'):
-            self.assertIsNone(cluster.instance_of_unit(name), name)
-
     def test_unreadable_cluster_is_a_502_page_not_a_crash(self):
         runner = FakeRunner().on('kubectl', returncode=1, stderr='connection refused')
         response = client(runner).get('/apps', headers=WHO)
@@ -502,7 +498,7 @@ class AssetTests(unittest.TestCase):
 class StateTests(unittest.TestCase):
     def status(self, **changes):
         digest = 'sha256:' + 'a' * 64
-        status = cluster.ops.InstanceStatus(cluster.ops.Instance('web', 'staging'), 'r', 'r', ('True', ''),
+        status = cluster.ops.InstanceStatus(Instance('web', 'staging'), 'r', 'r', ('True', ''),
                                             ('True', ''), f'x:1@{digest}', [f'x@{digest}'],
                                             [cluster.ops.Replicas('Deployment/web', 1, 1)], [], [], [])
         return replace(status, **changes)
@@ -520,7 +516,7 @@ class StateTests(unittest.TestCase):
                 self.assertEqual(cluster.instance_state(self.status(**overrides), None).key, expected)
 
     def test_a_ready_unit_with_no_release_is_not_a_healthy_app(self):
-        row = cluster.AppRow(cluster.ops.Instance('web', 'prod'), ('True', ''), False, 'no HelmRelease')
+        row = cluster.AppRow(Instance('web', 'prod'), ('True', ''), False, 'no HelmRelease')
         self.assertEqual(row.state.key, 'unknown')
 
     def test_one_vocabulary_and_waiting_is_updating_not_failing(self):
@@ -543,7 +539,7 @@ class StateTests(unittest.TestCase):
 
 class AppSummaryTests(unittest.TestCase):
     def row(self, env, tag, digest='', app='hello-ts'):
-        return cluster.AppRow(cluster.ops.Instance(app, env), ('True', ''), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
+        return cluster.AppRow(Instance(app, env), ('True', ''), False, f'ghcr.io/x/{app}:{tag}', tag, digest)
 
     def test_compares_staging_with_prod(self):
         cases = {('5-aaaaaaa', 'sha256:1', '4-bbbbbbb', 'sha256:2'): 'ahead',

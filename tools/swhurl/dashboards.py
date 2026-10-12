@@ -33,7 +33,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import app_alerts, clickstack, statestore
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import NAME_RE
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner

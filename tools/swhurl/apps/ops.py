@@ -17,9 +17,9 @@ from swhurl import ROOT
 from swhurl.apps import helmrelease, policy
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
-    INSTANCE_ROOTS,
     TEAM,
 )
+from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.run import CommandError, Runner
 from swhurl.verify import ready_condition
 
@@ -27,18 +27,6 @@ ACTIONS = ('status', 'logs', 'reconcile', 'check')
 WORKLOAD_KINDS = 'deploy,statefulset,daemonset'
 
 
-@dataclass(frozen=True)
-class Instance:
-    app: str
-    env: str
-
-    @property
-    def namespace(self) -> str:
-        return f'{self.app}-{self.env}'
-
-    @property
-    def unit(self) -> str:
-        return f'app-{self.app}-{self.env}'
 
 
 def get(runner: Runner, *args: str) -> dict | None:
@@ -347,9 +335,12 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     if len(argv) != 3 or argv[0] not in ACTIONS:
         print(__doc__.split('\n\n', 1)[1].rstrip(), file=sys.stderr)
         return 2
-    action, instance = argv[0], Instance(argv[1], argv[2])
+    action, instance = argv[0], Instance.named(argv[1], argv[2])
+    if instance is None:
+        print(f'[ERROR] no instance {argv[1]}/{argv[2]}: APP must be a DNS label and ENV one of {", ".join(ENVIRONMENTS)}', file=sys.stderr)
+        return 2
     if action == 'check':
-        return policy.main([str(ROOT / INSTANCE_ROOTS[0] / instance.app / instance.env)])
+        return policy.main([str(instance.folder(ROOT))])
     runner = runner or Runner.from_environment()
     try:
         if action == 'status':

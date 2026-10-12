@@ -11,6 +11,7 @@ from pathlib import Path
 
 from swhurl import platform
 from swhurl.apps import helmrelease, ops, promotion
+from swhurl.apps.instance import Instance
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
 from swhurl.console.actions import ActionError, Job
@@ -135,7 +136,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
                 + '\n\n<!-- swhurl-promotion ' + json.dumps(captured, sort_keys=True) + ' -->')
 
     def verify():
-        problem = promotion.source_problem(ops.gather_status(runner, ops.Instance(app, 'staging')),
+        problem = promotion.source_problem(ops.gather_status(runner, Instance(app, 'staging')),
                                            image, form['revision'])
         if problem:
             raise ActionError(problem)

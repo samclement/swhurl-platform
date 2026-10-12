@@ -33,7 +33,8 @@ from ruamel.yaml.comments import CommentedMap
 
 from swhurl import ROOT
 from swhurl.apps import channels, derive, edit
-from swhurl.apps.contract import ENVIRONMENTS, TEAM, TEAMS_FILE
+from swhurl.apps.contract import TEAM, TEAMS_FILE
+from swhurl.apps.instance import ENVIRONMENTS
 from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner

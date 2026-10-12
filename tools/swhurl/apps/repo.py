@@ -41,7 +41,7 @@ from swhurl.apps.contract import (
     STACK_REVISIONS,
     STACKS,
 )
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import NAME_RE
 from swhurl.run import CommandError, Runner
 
 MANIFEST_TYPES = ', '.join((

@@ -19,7 +19,7 @@ import secrets
 
 from swhurl import verify
 from swhurl.apps import calling, contract, events, helmrelease
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import NAME_RE
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 

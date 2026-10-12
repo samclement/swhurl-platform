@@ -33,6 +33,7 @@ from starlette.templating import Jinja2Templates
 
 from swhurl import ROOT, dashboards
 from swhurl.apps import contract, new, ops, repo
+from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import actions, catalogue, changes, cluster, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
@@ -252,15 +253,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return {'apps': shown, 'teams': teams, 'tally': tally, 'attention': attention, 'team': team,
                     'stacks': stacks([summary.app for summary in shown]) if view != 'map' else {},
                     'stack_names': STACK_NAMES, 'owner': contract.APP_OWNER,
-                    'dashboards': dashboard_urls(runner) if view != 'map' else {}, 'view': 'map' if view == 'map' else 'list', 'env': env if env in contract.ENVIRONMENTS else 'staging',
+                    'dashboards': dashboard_urls(runner) if view != 'map' else {}, 'view': 'map' if view == 'map' else 'list', 'env': env if env in ENVIRONMENTS else 'staging',
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
-                                           env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
+                                           env if env in ENVIRONMENTS else 'staging') if view == 'map' else None}
         return reading(request, 'apps.html', read)
 
     def catalogue_page(request: Request) -> Response:
         """What the apps of one environment offer each other: APIs and events, described where the app describes them."""
         env = request.query_params.get('env', 'staging')
-        env = env if env in contract.ENVIRONMENTS else 'staging'
+        env = env if env in ENVIRONMENTS else 'staging'
         kind, team = request.query_params.get('kind', ''), request.query_params.get('team', '')
 
         def read():
@@ -275,7 +276,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return reading(request, 'catalogue.html', read)
 
     def read_app(request: Request) -> Response:
-        found = cluster.instance(request.path_params['app'], request.path_params['env'])
+        found = Instance.named(request.path_params['app'], request.path_params['env'])
         status = ops.gather_status(runner, found) if found else None
         if status is None and found:
             # Created here but not applied yet: say so instead of "no such app" (its links appear at once).
@@ -328,7 +329,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             name = request.path_params['unit']
             if name not in found:
                 raise LookupError(name)
-            return {'u': found[name], 'app': cluster.instance_of_unit(name),
+            return {'u': found[name], 'app': Instance.of_unit(name),
                     'unit_jobs': [j for j in jobs.recent() if j.unit == name]}
         try:
             return reading(request, 'unit.html', read)
@@ -614,7 +615,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def review_promotion(request: Request) -> Response:
         app = request.path_params['app']
-        found = cluster.instance(app, 'staging')
+        found = Instance.named(app, 'staging')
         if found is None or github is None:
             return page(request, 'error.html', status_code=409, error='Staging and a GitHub token are required.')
         try:
@@ -648,7 +649,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     async def change_app(request: Request) -> Response:
         """Promote, scale, change access to, change the connections of or remove an instance: a PR made by the clone's app-* commands."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
-        found = cluster.instance(app, env)
+        found = Instance.named(app, env)
         if found is None or change not in ('promote', 'scale', 'expose', 'connect', 'disconnect', 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:

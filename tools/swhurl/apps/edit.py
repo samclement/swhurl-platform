@@ -33,7 +33,6 @@ from swhurl.apps.calling import (
 )
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
-    ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
     MANIFEST_FILE,
@@ -55,6 +54,7 @@ from swhurl.apps.derive import (
     sync_env,
     values,
 )
+from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.new import (
     check_generated,
     depends_on,
@@ -604,7 +604,8 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
             raise EditError('staging image changed since it was reviewed; refresh and review it again')
         if decision.outcome == 'same':
             raise EditError('production already runs this digest; same image in both')
-        status = ops.gather_status(runner, ops.Instance(args.app, 'staging'))
+        source_instance = Instance.named(args.app, 'staging')
+        status = ops.gather_status(runner, source_instance) if source_instance else None
         problem = promotion.source_problem(status, decision.image, status.applied_revision if status else '')
         if problem:
             raise EditError(problem)

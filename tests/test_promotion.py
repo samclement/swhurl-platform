@@ -8,6 +8,7 @@ from pathlib import Path
 
 from swhurl import ROOT
 from swhurl.apps import contract, ops, promotion
+from swhurl.apps.instance import Instance
 from swhurl.apps.yaml_file import EditError
 
 DIGEST = 'sha256:' + 'a' * 64
@@ -45,7 +46,7 @@ class PromotionTests(unittest.TestCase):
 
     def test_readiness_and_review_failures(self):
         image = 'ghcr.io/example/app:2-abcdef0@' + DIGEST
-        status = ops.InstanceStatus(ops.Instance('example', 'staging'), 'main@sha1:abc', 'main@sha1:abc',
+        status = ops.InstanceStatus(Instance('example', 'staging'), 'main@sha1:abc', 'main@sha1:abc',
                                     ('True', ''), ('True', ''), image, ['ghcr.io/example/app@' + DIGEST],
                                     [ops.Replicas('Deployment/example', 1, 1)], [], [], [])
         self.assertEqual(promotion.source_problem(status, image, status.applied_revision), '')

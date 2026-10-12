@@ -10,9 +10,8 @@ from swhurl.apps import calling, contract, events, helmrelease, offers, ops, pro
 from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
-    ENVIRONMENTS,
 )
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import Instance
 from swhurl.flux import WAITING_REASONS
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
@@ -84,7 +83,7 @@ class Connections:
 
 @dataclass(frozen=True)
 class AppRow:
-    instance: ops.Instance
+    instance: Instance
     ready: tuple[str, str]
     suspended: bool
     image: str
@@ -174,27 +173,15 @@ def layer_of(name: str) -> str:
     return next((title for prefix, title, _ in LAYERS if name.startswith(prefix)), OTHER_LAYER)
 
 
-def instance(app: str, env: str) -> ops.Instance | None:
-    """The instance for a URL's app and env, or None if they cannot name one."""
-    if env in ENVIRONMENTS and NAME_RE.match(app):
-        return ops.Instance(app, env)
-    return None
-
-
-def instance_of_unit(name: str) -> ops.Instance | None:
-    app, _, env = name.removeprefix('app-').rpartition('-')
-    return instance(app, env) if name.startswith('app-') else None
-
-
 def target(name: str) -> tuple[str, str]:
     """How every page names a job's or problem's subject: ``(label, link)``. An app instance is always
     ``<app>/<env>`` and links to its app page, whether given as its unit (``app-<app>-<env>``) or as
     ``<app>/<env>``; anything else is a Flux unit, by name."""
     if name.startswith('team:'):  # a change made on the Teams page
         return f'team {name[5:]}', f'/teams#{name[5:]}'
-    found = instance_of_unit(name)
+    found = Instance.of_unit(name)
     app, _, env = name.partition('/')
-    found = found or (instance(app, env) if env else None)
+    found = found or (Instance.named(app, env) if env else None)
     if found:
         return f'{found.app}/{found.env}', f'/apps/{found.app}/{found.env}'
     return name, f'/units/{name}'
@@ -218,7 +205,7 @@ def apps(runner: Runner) -> list[AppRow]:
     except ReadError:  # an account that may not list namespaces still gets the rest
         teams = {}
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
-             for unit in items(runner, UNITS) if (instance := instance_of_unit(unit['metadata']['name']))]
+             for unit in items(runner, UNITS) if (instance := Instance.of_unit(unit['metadata']['name']))]
     subscribed = [(instance.env, publisher, event, instance.app) for instance, _, release in found
                   for publisher, event in events.subscribed(helmrelease.variables(release))]
     rows = []

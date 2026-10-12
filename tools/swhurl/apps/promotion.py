@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import calling, contract, events, helmrelease, offers, ops
-from swhurl.apps.new import NAME_RE
+from swhurl.apps.instance import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
 

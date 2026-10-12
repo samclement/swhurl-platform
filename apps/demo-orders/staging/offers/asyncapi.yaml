@@ -9,40 +9,44 @@ info:
   version: 0.1.0
   description: "Demo: takes orders, keeps them in SQLite, describes its API and publishes an event for each"
 channels:
-  visited:
-    address: visited
-    description: Someone asked demo-orders for its example route.
+  created:
+    address: created
+    description: An order was placed and stored.
     messages:
-      visited:
-        $ref: '#/components/messages/visited'
+      created:
+        $ref: '#/components/messages/created'
 operations:
-  publishVisited:
+  publishCreated:
     action: send
     channel:
-      $ref: '#/channels/visited'
+      $ref: '#/channels/created'
 components:
   messages:
-    visited:
-      summary: One request to the example route
+    created:
+      summary: One order, as GET /orders/{id} returns it
       payload:
         type: object
-        required: [path, caller]
+        required: [id, item, quantity, placedBy, at]
         additionalProperties: false
         properties:
-          path:
+          id:
             type: string
-            description: The path that was asked for
-          caller:
-            type: object
-            required: [type, id]
-            properties:
-              type:
-                type: string
-                enum: [app, user, anonymous]
-              id:
-                type: [string, 'null']
-                description: The calling app's name or the person's email
+            description: The order's id
+          item:
+            type: string
+          quantity:
+            type: integer
+            minimum: 1
+          placedBy:
+            type: string
+            description: The app that placed it
+          at:
+            type: string
+            format: date-time
       examples:
         - payload:
-            path: /
-            caller: {type: user, id: sam@example.com}
+            id: 3f0c7d0e-6f0f-4b3e-9d4f-0a8f6d1c2b3a
+            item: tea
+            quantity: 2
+            placedBy: demo-shop
+            at: '2026-01-01T00:00:00.000Z'

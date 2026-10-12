@@ -1,0 +1,15 @@
+apiVersion: jetstream.nats.io/v1beta2
+kind: Stream
+metadata:
+  name: staging-swhurl-try-15
+  namespace: swhurl-try-15-staging
+spec:
+  name: staging-swhurl-try-15
+  subjects:
+  - staging.swhurl-try-15.>
+  storage: file
+  replicas: 1
+  retention: limits
+  discard: old
+  maxAge: 168h
+  maxBytes: 67108864

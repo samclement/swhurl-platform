@@ -10,10 +10,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from swhurl.notifications import heartbeat as h
 from swhurl.notifications.errors import NotificationError
+from swhurl.notifications.notice import PLATFORM_KEY, Recorded
 from swhurl.run import FakeRunner, Result
 
 NOW = dt.datetime(2026, 10, 3, 12, tzinfo=dt.UTC).timestamp()
@@ -38,7 +38,7 @@ def runner_for(job=_DEFAULT, *, api_error=None):
             return Result(args, 1, '', 'Error from server (NotFound): cronjobs.batch "console-notifications" not found')
         return Result(args, 0, json.dumps(job))
     runner.on('kubectl', '-n', 'console', 'get', 'cronjob', handler=job_result)
-    secret = {'data': {h.SECRET_KEY: base64.b64encode(URL.encode()).decode()}}
+    secret = {'data': {PLATFORM_KEY: base64.b64encode(URL.encode()).decode()}}
     runner.on('kubectl', '-n', 'console', 'get', 'secret', stdout=json.dumps(secret))
     return runner
 
@@ -78,10 +78,11 @@ class HeartbeatCommandTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_main(self, runner, *args):
+    def run_main(self, runner, *args, sender=None):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = h.main(list(args), runner, now=NOW, state_path=self.state_path, watched=h.WATCHED[:1])
+            result = h.main(list(args), runner, now=NOW, state_path=self.state_path, watched=h.WATCHED[:1],
+                            sender=sender or Recorded())
         return result, output.getvalue()
 
     def test_dry_run_does_not_read_secret_post_or_save(self):
@@ -94,12 +95,11 @@ class HeartbeatCommandTests(unittest.TestCase):
 
     def test_stale_alert_persists_state_only_after_ntfy_accepts(self):
         runner = runner_for(cronjob(age=601))
-        with mock.patch.object(h, 'publish') as send:
-            result, output = self.run_main(runner)
+        sender = Recorded()
+        result, output = self.run_main(runner, sender=sender)
         self.assertEqual(result, 0)
-        send.assert_called_once()
-        self.assertEqual(send.call_args.args[0], URL)
-        self.assertEqual(send.call_args.args[1]['title'], 'notification checker stale')
+        self.assertEqual([(address, notice.title, notice.high) for address, notice in sender.sent],
+                         [(URL, 'notification checker stale', True)])
         self.assertEqual(json.loads(self.state_path.read_text()),
                          {'alerting_since': NOW, 'last_alert': NOW})
         self.assertEqual(self.state_path.stat().st_mode & 0o777, 0o600)
@@ -116,8 +116,7 @@ class HeartbeatCommandTests(unittest.TestCase):
 
     def test_missing_cronjob_alerts_and_secret_never_appears_in_errors(self):
         runner = runner_for(job=None)
-        with mock.patch.object(h, 'publish', side_effect=NotificationError(f'failed for {URL}')):
-            result, output = self.run_main(runner)
+        result, output = self.run_main(runner, sender=Recorded(refuse=f'failed for {URL}'))
         self.assertEqual(result, 1)
         self.assertNotIn(URL, output)
         self.assertFalse(self.state_path.exists())
@@ -145,9 +144,11 @@ class WatchedJobsTests(unittest.TestCase):
 
         runner.on('kubectl', '-n', 'reports', 'get', 'cronjob', 'sync', handler=second_result)
         output = io.StringIO()
-        with mock.patch.object(h, 'publish') as send, contextlib.redirect_stdout(output):
-            code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.SECOND))
-        return code, [call.args[1]['title'] for call in send.call_args_list], output.getvalue()
+        sender = Recorded()
+        with contextlib.redirect_stdout(output):
+            code = h.main([], runner, now=NOW, state_path=self.state_path, watched=(h.WATCHED[0], self.SECOND),
+                          sender=sender)
+        return code, [notice.title for _, notice in sender.sent], output.getvalue()
 
     def test_watched_jobs(self):
         self.assertEqual([(job.namespace, job.name, job.max_age) for job in h.WATCHED],

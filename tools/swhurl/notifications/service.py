@@ -46,8 +46,9 @@ from swhurl.apps.instance import Instance
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
-from .delivery import deliver, publish
+from .delivery import deliver
 from .errors import NotificationError
+from .notice import PRIORITIES, Notice, Ntfy, Sender
 
 AUDIENCE = 'notify'
 REVIEW = ['kubectl', 'create', '--validate=false', '-f', '-', '-o', 'json']
@@ -62,7 +63,6 @@ MAX_PENDING = 500
 MAX_OUTBOX_BYTES = 700_000
 HISTORY = 7200  # seconds a delivered entry's key is remembered, so a repeated request is not sent twice
 INTERVAL = 30  # seconds between delivery passes when nothing new arrives
-PRIORITIES = {'normal': 3, 'high': 4}
 
 log = logging.getLogger(__name__)
 
@@ -150,11 +150,7 @@ def message(body: bytes, app_sender: tuple[str, str] | None = None) -> dict:
         raise Refused(400, 'click must be an https URL of at most 500 characters')
     if not text['key'] or len(text['key']) > MAX_KEY:
         raise Refused(400, f'key is required (at most {MAX_KEY} characters): the same key is delivered once')
-    high = doc.get('priority', 'normal') == 'high'
-    notice = {'title': text['title'].strip(), 'message': text['message'], 'priority': PRIORITIES['high' if high else 'normal'],
-              'tags': ['warning' if high else 'white_check_mark']}
-    if text['click']:
-        notice['click'] = text['click']
+    notice = Notice(text['title'].strip(), text['message'], doc.get('priority', 'normal') == 'high', text['click'])
     return {'app': text['app'], 'env': text['env'], 'key': text['key'], 'notice': notice}
 
 
@@ -194,10 +190,8 @@ def alert(runner: Runner, body: bytes) -> dict:
     app, env, firing = instance.app, instance.env, text['state'] == 'ALERT'
     label = app_alerts.LABELS.get(named['preset'], named['preset'])
     detail = '\n'.join(line for line in text['body'].splitlines() if line.strip() and not line.startswith('Group:'))
-    notice = {'title': f"{app}/{env} {'alert' if firing else 'recovered'}: {label}", 'message': detail[:MAX_MESSAGE],
-              'priority': PRIORITIES['high' if firing else 'normal'], 'tags': ['warning' if firing else 'white_check_mark']}
-    if text['link'].startswith('https://') and len(text['link']) <= 500:
-        notice['click'] = text['link']
+    link = text['link'] if text['link'].startswith('https://') and len(text['link']) <= 500 else ''
+    notice = Notice(f"{app}/{env} {'alert' if firing else 'recovered'}: {label}", detail[:MAX_MESSAGE], firing, link)
     key = f"alert:{app}:{env}:{named['preset']}:{text['state']}:{hashlib.sha256(text['body'].encode()).hexdigest()[:16]}"
     return {'app': app, 'env': env, 'key': key, 'notice': notice}
 
@@ -236,8 +230,8 @@ def addresses(runner: Runner) -> dict[str, str]:
 class Outbox:
     """Accepted entries, checkpointed in one ConfigMap key before anything is sent."""
 
-    def __init__(self, runner: Runner, sender=publish, clock=time.time):
-        self.runner, self.sender, self.clock = runner, sender, clock
+    def __init__(self, runner: Runner, sender: Sender | None = None, clock=time.time):
+        self.runner, self.sender, self.clock = runner, sender or Ntfy(), clock
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.state: dict | None = None
@@ -270,7 +264,7 @@ class Outbox:
                 if len(state['pending']) + len(queued) > MAX_PENDING:
                     raise Refused(503, 'the outbox is full; try again later')
                 if queued:
-                    added = [request['notice'] | {'key': f"{request['key']}@{name}", 'channel': name, 'queued': now,
+                    added = [request['notice'].fields() | {'key': f"{request['key']}@{name}", 'channel': name, 'queued': now,
                                                   'app': request['app'], 'env': request['env']} for name in queued]
                     state['pending'] += added
                     try:
@@ -294,13 +288,13 @@ class Outbox:
                 return
             found: dict[str, str] = {}
 
-            def send(notice: dict) -> None:
+            def send(entry: dict) -> None:
                 if not found:
                     found.update(addresses(self.runner))
-                address = found.get(notice['channel'])
+                address = found.get(entry['channel'])
                 if not address:
                     raise NotificationError('no ntfy channel Secret with that name in the cluster')
-                self.sender(address, notice)
+                self.sender(address, Notice.of(entry))
             try:
                 deliver(self.runner, state, send, now, save=self.save, history=HISTORY)
             except CommandError:
@@ -335,14 +329,14 @@ def create_app(runner: Runner, outbox: Outbox, limit: RateLimit | None = None) -
         if app_sender:
             limit.take(*app_sender)
         queued = outbox.accept(wanted, team_channels(runner, wanted['app'], wanted['env']))
-        log.info('Accepted "%s" about %s/%s from %s for %d channel(s)', wanted['notice']['title'], wanted['app'],
+        log.info('Accepted "%s" about %s/%s from %s for %d channel(s)', wanted['notice'].title, wanted['app'],
                  wanted['env'], who.rsplit(':', 1)[-1], len(queued))
         return JSONResponse({'channels': queued}, status_code=202)
 
     def from_clickstack(_request: Request, body: bytes) -> Response:
         wanted = alert(runner, body)
         queued = outbox.accept(wanted, team_channels(runner, wanted['app'], wanted['env']))
-        log.info('Accepted "%s" about %s/%s from ClickStack for %d channel(s)', wanted['notice']['title'], wanted['app'],
+        log.info('Accepted "%s" about %s/%s from ClickStack for %d channel(s)', wanted['notice'].title, wanted['app'],
                  wanted['env'], len(queued))
         return JSONResponse({'channels': queued}, status_code=202)
 

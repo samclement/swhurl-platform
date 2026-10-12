@@ -1,24 +1,15 @@
-"""Validated ntfy publication and durable outbox delivery."""
+"""Durable outbox delivery: every pending entry is offered to a sender, in order."""
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
-from pathlib import Path
-from urllib.parse import urlsplit
 
-import httpx
-
-from swhurl.apps.calling import NOTIFY_VARIABLE
-from swhurl.apps.channels import address_problem
 from swhurl.run import Runner
 
 from .errors import NotificationError
 from .evaluate import HISTORY
 from .state import save_state
 
-SERVICE_URL = NOTIFY_VARIABLE  # the same variable every app instance gets
-TOKEN_FILE = '/var/run/swhurl/tokens/notify/token'
 CHANNEL_RETRY = 7200  # seconds a copy that cannot be sent stays in the outbox
 
 
@@ -28,42 +19,6 @@ def copy_of(notice: dict) -> str:
     if 'channel' in notice:
         return f"channel {notice['channel']}"
     return 'notify service' if 'about' in notice else ''
-
-
-def publish(url: str, notification: dict) -> None:
-    if address_problem('ntfy', url):
-        raise NotificationError('ntfy destination must be an HTTPS topic URL without a query or fragment')
-    parts = urlsplit(url)
-    topic = parts.path.strip('/')
-    payload = {k: v for k, v in notification.items() if k in {'title', 'message', 'priority', 'tags', 'click'}}
-    payload['topic'] = topic
-    try:
-        response = httpx.post(f'{parts.scheme}://{parts.netloc}', json=payload, timeout=10)
-        response.raise_for_status()
-    except httpx.HTTPError:
-        # HTTP exceptions can include the topic URL or response body. Never surface either.
-        raise NotificationError('ntfy delivery failed; notification remains pending') from None
-
-
-def forward(notice: dict) -> None:
-    """Hand a notice about an app to the notify service, which sends it to the channels of the app's team.
-    The checker proves who it is with its service-account token for the audience ``notify``."""
-    url = os.environ.get(SERVICE_URL, '').rstrip('/')
-    if not url:
-        raise NotificationError(f'{SERVICE_URL} is not set')
-    try:
-        token = Path(os.environ.get('SWHURL_NOTIFY_TOKEN_FILE', TOKEN_FILE)).read_text().strip()
-    except OSError:
-        raise NotificationError('no token file for the notify service') from None
-    app, env = notice['about']
-    body = {'app': app, 'env': env, 'key': notice['key'], 'title': notice['title'], 'message': notice['message'],
-            'priority': 'high' if notice['priority'] >= 4 else 'normal', 'click': notice.get('click', '')}
-    try:
-        response = httpx.post(f'{url}/v1/notify', json=body, headers={'Authorization': f'Bearer {token}'}, timeout=5)
-    except httpx.HTTPError:
-        raise NotificationError('notify service unreachable') from None  # the exception can carry the token
-    if response.status_code != 202:
-        raise NotificationError(f'notify service answered {response.status_code}')
 
 
 def deliver(runner: Runner, state: dict, sender: Callable[[dict], None], now: float, *,

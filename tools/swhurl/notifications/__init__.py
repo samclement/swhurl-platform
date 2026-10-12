@@ -14,12 +14,10 @@ import logging.config
 import os
 from collections.abc import Callable
 
-import httpx as httpx
-
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
-from .delivery import SERVICE_URL, deliver, forward, publish
+from .delivery import deliver
 from .errors import NotificationError
 from .evaluate import CONSOLE_GRACE as CONSOLE_GRACE
 from .evaluate import FAILURES as FAILURES
@@ -30,6 +28,7 @@ from .evaluate import REMINDER as REMINDER
 from .evaluate import SUCCESS as SUCCESS
 from .evaluate import evaluate, incident, snapshot
 from .evaluate import timestamp as timestamp
+from .notice import PLATFORM_KEY, SERVICE_URL, Notice, Ntfy, forward, platform_topic
 from .state import MAX_STATE_BYTES as MAX_STATE_BYTES
 from .state import STATE_NAME as STATE_NAME
 from .state import STATE_NAMESPACE as STATE_NAMESPACE
@@ -85,9 +84,6 @@ def check(runner: Runner, *, now: float, base: str, sender: Callable[[dict], Non
     return state
 
 
-DESTINATION = 'NTFY_PLATFORM_URL'  # the one platform topic; priority travels in each message
-
-
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Read and evaluate without posting or saving state')
@@ -101,18 +97,14 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         from swhurl.platform import base_domain
         base = f'https://console.{base_domain()}'
 
-    def sender(notice: dict) -> None:
-        if 'about' in notice:
-            return forward(notice)
-        url = os.environ.get(DESTINATION, '')
-        runner.add_secret(url)
-        if not url:
-            raise NotificationError(f'{DESTINATION} is missing; notification remains pending')
-        publish(url, notice)
+    def sender(entry: dict) -> None:
+        if 'about' in entry:
+            return forward(Notice.of(entry), *entry['about'], entry['key'])
+        Ntfy()(platform_topic(runner, os.environ), Notice.of(entry))  # the one platform topic
 
     try:
-        if not runner.dry_run and not os.environ.get(DESTINATION):
-            raise NotificationError(f'{DESTINATION} is missing; checker cannot deliver notifications')
+        if not runner.dry_run and not os.environ.get(PLATFORM_KEY):
+            raise NotificationError(f'{PLATFORM_KEY} is missing; checker cannot deliver notifications')
         state = check(runner, now=now, base=base, sender=sender, copies=bool(os.environ.get(SERVICE_URL)))
         logging.getLogger(__name__).info('Notification check completed: %d instances, %d pending, dry_run=%s',
                                         len(state['instances']), len(state['pending']), runner.dry_run)

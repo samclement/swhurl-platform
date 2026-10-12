@@ -1,12 +1,17 @@
 """The ClickStack ntfy command keeps one destination without exposing the topic."""
 import io
 import json
+import os
 import re
+import subprocess
+import sys
 import unittest
 
 from test_clickstack import EMAIL, URI, b64
 
-from swhurl import clickstack, clickstack_ntfy
+from swhurl import ROOT, clickstack, clickstack_ntfy
+from swhurl.notifications import service
+from swhurl.notifications.notice import Notice
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
@@ -18,7 +23,7 @@ class Fixture:
     def __init__(self, live=(), *, topic=TOPIC, dry_run=False):
         self.live, self.calls = list(live), []
         self.runner = (FakeRunner(dry_run=dry_run)
-                       .on(*clickstack_ntfy.NTFY_SECRET, stdout=json.dumps({'data': {
+                       .on('kubectl', '-n', 'console', 'get', 'secret', 'notification-ntfy', stdout=json.dumps({'data': {
                            'NTFY_PLATFORM_URL': b64(f'https://ntfy.sh/{topic}')}}))
                        .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.INPUTS_SECRET,
                            stdout=json.dumps({'data': {'CLICKSTACK_ADMIN_EMAIL': b64(EMAIL)}}))
@@ -131,3 +136,48 @@ class NotifyWebhookTests(unittest.TestCase):
         output = io.StringIO()
         self.assertEqual(clickstack_ntfy.main_notify([], missing.runner, Report(output, redact=missing.runner.redact)), 1)
         self.assertEqual(missing.calls, [])
+
+
+def filled(template, **values):
+    """A webhook body as HyperDX sends it: each variable JSON-escaped, the condition on the state decided."""
+    body = template.replace('{{#if (eq state "ALERT")}}4{{else}}3{{/if}}', '4' if values['state'] == 'ALERT' else '3')
+    for name, value in values.items():
+        body = body.replace('{{' + name + '}}', json.dumps(value)[1:-1])
+    return body
+
+
+class TemplateTests(unittest.TestCase):
+    """Each webhook's template, filled in, is what its reader takes: the template and the reader change together."""
+    FIRED = {'title': '🚨 swhurl:orders:error-logs', 'link': 'https://clickstack.example.test/dashboards/d1?from=1',
+             'body': 'Group: "arrayElement(ResourceAttributes, \'k8s.namespace.name\'):orders-staging"\n16 meets or exceeds 5\n'
+                     'Time Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)\n'}
+
+    def test_the_notify_service_reads_what_the_notify_webhook_sends(self):
+        runner = Fixture().runner
+        runner.on('kubectl', '-n', 'notify', 'get', 'secret', clickstack_ntfy.ALERT_SECRET,
+                  stdout=json.dumps({'data': {'secret': b64('private-alert-secret')}}))
+        runner.on('kubectl', '-n', 'notify', 'get', 'secrets', stdout=json.dumps({'items': [
+            {'metadata': {'name': service.ALERT_SECRET}, 'data': {'secret': b64('private-alert-secret')}}]}))
+        template = clickstack_ntfy.notify_destination(runner)['body']
+        for state, title, high in (('ALERT', 'orders/staging alert: error logs', True),
+                                   ('OK', 'orders/staging recovered: error logs', False)):
+            with self.subTest(state=state):
+                wanted = service.alert(runner, filled(template, state=state, **self.FIRED).encode())
+                self.assertEqual((wanted['app'], wanted['env']), ('orders', 'staging'))
+                self.assertEqual(wanted['notice'], Notice(
+                    title, '16 meets or exceeds 5\nTime Range (UTC): [Oct 11 5:58:00 PM - Oct 11 5:59:00 PM)', high, self.FIRED['link']))
+
+    def test_the_platform_webhook_sends_what_a_notice_sends(self):
+        template = clickstack_ntfy.destination(Fixture().runner)['body']
+        for state, high in (('ALERT', True), ('OK', False)):
+            with self.subTest(state=state):
+                sent = json.loads(filled(template, state=state, **self.FIRED))
+                same = Notice(f"ClickStack: {self.FIRED['title']}", self.FIRED['body'], high, self.FIRED['link']).to_ntfy(TOPIC)
+                del same['tags']  # the webhook sends none
+                self.assertEqual(sent, same)
+
+    def test_the_commands_load_without_httpx(self):
+        """make runs them with the system interpreter, which has no httpx: only sending a notice may need it."""
+        loaded = subprocess.run([sys.executable, '-c', "import sys; sys.modules['httpx'] = None; import swhurl.clickstack_ntfy"],
+                                env=os.environ | {'PYTHONPATH': str(ROOT / 'tools')}, capture_output=True, text=True)
+        self.assertEqual(loaded.returncode, 0, loaded.stderr)

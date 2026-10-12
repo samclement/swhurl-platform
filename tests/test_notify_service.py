@@ -267,8 +267,8 @@ class DeliveryTests(unittest.TestCase):
         client, outbox, sent = service_under_test(runner)
         post(client, BODY | {'priority': 'high'})
         outbox.deliver()
-        self.assertEqual([(address, notice['title'], notice['priority'], notice['click']) for address, notice in sent],
-                         [(ADDRESS, 'orders/staging deployed', 4, BODY['click']), (ADDRESS + '-desk', 'orders/staging deployed', 4, BODY['click'])])
+        self.assertEqual([(address, notice.title, notice.priority, notice.link) for address, notice in sent],
+                         [(ADDRESS, 'orders/staging deployed', 'high', BODY['click']), (ADDRESS + '-desk', 'orders/staging deployed', 'high', BODY['click'])])
         self.assertEqual(saved[-1]['pending'], [])
         self.assertEqual(saved[-1]['seen'], {'event:1@notify@payments-phone': NOW + service.HISTORY,
                                              'event:1@notify@payments-desk': NOW + service.HISTORY})
@@ -283,12 +283,12 @@ class DeliveryTests(unittest.TestCase):
         delivered = []
 
         def sender(address, notice):
-            delivered.append(notice['channel'])
+            delivered.append(address)
         client, outbox, _ = service_under_test(runner, sender)
         post(client)
         with self.assertLogs('swhurl.notifications.delivery', 'ERROR') as logs:
             outbox.deliver()
-        self.assertEqual(delivered, ['payments-desk'])
+        self.assertEqual(delivered, [ADDRESS + '-desk'])
         self.assertEqual([e['channel'] for e in saved[-1]['pending']], ['payments-phone'])
         self.assertIn('channel payments-phone: no ntfy channel Secret with that name in the cluster (will retry)', logs.output[0])
 

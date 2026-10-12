@@ -4,7 +4,7 @@
 {% import "_connections.html" as links with context %}
 {% block title %}New app{% endblock %}
 {% block main %}
-<p class="crumbs"><a href="/apps">Apps</a> › New app</p>
+<p class="crumbs"><a href="/apps">Apps/Services</a> › New app</p>
 <h1>New app</h1>
 {% call st.about() %}The console creates the repository <code>{{ owner }}/&lt;name&gt;</code> from the stack's template, waits for its first image, then opens a pull request that adds it to staging. Nothing changes on the cluster until you merge that PR; after that, every push to the repository's <code>main</code> deploys to staging. <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app">How it works</a>{% endcall %}
 
@@ -45,7 +45,7 @@
           {% else %}<span class="warn">No team is registered yet. <a href="/teams">Add one</a> first: every app belongs to a team.</span>
           {% endfor %}
         </div>
-        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Apps list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Apps/Services list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
       </div>
     </div>
   </section>

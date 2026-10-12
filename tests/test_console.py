@@ -681,7 +681,7 @@ class UnitsTests(unittest.TestCase):
 
     def test_platform_groups_units_by_layer_and_a_unit_opens_to_its_details_and_actions(self):
         text = client(fake(**CHECKS)).get('/platform', headers=WHO).text
-        for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps'):
+        for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps/Services'):
             self.assertIn(f'<div class="group">{layer} ', text)
         self.assertIn('href="/units/infra-base"', text)
         self.assertIn('abc1234', text)

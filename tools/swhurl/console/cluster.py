@@ -166,7 +166,7 @@ class Unit:
 LAYERS = (('cluster-', 'Cluster', "Flux's own Git source and unit list, applied by make flux-bootstrap"),
           ('infra-', 'Infrastructure', 'Namespaces, certificates and the ingress controller'),
           ('platform-', 'Platform services', 'Sign-in, observability, this console and automation'),
-          ('app-', 'Apps', 'One unit per app instance'))
+          ('app-', 'Apps/Services', 'One unit per app instance'))
 OTHER_LAYER = 'Other'
 
 

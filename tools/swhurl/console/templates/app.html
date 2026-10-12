@@ -7,7 +7,7 @@
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
 {% block main %}
 {% set c = connections %}
-<p class="crumbs"><a href="/apps">Apps</a> › {{ i.app }}</p>
+<p class="crumbs"><a href="/apps">Apps/Services</a> › {{ i.app }}</p>
 <h1>{{ i.app }}{% if stack %} <span class="pill" title="The stack in {{ i.app }}'s swhurl.yaml">{{ stack_names.get(stack, stack) }}</span>{% endif %}</h1>
 <nav class="tabs" aria-label="Environment">
 {% for env in ('staging', 'prod') %}{% if summary and env in summary.envs %}<a href="/apps/{{ i.app }}/{{ env }}"{% if env == i.env %} class="here" aria-current="page"{% endif %}>{{ env }}</a>{% endif %}{% endfor %}

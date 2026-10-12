@@ -1218,3 +1218,22 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **Commands:** `make app-status APP=demo-orders ENV=staging` prints `State      Healthy` under the instance's name.
 - **Console, through a port-forward with the identity header:** Overview, Apps/Services (2.6 s), Teams, the catalogue, New app, Platform and the app pages of a staging and a production instance (3.1 to 3.4 s) answer 200; `/apps/demo-orders/dev` answers 404 and a request without an identity 401. The console's log has no error: its account may list pods and workloads in every namespace.
 - **Not exercised:** an instance that is not Healthy (a list showing Updating for a Ready unit whose replicas are not ready is covered by `make test`); a promotion through the new gate on the new image; the two live tests whose namespace creation changed (`make live-test-reloader`, `make live-test-restore-sqlite`); page times before the change were not measured, so the cost on the app page is not known.
+
+## Console pages read each thing once, and at once (12 October 2026)
+
+`2a43d5a`: within one page an identical cluster read runs once and independent reads run together, three `kubectl` processes at a time ([how](contributing.md#operator-tooling)). Console image `src-8c5e326859d98e4c` (deployed as `44040bd`); `make verify-platform` passed.
+
+- **Where the time went, measured first:** a page's time was the number of `kubectl` processes it ran one after another (0.06 to 0.12 s each in the pod, whatever the size of the answer); rendering took 0.02 to 0.04 s. A first load after a console restart also waits for GitHub (12 requests, 2.9 s on an app page), which this does not change.
+- **Before and after, same method** (the old and the new code run inside the console's pod against the cluster, second load of each page):
+
+  | Page | Commands | Before | After |
+  | --- | --- | --- | --- |
+  | An app page | 17 → 14 | 1.38 s | 0.51 to 0.59 s |
+  | Apps/Services | 7 | 0.98 s | 0.41 to 0.48 s |
+  | Teams | 7 | 0.98 s | 0.45 to 0.49 s |
+  | Platform | 12 → 11 | 1.05 s | 0.49 to 0.52 s |
+  | Overview | 18 → 16 | 1.98 s | 0.95 to 0.99 s |
+
+- **Deployed, through a port-forward with the identity header, third load:** Overview 1.09 s, Apps/Services 0.80 s, Teams 0.91 s, the catalogue 0.35 s, Platform 0.61 s, an app page 0.90 s; every page answers 200 with the same states as before (24 healthy on the list, 29 on Platform) and a request without an identity 401.
+- **Memory:** after twelve pages requested at once the pod's peak was 131 Mi of its 256 Mi limit, with no restart and no error in its log.
+- **Not exercised:** a page while a cluster read fails on the deployed image (covered by `make test`); a signed-in browser.

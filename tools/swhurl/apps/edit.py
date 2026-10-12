@@ -155,7 +155,7 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
         # The seed goes from memory into a file that sops encrypts in place: it is never printed.
         seed, public = nkeys.generate()
         secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                                 'metadata': {'name': events.secret_name(app), 'namespace': f'{app}-{env}'},
+                                 'metadata': {'name': events.secret_name(app), 'namespace': Instance(app, env).namespace},
                                  'type': 'Opaque', 'stringData': {events.SEED_VARIABLE: seed}}]))
         try:
             (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
@@ -552,7 +552,7 @@ def remove(root: Path, app: str, env: str) -> None:
     if kept != lines:
         registry.write_text(''.join(kept))
         print(f'[OK] unregistered {unit_file.name} in clusters/home/kustomization.yaml')
-    unwatch_namespace(root, f'{app}-{env}')
+    unwatch_namespace(root, Instance(app, env).namespace)
     for path in sync_env(root, env):  # the apps it called no longer admit it
         print(f'[OK] rewrote {path.relative_to(root)}')
     if keeps_data:

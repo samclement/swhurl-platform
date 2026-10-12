@@ -42,6 +42,7 @@ from starlette.routing import Route
 from swhurl import app_alerts, statestore
 from swhurl.apps import channels
 from swhurl.apps.contract import TEAM
+from swhurl.apps.instance import Instance
 from swhurl.console.logconfig import CONFIG
 from swhurl.run import CommandError, Runner
 
@@ -62,7 +63,6 @@ MAX_OUTBOX_BYTES = 700_000
 HISTORY = 7200  # seconds a delivered entry's key is remembered, so a repeated request is not sent twice
 INTERVAL = 30  # seconds between delivery passes when nothing new arrives
 PRIORITIES = {'normal': 3, 'high': 4}
-NAME = channels.NAME_RE
 
 log = logging.getLogger(__name__)
 
@@ -94,9 +94,9 @@ def sender(who: str) -> tuple[str, str] | None:
     if who in PLATFORM_SENDERS:
         return None
     found = APP_SENDER.match(who)
-    for env in ('staging', 'prod'):
-        if found and found['namespace'] == f"{found['app']}-{env}":
-            return found['app'], env
+    instance = Instance.of_namespace(found['namespace']) if found else None
+    if instance and instance.app == found['app']:
+        return instance.app, instance.env
     log.warning('Refused a message from %s', who)
     raise Refused(403, 'this caller may not send notifications')
 
@@ -140,7 +140,7 @@ def message(body: bytes, app_sender: tuple[str, str] | None = None) -> dict:
         text['app'], text['env'] = app_sender
         text['key'] = f"app:{text['app']}:{text['env']}:{text['key'] or uuid.uuid4().hex}"
         text['title'] = f"{text['app']}/{text['env']}: {text['title'].strip()}" if text['title'].strip() else ''
-    if not NAME.match(text['app']) or text['env'] not in ('staging', 'prod'):
+    if not Instance.named(text['app'], text['env']):
         raise Refused(400, 'app must be an app name and env staging or prod')
     if not text['title'].strip() or len(text['title']) > MAX_TITLE or len(text['message']) > MAX_MESSAGE:
         raise Refused(400, f'a title of at most {MAX_TITLE} characters is required; a message is at most {MAX_MESSAGE}')
@@ -188,10 +188,10 @@ def alert(runner: Runner, body: bytes) -> dict:
     if not text['secret'] or not hmac.compare_digest(text['secret'].encode(), alert_secret(runner).encode()):
         raise Refused(401, 'the alert webhook secret is required')
     named, group = app_alerts.NAME.search(text['title']), GROUP.search(text['body'])
-    env = next((env for env in ('staging', 'prod') if named and group and group['namespace'] == f"{named['app']}-{env}"), None)
-    if not named or not env:
+    instance = Instance.of_namespace(group['namespace']) if named and group else None
+    if not instance or instance.app != named['app']:
         raise Refused(400, 'not an alert of an app: its name is swhurl:<app>:<preset> and its group the app\'s namespace')
-    app, firing = named['app'], text['state'] == 'ALERT'
+    app, env, firing = instance.app, instance.env, text['state'] == 'ALERT'
     label = app_alerts.LABELS.get(named['preset'], named['preset'])
     detail = '\n'.join(line for line in text['body'].splitlines() if line.strip() and not line.startswith('Group:'))
     notice = {'title': f"{app}/{env} {'alert' if firing else 'recovered'}: {label}", 'message': detail[:MAX_MESSAGE],
@@ -206,7 +206,7 @@ def team_channels(runner: Runner, app: str, env: str) -> list[str]:
     """The channels of the team that owns ``app``'s namespace; none for an unknown app or a team without any."""
     get = ['kubectl', '-n', channels.NAMESPACE, 'get']
     try:
-        namespace = runner.json(['kubectl', 'get', 'namespace', f'{app}-{env}', '--ignore-not-found', '-o', 'json']) or {}
+        namespace = runner.json(['kubectl', 'get', 'namespace', Instance(app, env).namespace, '--ignore-not-found', '-o', 'json']) or {}
         routes = next((json.loads(c['data'][channels.ROUTES_KEY]) for c in runner.json([*get, 'configmaps', '-o', 'json'])['items']
                        if c['metadata']['name'] == channels.ROUTES_NAME), {})
     except (CommandError, KeyError, TypeError, ValueError):

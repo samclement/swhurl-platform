@@ -33,7 +33,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import app_alerts, clickstack, statestore
-from swhurl.apps.instance import NAME_RE
+from swhurl.apps.instance import INSTANCE_ROOTS, NAME_RE, Instance, instances
 from swhurl.platform import ROOT
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -57,13 +57,13 @@ class App:
 
     @property
     def namespaces(self) -> str:
-        return ', '.join(f"'{self.name}-{env}'" for env in self.envs)
+        return ', '.join(f"'{Instance(self.name, env).namespace}'" for env in self.envs)
 
 
 def apps(paths: list[Path] | None = None) -> list[App]:
     """Apps in Git, from their instances' HelmReleases (a web app has a Service)."""
     found: dict[str, dict] = {}
-    paths = paths if paths is not None else [p.parent for p in sorted((ROOT / 'apps').glob('*/*/helmrelease.yaml'))]
+    paths = paths if paths is not None else [each.folder(ROOT) for each in instances(ROOT / INSTANCE_ROOTS[0])]
     for instance in paths:
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
         kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
@@ -95,16 +95,16 @@ def cluster_apps(runner: Runner) -> list[App]:
         metadata = release['metadata']
         labels = metadata.get('labels') or {}
         unit = labels.get('kustomize.toolkit.fluxcd.io/name', '')
-        match = re.fullmatch(r'app-([a-z0-9-]+)-(staging|prod)', unit)
-        if not match or labels.get('kustomize.toolkit.fluxcd.io/namespace') != 'flux-system':
+        found_instance = Instance.of_unit(unit)
+        if not found_instance or labels.get('kustomize.toolkit.fluxcd.io/namespace') != 'flux-system':
             continue
-        app, env = match.groups()
-        if metadata['name'] != app or metadata['namespace'] != f'{app}-{env}':
+        app, env = found_instance.app, found_instance.env
+        if metadata['name'] != app or metadata['namespace'] != found_instance.namespace:
             continue
         kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
         entry = found.setdefault(app, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(env)
-        entry['alerts'] = entry['alerts'] or settings.get(f'{app}-{env}', '')
+        entry['alerts'] = entry['alerts'] or settings.get(found_instance.namespace, '')
     return [App(name, entry['kind'], tuple(sorted(set(entry['envs']), key=lambda e: e != 'staging')), entry['alerts'])
             for name, entry in sorted(found.items())]
 

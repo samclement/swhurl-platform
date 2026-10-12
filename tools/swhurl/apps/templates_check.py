@@ -25,6 +25,7 @@ from swhurl.apps.contract import (
     STACKS,
     teams,
 )
+from swhurl.apps.instance import ENVIRONMENTS
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -72,7 +73,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
         report.bad(f'{label}: the template rendered no {MANIFEST_FILE}')
         return False
     instances = []
-    for env in ('staging', 'prod'):
+    for env in ENVIRONMENTS:
         code, output = instance(root, manifest, env)
         if code:
             report.bad(f'{label}: app-new refused its {MANIFEST_FILE} for {env}: {output.strip()}')

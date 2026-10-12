@@ -47,11 +47,10 @@ ENVIRONMENT = label('environment')
 EXPOSURE = label('exposure')
 EXCEPTIONS = label('policy-exceptions')
 
-# Teams: an app belongs to one team, a name registered in TEAMS_FILE. The team is a Namespace label,
+# Teams: an app belongs to one team, a name registered in TEAMS_FILE; there is no default, so every app names one. The team is a Namespace label,
 # the same in every environment of the app; telemetry carries it as swhurl.team (platform/otel).
 TEAM = label('team')
 TEAMS_FILE = Path('apps/teams.yaml')
-DEFAULT_TEAM = 'platform'
 
 
 def teams(root: Path = ROOT) -> dict[str, str]:
@@ -61,7 +60,7 @@ def teams(root: Path = ROOT) -> dict[str, str]:
         if path.is_file():
             registered = (yaml.safe_load(path.read_text()) or {}).get('teams') or {}
             return {name: (entry or {}).get('description', '') for name, entry in registered.items()}
-    return {DEFAULT_TEAM: ''}
+    return {}
 
 
 # Isolation: every instance carries a ResourceQuota and a NetworkPolicy, generated here so the

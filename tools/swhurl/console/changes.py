@@ -35,7 +35,6 @@ import yaml
 from swhurl import platform
 from swhurl.apps import channels, events, repo
 from swhurl.apps.contract import (
-    DEFAULT_TEAM,
     EXPOSURES,
     STACKS,
     TEAMS_FILE,
@@ -114,10 +113,11 @@ def new_repo_args(form: Mapping[str, str], questions: list[repo.Question],
         answers[question.name] = value
     extra = []
     team = form.get('team', '').strip()
-    if team:
-        if team not in (teams or {DEFAULT_TEAM: ''}):
-            raise ActionError(f'team must be one of {", ".join(teams or [DEFAULT_TEAM])} ({TEAMS_FILE})')
-        extra.append(f'--team={team}')
+    if not teams:
+        raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
+    if team not in teams:
+        raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
+    extra.append(f'--team={team}')
     if answers.get('kind') == 'worker':
         if form.get('host', '').strip():
             raise ActionError('a worker has no web address; leave Host empty')

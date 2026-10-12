@@ -50,7 +50,7 @@
 {% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
 <section class="card" id="{{ name }}">
   <div class="card-head" style="--acts: 3">
-    <h2>{{ name }}{% if name == default_team %} <span class="pill" title="New apps without a team go to it; it cannot be renamed or deleted">default</span>{% endif %}</h2>
+    <h2>{{ name }}</h2>
     <p class="{{ '' if description else 'muted' }}">{{ description or 'No description yet.' }}</p>
     {% set channel = team_channels.get(name, []) | first %}
     <p class="notifies">{% if channel %}<span class="pill ok" title="Gets a copy of the deployment and health messages of this team's apps">notification channel · {{ channels.get(channel, 'ntfy') }}</span>{% else %}<span class="muted">No notification channel: messages about its apps go to the platform topic only.</span>{% endif %}</p>
@@ -61,15 +61,14 @@
         <input type="hidden" name="name" value="{{ name }}">
         <fieldset>
           {{ ui.text_field('description-' ~ name, 'Description', description, 'What the team owns', 'One line. Empty removes it.', name='description') }}
-          {% if name != default_team %}{{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team: the same pull request relabels ' ~ ('its ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else, since it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
-          {% else %}<span class="muted hint">The default team keeps its name: new apps without a team go to it.</span>{% endif %}
+          {{ ui.text_field('rename-' ~ name, 'Name', name, name, 'Changing it renames the team: the same pull request relabels ' ~ ('its ' ~ count ~ ' app' ~ ('s' if count != 1 else '') ~ ' (' ~ (apps | join(', ')) ~ ')' if count else 'nothing else, since it owns no app') ~ ', so none is left naming the old team. Stored logs and traces keep the old name.', name='rename') }}
         </fieldset>
         {{ ui.submit('Open edit PR', 'You review and merge it on GitHub.') }}
       </form>
     </details>
     {# The team's one channel: an address is typed (or generated in the browser) once, sent to the
        server and never rendered back. #}
-    <details class="act" name="team-form" style="--slot: {{ 1 if name == default_team else 2 }}; --wide: 7rem">
+    <details class="act" name="team-form" style="--slot: 2; --wide: 7rem">
       <summary class="button">{{ st.icon('edit') }} Channel</summary>
       <form class="wizard" method="post" action="/team-channel/set" autocomplete="off">
         <input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="transport" value="ntfy">
@@ -85,7 +84,6 @@
       </form>
       {% endif %}
     </details>
-    {% if name != default_team %}
     <details class="act" name="team-form" style="--slot: 1">
       <summary class="button danger">{{ st.icon('trash') }} Delete</summary>
       <form class="wizard" method="post" action="/teams/remove" data-confirm="Open a pull request deleting team {{ name }}{% if count %} and moving its {{ count }} app(s) to the team chosen{% endif %}?" data-confirm-label="Open delete PR">
@@ -95,7 +93,7 @@
           <div class="field">
             <label for="move-{{ name }}">Move its {{ count }} app(s) to</label>
             <select id="move-{{ name }}" name="move_apps_to" required>
-              {% for other in teams if other != name %}<option value="{{ other }}" {{ 'selected' if other == default_team }}>{{ other }}</option>{% endfor %}
+              {% for other in teams if other != name %}<option value="{{ other }}">{{ other }}</option>{% endfor %}
             </select>
             <span class="muted hint">A team that owns apps is not deleted on its own: the same pull request moves {{ apps | join(', ') }} first, so no app is left without a team.</span>
           </div>
@@ -104,7 +102,6 @@
         {{ ui.submit('Open delete PR', 'You review and merge it on GitHub.') }}
       </form>
     </details>
-    {% endif %}
   </div>
   {% if count %}
   <div class="scroll">

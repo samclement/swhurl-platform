@@ -104,7 +104,7 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual((manifest.get_method(), manifest.full_url),
                          ('HEAD', 'https://ghcr.io/v2/samclement/notes/manifests/1-abcdef0'))
         self.assertIn('application/vnd.oci.image.index.v1+json', manifest.get_header('Accept'))
-        self.assertIn(f'make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --image {image}"',
+        self.assertIn(f'make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --team <team> --image {image}"',
                       lines[-1])
 
     def test_an_unreadable_webhook_token_is_a_warning_not_a_failure(self):

@@ -219,7 +219,9 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     args = new.parser().parse_args([app, '--env', 'prod', '--image', ops.image_reference(image_of(source)),
                                     '--kind', kind, '--exposure', exposure])
     args.host = host
-    args.team = namespace['metadata'].get('labels', {}).get(contract.TEAM, contract.DEFAULT_TEAM)
+    args.team = namespace['metadata'].get('labels', {}).get(contract.TEAM)
+    if not args.team:
+        raise EditError('staging names no team (its namespace label); set it with make app-team before promoting')
     if kind == 'web':  # the NetworkPolicy admits Traefik on the app's own port
         args.port = helmrelease.port(source) or args.port
     args.health_path = '/' if kind == 'web' else None  # the reviewed probes replace generator defaults

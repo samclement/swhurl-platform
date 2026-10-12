@@ -40,11 +40,12 @@
         <span class="label">Owning team</span>
         <div class="choices">
           {% for name, text in teams.items() %}
-          <label class="choice"><input type="radio" name="team" value="{{ name }}" {{ 'checked' if (form.team or default_team) == name }}>
-            <span><strong>{{ name }}</strong>{% if name == default_team %} <span class="pill">default</span>{% endif %} {% if team_channels.get(name) %}<span class="pill ok" title="The app's deployment and health messages also go to this team's channel">notification channel</span>{% else %}<span class="pill" title="Messages about the app go to the platform topic only">no notification channel</span>{% endif %}{% if text %}<br><span class="muted">{{ text }}</span>{% endif %}</span></label>
+          <label class="choice"><input type="radio" name="team" value="{{ name }}" required {{ 'checked' if form.team == name }}>
+            <span><strong>{{ name }}</strong> {% if team_channels.get(name) %}<span class="pill ok" title="The app's deployment and health messages also go to this team's channel">notification channel</span>{% else %}<span class="pill" title="Messages about the app go to the platform topic only">no notification channel</span>{% endif %}{% if text %}<br><span class="muted">{{ text }}</span>{% endif %}</span></label>
+          {% else %}<span class="warn">No team is registered yet. <a href="/teams">Add one</a> first: every app belongs to a team.</span>
           {% endfor %}
         </div>
-        <span class="muted hint">A label saying who owns the app: it groups and filters the Apps list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
+        <span class="muted hint">Choose one: there is no default. A label saying who owns the app: it groups and filters the Apps list and map, and is on the app's logs and traces as <code>swhurl.team</code>. It does not grant or restrict anyone's access. Add a team or give one a notification channel on the <a href="/teams">Teams</a> page; change an app's team later with <code>make app-team</code>.{% if teams_error %} <span class="warn">{{ teams_error }} Only the default team is offered.</span>{% endif %}</span>
       </div>
     </div>
   </section>

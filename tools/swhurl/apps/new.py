@@ -56,7 +56,6 @@ from swhurl.apps.contract import (
     DATABASE_PATH_VARIABLE,
     DATABASES,
     DEFAULT_DATABASE_SIZE,
-    DEFAULT_TEAM,
     ENVIRONMENT,
     ENVIRONMENTS,
     EXPOSURE,
@@ -125,6 +124,9 @@ def validate(args, root: Path = ROOT) -> None:
         app_alerts.thresholds(getattr(args, 'alerts', ''))
     except ValueError as error:
         raise GenerationError(f'--alerts: {error}') from None
+    if not args.team:
+        raise GenerationError('every app belongs to a team: give --team NAME (or team: in swhurl.yaml); registered in '
+                              f'apps/teams.yaml: {", ".join(teams(root)) or "none yet (make team-add NAME=<team>)"}')
     if args.team not in teams(root):
         raise GenerationError(f'unknown team {args.team!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
     if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
@@ -494,7 +496,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--kind', choices=['web', 'worker'], default='web')
     p.add_argument('--alerts', default='', metavar='SPEC',
                    help='the app\'s own default-alert settings: none, or error-logs=20,errors=none (default: the platform\'s)')
-    p.add_argument('--team', default=DEFAULT_TEAM, help='the owning team, a name in apps/teams.yaml (default %(default)s)')
+    p.add_argument('--team', help='the owning team, a name in apps/teams.yaml (required, here or as team: in swhurl.yaml)')
     p.add_argument('--exposure', choices=EXPOSURES, default='private',
                    help=f'private: no route; authenticated-web: shared sign-in on {COOKIE_DOMAIN}; '
                         f'public: no sign-in, host outside {COOKIE_DOMAIN}')

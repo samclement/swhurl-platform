@@ -14,7 +14,6 @@ make check-apps fails (rule team), so each command changes both in one Git edit:
   - renaming a team relabels every app that belongs to it;
   - removing a team is refused while apps belong to it, unless they are moved to another team
     in the same change;
-  - the default team cannot be removed or renamed: new apps without a team go to it.
 
 Telemetry already stored keeps the name it was written with (swhurl.team); only new data follows.
 
@@ -34,7 +33,7 @@ from ruamel.yaml.comments import CommentedMap
 
 from swhurl import ROOT
 from swhurl.apps import channels, derive, edit
-from swhurl.apps.contract import DEFAULT_TEAM, ENVIRONMENTS, TEAM, TEAMS_FILE
+from swhurl.apps.contract import ENVIRONMENTS, TEAM, TEAMS_FILE
 from swhurl.apps.new import dump
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -135,8 +134,6 @@ def change(root: Path, name: str, description: str | None = None, rename: str | 
         teams[name] = current
     apps: list[str] = []
     if rename and rename != name:
-        if name == DEFAULT_TEAM:
-            raise EditError(f'{name} is the default team for new apps and cannot be renamed')
         if checked_name(rename) in teams:
             raise EditError(f'team {rename} already exists; to merge the two, remove {name} with --move-apps-to {rename}')
         position = list(teams).index(name)
@@ -153,8 +150,6 @@ def remove(root: Path, name: str, move_apps_to: str | None = None) -> None:
     document, teams = registry(root)
     if name not in teams:
         raise EditError(f'no team {name}; registered: {", ".join(teams)}')
-    if name == DEFAULT_TEAM:
-        raise EditError(f'{name} is the default team for new apps and cannot be removed')
     apps = apps_of(root).get(name, [])
     if apps and not move_apps_to:
         raise EditError(f'team {name} still owns {", ".join(apps)}: move them with --move-apps-to <team>, '

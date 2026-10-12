@@ -7,6 +7,6 @@ metadata:
     platform.swhurl.com/app: smoke-data
     platform.swhurl.com/environment: prod
     platform.swhurl.com/exposure: private
-    platform.swhurl.com/team: platform
+    platform.swhurl.com/team: demo
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled

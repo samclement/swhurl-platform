@@ -64,7 +64,7 @@ class ManifestTests(unittest.TestCase):
             manifest = Path(root) / 'swhurl.yaml'
             manifest.write_text(yaml.safe_dump(WEB))
             args = app_new.parse_args(['kt', '--manifest', str(manifest), '--env', 'staging', '--root', root,
-                                       '--image', 'ghcr.io/me/kt:1-abcdef0@sha256:' + 'a' * 64, '--no-register'])
+                                       '--image', 'ghcr.io/me/kt:1-abcdef0@sha256:' + 'a' * 64, '--no-register', '--team', 'demo'])
             app_new.generate(args, Path(root))
             release = yaml.safe_load((Path(root) / 'apps/kt/staging/helmrelease.yaml').read_text())
         probes = release['spec']['values']['controllers']['main']['containers']['main']['probes']

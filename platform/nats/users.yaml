@@ -47,17 +47,6 @@ data:
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-12.swhurl-try-13_visited.>
-                - $JS.API.CONSUMER.INFO.staging-swhurl-try-15.swhurl-try-13_greeted
-                - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-15.swhurl-try-13_greeted
-                - $JS.ACK.staging-swhurl-try-15.swhurl-try-13_greeted.>
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-13.>
-          - nkey: UB46HHCGZ6Q663TTBNC6MDU3NYJPTED7E37F4WEMOREUCFRI6AP3D2RX
-            permissions:
-              publish:
-                allow:
-                - staging.swhurl-try-15.>
-              subscribe:
-                allow:
-                - _INBOX.staging.swhurl-try-15.>

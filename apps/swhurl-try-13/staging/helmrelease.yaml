@@ -62,7 +62,7 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-13
-              SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited,swhurl-try-12.visited,swhurl-try-15.greeted
+              SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited,swhurl-try-12.visited
               SWHURL_EVENTS_NKEY: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             envFrom:

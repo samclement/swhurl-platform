@@ -53,10 +53,9 @@ and, for the whole tree:
 
 and, across the environments of one app (source manifests, not rendered):
 
-  env-drift           environments differ only in namespace, hosts, image tag/digest,
-                      replicas, resources, issuer, exposure (route and sign-in), calls and events; encrypted
-                      Secrets and the staging-only
-                      image-automation.yaml (automatic deploys) are skipped
+  env-drift           environments differ only in the settings and files that per_environment.py lists
+                      (namespace, hosts, image, replicas, resources, issuer, exposure, calls, events, offers);
+                      encrypted Secrets are never compared
 
 A reviewed exception goes on the HelmRelease as
   platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
@@ -74,13 +73,10 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import channels, events, helmrelease, offers
+from swhurl.apps import channels, events, helmrelease, offers, per_environment
 from swhurl.apps.calling import (
-    API_VARIABLE,
-    CALLERS_VARIABLE,
     ENVIRONMENT_VARIABLE,
     TOKEN_SECONDS,
-    TOKENS_VOLUME,
     allowed_callers,
     callee_address,
     callee_variable,
@@ -98,7 +94,6 @@ from swhurl.apps.contract import (
     EXCEPTIONS,
     EXPOSURE,
     IMAGE_AUTOMATION_FILE,
-    NETWORK_POLICY_FILE,
     OTLP_HOST_IP,
     QUOTA,
     QUOTA_HEADROOM,
@@ -394,35 +389,19 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     return violations
 
 
-VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-manager.io/cluster-issuer', ENVIRONMENT,
-          # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
-          ENVIRONMENT_VARIABLE, CALLERS_VARIABLE, TOKENS_VOLUME,
-          # Events too: each environment has its own declaration, key and Secret (make app-events).
-          events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload',
-          # What an instance offers, and where it serves its API description, is read for the image it runs
-          # (make app-offers; promotion carries it).
-          offers.ANNOTATION, API_VARIABLE}
-# Exposure may differ per environment (for example a signed-in staging preview of a public app). When
-# the environments' exposure labels differ, their routes are not compared; each environment is still
-# checked against the exposure rules on its own. With the same exposure, routes must match.
-EXPOSURE_VARIES = {'ingress', EXPOSURE}
-VARIES_LISTS = {'hosts'}  # lists of host names (TLS); lists of rules are compared
-
-
-def flatten(node, path: str = '', varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
-    """Leaf values by dotted path, with the settings environments may vary removed."""
+def flatten(node, path: str = '', exposure_differs: bool = False) -> dict[str, object]:
+    """Leaf values by dotted path, without the settings environments may differ in (per_environment.py)."""
     if isinstance(node, dict):
         leaves = {}
         for key, value in node.items():
-            if key in varies or str(key).startswith('SWHURL_SERVICE_') \
-                    or (key in VARIES_LISTS and all(isinstance(v, str) for v in value or [])):
+            if per_environment.may_differ(key, value, exposure_differs=exposure_differs):
                 continue
-            leaves.update(flatten(value, f'{path}.{key}' if path else str(key), varies))
+            leaves.update(flatten(value, f'{path}.{key}' if path else str(key), exposure_differs))
         return leaves
     if isinstance(node, list):
         leaves = {}
         for index, value in enumerate(node):
-            leaves.update(flatten(value, f'{path}[{index}]', varies))
+            leaves.update(flatten(value, f'{path}[{index}]', exposure_differs))
         return leaves
     return {path: node}
 
@@ -433,29 +412,20 @@ def exposure_of(instance: Path) -> str | None:
     return ((docs[0].get('metadata') or {}).get('labels') or {}).get(EXPOSURE) if docs else None
 
 
-def source(instance: Path, varies: frozenset[str] = frozenset(VARIES)) -> dict[str, object]:
+def source(instance: Path, exposure_differs: bool = False) -> dict[str, object]:
+    """What an instance's manifests say, without the files and settings environments may differ in."""
     leaves = {}
     for path in sorted(instance.glob('*.yaml')):
-        if path.name.endswith('.sops.yaml') or path.name in {IMAGE_AUTOMATION_FILE, 'production-alert.yaml',
-                                                             NETWORK_POLICY_FILE, events.EVENTS_FILE}:
-            # Automatic deploys and production-only promotion alerts are environment-specific; the
-            # NetworkPolicy follows from each environment's exposure and callers (rule network-policy).
+        if not per_environment.compared(path.name):
             continue
         for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)
             if doc.get('kind') == 'Kustomization':
-                doc['resources'] = [r for r in doc.get('resources') or []
-                                    if r not in (IMAGE_AUTOMATION_FILE, events.EVENTS_FILE, events.SECRET_FILE)]
+                doc['resources'] = [r for r in doc.get('resources') or [] if r not in per_environment.NOT_CARRIED]
             if doc.get('kind') == 'HelmRelease':  # the reference to this environment's event key
-                container = helmrelease.container(doc)
-                refs = [ref for ref in container.get('envFrom') or []
-                        if ref != {'secretRef': {'name': events.secret_name(doc['metadata']['name'])}}]
-                if 'envFrom' in container:
-                    container['envFrom'] = refs
-                    if not refs:
-                        del container['envFrom']
-            leaves.update(flatten(doc, f'{path.name}#{index}', varies))
+                per_environment.without_reference(doc, events.secret_name(doc['metadata']['name']))
+            leaves.update(flatten(doc, f'{path.name}#{index}', exposure_differs))
     return leaves
 
 
@@ -469,8 +439,8 @@ def drift(environments: list[Path]) -> list[str]:
         allowed, _ = exceptions([d for d in yaml.safe_load_all((other / 'helmrelease.yaml').read_text()) if d])
         if 'env-drift' in allowed:
             continue
-        varies = frozenset(VARIES | (EXPOSURE_VARIES if exposure_of(base) != exposure_of(other) else set()))
-        reference, leaves = source(base, varies), source(other, varies)
+        exposure_differs = exposure_of(base) != exposure_of(other)
+        reference, leaves = source(base, exposure_differs), source(other, exposure_differs)
         changed = sorted(k for k in reference.keys() | leaves.keys() if reference.get(k, '<absent>') != leaves.get(k, '<absent>'))
         if changed:
             shown = ', '.join(changed[:5]) + (f' (+{len(changed) - 5} more)' if len(changed) > 5 else '')

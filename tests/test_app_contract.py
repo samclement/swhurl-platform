@@ -613,7 +613,7 @@ class PlatformImageTests(unittest.TestCase):
 
 
 class DriftTests(unittest.TestCase):
-    """Environments of one app may differ only in the settings policy.VARIES names."""
+    """Environments of one app may differ only in the settings per_environment.SETTINGS lists."""
 
     def setUp(self):
         self.app = Path(tempfile.mkdtemp()) / 'hello'

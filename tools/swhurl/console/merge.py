@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, helmrelease, new, offers, promotion
+from swhurl.apps import calling, helmrelease, new, offers, per_environment, promotion
 from swhurl.apps.instance import instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
@@ -71,21 +71,15 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
     if promotion.ops.image_reference(promotion.image_of(actual)) != meta.get('image'):
         raise Hold('PR no longer pins the reviewed image')
     if target is not None:
-        expected = json.loads(json.dumps(target))
-        image = promotion.image_of(expected)
         reviewed = new.parse_image(meta['image'])
-        if image.get('repository') != reviewed['repository']:
+        if promotion.image_of(target).get('repository') != reviewed['repository']:
             raise Hold('production image repository changed')
-        for key in ('tag', 'digest'):
-            if key in reviewed:
-                image[key] = reviewed[key]
-            else:
-                image.pop(key, None)
         # With the image goes what it offers (its API and event documents, read at its commit): the
         # documents and the release's note of that commit may change. What it publishes may not: that
         # also changes NATS, which a person reviews.
         release = f'apps/{app}/prod/helmrelease.yaml'
         carried = sorted(path for path in files if path.startswith(f'apps/{app}/prod/{offers.OFFERS_DIR}/'))
+        commit = ''
         if carried:
             try:
                 found = offers.read(instance_folder(candidate, app, 'prod'))
@@ -99,11 +93,9 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
                     (candidate / path).read_bytes() != (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).read_bytes()
                     for path in carried if (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).is_file()):
                 raise Hold("promotion carries offers that differ from staging's")
-            expected.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
-            # Where the image serves its API description goes with its documents (staging's value).
-            served = helmrelease.variables(source).get(calling.API_VARIABLE)
-            if served and helmrelease.port(expected) is not None:
-                helmrelease.container(expected).setdefault('env', {})[calling.API_VARIABLE] = served
+        # Where the image serves its API description goes with its documents (staging's value).
+        expected = per_environment.after_promotion(target, reviewed, commit=commit,
+                                                   served=helmrelease.variables(source).get(calling.API_VARIABLE, ''))
         if actual != expected or sorted(files) != sorted([release, *carried]):
             raise Hold('later promotion changes more than the image pin and what the image offers')
         return

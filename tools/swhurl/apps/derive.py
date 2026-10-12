@@ -33,6 +33,7 @@ from swhurl.apps.calling import (
 )
 from swhurl.apps.contract import (
     EXPOSURE,
+    RELOAD,
 )
 from swhurl.apps.instance import (
     ENVIRONMENTS,
@@ -92,7 +93,6 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: 
         edits.append((kustomization.path, kustomization.render()))
     return edits
 
-RELOAD = 'secret.reloader.stakater.com/reload'
 
 def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, publishers: dict[str, list[str]],
                 ) -> tuple[list[tuple[Path, str]], tuple[str, ...], tuple[str, ...], dict | None]:

@@ -66,6 +66,8 @@ def teams(root: Path = ROOT) -> dict[str, str]:
 # generator, the edit commands and the policy check agree.
 QUOTA_FILE = 'resourcequota.yaml'
 NETWORK_POLICY_FILE = 'networkpolicy.yaml'
+RELOAD = 'secret.reloader.stakater.com/reload'
+"""On an app's controller: the Secrets whose change restarts it (Reloader), comma-separated."""
 ISOLATION_FILES = (QUOTA_FILE, NETWORK_POLICY_FILE)
 # One size for every instance namespace: room for app-scale's maximum replicas at template sizes.
 QUOTA = {'pods': '14', 'requests.cpu': '2', 'requests.memory': '2Gi', 'limits.memory': '4Gi'}

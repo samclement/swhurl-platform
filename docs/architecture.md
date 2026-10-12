@@ -93,7 +93,7 @@ flowchart LR
 | `platform-oauth2-proxy` | oauth2-proxy, its Secret, the sign-in middleware | infra-base | settings, SOPS |
 | `platform-clickstack-operators` | MongoDB and ClickHouse operators and their CRDs (`platform/clickstack-operators`) | infra-base | |
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
-| `platform-otel` | Both collectors, the ingestion Secret | infra-base | settings, SOPS |
+| `platform-otel` | Both collectors, the ingestion Secret | infra-base | SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `platform-alerts` | The ntfy Provider and the infrastructure/source failure Alert, with their SOPS Secret (`platform/alerts`) | infra-base | SOPS |
 | `platform-notify` | The [notify service](services.md#notify-service) with its RBAC, outbox ConfigMap and NetworkPolicy, one SOPS Secret per [notification channel](services.md#notification-channels) and the generated team routes (`platform/notify`). Defined in its own file, `clusters/home/platform-notify.yaml`, because `make channel-add` and `make channel-remove` edit it | infra-base | SOPS while a channel exists |

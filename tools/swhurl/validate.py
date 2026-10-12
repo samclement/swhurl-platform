@@ -180,6 +180,27 @@ def check_doc_links(runner: Runner, report: Report, root: Path = ROOT) -> None:
     report.ok(f'{checked} relative documentation links resolve')
 
 
+UNIT_ROW = re.compile(r'^\| `((?:cluster|infra|platform)-[a-z0-9-]+)` \|.*\|([^|]*)\|$', re.M)
+
+
+def check_unit_table(report: Report, root: Path = ROOT) -> None:
+    """The Flux units table in the architecture page lists the shared units Git defines, with their inputs."""
+    doc = root / platform.UNITS_DOC
+    if not doc.is_file():
+        return
+    rows = dict(UNIT_ROW.findall(doc.read_text()))
+    shared = {unit.name: unit for unit in platform.units(root) if not unit.is_app}
+    problems = [f'{name} is not in the table' for name in shared.keys() - rows.keys()]
+    problems += [f'{name} is in the table but not in Git' for name in rows.keys() - shared.keys()]
+    for name in shared.keys() & rows.keys():
+        for word, has in (('settings', shared[name].substitutes), ('SOPS', shared[name].decrypts)):
+            if (word in rows[name]) != has:
+                problems.append(f"{name}: Inputs {'omits' if has else 'names'} {word}")
+    if problems:
+        fail(f'{platform.UNITS_DOC} Flux units table differs from Git:\n  ' + '\n  '.join(sorted(problems)))
+    report.ok(f'{platform.UNITS_DOC} lists the {len(shared)} shared Flux units and their inputs')
+
+
 def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
     """Run every check, recording failures instead of stopping at the first."""
     def attempt(check, *args):
@@ -190,6 +211,7 @@ def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
             return None
 
     attempt(check_doc_links, runner, report, root)
+    attempt(check_unit_table, report, root)
     attempt(check_shell_syntax, runner, report)
     attempt(check_secrets, report, root)
     settings = attempt(platform_settings, root)

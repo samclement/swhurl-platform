@@ -614,6 +614,17 @@ components:
         self.assertEqual(len(self.seeds), 2, 'production has its own key')
         self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
         self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [], 'offers follow each image')
+        # A first promotion carries them too: production is made from staging's release, then given the documents.
+        shutil.rmtree(prod)
+        (self.root / 'clusters/home/app-orders-prod.yaml').unlink()
+        registry = self.root / 'clusters/home/kustomization.yaml'
+        registry.write_text(registry.read_text().replace('  - app-orders-prod.yaml\n', ''))
+        with mock.patch.object(policy, 'evaluate', side_effect=lambda instance, runner=None: [
+                f'offers: {p}' for p in offers.problems(instance, [], str((yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata']
+                                                                           .get('annotations') or {}).get(offers.ANNOTATION, '')))
+                if 'annotated' in p]):
+            self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
+        self.assertEqual((offers.read(prod).commit, self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH']), ('abc1234', 'created,paid'))
         release = self.root / 'apps/orders/staging/helmrelease.yaml'
         release.write_text(release.read_text().replace('SWHURL_APP: orders', 'SWHURL_APP: orders\n              SWHURL_API_PATH: /openapi.json', 1))
         self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [],

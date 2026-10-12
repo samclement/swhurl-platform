@@ -383,7 +383,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         sync_env(root, target)  # production's own callers and callees
         carry_offers(root, app, runner=runner)
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
-        if container(src).get('envFrom'):
+        if (root / 'apps' / app / target / 'secret.sops.yaml').is_file():  # not the events key, which is made here
             print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
         return result
     if host:

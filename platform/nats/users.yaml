@@ -28,6 +28,7 @@ data:
                 - $JS.API.CONSUMER.INFO.staging-demo-orders.demo-notifier_created
                 - $JS.API.CONSUMER.MSG.NEXT.staging-demo-orders.demo-notifier_created
                 - $JS.ACK.staging-demo-orders.demo-notifier_created.>
+                - $JS.API.STREAM.INFO.staging-demo-orders
               subscribe:
                 allow:
                 - _INBOX.staging.demo-notifier.>
@@ -62,9 +63,11 @@ data:
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>
+                - $JS.API.STREAM.INFO.staging-swhurl-try-10
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-12.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-12.swhurl-try-13_visited.>
+                - $JS.API.STREAM.INFO.staging-swhurl-try-12
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-13.>

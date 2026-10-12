@@ -411,7 +411,8 @@ class EditTests(unittest.TestCase):
         self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']], {
             'publish': {'allow': ['$JS.API.CONSUMER.INFO.staging-orders.hello_created',
                                   '$JS.API.CONSUMER.MSG.NEXT.staging-orders.hello_created',
-                                  '$JS.ACK.staging-orders.hello_created.>']},
+                                  '$JS.ACK.staging-orders.hello_created.>',
+                                  '$JS.API.STREAM.INFO.staging-orders']},  # the Java client asks before it binds
             'subscribe': {'allow': ['_INBOX.staging.hello.>']}})
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
         self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging'])

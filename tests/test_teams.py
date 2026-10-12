@@ -15,7 +15,7 @@ from swhurl.apps import channels, contract, policy, teams
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import FakeRunner, Result
 
-SAMPLE = ROOT / 'tests/fixtures/instance'  # one app, hello, in staging and prod, team platform
+SAMPLE = ROOT / 'tests/fixtures/instance'  # one app, hello, in staging and prod, team demo
 
 
 class TeamTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class TeamTests(unittest.TestCase):
         for rel in ('apps', 'clusters'):
             shutil.copytree(SAMPLE / rel, self.root / rel)
         (self.root / 'apps/teams.yaml').write_text(
-            '# Teams that own apps.\nteams:\n  platform:\n    description: The platform itself\n  payments: {}\n')
+            '# Teams that own apps.\nteams:\n  demo:\n    description: The platform itself\n  payments: {}\n')
 
     def quiet(self, fn, *args, **kwargs):
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
@@ -41,7 +41,7 @@ class TeamTests(unittest.TestCase):
 
     def test_add_and_describe(self):
         self.quiet(teams.add, 'insights', '  Reporting\n and  dashboards ')
-        self.assertEqual(self.registered(), {'platform': 'The platform itself', 'payments': '', 'insights': 'Reporting and dashboards'})
+        self.assertEqual(self.registered(), {'demo': 'The platform itself', 'payments': '', 'insights': 'Reporting and dashboards'})
         self.assertTrue((self.root / 'apps/teams.yaml').read_text().startswith('# Teams that own apps.'), 'comments are kept')
         self.quiet(teams.change, 'payments', description='Orders')
         self.assertEqual(self.registered()['payments'], 'Orders')
@@ -58,31 +58,31 @@ class TeamTests(unittest.TestCase):
         self.quiet(teams.remove, 'payments')
         self.quiet(teams.add, 'core')
         self.quiet(teams.remove, 'core')  # round trip of an empty team
-        (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  legacy: {description: Old}\n  payments: {}\n')
+        (self.root / 'apps/teams.yaml').write_text('teams:\n  demo: {}\n  legacy: {description: Old}\n  payments: {}\n')
         for env in ('staging', 'prod'):
             path = self.root / 'apps/hello' / env / 'namespace.yaml'
-            path.write_text(path.read_text().replace('team: platform', 'team: legacy'))
+            path.write_text(path.read_text().replace('team: demo', 'team: legacy'))
         out = self.quiet(teams.change, 'legacy', rename='orders')
         self.assertIn('renamed to orders; relabelled 1 app(s)', out)
-        self.assertEqual(list(self.registered()), ['platform', 'orders', 'payments'], 'it keeps its place and description')
+        self.assertEqual(list(self.registered()), ['demo', 'orders', 'payments'], 'it keeps its place and description')
         self.assertEqual(self.registered()['orders'], 'Old')
         self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('orders', 'orders'))
         self.assertEqual(teams.apps_of(self.root), {'orders': ['hello']})
         self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
         with self.assertRaisesRegex(EditError, 'already exists; to merge the two, remove orders with --move-apps-to payments'):
             teams.change(self.root, 'orders', rename='payments')
-        with self.assertRaisesRegex(EditError, 'default team for new apps and cannot be renamed'):
-            teams.change(self.root, 'platform', rename='core')
+        self.quiet(teams.change, 'demo', rename='core')  # no team is special: any can be renamed
+        self.assertEqual(list(self.registered()), ['core', 'orders', 'payments'])
 
     def test_a_team_with_apps_is_not_removed_unless_they_are_moved(self):
         self.quiet(teams.add, 'legacy')
         for env in ('staging', 'prod'):
             path = self.root / 'apps/hello' / env / 'namespace.yaml'
-            path.write_text(path.read_text().replace('team: platform', 'team: legacy'))
+            path.write_text(path.read_text().replace('team: demo', 'team: legacy'))
         before = (self.root / 'apps/teams.yaml').read_text()
         with self.assertRaisesRegex(EditError, 'team legacy still owns hello: move them with --move-apps-to'):
             teams.remove(self.root, 'legacy')
-        for target, message in (('legacy', 'another registered team'), ('nobody', 'another registered team: platform, payments')):
+        for target, message in (('legacy', 'another registered team'), ('nobody', 'another registered team: demo, payments')):
             with self.subTest(target=target), self.assertRaisesRegex(EditError, message):
                 teams.remove(self.root, 'legacy', target)
         self.assertEqual(((self.root / 'apps/teams.yaml').read_text(), self.team_of('staging')), (before, 'legacy'),
@@ -91,8 +91,8 @@ class TeamTests(unittest.TestCase):
         self.assertIn('removed team legacy; moved hello to payments', out)
         self.assertNotIn('legacy', self.registered())
         self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('payments', 'payments'))
-        with self.assertRaisesRegex(EditError, 'default team for new apps and cannot be removed'):
-            teams.remove(self.root, 'platform')
+        self.quiet(teams.remove, 'demo')  # no team is special: one that owns nothing can go
+        self.assertEqual(list(self.registered()), ['payments'])
 
     def notify_unit(self):
         directory = self.root / channels.NOTIFY_DIR
@@ -186,7 +186,7 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(channels.problems(self.root), [])
         self.quiet(teams.remove, 'billing')
         self.assertEqual(self.routes(), {})
-        self.quiet(teams.change, 'platform', notify=[])
+        self.quiet(teams.change, 'demo', notify=[])
         self.assertNotIn('notify', (self.root / 'apps/teams.yaml').read_text())
 
     def test_the_policy_finds_channels_teams_and_routes_that_disagree(self):
@@ -217,13 +217,13 @@ class TeamTests(unittest.TestCase):
         self.quiet(teams.change, 'payments', rename='billing')
         self.quiet(teams.team_channel, 'billing', address, runner=runner)
         self.assertEqual(channels.channels(self.root), {'payments': 'ntfy'}, 'a renamed team keeps the channel it has')
-        self.quiet(teams.team_channel, 'platform', address, runner=runner)
-        self.quiet(teams.change, 'platform', notify=['payments'])  # by hand: two teams, one channel
+        self.quiet(teams.team_channel, 'demo', address, runner=runner)
+        self.quiet(teams.change, 'demo', notify=['payments'])  # by hand: two teams, one channel
         self.quiet(teams.team_channel, 'billing', None)
-        self.assertEqual((channels.channels(self.root), self.routes()), ({'payments': 'ntfy', 'platform': 'ntfy'}, {'platform': ['payments']}),
+        self.assertEqual((channels.channels(self.root), self.routes()), ({'payments': 'ntfy', 'demo': 'ntfy'}, {'demo': ['payments']}),
                          'a channel another team notifies stays')
-        self.quiet(teams.team_channel, 'platform', None)
-        self.assertEqual((list(channels.channels(self.root)), self.routes()), (['platform'], {}))
+        self.quiet(teams.team_channel, 'demo', None)
+        self.assertEqual((list(channels.channels(self.root)), self.routes()), (['demo'], {}))
         self.assertEqual(channels.problems(self.root), [])
         self.assertIsNotNone(first)
         for team, value, message in (('ghost', address, 'no team ghost'), ('billing', None, 'has no channel to remove'),
@@ -248,18 +248,18 @@ class TeamTests(unittest.TestCase):
 
     def test_an_app_naming_an_unregistered_team_is_found(self):
         path = self.root / 'apps/hello/staging/namespace.yaml'
-        path.write_text(path.read_text().replace('team: platform', 'team: ghost'))
-        self.assertEqual(teams.apps_of(self.root), {'ghost': ['hello'], 'platform': ['hello']})
+        path.write_text(path.read_text().replace('team: demo', 'team: ghost'))
+        self.assertEqual(teams.apps_of(self.root), {'ghost': ['hello'], 'demo': ['hello']})
         self.quiet(teams.add, 'ghost')  # registering it is one of the two ways out
         self.assertIn('ghost', self.registered())
 
     def test_commands_exit_2_on_refusal(self):
         err = io.StringIO()
         with redirect_stderr(err), redirect_stdout(io.StringIO()):
-            self.assertEqual(teams.main_remove(['platform', '--root', str(self.root)]), 2)
+            self.assertEqual(teams.main_remove(['demo', '--root', str(self.root)]), 2)
             self.assertEqual(teams.main_add(['insights', '--description', 'Reporting', '--root', str(self.root)]), 0)
             self.assertEqual(teams.main_edit(['insights', '--rename', 'reports', '--root', str(self.root)]), 0)
-        self.assertIn('[ERROR] platform is the default team', err.getvalue())
+        self.assertIn('[ERROR] team demo still owns hello', err.getvalue())
         self.assertIn('reports', self.registered())
 
 

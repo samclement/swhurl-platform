@@ -13,3 +13,7 @@ teams:
     description: Reporting (team platform scenario)
     notify:
     - insights
+  demo:
+    notify:
+    - platform
+    description: 'Apps that show how to use the platform: calling an API securely, events, a database, notifications'

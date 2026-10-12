@@ -4,3 +4,4 @@ kind: worker
 uid: 65532
 telemetry: otlp
 autoDeploy: true
+team: demo

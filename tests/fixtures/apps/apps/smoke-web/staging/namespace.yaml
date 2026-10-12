@@ -7,4 +7,4 @@ metadata:
     platform.swhurl.com/app: smoke-web
     platform.swhurl.com/environment: staging
     platform.swhurl.com/exposure: authenticated-web
-    platform.swhurl.com/team: platform
+    platform.swhurl.com/team: demo

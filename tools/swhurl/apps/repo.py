@@ -248,8 +248,8 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
     tag = f'{run["number"]}-{run["headSha"][:7]}'
     image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
     out(f'[OK] First image: {image}')
-    out('Next, add it to staging (a Git edit; commit and push it):')
-    out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --image {image}"')
+    out('Next, add it to staging (a Git edit; commit and push it). <team> is the team that owns it, a name in apps/teams.yaml:')
+    out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --team <team> --image {image}"')
     return image
 
 

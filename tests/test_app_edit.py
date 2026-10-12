@@ -647,7 +647,7 @@ components:
     def test_expose_refuses_a_worker_route(self):
         with redirect_stdout(io.StringIO()):
             new.main(['job', '--env', 'staging', '--kind', 'worker', '--image', 'r/job:1', '--root', str(self.root),
-                      '--no-policy-check'])
+                      '--no-policy-check', '--team', 'demo'])
         with self.assertRaisesRegex(edit.EditError, 'worker'):
             edit.expose(self.root, 'job', 'staging', 'public', 'job.example.com')
     def test_expose_preserves_custom_annotations_dependencies_and_comments(self):

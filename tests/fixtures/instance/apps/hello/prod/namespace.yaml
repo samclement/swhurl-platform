@@ -7,4 +7,4 @@ metadata:
     platform.swhurl.com/app: hello
     platform.swhurl.com/environment: prod
     platform.swhurl.com/exposure: authenticated-web
-    platform.swhurl.com/team: platform
+    platform.swhurl.com/team: demo

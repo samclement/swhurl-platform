@@ -23,6 +23,7 @@ from swhurl.apps.contract import (
     MANIFEST_FILE,
     STACK_REVISIONS,
     STACKS,
+    teams,
 )
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
@@ -44,8 +45,9 @@ def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
     out = StringIO()
     with redirect_stdout(out), redirect_stderr(out):
         if env == 'staging':
+            # A template names no team (the creator chooses one): any registered team serves the check.
             code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', env,
-                             '--image', IMAGE, '--no-policy-check'])
+                             '--image', IMAGE, '--no-policy-check', '--team', next(iter(teams()), '')])
         else:
             source, _ = promotion.read(root, NAME)
             promotion.create(root, NAME, source)

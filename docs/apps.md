@@ -83,8 +83,8 @@ Once staging is deployed, later pushes to the app repository's `main` publish im
 make app-repo NAME=weather-api STACK=kotlin ANSWERS="kind=web database=sqlite"   # DRY_RUN=true shows the plan
 # [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-kotlin
 # [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
-#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"
-make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --image ghcr.io/…"   # the printed line
+#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team <team> --image ghcr.io/…"
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team payments --image ghcr.io/…"   # the printed line, with the team that owns it
 git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/staging" && git push
 make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
 ```
@@ -141,7 +141,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
-| `--team` | The owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)); default `platform` |
+| `--team` | Required (here or as `team:` in `swhurl.yaml`): the owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)) |
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)): set the values before pushing and also `git add platform/reloader` |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
@@ -167,7 +167,7 @@ database: sqlite        # optional; databaseSize: 1Gi        --database, --datab
 secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
 exposure: authenticated-web   # optional; default: web apps authenticated-web, workers private
-team: payments          # optional: a name in apps/teams.yaml (default platform)   --team
+team: payments          # a name in apps/teams.yaml; required here or as --team (there is no default)
 alerts: error-logs=20,errors=none   # optional: its own default-alert thresholds, or none   --alerts
 calls: [orders]         # optional: apps this one calls; each must exist in staging   --calls
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
@@ -187,7 +187,7 @@ Set it with `--exposure` at creation, and change it later with `make app-expose 
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. Set it at creation (`team:` in `swhurl.yaml`, `--team`, or the console's team select; default `platform`) and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, `team:` in `swhurl.yaml`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=hello-ts ARGS="--team payments"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
 
@@ -195,7 +195,6 @@ Manage teams on the console's **Teams** page or with `make team-add`, `make team
 | --- | --- |
 | Rename a team | The same change relabels every app that belongs to it |
 | Remove a team that owns apps | Refused, unless the same change moves them to another team (`--move-apps-to`) |
-| Remove or rename `platform` | Refused: it is the default for an app created without a team |
 | An app already naming an unregistered team | Listed first on the Teams page; register the team or move the app with `make app-team` |
 
 Logs and traces already stored keep the team name they were written with; only new data carries a new name.

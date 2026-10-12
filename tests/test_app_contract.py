@@ -34,7 +34,7 @@ class GeneratorTests(unittest.TestCase):
         (self.tmp / 'clusters/home/kustomization.yaml').write_text('resources:\n  - tenants.yaml\n')
 
     def gen(self, *args):
-        return app_new.main(['--root', str(self.tmp), '--no-policy-check', *args])
+        return app_new.main(['--root', str(self.tmp), '--no-policy-check', '--team', 'demo', *args])
 
     def test_requested_validation_cannot_silently_skip_missing_or_failed_tools(self):
         for error in (CommandError(['helm'], 'helm not found'),
@@ -42,7 +42,7 @@ class GeneratorTests(unittest.TestCase):
             with self.subTest(error=error), mock.patch.object(app_policy, 'evaluate', side_effect=error):
                 out, err = io.StringIO(), io.StringIO()
                 with redirect_stdout(out), redirect_stderr(err):
-                    result = app_new.main(['worker', '--env=staging', '--kind=worker', '--image=r/w:1',
+                    result = app_new.main(['worker', '--env=staging', '--kind=worker', '--image=r/w:1', '--team=demo',
                                            '--root', str(self.tmp)])
                 self.assertEqual(result, 1)
                 self.assertIn('could not validate', err.getvalue())
@@ -109,7 +109,7 @@ class GeneratorTests(unittest.TestCase):
 
     def test_every_instance_gets_a_team_a_quota_and_a_network_policy(self):
         (self.tmp / 'apps').mkdir()
-        (self.tmp / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  payments: {description: Orders}\n')
+        (self.tmp / 'apps/teams.yaml').write_text('teams:\n  demo: {}\n  payments: {description: Orders}\n')
         self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--port', '9000',
                                   '--exposure', 'authenticated-web', '--team', 'payments'), 0)
         self.assertEqual(self.gen('job', '--image', 'r/job:1', '--kind', 'worker'), 0)
@@ -117,7 +117,7 @@ class GeneratorTests(unittest.TestCase):
         def load(app, name):
             return yaml.safe_load((self.tmp / 'apps' / app / 'staging' / name).read_text())
         self.assertEqual(load('web', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'payments')
-        self.assertEqual(load('job', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'platform')
+        self.assertEqual(load('job', 'namespace.yaml')['metadata']['labels'][contract.TEAM], 'demo')
         for app in ('web', 'job'):
             self.assertEqual(load(app, 'resourcequota.yaml')['spec']['hard'], contract.QUOTA)
             self.assertLessEqual({'resourcequota.yaml', 'networkpolicy.yaml'}, set(load(app, 'kustomization.yaml')['resources']))
@@ -175,6 +175,12 @@ class GeneratorTests(unittest.TestCase):
         with redirect_stderr(err):
             self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--team', 'nobody'), 2)
         self.assertIn("unknown team 'nobody'; registered in apps/teams.yaml: platform", err.getvalue())
+        with redirect_stderr(err):
+            self.assertEqual(app_new.main(['web', '--image', 'r/web:1', '--health-path', '/h', '--root', str(self.tmp),
+                                           '--no-policy-check']), 2, 'there is no default team')
+        self.assertIn('every app belongs to a team: give --team NAME (or team: in swhurl.yaml); registered in apps/teams.yaml: platform',
+                      err.getvalue())
+        self.assertFalse((self.tmp / 'apps/web').exists())
         self.assertFalse((self.tmp / 'apps/web').exists())
 
     def test_an_apps_own_alert_settings_go_on_its_namespace_and_bad_ones_are_refused(self):

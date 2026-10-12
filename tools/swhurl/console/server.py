@@ -404,15 +404,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     teams_cache: list[tuple[float, dict[str, str]]] = []
 
     def platform_teams() -> tuple[dict[str, str], str]:
-        """``(registered teams, problem)``, read from main at most every 5 minutes; the default team alone on a problem."""
+        """``(registered teams, problem)``, read from main at most every 5 minutes; none on a problem."""
         if teams_cache and time.monotonic() - teams_cache[0][0] <= 300:
             return teams_cache[0][1], ''
         if github is None:
-            return {contract.DEFAULT_TEAM: ''}, 'No GitHub token is configured, so the team registry on main cannot be read.'
+            return {}, 'No GitHub token is configured, so the team registry on main cannot be read.'
         try:
             found = changes.platform_teams(runner, github)
         except actions.ActionError as problem:
-            return {contract.DEFAULT_TEAM: ''}, str(problem)
+            return {}, str(problem)
         teams_cache[:] = [(time.monotonic(), found)]
         return found, ''
 
@@ -474,7 +474,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             channels, team_channels = platform_channels()
             return {'teams': registered, 'owned': owned, 'unregistered': unregistered, 'registry_error': registry_error,
                     'channels': channels, 'team_channels': team_channels,
-                    'default_team': contract.DEFAULT_TEAM, 'error': error, 'team_jobs': latest,
+                    'error': error, 'team_jobs': latest,
                     'stacks': stacks(sorted({app for apps in owned.values() for app in apps})),
                     'dashboards': dashboard_urls(runner),
                     'stack_names': STACK_NAMES}
@@ -560,7 +560,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return page(request, 'new_repo.html', status_code=status_code,
                     features=features, features_error=features_error,
                     stacks=contract.STACKS, stack_names=STACK_NAMES, stack_text=contract.STACK_DESCRIPTIONS,
-                    owner=contract.APP_OWNER, teams=teams, teams_error=teams_error, default_team=contract.DEFAULT_TEAM,
+                    owner=contract.APP_OWNER, teams=teams, teams_error=teams_error,
                     team_channels=platform_channels()[1],
                     callable_apps=callable_apps, offered_events=offered_events, connections_error=connections_error,
                     chosen_calls=[n for n in form.get('calls', '').split(',') if n],

@@ -15,9 +15,10 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State, ready_reason, unit_state, verdict
+from swhurl.kube import ready_condition
 from swhurl.report import Entry, Report
 from swhurl.run import CommandError, Runner
-from swhurl.verify import ready_condition, verify_platform
+from swhurl.verify import verify_platform
 
 UNITS = ['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io', '-o', 'json']
 RELEASES = ['kubectl', 'get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces', '-o', 'json']

@@ -7,8 +7,8 @@ import logging
 
 from swhurl.apps import ops
 from swhurl.apps.instance import Instance
+from swhurl.kube import ready_condition
 from swhurl.run import Runner
-from swhurl.verify import ready_condition
 
 from .notice import Notice
 from .state import empty_state

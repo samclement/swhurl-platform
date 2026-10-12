@@ -5,12 +5,41 @@ Day-to-day work on the live cluster. Every `make` target is listed in [commands]
 ## Check health
 
 ```bash
-make verify-platform              # Flux units, HTTPS redirect, ingestion key, ClickStack sign-up closed, retention, backup age
+make verify-platform              # every check in the table below; expect "Validation passed."
 flux get kustomizations           # one line per Flux unit
 make app-status APP=demo-orders ENV=prod
 ```
 
 A unit showing `DependencyNotReady` is waiting for another unit; fix that one first ([dependencies](architecture.md#flux-units)).
+
+`make verify-platform` only reads. It runs these checks in this order, prints `[OK]`, `[WARN]` or `[BAD]` lines under a heading for each, and exits 1 on any `[BAD]`. The console's Platform page runs the ones that read nothing but the cluster.
+
+| Check | Passes when | Reads |
+| --- | --- | --- |
+| `flux` | Every Flux unit is Ready | Cluster (read) |
+| `flux-controllers` | The Flux controllers run the pinned version with the settings in Git (warns otherwise) | Cluster (read), this host |
+| `ingestion-key` | The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed | Cluster (read), Secrets (read), commands in pods |
+| `registration` | A HyperDX team exists, so registration is closed | Cluster (read), commands in pods |
+| `ingress` | Traefik redirects HTTP to HTTPS | Cluster (read) |
+| `image-automation` | Every app's ImagePolicy and ImageUpdateAutomation is Ready, so staging deploys itself | Cluster (read) |
+| `isolation` | Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods | Cluster (read), this host |
+| `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this host |
+| `events` | NATS and its controller run, and every declared stream and consumer exists | Cluster (read), this host |
+| `alerts` | The Flux failure Alert exists and its provider does (a missing Alert warns) | Cluster (read) |
+| `channels` | The team routes are Git's and every channel has its Secret (a team without a channel warns) | Cluster (read), this host |
+| `notify-service` | The notify service runs, on the console's image (another image warns) | Cluster (read) |
+| `retention` | Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, and the MongoDB volume is retained | Cluster (read), commands in pods |
+| `backups` | The newest MongoDB backup, on this host and in S3, is younger than `BACKUP_MAX_AGE_HOURS` (26) | this host |
+| `sqlite-backups` | Each app SQLite database's newest backup, on this host and in S3, is as young | Cluster (read), this host |
+| `push-webhook` | Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise) | Cluster (read), this host |
+| `image-webhooks` | The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise) | Cluster (read), this host |
+| `dashboards` | The dashboard and alert sync succeeded within five minutes | Cluster (read) |
+| `notifications` | The notification checker succeeded within five minutes | Cluster (read) |
+| `notification-heartbeat` | The host heartbeat timer is active and its service's last run succeeded within 15 minutes | this host |
+| `console` | The console image is built from this checkout's tooling (warns otherwise) and its job record exists | Cluster (read), this host |
+| `console-token` | GitHub accepts the console's tokens and none expires within 14 days (warns) | Cluster (read), Secrets (read), this host |
+
+Each check is a function beside what it checks, listed in [`verify.py`](../tools/swhurl/verify.py); this table is that list (`make test` fails when they differ).
 
 ## Secrets
 

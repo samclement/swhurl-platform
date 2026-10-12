@@ -29,7 +29,7 @@ reconcile: ## UNIT=<name> Fetch Git and reconcile one Flux unit (for example aft
 	flux reconcile kustomization $(UNIT) -n flux-system --with-source --timeout=20m
 
 .PHONY: verify-platform
-verify-platform: ## Live: Flux units Ready, HTTPS redirect, ingestion key, retention (never prints keys)
+verify-platform: ## Live: every platform check, read-only (never prints keys)
 	@$(SWHURL) verify-platform
 
 .PHONY: notifications-check

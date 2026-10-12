@@ -17,7 +17,7 @@ import json
 import os
 import secrets
 
-from swhurl import verify
+from swhurl import clickstack
 from swhurl.apps import calling, contract, events, helmrelease
 from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.livetests import LiveTest, Preflight, run_live_test
@@ -70,7 +70,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
 
     def recorded() -> bool:
         nonlocal spans
-        rows = verify.clickhouse(t.runner, (
+        rows = clickstack.clickhouse(t.runner, (
             "SELECT ServiceName, ResourceAttributes['swhurl.team'], SpanKind, SpanName, SpanAttributes['caller.type'], "
             f"SpanAttributes['caller.id'] FROM otel_traces WHERE TraceId = '{trace}' ORDER BY Timestamp FORMAT TSV"))
         spans = [line.split('\t') for line in rows.splitlines() if line]
@@ -90,7 +90,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
         found = sorted({span[1] for span in spans if span[0] == app})
         t.check(bool(wanted) and found == [wanted], f"{app}'s spans carry its team: {wanted}",
                 f"{app}'s spans carry team {found or 'none'}, its namespace says {wanted or 'none'}")
-    logged = verify.clickhouse(t.runner, (
+    logged = clickstack.clickhouse(t.runner, (
         "SELECT count() FROM otel_logs WHERE TraceId = '" + trace + f"' AND ServiceName = '{callee}' "
         f"AND LogAttributes['caller.type'] = 'app' AND LogAttributes['caller.id'] = '{caller}' FORMAT TSV"))
     t.check(logged.strip() not in ('', '0'), f"{callee}'s log line for the request names the caller",

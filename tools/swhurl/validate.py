@@ -15,6 +15,7 @@ import yaml
 from swhurl import ROOT, platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
+from swhurl.settings import SettingsError, load_settings
 
 MANIFEST_ROOTS = ('clusters', 'infra', 'platform', 'apps')
 TOKEN = re.compile(r'(?<!\$)\$\{([^}]+)\}')
@@ -228,3 +229,26 @@ def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, report: Report | None = None) -> int:
     return validate(runner or Runner(cwd=ROOT), report or Report())
+
+
+def check_config(argv: list[str] | None = None, root: Path = ROOT) -> int:
+    """Local checks that need no cluster.
+
+    Every Flux unit that decrypts SOPS has at least one encrypted Secret in its
+    path (derived from the unit definitions, not a hand-kept list), and the
+    settings the platform substitutes exist.
+    """
+    for unit, files in platform.decrypted_secret_files(root).items():
+        if not files:
+            print(f'{unit} decrypts SOPS but its path has no *.sops.yaml Secret')
+            return 1
+    try:
+        values = load_settings((root / platform.SETTINGS).read_text())
+    except (OSError, SettingsError) as error:
+        print(f'platform-settings unreadable: {error}')
+        return 1
+    for key in ('BASE_DOMAIN', 'CERT_ISSUER'):
+        if not values.get(key):
+            print(f'{key} missing from platform-settings')
+            return 1
+    return 0

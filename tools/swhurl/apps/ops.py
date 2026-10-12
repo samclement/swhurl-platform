@@ -22,8 +22,8 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import ready_reason, verdict
+from swhurl.kube import ready_condition
 from swhurl.run import CommandError, Runner
-from swhurl.verify import ready_condition
 
 ACTIONS = ('status', 'logs', 'reconcile', 'check')
 WORKLOAD_KINDS = 'deploy,statefulset,daemonset'

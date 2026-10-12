@@ -298,3 +298,13 @@ def prune_backups(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     backups(args.directory).prune(args.daily, args.weekly, dry_run=args.dry_run)
     return 0
+
+
+def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
+                  now: dt.datetime | None = None) -> None:
+    """The newest MongoDB backup, locally and off-host, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
+    env = os.environ if env is None else env
+    report.section('Backups')
+    backupset.check_backup_set(runner, report, backups(backupset.backup_dir(env)),
+                     env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
+                     run='make backup-mongodb', hint='systemctl status swhurl-backup-mongodb')

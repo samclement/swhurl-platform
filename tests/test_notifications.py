@@ -10,9 +10,9 @@ from unittest import mock
 import httpx
 import yaml
 
-from swhurl import ROOT, platform, verify
+from swhurl import ROOT, platform
 from swhurl import notifications as n
-from swhurl.notifications import delivery
+from swhurl.notifications import checks, delivery
 from swhurl.notifications.notice import Notice, Ntfy
 from swhurl.notifications.notice import forward as forward_copy
 from swhurl.report import Report
@@ -525,5 +525,5 @@ class WiringTests(unittest.TestCase):
                 job['status']['lastSuccessfulTime'] = dt.datetime.fromtimestamp(NOW-age, dt.UTC).isoformat()
             runner = FakeRunner().on('kubectl', handler=lambda args, _input, job=job: Result(args, 0, json.dumps(job)))
             report = Report()
-            verify.check_notifications(runner, report, now)
+            checks.check_notifications(runner, report, now)
             self.assertEqual(report.exit_code(), expected)

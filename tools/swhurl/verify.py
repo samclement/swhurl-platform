@@ -1,164 +1,31 @@
-"""Verify the platform: local config (``check-config``) and live state (``verify-platform``).
+"""Verify the live platform (``verify-platform``): the registry of checks and what runs them.
 
 ``verify-platform`` is read-only. Each check reports ``[OK]``/``[BAD]`` under a
 section heading; any ``[BAD]`` makes the exit code 1. Key values are
 registered with the runner as secrets, so they are redacted from every message
 and never printed, even when a comparison fails.
+
+A check lives beside what it checks (``flux.py``, ``clickstack.py``, ``apps/checks.py``,
+``notifications/checks.py``, ``console/checks.py``, the backup modules) and is listed in ``CHECKS``.
 """
 from __future__ import annotations
 
-import base64
-import binascii
-import datetime as dt
 import functools
 import io
-import json
-import os
 import sys
-import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT, backupset, clickstack, flux, images, platform, recovery, sqlite_backup
-from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
-from swhurl.apps.instance import INSTANCE_ROOTS, instances
-from swhurl.backupset import BackupError, BackupSet
+from swhurl import clickstack, dashboards, flux, recovery, sqlite_backup
+from swhurl.apps import checks as apps
+from swhurl.console import checks as console
+from swhurl.notifications import checks as notifications
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner, SharedReads
-from swhurl.settings import SettingsError, load_settings
-
-APP_LABEL = 'platform.swhurl.com/app'  # apps.contract.APP; set on each app's ImagePolicy
-SYSTEM_LOGS = ('query_log', 'metric_log', 'asynchronous_metric_log', 'crash_log', 'processors_profile_log',
-               'part_log', 'trace_log', 'query_thread_log', 'query_views_log', 'opentelemetry_span_log')
-
-
-def verify_config(argv: list[str] | None = None, root: Path = ROOT) -> int:
-    """Local checks that need no cluster.
-
-    Every Flux unit that decrypts SOPS has at least one encrypted Secret in its
-    path (derived from the unit definitions, not a hand-kept list), and the
-    settings the platform substitutes exist.
-    """
-    for unit, files in platform.decrypted_secret_files(root).items():
-        if not files:
-            print(f'{unit} decrypts SOPS but its path has no *.sops.yaml Secret')
-            return 1
-    try:
-        values = load_settings((root / platform.SETTINGS).read_text())
-    except (OSError, SettingsError) as error:
-        print(f'platform-settings unreadable: {error}')
-        return 1
-    for key in ('BASE_DOMAIN', 'CERT_ISSUER'):
-        if not values.get(key):
-            print(f'{key} missing from platform-settings')
-            return 1
-    return 0
-
-
-def ready_condition(obj: dict) -> tuple[str, str]:
-    for condition in (obj.get('status') or {}).get('conditions') or []:
-        if condition.get('type') == 'Ready':
-            return condition.get('status', 'Unknown'), condition.get('message', '')
-    return 'Unknown', 'no Ready condition'
-
-
-def check_flux(runner: Runner, report: Report) -> None:
-    report.section('Flux Kustomizations')
-    try:
-        units = runner.json(['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
-                             '-o', 'json'])['items']
-    except (CommandError, KeyError, TypeError):
-        report.bad('could not read Flux kustomizations')
-        return
-    if not units:
-        report.bad('no Flux kustomizations found in flux-system')
-        return
-    for unit in sorted(units, key=lambda u: u['metadata']['name']):
-        name = unit['metadata']['name']
-        status, message = ready_condition(unit)
-        if status == 'True':
-            report.ok(name)
-        else:
-            report.bad(f'{name} is not Ready' + (f': {message}' if message else ''))
-
-
-def check_flux_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The controllers run the pinned version with the settings in Git (a plain `flux install` drops them)."""
-    report.section('Flux Controllers')
-    version = flux.pinned_version(root)
-    required = flux.required_args(root)
-    for name in flux.CONTROLLERS:
-        args = required.get(name, [])
-        try:
-            deployment = runner.json(['kubectl', '-n', 'flux-system', 'get', 'deployment', name, '-o', 'json'])
-        except CommandError:
-            report.warn(f'{name} is not installed (run: make flux-install)')
-            continue
-        try:
-            live = deployment['metadata'].get('labels', {}).get('app.kubernetes.io/version', '')
-            running = [a for c in deployment['spec']['template']['spec']['containers'] for a in c.get('args') or []]
-        except (KeyError, TypeError):
-            report.bad(f'could not read flux-system/{name}')
-            continue
-        missing = [a for a in args if a not in running]
-        if missing or live != f'v{version}':
-            expected = f'v{version}' + (f' with {", ".join(args)}' if args else '')
-            report.warn(f'{name} is {live or "unknown"}' + (f' with {len(args) - len(missing)}/{len(args)} Git settings'
-                        if args else '') + f'; expected {expected} (run: make flux-install)')
-        else:
-            report.ok(f'{name} {live}' + (' with the settings in Git' if args else ''))
-
-
-def read_ingestion_secret(runner: Runner) -> str:
-    """The Secret's ``data`` value: base64 text, exactly as Kubernetes stores it."""
-    try:
-        secret = runner.json(['kubectl', '-n', 'logging', 'get', 'secret', platform.INGESTION_SECRET_NAME, '-o', 'json'],
-                             secret_output=True)
-    except CommandError:
-        return ''
-    value = ((secret or {}).get('data') or {}).get(platform.INGESTION_KEY, '')
-    runner.add_secret(value)
-    return value
-
-
-def check_runtime_secret(stored: str, report: Report) -> None:
-    report.section('Runtime Secrets')
-    if stored:
-        report.ok(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} present')
-    else:
-        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty (run: make reconcile UNIT=platform-otel)')
-
-
-def check_ingestion_key(runner: Runner, report: Report, stored: str) -> None:
-    """The collectors' key must be exactly one base64 layer around the ClickStack team key."""
-    report.section('Ingestion Key Sync')
-    try:
-        team_key = clickstack.team_key(runner)
-    except (CommandError, ValueError, KeyError):
-        team_key = ''
-    if not team_key:
-        report.bad('cannot read a unique ClickStack team ingestion key; is MongoDB Running and '
-                   'make clickstack-bootstrap done?')
-        return
-    try:
-        decoded = base64.b64decode(stored, validate=True)
-    except (binascii.Error, ValueError):
-        decoded = b''
-    runner.add_secret(decoded)
-    if not decoded:
-        report.bad(f'logging/{platform.INGESTION_SECRET_NAME}.{platform.INGESTION_KEY} is empty or invalid base64')
-    elif decoded == team_key.encode() and stored == base64.b64encode(team_key.encode()).decode():
-        report.ok('ingestion Secret bytes match ClickStack; verify collector logs and fresh telemetry after a restart')
-    else:
-        report.bad(f'{platform.INGESTION_KEY} does not match the ClickStack team ingestion key')
-        report.detail('Fix: run make clickstack-bootstrap (writes the Git key into the team); if the two')
-        report.detail('     SOPS copies differ, make check-secrets says so')
 
 
 def check_ingress(runner: Runner, report: Report) -> None:
+    """Traefik comes with k3s and has no module of its own, so its one check is here."""
     report.section('Ingress')
     try:
         deploy = runner.json(['kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', '-o', 'json'])
@@ -172,632 +39,75 @@ def check_ingress(runner: Runner, report: Report) -> None:
                    'check infra/traefik/helmchartconfig.yaml')
 
 
-def clickhouse(runner: Runner, query: str) -> str:
-    return runner.output(['kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, '--',
-                          'clickhouse-client', '-q', query]).strip()
-
-
-def check_retention(runner: Runner, report: Report) -> None:
-    report.section('Retention')
-    try:
-        with_ttl, total = map(int, clickhouse(runner, (
-            "SELECT countIf(position(engine_full, 'toIntervalDay(30)') > 0), count() FROM system.tables "
-            "WHERE database = 'default' AND engine LIKE '%MergeTree' FORMAT TSV")).split())
-    except (CommandError, ValueError):
-        report.bad('could not read ClickHouse telemetry table TTLs')
-    else:
-        if total > 0 and with_ttl == total:
-            report.ok(f'all {total} telemetry tables expire after 30 days')
-        else:
-            report.bad(f'telemetry tables without a 30-day TTL ({with_ttl} of {total} have it); '
-                       'the collector image default may have changed')
-
-    names = "', '".join(SYSTEM_LOGS)
-    try:
-        untimed = int(clickhouse(runner, (
-            f"SELECT count() FROM system.tables WHERE database = 'system' AND name IN ('{names}') "
-            "AND position(engine_full, 'TTL ') = 0 FORMAT TSV")))
-    except (CommandError, ValueError):
-        report.bad('could not read ClickHouse system log TTLs')
-    else:
-        if untimed == 0:
-            report.ok('ClickHouse system logs expire after 7 days')
-        else:
-            report.bad(f'{untimed} ClickHouse system log table(s) have no TTL; '
-                       'the chart sets them in clickhouse.cluster.spec.settings.extraConfig')
-
-    # A merge that fails is retried at once, burning CPU and logging a stack trace each time.
-    try:
-        failed, table = (clickhouse(runner, (
-            "SELECT count(), any(database || '.' || table) FROM system.part_log WHERE event_type = 'MergeParts' "
-            "AND error != 0 AND event_time > now() - INTERVAL 1 HOUR FORMAT TSV")).split('\t') + [''])[:2]
-        failed = int(failed)
-    except (CommandError, ValueError):
-        report.bad('could not read ClickHouse merge results (system.part_log)')
-    else:
-        if failed == 0:
-            report.ok('no ClickHouse merge failed in the last hour')
-        else:
-            report.bad(f'{failed} ClickHouse merge(s) failed in the last hour (for example {table}); '
-                       'see docs/operations.md#troubleshooting')
-
-    try:
-        pvc = runner.json(['kubectl', '-n', 'observability', 'get', 'pvc', clickstack.MONGO_DATA_CLAIM, '-o', 'json'])
-    except CommandError:
-        pvc = {}
-    volume = (pvc.get('spec') or {}).get('volumeName', '')
-    policy = ''
-    if volume:
-        try:
-            policy = runner.json(['kubectl', 'get', 'pv', volume, '-o', 'json'])['spec'].get(
-                'persistentVolumeReclaimPolicy', '')
-        except (CommandError, KeyError, TypeError):
-            policy = ''
-    if policy == 'Retain':
-        report.ok('ClickStack MongoDB data volume is Retain (outlives its claim)')
-    else:
-        report.bad('ClickStack MongoDB data volume is not Retain; its storage class must be local-path-retain')
-
-
-def check_registration(runner: Runner, report: Report) -> None:
-    report.section('ClickStack Sign-up')
-    try:
-        closed = clickstack.api(runner, 'GET', '/installation')['body'].get('isTeamExisting')
-    except (CommandError, ValueError, KeyError, AttributeError):
-        report.bad('could not ask the HyperDX API whether a team exists')
-        return
-    if closed:
-        report.ok('a team exists, so HyperDX registration is closed')
-    else:
-        report.bad('no team yet: HyperDX registration is open (run: make clickstack-bootstrap)')
-
-def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],
-                     now: dt.datetime | None, what: str, hint: str, run: str, prefix: str = '') -> None:
-    """The set's newest backup, on this host and under ``uri``, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
-    now = now or dt.datetime.now(dt.UTC)
-    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    places = [(str(backups.directory), lambda: backups.age(now))]
-    if uri:
-        places.append((uri, lambda: backups.age(now, backupset.remote_names(runner, uri))))
-    for where, read in places:
-        try:
-            age = read()
-        except (CommandError, BackupError, TypeError) as error:
-            report.bad(f'{prefix}cannot list backups in {where}: {error}')
-            continue
-        if age is None:
-            report.bad(f'{prefix}no {what} backup in {where} (run: {run})')
-        elif age > limit:
-            report.bad(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.0f} h old; '
-                       f'check: {hint}')
-        else:
-            report.ok(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.1f} h old')
-
-
-def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
-                  now: dt.datetime | None = None) -> None:
-    """The newest MongoDB backup, locally and off-host, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
-    env = os.environ if env is None else env
-    report.section('Backups')
-    check_backup_set(runner, report, recovery.backups(backupset.backup_dir(env)),
-                     env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
-                     run='make backup-mongodb', hint='systemctl status swhurl-backup-mongodb')
-
-
-def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
-                         now: dt.datetime | None = None) -> None:
-    """Each app SQLite database's newest backup, locally and off-host, is younger than BACKUP_MAX_AGE_HOURS (26)."""
-    env = os.environ if env is None else env
-    report.section('App SQLite backups')
-    try:
-        databases = sqlite_backup.find(runner)
-    except (CommandError, BackupError, KeyError, TypeError) as error:
-        report.bad(f'cannot find app SQLite databases: {error}')
-        return
-    if not databases:
-        report.ok('no app has a SQLite database')
-        return
-    uri = env.get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
-    for db in databases:
-        check_backup_set(runner, report, sqlite_backup.backups(backupset.backup_dir(env), db.namespace),
-                         f'{uri}{db.namespace}/' if uri else '', env=env, now=now, what='SQLite',
-                         run='make backup-sqlite', prefix=f'{db.name}: ',
-                         hint='systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')
-
-
-def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """A successful minute-by-minute sync of every app's dashboard and default alerts must be recent, and
-    scheduling enabled. The job also fails while HyperDX lacks the webhook the alerts need."""
-    report.section('App dashboards and alerts')
-    now = now or dt.datetime.now(dt.UTC)
-    try:
-        job = runner.json(['kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', '-o', 'json'])
-        last = (job.get('status') or {}).get('lastSuccessfulTime', '')
-        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
-        if job['spec'].get('suspend'):
-            report.bad('dashboard and alert sync is suspended')
-        elif taken is None or now - taken > dt.timedelta(minutes=5):
-            report.bad('dashboard and alert sync has no success in the last 5 minutes: check the console-dashboards job logs '
-                       '(no "swhurl notify" webhook? make clickstack-notify-webhook)')
-        else:
-            report.ok('dashboard and alert sync succeeded in the last 5 minutes')
-    except (CommandError, KeyError, ValueError, TypeError):
-        report.bad('cannot read dashboard sync status (console/console-dashboards)')
-
-
-def check_notifications(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """A recent successful check proves the snapshot/outbox pass finished, not subscriber delivery."""
-    report.section('Notifications')
-    now = now or dt.datetime.now(dt.UTC)
-    try:
-        job = runner.json(['kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', '-o', 'json'])
-        last = (job.get('status') or {}).get('lastSuccessfulTime', '')
-        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')) if last else None
-        if job['spec'].get('suspend'):
-            report.bad('notification checker is suspended')
-        elif taken is None or now - taken > dt.timedelta(minutes=5):
-            report.bad('notification checker has no success in the last 5 minutes; check console-notifications job logs')
-        else:
-            report.ok('notification checker succeeded in the last 5 minutes')
-    except (CommandError, KeyError, ValueError, TypeError):
-        report.bad('cannot read notification checker status (console/console-notifications)')
-
-
-def check_notification_heartbeat(runner: Runner, report: Report,
-                                 now: dt.datetime | None = None) -> None:
-    """The host timer is active and its last heartbeat service run succeeded within 15 minutes."""
-    report.section('Notification heartbeat')
-    now = now or dt.datetime.now(dt.UTC)
-    timer = 'swhurl-notification-heartbeat.timer'
-    service = 'swhurl-notification-heartbeat.service'
-    try:
-        active = runner.output(['systemctl', 'is-active', timer], check=False).strip()
-        details = runner.output(['systemctl', 'show', service, '--property=Result', '--property=ExecMainStatus',
-                                 '--property=ExecMainExitTimestamp'])
-    except CommandError:
-        report.bad('cannot read host notification heartbeat timer/service status')
-        return
-    if active != 'active':
-        report.bad(f'{timer} is not active')
-    props = dict(line.split('=', 1) for line in details.splitlines() if '=' in line)
-    if props.get('Result') != 'success' or props.get('ExecMainStatus') != '0':
-        report.bad(f'{service} has not completed successfully')
-        return
-    raw_timestamp = props.get('ExecMainExitTimestamp', '')
-    try:
-        # systemctl renders this timestamp in the host's local timezone and abbreviation.
-        parsed = time.strptime(raw_timestamp, '%a %Y-%m-%d %H:%M:%S %Z')
-        taken = time.mktime(parsed)
-    except (TypeError, ValueError, OverflowError):
-        report.bad(f'{service} has an invalid successful run timestamp')
-        return
-    age = now.timestamp() - taken
-    if age < -60 or age > 15 * 60:
-        report.bad(f'{service} last succeeded {age / 60:.1f} minutes ago; check the host timer and log')
-    elif active == 'active':
-        report.ok('host notification heartbeat timer is active and its service succeeded within 15 minutes')
-
-
-def check_console(runner: Runner, report: Report) -> None:
-    """Warn if the console image's inputs changed since it was built.
-
-    A ``src-<hash>`` tag (make console-image) is compared with the hash of this
-    checkout's inputs; a commit tag with git diff since that commit.
-    """
-    report.section('Console')
-    try:
-        release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
-        tag = helmrelease.image(release)['tag']
-    except (CommandError, KeyError, TypeError):
-        report.bad('cannot read the console HelmRelease image tag (console/console)')
-        return
-    try:  # where the console keeps its jobs across a restart (console/jobstore.py)
-        runner.json(['kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', '-o', 'json'])
-    except CommandError:
-        report.bad('console/console-jobs is missing: the console forgets its jobs on restart (make reconcile UNIT=platform-console)')
-    label = tag if tag.startswith('src-') else tag[:7]
-    if tag.startswith('src-'):
-        try:
-            changed = 0 if images.content_tag(runner) == tag else 1
-        except CommandError:
-            changed = 2
-    else:
-        changed = runner.run(['git', '-C', str(ROOT), 'diff', '--quiet', tag, 'HEAD', '--',
-                              *platform.CONSOLE_IMAGE_INPUTS], check=False).returncode
-    if changed == 0:
-        report.ok(f'console image {label} is built from the current tooling')
-    elif changed == 1:
-        report.warn(f'tooling changed since console image {label}; after the publish run: make console-image, '
-                    'commit and push')
-    else:
-        report.warn(f'cannot compare console image {label} with this checkout (git fetch?)')
-
-
-TOKEN_WARN_DAYS = 14
-
-
-def check_push_webhook(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Flux's GitHub Receiver is Ready and GitHub's latest delivery to it succeeded (docs/services.md#push-webhook)."""
-    report.section('Push Webhook')
-    try:
-        receiver = runner.json(['kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
-                                'github', '-o', 'json'])
-        status, message = ready_condition(receiver)
-    except (CommandError, TypeError):
-        status, message = 'Unknown', 'could not read it'
-    if status == 'True':
-        report.ok('Flux receiver flux-system/github is Ready')
-    else:
-        report.bad(f'Flux receiver flux-system/github is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
-    host = f'flux-webhook.{platform.base_domain(root)}'
-    repository = platform.github_repository(root)
-    try:
-        hooks = runner.json(['gh', 'api', f'repos/{repository}/hooks'])
-    except CommandError as error:
-        report.warn(f'could not list the GitHub webhooks of {repository} with gh: {error}')
-        return
-    hook = next((h for h in hooks or [] if host in (h.get('config') or {}).get('url', '')), None)
-    if not hook:
-        report.warn(f'no GitHub webhook on {repository} calls {host}; Flux falls back to polling every minute')
-        return
-    last = hook.get('last_response') or {}
-    if not hook.get('active'):
-        report.warn(f'the GitHub webhook to {host} is disabled; Flux falls back to polling every minute')
-    elif last.get('code') == 200:
-        report.ok(f'GitHub\'s latest delivery to {host} returned 200')
-    else:
-        report.warn(f'GitHub\'s latest delivery to {host} returned {last.get("code")} {last.get("message", "")}'.rstrip()
-                    + '; see Recent Deliveries on the webhook (Flux still polls every minute)')
-
-
-def check_image_webhooks(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The app-images Receiver is Ready and each auto-deploy app's repository calls it (docs/services.md#image-webhook)."""
-    report.section('Image Webhooks')
-    try:
-        receiver = runner.json(['kubectl', '-n', hooks.RECEIVER_NAMESPACE, 'get',
-                                'receivers.notification.toolkit.fluxcd.io', hooks.RECEIVER, '-o', 'json'])
-        status, message = ready_condition(receiver)
-    except (CommandError, TypeError):
-        status, message = 'Unknown', 'could not read it'
-    name = f'{hooks.RECEIVER_NAMESPACE}/{hooks.RECEIVER}'
-    if status == 'True':
-        report.ok(f'Flux receiver {name} is Ready')
-    else:
-        report.bad(f'Flux receiver {name} is not Ready: {message} (make reconcile UNIT=platform-flux-webhook)')
-    host = hooks.webhook_host(root)
-    fallback = 'Flux finds its new images within the hour'
-    for app, repository in hooks.auto_deploy_repositories(root).items():
-        try:
-            hook = hooks.find(runner.json(['gh', 'api', f'repos/{repository}/hooks']), host)
-        except CommandError as error:
-            report.warn(f'{app}: could not list the GitHub webhooks of {repository} with gh: {error}')
-            continue
-        last = (hook or {}).get('last_response') or {}
-        if not hook:
-            report.warn(f'{app}: no image webhook on {repository}; {fallback} (make app-hooks)')
-        elif not hook.get('active') or not set(hooks.EVENTS) <= set(hook.get('events') or []):
-            report.warn(f'{app}: the image webhook on {repository} is disabled or lacks its events; {fallback} '
-                        '(make app-hooks)')
-        elif last.get('code') in (200, None):
-            report.ok(f'{app}: image webhook on {repository}'
-                      + (', latest delivery returned 200' if last.get('code') else ', no delivery yet'))
-        else:
-            report.warn(f'{app}: the latest image webhook delivery from {repository} returned {last.get("code")} '
-                        f'{last.get("message") or ""}'.rstrip() + f'; {fallback} (after a token rotation: make app-hooks)')
-
-
-def check_image_automation(runner: Runner, report: Report) -> None:
-    """Automatic staging deploys: every app ImagePolicy and its named writer are Ready."""
-    report.section('Image Automation')
-    base = ['kubectl', '-n', 'flux-system', 'get']
-    try:
-        policies = runner.json([*base, 'imagepolicies.image.toolkit.fluxcd.io', '-l', APP_LABEL, '-o', 'json'])['items']
-        automations = runner.json([*base, 'imageupdateautomations.image.toolkit.fluxcd.io', '-l', APP_LABEL,
-                                   '-o', 'json'])['items']
-    except (CommandError, KeyError, TypeError):
-        report.bad('could not read the apps\' ImagePolicies or ImageUpdateAutomations')
-        return
-    by_name = {a['metadata']['name']: a for a in automations}
-    for policy in sorted(policies, key=lambda p: p['metadata']['name']):
-        name = policy['metadata']['name']
-        automation = by_name.get(name)
-        if automation is None:
-            report.bad(f'ImageUpdateAutomation {name} is missing: staging image updates are not automatic')
-        else:
-            status, message = ready_condition(automation)
-            if status == 'True':
-                pushed = (automation.get('status') or {}).get('lastPushTime')
-                report.ok(f'ImageUpdateAutomation {name} is Ready' + (f'; last pushed {pushed}' if pushed else ''))
-            else:
-                report.bad(f'ImageUpdateAutomation {name} is not Ready: {message}')
-        status, message = ready_condition(policy)
-        latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
-        if status == 'True':
-            report.ok(f'{name}: newest image {latest}')
-        else:
-            report.bad(f'ImagePolicy {name} is not Ready: {message}')
-
-
-def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """Every instance in Git has, live, a registered team, the platform quota and a NetworkPolicy on the app's pods.
-
-    Namespaces kept for their data after an app was removed are not instances and are not checked.
-    """
-    report.section('App isolation')
-    try:
-        namespaces = runner.json(['kubectl', 'get', 'namespaces', '-l', APP_LABEL, '-o', 'json'])['items']
-        quotas = runner.json(['kubectl', 'get', 'resourcequotas', '--all-namespaces', '-o', 'json'])['items']
-        policies = runner.json(['kubectl', 'get', 'networkpolicies.networking.k8s.io', '--all-namespaces',
-                                '-o', 'json'])['items']
-    except (CommandError, KeyError, TypeError):
-        report.bad('could not read app namespaces, ResourceQuotas or NetworkPolicies')
-        return
-    known = contract.teams(root)
-    live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
-    complete = 0
-    for instance in instances(root / INSTANCE_ROOTS[0]):
-        app, name = instance.app, instance.namespace
-        if name not in live:
-            report.bad(f'{name}: the namespace does not exist')
-            continue
-        labels = live[name]
-        problems = []
-        if labels.get(contract.TEAM) not in known:
-            problems.append(f'team {labels.get(contract.TEAM)!r} is not in {contract.TEAMS_FILE}')
-        if not any(q['metadata']['namespace'] == name and (q.get('spec') or {}).get('hard') == contract.QUOTA
-                   for q in quotas):
-            problems.append('no platform ResourceQuota')
-        selector = {'matchLabels': {'app.kubernetes.io/instance': app}}
-        if not any(p['metadata']['namespace'] == name and (p.get('spec') or {}).get('podSelector') == selector
-                   for p in policies):
-            problems.append("no NetworkPolicy on the app's pods")
-        if problems:
-            report.bad(f'{name}: ' + '; '.join(problems))
-        else:
-            complete += 1
-    if complete:
-        report.ok(f'{complete} app namespace(s) have a registered team, the platform quota and a NetworkPolicy')
-
-
-def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The token issuer and public signing keys apps were given are the cluster's own."""
-    report.section('Call identity')
-    try:
-        live = runner.json(['kubectl', 'get', '--raw', '/openid/v1/jwks'])
-        issuer = runner.json(['kubectl', 'get', '--raw', '/.well-known/openid-configuration']).get('issuer')
-    except (CommandError, AttributeError):
-        report.bad('could not read the cluster\'s token issuer or signing keys')
-        return
-    path = root / calling.SIGNING_KEYS_FILE
-    if not path.is_file():
-        report.bad(f'{calling.SIGNING_KEYS_FILE} is missing: make platform-signing-keys')
-    elif json.loads(path.read_text()) != live:
-        report.bad(f'{calling.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
-                   'them until you run make platform-signing-keys, commit and push')
-    else:
-        report.ok(f'{calling.SIGNING_KEYS_FILE} holds the cluster\'s {len(live.get("keys") or [])} signing key(s)')
-    if issuer == calling.ISSUER:
-        report.ok(f'token issuer is {issuer}')
-    else:
-        report.bad(f'token issuer is {issuer}, but apps are told {calling.ISSUER} (apps/calling.py ISSUER)')
-
-
-def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """NATS and its stream controller run, and every stream and consumer the instances declare is Ready in NATS."""
-    report.section('Events')
-    try:
-        server = runner.json(['kubectl', '-n', events.NAMESPACE, 'get', 'statefulset', 'nats', '-o', 'json'])
-        controller = runner.json(['kubectl', '-n', events.NAMESPACE, 'get', 'deployment', 'nats-controller', '-o', 'json'])
-        declared = runner.json(['kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io',
-                                '--all-namespaces', '-o', 'json'])['items']
-    except (CommandError, KeyError, TypeError):
-        report.bad('could not read NATS, its controller, or the streams and consumers')
-        return
-    for name, workload in (('NATS', server), ('the stream controller', controller)):
-        ready = ((workload or {}).get('status') or {}).get('readyReplicas', 0)
-        (report.ok if ready else report.bad)(f'{name} is running' if ready else f'{name} is not running: no events are '
-                                             'published or delivered (make reconcile UNIT=platform-nats)')
-    waiting = []
-    for item in declared:
-        status, message = ready_condition(item)
-        if status != 'True':
-            waiting.append(f"{item['kind']} {item['metadata']['namespace']}/{item['metadata']['name']}: {message or 'not Ready'}")
-    for line in waiting:
-        report.bad(line)
-    if declared and not waiting:
-        report.ok(f'{len(declared)} declared stream(s) and consumer(s) exist in NATS')
-    wanted = events.users_file(root)
-    if wanted and (not wanted[0].is_file() or wanted[0].read_text() != wanted[1]):
-        report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
-
-
-def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
-    """The team routes in the cluster are Git's and every channel has its Secret (names only, never an address)."""
-    report.section('Notification channels')
-    wanted = channels.routes_file(root)
-    if not wanted:
-        return
-    get = ['kubectl', '-n', channels.NAMESPACE, 'get']
-    try:
-        configmaps = runner.json([*get, 'configmaps', '-o', 'json'])['items']
-        secrets = runner.output([*get, 'secrets', '-o', 'name']).split()
-        live = next((json.loads(c['data'][channels.ROUTES_KEY]) for c in configmaps
-                     if c['metadata']['name'] == channels.ROUTES_NAME), None)
-    except (CommandError, KeyError, TypeError, ValueError):
-        report.bad('could not read the notification routes and channels (make reconcile UNIT=platform-notify)')
-        return
-    routes = channels.team_channels(root)
-    if live != channels.routes(root):
-        report.bad('the team routes in the cluster are not those of apps/teams.yaml: make app-sync, commit, push '
-                   'and make flux-reconcile')
-    else:
-        report.ok(f'{len(routes)} team(s) notify a channel, as in Git')
-    known = channels.channels(root)
-    missing = [name for name in known if f'secret/{channels.SECRET_PREFIX}{name}' not in secrets]
-    if missing:
-        report.bad(f'channel {", ".join(missing)} has no Secret in the cluster: its teams get no notifications '
-                   '(make reconcile UNIT=platform-notify)')
-    elif known:
-        report.ok(f'{len(known)} channel(s) have their Secret')
-    owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
-    for instance in instances(root / INSTANCE_ROOTS[0]):
-        path = instance.folder(root) / 'namespace.yaml'
-        labels = ((yaml.safe_load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {} if path.is_file() else {}
-        owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(instance.app)
-    for team, apps in sorted(owned.items()):
-        if team and not routes.get(team):
-            report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '
-                        f'reach nobody (make team-channel NAME={team})')
-
-
-def check_notify_service(runner: Runner, report: Report) -> None:
-    """The notify service is running, on the image the console runs (one pin moves both)."""
-    report.section('Notify service')
-    try:
-        deployment = runner.json(['kubectl', '-n', channels.NAMESPACE, 'get', 'deployment', 'notify', '-o', 'json'])
-        running = deployment['spec']['template']['spec']['containers'][0]['image']
-        ready = (deployment.get('status') or {}).get('readyReplicas', 0)
-        console = helmrelease.image(runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json']))
-    except (CommandError, KeyError, TypeError, IndexError):
-        report.bad('cannot read the notify service (notify/notify): teams get no copies of their apps\' messages '
-                   '(make reconcile UNIT=platform-notify)')
-        return
-    if not ready:
-        report.bad('the notify service is not running: teams get no copies of their apps\' messages '
-                   '(kubectl -n notify get pods; make reconcile UNIT=platform-notify)')
-    elif f":{console.get('tag')}" not in running:
-        report.warn(f"the notify service runs {running.split('@')[0].rsplit(':', 1)[-1]}, not the console's "
-                    f"{console.get('tag')}: make console-image pins both, then commit and push")
-    else:
-        report.ok(f"the notify service is running {console.get('tag')}, as the console")
-
-
-ALERTS = ('failures',)  # platform/alerts/alerts.yaml
-
-
-def check_alerts(runner: Runner, report: Report) -> None:
-    """The ntfy alerts exist and point at existing providers (v1beta3 objects report no Ready status)."""
-    report.section('Alerts')
-    base = ['kubectl', '-n', 'flux-system', 'get']
-    try:
-        alerts = {a['metadata']['name']: a for a in runner.json([*base, 'alerts.notification.toolkit.fluxcd.io',
-                                                                 '-o', 'json'])['items']}
-        providers = {p['metadata']['name'] for p in runner.json([*base, 'providers.notification.toolkit.fluxcd.io',
-                                                                 '-o', 'json'])['items']}
-    except (CommandError, KeyError, TypeError):
-        report.bad('could not read Flux alerts and providers')
-        return
-    for name in ALERTS:
-        alert = alerts.get(name)
-        provider = ((alert or {}).get('spec') or {}).get('providerRef', {}).get('name')
-        if alert is None:
-            report.warn(f'alert {name} is missing: no push notifications for it (make reconcile UNIT=platform-alerts)')
-        elif provider not in providers:
-            report.bad(f'alert {name} points at provider {provider}, which does not exist')
-        else:
-            report.ok(f'alert {name} sends to {provider}')
-
-
-def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
-    """GitHub accepts the console's tokens, and none is about to expire (read from GitHub's reply).
-
-    GITHUB_TOKEN (pull requests here) is required; APP_REPOS_TOKEN (new app repositories) is optional:
-    without it only the console's New app page is off."""
-    report.section('Console GitHub Token')
-    name = platform.CONSOLE_TOKEN_SECRET
-    try:
-        secret = runner.json(['kubectl', '-n', 'console', 'get', 'secret', name, '-o', 'json'], secret_output=True)
-    except CommandError:
-        secret = None
-    data = (secret or {}).get('data') or {}
-    for key, label, required in ((platform.CONSOLE_TOKEN_KEY, 'console token', True),
-                                 (platform.APP_REPOS_TOKEN_KEY, 'console repository token', False)):
-        try:
-            token = base64.b64decode(data.get(key, '')).decode().strip()
-        except (binascii.Error, UnicodeDecodeError):
-            token = ''
-        runner.add_secret(token)
-        if token in ('', 'REPLACE_ME'):
-            message = f'console/{name}.{key} is not set; set it with: sops platform/console/secret.sops.yaml'
-            if required:
-                report.bad(message)
-            else:
-                report.warn(message + " (the console's New app page is off until then)")
-            continue
-        check_github_token(runner, report, token, label, now)
-
-
-def check_github_token(runner: Runner, report: Report, token: str, label: str, now: dt.datetime | None) -> None:
-    reply = runner.run(['curl', '--silent', '--show-error', '--config', '-', '--output', '/dev/null', '--dump-header', '-',
-                        f'https://api.github.com/repos/{platform.GITHUB_REPO}'],
-                       input=f'header = "Authorization: Bearer {token}"\n', check=False, secret_output=True)
-    lines = reply.stdout.splitlines()
-    status = lines[0].split()[1] if lines and len(lines[0].split()) > 1 else 'no reply'
-    headers = dict(line.split(':', 1) for line in lines[1:] if ':' in line)
-    expires = {k.strip().lower(): v.strip() for k, v in headers.items()}.get('github-authentication-token-expiration')
-    if status != '200':
-        report.bad(f'GitHub did not accept the {label} (HTTP {status}); create a new one and set it with sops')
-        return
-    if not expires:
-        report.ok(f'GitHub accepts the {label} (no expiry date)')
-        return
-    try:
-        when = dt.datetime.strptime(expires[:19], '%Y-%m-%d %H:%M:%S').replace(tzinfo=dt.UTC)
-    except ValueError:
-        report.warn(f'GitHub accepts the {label}; could not read its expiry {expires!r}')
-        return
-    days = ((when - (now or dt.datetime.now(dt.UTC))).total_seconds()) / 86400
-    message = f'GitHub accepts the {label}; it expires {when:%Y-%m-%d} ({days:.0f} days)'
-    if days < TOKEN_WARN_DAYS:
-        report.warn(message + '; create a new one and set it with sops platform/console/secret.sops.yaml')
-    else:
-        report.ok(message)
-
-
-def check_ingestion(runner: Runner, report: Report) -> None:
-    stored = read_ingestion_secret(runner)
-    check_runtime_secret(stored, report)
-    check_ingestion_key(runner, report, stored)
-
-
 @dataclass(frozen=True)
 class Check:
-    """One group of checks and what it needs beyond reading the cluster.
+    """One group of checks, what it needs beyond reading the cluster, and what passing means.
 
     ``cluster``: read non-Secret objects; ``secret``: read Secrets; ``exec``: run
     commands in pods; ``host``: this machine's files or AWS credentials. The
     console runs only the checks its read-only account can (``{'cluster'}``).
+    ``what`` is the check's row in the operations page (``table``; a test keeps the two the same).
     """
     name: str
     needs: frozenset[str]
     run: Callable[[Runner, Report], None]
+    what: str
+
+    @classmethod
+    def of(cls, name: str, needs: str, run: Callable[[Runner, Report], None], what: str) -> Check:
+        return cls(name, frozenset(needs.split()), run, what)
 
 
 CHECKS = (
-    Check('flux', frozenset({'cluster'}), check_flux),
-    Check('flux-controllers', frozenset({'cluster', 'host'}), check_flux_controllers),
-    Check('ingestion-key', frozenset({'cluster', 'secret', 'exec'}), check_ingestion),
-    Check('registration', frozenset({'cluster', 'exec'}), check_registration),
-    Check('ingress', frozenset({'cluster'}), check_ingress),
-    Check('image-automation', frozenset({'cluster'}), check_image_automation),
-    Check('isolation', frozenset({'cluster', 'host'}), check_isolation),  # reads apps/teams.yaml
-    Check('signing-keys', frozenset({'cluster', 'host'}), check_signing_keys),  # reads apps/signing-keys.json
-    Check('events', frozenset({'cluster', 'host'}), check_events),  # reads platform/nats/users.yaml
-    Check('alerts', frozenset({'cluster'}), check_alerts),
-    Check('channels', frozenset({'cluster', 'host'}), check_channels),  # reads apps/teams.yaml and platform/notify
-    Check('notify-service', frozenset({'cluster'}), check_notify_service),
-    Check('retention', frozenset({'cluster', 'exec'}), check_retention),
-    Check('backups', frozenset({'host'}), check_backups),
-    Check('sqlite-backups', frozenset({'cluster', 'host'}), check_sqlite_backups),
-    Check('push-webhook', frozenset({'cluster', 'host'}), check_push_webhook),
-    Check('image-webhooks', frozenset({'cluster', 'host'}), check_image_webhooks),
-    Check('dashboards', frozenset({'cluster'}), check_dashboards),
-    Check('notifications', frozenset({'cluster'}), check_notifications),
-    Check('notification-heartbeat', frozenset({'host'}), check_notification_heartbeat),
-    Check('console', frozenset({'cluster', 'host'}), check_console),
-    Check('console-token', frozenset({'cluster', 'secret', 'host'}), check_console_token),
+    Check.of('flux', 'cluster', flux.check_units, 'Every Flux unit is Ready'),
+    Check.of('flux-controllers', 'cluster host', flux.check_controllers,
+             'The Flux controllers run the pinned version with the settings in Git (warns otherwise)'),
+    Check.of('ingestion-key', 'cluster secret exec', clickstack.check_ingestion,
+             "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
+    Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
+    Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
+    Check.of('image-automation', 'cluster', apps.check_image_automation,
+             "Every app's ImagePolicy and ImageUpdateAutomation is Ready, so staging deploys itself"),
+    Check.of('isolation', 'cluster host', apps.check_isolation,  # reads apps/teams.yaml
+             'Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods'),
+    Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads apps/signing-keys.json
+             "The signing keys and token issuer apps were given are the cluster's"),
+    Check.of('events', 'cluster host', apps.check_events,  # reads platform/nats/users.yaml
+             'NATS and its controller run, and every declared stream and consumer exists'),
+    Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
+    Check.of('channels', 'cluster host', notifications.check_channels,  # reads apps/teams.yaml and platform/notify
+             "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),
+    Check.of('notify-service', 'cluster', notifications.check_notify_service,
+             "The notify service runs, on the console's image (another image warns)"),
+    Check.of('retention', 'cluster exec', clickstack.check_retention,
+             'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
+             'and the MongoDB volume is retained'),
+    Check.of('backups', 'host', recovery.check_backups,
+             'The newest MongoDB backup, on this host and in S3, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
+    Check.of('sqlite-backups', 'cluster host', sqlite_backup.check_sqlite_backups,
+             "Each app SQLite database's newest backup, on this host and in S3, is as young"),
+    Check.of('push-webhook', 'cluster host', flux.check_push_webhook,
+             "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
+    Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,
+             "The image receiver is Ready; each auto-deploy app's repository calls it (warns otherwise)"),
+    Check.of('dashboards', 'cluster', dashboards.check_dashboards, 'The dashboard and alert sync succeeded within five minutes'),
+    Check.of('notifications', 'cluster', notifications.check_notifications, 'The notification checker succeeded within five minutes'),
+    Check.of('notification-heartbeat', 'host', notifications.check_notification_heartbeat,
+             "The host heartbeat timer is active and its service's last run succeeded within 15 minutes"),
+    Check.of('console', 'cluster host', console.check_console,
+             'The console image is built from this checkout\'s tooling (warns otherwise) and its job record exists'),
+    Check.of('console-token', 'cluster secret host', console.check_console_token,
+             "GitHub accepts the console's tokens and none expires within 14 days (warns)"),
 )
 NEEDS = frozenset().union(*(check.needs for check in CHECKS))
+WORDS = {'cluster': 'Cluster (read)', 'secret': 'Secrets (read)', 'exec': 'commands in pods', 'host': 'this host'}
+
+
+def table() -> str:
+    """The checks as the Markdown table in the operations page, in the order they run."""
+    rows = [f"| `{check.name}` | {check.what} | {', '.join(WORDS[need] for need in WORDS if need in check.needs)} |"
+            for check in CHECKS]
+    return '\n'.join(['| Check | Passes when | Reads |', '| --- | --- | --- |', *rows])
 
 
 def verify_platform(runner: Runner, report: Report, *, allowed: frozenset[str] = NEEDS) -> int:

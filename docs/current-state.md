@@ -1148,3 +1148,12 @@ Faults found and fixed on the way:
 
 Not exercised: the shop in a signed-in browser; the notification arriving on a phone (the service accepted it); `demo-shop`, `demo-shopper` and `demo-notifier` in production; a first promotion of a described app through the console and its merge gate.
 
+## The old example apps removed (12 October 2026)
+
+Step 4 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-2026), commit `ee8ad6d`: `make app-remove` for `hello-ts`, `test-2`, `test-3` and `test-4`, production first, then staging.
+
+- After the reconcile the namespaces, Flux units and image automation of `hello-ts`, `test-2` and `test-4` are gone; `make verify-platform` passes.
+- `test-3` kept its two namespaces and claims, as a retained volume does. On the operator's word, `make destroy-data TARGET=pvc/test-3-staging/test-3` and `…/test-3-prod/test-3` (each after its `DRY_RUN=true` checks passed) deleted both claims, their volumes (`pvc-7590c29e…`, `pvc-ed46d2b3…`) and host data. Each database was 16 KB with two tables; the encrypted backups of 12 October 13:03 UTC remain under `test-3-staging` and `test-3-prod`, locally and in S3, until retention prunes them.
+- Two unit tests read this repository's own `apps/` and named `hello-ts`; they name `demo-shop` now.
+- Left: the empty namespaces `test-3-staging` and `test-3-prod` (and `test-1-staging`, from before); the GitHub repositories and packages of the four apps.
+

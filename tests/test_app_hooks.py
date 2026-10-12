@@ -64,5 +64,6 @@ class AppHooksTests(unittest.TestCase):
         self.assertNotIn(TOKEN, '\n'.join(repo.runner.echoed))
 
     def test_repositories_come_from_the_scanned_images(self):
+        # Read from this repository's own apps/: demo-shop is one of the demo apps, which stay.
         found = hooks.auto_deploy_repositories()
-        self.assertEqual(found.get('hello-ts'), 'samclement/hello-ts')
+        self.assertEqual(found.get('demo-shop'), 'samclement/demo-shop')

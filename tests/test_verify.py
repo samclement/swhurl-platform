@@ -470,16 +470,16 @@ class ConsoleTokenTests(unittest.TestCase):
         url = {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'}
         events = ['package', 'registry_package']
         _, report, text = run(healthy())
-        self.assertIn('[OK] hello-ts: image webhook on samclement/hello-ts, latest delivery returned 200', report.lines, text)
+        self.assertIn('[OK] demo-shop: image webhook on samclement/demo-shop, latest delivery returned 200', report.lines, text)
         cases = {
             'receiver': ({'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no secret'}]}}},
                          '[BAD] Flux receiver flux-system/app-images is not Ready: no secret'),
-            'no hook': ({'hooks': []}, '[WARN] hello-ts: no image webhook on samclement/hello-ts; Flux finds its new images '
+            'no hook': ({'hooks': []}, '[WARN] demo-shop: no image webhook on samclement/demo-shop; Flux finds its new images '
                                        'within the hour (make app-hooks)'),
             'unused': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': None}}]},
-                       '[OK] hello-ts: image webhook on samclement/hello-ts, no delivery yet'),
+                       '[OK] demo-shop: image webhook on samclement/demo-shop, no delivery yet'),
             'failing': ({'hooks': [{'active': True, 'events': events, 'config': url, 'last_response': {'code': 404}}]},
-                        '[WARN] hello-ts: the latest image webhook delivery from samclement/hello-ts returned 404'),
+                        '[WARN] demo-shop: the latest image webhook delivery from samclement/demo-shop returned 404'),
             'events': ({'hooks': [{'active': True, 'events': ['push'], 'config': url}]}, 'is disabled or lacks its events'),
         }
         for name, (overrides, expected) in cases.items():

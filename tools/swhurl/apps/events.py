@@ -92,6 +92,11 @@ def user(nkey: str, env: str, app: str, publishes: list[str], subscribes: list[t
     for publisher, event in subscribes:
         on = f'{stream(env, publisher)}.{consumer(app, event)}'
         allow += [f'$JS.API.CONSUMER.INFO.{on}', f'$JS.API.CONSUMER.MSG.NEXT.{on}', f'$JS.ACK.{on}.>']
+        # The Java client (the Kotlin stack) reads the stream's description before it binds to its
+        # consumer; the JavaScript client does not. Read-only, and of a stream whose events it may read.
+        info = f'$JS.API.STREAM.INFO.{stream(env, publisher)}'
+        if info not in allow:
+            allow.append(info)
     return {'nkey': nkey, 'permissions': {'publish': {'allow': allow}, 'subscribe': {'allow': [f'{inbox(env, app)}.>']}}}
 
 

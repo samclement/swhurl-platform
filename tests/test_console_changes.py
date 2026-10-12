@@ -355,6 +355,7 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertEqual(page.count('name="team" value="platform" required checked'), 0, 'no team is preselected: there is no default')
         self.assertIn('<span class="muted">The platform itself</span>', page)
         self.assertIn('name="team" value="payments" required >', page)
+        self.assertLess(page.index('name="team" value="payments"'), page.index('name="team" value="platform"'), 'alphabetical')
         self.assertEqual((page.count('>notification channel</span>'), page.count('>no notification channel</span>')), (1, 1),
                          'each team is marked with whether it has a channel')
         teams = changes.platform_teams(FakeRunner(), self.api.github)
@@ -930,6 +931,7 @@ class TeamsPageTests(unittest.TestCase):
     def test_shows_each_team_with_its_apps_and_the_apps_left_without_one(self):
         page = self.client().get('/teams', headers=WHO).text
         self.assertIn('<h2>platform</h2>', page)
+        self.assertLess(page.index('<h2>payments</h2>'), page.index('<h2>platform</h2>'), 'alphabetical, not the registry\'s order')
         self.assertNotIn('>default</span>', page, 'no team is special')
         self.assertIn('The platform itself', page)
         self.assertIn('<a href="/apps/billing/staging" title="billing/staging:', page, 'each app, with what runs where')

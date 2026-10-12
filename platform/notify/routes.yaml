@@ -22,9 +22,6 @@ data:
         ],
         "payments": [
           "payments"
-        ],
-        "platform": [
-          "platform"
         ]
       }
     }

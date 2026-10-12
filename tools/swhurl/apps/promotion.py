@@ -84,6 +84,10 @@ def source_problem(status: ops.InstanceStatus | None, image: str, revision: str)
         return 'staging no longer exists; refresh the app page'
     if status.desired_image != image or status.applied_revision != revision:
         return 'staging changed since this page was loaded; refresh and review it again'
+    if status.desired_revision and status.applied_revision and not status.applied:
+        # Any commit to main (another app's deploy, a console change) is "newer" until Flux has applied it here.
+        return ('Flux is still applying the latest commit on main to staging (a change landed moments ago, perhaps '
+                "another app's); wait a few seconds, refresh and promote again")
     healthy = (not status.unit_suspended and not status.release_suspended and not status.problems
                and status.unit[0] == 'True' and status.release and status.release[0] == 'True'
                and status.desired_revision and status.applied_revision and status.applied

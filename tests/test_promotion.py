@@ -57,6 +57,9 @@ class PromotionTests(unittest.TestCase):
                 self.assertTrue(promotion.source_problem(dataclasses.replace(status, **changes),
                                                          image, status.applied_revision))
         self.assertTrue(promotion.source_problem(None, image, 'abc'))
+        behind = dataclasses.replace(status, desired_revision='main@sha1:def')
+        self.assertIn('Flux is still applying the latest commit on main', promotion.source_problem(behind, image, status.applied_revision),
+                      "a commit for another app makes staging 'not applied' for a few seconds: say so, not 'unhealthy'")
 
 
 class FirstProductionTests(unittest.TestCase):

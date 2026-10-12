@@ -1114,3 +1114,7 @@ The operator merged four of the five stage 5 pull requests (`swhurl-try-10`, `-1
 - `make verify-platform` reported four app units "not Ready: dependency … is not ready" while the reconcile was still running, and passed once every unit was Ready.
 - All five stage 5 pull requests are merged; `swhurl-try-12` (Kotlin) is described in staging (`7f2f3ae`).
 
+
+## swhurl-try-15 removed (12 October 2026)
+
+Commit `41ecd70`: `make app-events APP=swhurl-try-13 ENV=staging ARGS="--remove-subscribe swhurl-try-15.greeted"`, then `make app-remove APP=swhurl-try-15 ENV=staging`. After the reconcile its namespace, Flux unit and image automation are gone, `swhurl-try-13` runs 1/1 subscribed to `swhurl-try-10.visited` and `swhurl-try-12.visited`, and `make verify-platform` passes. Validate's first run failed in the OTel job on a chart download and passed when that job was run again. The GitHub repository and container package `samclement/swhurl-try-15` remain for the operator to delete.

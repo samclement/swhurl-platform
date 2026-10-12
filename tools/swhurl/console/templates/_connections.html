@@ -30,17 +30,17 @@
   <div class="choices small">
     {% for row in callable_apps %}
     <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
-      <span><strong>{{ row.instance.app }}</strong> <span class="muted">team {{ row.team or 'unknown' }}</span></span></label>
+      <span><strong>{{ row.instance.app }}</strong> <span class="muted">team {{ row.team or 'unknown' }}{% set says = offer_text(row) %}{% if says %} · {{ says }}{% endif %}</span></span></label>
     {% else %}<span class="muted">No {{ 'other ' if who != 'The new app' }}web app {{ 'is in ' ~ env ~ ' yet' if who == 'The new app' else 'in ' ~ env ~ ' is left to call' }}.</span>{% endfor %}
   </div>
-  <span class="muted hint">{{ who }} gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in {{ env }} are offered.</span>
+  <span class="muted hint">{{ who }} gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in {{ env }} are offered; the <a href="/catalogue?env={{ env }}">catalogue</a> shows each one's routes and each event's payload.</span>
 </div>
 <div class="field">
   <span class="label">Events it receives</span>
   <div class="choices small">
     {% for name, row in offered_events %}
     <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
-      <span><code>{{ name }}</code> <span class="muted">from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
+      <span><code>{{ name }}</code> <span class="muted">from {{ row.instance.app }}, team {{ row.team or 'unknown' }}{% set says = offer_text(row, name.split('.', 1)[1]) %}{% if says %} · {{ says }}{% endif %}</span></span></label>
     {% else %}<span class="muted">No {{ 'other ' if who != 'The new app' }}app in {{ env }} publishes an event {{ 'yet' if who == 'The new app' else 'it does not already receive' }}.</span>{% endfor %}
   </div>
   <span class="muted hint">{{ who }} may read exactly these, from the oldest event still kept (seven days).</span>

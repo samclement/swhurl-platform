@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "_status.html" as st %}
+{% block title %}Catalogue{% endblock %}
+{% block main %}
+{% macro link(e, k, t='') %}/catalogue?env={{ e }}{% if k %}&kind={{ k }}{% endif %}{% if t %}&team={{ t }}{% endif %}{% endmacro %}
+<h1>Catalogue</h1>
+{% call st.about() %}What the apps of one environment offer each other: every web app's API and every event an app publishes, with what its own repository says about it (its OpenAPI and AsyncAPI documents, read for the image it runs). Open a row for its routes or its payload and an example. <strong>Use</strong> opens a pull request that lets one of your apps call the API or receive the event; you review and merge it on GitHub.{% endcall %}
+<div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
+  <span class="muted">Environment</span>
+  {% for name in ('staging', 'prod') %}<a href="{{ link(name, kind, team) }}" class="{{ 'here' if env == name }}">{{ name }}</a>{% endfor %}
+  <span class="muted">Kind</span>
+  <a href="{{ link(env, '', team) }}" class="{{ 'here' if not kind }}">all</a>
+  <a href="{{ link(env, 'api', team) }}" class="{{ 'here' if kind == 'api' }}">APIs</a>
+  <a href="{{ link(env, 'event', team) }}" class="{{ 'here' if kind == 'event' }}">events</a>
+  <span class="muted">Team</span>
+  <a href="{{ link(env, kind) }}" class="{{ 'here' if not team }}">all</a>
+  {% for name in teams %}<a href="{{ link(env, kind, name) }}" class="{{ 'here' if team == name }}">{{ name }}</a>{% endfor %}
+</div>
+{% if entries %}
+<p class="tally">{{ entries | selectattr('kind', 'equalto', 'api') | list | length }} APIs · {{ entries | selectattr('kind', 'equalto', 'event') | list | length }} events · {{ entries | selectattr('described') | list | length }} described by their app</p>
+<div class="openlist catalogue">
+  <div class="cols head" aria-hidden="true"><span></span><span>Kind</span><span>Name</span><span>Team</span><span>What it is</span><span>Used by</span><span></span></div>
+  {% for e in entries %}
+  <details class="openrow" id="{{ e.kind }}-{{ e.name }}">
+    <summary class="cols" title="Show or hide what {{ e.name }} offers">
+      <span class="chev" aria-hidden="true"></span>
+      <span class="cell" data-label="Kind"><span class="pill">{{ 'API' if e.kind == 'api' else 'event' }}</span></span>
+      <strong>{{ e.name }}</strong>
+      <span class="cell" data-label="Team">{{ e.team or '—' }}</span>
+      <span class="cell wrap" data-label="What it is">{% if e.description %}{{ e.description }}{% elif e.described %}<span class="muted">described, without a summary</span>{% else %}<span class="muted">not described by its app</span>{% endif %}</span>
+      <span class="cell" data-label="Used by">{% if e.used_by %}{{ e.used_by | length }} app{{ 's' if e.used_by | length != 1 }}{% else %}<span class="muted">—</span>{% endif %}</span>
+      <span class="cell act muted">{{ 'routes' if e.kind == 'api' else 'payload' }} and use</span>
+    </summary>
+    <div class="panel">
+      <section>
+        {% if e.kind == 'api' %}
+        <h3>Routes</h3>
+        {% if e.operations %}
+        <table class="compact">
+          <tr><th>Method</th><th>Path</th><th>What it does</th></tr>
+          {% for method, path, summary in e.operations %}<tr><td><span class="pill">{{ method }}</span></td><td><code>{{ path }}</code></td><td>{{ summary or '—' }}</td></tr>{% endfor %}
+        </table>
+        {% elif e.described %}<p class="muted">Its description lists no routes.</p>
+        {% else %}<p class="muted">{{ e.app }} does not describe its API. It can still be called by name; ask team {{ e.team or 'unknown' }} what it answers.</p>{% endif %}
+        <dl class="plain">
+          <dt>In the cluster</dt><dd><code>{{ e.address }}</code></dd>
+          {% if e.link %}<dt>Full description</dt><dd>{% if e.link.startswith('https://') %}<a href="{{ e.link }}">{{ e.link }} {{ st.icon('external') }}</a>{% else %}<code>{{ e.link }}</code>{% endif %}</dd>{% endif %}
+        </dl>
+        {% else %}
+        <h3>Payload</h3>
+        {% if e.schema %}<pre><code>{{ e.schema }}</code></pre>
+        {% elif e.described %}<p class="muted">Its description gives no payload schema: any JSON.</p>
+        {% else %}<p class="muted">{{ e.app }} does not describe this event. It can still be received; ask team {{ e.team or 'unknown' }} what it carries.</p>{% endif %}
+        {% if e.example %}<h3>Example</h3><pre><code>{{ e.example }}</code></pre>{% endif %}
+        <p class="muted">It arrives as a CloudEvents envelope: this is its <code>data</code>.</p>
+        {% endif %}
+        {% if e.problem %}<p class="warn">Its description could not be shown: {{ e.problem }}.</p>{% endif %}
+        {% if e.commit %}<p class="muted">Described by <a href="https://github.com/{{ owner }}/{{ e.app }}/tree/{{ e.commit }}">{{ e.app }}'s repository at <code>{{ e.commit }}</code></a>, the image {{ env }} runs.</p>{% endif %}
+      </section>
+      <section>
+        <h3>Use it from an app</h3>
+        {% if e.could_use %}
+        <p class="muted">Choose the app that will {{ 'call ' ~ e.app if e.kind == 'api' else 'receive ' ~ e.name }} in {{ env }}. It opens a pull request that changes that app and {{ e.app }}.</p>
+        <div class="choose">
+          {% for name, team in e.could_use %}
+          <form class="inline" method="post" action="/apps/{{ name }}/{{ env }}/connect" data-confirm="Open a pull request so that {{ name }}/{{ env }} {{ 'may call ' ~ e.app if e.kind == 'api' else 'receives ' ~ e.name }}? You review and merge it on GitHub." data-confirm-label="Open connection PR">
+            <input type="hidden" name="{{ 'calls' if e.kind == 'api' else 'subscribe' }}" value="{{ e.name }}">
+            <button {{ 'disabled' if not github }} title="Team {{ team or 'unknown' }}">{{ name }}</button>
+          </form>
+          {% endfor %}
+        </div>
+        {% else %}<p class="muted">Every other app in {{ env }} uses it already.</p>{% endif %}
+        <p class="muted">Then, in that app's code (the stack templates' helpers):</p>
+        {% if e.kind == 'api' %}<pre><code>// TypeScript
+service("{{ e.app }}").fetch("/")
+// Kotlin
+platform.call("{{ e.app }}", "/")</code></pre>
+        {% else %}<pre><code>// TypeScript
+subscribe("{{ e.name }}", async (event) => { ... })
+// Kotlin
+events.subscribe("{{ e.name }}") { event -> ... }</code></pre>{% endif %}
+        <h3>Used by</h3>
+        <p>{% for name in e.used_by %}<a href="/apps/{{ name }}/{{ env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nobody yet</span>{% endfor %}</p>
+        <p class="foot"><a href="/apps/{{ e.app }}/{{ env }}">{{ e.app }}/{{ env }}</a></p>
+      </section>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">Nothing is offered in {{ env }}{% if team %} by team {{ team }}{% endif %}{% if kind %} of this kind{% endif %}: no web app runs there and no app publishes an event.</p>
+{% endif %}
+{% endblock %}

@@ -15,13 +15,36 @@ channels:
     messages:
       visited:
         $ref: '#/components/messages/visited'
+  greeted:
+    address: greeted
+    description: swhurl-try-15 said hello to someone.
+    messages:
+      greeted:
+        $ref: '#/components/messages/greeted'
 operations:
+  publishGreeted:
+    action: send
+    channel:
+      $ref: '#/channels/greeted'
   publishVisited:
     action: send
     channel:
       $ref: '#/channels/visited'
 components:
   messages:
+    greeted:
+      summary: One greeting
+      payload:
+        type: object
+        required: [to]
+        additionalProperties: false
+        properties:
+          to:
+            type: string
+            description: Who was greeted
+      examples:
+        - payload:
+            to: anonymous
     visited:
       summary: One request to the example route
       payload:

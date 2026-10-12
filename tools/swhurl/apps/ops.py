@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import functools
 import os
 import sys
 from dataclasses import dataclass, field
@@ -247,14 +248,14 @@ def gather_status(runner: Runner, instance: Instance) -> InstanceStatus | None:
     unit = get(runner, '-n', 'flux-system', 'get', 'kustomization', instance.unit)
     if unit is None:
         return None
-    source = get(runner, '-n', 'flux-system', 'get', 'gitrepository', SOURCE) or {}
-    release = get(runner, '-n', ns, 'get', 'helmrelease', instance.app)
     selector = f'{INSTANCE_LABEL}={instance.app}'
-    pods = get(runner, '-n', ns, 'get', 'pods', '-l', selector)
-    workloads = get(runner, '-n', ns, 'get', WORKLOAD_KINDS, '-l', selector)
-    ingresses = (get(runner, '-n', ns, 'get', 'ingress') or {}).get('items', [])
-    certificates = (get(runner, '-n', ns, 'get', 'certificate') or {}).get('items', [])
-    return status_of(instance, unit, source, release, pods, workloads, ingresses, certificates)
+    source, release, pods, workloads, ingresses, certificates = runner.together(*(
+        functools.partial(get, runner, *args) for args in (
+            ('-n', 'flux-system', 'get', 'gitrepository', SOURCE), ('-n', ns, 'get', 'helmrelease', instance.app),
+            ('-n', ns, 'get', 'pods', '-l', selector), ('-n', ns, 'get', WORKLOAD_KINDS, '-l', selector),
+            ('-n', ns, 'get', 'ingress'), ('-n', ns, 'get', 'certificate'))))
+    return status_of(instance, unit, source or {}, release, pods, workloads,
+                     (ingresses or {}).get('items', []), (certificates or {}).get('items', []))
 
 
 def status_of(instance: Instance, unit: dict, source: dict, release: dict | None, pods: dict | None,

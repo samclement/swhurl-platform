@@ -10,6 +10,8 @@ from __future__ import annotations
 import base64
 import binascii
 import datetime as dt
+import functools
+import io
 import json
 import os
 import sys
@@ -24,7 +26,7 @@ from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_ba
 from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.report import Report
-from swhurl.run import CommandError, Runner
+from swhurl.run import CommandError, Runner, SharedReads
 from swhurl.settings import SettingsError, load_settings
 
 APP_LABEL = 'platform.swhurl.com/app'  # apps.contract.APP; set on each app's ImagePolicy
@@ -825,8 +827,16 @@ def verify_platform(runner: Runner, report: Report, *, allowed: frozenset[str] =
         print(f'[ERROR] {detail}', file=sys.stderr)
         return 1
     skipped = [check.name for check in CHECKS if not check.needs <= allowed]
-    for check in CHECKS:
-        if check.needs <= allowed:
+    def alone(check: Check) -> Report:
+        part = Report(io.StringIO(), redact=runner.redact)
+        check.run(runner, part)
+        return part
+    wanted = [check for check in CHECKS if check.needs <= allowed]
+    if isinstance(runner, SharedReads):  # a console page: the checks at once, reported in their order
+        for part in runner.together(*(functools.partial(alone, check) for check in wanted)):
+            report.merge(part)
+    else:  # a terminal: each line as its check finishes
+        for check in wanted:
             check.run(runner, report)
     if skipped:
         report.line()

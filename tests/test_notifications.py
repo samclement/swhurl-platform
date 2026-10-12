@@ -507,7 +507,7 @@ class WiringTests(unittest.TestCase):
         kustomizations = [s for s in sources if s['kind'] == 'Kustomization']
         self.assertEqual(kustomizations, [{'kind': 'Kustomization', 'name': '*',
                          'matchLabels': {'platform.swhurl.com/alert': 'failures'}}])
-        for file in ('clusters/home/infra.yaml', 'clusters/home/platform.yaml',
+        for file in ('clusters/home/infra.yaml', 'clusters/home/platform.yaml', 'clusters/home/platform-notify.yaml',
                      'clusters/home/flux-system/kustomizations.yaml'):
             for unit in yaml.safe_load_all((ROOT/file).read_text()):
                 labels = unit['metadata'].get('labels', {})

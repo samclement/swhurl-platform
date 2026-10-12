@@ -1,7 +1,7 @@
 """Flux itself: install its controllers with our settings, and wait for its units.
 
 ``flux-install`` (``make flux-install``) renders ``flux install --export`` at the
-version pinned in the console Dockerfile, applies the patches in
+version pinned here (``FLUX_VERSION``), applies the patches in
 ``clusters/home/flux-system/install`` with kustomize, and applies the result
 server-side as the ``flux`` field manager, like ``flux install`` does. A plain
 ``flux install`` would drop the patches; ``verify-platform`` warns if it has.

@@ -9,7 +9,7 @@ An app's life, and where each step is described. Every app comes from a stack te
 | Start a new app: code, repository and staging | **New app** | `make app-repo`, then `make app-new` | [Start a new app](#start-a-new-app) |
 | Ship a new version | — | push to the app's repository | [Deploy a new image](#deploy-a-new-image) |
 | Promote to production | **Promote to production** | `make app-promote` | [Promote to production](#promote-to-production) |
-| Choose who can reach it | **Who can reach it** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
+| Choose who can reach it | **Change access** | `make app-expose` | [Who can reach it](#who-can-reach-it) |
 | Give it secrets | — | `sops apps/<app>/<env>/secret.sops.yaml` | [Secrets](#secrets) |
 | Keep dependencies current | — | Renovate pull requests in the app's repository | [Dependency updates](#dependency-updates-in-app-repositories) |
 | Watch, resize, fix | the app page, **Scale**, **Reconcile** | `make app-status`, `app-logs`, `app-scale`, `app-reconcile` | [Operate an instance](#operate-an-instance) |
@@ -136,7 +136,7 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 
 | Feature | Choices | The app gets | The platform adds |
 | --- | --- | --- | --- |
-| `kind` | `web` (default), `worker` | An HTTP service answering `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
+| `kind` | `web` (default), `worker` | An HTTP service answering `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Change access**) |
 | `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
 | `api` | `none` (default), `openapi` | Web only. An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | The link on the app page (`provides.api`), and the document kept beside each instance (`provides.apiFile`; [what an app offers](#what-an-app-offers)) |
 | `events` | `none` (default), `asyncapi` | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` for a worker). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema | Its NATS key and stream at creation, and what it publishes from the document from then on ([what an app offers](#what-an-app-offers)). Every app can publish and subscribe without this feature: it adds the description |
@@ -209,11 +209,11 @@ events: {publish: [created], subscribe: [orders.created]}   # optional   --publi
 
 | Exposure | Route | Host |
 | --- | --- | --- |
-| `private` (the default) | None; only apps that [declare a call](#calling-another-app) to it can connect | — |
-| `authenticated-web` | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
+| `private` (the default for `make app-new` and for a worker) | None; only apps that [declare a call](#calling-another-app) to it can connect | — |
+| `authenticated-web` (the default for a web app made from a stack) | Behind Google sign-in (the shared oauth2-proxy middleware) | Under `homelab.swhurl.com`; derived as `staging-<name>.homelab.swhurl.com` (`<name>.homelab.swhurl.com` in prod) unless given |
 | `public` | No sign-in | `--host` **outside** `homelab.swhurl.com`, so the shared sign-in cookie never reaches it |
 
-Set it with `--exposure` at creation, and change it later with `make app-expose APP=demo-shop ENV=staging ARGS="--exposure public --host demo-shop.example.com"` or the app page's **Who can reach it** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
+Set it with `--exposure` at creation, and change it later with `make app-expose APP=demo-shop ENV=staging ARGS="--exposure public --host demo-shop.example.com"` or the app page's **Change access** form. `app-expose` rewrites the route, the Namespace's exposure label and the unit's dependencies together, keeps a signed-in host (or derives one), and refuses a route on a worker. Staging and production may differ, for example a signed-in staging preview of a public app. `make app-status` and the app page show the exposure read from the live routes.
 
 ## Teams and isolation
 

@@ -21,6 +21,14 @@ data:
               subscribe:
                 allow:
                 - _INBOX.>
+          - nkey: UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G
+            permissions:
+              publish:
+                allow:
+                - staging.demo-orders.>
+              subscribe:
+                allow:
+                - _INBOX.staging.demo-orders.>
           - nkey: UDI2RINKCVTQFX5S4IXXG4P3EFI4CXM235HJ3FPCNWJHDIMHTINQVZWX
             permissions:
               publish:

@@ -7,8 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import retention, sqlite_backup
-from swhurl.recovery import BackupSettings, RecoveryError
+from swhurl import sqlite_backup
+from swhurl.backupset import BackupError
+from swhurl.recovery import BackupSettings
 from swhurl.run import FakeRunner, Result
 
 NOW = dt.datetime(2026, 10, 1, 3, 30, tzinfo=dt.UTC)
@@ -77,7 +78,7 @@ class SqliteBackupTests(unittest.TestCase):
         found = sqlite_backup.find(cluster.runner)
         self.assertEqual([(d.name, d.claim, d.in_pod, d.uid) for d in found],
                          [('notes-staging/notes', 'notes', '/data/app.db', 65532), ('x-prod/x', 'x', '/data/main.db', 101)])
-        with self.assertRaisesRegex(RecoveryError, 'not on a mounted claim'):
+        with self.assertRaisesRegex(BackupError, 'not on a mounted claim'):
             sqlite_backup.find(FakeCluster([deployment(path='/tmp/app.db')]).runner)
 
     def test_backs_up_through_a_pod_running_as_the_app_and_uploads(self):
@@ -101,7 +102,7 @@ class SqliteBackupTests(unittest.TestCase):
 
     def test_a_corrupt_copy_fails_writes_nothing_and_still_deletes_the_pod(self):
         cluster = FakeCluster([deployment()], integrity='*** in database main ***')
-        with self.assertRaisesRegex(RecoveryError, 'backup failed for notes-staging/notes'):
+        with self.assertRaisesRegex(BackupError, 'backup failed for notes-staging/notes'):
             sqlite_backup.backup(cluster.runner, self.settings, '', now=NOW, out=lambda s: None)
         self.assertFalse(list(self.dir.rglob('*.age')))
         self.assertTrue(any(c[:5] == ('kubectl', '-n', 'notes-staging', 'delete', 'pod') for c in cluster.runner.calls))
@@ -109,7 +110,7 @@ class SqliteBackupTests(unittest.TestCase):
     def test_a_stream_shorter_than_the_database_fails(self):
         cluster = FakeCluster([deployment()], size=4096)  # the fake's age file is a few bytes
         out = []
-        with self.assertRaisesRegex(RecoveryError, 'backup failed'):
+        with self.assertRaisesRegex(BackupError, 'backup failed'):
             sqlite_backup.backup(cluster.runner, self.settings, '', now=NOW, out=out.append)
         self.assertTrue(any('stream was cut short' in line for line in out))
         self.assertFalse(list(self.dir.rglob('*.age')))
@@ -131,7 +132,7 @@ class SqliteBackupTests(unittest.TestCase):
         for stamp in ('20261001T033000Z', '20260930T033000Z', '20260929T033000Z', '20260929T120000Z'):
             (directory / f'sqlite-{stamp}.db.age').write_text('x')
             (directory / f'sqlite-{stamp}.json').write_text('{}')
-        retention.prune(directory, 2, 1, pattern=sqlite_backup.PATTERN, out=lambda s: None)
+        sqlite_backup.backups(self.dir, 'notes-staging').prune(2, 1, out=lambda s: None)
         self.assertEqual(sorted(p.name for p in directory.iterdir()),
                          ['sqlite-20260930T033000Z.db.age', 'sqlite-20260930T033000Z.json',
                           'sqlite-20261001T033000Z.db.age', 'sqlite-20261001T033000Z.json'])

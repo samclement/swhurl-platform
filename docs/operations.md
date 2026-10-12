@@ -171,7 +171,7 @@ The [incident reviewer](services.md#incident-reviewer) and its namespace are rem
 
 ```bash
 make backup-mongodb              # encrypted dump to ~/.local/state/swhurl-platform/backups, then S3
-make live-test-restore-mongodb   # restores the latest into a throwaway namespace and checks it
+make live-test-restore-mongodb   # restores the newest into a throwaway namespace and checks it
 make backup-sqlite               # every app SQLite database, encrypted, then S3
 make host-backup                 # install the daily timer (03:30: MongoDB, then SQLite; catches up after downtime)
 systemctl status swhurl-backup-mongodb  # last run; output: /var/log/swhurl-platform/swhurl-backup-mongodb.log
@@ -183,7 +183,7 @@ Like the dynamic DNS timer, it is a system unit under `/etc/systemd/system` that
 
 **App SQLite databases** are copied by a short-lived pod in the app's namespace (pinned `keinos/sqlite3` image), which runs as the app's user, mounts the app's claim and uses SQLite's online backup, so the app keeps running. The copy must pass `PRAGMA integrity_check` before it is encrypted; it streams through `kubectl exec` into age, so no plaintext reaches this host. Metadata records the source, table count, the archive's checksum and the plaintext's size and SHA-256 (measured in the pod); an archive smaller than the plaintext means the stream was cut short, and the run fails. The timer runs it after the MongoDB backup, so a failed MongoDB backup skips it; `make verify-platform` checks each database's newest backup (local and S3) is under 26 hours old.
 
-Restore an app's database from its newest local backup. On another machine, copy both the chosen archive and its matching `.json` metadata file from `s3://swhurl-platform-backups-110927251694/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/` first:
+Restore an app's database from its newest local backup. For MongoDB and SQLite alike, the newest backup is the one with the latest time in its file name, whatever order the files were copied in. On another machine, copy both the chosen archive and its matching `.json` metadata file from `s3://swhurl-platform-backups-110927251694/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/` first:
 
 ```bash
 export BACKUP_DIR="$HOME/restore-backups"

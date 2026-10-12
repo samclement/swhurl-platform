@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl.recovery import RecoveryError, sha256
+from swhurl.backupset import BackupError, sha256
 from swhurl.run import FakeRunner, Result
 from swhurl.sqlite_backup import Database
-from swhurl.sqlite_restore import RestoreSettings, restore
+from swhurl.sqlite_restore import newest, restore
 
 DB = Database('notes-staging', 'notes', 'notes', '/data', '/data/app.db', 65532)
 NS = ('kubectl', '-n', 'notes-staging')
@@ -96,7 +96,7 @@ class SqliteRestoreTests(unittest.TestCase):
                                           ('ok', '3', 'cd' * 32)):
             with self.subTest(integrity=integrity, tables=tables, digest=digest[:2]):
                 cluster = FakeCluster(integrity=integrity, tables=tables, digest=digest)
-                with self.assertRaisesRegex(RecoveryError, 'the database is unchanged'):
+                with self.assertRaisesRegex(BackupError, 'the database is unchanged'):
                     self.restore(cluster)
                 joined = [' '.join(c) for c in cluster.runner.calls]
                 self.assertFalse(any('mv "$1.restore"' in c for c in joined))
@@ -107,7 +107,7 @@ class SqliteRestoreTests(unittest.TestCase):
 
     def test_pods_that_never_stop_abort_before_touching_the_claim(self):
         cluster = FakeCluster(pods_stop=False)
-        with self.assertRaisesRegex(RecoveryError, 'did not stop'):
+        with self.assertRaisesRegex(BackupError, 'did not stop'):
             self.restore(cluster)
         self.assertEqual(cluster.applied, [])
         self.assertTrue(any(c[0] == 'flux' and c[1] == 'resume' for c in cluster.runner.calls))
@@ -119,7 +119,7 @@ class SqliteRestoreTests(unittest.TestCase):
         for archive, message in cases:
             with self.subTest(message=message):
                 cluster = FakeCluster()
-                with self.assertRaisesRegex(RecoveryError, message):
+                with self.assertRaisesRegex(BackupError, message):
                     self.restore(cluster, archive)
                 self.assertEqual(cluster.mutations(), [])
 
@@ -135,14 +135,11 @@ class SqliteRestoreTests(unittest.TestCase):
         self.assertEqual(cluster.mutations(), [])
         self.assertIn('Plan (restore-sqlite notes-staging/notes):', lines)
 
-    def test_picks_the_newest_backup_unless_one_is_named(self):
+    def test_picks_the_newest_backup(self):
         self.backup('20260930T033000Z')
-        settings = RestoreSettings(backup_dir=self.dir, age_key=self.key)
-        self.assertEqual(settings.archive('notes-staging'), self.archive)
-        named = RestoreSettings(backup_dir=self.dir, age_key=self.key, backup_file=Path('/x/sqlite-1.db.age'))
-        self.assertEqual(named.archive('notes-staging'), Path('/x/sqlite-1.db.age'))
-        with self.assertRaisesRegex(RecoveryError, 'no backup in'):
-            RestoreSettings(backup_dir=self.dir, age_key=self.key).archive('other-prod')
+        self.assertEqual(newest(self.dir, 'notes-staging'), self.archive)
+        with self.assertRaisesRegex(BackupError, 'no backup in'):
+            newest(self.dir, 'other-prod')
 
 
 if __name__ == '__main__':

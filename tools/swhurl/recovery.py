@@ -1,13 +1,15 @@
 """Back up ClickStack MongoDB and prove a backup restores.
 
     backup-mongodb             dump the hyperdx database, encrypted with age, to BACKUP_DIR
-    live-test-restore-mongodb  restore the latest backup into a throwaway namespace and check it
+    live-test-restore-mongodb  restore the newest backup into a throwaway namespace and check it
+    prune-backups              prune a directory of MongoDB backups to the retention set
 
 Plaintext never touches disk: the dump streams from ``mongodump`` straight into
 ``age`` (and on restore from ``age -d`` into ``mongorestore``) through an OS
 pipe that Python never reads. MongoDB requires a login: the connection string
 the MongoDB operator writes (``clickstack-mongodb-hyperdx-hyperdx``) reaches
-``mongodump`` as a config file on stdin, never in a command line. Settings come
+``mongodump`` as a config file on stdin, never in a command line. The archives
+are a backup set (``backupset``), which names, orders, prunes and uploads them. Settings come
 from the environment, as the Makefile passes them: BACKUP_DIR, DRY_RUN, PRUNE,
 KEEP_DAILY, KEEP_WEEKLY, AGE_RECIPIENT, MONGO_DATABASE, BACKUP_S3_URI (backup; empty
 skips the upload, which uses the AWS CLI's default credentials or AWS_PROFILE) and
@@ -15,33 +17,34 @@ BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE, KEEP, MONGO_IMAGE (restore test).
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import binascii
 import contextlib
 import datetime as dt
-import hashlib
 import json
 import os
 import re
 import sys
 import time
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, clickstack, platform, retention
+from swhurl import ROOT, backupset, clickstack, platform
+from swhurl.backupset import BackupError, BackupSet
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
-DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
 INGESTION_SECRET = platform.INGESTION_SECRET
 RECOVERY_LABEL = platform.label('recovery-test')
 
 
-class RecoveryError(Exception):
-    pass
+def backups(backup_dir: Path) -> BackupSet:
+    """The MongoDB backups in ``backup_dir``: ``clickstack-mongodb-<UTC>.archive.gz.age``."""
+    return BackupSet(backup_dir, 'clickstack-mongodb', '.archive.gz.age')
 
 
 def sops_recipient(root: Path = ROOT) -> str:
@@ -49,26 +52,8 @@ def sops_recipient(root: Path = ROOT) -> str:
     rules = (yaml.safe_load((root / '.sops.yaml').read_text()) or {}).get('creation_rules') or []
     recipients = {rule['age'].strip() for rule in rules if rule.get('age')}
     if len(recipients) != 1:
-        raise RecoveryError('expected exactly one age recipient in .sops.yaml (set AGE_RECIPIENT)')
+        raise BackupError('expected exactly one age recipient in .sops.yaml (set AGE_RECIPIENT)')
     return recipients.pop()
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open('rb') as handle:
-        for block in iter(lambda: handle.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-@contextlib.contextmanager
-def private_files() -> Iterator[None]:
-    """Create files and directories readable by the owner only (umask 077)."""
-    previous = os.umask(0o077)
-    try:
-        yield
-    finally:
-        os.umask(previous)
 
 
 # Backup ----------------------------------------------------------------------
@@ -88,7 +73,7 @@ class BackupSettings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BackupSettings:
         return cls(
-            backup_dir=Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR),
+            backup_dir=backupset.backup_dir(env),
             recipient=env.get('AGE_RECIPIENT') or sops_recipient(),
             database=env.get('MONGO_DATABASE') or 'hyperdx',
             prune=env.get('PRUNE', 'true') == 'true',
@@ -101,9 +86,9 @@ class BackupSettings:
 def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None = None,
            out: Callable[[str], None] = print) -> Path:
     """Write ``clickstack-mongodb-<UTC>.archive.gz.age`` plus metadata; return the archive path."""
-    stamp = (now or dt.datetime.now(dt.UTC)).strftime('%Y%m%dT%H%M%SZ')
-    archive = settings.backup_dir / f'clickstack-mongodb-{stamp}.archive.gz.age'
-    metadata = archive.with_name(archive.name.replace('.archive.gz.age', '.json'))
+    stamp = backupset.stamp(now)
+    archives = backups(settings.backup_dir)
+    archive = archives.path(stamp)
     exec_mongo = ['kubectl', '-n', settings.namespace, 'exec', '-i', settings.pod, '-c', 'mongod', '--']
 
     if runner.dry_run:
@@ -121,84 +106,37 @@ def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None 
 
     uri = clickstack.read_secret(runner, clickstack.MONGO_URI_SECRET).get('connectionString.standard', '')
     if not uri:
-        raise RecoveryError(f'{settings.namespace}/{clickstack.MONGO_URI_SECRET} has no connection string')
-    with private_files():
-        settings.backup_dir.mkdir(parents=True, exist_ok=True)
-        partial = archive.with_name(archive.name + '.partial')
-        try:
-            runner.pipe([*exec_mongo, 'mongodump', '--quiet', '--config=/dev/stdin', '--db', settings.database,
-                         '--archive', '--gzip'],
-                        ['age', '-r', settings.recipient, '-o', partial], input=f'uri: {json.dumps(uri)}\n')
-            if not partial.is_file() or partial.stat().st_size == 0:
-                raise RecoveryError('Backup archive is empty')
-            counts = clickstack.mongo(runner, uri, clickstack.COLLECTION_COUNTS)
-            version_text = runner.output([*exec_mongo, 'mongod', '--version'])
-            match = re.search(r'^db version v(\S+)', version_text, re.M)
-            if not match:
-                raise RecoveryError('could not read the MongoDB version')
-            partial.replace(archive)
-        finally:
-            partial.unlink(missing_ok=True)
-        metadata.write_text(json.dumps({
-            'created': stamp, 'source': f'{settings.namespace}/{settings.pod}', 'database': settings.database,
-            'mongodb_version': match[1], 'age_recipient': settings.recipient, 'sha256': sha256(archive),
-            'collections': counts}) + '\n')
+        raise BackupError(f'{settings.namespace}/{clickstack.MONGO_URI_SECRET} has no connection string')
+    with archives.writing(stamp) as partial:
+        runner.pipe([*exec_mongo, 'mongodump', '--quiet', '--config=/dev/stdin', '--db', settings.database,
+                     '--archive', '--gzip'],
+                    ['age', '-r', settings.recipient, '-o', partial], input=f'uri: {json.dumps(uri)}\n')
+        if not partial.is_file() or partial.stat().st_size == 0:
+            raise BackupError('Backup archive is empty')
+        counts = clickstack.mongo(runner, uri, clickstack.COLLECTION_COUNTS)
+        version_text = runner.output([*exec_mongo, 'mongod', '--version'])
+        match = re.search(r'^db version v(\S+)', version_text, re.M)
+        if not match:
+            raise BackupError('could not read the MongoDB version')
+    metadata = archives.record(archive, {
+        'source': f'{settings.namespace}/{settings.pod}', 'database': settings.database,
+        'mongodb_version': match[1], 'age_recipient': settings.recipient, 'collections': counts})
     out(f'[OK] Encrypted backup: {archive}')
     out(f'[OK] Metadata: {metadata}')
     if settings.prune:
-        retention.main([str(settings.backup_dir), '--daily', str(settings.keep_daily),
-                      '--weekly', str(settings.keep_weekly)])
+        archives.prune(settings.keep_daily, settings.keep_weekly, out=out)
     if settings.s3_uri:
-        upload(runner, settings.backup_dir, settings.s3_uri, out)
+        archives.upload(runner, settings.s3_uri, out)
     else:
         out('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.')
     return archive
-
-
-def s3_location(uri: str) -> tuple[str, str]:
-    """``s3://bucket/prefix/`` as ``(bucket, 'prefix/')``."""
-    bucket, _, prefix = uri.removeprefix('s3://').partition('/')
-    if not uri.startswith('s3://') or not bucket or (prefix and not prefix.endswith('/')):
-        raise RecoveryError(f'BACKUP_S3_URI must look like s3://bucket/prefix/ (got {uri!r})')
-    return bucket, prefix
-
-
-def remote_names(runner: Runner, uri: str) -> list[str]:
-    """File names of the backups already under ``uri``."""
-    bucket, prefix = s3_location(uri)
-    keys = runner.json(['aws', 's3api', 'list-objects-v2', '--bucket', bucket, '--prefix', prefix,
-                        '--query', 'Contents[].Key', '--output', 'json']) or []
-    return [key.removeprefix(prefix) for key in keys]
-
-
-def upload(runner: Runner, backup_dir: Path, uri: str, out: Callable[[str], None] = print, *,
-           prefix: str = 'clickstack-mongodb-', suffixes: tuple[str, ...] = ('.archive.gz.age', '.json')) -> list[Path]:
-    """Copy every local archive and metadata file missing from ``uri``; files are already age-encrypted."""
-    present = set(remote_names(runner, uri))
-    local = sorted(p for p in backup_dir.glob(f'{prefix}*') if p.name.endswith(suffixes))
-    missing = [p for p in local if p.name not in present]
-    for path in missing:
-        runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)
-    out(f'[OK] Off-host: {len(missing)} file(s) uploaded to {uri}, {len(local) - len(missing)} already there')
-    return missing
-
-
-def backup_time(name: str) -> dt.datetime | None:
-    """When an archive named ``clickstack-mongodb-<UTC>.archive.gz.age`` was taken."""
-    match = retention.PATTERN.match(name)
-    return dt.datetime.strptime(match[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.UTC) if match else None
-
-
-def newest(names: Iterable[str]) -> dt.datetime | None:
-    times = [t for t in map(backup_time, names) if t]
-    return max(times) if times else None
 
 
 def backup_mongodb(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     try:
         settings = BackupSettings.from_env(os.environ)
         backup(runner or Runner.from_environment(), settings)
-    except (RecoveryError, CommandError, ValueError) as error:
+    except (BackupError, CommandError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
     return 0
@@ -218,8 +156,8 @@ class RestoreSettings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> RestoreSettings:
         return cls(
-            backup_dir=Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR),
-            age_key=Path(env.get('AGE_KEY_FILE') or env.get('SOPS_AGE_KEY_FILE') or ROOT / platform.AGE_KEY),
+            backup_dir=backupset.backup_dir(env),
+            age_key=backupset.age_key(env),
             backup_file=Path(env['BACKUP_FILE']) if env.get('BACKUP_FILE') else None,
             namespace=env.get('RECOVERY_NAMESPACE') or 'recovery-test',
             keep=env.get('KEEP', 'false') == 'true',
@@ -227,11 +165,7 @@ class RestoreSettings:
         )
 
     def archive(self) -> Path | None:
-        if self.backup_file:
-            return self.backup_file
-        candidates = sorted(self.backup_dir.glob('clickstack-mongodb-*.archive.gz.age'),
-                            key=lambda p: p.stat().st_mtime) if self.backup_dir.is_dir() else []
-        return candidates[-1] if candidates else None
+        return self.backup_file or backups(self.backup_dir).newest()
 
 
 def recovery_pod(image: str) -> str:
@@ -259,23 +193,18 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
         report.line(f'  - compare restored collection counts with the backup metadata, then delete {ns}')
         return 0
 
-    if not archive or not archive.is_file():
-        raise RecoveryError('No backup archive found (set BACKUP_FILE or BACKUP_DIR)')
-    metadata_path = archive.with_name(archive.name.replace('.archive.gz.age', '.json'))
-    if not metadata_path.is_file():
-        raise RecoveryError(f'Missing backup metadata: {metadata_path}')
+    if not archive:
+        raise BackupError('No backup archive found (set BACKUP_FILE or BACKUP_DIR)')
     if not os.access(settings.age_key, os.R_OK):
-        raise RecoveryError(f'Cannot read age key: {settings.age_key}')
-    metadata = json.loads(metadata_path.read_text())
-    if sha256(archive) != metadata['sha256']:
-        raise RecoveryError('Archive checksum does not match metadata')
+        raise BackupError(f'Cannot read age key: {settings.age_key}')
+    metadata = backups(archive.parent).read(archive)
 
     existing = runner.run(['kubectl', 'get', 'namespace', ns, '-o', 'json'], check=False)
     if existing.returncode == 0:
         labels = (json.loads(existing.stdout).get('metadata') or {}).get('labels') or {}
         if labels.get(RECOVERY_LABEL) != 'true':
-            raise RecoveryError(f'Namespace {ns} exists and is not a recovery-test namespace; refusing to use it')
-        raise RecoveryError(f'Namespace {ns} already exists; delete it or set RECOVERY_NAMESPACE')
+            raise BackupError(f'Namespace {ns} exists and is not a recovery-test namespace; refusing to use it')
+        raise BackupError(f'Namespace {ns} already exists; delete it or set RECOVERY_NAMESPACE')
 
     with contextlib.ExitStack() as cleanup:
         runner.run(['kubectl', 'create', 'namespace', ns], mutating=True)
@@ -354,6 +283,18 @@ def restore_test_mongodb(argv: list[str] | None = None, runner: Runner | None = 
     report = report or Report()
     try:
         return restore_test(runner, RestoreSettings.from_env(os.environ), report)
-    except (RecoveryError, CommandError, KeyError, ValueError) as error:
+    except (BackupError, CommandError, KeyError, ValueError) as error:
         print(f'[ERROR] {runner.redact(str(error))}', file=sys.stderr)
         return 1
+
+
+def prune_backups(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description='Prune ClickStack MongoDB backups to the newest of each of the '
+                                     'last --daily backup days and --weekly ISO weeks.')
+    parser.add_argument('directory', type=Path)
+    parser.add_argument('--daily', type=int, default=7)
+    parser.add_argument('--weekly', type=int, default=4)
+    parser.add_argument('--dry-run', action='store_true')
+    args = parser.parse_args(argv)
+    backups(args.directory).prune(args.daily, args.weekly, dry_run=args.dry_run)
+    return 0

@@ -17,21 +17,20 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import platform, retention
+from swhurl import backupset, platform
 from swhurl.apps.contract import (
     DATABASE_PATH_VARIABLE,
 )
-from swhurl.recovery import BackupSettings, RecoveryError, private_files, sha256, upload
+from swhurl.backupset import BackupError, BackupSet
+from swhurl.recovery import BackupSettings
 from swhurl.run import CommandError, Runner
 
 IMAGE = 'docker.io/keinos/sqlite3:3.53.4@sha256:637e4ac26b6b5c0bf0acf0f5625f7d18453f39407bee18787d1d16875ad07e24'
-PATTERN = re.compile(r'^sqlite-(\d{8}T\d{6}Z)\.db\.age$')
 BACKUP_LABEL = platform.label('sqlite-backup')
 COPY = '/tmp/backup.db'
 
@@ -59,6 +58,16 @@ class Database:
         return '/data/' + self.path.removeprefix(self.mount).lstrip('/')
 
 
+def backups_in(directory: Path) -> BackupSet:
+    """The database backups in one directory: ``sqlite-<UTC>.db.age``."""
+    return BackupSet(directory, 'sqlite', '.db.age')
+
+
+def backups(backup_dir: Path, namespace: str) -> BackupSet:
+    """One instance's database backups, kept in ``<backup_dir>/sqlite/<namespace>/``."""
+    return backups_in(backup_dir / 'sqlite' / namespace)
+
+
 def find(runner: Runner) -> list[Database]:
     """Instances whose main container has DATABASE_PATH, from their live Deployments."""
     found = []
@@ -75,7 +84,7 @@ def find(runner: Runner) -> list[Database]:
             mounts = [m for m in container.get('volumeMounts') or []
                       if m['name'] in claims and path.startswith(m['mountPath'].rstrip('/') + '/')]
             if not mounts:
-                raise RecoveryError(f"{deploy['metadata']['namespace']}/{deploy['metadata']['name']}: "
+                raise BackupError(f"{deploy['metadata']['namespace']}/{deploy['metadata']['name']}: "
                                     f'{DATABASE_PATH_VARIABLE}={path} is not on a mounted claim')
             uid = (spec.get('securityContext') or {}).get('runAsUser', 65532)
             found.append(Database(deploy['metadata']['namespace'], deploy['metadata']['name'],
@@ -114,8 +123,8 @@ def plain_fingerprint(runner: Runner, exec_pod: list[str], path: str) -> tuple[i
 
 def backup_one(runner: Runner, db: Database, settings: BackupSettings, *, stamp: str,
                out: Callable[[str], None] = print) -> Path:
-    directory = settings.backup_dir / 'sqlite' / db.namespace
-    archive = directory / f'sqlite-{stamp}.db.age'
+    archives = backups(settings.backup_dir, db.namespace)
+    archive = archives.path(stamp)
     exec_pod = ['kubectl', '-n', db.namespace, 'exec', db.pod, '-c', 'sqlite', '--']
     if runner.dry_run:
         out(f'  - {db.name}: a pod as UID {db.uid} mounting {db.claim} copies {db.path} with sqlite3 .backup, '
@@ -127,26 +136,20 @@ def backup_one(runner: Runner, db: Database, settings: BackupSettings, *, stamp:
         runner.run([*exec_pod, 'sqlite3', db.in_pod, f'.backup {COPY}'])
         check = runner.output([*exec_pod, 'sqlite3', COPY, 'PRAGMA integrity_check;']).strip()
         if check != 'ok':
-            raise RecoveryError(f'{db.name}: the copy failed integrity_check: {check[:200]}')
+            raise BackupError(f'{db.name}: the copy failed integrity_check: {check[:200]}')
         tables = int(runner.output([*exec_pod, 'sqlite3', COPY,
                                     "SELECT count(*) FROM sqlite_master WHERE type = 'table';"]).strip() or 0)
         size, digest = plain_fingerprint(runner, exec_pod, COPY)
-        with private_files():
-            directory.mkdir(parents=True, exist_ok=True)
-            partial = archive.with_name(archive.name + '.partial')
-            try:
-                runner.pipe([*exec_pod, 'cat', COPY], ['age', '-r', settings.recipient, '-o', partial])
-                # age adds a header and 16 bytes per 64 KiB, so a whole copy is never smaller than the plaintext;
-                # an age file of a truncated or empty stream is (it still has a header).
-                if not partial.is_file() or partial.stat().st_size < max(size, 1):
-                    raise RecoveryError(f'{db.name}: the encrypted copy is smaller than the database '
-                                        f'({size} bytes): the stream was cut short')
-                partial.replace(archive)
-            finally:
-                partial.unlink(missing_ok=True)
-            archive.with_name(archive.name.replace('.db.age', '.json')).write_text(json.dumps({
-                'created': stamp, 'source': db.name, 'claim': db.claim, 'path': db.path, 'tables': tables,
-                'integrity_check': check, 'bytes': size, 'plain_sha256': digest, 'age_recipient': settings.recipient, 'sha256': sha256(archive)}) + '\n')
+        with archives.writing(stamp) as partial:
+            runner.pipe([*exec_pod, 'cat', COPY], ['age', '-r', settings.recipient, '-o', partial])
+            # age adds a header and 16 bytes per 64 KiB, so a whole copy is never smaller than the plaintext;
+            # an age file of a truncated or empty stream is (it still has a header).
+            if not partial.is_file() or partial.stat().st_size < max(size, 1):
+                raise BackupError(f'{db.name}: the encrypted copy is smaller than the database '
+                                  f'({size} bytes): the stream was cut short')
+        archives.record(archive, {
+            'source': db.name, 'claim': db.claim, 'path': db.path, 'tables': tables, 'integrity_check': check,
+            'bytes': size, 'plain_sha256': digest, 'age_recipient': settings.recipient})
     finally:
         runner.run(['kubectl', '-n', db.namespace, 'delete', 'pod', db.pod, '--ignore-not-found', '--wait=false'],
                    check=False, mutating=True)
@@ -156,7 +159,7 @@ def backup_one(runner: Runner, db: Database, settings: BackupSettings, *, stamp:
 
 def backup(runner: Runner, settings: BackupSettings, s3_uri: str, *, now: dt.datetime | None = None,
            out: Callable[[str], None] = print) -> list[Path]:
-    stamp = (now or dt.datetime.now(dt.UTC)).strftime('%Y%m%dT%H%M%SZ')
+    stamp = backupset.stamp(now)
     databases = find(runner)
     if runner.dry_run:
         out('Plan (backup-sqlite):')
@@ -167,19 +170,19 @@ def backup(runner: Runner, settings: BackupSettings, s3_uri: str, *, now: dt.dat
     for db in databases:
         try:
             archives.append(backup_one(runner, db, settings, stamp=stamp, out=out))
-        except (RecoveryError, CommandError) as error:
+        except (BackupError, CommandError) as error:
             failed.append(db.name)
             out(f'[ERROR] {db.name}: {error}')
             continue
         if runner.dry_run:
             continue
-        directory = settings.backup_dir / 'sqlite' / db.namespace
+        kept = backups(settings.backup_dir, db.namespace)
         if settings.prune:
-            retention.prune(directory, settings.keep_daily, settings.keep_weekly, pattern=PATTERN, out=out)
+            kept.prune(settings.keep_daily, settings.keep_weekly, out=out)
         if s3_uri:
-            upload(runner, directory, f'{s3_uri}{db.namespace}/', out, prefix='sqlite-', suffixes=('.db.age', '.json'))
+            kept.upload(runner, f'{s3_uri}{db.namespace}/', out)
     if failed:
-        raise RecoveryError(f'backup failed for {", ".join(failed)}')
+        raise BackupError(f'backup failed for {", ".join(failed)}')
     return archives
 
 
@@ -187,7 +190,7 @@ def backup_sqlite(argv: list[str] | None = None, runner: Runner | None = None) -
     try:
         settings = BackupSettings.from_env(os.environ)
         backup(runner or Runner.from_environment(), settings, os.environ.get('SQLITE_S3_URI', platform.SQLITE_S3_URI))
-    except (RecoveryError, CommandError, ValueError) as error:
+    except (BackupError, CommandError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
     return 0

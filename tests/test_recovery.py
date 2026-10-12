@@ -13,7 +13,8 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import recovery
+from swhurl import backupset, recovery
+from swhurl.backupset import BackupError
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
 
@@ -103,7 +104,7 @@ class BackupTests(unittest.TestCase):
         }
         for label, overrides in cases.items():
             with self.subTest(label):
-                with self.assertRaises((CommandError, recovery.RecoveryError)):
+                with self.assertRaises((CommandError, BackupError)):
                     self.backup(self.runner(**overrides))
                 self.assertEqual([p.name for p in self.dir.iterdir()] if self.dir.exists() else [], [])
 
@@ -157,8 +158,8 @@ class BackupTests(unittest.TestCase):
         _, lines = self.backup(self.runner())
         self.assertIn('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.', lines)
         for uri in ('bucket/prefix/', 's3://', 's3://bucket/prefix'):
-            with self.subTest(uri=uri), self.assertRaises(recovery.RecoveryError):
-                recovery.s3_location(uri)
+            with self.subTest(uri=uri), self.assertRaises(BackupError):
+                backupset.s3_location(uri)
 
     def test_dry_run_plans_the_upload_without_listing(self):
         self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
@@ -172,7 +173,7 @@ class BackupTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root)
         (root / '.sops.yaml').write_text('creation_rules:\n  - age: age1a\n  - age: age1b\n')
-        with self.assertRaisesRegex(recovery.RecoveryError, 'exactly one age recipient'):
+        with self.assertRaisesRegex(BackupError, 'exactly one age recipient'):
             recovery.sops_recipient(root)
 
 
@@ -239,7 +240,7 @@ class RestoreTestTests(unittest.TestCase):
         report = Report(out)
         try:
             code = recovery.restore_test(runner, settings or self.settings, report, sleep=lambda _s: None)
-        except (recovery.RecoveryError, CommandError) as error:
+        except (BackupError, CommandError) as error:
             code, out = 1, io.StringIO(out.getvalue() + f'[ERROR] {runner.redact(str(error))}\n')
         return code, out.getvalue()
 
@@ -331,12 +332,14 @@ class RestoreTestTests(unittest.TestCase):
         self.assertIn(str(self.archive), text)
         self.assertEqual(runner.calls, [])
 
-    def test_latest_archive_is_newest_by_mtime(self):
-        older = self.dir / 'clickstack-mongodb-20990101T000000Z.archive.gz.age'
-        older.write_bytes(b'x')
+    def test_latest_archive_is_newest_by_its_stamp_not_its_file_time(self):
         import os
-        os.utime(older, (1, 1))
+        older = self.dir / 'clickstack-mongodb-20260101T000000Z.archive.gz.age'
+        older.write_bytes(b'x')
+        os.utime(self.archive, (1, 1))  # as after a copy back from S3 in another order
         self.assertEqual(self.settings.archive(), self.archive)
+        named = recovery.RestoreSettings(backup_dir=self.dir, age_key=self.key, backup_file=older)
+        self.assertEqual(named.archive(), older)
 
 
 if __name__ == '__main__':

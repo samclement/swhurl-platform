@@ -25,6 +25,7 @@ account's key from MongoDB, as ``make clickstack-bootstrap`` reads the team key,
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 from dataclasses import dataclass
@@ -32,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import app_alerts, clickstack, statestore
+from swhurl import app_alerts, clickstack, kube, statestore
 from swhurl.apps.instance import INSTANCE_ROOTS, NAME_RE, Instance, instances
 from swhurl.platform import ROOT
 from swhurl.report import Report
@@ -276,3 +277,21 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     wanted = cluster_apps(runner) if args.cluster else apps()
     return sync(runner, report or Report(redact=runner.redact), wanted,
                 prune=bool(wanted) or not args.cluster, cluster=args.cluster)
+
+
+def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
+    """A successful minute-by-minute sync of every app's dashboard and default alerts must be recent, and
+    scheduling enabled. The job also fails while HyperDX lacks the webhook the alerts need."""
+    report.section('App dashboards and alerts')
+    try:
+        state = kube.cronjob_run(runner, 'console', 'console-dashboards', now)
+    except (CommandError, KeyError, ValueError, TypeError):
+        report.bad('cannot read dashboard sync status (console/console-dashboards)')
+        return
+    if state == 'suspended':
+        report.bad('dashboard and alert sync is suspended')
+    elif state == 'stale':
+        report.bad('dashboard and alert sync has no success in the last 5 minutes: check the console-dashboards job logs '
+                   '(no "swhurl notify" webhook? make clickstack-notify-webhook)')
+    else:
+        report.ok('dashboard and alert sync succeeded in the last 5 minutes')

@@ -1,9 +1,11 @@
-"""verify-platform and check-config: every branch, offline, with FakeRunner."""
-import base64
+"""verify-platform and check-config: every branch, offline, against the fake cluster (fakecluster.py)."""
 import datetime as dt
 import io
 import json
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -11,164 +13,16 @@ from pathlib import Path
 from unittest import mock
 
 import yaml
+from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 
-from swhurl import ROOT, clickstack, flux, platform, verify
+from swhurl import ROOT, clickstack, dashboards, images, platform, recovery, validate, verify
 from swhurl.apps import calling, channels, contract
+from swhurl.apps import checks as app_checks
+from swhurl.notifications import checks as notification_checks
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
-KEY = 'fixture-team-ingestion-key-0001'
-CONSOLE_TAG = 'b63d2aff9dfd4cf9df0307e382038dcbd15e29ed'
-TOKEN = 'github_pat_fixture_token_0001'
 OTHER = 'fixture-other-ingestion-key-9999'
-
-
-INSTANCES = [(p.parent.parent.name, p.parent.name) for p in sorted((ROOT / 'apps').glob('*/*/helmrelease.yaml'))]
-
-
-def b64(value: bytes | str) -> str:
-    return base64.b64encode(value.encode() if isinstance(value, str) else value).decode()
-
-
-def fresh_backup(hours=1):
-    taken = dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours)
-    return f'clickstack-mongodb-{taken:%Y%m%dT%H%M%SZ}.archive.gz.age'
-
-
-def healthy(**overrides):
-    """A FakeRunner answering every verify-platform call for a healthy cluster."""
-    responses = {
-        'notifications': {'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}},
-        'dashboards': {'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}},
-        'version': Result((), 0, '{}'),
-        'units': {'items': [
-            {'metadata': {'name': 'homelab-b'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
-            {'metadata': {'name': 'homelab-a'}, 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
-        ]},
-        'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY)}},
-        'mongouri': {'data': {'connectionString.standard': b64('mongodb://u:p@db/hyperdx')}},
-        'team': Result((), 0, 'Warning: EACCES\nRESULT ' + json.dumps({'keys': [KEY]}) + '\n'),
-        'installation': Result((), 0, 'RESULT ' + json.dumps({'status': 200, 'body': {'isTeamExisting': True}}) + '\n'),
-        'traefik': {'spec': {'template': {'spec': {'containers': [
-            {'args': ['--entryPoints.web.http.redirections.entryPoint.scheme=https']}]}}}},
-        'ttl30': Result((), 0, '9\t9\n'),
-        'untimed': Result((), 0, '0\n'),
-        'merges': Result((), 0, '0\t\n'),
-        'pvc': {'spec': {'volumeName': 'pv-1'}},
-        'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Retain'}},
-        'remote': [f'clickstack-mongodb/{fresh_backup()}', f'clickstack-mongodb/{fresh_backup()[:-15]}.json'],
-        'deployments': {'items': []},
-        'console-jobs': {'data': {}},
-        'console': {'spec': {'values': {'controllers': {'main': {'containers': {'main': {'image': {
-            'tag': CONSOLE_TAG}}}}}}}},
-        'notify': {'spec': {'template': {'spec': {'containers': [{'image': f'ghcr.io/samclement/swhurl-console:{CONSOLE_TAG}@sha256:abc'}]}}},
-                   'status': {'readyReplicas': 1}},
-        'git-diff': Result((), 0),
-        'token': {'data': {'GITHUB_TOKEN': b64(TOKEN)}},
-        'kustomize-controller': {'metadata': {'labels': {'app.kubernetes.io/version': f'v{flux.pinned_version()}'}},
-                                 'spec': {'template': {'spec': {'containers': [
-                                     {'args': ['--log-level=info', *flux.required_args()['kustomize-controller']]}]}}}},
-        'automations': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
-            'conditions': [{'type': 'Ready', 'status': 'True'}], 'lastPushTime': '2026-09-30T10:00:00Z'}}]},
-        'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
-            'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
-        # The isolation check walks the instances in this checkout: answer for each of them.
-        'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
-            'platform.swhurl.com/app': app, contract.TEAM: 'demo'}}} for app, env in INSTANCES]},
-        'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
-                             for app, env in INSTANCES]},
-        'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
-            'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
-        'nats': {'status': {'readyReplicas': 1}},
-        'nats-controller': {'status': {'readyReplicas': 1}},
-        'streams': {'items': [{'kind': 'Stream', 'metadata': {'namespace': 'w-staging', 'name': 'staging-w'},
-                               'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}]},
-        'jwks': json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text()),
-        'openid': {'issuer': calling.ISSUER},
-        'alerts': {'items': [{'metadata': {'name': 'failures'}, 'spec': {'providerRef': {'name': 'ntfy-platform'}}}]},
-        'providers': {'items': [{'metadata': {'name': 'ntfy-platform'}}]},
-        'routes': {'items': [{'metadata': {'name': channels.ROUTES_NAME}, 'data': {channels.ROUTES_KEY: json.dumps(
-            channels.routes(ROOT))}}]},
-        'channel-secrets': Result((), 0, ''.join(f'secret/channel-{name}\n' for name in channels.channels(ROOT))),
-        'receiver': {'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}},
-        'hooks': [{'active': True, 'events': ['push', 'package', 'registry_package'], 'config': {'url': f'https://flux-webhook.{platform.base_domain()}/hook/abc'},
-                   'last_response': {'code': 200, 'message': 'OK'}}],
-        'github': Result((), 0, 'HTTP/2 200\r\ngithub-authentication-token-expiration: 2099-01-01 00:00:00 UTC\r\n\r\n'),
-    }
-    responses.update(overrides)
-
-    def answer(key):
-        def handler(args, _input):
-            value = responses[key]
-            if isinstance(value, Result):
-                return Result(args, value.returncode, value.stdout, value.stderr)
-            return Result(args, 0, json.dumps(value))
-        return handler
-
-    def clickhouse(args, _input):
-        query = args[-1]
-        return answer('ttl30' if 'toIntervalDay(30)' in query else 'merges' if 'MergeParts' in query else 'untimed')(args, _input)
-
-    stdin = []  # every program sent into a pod (mongosh scripts, API requests)
-
-    def recorded(key):
-        def handler(args, program):
-            stdin.append((args, program))
-            return answer(key)(args, program)
-        return handler
-
-    runner = FakeRunner()
-    runner.stdin = stdin
-    runner.github = []  # (args, stdin) of each GitHub API call
-
-    def github(args, config):
-        runner.github.append((args, config))
-        return answer('github')(args, config)
-    return (runner
-            .on('systemctl', 'is-active', stdout='active\n')
-            .on('systemctl', 'show', stdout=(
-                'Result=success\nExecMainStatus=0\nExecMainExitTimestamp='
-                + dt.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z') + '\n'))
-            .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-dashboards', handler=answer('dashboards'))
-            .on('kubectl', '-n', 'console', 'get', 'cronjob', 'console-notifications', handler=answer('notifications'))
-            .on('kubectl', 'get', '--raw=/version', handler=answer('version'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
-                handler=answer('units'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'deployment', handler=answer('kustomize-controller'))
-            .on('kubectl', '-n', 'logging', 'get', 'secret', 'clickstack-ingestion-key', handler=answer('secret'))
-            .on('kubectl', '-n', 'observability', 'get', 'secret', clickstack.MONGO_URI_SECRET, handler=answer('mongouri'))
-            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.MONGO_POD, handler=recorded('team'))
-            .on('kubectl', '-n', 'observability', 'exec', '-i', clickstack.APP, handler=recorded('installation'))
-            .on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
-            .on('kubectl', '-n', 'observability', 'exec', clickstack.CLICKHOUSE_POD, handler=clickhouse)
-            .on('kubectl', '-n', 'observability', 'get', 'pvc', handler=answer('pvc'))
-            .on('kubectl', 'get', 'pv', handler=answer('pv'))
-            .on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
-            .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments'))
-            .on('kubectl', '-n', 'console', 'get', 'helmrelease', 'console', handler=answer('console'))
-            .on('kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', handler=answer('console-jobs'))
-            .on('kubectl', '-n', 'notify', 'get', 'deployment', 'notify', handler=answer('notify'))
-            .on('git', '-C', str(ROOT), 'diff', '--quiet', CONSOLE_TAG, 'HEAD', '--', handler=answer('git-diff'))
-            .on('kubectl', '-n', 'console', 'get', 'secret', 'console-github', handler=answer('token'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'receivers.notification.toolkit.fluxcd.io',
-                handler=answer('receiver'))
-            .on('gh', 'api', handler=answer('hooks'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'alerts.notification.toolkit.fluxcd.io', handler=answer('alerts'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'providers.notification.toolkit.fluxcd.io', handler=answer('providers'))
-            .on('kubectl', '-n', 'notify', 'get', 'configmaps', handler=answer('routes'))
-            .on('kubectl', '-n', 'notify', 'get', 'secrets', '-o', 'name', handler=answer('channel-secrets'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'imageupdateautomations.image.toolkit.fluxcd.io',
-                '-l', 'platform.swhurl.com/app', '-o', 'json', handler=answer('automations'))
-            .on('kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
-            .on('kubectl', 'get', 'namespaces', '-l', 'platform.swhurl.com/app', handler=answer('app-namespaces'))
-            .on('kubectl', 'get', 'resourcequotas', handler=answer('quotas'))
-            .on('kubectl', 'get', 'networkpolicies.networking.k8s.io', handler=answer('network-policies'))
-            .on('kubectl', '-n', 'messaging', 'get', 'statefulset', 'nats', handler=answer('nats'))
-            .on('kubectl', '-n', 'messaging', 'get', 'deployment', 'nats-controller', handler=answer('nats-controller'))
-            .on('kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io', handler=answer('streams'))
-            .on('kubectl', 'get', '--raw', '/openid/v1/jwks', handler=answer('jwks'))
-            .on('kubectl', 'get', '--raw', '/.well-known/openid-configuration', handler=answer('openid'))
-            .on('curl', handler=github))
 
 
 def run(runner, **kwargs):
@@ -315,7 +169,7 @@ class ConsoleCheckTests(unittest.TestCase):
             with self.subTest(current=current):
                 runner = healthy(console={'spec': {'values': {'controllers': {'main': {'containers': {'main': {
                     'image': {'tag': 'src-abc'}}}}}}}})
-                with mock.patch.object(verify.images, 'content_tag', return_value=current):
+                with mock.patch.object(images, 'content_tag', return_value=current):
                     _, report, _ = run(runner)
                 self.assertTrue(any(line.startswith(expected) for line in report.lines), report.lines)
 
@@ -371,7 +225,7 @@ class ConsoleTokenTests(unittest.TestCase):
 
         def isolation(**overrides):
             report = Report(io.StringIO())
-            verify.check_isolation(healthy(**overrides), report, root)
+            app_checks.check_isolation(healthy(**overrides), report, root)
             return report.lines
         present = {'items': [{'metadata': {'name': 'w-staging', 'labels': {
             'platform.swhurl.com/app': 'w', contract.TEAM: 'demo'}}}]}
@@ -441,7 +295,7 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] could not read the notification routes and channels (make reconcile UNIT=platform-notify)',
                       report.lines, text)
         cluster = healthy()  # no channel Secret in the cluster
-        with mock.patch.object(verify.channels, 'channels', return_value={'payments-phone': 'ntfy'}):
+        with mock.patch.object(channels, 'channels', return_value={'payments-phone': 'ntfy'}):
             _, report, text = run(cluster)
         self.assertIn('[BAD] channel payments-phone has no Secret in the cluster: its teams get no notifications '
                       '(make reconcile UNIT=platform-notify)', report.lines, text)
@@ -457,7 +311,7 @@ class ConsoleTokenTests(unittest.TestCase):
                     f'reach nobody (make team-channel NAME={team})')
             (self.assertNotIn if routes.get(team) else self.assertIn)(line, report.lines, text)
         cluster = healthy()
-        with mock.patch.object(verify.channels, 'team_channels', return_value={team: [team] for team in owned}):
+        with mock.patch.object(channels, 'team_channels', return_value={team: [team] for team in owned}):
             _, report, text = run(cluster)
         self.assertFalse([line for line in report.lines if 'has no notification channel' in line], text)
 
@@ -539,6 +393,17 @@ class AllowedChecksTests(unittest.TestCase):
         self.assertEqual(verify.NEEDS, {'cluster', 'secret', 'exec', 'host'})
         self.assertEqual(len({check.name for check in verify.CHECKS}), len(verify.CHECKS))
 
+    def test_the_operations_page_lists_the_checks_as_the_registry_does(self):
+        page = (ROOT / 'docs/operations.md').read_text()
+        self.assertIn(verify.table(), page, 'docs/operations.md: replace the table under "Check health" with:\n' + verify.table())
+
+    def test_the_command_loads_with_the_system_interpreter(self):
+        """make runs it without uv: no check's module may need httpx or ruamel to load."""
+        code = "import sys; sys.modules['httpx'] = sys.modules['ruamel'] = None; import swhurl.verify, swhurl.validate"
+        loaded = subprocess.run([sys.executable, '-c', code], env=os.environ | {'PYTHONPATH': str(ROOT / 'tools')},
+                                capture_output=True, text=True)
+        self.assertEqual(loaded.returncode, 0, loaded.stderr)
+
     def test_entries_carry_section_and_level(self):
         _, report, _ = run(healthy(traefik={'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}))
         bad = [e for e in report.entries if e.level == 'bad']
@@ -557,7 +422,7 @@ class BackupAgeTests(unittest.TestCase):
                                  stdout=json.dumps([f'p/{n}' for n in remote]))
         env = {'BACKUP_DIR': str(folder), 'BACKUP_S3_URI': uri, **({'BACKUP_MAX_AGE_HOURS': max_hours} if max_hours else {})}
         report = Report(io.StringIO())
-        verify.check_backups(runner, report, env, now=self.NOW)
+        recovery.check_backups(runner, report, env, now=self.NOW)
         return report, runner
 
     def test_fresh_backups_pass(self):
@@ -606,7 +471,7 @@ class VerifyConfigTests(unittest.TestCase):
     def run_config(self, root=None):
         out = io.StringIO()
         with mock.patch('sys.stdout', out):
-            code = verify.verify_config([], **({'root': root} if root else {}))
+            code = validate.check_config([], **({'root': root} if root else {}))
         return code, out.getvalue()
 
     def test_passes_on_this_repo(self):
@@ -639,7 +504,7 @@ class DashboardHealthTests(unittest.TestCase):
                 job = {'spec': spec, 'status': {'lastSuccessfulTime': taken.isoformat()} if taken else {}}
                 out = io.StringIO()
                 report = Report(out)
-                verify.check_dashboards(healthy(dashboards=job), report, now)
+                dashboards.check_dashboards(healthy(dashboards=job), report, now)
                 self.assertEqual(report.exit_code(), expected, out.getvalue())
 
 
@@ -654,7 +519,7 @@ class NotificationHeartbeatHostVerifyTests(unittest.TestCase):
             'systemctl', 'show', stdout=details)
         out = io.StringIO()
         report = Report(out)
-        verify.check_notification_heartbeat(runner, report, now)
+        notification_checks.check_notification_heartbeat(runner, report, now)
         return report.exit_code(), out.getvalue()
 
     def test_active_timer_and_recent_success_pass(self):

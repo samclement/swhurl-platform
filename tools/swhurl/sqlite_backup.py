@@ -18,7 +18,7 @@ import datetime as dt
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.backupset import BackupError, BackupSet
 from swhurl.recovery import BackupSettings
+from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 IMAGE = 'docker.io/keinos/sqlite3:3.53.4@sha256:637e4ac26b6b5c0bf0acf0f5625f7d18453f39407bee18787d1d16875ad07e24'
@@ -194,3 +195,24 @@ def backup_sqlite(argv: list[str] | None = None, runner: Runner | None = None) -
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1
     return 0
+
+
+def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
+                         now: dt.datetime | None = None) -> None:
+    """Each app SQLite database's newest backup, locally and off-host, is younger than BACKUP_MAX_AGE_HOURS (26)."""
+    env = os.environ if env is None else env
+    report.section('App SQLite backups')
+    try:
+        databases = find(runner)
+    except (CommandError, BackupError, KeyError, TypeError) as error:
+        report.bad(f'cannot find app SQLite databases: {error}')
+        return
+    if not databases:
+        report.ok('no app has a SQLite database')
+        return
+    uri = env.get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
+    for db in databases:
+        backupset.check_backup_set(runner, report, backups(backupset.backup_dir(env), db.namespace),
+                         f'{uri}{db.namespace}/' if uri else '', env=env, now=now, what='SQLite',
+                         run='make backup-sqlite', prefix=f'{db.name}: ',
+                         hint='systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')

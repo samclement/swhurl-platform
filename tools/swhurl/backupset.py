@@ -25,7 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, platform
-from swhurl.run import Runner
+from swhurl.report import Report
+from swhurl.run import CommandError, Runner
 
 DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
 STAMP = '%Y%m%dT%H%M%SZ'
@@ -193,3 +194,26 @@ class BackupSet:
             runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)
         out(f'[OK] Off-host: {len(missing)} file(s) uploaded to {uri}, {len(local) - len(missing)} already there')
         return missing
+
+
+def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],
+                     now: dt.datetime | None, what: str, hint: str, run: str, prefix: str = '') -> None:
+    """The set's newest backup, on this host and under ``uri``, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
+    now = now or dt.datetime.now(dt.UTC)
+    limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
+    places = [(str(backups.directory), lambda: backups.age(now))]
+    if uri:
+        places.append((uri, lambda: backups.age(now, remote_names(runner, uri))))
+    for where, read in places:
+        try:
+            age = read()
+        except (CommandError, BackupError, TypeError) as error:
+            report.bad(f'{prefix}cannot list backups in {where}: {error}')
+            continue
+        if age is None:
+            report.bad(f'{prefix}no {what} backup in {where} (run: {run})')
+        elif age > limit:
+            report.bad(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.0f} h old; '
+                       f'check: {hint}')
+        else:
+            report.ok(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.1f} h old')

@@ -108,8 +108,8 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 | --- | --- | --- | --- |
 | `kind` | `web` (default), `worker` | An HTTP service answering `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Who can reach it**) |
 | `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
-| `api` | `none` (default), `openapi` | Web only. An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | Nothing yet beyond the link on the app page (`provides.api`); the file is named in `provides.apiFile` for the catalogue ([plan](plan.md#17-connections-and-contracts--designed-12-october-2026)) |
-| `events` | `none` (default), `asyncapi` | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` for a worker). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema | The example event at creation (`events.publish`); the file is named in `provides.eventsFile` for the catalogue. Every app can publish and subscribe without this feature: it adds the description |
+| `api` | `none` (default), `openapi` | Web only. An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | The link on the app page (`provides.api`), and the document kept beside each instance (`provides.apiFile`; [what an app offers](#what-an-app-offers)) |
+| `events` | `none` (default), `asyncapi` | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` for a worker). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema | Its NATS key and stream at creation, and what it publishes from the document from then on ([what an app offers](#what-an-app-offers)). Every app can publish and subscribe without this feature: it adds the description |
 
 Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tmp` (and `/data` with a database), sends traces and metrics over OpenTelemetry, logs JSON linked to its traces, and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`. Nothing in the app's repository names the cluster: its [`swhurl.yaml`](#swhurlyaml) says what it needs, and this repo writes the manifests. Each template's README is the guide on the app's side. The catalogue pins reviewed template commits in `STACK_REVISIONS` in [`contract.py`](../tools/swhurl/apps/contract.py). Questions, rendering and contract checks all use that commit. Template releases have immutable version tags; Copier records the tag when it describes the pinned commit. Deliberate catalogue updates change the pin and run `make check-templates` before release. App workflow versions are pinned to release tags and bumped by Renovate. The shared Renovate preset keeps dependency rules consistent; [template updates](#template-updates) apply generated-file changes through reviewed PRs.
 
@@ -171,7 +171,7 @@ team: payments          # optional: a name in apps/teams.yaml (default platform)
 alerts: error-logs=20,errors=none   # optional: its own default-alert thresholds, or none   --alerts
 calls: [orders]         # optional: apps this one calls; each must exist in staging   --calls
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
-#   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents
+#   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
 ```
 
@@ -280,14 +280,51 @@ An event is named `<app>.<event>`: only its app may publish it. `--publish` and 
 | The instance's HelmRelease | `SWHURL_EVENTS_PUBLISH`, `SWHURL_EVENTS_SUBSCRIBE`, `SWHURL_EVENTS_URL` and `SWHURL_EVENTS_NKEY` (the instance's public key) | What it declared, where NATS is, and who it is there |
 | `events.sops.yaml` | `SWHURL_EVENTS_SEED`, the private half of that key | Created and encrypted the first time the instance declares events; never printed. Reloader restarts the app if it changes |
 | `events.yaml` | A stream for a publisher; a durable consumer for each subscription | The stream controller creates them in NATS when the commit is applied |
-| `platform/nats/users.yaml` | The instance's NATS user | It may publish exactly its declared events, and fetch and acknowledge exactly the events it subscribes to |
+| `platform/nats/users.yaml` | The instance's NATS user | A publisher may publish anything under its own name (`<env>.<app>.>`), so a new image can send a new event before the platform has read its description; it may fetch and acknowledge exactly the events it subscribes to |
 | The instance's Flux unit | Waits for `platform-nats` | The manifests need the controller's resource types |
 
 **What the app does.** The stack templates' `events` feature ships the helper: `events.publish("created", data)` and `events.subscribe("orders.created", handler)`. An event travels as a [CloudEvents](https://cloudevents.io) JSON envelope with the trace context in its headers, so the subscriber's work joins the publisher's trace. A handler that throws gets the event again, up to five times. A new subscription starts from the oldest event the stream still holds, and a subscriber that was down receives what it missed when it returns.
 
 **When it takes effect.** After the commit is applied, NATS learns the app's user within a minute or two (the time Kubernetes takes to refresh the server's mounted configuration). An app that starts sooner is refused at first; the helper keeps trying every five seconds and logs each try.
 
-**Rules.** A subscription must name an event that an app of the same environment publishes; removing that event or its app is refused while someone subscribes. Staging and production are separate: an app's production instance has its own key, declared with `make app-events ENV=prod` after promotion, and cannot read staging's events. A stream keeps seven days or 64Mi, whichever comes first, and is not backed up: keep anything you must not lose in the app's own database. `make check-apps` fails when the files disagree with the declaration (rules `events`, `event-users`); `make app-sync` rewrites them.
+**Rules.** A subscription must name an event that an app of the same environment publishes; removing that event or its app is refused while someone subscribes. An app that [describes its events](#what-an-app-offers) publishes what its `asyncapi.yaml` says: `--publish` on it is overwritten the next time its documents are read. Staging and production are separate: an app's production instance has its own key and cannot read staging's events; subscriptions are declared with `make app-events ENV=prod` after promotion, and so is what it publishes unless the app describes its events, which promotion then carries. A stream keeps seven days or 64Mi, whichever comes first, and is not backed up: keep anything you must not lose in the app's own database. `make check-apps` fails when the files disagree with the declaration (rules `events`, `event-users`); `make app-sync` rewrites them.
+
+## What an app offers
+
+An app can describe what other apps may use: its HTTP API as an [OpenAPI](https://www.openapis.org) document and the events it publishes as an [AsyncAPI 3](https://www.asyncapi.com) document. Both live in the app's own repository, beside the code (the templates' `api` and `events` [features](#stacks-and-features) write them and keep them true), and its `swhurl.yaml` names them:
+
+```yaml
+provides:
+  api: /openapi.json          # where the running app serves it
+  apiFile: openapi.json       # where the repository keeps it
+  eventsFile: asyncapi.yaml
+```
+
+The platform reads them for the image an instance runs, so staging and production each show what their own image offers:
+
+```mermaid
+flowchart LR
+  push["push to the app's main"] --> image["image 8-b2c3d4e"]
+  image -->|"Flux commits the new tag"| staging["apps/orders/staging<br/>helmrelease.yaml"]
+  staging -->|"Offers workflow:<br/>make app-offers --all staging"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
+  read --> kept["apps/orders/staging/offers/<br/>source.yaml, openapi.json, asyncapi.yaml"]
+  read --> publishes["SWHURL_EVENTS_PUBLISH<br/>from asyncapi.yaml"]
+  kept -->|"make app-promote"| prod["apps/orders/prod/offers/"]
+```
+
+| What | Where | Why |
+| --- | --- | --- |
+| The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
+| The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
+| The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
+
+**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). After every new staging image: the [Offers workflow](../.github/workflows/offers.yml) runs on Flux's tag commit, reads every staging instance, checks the app policy and commits what changed to `main`. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents and the commit still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=orders ENV=staging`.
+
+**A new event works at once.** The new image starts a minute or two before the workflow has read its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
+
+**What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps what it had (the others are still read), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
+
+**Limits.** The repository is read anonymously, so it must be public (a private one needs `GITHUB_TOKEN`). The documents are checked for the shape the platform uses, not against the full specifications; the templates' own tests do more. An app that stops naming its documents loses `offers/` and keeps publishing what it published.
 
 ## Notifications
 

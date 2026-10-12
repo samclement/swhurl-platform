@@ -131,6 +131,51 @@ class MergeTests(unittest.TestCase):
         self.check(runner)
         self.assertTrue(self.pushes(runner))
 
+    def test_a_promotion_may_carry_what_the_image_offers_and_nothing_else(self):
+        """The documents read at the reviewed image's commit merge with it; a change to what it publishes waits."""
+        from swhurl.apps import edit
+        api = 'openapi: 3.0.1\npaths: {}\n'
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None)
+        self.meta = console.metadata(self.root, 'example', IMAGE, False)
+        self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'
+        self.files = ['apps/example/prod/helmrelease.yaml', 'apps/example/prod/offers/openapi.yaml', 'apps/example/prod/offers/source.yaml']
+
+        def runner(change=lambda dst: None):
+            base = self.runner()
+            plain = next(handler for prefix, handler in base._rules if prefix == ('git', 'worktree', 'add'))
+
+            def worktree(args, _):
+                result = plain(args, _) if callable(plain) else plain
+                dst = Path(args[-2])
+                if dst.name == 'candidate':
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        edit.carry_offers(dst, 'example')
+                    change(dst)
+                return result
+            base._rules.insert(0, (('git', 'worktree', 'add'), worktree))
+            return base
+        carried = runner()
+        self.check(carried)
+        self.assertTrue(self.pushes(carried))
+
+        def another_commit(dst):
+            path = dst / 'apps/example/prod/offers/source.yaml'
+            path.write_text(path.read_text().replace('abcdef0', '1234567'))
+
+        def another_document(dst):
+            (dst / 'apps/example/prod/offers/openapi.yaml').write_text(api + '# edited\n')
+
+        def publishes_more(dst):
+            path = dst / 'apps/example/prod/helmrelease.yaml'
+            path.write_text(path.read_text().replace('SWHURL_APP: example', 'SWHURL_APP: example\n              SWHURL_EVENTS_PUBLISH: created'))
+        for change, message in ((another_commit, 'not from the reviewed image'), (another_document, "differ from staging's"),
+                                (publishes_more, 'changes more than the image pin and what the image offers')):
+            with self.subTest(change=change.__name__), self.assertRaisesRegex(merge.Hold, message):
+                held = runner(change)
+                self.check(held)
+            self.assertEqual(self.pushes(held), [])
+
     def test_first_production_reproduces_conversion_and_rejects_source_config_change(self):
         shutil.rmtree(self.root / 'apps/example/prod')
         (self.root / 'clusters/home/app-example-prod.yaml').unlink()

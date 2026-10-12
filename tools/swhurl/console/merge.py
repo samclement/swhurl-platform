@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import helmrelease, new, promotion
+from swhurl.apps import helmrelease, new, offers, promotion
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
@@ -80,8 +80,27 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
                 image[key] = reviewed[key]
             else:
                 image.pop(key, None)
-        if actual != expected or files != [f'apps/{app}/prod/helmrelease.yaml']:
-            raise Hold('later promotion changes more than the image pin')
+        # With the image goes what it offers (its API and event documents, read at its commit): the
+        # documents and the release's note of that commit may change. What it publishes may not: that
+        # also changes NATS, which a person reviews.
+        release = f'apps/{app}/prod/helmrelease.yaml'
+        carried = sorted(path for path in files if path.startswith(f'apps/{app}/prod/{offers.OFFERS_DIR}/'))
+        if carried:
+            try:
+                found = offers.read(candidate / 'apps' / app / 'prod')
+                commit = offers.commit_of(reviewed.get('tag', ''))
+            except offers.OfferError as error:
+                raise Hold(f'promotion carries offers that cannot be used: {error}') from None
+            if found is None or found.commit != commit:
+                raise Hold('promotion carries offers that are not from the reviewed image')
+            staging = offers.read(base / 'apps' / app / 'staging')
+            if staging and staging.commit == commit and any(
+                    (candidate / path).read_bytes() != (base / 'apps' / app / 'staging' / offers.OFFERS_DIR / Path(path).name).read_bytes()
+                    for path in carried if (base / 'apps' / app / 'staging' / offers.OFFERS_DIR / Path(path).name).is_file()):
+                raise Hold("promotion carries offers that differ from staging's")
+            expected.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
+        if actual != expected or sorted(files) != sorted([release, *carried]):
+            raise Hold('later promotion changes more than the image pin and what the image offers')
         return
     if promotion.fingerprint(base, app, 'staging', ignore_image=True) != meta.get('source'):
         raise Hold('first-production staging configuration changed; regenerate and review')

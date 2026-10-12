@@ -13,7 +13,7 @@
     <td>{% if r.app %}<a href="/apps/{{ r.app }}/{{ env }}">{{ r.app }}</a>{% else %}<span class="muted">any subscriber</span>{% endif %}</td>
     <td>{{ r.what }}{% if r.event %} <code>{{ r.event }}</code>{% endif %}</td>
     <td>{% if r.team %}<a href="/apps?team={{ r.team }}">{{ r.team }}</a>{% elif r.app %}<span class="muted">unknown</span>{% endif %}</td>
-    {% if remove %}<td class="act">{% if r.direction == 'out' %}{% set name = (r.app ~ '.' ~ r.event) if r.app and r.event else (r.app or r.event) %}
+    {% if remove %}<td class="act">{% if r.direction == 'out' and not (r.role == 'publishes' and c.offers) %}{% set name = (r.app ~ '.' ~ r.event) if r.app and r.event else (r.app or r.event) %}
       <form class="inline" method="post" action="/apps/{{ app }}/{{ env }}/disconnect" data-confirm="Open a pull request so that {{ app }}/{{ env }} no longer {{ 'calls' if r.role == 'calls' else 'receives' if r.role == 'subscribes' else 'publishes' }} {{ name }}?{{ ' It also changes ' ~ r.app ~ '.' if r.app }} You review and merge it on GitHub." data-confirm-label="Open removal PR">
         <input type="hidden" name="role" value="{{ r.role }}"><input type="hidden" name="app" value="{{ r.app }}"><input type="hidden" name="event" value="{{ r.event }}">
         <button {{ 'disabled' if not github }} title="Open a pull request removing this connection">Remove</button></form>{% endif %}</td>{% endif %}

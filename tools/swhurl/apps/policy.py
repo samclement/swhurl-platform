@@ -74,7 +74,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import channels, events, helmrelease
+from swhurl.apps import channels, events, helmrelease, offers
 from swhurl.apps.calling import (
     CALLERS_VARIABLE,
     ENVIRONMENT_VARIABLE,
@@ -397,7 +397,9 @@ VARIES = {'namespace', 'host', 'tag', 'digest', 'replicas', 'resources', 'cert-m
           # Calls are declared per environment (make app-calls), like replicas: what follows from them varies too.
           ENVIRONMENT_VARIABLE, CALLERS_VARIABLE, TOKENS_VOLUME,
           # Events too: each environment has its own declaration, key and Secret (make app-events).
-          events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload'}
+          events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE, 'secret.reloader.stakater.com/reload',
+          # What an instance offers is read for the image it runs (make app-offers; promotion carries it).
+          offers.ANNOTATION}
 # Exposure may differ per environment (for example a signed-in staging preview of a public app). When
 # the environments' exposure labels differ, their routes are not compared; each environment is still
 # checked against the exposure rules on its own. With the same exposure, routes must match.
@@ -541,6 +543,9 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
         problems += platform_image(instance)
     root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
+    release = yaml.safe_load(strip_image_markers((instance / 'helmrelease.yaml').read_text())[0])
+    problems += offers.problems(instance, events.published(helmrelease.variables(release)),
+                                str(((release.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
     return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))
                        if rule not in allowed]
 

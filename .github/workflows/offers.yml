@@ -1,0 +1,96 @@
+name: Offers
+
+# When an app's staging image changes (Flux's image automation commits the new tag to main), read
+# what that image's commit offers other apps: the OpenAPI and AsyncAPI documents its swhurl.yaml
+# names (make app-offers; docs/apps.md#what-an-app-offers). What changed is committed to main: the
+# documents beside the instance and, from the AsyncAPI document, the events the app publishes.
+#
+# The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not
+# Validate): the app policy is therefore checked here before pushing. A document the platform cannot
+# use, or one that drops an event another app still receives, fails this run and changes nothing for
+# that app; the others are still read.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/*/staging/helmrelease.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: offers
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # push the commit to main
+
+jobs:
+  read:
+    name: Read what each staging app offers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.34.4'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.19.0'
+
+      - name: Install validation dependencies
+        run: python3 -m pip install --group check
+
+      # An app that describes events for the first time gets its NATS key, encrypted with SOPS (public
+      # recipients only: no key is needed). The same release and checksum as the console image.
+      - name: Install sops
+        env:
+          SOPS_VERSION: v3.12.1
+          SOPS_SHA256: cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100
+        run: |
+          curl -fsSLo sops "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64"
+          echo "${SOPS_SHA256}  sops" | sha256sum -c -
+          sudo install -m 0755 sops /usr/local/bin/sops
+          rm sops
+
+      - name: Read, check and commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # reads the app repositories (a higher rate limit than anonymous)
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -Eeuo pipefail
+          # Flux and the console also push to main: start from its head, and start again if it moved.
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            git checkout --quiet --detach origin/main
+            git reset --quiet --hard origin/main
+            git clean --quiet -fd apps platform
+            failed=0
+            PYTHONPATH=tools python3 -m swhurl app-offers --all staging | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "Nothing changed." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit "$failed"
+            fi
+            make check-apps
+            git add apps platform/nats/users.yaml platform/reloader/helmrelease.yaml clusters/home
+            git commit --quiet -m "offers: what the staging apps offer (offers workflow)"
+            if git push --quiet origin HEAD:main; then
+              git show --stat --format='%h %s' HEAD | tee -a "$GITHUB_STEP_SUMMARY"
+              exit "$failed"
+            fi
+            echo "main moved; reading again (attempt $attempt)"
+          done
+          echo "main kept moving; the next image change runs this again" >&2
+          exit 1

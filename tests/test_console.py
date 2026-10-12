@@ -222,6 +222,23 @@ class ConnectionsTests(unittest.TestCase):
         self.assertIn('name="calls" value="reports"', orders)
         self.assertNotIn('name="calls" value="job"', orders, 'a worker cannot be called')
         self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 2, 'only what it declared: its two events')
+        self.assertIn('Publish an event</summary>', orders)
+        self.assertNotIn('Describes itself', orders)
+
+    def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
+        runner = self.cluster()
+        described = next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'orders-staging')
+        described['metadata']['annotations'] = {'platform.swhurl.com/offers': 'abc1234'}
+        runner._rules.insert(0, (tuple(cluster.RELEASES[:3]), Result((), 0, json.dumps({'items': [described]}), '')))
+        self.assertEqual({row.instance.app: row.connections.offers for row in cluster.apps(runner)}['orders'], 'abc1234')
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-orders-staging')))
+        runner.on('kubectl', '-n', 'orders-staging', 'get', 'helmrelease', stdout=json.dumps(described))
+        runner.on('kubectl', '-n', 'orders-staging', 'get', stdout=json.dumps({'items': []}))
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
+        text = client(runner).get('/apps/orders/staging', headers=WHO).text
+        self.assertIn('href="https://github.com/samclement/orders/tree/abc1234"', text)
+        self.assertNotIn('Publish an event</summary>', text, 'the document is the declaration')
+        self.assertIn('Connect to an app</summary>', text)
         self.assertEqual(cluster.Connections().summary, '')
 
     def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):

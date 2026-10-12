@@ -70,11 +70,11 @@
   </div>
 </section>
 
-<section class="card" id="connect" style="--acts: 2; --pitch: 11.5rem">
+<section class="card" id="connect" style="--acts: {{ 1 if c.offers else 2 }}; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
     <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}.</p>
-    <details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
+    <details class="act" name="app-form" style="--slot: {{ 0 if c.offers else 1 }}; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
         <div class="rows">
@@ -83,6 +83,8 @@
         {{ ui.submit('Open connection PR', 'It changes this instance and each app chosen; you review and merge it on GitHub.') }}
       </form>
     </details>
+    {# An app that describes its events (asyncapi.yaml in its repository) declares them there, not here. #}
+    {% if not c.offers %}
     <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Publish an event</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
@@ -92,11 +94,13 @@
         {{ ui.submit('Open event PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
       </form>
     </details>
+    {% endif %}
   </div>
   <div class="card-body">
     <dl class="plain">
       <dt>In the cluster</dt>
       <dd>{% if c.address %}<code>{{ c.address }}</code> <span class="muted">for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
+      {% if c.offers %}<dt>Describes itself</dt><dd>Its API and events are read from <a href="https://github.com/{{ owner }}/{{ i.app }}/tree/{{ c.offers }}">its repository at <code>{{ c.offers }}</code></a>, the commit of the image it runs. <span class="muted">To publish a new event, add it to <code>asyncapi.yaml</code> there and push.</span></dd>{% endif %}
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
     </dl>
     {% if c.rows %}{{ links.table(c, i.app, i.env, remove=true) }}

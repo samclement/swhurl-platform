@@ -1,7 +1,7 @@
 """Changes through GitHub: download ``main``, run its own tooling, commit to a ``console/*`` branch, open a PR.
 
-Everything goes through GitHub's REST API with ``httpx`` (the image has no
-``git`` or ``curl``): ``main``'s tarball is unpacked into a work tree, the
+Everything goes through GitHub's REST API with ``httpx`` (no ``git`` push,
+so no credential on disk): ``main``'s tarball is unpacked into a work tree, the
 tree's own tooling (not this image's) makes and checks the change, so it
 follows the rules CI will apply even when the console is older than ``main``,
 and the files it added, changed or deleted become one commit (blobs, a tree,

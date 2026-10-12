@@ -54,8 +54,7 @@ def body(t: LiveTest, watched: str) -> None:
         t.report.info('Cleaned up reloader test resources')
     t.cleanup.callback(cleanup)
 
-    t.kubectl('create', 'namespace', UNWATCHED_NS)
-    t.kubectl('label', 'namespace', UNWATCHED_NS, f'{LABEL}=true')
+    t.apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': UNWATCHED_NS, 'labels': {LABEL: 'true'}}})  # labelled from the start, so cleanup can always delete it
     workloads = [(watched, 'reloader-test-optin', True), (watched, 'reloader-test-control', False),
                  (UNWATCHED_NS, 'reloader-test-unwatched', True)]
     for namespace, name, opt_in in workloads:

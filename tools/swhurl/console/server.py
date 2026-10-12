@@ -1,4 +1,4 @@
-"""``python3 -m swhurl console``: serve the read-only console.
+"""``python3 -m swhurl console``: serve the console.
 
 Every page except ``/healthz`` needs the signed-in email that oauth2-proxy
 passes through Traefik as ``X-Auth-Request-Email``; without it the answer is

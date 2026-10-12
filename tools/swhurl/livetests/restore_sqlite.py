@@ -78,8 +78,7 @@ def body(t: LiveTest) -> None:
     t.cleanup.callback(cleanup)
 
     t.step('Throwaway app with a SQLite database')
-    t.kubectl('create', 'namespace', NS)
-    t.kubectl('label', 'namespace', NS, f'{LABEL}=true')
+    t.apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': NS, 'labels': {LABEL: 'true'}}})  # labelled from the start, so cleanup can always delete it
     t.apply(helmrelease(), namespace=NS)
     t.kubectl('-n', NS, 'wait', f'helmrelease/{APP}', '--for=condition=Ready', '--timeout=5m')
     t.kubectl('-n', NS, 'rollout', 'status', f'deploy/{APP}', '--timeout=3m')

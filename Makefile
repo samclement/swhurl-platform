@@ -162,7 +162,7 @@ console-image: ## Pin platform/console to the image published for this commit (G
 	$(SWHURL) console-image
 
 .PHONY: console-dev
-console-dev: ## Read-only web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)
+console-dev: ## Web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)
 	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl console --dev --port $(or $(PORT),8080)
 
 # Settings -----------------------------------------------------------------------

@@ -41,7 +41,7 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 | To see | Do this |
 | --- | --- |
-| The apps and how they are connected | Console → **Apps** → **Map**: two solid lines (calls) and one dashed (the event) |
+| The apps and how they are connected | Console → **Apps/Services** → **Map**: two solid lines (calls) and one dashed (the event) |
 | What each offers, and its routes or payload | Console → **Catalogue** → team `demo`; open `created` under `demo-orders` for its fields and an example |
 | A purchase | Open `https://staging-demo-shop.homelab.swhurl.com/`: `latestOrders` shows what `demo-shopper` bought seconds ago |
 | That only apps may place orders | Signed in, `POST https://staging-demo-orders.homelab.swhurl.com/orders` answers 401: you are a person, not `demo-shop` |
@@ -275,7 +275,7 @@ Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every we
 - **Calling:** `service("demo-orders")` reads the address and the token file (again on every call, since it is replaced) and sends `Authorization: Bearer <token>`.
 - **Being called:** a request that carries a token must carry a good one, or it gets 401: signed by a key in `SWHURL_AUTH_KEYS`, issued by `SWHURL_AUTH_ISSUER` for the audience `SWHURL_APP`, unexpired, and belonging to `system:serviceaccount:<caller>-<SWHURL_ENV>:<caller>` for a caller in `SWHURL_ALLOWED_CALLERS`. A request without a token is a person: signed in when it carries oauth2-proxy's `x-auth-request-email`, anonymous otherwise (a public app). A route meant only for apps asks for an app caller and answers 401 to anyone else. Logs and spans carry `caller.type` (`app`, `user` or `anonymous`) and `caller.id`.
 
-**Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload's fields and an example), who uses it and what each app uses in turn, and a choice of app to use it from. The **Apps** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call and an event, whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
+**Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload's fields and an example), who uses it and what each app uses in turn, and a choice of app to use it from. The **Apps/Services** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call and an event, whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
 
 **Rules.** A callee must be a web app with an instance in the same environment. Calls are declared per environment, like replicas: declare them in staging, promote, then declare them in production. The first promotion of a caller is refused until every app it calls has a production instance, and it adds the caller to those apps' production instances; such a pull request touches other apps' files, so the console does not merge it by itself. `make app-remove` refuses an instance that others call. The variables above are the platform's: `make app-sync` rewrites them, and `make check-apps` fails when the two sides disagree (rules `calls`, `identity`, `call-tokens`).
 
@@ -493,7 +493,7 @@ To guard the exact image reviewed, use:
 make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha256:<digest>"
 ```
 
-A mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Apps or staging shows the exact image, destination and first-production changes, then **Promote to production** creates the PR. Eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused; a replacement image requires explicitly closing the old PR. See [merge controls and pending changes](console.md#auto-merge).
+A mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Apps/Services or staging shows the exact image, destination and first-production changes, then **Promote to production** creates the PR. Eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused; a replacement image requires explicitly closing the old PR. See [merge controls and pending changes](console.md#auto-merge).
 
 ### Console promotion: what happens, and when
 

@@ -41,7 +41,7 @@ Teams deploy apps that find and call each other, publish and receive events, kee
 | [Events](apps.md#events) | `events: {publish, subscribe}` | A key, a stream or consumers, and a NATS user limited to those events | [NATS JetStream](services.md#nats) |
 | [Data](apps.md#stacks-and-features) | `database: sqlite` | A retained volume, one writer, nightly backups | local-path storage |
 | [Telemetry](apps.md#telemetry) | `telemetry: otlp` | The collector address; pod, namespace and team on every signal | OTel collectors, ClickStack |
-| Finding what exists | nothing | The console's [Apps](console.md#use-it) list and map, and each app page's Connect part, read from what runs | The console |
+| Finding what exists | nothing | The console's [Apps/Services](console.md#use-it) list and map, and each app page's Connect part, read from what runs | The console |
 
 ```mermaid
 flowchart LR

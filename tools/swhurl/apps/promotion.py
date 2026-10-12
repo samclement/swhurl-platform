@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import calling, contract, events, helmrelease, offers, ops, state
+from swhurl.apps import calling, contract, events, helmrelease, ops, per_environment, state
 from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -203,9 +203,8 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     kustomization = YamlFile(instance / 'kustomization.yaml').data
     only(kustomization, {'apiVersion', 'kind', 'resources'}, 'kustomization')
     expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({'secret.sops.yaml'} if refs else set())
-    per_environment = {contract.IMAGE_AUTOMATION_FILE, events.EVENTS_FILE, events.SECRET_FILE}
-    resources = set(kustomization.get('resources', [])) - per_environment
-    if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment != expected | {
+    resources = set(kustomization.get('resources', [])) - per_environment.NOT_CARRIED
+    if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment.NOT_CARRIED != expected | {
             'kustomization.yaml'}:
         raise EditError('first promotion refuses additional resources or files')
     variables = container.get('env', {})
@@ -274,47 +273,12 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         if not generated_ns['metadata']['annotations']:
             generated_ns['metadata'].pop('annotations')
         (dst / 'namespace.yaml').write_text(new.dump([generated_ns]))
-        # Strip staging-only automation comments, then retain the effective reviewed release settings.
-        release = json.loads(json.dumps(source))
-        release['metadata']['namespace'] = f'{app}-prod'
-        values = release['spec']['values']
-        for options in (values.get('defaultPodOptions', {}), release['metadata']):
-            labels = options.get('labels', {})
-            if contract.ENVIRONMENT in labels:
-                labels[contract.ENVIRONMENT] = 'prod'
-        # What the platform derives per environment: production's own identity; its callers are
-        # worked out from the production instances that exist (derive.sync_env, after this).
-        main, workload = helmrelease.container(release), helmrelease.workload(release)
-        # What staging's image offers is carried after this (edit.carry_offers): the note of its commit
-        # without the documents would fail the policy check below.
-        annotations = release['metadata'].get('annotations') or {}
-        if annotations.pop(offers.ANNOTATION, None) is not None and not annotations:
-            release['metadata'].pop('annotations', None)
-        variables = main.get('env') or {}
-        if calling.ENVIRONMENT_VARIABLE in variables:
-            variables[calling.ENVIRONMENT_VARIABLE] = 'prod'
-        variables.pop(calling.CALLERS_VARIABLE, None)
-        for key in (events.PUBLISH_VARIABLE, events.SUBSCRIBE_VARIABLE, events.URL_VARIABLE, events.NKEY_VARIABLE):
-            variables.pop(key, None)
-        staging_key = {'secretRef': {'name': events.secret_name(app)}}
-        if staging_key in main.get('envFrom', []):
-            main['envFrom'].remove(staging_key)
-            if not main['envFrom']:
-                del main['envFrom']
-        reload_key = 'secret.reloader.stakater.com/reload'
-        reloads = [name for name in str((workload.get('annotations') or {}).get(reload_key, '')).split(',')
-                   if name and name != events.secret_name(app)]
-        if reload_key in (workload.get('annotations') or {}):
-            if reloads:
-                workload['annotations'][reload_key] = ','.join(reloads)
-            else:
-                del workload['annotations'][reload_key]
-                if not workload['annotations']:
-                    del workload['annotations']
-        if args.exposure != 'private':
-            route = values['ingress']['main']
-            route['hosts'][0]['host'] = args.host
-            route['tls'][0]['hosts'] = [args.host]
+        # Staging's reviewed release with what differs in production (per_environment.py): its own
+        # identity and address; no callers, events or offers yet. Its callers are worked out from the
+        # production instances that exist (derive.sync_env) and what the image offers is carried
+        # (edit.carry_offers), both after this: the note of the offers' commit without the documents
+        # would fail the policy check below. Plain data, so staging's automation comments go too.
+        release = per_environment.for_production(source, app, args.host if args.exposure != 'private' else None)
         # Same app-scoped Secret/PVC names resolve in the independent production namespace.
         if f'{app}-staging' in json.dumps(release) or contract.default_host(app, 'staging') in json.dumps(release):
             raise EditError('staging-specific reference remains in deployment settings; edit custom production in Git')

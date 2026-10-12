@@ -65,6 +65,7 @@ from swhurl.apps.contract import (
     MANIFEST_FILE,
     NETWORK_POLICY_FILE,
     QUOTA_FILE,
+    RELOAD,
     RETAINED_STORAGE_CLASS,
     SQLITE_PATH,
     STARTUP_PERIOD,
@@ -235,7 +236,7 @@ def build_values(args) -> dict:
         controller['replicas'] = 1
         controller['strategy'] = 'Recreate'
     if args.secret_keys:
-        controller['annotations'] = {'secret.reloader.stakater.com/reload': f'{args.name}-secret'}
+        controller['annotations'] = {RELOAD: f'{args.name}-secret'}
 
     values: dict = {
         'defaultPodOptions': {

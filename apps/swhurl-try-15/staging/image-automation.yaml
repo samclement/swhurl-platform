@@ -1,0 +1,65 @@
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: swhurl-try-15
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: swhurl-try-15
+spec:
+  image: ghcr.io/samclement/swhurl-try-15
+  interval: 1h
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: swhurl-try-15-staging
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: swhurl-try-15
+spec:
+  imageRepositoryRef:
+    name: swhurl-try-15
+  filterTags:
+    pattern: ^(?P<run>[0-9]+)-[0-9a-f]{7,40}$
+    extract: $run
+  policy:
+    numerical:
+      order: asc
+  digestReflectionPolicy: Always
+  interval: 1h
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: swhurl-try-15-staging
+  namespace: flux-system
+  labels:
+    platform.swhurl.com/managed: 'true'
+    platform.swhurl.com/app: swhurl-try-15
+spec:
+  interval: 1h
+  sourceRef:
+    kind: GitRepository
+    name: swhurl-platform-write
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: fluxcdbot
+        email: fluxcdbot@users.noreply.github.com
+      messageTemplate: 'deploy: staging image for swhurl-try-15
+
+        {{ range .Changed.Changes }}
+
+        - {{ .OldValue }} -> {{ .NewValue }}
+
+        {{- end }}'
+    push:
+      branch: main
+  update:
+    path: ./apps/swhurl-try-15/staging
+    strategy: Setters

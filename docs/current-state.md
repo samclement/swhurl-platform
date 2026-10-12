@@ -1106,3 +1106,11 @@ The operator merged four of the five stage 5 pull requests (`swhurl-try-10`, `-1
 - **Fault: a promotion of `hello-ts` was refused** at 11:14:28 UTC with "staging must be healthy and running the reviewed digest". Staging was healthy: Flux's commit for `swhurl-try-12` had landed about four seconds earlier, so the latest commit on `main` was not yet applied to `hello-ts`. The refusal stands; it now says that Flux is still applying the latest commit and to try again (`92e1b01`, console image `src-947d4a352ffac475`).
 - A trial `make app-promote APP=hello-ts` in the checkout (reverted, nothing committed) changed `apps/hello-ts/prod/helmrelease.yaml`, added `apps/hello-ts/prod/offers/` and passed the policy. Not exercised: that promotion made from the console and merged.
 
+## A promotion carrying offers: hello-ts in production (12 October 2026)
+
+- Pull request #57, made by the console's **Promote to production**, changed `apps/hello-ts/prod/helmrelease.yaml` (image `38-b4de9e0`, the offers annotation, `SWHURL_API_PATH`) and added `apps/hello-ts/prod/offers/`. The auto-merge gate held it for the `SWHURL_API_PATH` line, shown as a failed `merge` check; the operator merged it (`4fe52c3`). The gate accepts that line since `0796834`; a promotion merging itself with it is not exercised.
+- After the reconcile `hello-ts/prod` runs that digest 1/1 and the app policy passes for 17 instances. Through a port-forward, production answers `/repeat?times=2` with `{"times":2,"text":"hello hello"}` and serves `/openapi.json` with the paths `/` and `/repeat`.
+- The live catalogue for prod shows "5 APIs · 0 events · 1 described by their app": `hello-ts`, with its description, both routes, its served description at `https://hello-ts.homelab.swhurl.com/openapi.json` and "Described by hello-ts's repository at `b4de9e0`, the image prod runs".
+- `make verify-platform` reported four app units "not Ready: dependency … is not ready" while the reconcile was still running, and passed once every unit was Ready.
+- All five stage 5 pull requests are merged; `swhurl-try-12` (Kotlin) is described in staging (`7f2f3ae`).
+

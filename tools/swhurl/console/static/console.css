@@ -246,12 +246,25 @@ table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
 .openlist { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-2); }
 .cols { display: grid; gap: var(--gap-3); align-items: baseline; padding: var(--gap-3) var(--gap-4); }
 .openlist.apps .cols { grid-template-columns: 1rem 11rem 6.5rem 6.5rem minmax(0, 1fr) minmax(0, 1fr) 7.5rem 8.5rem; }
-.openlist.catalogue .cols { grid-template-columns: 1rem 4.5rem minmax(0, 15rem) 7rem minmax(0, 1fr) 5.5rem 8.5rem; }
-.openlist.catalogue .panel { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--gap-4) var(--gap-6); }
+.openlist.catalogue .cols { grid-template-columns: 1rem 4.5rem minmax(0, 11rem) minmax(0, 1fr) minmax(0, 14rem); }
+.openlist.catalogue .group { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-4); padding-block: var(--gap-3); }
+.openlist.catalogue .group:last-child { border-bottom: 0; }
+.openlist.catalogue .group .name { font-size: 1rem; color: var(--text); }
+.openlist.catalogue .group .uses { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-2); font-weight: 400; }
+.openlist.catalogue .group .label { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.openlist.catalogue .group a.pill { text-decoration: none; background: var(--panel); } .openlist.catalogue .group a.pill:hover { color: var(--accent); border-color: var(--accent); }
+.openlist.catalogue .group .none { margin-left: auto; }
+.openlist.catalogue .panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-5) var(--gap-6); }
+.openlist.catalogue .panel .what { grid-column: 1 / -1; }
 .openlist.catalogue .panel pre { max-height: 22rem; overflow: auto; }
-.openlist.catalogue .choose { display: flex; flex-wrap: wrap; gap: var(--gap-2); margin: var(--gap-2) 0 var(--gap-4); }
-.openlist.catalogue .choose form.inline { margin: 0; }
-.openlist.catalogue .choose button { font-size: inherit; padding: 4px var(--gap-3); }
+.openlist.catalogue .payload { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--gap-4) var(--gap-6); margin-bottom: var(--gap-2); }
+.openlist.catalogue .payload > :only-child { grid-column: 1 / -1; }
+.openlist.catalogue .users { list-style: none; margin: 0 0 var(--gap-3); padding: 0; } .openlist.catalogue .users li { padding: 2px 0; }
+.openlist.catalogue form.use { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2); margin: 0 0 var(--gap-1); }
+.openlist.catalogue form.use label { font-size: 0.875rem; font-weight: 600; }
+.openlist.catalogue form.use select { font: inherit; font-size: 0.875rem; min-width: 14em; padding: 5px var(--gap-2); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+.openlist.catalogue .panel details.section { margin: 0; } .openlist.catalogue .panel details.section[open] > summary { margin-bottom: var(--gap-1); }
+.openlist.catalogue dl.foot { font-size: var(--size-detail); }
 .openlist.units .cols { grid-template-columns: 1rem minmax(0, 22rem) 9rem minmax(0, 1fr); padding-block: var(--gap-2); }
 .openlist.jobs .cols { grid-template-columns: 1rem 7rem minmax(0, 1.4fr) minmax(0, 1fr) 11rem minmax(0, 12rem); padding-block: var(--gap-2); }
 .cols.head { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
@@ -372,13 +385,14 @@ svg.map path.event { stroke: var(--muted); stroke-dasharray: 5 4; }
   .rows .field > :not(:first-child) { grid-column: 1; }
   form.wizard { padding: var(--gap-3); } form.wizard .pair { grid-template-columns: minmax(0, 1fr); }
   .cols.head { display: none; }
-  .openlist .cols { grid-template-columns: 1rem minmax(0, 1fr); gap: var(--gap-1) var(--gap-2); padding: var(--gap-3); }
+  .openlist.openlist .cols { grid-template-columns: 1rem minmax(0, 1fr); gap: var(--gap-1) var(--gap-2); padding: var(--gap-3); }
   details.openrow > summary > :not(.chev) { grid-column: 2; }
   details.openrow .cell { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; white-space: normal; }
   details.openrow .cell[data-label]::before { content: attr(data-label); flex: 0 0 6.25rem; color: var(--muted); font-size: var(--size-label); font-weight: 600;
                                               letter-spacing: 0.06em; text-transform: uppercase; }
   details.openrow .cell.act { text-align: left; } details.openrow .cell.act:empty { display: none; }
-  .panel, .openlist.apps .panel { grid-template-columns: minmax(0, 1fr); padding: var(--gap-3); }
+  .panel, .openlist.apps .panel, .openlist.catalogue .panel, .openlist.catalogue .payload { grid-template-columns: minmax(0, 1fr); padding: var(--gap-3); }
+  .openlist.catalogue .payload { padding: 0; } .openlist.catalogue .group .none { margin-left: 0; }
   .action-row { flex-direction: column; } .action-row form { width: 100%; }
   .card-head, .card-body { padding: var(--gap-3); } .card-head h2, .card-head p { margin-right: 0; }
   .card-head > details.act, .card-head > a.act { display: inline-flex; margin: var(--gap-3) var(--gap-2) 0 0; }

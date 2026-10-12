@@ -292,22 +292,55 @@ channels:
         self.assertEqual(catalogue.entries(cluster.apps(self.described_cluster()), 'prod', documents)[0].described, False,
                          'production has its own image and documents')
 
-    def test_the_catalogue_page_shows_routes_payloads_and_one_button_per_app_that_could_use_it(self):
+    def test_the_catalogue_groups_offers_by_app_and_says_what_each_app_uses(self):
+        from swhurl.console import catalogue
+        rows = cluster.apps(self.described_cluster())
+        found = catalogue.entries(rows, 'staging', catalogue.Documents(self.documents()))
+        groups = catalogue.groups(rows, 'staging', found)
+        self.assertEqual([(g.app, [e.name for e in g.entries]) for g in groups],
+                         [('orders', ['orders', 'orders.created', 'orders.paid']), ('reports', ['reports']), ('job', [])],
+                         'apps that offer something first; an app that only uses is still listed')
+        uses = {g.app: g.uses for g in groups}
+        self.assertEqual((uses['reports'], uses['job']), ((('api', 'orders'),), (('event', 'orders.created'),)))
+        schema = {'type': 'object', 'required': ['id', 'caller'], 'properties': {
+            'id': {'type': 'string', 'format': 'uuid', 'description': 'Its id'},
+            'caller': {'type': 'object', 'required': ['type'], 'properties': {'type': {'enum': ['app', 'user']}, 'id': {'type': ['string', 'null']}}},
+            'lines': {'type': 'array', 'items': {'type': 'object', 'required': ['item'], 'properties': {'item': {'type': 'string'}}}}}}
+        self.assertEqual([(f.name, f.type, f.required, f.meaning) for f in catalogue.fields(schema)], [
+            ('id', 'string (uuid)', True, 'Its id'), ('caller', 'object', True, ''), ('caller.type', 'one of app, user', True, ''),
+            ('caller.id', 'string or null', False, ''), ('lines', 'list of object', False, ''), ('lines[].item', 'string', False, '')],
+            'one row per field; a field of an optional parent is not required')
+        self.assertEqual(catalogue.fields({'type': 'string'}), (), 'not an object: the schema is shown instead')
+        self.assertEqual(catalogue.Entry('api', 'a', 'a', '', operations=(('GET', '/', ''), ('GET', '/o/{id}', ''), ('POST', '/o', ''), ('GET', '/o', ''))).sample_path, '/o')
+        self.assertEqual(catalogue.Entry('api', 'a', 'a', '').sample_path, '/')
+
+    def test_the_catalogue_page_shows_routes_payload_fields_and_one_choice_of_app_to_use_it(self):
         c = client(self.described_cluster(), documents=self.documents())
         text = c.get('/catalogue', headers=WHO).text
         self.assertIn('2 APIs · 2 events · 2 described by their app', text)
         self.assertIn('<td><span class="pill">GET</span></td><td><code>/orders/{id}</code></td><td>Read one order</td>', text)
         self.assertIn('An order was &lt;b&gt;accepted&lt;/b&gt;', text, 'what an app says about itself is escaped')
-        self.assertIn('&#34;required&#34;: [', text, 'the payload schema')
-        self.assertIn('<form class="inline" method="post" action="/apps/reports/staging/connect"', text)
+        self.assertIn('<tr><td><code>id</code></td><td>string</td><td>yes</td><td>—</td></tr>', text, 'the payload, one row per field')
+        self.assertIn('&#34;required&#34;: [', text, 'the full schema is still there, closed')
+        self.assertIn('<a class="name" href="/apps/reports/staging">reports</a>', text)
+        self.assertIn('href="/catalogue?env=staging#api-orders" title="Show orders in the catalogue">API orders</a>', text, 'what reports uses')
+        self.assertIn('href="/catalogue?env=staging#event-orders.created" title="Show orders.created in the catalogue">event orders.created</a>', text)
+        self.assertIn('<span class="muted none">offers nothing</span>', text, 'job only uses')
+        self.assertEqual(text.count('<form class="inline use" method="post" action="/catalogue/staging/use"'), 4, 'one form per offer')
         self.assertIn('<input type="hidden" name="subscribe" value="orders.paid">', text)
         self.assertIn('<input type="hidden" name="calls" value="orders">', text)
-        self.assertNotIn('action="/apps/orders/staging/connect" data-confirm="Open a pull request so that orders/staging may call orders', text)
+        api = text[text.index('id="api-orders"'):text.index('id="event-orders.created"')]
+        self.assertIn('<option value="job">job (team ', api)
+        self.assertNotIn('<option value="orders">', api, 'not itself')
+        self.assertNotIn('<option value="reports">', api, 'not who calls it already')
+        self.assertIn('<a href="/apps/reports/staging">reports</a> <span class="muted">team ', api, 'who uses it, by name')
+        self.assertIn('service("orders").fetch("/")', api)
         self.assertIn('href="https://github.com/samclement/orders/tree/abc1234"', text)
         self.assertIn('reports does not describe its API', text)
         self.assertIn('<a href="/catalogue" class="here">Catalogue</a>', text)
         events = c.get('/catalogue?kind=event&team=payments', headers=WHO).text
         self.assertIn('0 APIs · 2 events', events)
+        self.assertNotIn('offers nothing', events, 'a kind was chosen: apps that offer neither are left out')
         self.assertIn('Nothing is offered in prod by team nobody', c.get('/catalogue?env=prod&team=nobody', headers=WHO).text)
         self.assertEqual(c.get('/catalogue').status_code, 401)
 

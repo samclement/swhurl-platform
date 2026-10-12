@@ -77,7 +77,7 @@ Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `liv
 | `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links | Local |
 | `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment, test classes in parallel) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
-| `check-templates` | Render every combination of each stack template's questions; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod ([apps](apps.md#stacks-and-features)) | Local (reads GitHub) |
+| `check-templates` | Render every combination of each stack template's questions; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; needs `sops` for a template that declares events) |
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
 | `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
 | `notifications-heartbeat` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |

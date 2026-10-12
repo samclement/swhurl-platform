@@ -31,10 +31,10 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from swhurl import dashboards
+from swhurl import ROOT, dashboards
 from swhurl.apps import contract, new, ops, repo
 from swhurl.apps.yaml_file import EditError
-from swhurl.console import actions, changes, cluster, logconfig, promotion, repos
+from swhurl.console import actions, catalogue, changes, cluster, logconfig, promotion, repos
 from swhurl.run import CommandError, Runner
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -165,17 +165,44 @@ class RequireIdentity(BaseHTTPMiddleware):
 
 def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions.Jobs | None = None,
                github: changes.GitHub | None = None, app_repos: repos.AppReposToken | None = None,
-               repo_opener: repo.Opener | None = None) -> Starlette:
+               repo_opener: repo.Opener | None = None, documents: catalogue.Reader | None = None) -> Starlette:
     """``github`` and ``app_repos`` default to the tokens in the environment (none: the new-app form says so)."""
     jobs = jobs or actions.Jobs(runner)
     github = github or changes.github_from_env(runner)
     app_repos = app_repos or repos.token_from_env(runner)
+
+    def platform_file(path: str) -> str | None:
+        """A file of this repository's main branch, through the console's GitHub token."""
+        api = changes.GitHubAPI(runner, github)
+        try:
+            reply = api.client.get(f'/contents/{path}', params={'ref': 'main'}, headers={'Accept': 'application/vnd.github.raw+json'})
+        finally:
+            api.client.close()
+        if reply.status_code == 404:
+            return None
+        reply.raise_for_status()
+        return reply.text
+
+    def local_file(path: str) -> str | None:
+        return (ROOT / path).read_text() if (ROOT / path).is_file() else None
+
+    # What apps offer is described in Git (apps/<app>/<env>/offers/): through GitHub, or without a token
+    # from this checkout if it has one (console --dev); the image has no apps/, so then not at all.
+    described = catalogue.Documents(documents or (platform_file if github else local_file if (ROOT / 'apps').is_dir() else None))
+
+    def offer_text(row: cluster.AppRow, event: str = '') -> str:
+        """What an app's own documents say about its API, or about one of its events ('' if nothing)."""
+        found = described.of(row.instance.app, row.instance.env, row.connections.offers)
+        if event:
+            return next((e.description for e in found.events if e.name == event), '')
+        return found.api.description if found.api else ''
 
     def page(request: Request, name: str, status_code: int = 200, **context) -> Response:
         context.update(identity=request.state.identity, path=request.url.path, refused=actions.REFUSED,
                        read_at=dt.datetime.now().astimezone().strftime('%H:%M'),
                        running_jobs=[j for j in jobs.recent() if j.state == 'running'])
         context.setdefault('github', github)
+        context.setdefault('offer_text', offer_text)
         context.update(auto_refresh=name in SELF_REFRESHING and status_code == 200,
                        refresh_url=request.url.path + (f'?{request.url.query}' if request.url.query else ''))
         return TEMPLATES.TemplateResponse(request, name, context, status_code=status_code)
@@ -229,6 +256,19 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     'map': cluster.app_map([row for row in rows if not team or row.team == team],
                                            env if env in contract.ENVIRONMENTS else 'staging') if view == 'map' else None}
         return reading(request, 'apps.html', read)
+
+    def catalogue_page(request: Request) -> Response:
+        """What the apps of one environment offer each other: APIs and events, described where the app describes them."""
+        env = request.query_params.get('env', 'staging')
+        env = env if env in contract.ENVIRONMENTS else 'staging'
+        kind, team = request.query_params.get('kind', ''), request.query_params.get('team', '')
+
+        def read():
+            found = catalogue.entries(cluster.apps(runner), env, described)
+            return {'entries': [e for e in found if (not kind or e.kind == kind) and (not team or e.team == team)],
+                    'teams': sorted({e.team for e in found if e.team}), 'env': env, 'kind': kind if kind in ('api', 'event') else '',
+                    'team': team, 'owner': contract.APP_OWNER}
+        return reading(request, 'catalogue.html', read)
 
     def read_app(request: Request) -> Response:
         found = cluster.instance(request.path_params['app'], request.path_params['env'])
@@ -689,7 +729,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return PlainTextResponse('ok\n')
 
     return Starlette(
-        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')),
+        routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')), Route('/catalogue', catalogue_page),
                 Route('/teams', teams_page), Route('/teams/{action}', change_team, methods=['POST']),
                 Route('/team-channel/{action}', change_channel, methods=['POST']),
                 Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),

@@ -246,6 +246,12 @@ table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
 .openlist { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--gap-2); }
 .cols { display: grid; gap: var(--gap-3); align-items: baseline; padding: var(--gap-3) var(--gap-4); }
 .openlist.apps .cols { grid-template-columns: 1rem 11rem 6.5rem 6.5rem minmax(0, 1fr) minmax(0, 1fr) 7.5rem 8.5rem; }
+.openlist.catalogue .cols { grid-template-columns: 1rem 4.5rem minmax(0, 15rem) 7rem minmax(0, 1fr) 5.5rem 8.5rem; }
+.openlist.catalogue .panel { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--gap-4) var(--gap-6); }
+.openlist.catalogue .panel pre { max-height: 22rem; overflow: auto; }
+.openlist.catalogue .choose { display: flex; flex-wrap: wrap; gap: var(--gap-2); margin: var(--gap-2) 0 var(--gap-4); }
+.openlist.catalogue .choose form.inline { margin: 0; }
+.openlist.catalogue .choose button { font-size: inherit; padding: 4px var(--gap-3); }
 .openlist.units .cols { grid-template-columns: 1rem minmax(0, 22rem) 9rem minmax(0, 1fr); padding-block: var(--gap-2); }
 .openlist.jobs .cols { grid-template-columns: 1rem 7rem minmax(0, 1.4fr) minmax(0, 1fr) 11rem minmax(0, 12rem); padding-block: var(--gap-2); }
 .cols.head { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;

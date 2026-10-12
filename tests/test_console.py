@@ -241,6 +241,114 @@ class ConnectionsTests(unittest.TestCase):
         self.assertIn('Connect to an app</summary>', text)
         self.assertEqual(cluster.Connections().summary, '')
 
+    ASYNCAPI = """asyncapi: 3.0.0
+info: {title: orders, version: 0.1.0}
+channels:
+  created:
+    address: created
+    description: An order was <b>accepted</b>
+    messages:
+      created:
+        payload: {type: object, required: [id], properties: {id: {type: string}}}
+        examples: [{payload: {id: o-1}}]
+"""
+    OPENAPI = '{"openapi": "3.1.0", "info": {"title": "orders", "description": "Create and read orders"}, "paths": {"/orders/{id}": {"get": {"summary": "Read one order"}}}}'
+
+    def described_cluster(self, commit='abc1234'):
+        runner = self.cluster()
+        releases = runner.json(list(cluster.RELEASES))['items']
+        next(r for r in releases if r['metadata']['namespace'] == 'orders-staging')['metadata']['annotations'] = {
+            'platform.swhurl.com/offers': commit}
+        runner._rules.insert(0, (tuple(cluster.RELEASES[:3]), Result((), 0, json.dumps({'items': releases}), '')))
+        return runner
+
+    def documents(self, commit='abc1234', reads=None):
+        files = {'apps/orders/staging/offers/source.yaml': f'repository: samclement/orders\ncommit: {commit}\napi: openapi.json\nevents: asyncapi.yaml\n',
+                 'apps/orders/staging/offers/openapi.json': self.OPENAPI, 'apps/orders/staging/offers/asyncapi.yaml': self.ASYNCAPI}
+
+        def reader(path):
+            if reads is not None:
+                reads.append(path)
+            return files.get(path)
+        return reader
+
+    def test_the_catalogue_lists_every_api_and_event_with_what_its_app_says_about_it(self):
+        from swhurl.console import catalogue
+        reads = []
+        documents = catalogue.Documents(self.documents(reads=reads))
+        found = catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+        self.assertEqual([(e.kind, e.name, e.described, e.description, e.used_by) for e in found], [
+            ('api', 'orders', True, 'Create and read orders', ('reports',)),
+            ('api', 'reports', False, '', ()),
+            ('event', 'orders.created', True, 'An order was <b>accepted</b>', ('job',)),
+            ('event', 'orders.paid', False, '', ())], 'APIs first; a worker offers no API; what is not described is still listed')
+        api, _, created, paid = found
+        self.assertEqual(api.operations, (('GET', '/orders/{id}', 'Read one order'),))
+        self.assertEqual((json.loads(created.schema)['required'], json.loads(created.example)), (['id'], {'id': 'o-1'}))
+        self.assertEqual([name for name, _ in api.could_use], ['job'], 'not itself, not who calls it already')
+        self.assertEqual([name for name, _ in paid.could_use], ['job', 'reports'])
+        catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+        self.assertEqual(len(reads), 3, 'the documents of a commit are read once')
+        self.assertEqual(catalogue.entries(cluster.apps(self.described_cluster()), 'prod', documents)[0].described, False,
+                         'production has its own image and documents')
+
+    def test_the_catalogue_page_shows_routes_payloads_and_one_button_per_app_that_could_use_it(self):
+        c = client(self.described_cluster(), documents=self.documents())
+        text = c.get('/catalogue', headers=WHO).text
+        self.assertIn('2 APIs · 2 events · 2 described by their app', text)
+        self.assertIn('<td><span class="pill">GET</span></td><td><code>/orders/{id}</code></td><td>Read one order</td>', text)
+        self.assertIn('An order was &lt;b&gt;accepted&lt;/b&gt;', text, 'what an app says about itself is escaped')
+        self.assertIn('&#34;required&#34;: [', text, 'the payload schema')
+        self.assertIn('<form class="inline" method="post" action="/apps/reports/staging/connect"', text)
+        self.assertIn('<input type="hidden" name="subscribe" value="orders.paid">', text)
+        self.assertIn('<input type="hidden" name="calls" value="orders">', text)
+        self.assertNotIn('action="/apps/orders/staging/connect" data-confirm="Open a pull request so that orders/staging may call orders', text)
+        self.assertIn('href="https://github.com/samclement/orders/tree/abc1234"', text)
+        self.assertIn('reports does not describe its API', text)
+        self.assertIn('<a href="/catalogue" class="here">Catalogue</a>', text)
+        events = c.get('/catalogue?kind=event&team=payments', headers=WHO).text
+        self.assertIn('0 APIs · 2 events', events)
+        self.assertIn('Nothing is offered in prod by team nobody', c.get('/catalogue?env=prod&team=nobody', headers=WHO).text)
+        self.assertEqual(c.get('/catalogue').status_code, 401)
+
+    def test_descriptions_that_cannot_be_read_leave_the_catalogue_standing(self):
+        from swhurl.console import catalogue
+
+        def broken(path):
+            raise OSError('GitHub is away')
+        clock = [0.0]
+        for reader, message in ((broken, 'could not be read from Git: OSError'), (None, 'no GitHub token'),
+                                (lambda path: None, 'is not in Git yet'),
+                                (self.documents(commit='0000000'), '')):
+            with self.subTest(message=message):
+                documents = catalogue.Documents(reader, clock=lambda: clock[0])
+                found = catalogue.entries(cluster.apps(self.described_cluster()), 'staging', documents)
+                self.assertEqual(len(found), 4)
+                self.assertIn(message, found[0].problem)
+                self.assertEqual(documents.kept, {}, 'only what matches the running commit is kept for good')
+        calls = []
+        documents = catalogue.Documents(lambda path: calls.append(path) or broken(path), clock=lambda: clock[0])
+        for _ in range(3):
+            documents.of('orders', 'staging', 'abc1234')
+        self.assertEqual(len(calls), 1, 'a failure is not retried for five minutes')
+        clock[0] = 301
+        documents.of('orders', 'staging', 'abc1234')
+        self.assertEqual(len(calls), 2)
+        text = client(self.described_cluster(), documents=broken).get('/catalogue', headers=WHO).text
+        self.assertIn('Its description could not be shown: could not be read from Git: OSError.', text)
+
+    def test_the_connect_picker_says_what_each_choice_is(self):
+        runner = self.described_cluster()
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-reports-staging')))
+        runner.on('kubectl', '-n', 'reports-staging', 'get', 'helmrelease', stdout=json.dumps(
+            next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'reports-staging')))
+        runner.on('kubectl', '-n', 'reports-staging', 'get', stdout=json.dumps({'items': []}))
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
+        text = client(runner, documents=self.documents()).get('/apps/reports/staging', headers=WHO).text
+        self.assertIn('<code>orders.created</code> <span class="muted">from orders, team payments · An order was &lt;b&gt;accepted&lt;/b&gt;</span>', text)
+        self.assertIn('<code>orders.paid</code> <span class="muted">from orders, team payments</span>', text)
+        self.assertIn('<a href="/catalogue?env=staging">catalogue</a>', text)
+
     def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):
         runner = fake(**{'kubectl get namespaces -l platform.swhurl.com/app': ''})
         runner._rules.insert(0, (('kubectl', 'get', 'namespaces'), Result((), 1, '', 'forbidden')))

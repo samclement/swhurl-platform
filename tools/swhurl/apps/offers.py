@@ -145,6 +145,26 @@ def check_api(text: str, name: str) -> dict:
     return doc
 
 
+METHODS = ('get', 'put', 'post', 'delete', 'patch', 'head', 'options')
+
+
+@dataclass(frozen=True)
+class Api:
+    title: str = ''
+    description: str = ''
+    operations: tuple[tuple[str, str, str], ...] = ()  # (METHOD, path, summary)
+
+
+def api(text: str, name: str) -> Api:
+    """What an OpenAPI document says its app answers: each path and method with its summary."""
+    doc = check_api(text, name)
+    info = doc.get('info') if isinstance(doc.get('info'), dict) else {}
+    operations = [(method.upper(), str(path), str(operation.get('summary') or operation.get('description') or ''))
+                  for path, item in doc['paths'].items() if isinstance(item, dict)
+                  for method, operation in item.items() if method in METHODS and isinstance(operation, dict)]
+    return Api(str(info.get('title') or ''), str(info.get('description') or ''), tuple(operations))
+
+
 @dataclass(frozen=True)
 class Offers:
     """What an instance keeps in its offers directory."""

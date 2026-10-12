@@ -406,7 +406,7 @@ class EditTests(unittest.TestCase):
         users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
         self.assertEqual(users['UCONTROLLER']['publish']['allow'], ['$JS.API.>'])
         self.assertEqual(users[self.env('orders')['SWHURL_EVENTS_NKEY']], {
-            'publish': {'allow': ['staging.orders.created', 'staging.orders.cancelled', 'staging.orders.paid']},
+            'publish': {'allow': ['staging.orders.>']},  # its whole prefix: a new image may carry a new event
             'subscribe': {'allow': ['_INBOX.staging.orders.>']}})
         self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']], {
             'publish': {'allow': ['$JS.API.CONSUMER.INFO.staging-orders.hello_created',
@@ -459,6 +459,159 @@ class EditTests(unittest.TestCase):
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'a refused change is undone')
         self.quiet(edit.set_events, self.root, 'orders', 'staging', remove_publish=['created'], runner=runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'paid')
+
+    ASYNCAPI = """asyncapi: 3.0.0
+info: {title: orders, version: 0.1.0}
+channels:
+  created:
+    address: created
+    description: An order was accepted
+    messages:
+      created: {$ref: '#/components/messages/created'}
+  paid:
+    address: paid
+    description: An order was paid
+    messages:
+      paid: {payload: {type: object}, examples: [{payload: {id: 1}}]}
+  heard:
+    address: heard
+operations:
+  sendCreated: {action: send, channel: {$ref: '#/channels/created'}}
+  sendPaid: {action: send, channel: {$ref: '#/channels/paid'}}
+  receiveHeard: {action: receive, channel: {$ref: '#/channels/heard'}}
+components:
+  messages:
+    created:
+      payload: {type: object, required: [id], properties: {id: {type: string}}}
+      examples: [{payload: {id: o-1}}]
+"""
+
+    def repository(self, files):
+        """An opener serving one app repository at one commit, and the requests it saw."""
+        import urllib.error
+        seen = []
+
+        def opener(request):
+            seen.append(request.full_url)
+            path = request.full_url.split('/contents/')[1].split('?')[0]
+            if path not in files:
+                raise urllib.error.HTTPError(request.full_url, 404, 'Not Found', {}, None)
+            return files[path].encode()
+        return opener, seen
+
+    def built_from_a_repository(self, app='orders', tag='7-abc1234'):
+        for env in ('staging', 'prod'):
+            path = self.root / 'apps' / app / env / 'helmrelease.yaml'
+            path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
+                            .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
+
+    def test_offers_are_read_at_the_images_commit_and_say_what_the_app_publishes(self):
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        manifest = 'version: 1\nkind: web\nprovides: {api: /openapi.json, apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
+        api = '{"openapi": "3.1.0", "info": {"title": "orders", "version": "0.1.0"}, "paths": {"/": {}}}\n'
+        opener, seen = self.repository({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': self.ASYNCAPI})
+        changed, _ = self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.assertTrue(changed)
+        self.assertTrue(all('/repos/samclement/orders/contents/' in url and url.endswith('?ref=abc1234') for url in seen), seen)
+        instance = self.root / 'apps/orders/staging'
+        self.assertEqual({p.name for p in (instance / 'offers').iterdir()}, {'source.yaml', 'openapi.json', 'asyncapi.yaml'})
+        self.assertEqual((instance / 'offers/asyncapi.yaml').read_text(), self.ASYNCAPI, 'kept as the repository has it')
+        found = offers.read(instance)
+        self.assertEqual((found.repository, found.commit, found.api, found.events), ('samclement/orders', 'abc1234', 'openapi.json', 'asyncapi.yaml'))
+        self.assertEqual([(e.name, e.description, e.example) for e in found.described],
+                         [('created', 'An order was accepted', {'id': 'o-1'}), ('paid', 'An order was paid', {'id': 1})],
+                         'the channels it sends to; a reference is followed')
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'what it publishes follows the document')
+        self.assertEqual(len(self.seeds), 1, 'its NATS key is made the first time')
+        release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
+        self.assertEqual(release['metadata']['annotations'][offers.ANNOTATION], 'abc1234')
+        self.assertNotIn('offers', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'], 'documents, not resources')
+        self.assertEqual(offers.problems(instance, ['created', 'paid'], 'abc1234'), [])
+        self.assertIn('describes created, paid', offers.problems(instance, ['created'], 'abc1234')[0])
+        self.assertIn('the release says its offers are from 0000000', offers.problems(instance, ['created', 'paid'], '0000000')[0])
+        self.assertEqual(self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0], False,
+                         'reading the same commit again changes nothing')
+
+        # Another app subscribes; a later image that drops the event is refused and nothing changes.
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', add_subscribe=['orders.paid'], runner=runner)
+        dropped = self.ASYNCAPI.replace("  sendPaid: {action: send, channel: {$ref: '#/channels/paid'}}\n", '')
+        opener, _ = self.repository({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': dropped})
+        before = {p: p.read_text() for p in instance.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(edit.EditError, 'hello/staging subscribes to orders.paid, which orders/staging does not publish'):
+            edit.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
+
+        # An app that stops describing itself keeps what it publishes; only the documents go.
+        opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\n'})
+        self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.assertFalse((instance / 'offers').exists())
+        self.assertNotIn('annotations', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'])
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
+
+    def test_offers_that_cannot_be_used_are_refused_and_change_nothing(self):
+        self.with_units()
+        self.built_from_a_repository()
+        instance = self.root / 'apps/orders/staging'
+        before = (instance / 'helmrelease.yaml').read_text()
+        manifest = 'version: 1\nkind: web\nprovides: {apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
+        api = 'openapi: 3.0.1\npaths: {}\n'
+        cases = (({}, 'has no swhurl.yaml'),
+                 ({'swhurl.yaml': manifest, 'openapi.json': api}, r'names asyncapi.yaml \(provides.eventsFile\), which samclement/orders@abc1234 does not have'),
+                 ({'swhurl.yaml': manifest, 'openapi.json': 'swagger: "2.0"', 'asyncapi.yaml': self.ASYNCAPI}, 'must be an OpenAPI 3 document'),
+                 ({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': 'asyncapi: 2.6.0'}, 'must be an AsyncAPI 3 document'),
+                 ({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': self.ASYNCAPI.replace('address: paid', 'address: Paid.Up')},
+                  'an event is a lowercase name'),
+                 ({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': '{asyncapi: 3.0.0, channels: [oops'}, 'not valid YAML'),
+                 ({'swhurl.yaml': 'provides: {apiFile: ../../etc/passwd}'}, 'is not a file in the repository'))
+        for files, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_offers(self.root, 'orders', 'staging', opener=self.repository(files)[0], runner=self.sops())
+        self.assertEqual((instance / 'helmrelease.yaml').read_text(), before)
+        self.assertFalse((instance / 'offers').exists())
+        (self.root / 'apps/hello/staging/helmrelease.yaml').write_text(
+            (self.root / 'apps/hello/staging/helmrelease.yaml').read_text().replace('tag: 1.27-alpine', 'tag: latest'))
+        with self.assertRaisesRegex(edit.EditError, 'only an app published from its own GitHub repository has offers'):
+            edit.set_offers(self.root, 'hello', 'staging', opener=self.repository({})[0])
+
+    def test_every_instance_of_an_environment_is_read_and_one_failure_does_not_stop_the_rest(self):
+        self.with_units()
+        self.built_from_a_repository('orders')
+        self.second_app('billing', port=9100)
+        self.built_from_a_repository('billing')
+        import urllib.error
+
+        def opener(request):
+            if '/repos/samclement/billing/' in request.full_url:
+                raise urllib.error.HTTPError(request.full_url, 500, 'Server Error', {}, None)
+            return b'version: 1\nkind: web\n'
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+            code = edit.main_offers(['--all', 'staging', '--root', str(self.root)], opener=opener)
+        self.assertEqual(code, 1)
+        self.assertIn('[OK] orders/staging at abc1234 offers nothing', out.getvalue())
+        self.assertIn('[ERROR] billing/staging: could not read swhurl.yaml from samclement/billing@abc1234: 500', err.getvalue())
+        self.assertNotIn('hello', out.getvalue() + err.getvalue(), 'an image no app repository built is skipped')
+
+    def test_promotion_carries_what_the_promoted_image_offers(self):
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        manifest = 'version: 1\nkind: web\nprovides: {eventsFile: asyncapi.yaml}\n'
+        self.quiet(edit.set_offers, self.root, 'orders', 'staging',
+                   opener=self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': self.ASYNCAPI})[0], runner=runner)
+        staging = self.root / 'apps/orders/staging/helmrelease.yaml'
+        staging.write_text(staging.read_text().replace(staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
+        prod = self.root / 'apps/orders/prod'
+        self.assertEqual(offers.read(prod).commit, 'abc1234')
+        self.assertEqual((prod / 'offers/asyncapi.yaml').read_text(), self.ASYNCAPI)
+        self.assertEqual(self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'no second declaration for production')
+        self.assertEqual(len(self.seeds), 2, 'production has its own key')
+        self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
+        self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [], 'offers follow each image')
 
     def test_event_refusals_change_nothing(self):
         self.with_units()

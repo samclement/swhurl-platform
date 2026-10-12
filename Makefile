@@ -129,6 +129,11 @@ app-events: ## APP= ENV= ARGS="--publish created --subscribe orders.created" Set
 	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-events APP=<app> ENV=<env> ARGS='--publish created'" >&2; exit 2; }
 	$(SWHURL_APPS) app-events $(APP) $(ENV) $(ARGS)
 
+.PHONY: app-offers
+app-offers: ## APP= ENV= (or ARGS="--all staging") Read what an app offers, its API and event documents, from its repository (Git edit)
+	@[[ -n "$(APP)" && -n "$(ENV)" || -n "$(ARGS)" ]] || { echo "Usage: make app-offers APP=<app> ENV=<env>, or ARGS='--all staging'" >&2; exit 2; }
+	$(SWHURL_APPS) app-offers $(APP) $(ENV) $(ARGS)
+
 .PHONY: app-sync
 app-sync: ## Rewrite what the platform derives in every instance: identity, signing keys, allowed callers (Git edit)
 	$(SWHURL_APPS) app-sync

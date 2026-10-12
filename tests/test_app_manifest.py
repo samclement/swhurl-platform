@@ -43,7 +43,8 @@ class ManifestTests(unittest.TestCase):
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
         self.assertEqual(manifest_defaults(web)['api_path'], '/openapi.json')
         manifest_defaults({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
-        manifest_defaults({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})
+        self.assertTrue(manifest_defaults({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})['offers'], 'app-new reads the documents')
+        self.assertNotIn('offers', manifest_defaults(web))
         for bad, message in (({**doc, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
                              ({**web, 'provides': {'events': []}}, 'apiFile and eventsFile only'),
                              ({**web, 'provides': {'apiFile': '../x'}}, 'a file in the repository, such as openapi.json'),

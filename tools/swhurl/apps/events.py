@@ -81,8 +81,14 @@ def inbox(env: str, app: str) -> str:
 
 
 def user(nkey: str, env: str, app: str, publishes: list[str], subscribes: list[tuple[str, str]]) -> dict:
-    """One NATS user: it may publish its declared events, and fetch and acknowledge the events it subscribes to."""
-    allow = [subject(env, app, event) for event in publishes]
+    """One NATS user: a publisher may publish anything under its own name, and an app may fetch and
+    acknowledge exactly the events it subscribes to.
+
+    The publish permission is the app's whole prefix, not its list of events: a new image can carry a
+    new event before the platform has read its description (make app-offers), and an exact list would
+    refuse it until then. The app's own helper holds it to the events its asyncapi.yaml describes.
+    """
+    allow = [subject(env, app, '>')] if publishes else []
     for publisher, event in subscribes:
         on = f'{stream(env, publisher)}.{consumer(app, event)}'
         allow += [f'$JS.API.CONSUMER.INFO.{on}', f'$JS.API.CONSUMER.MSG.NEXT.{on}', f'$JS.ACK.{on}.>']

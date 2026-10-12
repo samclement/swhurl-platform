@@ -597,6 +597,15 @@ def main(argv=None, opener: Opener = _open) -> int:
                 # Nothing half-made: the instance without its calls or events would start and fail.
                 edit.remove(args.root.resolve(), args.name, args.env)
                 raise GenerationError(f'--calls, --publish or --subscribe: {error}') from None
+        if getattr(args, 'offers', False) and args.from_repo:
+            # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the
+            # documents beside the instance from the start, and publish what the events document says.
+            from swhurl.apps import edit
+            try:
+                edit.set_offers(args.root.resolve(), args.name, args.env, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
+            except edit.EditError as error:
+                edit.remove(args.root.resolve(), args.name, args.env)
+                raise GenerationError(f'what the app offers could not be read: {error}') from None
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 2

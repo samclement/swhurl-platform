@@ -247,6 +247,8 @@ def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
         path = provides.get(key)
         if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
             raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
+    if provides.get('apiFile') or provides.get('eventsFile'):
+        defaults['offers'] = True  # app-new reads them from the repository (make app-offers)
     if provides.get('apiFile') and kind != 'web':
         raise fail('provides.apiFile applies to kind web only')
     if provides.get('api'):

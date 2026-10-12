@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from swhurl.apps import calling, contract, events, helmrelease, ops, promotion
+from swhurl.apps import calling, contract, events, helmrelease, offers, ops, promotion
 from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
@@ -72,6 +72,7 @@ class Connections:
     subscribes: tuple[str, ...] = ()  # <app>.<event>
     subscribers: tuple[tuple[str, str], ...] = ()  # (its event, the app receiving it)
     rows: tuple[links.Connection, ...] = ()  # the same, one row per connection: what every list shows
+    offers: str = ''  # the commit its API and event documents were read at (make app-offers); '' if it has none
 
     @property
     def summary(self) -> str:
@@ -234,7 +235,8 @@ def apps(runner: Runner) -> list[AppRow]:
             address, (f'https://{hosts[0]}{path}' if hosts else address + path) if path else '',
             tuple(calls), tuple(callers), tuple(publishes), tuple('.'.join(pair) for pair in subscribes), tuple(subscribers),
             links.rows(calls, callers, publishes, subscribes, subscribers,
-                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env}))
+                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env}),
+            str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
         rows.append(AppRow(instance, ready_condition(unit), bool(unit['spec'].get('suspend')),
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts, ready_reason(unit),

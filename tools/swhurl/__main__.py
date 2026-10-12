@@ -42,6 +42,7 @@ COMMANDS = {
     'channel-remove': ('swhurl.apps.teams', 'main_channel_remove', 'Remove a notification channel no team notifies (Git edit)'),
     'app-calls': ('swhurl.apps.edit', 'main_calls', 'Change which apps an instance may call; updates the callees too (Git edit)'),
     'app-events': ('swhurl.apps.edit', 'main_events', 'Set the events an instance publishes and receives; creates its NATS key the first time (Git edit)'),
+    'app-offers': ('swhurl.apps.edit', 'main_offers', "Read what an app offers (its API and event documents) from its repository at its image's commit (Git edit)"),
     'app-sync': ('swhurl.apps.edit', 'main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, callers (Git edit)'),
     'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),
     'check-otel': ('swhurl.otel', 'main', 'Validate each OTel collector config with the collector version it will run'),

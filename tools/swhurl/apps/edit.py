@@ -6,6 +6,7 @@
     app-team APP --team T                          move an app (every environment) to a registered team
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
     app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
+    app-offers APP ENV | --all ENV                 read what an app offers (its API and event documents) from its repository
     app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -16,13 +17,14 @@ quotes and key order. Unsupported custom structures are refused explicitly.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import events, helmrelease, nkeys, ops, promotion
+from swhurl.apps import events, helmrelease, nkeys, offers, ops, promotion
 from swhurl.apps.calling import (
     callee_address,
     callee_variable,
@@ -33,6 +35,7 @@ from swhurl.apps.contract import (
     ENVIRONMENTS,
     EXPOSURE,
     EXPOSURES,
+    MANIFEST_FILE,
     TEAM,
     default_host,
     in_cookie_domain,
@@ -43,6 +46,7 @@ from swhurl.apps.derive import (
     container,
     controller,
     instance_dir,
+    instances_in,
     isolation_edits,
     service_port,
     subscribers_of,
@@ -176,6 +180,112 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
     return instance
 
 
+def write_offers(root: Path, app: str, env: str, repository: str, commit: str, files: dict[str, str],
+                 described: list[offers.Event] | None, *, runner: Runner | None = None) -> bool:
+    """Keep an instance's offers (``files``: name in the offers directory -> text) and what follows from
+    them: the release's annotation, and with an events document the events it publishes. Returns whether
+    anything changed. Without files the directory and annotation go; what it publishes is left as it is.
+    A refusal (an event another app still receives is gone) leaves everything as it was."""
+    instance = instance_dir(root, app, env)
+    folder = instance / offers.OFFERS_DIR
+    release = instance / 'helmrelease.yaml'
+    before = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
+    if files:
+        source = {'repository': repository, 'commit': commit}
+        source |= {key: name for key, name in (('api', next((n for n in files if n != offers.EVENTS_NAME), '')),
+                                               ('events', offers.EVENTS_NAME if offers.EVENTS_NAME in files else '')) if name}
+        wanted = {offers.SOURCE_FILE: '# Read from the app\'s repository by make app-offers: do not edit.\n' + dump([source]), **files}
+        folder.mkdir(exist_ok=True)
+        for path in folder.iterdir():
+            if path.name not in wanted:
+                path.unlink()
+        for name, text in wanted.items():
+            if not (folder / name).is_file() or (folder / name).read_text() != text:
+                (folder / name).write_text(text)
+    elif folder.is_dir():
+        shutil.rmtree(folder)
+    document = YamlFile(release)
+    metadata = mapping(document.data, 'metadata')
+    annotations = metadata.get('annotations') or {}
+    if files and annotations.get(offers.ANNOTATION) != commit:
+        mapping(metadata, 'annotations', create=True)[offers.ANNOTATION] = commit
+        document.save()
+    elif not files and offers.ANNOTATION in annotations:
+        del annotations[offers.ANNOTATION]
+        if not annotations:
+            del metadata['annotations']
+        document.save()
+    names = [event.name for event in described] if described is not None else None
+    if names is not None and names != events.published(helmrelease.variables(document.data)):
+        try:
+            set_events(root, app, env, publish=names, runner=runner)
+        except EditError:
+            if folder.is_dir():
+                shutil.rmtree(folder)
+            for path, content in before.items():
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(content)
+            raise
+    after = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
+    return after != before
+
+
+def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
+               runner: Runner | None = None) -> bool:
+    """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
+    documents its swhurl.yaml names (provides.apiFile, provides.eventsFile). Returns whether anything changed."""
+    instance = instance_dir(root, app, env)
+    image = helmrelease.image(YamlFile(instance / 'helmrelease.yaml').data)
+    repository = str(image.get('repository', ''))
+    if not repository.startswith('ghcr.io/'):
+        raise EditError(f'{app}/{env} runs {repository or "no image"}: only an app published from its own GitHub repository has offers')
+    repository = repository.removeprefix('ghcr.io/')
+    try:
+        commit = offers.commit_of(str(image.get('tag', '')))
+        manifest = offers.fetch(repository, commit, MANIFEST_FILE, token=token, opener=opener)
+        if manifest is None:
+            raise offers.OfferError(f'{repository}@{commit} has no {MANIFEST_FILE} (or the repository is private: set GITHUB_TOKEN)')
+        provides = (offers._document(manifest, MANIFEST_FILE).get('provides') or {})
+        files, described = {}, None
+        for key, kind in (('apiFile', 'api'), ('eventsFile', 'events')):
+            path = provides.get(key)
+            if not path:
+                continue
+            text = offers.fetch(repository, commit, str(path), token=token, opener=opener)
+            if text is None:
+                raise offers.OfferError(f'{MANIFEST_FILE} names {path} (provides.{key}), which {repository}@{commit} does not have')
+            if kind == 'api':
+                offers.check_api(text, str(path))
+                files['openapi' + (Path(str(path)).suffix or '.yaml')] = text
+            else:
+                described = offers.events(text, str(path))
+                files[offers.EVENTS_NAME] = text
+    except offers.OfferError as error:
+        raise EditError(str(error)) from None
+    changed = write_offers(root, app, env, repository, commit, files, described, runner=runner)
+    what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n != offers.EVENTS_NAME), ''),
+                                   described is not None and f'events: {", ".join(e.name for e in described) or "none"}']))
+    print(f'[OK] {app}/{env} at {commit} offers {what or "nothing"}' + ('' if changed else ' (unchanged)'))
+    return changed
+
+
+def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
+    """Production offers what the image it now runs offers: staging's documents, read for that image."""
+    try:
+        found = offers.read(root / 'apps' / app / 'staging')
+    except offers.OfferError as error:
+        raise EditError(f'{app}/staging: {error}') from None
+    if found:
+        tag = str(helmrelease.image(YamlFile(root / 'apps' / app / 'staging' / 'helmrelease.yaml').data).get('tag', ''))
+        if offers.IMAGE_COMMIT.match(tag) and offers.commit_of(tag) != found.commit:
+            raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
+                            f'(make app-offers APP={app} ENV=staging; the Offers workflow does it after each new image)')
+    folder = root / 'apps' / app / 'staging' / offers.OFFERS_DIR
+    files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events))} if found else {}
+    return write_offers(root, app, 'prod', found.repository if found else '', found.commit if found else '', files,
+                        list(found.described) if found and found.described is not None else None, runner=runner)
+
+
 def set_team(root: Path, app: str, name: str) -> Path:
     """Move every environment of an app to a team, and give each its quota and NetworkPolicy if it lacks them."""
     if name not in teams(root):
@@ -261,6 +371,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
             raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
         result = promotion.create(root, app, src, host=host, runner=runner)
         sync_env(root, target)  # production's own callers and callees
+        carry_offers(root, app, runner=runner)
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
         if container(src).get('envFrom'):
             print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
@@ -273,7 +384,13 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     current.update({k: str(image[k]) for k in ('tag', 'digest') if k in image})
     if 'tag' not in image:
         current.pop('tag', None)
+    before = document.path.read_text()
     document.save()
+    try:
+        carry_offers(root, app, runner=runner)  # what this image offers; refused if production still uses what it dropped
+    except EditError:
+        document.path.write_text(before)
+        raise
     print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
     return root / 'apps' / app / 'prod'
 
@@ -571,6 +688,32 @@ def main_events(argv: list[str] | None = None) -> int:
     return run(lambda: set_events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe,
                                   add_publish=args.add_publish, remove_publish=args.remove_publish,
                                   add_subscribe=args.add_subscribe, remove_subscribe=args.remove_subscribe), True)
+
+
+def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._open) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-offers',
+                                description="Read what an app offers (its API and event documents) from its repository at its image's commit")
+    p.add_argument('app', nargs='?')
+    p.add_argument('env', nargs='?', choices=ENVIRONMENTS)
+    p.add_argument('--all', choices=ENVIRONMENTS, metavar='ENV', help='every instance of this environment that an app repository publishes')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    if bool(args.all) == bool(args.app and args.env):
+        p.error('give APP and ENV, or --all ENV')
+    root, token = args.root.resolve(), os.environ.get('GITHUB_TOKEN', '')
+    if not args.all:
+        return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener), True)
+    failed = 0
+    for app in instances_in(root, args.all):
+        image = helmrelease.image(YamlFile(root / 'apps' / app / args.all / 'helmrelease.yaml').data)
+        if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
+            continue  # not built from an app repository (a fixture, a pinned third-party image)
+        try:
+            set_offers(root, app, args.all, token=token, opener=opener)
+        except EditError as error:  # the others are still read; this one keeps what it had
+            failed += 1
+            print(f'[ERROR] {app}/{args.all}: {error}', file=sys.stderr)
+    return 1 if failed else 0
 
 
 def main_sync(argv: list[str] | None = None) -> int:

@@ -25,7 +25,7 @@ data:
             permissions:
               publish:
                 allow:
-                - staging.swhurl-try-10.visited
+                - staging.swhurl-try-10.>
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-10.>
@@ -33,7 +33,7 @@ data:
             permissions:
               publish:
                 allow:
-                - staging.swhurl-try-12.visited
+                - staging.swhurl-try-12.>
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-12.>

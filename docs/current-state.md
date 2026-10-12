@@ -1237,3 +1237,11 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **Deployed, through a port-forward with the identity header, third load:** Overview 1.09 s, Apps/Services 0.80 s, Teams 0.91 s, the catalogue 0.35 s, Platform 0.61 s, an app page 0.90 s; every page answers 200 with the same states as before (24 healthy on the list, 29 on Platform) and a request without an identity 401.
 - **Memory:** after twelve pages requested at once the pod's peak was 131 Mi of its 256 Mi limit, with no restart and no error in its log.
 - **Not exercised:** a page while a cluster read fails on the deployed image (covered by `make test`); a signed-in browser.
+
+## One table of what differs between environments (12 October 2026)
+
+`d4e176e` states once what staging and production may differ in and what a promotion does with each setting ([`per_environment.py`](../tools/swhurl/apps/per_environment.py)); the `env-drift` rule, promotion and the auto-merge gate read it ([app policy](apps.md#the-app-policy)). A refactor: nothing on the cluster changed. Console image `src-f3c9d530c2a196c2` (deployed as `4f99b8b`); Validate passed on the commit, and after `make flux-reconcile`, `make verify-platform` passed with no warning and `make app-status APP=demo-orders ENV=prod` says Healthy.
+
+- **Same decisions as before, on the real apps:** run offline with the old tooling (`cb221b7`) and the new one over this repository, what the drift rule reads was identical for all 12 instances (with and without differing exposure), and the production release a first promotion would create was byte-identical for all 9 apps (production removed in a scratch copy, policy check stubbed).
+- **Offline:** `make check` passed (634 tests; `check-apps` for every instance, including the six apps that have a production instance; every template combination).
+- **Not exercised:** a real promotion, first or later, through the new code on the cluster, and the auto-merge gate on a real pull request (both covered by `make test`).

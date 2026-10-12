@@ -379,19 +379,38 @@ def expose_args(form: Mapping[str, str]) -> list[str]:
     return [f'--exposure={exposure}'] + ([f'--host={host}'] if host else [])
 
 
-def calls_args(form: Mapping[str, str]) -> list[str]:
-    """``--add=`` and/or ``--remove=`` (comma-separated app names) for app-calls; at least one is needed."""
-    argv = []
-    for field in ('add', 'remove'):
-        names = [name.strip() for name in form.get(field, '').split(',') if name.strip()]
-        bad = [name for name in names if not NAME_RE.match(name)]
-        if bad:
-            raise ActionError(f'{", ".join(bad)}: not an app name')
-        if names:
-            argv.append(f'--{field}={",".join(names)}')
-    if not argv:
-        raise ActionError('name at least one app to call or to stop calling')
-    return argv
+def connect_commands(app: str, env: str, form: Mapping[str, str], callable_apps: set[str] | None = None,
+                     offered_events: set[str] | None = None) -> list[tuple[str, list[str]]]:
+    """The app-calls and app-events commands that add what the Connect forms chose: comma-separated
+    ``calls`` (apps), ``subscribe`` (``<app>.<event>``) and ``publish`` (event names). Both run in
+    one clone, so one pull request carries them. Choices are checked as connection_args checks them."""
+    chosen = {field.split('=')[0][2:]: field.split('=', 1)[1] for field in connection_args(form, callable_apps, offered_events)}
+    commands = []
+    if 'calls' in chosen:
+        commands.append(('app-calls', [app, env, f'--add={chosen["calls"]}']))
+    added = [f'--add-{field}={chosen[field]}' for field in ('subscribe', 'publish') if field in chosen]
+    if added:
+        commands.append(('app-events', [app, env, *added]))
+    if not commands:
+        raise ActionError('choose an app to call, an event to receive or an event to publish')
+    return commands
+
+
+def disconnect_commands(app: str, env: str, form: Mapping[str, str]) -> list[tuple[str, list[str]]]:
+    """The command that removes one connection this app declared: the row's ``role``, ``app`` and ``event``."""
+    role, other, event = (form.get(key, '').strip() for key in ('role', 'app', 'event'))
+    if role == 'calls' and NAME_RE.match(other):
+        return [('app-calls', [app, env, f'--remove={other}'])]
+    if role == 'subscribes' and events.SUBSCRIPTION_RE.match(f'{other}.{event}'):
+        return [('app-events', [app, env, f'--remove-subscribe={other}.{event}'])]
+    if role == 'publishes' and events.EVENT_RE.match(event):
+        return [('app-events', [app, env, f'--remove-publish={event}'])]
+    raise ActionError('no such connection to remove: only the app that declared one can remove it')
+
+
+def as_make(commands: list[tuple[str, list[str]]]) -> str:
+    """The same change as the operator would type it."""
+    return ' && '.join(f'make {command} APP={argv[0]} ENV={argv[1]} ARGS="{" ".join(argv[2:])}"' for command, argv in commands)
 
 
 TEAM_NAME = re.compile(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?')
@@ -460,18 +479,6 @@ def team_change(action: str, form: Mapping[str, str]) -> tuple[str, list[str], s
         return 'team-remove', argv, f'teams: remove {name}', f'make team-remove NAME={name}' + (
             f' ARGS="--move-apps-to {move}"' if move else '')
     raise ActionError('no such team change')
-
-
-def events_args(form: Mapping[str, str]) -> list[str]:
-    """``--publish=`` and ``--subscribe=`` for app-events. Both are always sent: the form shows the
-    current lists, and what it sends replaces them (an empty field clears that list)."""
-    lists = {field: [name.strip() for name in form.get(field, '').split(',') if name.strip()]
-             for field in ('publish', 'subscribe')}
-    bad = [name for name in lists['publish'] if not events.EVENT_RE.match(name)]
-    bad += [name for name in lists['subscribe'] if not events.SUBSCRIPTION_RE.match(name)]
-    if bad:
-        raise ActionError(f'{", ".join(bad)}: an event is a lowercase name (created), a subscription <app>.<event> (orders.created)')
-    return [f'--{field}={",".join(names)}' for field, names in lists.items()]
 
 
 def scale_args(form: Mapping[str, str]) -> list[str]:

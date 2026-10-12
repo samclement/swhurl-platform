@@ -226,6 +226,10 @@ pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var
                                   text-transform: uppercase; margin-bottom: 2px; }
 h1 .pill { vertical-align: 0.35em; margin-left: var(--gap-2); }
 h1 + .tabs { margin-top: var(--gap-2); }
+/* Connections: one per row, the same columns wherever they are listed. */
+table.connections { margin: var(--gap-3) 0; }
+table.connections td.act { text-align: right; width: 6rem; }
+table.connections form.inline { margin: 0; }
 table.team-apps { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; table-layout: fixed; }
 table.team-apps th, table.team-apps td { padding: 10px var(--gap-3); vertical-align: baseline; white-space: nowrap; }
 table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-5); width: 30%; }

@@ -251,7 +251,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         promotion_problem = cluster.promotion_problem(status, status.desired_image, status.applied_revision)
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
-                    connections=row.connections if row else cluster.Connections(), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
+                    connections=row.connections if row else cluster.Connections(), connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
@@ -493,15 +493,19 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=409, error=str(error))
         return RedirectResponse(f'/jobs/{job.id}', status_code=303)
 
-    def connectable() -> tuple[list[cluster.AppRow], list[tuple[str, cluster.AppRow]], str]:
-        """What a new app can connect to in staging: the web apps it could call, each published
-        ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders)."""
+    def connectable(env: str = 'staging', app: str = '') -> tuple[list[cluster.AppRow], list[tuple[str, cluster.AppRow]], str]:
+        """What an app can connect to in ``env``: the web apps it could call, each published
+        ``<app>.<event>`` with its publisher, and why they could not be read (the form still renders).
+        For an existing ``app``, without itself and what it is connected to already."""
         try:
-            staging = [row for row in cluster.apps(runner) if row.instance.env == 'staging']
+            rows = [row for row in cluster.apps(runner) if row.instance.env == env]
         except cluster.ReadError as problem:
             return [], [], str(problem)
-        return ([row for row in staging if row.connections.address],
-                [(f'{row.instance.app}.{event}', row) for row in staging for event in row.connections.publishes], '')
+        mine = next((row.connections for row in rows if row.instance.app == app), cluster.Connections())
+        others = [row for row in rows if row.instance.app != app]
+        return ([row for row in others if row.connections.address and row.instance.app not in mine.calls],
+                [(name, row) for row in others for event in row.connections.publishes
+                 if (name := f'{row.instance.app}.{event}') not in mine.subscribes], '')
 
     def new_repo_form(request: Request, status_code: int = 200, error: str = '', form=None) -> Response:
         form = form or {}
@@ -598,14 +602,16 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return started(request, job)
 
     async def change_app(request: Request) -> Response:
-        """Promote, scale, change access to, change the calls of or remove an instance: a PR made by the clone's app-* command."""
+        """Promote, scale, change access to, change the connections of or remove an instance: a PR made by the clone's app-* commands."""
         app, env, change = (request.path_params[k] for k in ('app', 'env', 'change'))
         found = cluster.instance(app, env)
-        if found is None or change not in ('promote', 'scale', 'expose', 'calls', 'events', 'remove'):
+        if found is None or change not in ('promote', 'scale', 'expose', 'connect', 'disconnect', 'remove'):
             return page(request, 'error.html', status_code=404, error='No such app instance or change.')
         if github is None:
             return page(request, 'error.html', status_code=409, error='No GitHub token is configured (console-github Secret).')
-        form = {k: v[0] for k, v in parse_qs((await request.body()).decode(), keep_blank_values=True).items()}
+        fields = parse_qs((await request.body()).decode(), keep_blank_values=True)
+        form = {k: v[0] for k, v in fields.items()}
+        commands: list[tuple[str, list[str]]] = []
         try:
             if change == 'promote':
                 if env != 'staging':
@@ -629,12 +635,21 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             elif change == 'expose':
                 command, argv, target = 'app-expose', [app, env, *changes.expose_args(form)], f'{app}/{env}'
                 title, make = f'apps: change access to {app}/{env}', f'make app-expose APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
-            elif change == 'calls':
-                command, argv, target = 'app-calls', [app, env, *changes.calls_args(form)], f'{app}/{env}'
-                title, make = f'apps: change what {app}/{env} calls', f'make app-calls APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
-            elif change == 'events':
-                command, argv, target = 'app-events', [app, env, *changes.events_args(form)], f'{app}/{env}'
-                title, make = f'apps: change the events of {app}/{env}', f'make app-events APP={app} ENV={env} ARGS="{" ".join(argv[2:])}"'
+            elif change in ('connect', 'disconnect'):
+                if change == 'connect':
+                    for ticked in ('calls', 'subscribe'):  # one checkbox per app or event
+                        form[ticked] = ','.join(value for value in fields.get(ticked, []) if value)
+                    commands = changes.connect_commands(app, env, form)  # malformed: refused before reading the cluster
+                    if form['calls'] or form['subscribe']:
+                        callable_apps, offered_events, problem = connectable(env, app)
+                        if problem:
+                            raise actions.ActionError(f'cannot check the apps and events chosen: {problem}')
+                        changes.connect_commands(app, env, form, {row.instance.app for row in callable_apps},
+                                                 {name for name, _ in offered_events})
+                else:
+                    commands = changes.disconnect_commands(app, env, form)
+                command, argv, target = '', [], f'{app}/{env}'
+                title, make = f'apps: change the connections of {app}/{env}', changes.as_make(commands)
             else:
                 command, argv, target = 'app-remove', [app, env], f'{app}/{env}'
                 title, make = f'apps: remove {app}/{env}', f'make app-remove APP={app} ENV={env}'
@@ -658,7 +673,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             job.link = changes.open_pr(
                 runner, github, job, slug=f'{change}-{app}-{env}', title=title,
                 body=f'Generated by the console with:\n\n    {make}',
-                change=lambda clone: changes.run_tool(runner, job, clone, command, argv),
+                change=lambda clone: [changes.run_tool(runner, job, clone, *each) for each in commands or [(command, argv)]],
                 auto_merge=False)
         try:
             job = jobs.submit(change, target, request.state.identity, work)

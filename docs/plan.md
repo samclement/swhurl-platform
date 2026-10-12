@@ -20,6 +20,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 10. **Platform-generated apps only: done 9 October 2026** (`13c761c`, `2cbdd9f`, `131818a`). Every app comes from a stack template through `make app-repo` or the console; `make app-new` and the app policy rule `platform-image` refuse anything else; `hello` is retired. Rules: [apps](apps.md#start-a-new-app); evidence: [current state](current-state.md). Left unexercised: a new app created after the change, from the console and from `make app-repo`.
 11. **Team platform: delivered 11 October 2026; operator actions left** ([section 15](#15-team-platform--delivered-10-to-11-october-2026)): signed-in browser checks of the console (restructured the same day: one Apps list with a map, and Use, Connect and Operate on each app page), and removing the four throwaway apps (`swhurl-try-10` to `-13`) and their repositories when they are no longer wanted. Not built, and where it would start: tokens for callers outside the cluster; a signed sign-in identity inside the cluster.
 12. **App notification service: N1 to N4 delivered 11 October 2026** ([section 16](#16-app-notification-service--designed-11-october-2026)). Goals and order revised on 11 October ([end goal](#end-goal-and-revised-order-11-october-2026)). The end goal is met and the follow-ups are done; left is N5 (a second provider). The `swhurl-try-14` instance is removed; its GitHub repository and package are yours to delete. Operator: confirm that the platform topic keeps every app's lifecycle messages as well, and try the Teams page's channel forms in a signed-in browser (not exercised live).
+13. **Connections and contracts: stage 1 delivered 12 October 2026; stages 2 to 5 left** ([section 17](#17-connections-and-contracts--designed-12-october-2026)). Next: stage 2, the `api` and `events` features in both stack templates.
 
 ### Delivered
 
@@ -952,3 +953,38 @@ New-component checklist for the notify service: it stores only the outbox (one C
 ### Out of scope
 
 The operations gaps in [open work](#open-work) item 5 (backups, certificates, disk, external availability) stay on the operations plane and can go ahead independently. End-user notifications, a console page for editing channels, and per-user preferences are not planned.
+
+## 17. Connections and contracts — designed 12 October 2026
+
+Goal: an app creator can see what other apps offer (an API, events), choose it at creation or later, and know what they will receive. Today's use is in [calling another app](apps.md#calling-another-app) and [events](apps.md#events).
+
+### Decisions (operator, 12 October)
+
+| Decision | Why |
+| --- | --- |
+| A connection is one row with one shape wherever it is shown or changed | Calls and events were listed and edited three different ways |
+| APIs are described with OpenAPI, generated from code: `micronaut-openapi` (Kotlin), Hono with `@hono/zod-openapi` (TypeScript, replacing the template's `node:http` server) | The document cannot drift from the routes |
+| Events are described with AsyncAPI 3, a hand-written `asyncapi.yaml` in the app repository; the template helpers validate each payload against it on publish (`ajv`; a JSON Schema validator in Kotlin) | No mature generate-from-code AsyncAPI library for NATS in either stack |
+| The AsyncAPI document is the declaration of what an app publishes: the platform reads it, with the OpenAPI document, from the app repository at the image's commit and keeps both per environment beside the instance (`apps/<app>/<env>/contract/`); promotion copies them with the image | One place to edit, beside the code; offline checks; workers included. Needs a token once app repositories are private |
+| NATS lets an app publish anything under its own name (`<env>.<app>.>`) instead of an exact list; the helper refuses an event its `asyncapi.yaml` does not have. Ticking **Publishes events** at creation creates the key and stream at once | The image arrives before the platform has read its contract: an exact list would refuse a new event for some minutes, and an app with no key drops events silently (`publish()` returns `null`) |
+| Consumers stay platform-side: a call or subscription is `app-calls` / `app-events`, picked from a catalogue | The other app's files change, so it stays a reviewed pull request |
+
+### Stages
+
+| # | Stage | Ends in | State |
+| --- | --- | --- | --- |
+| 0 | Spike the libraries and the sync trigger | Findings below | Done 12 Oct |
+| 1 | Connection rows; `app-events --add-*`/`--remove-*`; **Connect to an app**, **Publish an event** and per-row **Remove** on the app page; the same rows in the Apps list and the same picker in New app | Console deployed and verified | Done 12 Oct ([current state](current-state.md)) |
+| 2 | Templates: `api` (web only) and `events` questions, default off; the libraries; a sample route and event; CI validates both documents; `swhurl.yaml` gains `provides.events`; Template workflow matrix becomes defaults, each choice alone, all together; new tags, pinned in `STACK_REVISIONS` | `make check-templates` green on every combination | Not started |
+| 3 | Contract intake: `make app-contract`, per-environment `contract/`, the publish list derived from it, wildcard publish permission, policy rules (a subscription names an event in the publisher's contract; a contract may not drop a subscribed event), promotion carries it, a workflow on the image-bump commit runs the sync. The console's **Publish an event** goes: the file is the declaration | A push to a throwaway app changes its catalogue entry with no manual step | Not started |
+| 4 | **Catalogue** page (`/catalogue`): one row per API and event with its description, operations or payload schema and example, who uses it, and **Use** (choose the consuming app, open the PR); the Connect picker shows the same rows | Live: a subscription made from the catalogue | Not started |
+| 5 | Move `swhurl-try-10` to `-13` and `hello-ts` onto the features | Each app's pull request reviewed by the operator | Not started |
+| Later | Live state per connection (NATS consumer lag, redeliveries; call counts and 401s from `caller.type` spans); typed clients generated from the documents; a check in the app's CI that refuses a breaking change before merge | | |
+
+### Spike findings (stage 0, 12 October; nothing deployed)
+
+- **Sync trigger:** Flux's image-bump commit (`3a39e57`, `fluxcdbot`) started the `Validate` workflow as a `push` event, so a workflow on `main` can run the contract sync.
+- **TypeScript:** the rendered template with `hono`, `@hono/node-server`, `@hono/zod-openapi`, `zod`, `ajv` and `yaml` added type-checks under the template's TypeScript 7 and Node 24, serves an OpenAPI 3.1 document at `/openapi.json` from one route definition, and validates a payload against the message schema in an AsyncAPI 3.0 file.
+- **Kotlin:** adding `ksp("io.micronaut.openapi:micronaut-openapi")` and `compileOnly("io.micronaut.openapi:micronaut-openapi-annotations")` to the rendered template generates `META-INF/swagger/<app>-<version>.yml` (OpenAPI 3.0.1) from the existing controllers at build, with no other change.
+- **AsyncAPI validation in CI:** `npx @asyncapi/cli validate` works but took 1 min 45 s cold; use `@asyncapi/parser` as a dev dependency or cache the CLI.
+- Not tried: serving the Kotlin document at `/openapi.json`; a Kotlin JSON Schema validator; the two libraries together with the OpenTelemetry instrumentation.

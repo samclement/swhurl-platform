@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
 {% import "_status.html" as st %}
+{% import "_connections.html" as links with context %}
 {% set i = status.instance %}
 {% set row = summary.envs.get(i.env) if summary else none %}
 {% block title %}{{ i.app }}/{{ i.env }}{% endblock %}
@@ -69,28 +70,26 @@
   </div>
 </section>
 
-<section class="card" id="connect" style="--acts: 2; --pitch: 9.5rem">
+<section class="card" id="connect" style="--acts: 2; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
     <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}.</p>
-    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
-      <summary class="button">{{ st.icon('edit') }} Change calls</summary>
-      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/calls">
-        <fieldset>
-          {{ ui.text_field('calls_add', 'Start calling', name='add', placeholder='orders', hint='App names, comma-separated. Each must be a web app with a ' ~ i.env ~ ' instance. This app gets its address (SWHURL_SERVICE_<NAME>_URL) and a token only that app accepts; that app starts admitting this one.') }}
-          {{ ui.text_field('calls_remove', 'Stop calling', name='remove', placeholder=c.calls | join(', '), hint='App names, comma-separated.') }}
-        </fieldset>
-        {{ ui.submit('Open calls PR', 'It changes this instance and each app named; you review and merge it on GitHub.') }}
+    <details class="act" name="app-form" style="--slot: 1; --wide: 11rem">
+      <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
+        <div class="rows">
+          {{ links.choices(connectable[0], connectable[1], [], [], i.env, who=i.app, problem=connectable[2]) }}
+        </div>
+        {{ ui.submit('Open connection PR', 'It changes this instance and each app chosen; you review and merge it on GitHub.') }}
       </form>
     </details>
-    <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
-      <summary class="button">{{ st.icon('edit') }} Change events</summary>
-      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/events">
+    <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
+      <summary class="button">{{ st.icon('plus') }} Publish an event</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
         <fieldset>
-          {{ ui.text_field('events_publish', 'Publishes', c.publishes | join(', '), name='publish', placeholder='created, cancelled', hint='Event names, comma-separated. Other apps see them as ' ~ i.app ~ '.<event>. What you send replaces the list; empty publishes nothing.') }}
-          {{ ui.text_field('events_subscribe', 'Subscribes to', c.subscribes | join(', '), name='subscribe', placeholder='orders.created', hint='<app>.<event>, comma-separated. Each must be published by an app with a ' ~ i.env ~ ' instance. Empty subscribes to nothing.') }}
+          {{ ui.text_field('connect_publish', 'New event', name='publish', placeholder='created', hint='A lowercase name; several comma-separated. Other apps see it as ' ~ i.app ~ '.<event> and can subscribe. What ' ~ i.app ~ ' publishes already stays.') }}
         </fieldset>
-        {{ ui.submit('Open events PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
+        {{ ui.submit('Open event PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
       </form>
     </details>
   </div>
@@ -99,23 +98,15 @@
       <dt>In the cluster</dt>
       <dd>{% if c.address %}<code>{{ c.address }}</code> <span class="muted">for apps that declare the call</span>{% else %}<span class="muted">none: a worker cannot be called</span>{% endif %}</dd>
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
-      <dt>Calls</dt>
-      <dd>{% for name in c.calls %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nothing</span>{% endfor %}</dd>
-      <dt>Called by</dt>
-      <dd>{% for name in c.callers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">nobody</span>{% endfor %}</dd>
-      <dt>Publishes</dt>
-      <dd>{% for name in c.publishes %}<code>{{ i.app }}.{{ name }}</code>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
-      {% if c.subscribers %}<dt>Its subscribers</dt>
-      <dd>{% for event, name in c.subscribers %}<a href="/apps/{{ name }}/{{ i.env }}">{{ name }}</a> <span class="muted">({{ event }})</span>{{ ', ' if not loop.last }}{% endfor %}</dd>{% endif %}
-      <dt>Subscribes to</dt>
-      <dd>{% for name in c.subscribes %}<a href="/apps/{{ name.split('.')[0] }}/{{ i.env }}"><code>{{ name }}</code></a>{{ ', ' if not loop.last }}{% else %}<span class="muted">no events</span>{% endfor %}</dd>
     </dl>
+    {% if c.rows %}{{ links.table(c, i.app, i.env, remove=true) }}
+    {% else %}<p class="muted">No connections: it calls nothing, nothing calls it, and it publishes and receives no events.</p>{% endif %}
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
       <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
       <pre><code>calls: [{{ i.app }}]</code></pre>
-      <p class="muted">Afterwards, your app page's <strong>Change calls</strong>, or:</p>
+      <p class="muted">Afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
       <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
       <p class="muted">Then, in your code (the stack templates' helper):</p>
       <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
@@ -127,8 +118,8 @@ platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
       <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
       <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
       <pre><code>events: {subscribe: [{{ i.app }}.{{ c.publishes[0] }}]}</code></pre>
-      <p class="muted">Afterwards, your app page's <strong>Change events</strong>, or:</p>
-      <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--subscribe {{ i.app }}.{{ c.publishes[0] }}"</code></pre>
+      <p class="muted">Afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
+      <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add-subscribe {{ i.app }}.{{ c.publishes[0] }}"</code></pre>
       <p class="muted">Then, in your code:</p>
       <pre><code>subscribe("{{ i.app }}.{{ c.publishes[0] }}", async (event) => { ... })        // TypeScript
 events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }            // Kotlin</code></pre>

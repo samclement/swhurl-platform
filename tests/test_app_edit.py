@@ -438,6 +438,28 @@ class EditTests(unittest.TestCase):
         self.assertEqual(len(yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data'][
             'values.yaml'])['config']['merge']['authorization']['users']), 2, 'the controller and orders remain')
 
+    def test_events_are_added_and_removed_one_at_a_time_like_calls(self):
+        self.with_units()
+        runner = self.sops()
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', add_publish=['created'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', add_publish=['paid'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', add_subscribe=['orders.created'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', add_subscribe=['orders.paid'],
+                   remove_subscribe=['orders.created'], runner=runner)
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'what was there stays')
+        self.assertEqual(self.env('hello')['SWHURL_EVENTS_SUBSCRIBE'], 'orders.paid')
+        cases = (('orders', {'add_publish': ['paid']}, 'already there: paid'),
+                 ('orders', {'remove_publish': ['refunded']}, 'not there to remove: refunded'),
+                 ('orders', {'remove_publish': ['paid']}, 'subscribes to orders.paid, which orders/staging does not publish'),
+                 ('orders', {'publish': ['x'], 'add_publish': ['y']}, '--publish replaces the list'),
+                 ('hello', {'add_subscribe': ['orders.refunded']}, 'which orders/staging does not publish'))
+        for app, kwargs, message in cases:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_events(self.root, app, 'staging', runner=runner, **kwargs)
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'a refused change is undone')
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', remove_publish=['created'], runner=runner)
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'paid')
+
     def test_event_refusals_change_nothing(self):
         self.with_units()
         before = self.staging.read_text()

@@ -5,7 +5,7 @@
     app-expose APP ENV --exposure E [--host H]     change who can reach an instance
     app-team APP --team T                          move an app (every environment) to a registered team
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
-    app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...]   set the events an instance publishes and receives
+    app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
     app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -99,12 +99,36 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
     return instance
 
 
+def changed_list(what: str, current: list[str], replace: list[str] | None, add: list[str], remove: list[str]) -> list[str] | None:
+    """A list after a change: replaced whole, or with names added and removed (as app-calls does); None if untouched."""
+    if replace is not None:
+        if add or remove:
+            raise EditError(f'--{what} replaces the list: do not give --add-{what} or --remove-{what} with it')
+        return replace
+    if not add and not remove:
+        return None
+    present = [name for name in add if name in current]
+    absent = [name for name in remove if name not in current]
+    if present or absent:
+        raise EditError('; '.join(filter(None, [present and f'already there: {", ".join(present)}',
+                                                absent and f'not there to remove: {", ".join(absent)}'])))
+    return [name for name in current if name not in remove] + add
+
+
 def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
-           runner: Runner | None = None) -> Path:
-    """Set the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives (None: unchanged,
-    an empty list: none). The first time, the instance gets its own NATS key; everything else follows in sync_env."""
+               add_publish: list[str] | None = None, remove_publish: list[str] | None = None,
+               add_subscribe: list[str] | None = None, remove_subscribe: list[str] | None = None,
+               runner: Runner | None = None) -> Path:
+    """Change the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives: each list
+    replaced whole (None: unchanged, an empty list: none) or with names added and removed. The first
+    time, the instance gets its own NATS key; everything else follows in sync_env."""
+    now = helmrelease.variables(YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data)
+    publish = changed_list('publish', events.published(now), publish, add_publish or [], remove_publish or [])
+    subscribe = changed_list('subscribe', ['.'.join(pair) for pair in events.subscribed(now)], subscribe,
+                             add_subscribe or [], remove_subscribe or [])
     if publish is None and subscribe is None:
-        raise EditError('give --publish and/or --subscribe (an empty value clears it)')
+        raise EditError('give --publish and/or --subscribe (an empty value clears it), or --add-publish, '
+                        '--remove-publish, --add-subscribe, --remove-subscribe')
     bad = [name for name in publish or [] if not events.EVENT_RE.match(name)]
     bad += [name for name in subscribe or [] if not events.SUBSCRIPTION_RE.match(name)]
     if bad or len(set(publish or [])) != len(publish or []) or len(set(subscribe or [])) != len(subscribe or []):
@@ -538,9 +562,15 @@ def main_events(argv: list[str] | None = None) -> int:
     p.add_argument('env', choices=ENVIRONMENTS)
     p.add_argument('--publish', type=names, help='comma-separated events this app publishes ("" for none)')
     p.add_argument('--subscribe', type=names, help='comma-separated <app>.<event> it receives ("" for none)')
+    p.add_argument('--add-publish', type=names, default=[], help='comma-separated events to start publishing')
+    p.add_argument('--remove-publish', type=names, default=[], help='comma-separated events to stop publishing')
+    p.add_argument('--add-subscribe', type=names, default=[], help='comma-separated <app>.<event> to start receiving')
+    p.add_argument('--remove-subscribe', type=names, default=[], help='comma-separated <app>.<event> to stop receiving')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: set_events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe), True)
+    return run(lambda: set_events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe,
+                                  add_publish=args.add_publish, remove_publish=args.remove_publish,
+                                  add_subscribe=args.add_subscribe, remove_subscribe=args.remove_subscribe), True)
 
 
 def main_sync(argv: list[str] | None = None) -> int:

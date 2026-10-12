@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from swhurl.apps import calling, contract, events, helmrelease, ops, promotion
+from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
     ENVIRONMENTS,
@@ -70,6 +71,7 @@ class Connections:
     publishes: tuple[str, ...] = ()  # its own event names
     subscribes: tuple[str, ...] = ()  # <app>.<event>
     subscribers: tuple[tuple[str, str], ...] = ()  # (its event, the app receiving it)
+    rows: tuple[links.Connection, ...] = ()  # the same, one row per connection: what every list shows
 
     @property
     def summary(self) -> str:
@@ -224,12 +226,15 @@ def apps(runner: Runner) -> list[AppRow]:
         hosts = helmrelease.hosts(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
         path = str(variables.get(calling.API_VARIABLE, '')) if address else ''
+        calls, callers = calling.declared_calls(variables), calling.allowed_callers(variables)
+        publishes, subscribes = events.published(variables), events.subscribed(variables)
+        subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
+                       if (env, publisher) == (instance.env, instance.app)]
         connections = Connections(
             address, (f'https://{hosts[0]}{path}' if hosts else address + path) if path else '',
-            tuple(calling.declared_calls(variables)), tuple(calling.allowed_callers(variables)),
-            tuple(events.published(variables)), tuple('.'.join(pair) for pair in events.subscribed(variables)),
-            tuple((event, subscriber) for env, publisher, event, subscriber in subscribed
-                  if (env, publisher) == (instance.env, instance.app)))
+            tuple(calls), tuple(callers), tuple(publishes), tuple('.'.join(pair) for pair in subscribes), tuple(subscribers),
+            links.rows(calls, callers, publishes, subscribes, subscribers,
+                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env}))
         rows.append(AppRow(instance, ready_condition(unit), bool(unit['spec'].get('suspend')),
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts, ready_reason(unit),

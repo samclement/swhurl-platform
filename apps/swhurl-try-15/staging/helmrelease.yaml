@@ -4,7 +4,7 @@ metadata:
   name: swhurl-try-15
   namespace: swhurl-try-15-staging
   annotations:
-    platform.swhurl.com/offers: e740ab6
+    platform.swhurl.com/offers: 14f76f2
 spec:
   interval: 30m
   timeout: 3m
@@ -67,7 +67,7 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-15
-              SWHURL_EVENTS_PUBLISH: visited
+              SWHURL_EVENTS_PUBLISH: visited,greeted
               SWHURL_EVENTS_NKEY: UB46HHCGZ6Q663TTBNC6MDU3NYJPTED7E37F4WEMOREUCFRI6AP3D2RX
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:

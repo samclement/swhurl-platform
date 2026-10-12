@@ -1,0 +1,48 @@
+{# A connection is one row wherever it is shown (the app page, the Apps list), and one choice wherever it is
+   made (New app, the app page's Connect). Import with context: {% import "_connections.html" as links with context %} #}
+
+{# An instance's connections: what it declared first, then what other apps declared about it. With ``remove``,
+   each row this app declared gets a button that opens the pull request removing it. #}
+{% macro table(c, app, env, remove=false) %}
+<table class="compact connections">
+  <tr><th>Direction</th><th>Kind</th><th>App</th><th>What</th><th>Team</th>{% if remove %}<th></th>{% endif %}</tr>
+  {% for r in c.rows %}
+  <tr>
+    <td>{% if r.direction == 'out' %}<span title="{{ app }} declared it">→ outgoing</span>{% else %}<span class="muted" title="{{ r.app }} declared it">← incoming</span>{% endif %}</td>
+    <td><span class="pill">{{ r.kind }}</span></td>
+    <td>{% if r.app %}<a href="/apps/{{ r.app }}/{{ env }}">{{ r.app }}</a>{% else %}<span class="muted">any subscriber</span>{% endif %}</td>
+    <td>{{ r.what }}{% if r.event %} <code>{{ r.event }}</code>{% endif %}</td>
+    <td>{% if r.team %}<a href="/apps?team={{ r.team }}">{{ r.team }}</a>{% elif r.app %}<span class="muted">unknown</span>{% endif %}</td>
+    {% if remove %}<td class="act">{% if r.direction == 'out' %}{% set name = (r.app ~ '.' ~ r.event) if r.app and r.event else (r.app or r.event) %}
+      <form class="inline" method="post" action="/apps/{{ app }}/{{ env }}/disconnect" data-confirm="Open a pull request so that {{ app }}/{{ env }} no longer {{ 'calls' if r.role == 'calls' else 'receives' if r.role == 'subscribes' else 'publishes' }} {{ name }}?{{ ' It also changes ' ~ r.app ~ '.' if r.app }} You review and merge it on GitHub." data-confirm-label="Open removal PR">
+        <input type="hidden" name="role" value="{{ r.role }}"><input type="hidden" name="app" value="{{ r.app }}"><input type="hidden" name="event" value="{{ r.event }}">
+        <button {{ 'disabled' if not github }} title="Open a pull request removing this connection">Remove</button></form>{% endif %}</td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% endmacro %}
+
+{# What an app can connect to: one checkbox per web app it could call and per event it could receive. #}
+{% macro choices(callable_apps, offered_events, chosen_calls, chosen_events, env, who='The new app', problem='') %}
+{% if problem %}<p class="warn">The apps in {{ env }} could not be read ({{ problem }}), so none are offered.</p>{% endif %}
+<div class="field">
+  <span class="label">Apps it calls</span>
+  <div class="choices small">
+    {% for row in callable_apps %}
+    <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
+      <span><strong>{{ row.instance.app }}</strong> <span class="muted">team {{ row.team or 'unknown' }}</span></span></label>
+    {% else %}<span class="muted">No {{ 'other ' if who != 'The new app' }}web app {{ 'is in ' ~ env ~ ' yet' if who == 'The new app' else 'in ' ~ env ~ ' is left to call' }}.</span>{% endfor %}
+  </div>
+  <span class="muted hint">{{ who }} gets each one's address and a short-lived token only that app accepts; each one starts admitting it. Any other app is blocked. Web apps in {{ env }} are offered.</span>
+</div>
+<div class="field">
+  <span class="label">Events it receives</span>
+  <div class="choices small">
+    {% for name, row in offered_events %}
+    <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
+      <span><code>{{ name }}</code> <span class="muted">from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
+    {% else %}<span class="muted">No {{ 'other ' if who != 'The new app' }}app in {{ env }} publishes an event {{ 'yet' if who == 'The new app' else 'it does not already receive' }}.</span>{% endfor %}
+  </div>
+  <span class="muted hint">{{ who }} may read exactly these, from the oldest event still kept (seven days).</span>
+</div>
+{% endmacro %}

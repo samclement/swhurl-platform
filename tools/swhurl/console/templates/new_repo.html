@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_form.html" as ui with context %}
 {% import "_status.html" as st %}
+{% import "_connections.html" as links with context %}
 {% block title %}New app{% endblock %}
 {% block main %}
 <p class="crumbs"><a href="/apps">Apps</a> › New app</p>
@@ -96,27 +97,7 @@
       <details class="act" style="--slot: 0; --wide: 9rem" {{ 'open' if chosen_calls or chosen_events or form.publish }}>
         <summary class="button">{{ st.icon('plus') }} Connections</summary>
         <div class="rows">
-          {% if connections_error %}<p class="warn">The apps in staging could not be read ({{ connections_error }}), so none are offered. Add calls and events from the app's page later.</p>{% endif %}
-          <div class="field">
-            <span class="label">Apps it calls</span>
-            <div class="choices small">
-              {% for row in callable_apps %}
-              <label class="choice"><input type="checkbox" name="calls" value="{{ row.instance.app }}" {{ 'checked' if row.instance.app in chosen_calls }}>
-                <span><strong>{{ row.instance.app }}</strong> <span class="muted">team {{ row.team or 'unknown' }}</span></span></label>
-              {% else %}<span class="muted">No web app is in staging yet.</span>{% endfor %}
-            </div>
-            <span class="muted hint">The new app gets each one's address and a short-lived token only that app accepts; each one starts admitting the new app. Any other app is blocked. Web apps in staging are offered; production is declared after promoting.</span>
-          </div>
-          <div class="field">
-            <span class="label">Events it receives</span>
-            <div class="choices small">
-              {% for name, row in offered_events %}
-              <label class="choice"><input type="checkbox" name="subscribe" value="{{ name }}" {{ 'checked' if name in chosen_events }}>
-                <span><code>{{ name }}</code> <span class="muted">from {{ row.instance.app }}, team {{ row.team or 'unknown' }}</span></span></label>
-              {% else %}<span class="muted">No app in staging publishes an event yet.</span>{% endfor %}
-            </div>
-            <span class="muted hint">The new app may read exactly these, from the oldest event still kept (seven days).</span>
-          </div>
+          {{ links.choices(callable_apps, offered_events, chosen_calls, chosen_events, 'staging', problem=connections_error) }}
           {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
           <p class="muted">Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</p>
         </div>

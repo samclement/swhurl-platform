@@ -165,13 +165,31 @@ class FormTests(unittest.TestCase):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.expose_args(form)
 
-    def test_events_form_replaces_both_lists(self):
-        self.assertEqual(changes.events_args({'publish': 'created, paid', 'subscribe': 'orders.created'}),
-                         ['--publish=created,paid', '--subscribe=orders.created'])
-        self.assertEqual(changes.events_args({}), ['--publish=', '--subscribe='], 'empty fields clear the lists')
-        for form in ({'publish': '--root=/'}, {'subscribe': 'orders'}, {'publish': 'a.b'}):
-            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'an event is a lowercase name'):
-                changes.events_args(form)
+    def test_connections_are_added_and_removed_by_the_commands_make_runs(self):
+        offered = ({'orders', 'billing'}, {'orders.created'})
+        self.assertEqual(changes.connect_commands('hello', 'staging', {'calls': 'orders, billing', 'subscribe': 'orders.created',
+                                                                       'publish': 'seen'}, *offered),
+                         [('app-calls', ['hello', 'staging', '--add=orders,billing']),
+                          ('app-events', ['hello', 'staging', '--add-subscribe=orders.created', '--add-publish=seen'])])
+        self.assertEqual(changes.connect_commands('hello', 'staging', {'publish': 'seen, gone'}, *offered),
+                         [('app-events', ['hello', 'staging', '--add-publish=seen,gone'])])
+        for form, message in (({}, 'choose an app to call'), ({'calls': 'reports'}, 'not a web app, or an event'),
+                              ({'subscribe': 'orders.paid'}, 'not a web app, or an event'),
+                              ({'publish': '--root=/'}, 'a published event a lowercase name')):
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
+                changes.connect_commands('hello', 'staging', form, *offered)
+        self.assertEqual(changes.disconnect_commands('hello', 'staging', {'role': 'calls', 'app': 'orders'}),
+                         [('app-calls', ['hello', 'staging', '--remove=orders'])])
+        self.assertEqual(changes.disconnect_commands('hello', 'staging', {'role': 'subscribes', 'app': 'orders', 'event': 'created'}),
+                         [('app-events', ['hello', 'staging', '--remove-subscribe=orders.created'])])
+        self.assertEqual(changes.disconnect_commands('hello', 'staging', {'role': 'publishes', 'event': 'seen'}),
+                         [('app-events', ['hello', 'staging', '--remove-publish=seen'])])
+        for form in ({}, {'role': 'called-by', 'app': 'orders'}, {'role': 'calls', 'app': '--root=/'},
+                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'}, {'role': 'publishes', 'event': 'Seen'}):
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'no such connection to remove'):
+                changes.disconnect_commands('hello', 'staging', form)
+        self.assertEqual(changes.as_make(changes.connect_commands('hello', 'staging', {'calls': 'orders', 'publish': 'seen'}, *offered)),
+                         'make app-calls APP=hello ENV=staging ARGS="--add=orders" && make app-events APP=hello ENV=staging ARGS="--add-publish=seen"')
 
     def test_only_console_branches(self):
         self.assertEqual(changes.branch_name('new-weather-api-staging', 'abc1234'), 'console/new-weather-api-staging-abc1234')
@@ -487,12 +505,12 @@ class ChangeAppRouteTests(unittest.TestCase):
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
-            ('/apps/hello/staging/calls', {'add': 'orders, billing', 'remove': ''},
-             ('app-calls', 'hello', 'staging', '--add=orders,billing'), 'hello/staging',
-             'console/calls-hello-staging-abc1234', '[console] apps: change what hello/staging calls'),
-            ('/apps/hello/staging/events', {'publish': 'created, paid', 'subscribe': ''},
-             ('app-events', 'hello', 'staging', '--publish=created,paid', '--subscribe='), 'hello/staging',
-             'console/events-hello-staging-abc1234', '[console] apps: change the events of hello/staging'),
+            ('/apps/hello/staging/connect', {'publish': 'created, paid'},
+             ('app-events', 'hello', 'staging', '--add-publish=created,paid'), 'hello/staging',
+             'console/connect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
+            ('/apps/hello/staging/disconnect', {'role': 'subscribes', 'app': 'orders', 'event': 'created'},
+             ('app-events', 'hello', 'staging', '--remove-subscribe=orders.created'), 'hello/staging',
+             'console/disconnect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):
@@ -512,7 +530,7 @@ class ChangeAppRouteTests(unittest.TestCase):
                  ('/apps/hello/staging/promote', PROMOTION, True),
                  ('/apps/hello/staging/promote', {**PROMOTION, 'hold': 'on'}, False),
                  ('/apps/hello/staging/expose', {'exposure': 'public', 'host': 'hello.example.com'}, False),
-                 ('/apps/hello/staging/calls', {'remove': 'orders'}, False),
+                 ('/apps/hello/staging/disconnect', {'role': 'calls', 'app': 'orders'}, False),
                  ('/apps/hello/staging/remove', {'auto_merge': 'on'}, False))
         for path, form, merges in cases:
             with self.subTest(path=path, form=form):
@@ -525,7 +543,7 @@ class ChangeAppRouteTests(unittest.TestCase):
     def test_a_change_the_tooling_refuses_shows_its_own_words_and_opens_nothing(self):
         """The console runs the same commands as make, so their refusals read the same in the job."""
         refusals = (
-            ('/apps/hello/staging/calls', {'add': 'nowhere'}, '[ERROR] no instance nowhere/staging (missing apps/nowhere/staging/helmrelease.yaml)'),
+            ('/apps/hello/staging/disconnect', {'role': 'calls', 'app': 'nowhere'}, '[ERROR] hello/staging does not call nowhere'),
             ('/apps/hello/staging/remove', {}, '[ERROR] hello/staging is called by reports: remove those calls first'),
             ('/apps/hello/prod/scale', {'replicas': '9'}, '[BAD] quota: replicas and sizes exceed the namespace quota for pods'),
         )
@@ -547,9 +565,11 @@ class ChangeAppRouteTests(unittest.TestCase):
         c, _ = self.client(runner)
         for path, form, code in (('/apps/hello/prod/promote', {}, 400), ('/apps/hello/prod/scale', {}, 400),
                                  ('/apps/hello/prod/scale', {'replicas': '2; rm'}, 400), ('/apps/hello/prod/delete', {}, 404),
-                                 ('/apps/hello/prod/calls', {}, 400), ('/apps/hello/prod/calls', {'add': '--root=/'}, 400),
-                                 ('/apps/hello/prod/events', {'publish': 'Created'}, 400),
-                                 ('/apps/hello/prod/events', {'subscribe': 'created'}, 400),
+                                 ('/apps/hello/prod/connect', {}, 400), ('/apps/hello/prod/connect', {'calls': '--root=/'}, 400),
+                                 ('/apps/hello/prod/connect', {'publish': 'Created'}, 400),
+                                 ('/apps/hello/prod/connect', {'subscribe': 'created'}, 400),
+                                 ('/apps/hello/prod/disconnect', {'role': 'called-by', 'app': 'orders'}, 400),
+                                 ('/apps/hello/prod/calls', {}, 404), ('/apps/hello/prod/events', {}, 404),
                                  ('/apps/Hello/prod/remove', {}, 404), ('/apps/hello/dev/remove', {}, 404)):
             with self.subTest(path=path, form=form):
                 self.assertEqual(c.post(path, data=form, headers=WHO).status_code, code)

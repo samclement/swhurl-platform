@@ -2,6 +2,7 @@
 import datetime as dt
 import io
 import json
+import re
 import threading
 import unittest
 from contextlib import redirect_stderr
@@ -138,10 +139,15 @@ class ConnectionsTests(unittest.TestCase):
         text = client(runner).get('/apps', headers=WHO).text
         self.assertIn('title="Show only team payments">payments</a>', text)
         self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
-        self.assertIn('<dt>Called by</dt><dd><a href="/apps/reports/staging">reports</a></dd>', text, 'the opened row names them')
-        self.assertIn('<dt>Publishes</dt><dd><code>created</code>, <code>paid</code></dd>', text)
-        self.assertIn('<dt>Calls</dt><dd><a href="/apps/orders/staging">orders</a></dd>', text)
-        self.assertIn('<dt>Subscribes to</dt><dd><code>orders.created</code></dd>', text)
+        cells = [re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', text, re.S)]
+        listed = [tuple(cells[n:n + 5]) for n in range(0, len(cells), 5)]
+        for row in (('← incoming', 'call', 'reports', 'calls this app', '&lt;b&gt;insights'),
+                    ('→ outgoing', 'event', 'any subscriber', 'publishes paid', ''),
+                    ('← incoming', 'event', 'job', 'receives created', 'payments'),
+                    ('→ outgoing', 'call', 'orders', 'its API', 'payments'),
+                    ('→ outgoing', 'event', 'orders', 'receives created', 'payments')):
+            self.assertIn(row, listed, 'the opened row lists one connection per row, the same columns for each')
+        self.assertNotIn('/disconnect', text, 'changes are made on the app page')
         self.assertIn('>Staging only</span>', text)
         self.assertIn('<a href="/apps/reports/staging/promotion">Review promotion</a>', text)
         self.assertIn('<a class="open" href="https://staging-orders.homelab.swhurl.com" title="Open staging-orders.homelab.swhurl.com">', text)
@@ -190,6 +196,32 @@ class ConnectionsTests(unittest.TestCase):
         self.assertEqual(rows['orders', 'prod'].subscribers, (), 'production has its own connections')
         self.assertEqual((rows['job', 'staging'].address, rows['job', 'staging'].subscribes), ('', ('orders.created',)))
         self.assertEqual(rows['reports', 'staging'].summary, 'calls 1')
+        self.assertEqual([(r.direction, r.kind, r.app, r.event, r.team) for r in orders.rows],
+                         [('out', 'event', '', 'created', ''), ('out', 'event', '', 'paid', ''),
+                          ('in', 'call', 'reports', '', '<b>insights'), ('in', 'event', 'job', 'created', 'payments')],
+                         'what it declared first, then what others declared about it')
+        self.assertEqual([(r.role, r.app, r.event) for r in rows['job', 'staging'].rows], [('subscribes', 'orders', 'created')])
+
+    def test_the_app_page_lists_connections_and_offers_what_is_left_to_connect(self):
+        def page(app):
+            runner = self.cluster()
+            runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit(f'app-{app}-staging')))
+            runner.on('kubectl', '-n', f'{app}-staging', 'get', 'helmrelease', stdout=json.dumps(
+                next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == f'{app}-staging')))
+            runner.on('kubectl', '-n', f'{app}-staging', 'get', stdout=json.dumps({'items': []}))
+            runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
+            return client(runner).get(f'/apps/{app}/staging', headers=WHO).text
+        text = page('reports')
+        self.assertIn('<table class="compact connections">', text)
+        self.assertIn('<input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="orders">', text)
+        self.assertNotIn('name="calls" value="orders"', text, 'what it calls already is not offered again')
+        self.assertNotIn('name="calls" value="reports"', text, 'nor itself')
+        self.assertIn('name="subscribe" value="orders.created"', text)
+        self.assertIn('name="subscribe" value="orders.paid"', text)
+        orders = page('orders')
+        self.assertIn('name="calls" value="reports"', orders)
+        self.assertNotIn('name="calls" value="job"', orders, 'a worker cannot be called')
+        self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 2, 'only what it declared: its two events')
         self.assertEqual(cluster.Connections().summary, '')
 
     def test_an_account_that_cannot_list_namespaces_still_gets_the_apps(self):
@@ -439,8 +471,9 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
         self.assertEqual(text.count('<form class="wizard"'), 4, 'the app page uses the New app form layout')
-        self.assertIn('action="/apps/web/prod/calls"', text)
-        self.assertIn('action="/apps/web/prod/events"', text)
+        self.assertEqual(text.count('action="/apps/web/prod/connect"'), 2, 'connect to an app, and publish an event')
+        self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
+        self.assertIn('No connections: it calls nothing', text)
         self.assertLess(text.index('>Use</h2>'), text.index('>Connect</h2>'))
         self.assertLess(text.index('>Connect</h2>'), text.index('>Operate</h2>'))
         self.assertEqual(text.count('<h1>web '), 1, 'the app is named once, with its language; the environment is the tab')

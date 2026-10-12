@@ -1164,4 +1164,4 @@ Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-oct
 - `make team-remove NAME=platform` removed the team, which owned nothing, and its route to the `platform` channel; the channel itself stays and `demo` notifies it. Three test fixtures that labelled a namespace with team `platform` are checked against this registry and name `demo` now.
 - The Teams page and New app list teams in alphabetical order.
 - The namespaces `test-3-staging` and `test-3-prod`, each holding only its leftover TLS Secret, were deleted with `kubectl delete ns` on the operator's word. `test-1-staging` was not: it holds a retained 1Gi claim (`pvc-0b74a34c…`) from an app removed on 2 October, with no backup.
-
+- Later the same day, on the operator's word: `make destroy-data TARGET=pvc/test-1-staging/test-1` (after its `DRY_RUN=true` checks passed) deleted that claim, its volume and host data, and `kubectl delete ns test-1-staging` removed the namespace, which then held only a leftover TLS Secret. No namespace or volume of a removed app remains.

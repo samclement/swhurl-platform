@@ -34,7 +34,7 @@ from swhurl.apps.calling import (
 from swhurl.apps.contract import (
     EXPOSURE,
 )
-from swhurl.apps.instance import ENVIRONMENTS, NAME_RE
+from swhurl.apps.instance import ENVIRONMENTS, INSTANCE_ROOTS, NAME_RE, Instance, instances
 from swhurl.apps.new import (
     dump,
     isolation_files,
@@ -69,7 +69,7 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: 
     (and ``listed``, and no longer ``unlisted``: the event files, which sync_env writes or deletes)."""
     port = service_port(values(release))
     callers = allowed_callers(helmrelease.variables(release))
-    files = isolation_files(app, f'{app}-{env}', exposure, port, callers)
+    files = isolation_files(app, Instance(app, env).namespace, exposure, port, callers)
     edits = [(instance / name, text) for name, text in files.items()]
     kustomization = YamlFile(instance / 'kustomization.yaml')
     resources = kustomization.data.get('resources')
@@ -172,7 +172,7 @@ def service_port(app_values: dict) -> int | None:
     return port
 
 def instances_in(root: Path, env: str) -> list[str]:
-    return sorted(p.parent.parent.name for p in (root / 'apps').glob(f'*/{env}/helmrelease.yaml'))
+    return sorted(each.app for each in instances(root / INSTANCE_ROOTS[0]) if each.env == env)
 
 def sync_env(root: Path, env: str) -> list[Path]:
     """Rewrite what the platform derives in every instance of one environment; return the files changed.
@@ -218,7 +218,7 @@ def sync_env(root: Path, env: str) -> list[Path]:
         exposure = mapping(mapping(YamlFile(instance / 'namespace.yaml').data, 'metadata'), 'labels').get(EXPOSURE)
         event_files, listed, unlisted, user = event_edits(root, instance, app, env, doc.data, publishers)
         if user:
-            watch_namespace(root, f'{app}-{env}')
+            watch_namespace(root, Instance(app, env).namespace)
         edits.append((doc.path, doc.render()))
         edits += event_files
         edits += isolation_edits(instance, app, env, exposure, doc.data, listed=listed, unlisted=unlisted)

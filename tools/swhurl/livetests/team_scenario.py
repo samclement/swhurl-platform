@@ -19,12 +19,12 @@ import secrets
 
 from swhurl import verify
 from swhurl.apps import calling, contract, events, helmrelease
-from swhurl.apps.instance import NAME_RE
+from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.livetests import LiveTest, Preflight, run_live_test
 
 
 def release(t: LiveTest, app: str, env: str) -> dict:
-    found = t.get('-n', f'{app}-{env}', 'get', 'helmrelease', app)
+    found = t.get('-n', Instance(app, env).namespace, 'get', 'helmrelease', app)
     if not found:
         raise Preflight(f'{app}/{env} is not deployed')
     return found
@@ -86,7 +86,7 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
             f'{callee} published {callee}.{event} and {subscriber} processed it, in the same trace',
             f'no publish span from {callee} or no "process {callee}.{event}" span from {subscriber}')
     for app in (caller, callee, subscriber):
-        wanted = t.label(t.get('get', 'namespace', f'{app}-{env}'), contract.TEAM) or ''
+        wanted = t.label(t.get('get', 'namespace', Instance(app, env).namespace), contract.TEAM) or ''
         found = sorted({span[1] for span in spans if span[0] == app})
         t.check(bool(wanted) and found == [wanted], f"{app}'s spans carry its team: {wanted}",
                 f"{app}'s spans carry team {found or 'none'}, its namespace says {wanted or 'none'}")

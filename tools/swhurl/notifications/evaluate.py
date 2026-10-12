@@ -4,15 +4,14 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import logging
-import re
 
 from swhurl.apps import ops
+from swhurl.apps.instance import Instance
 from swhurl.run import Runner
 from swhurl.verify import ready_condition
 
 from .state import empty_state
 
-APP_PATH = re.compile(r'^\./(?:tests/fixtures/apps/)?apps/([a-z][a-z0-9-]*)/(staging|prod)$')
 GRACE = 300
 CONSOLE_GRACE = 600
 RECOVERY = 120
@@ -53,10 +52,9 @@ def targets(data: dict, copies: bool = False) -> dict:
         if unit['metadata'].get('deletionTimestamp'):
             continue
         path = (unit.get('spec') or {}).get('path', '')
-        match = APP_PATH.fullmatch(path)
-        if match:
-            app, env = match.groups()
-            key, title = f'{app}-{env}/{app}', f'{app}/{env}'
+        instance = Instance.of_path(path) if path.startswith('./') else None
+        if instance:
+            key, title = f'{instance.namespace}/{instance.app}', str(instance)
         elif unit['metadata']['name'] == 'platform-console' and path == './platform/console':
             key = 'console/console'
             title = 'console'
@@ -65,7 +63,7 @@ def targets(data: dict, copies: bool = False) -> dict:
         found[key] = {'title': title, 'unit': unit['metadata']['name'], 'namespace': key.split('/')[0],
                       'name': key.split('/')[1], 'console': title == 'console', 'unit_object': unit}
         if copies and title != 'console':
-            found[key]['about'] = [app, env]  # the notify service sends a copy to this app's team
+            found[key]['about'] = [instance.app, instance.env]  # the notify service sends a copy to this app's team
     return found
 
 

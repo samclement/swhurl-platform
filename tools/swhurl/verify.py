@@ -22,6 +22,7 @@ import yaml
 
 from swhurl import ROOT, clickstack, flux, images, platform, recovery, sqlite_backup
 from swhurl.apps import calling, channels, contract, events, helmrelease, hooks
+from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -543,8 +544,8 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
     known = contract.teams(root)
     live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
     complete = 0
-    for instance in sorted(p.parent for p in (root / 'apps').glob('*/*/helmrelease.yaml')):
-        app, name = instance.parent.name, f'{instance.parent.name}-{instance.name}'
+    for instance in instances(root / INSTANCE_ROOTS[0]):
+        app, name = instance.app, instance.namespace
         if name not in live:
             report.bad(f'{name}: the namespace does not exist')
             continue
@@ -648,9 +649,10 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     elif known:
         report.ok(f'{len(known)} channel(s) have their Secret')
     owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
-    for path in sorted((root / 'apps').glob('*/*/namespace.yaml')):
-        labels = ((yaml.safe_load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {}
-        owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(path.parent.parent.name)
+    for instance in instances(root / INSTANCE_ROOTS[0]):
+        path = instance.folder(root) / 'namespace.yaml'
+        labels = ((yaml.safe_load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {} if path.is_file() else {}
+        owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(instance.app)
     for team, apps in sorted(owned.items()):
         if team and not routes.get(team):
             report.warn(f'team {team} owns {len(apps)} app(s) and has no notification channel: their alerts and messages '

@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, platform
+from swhurl.apps.instance import Instance
 from swhurl.recovery import DEFAULT_BACKUP_DIR, RecoveryError, sha256
 from swhurl.run import CommandError, Runner
 from swhurl.sqlite_backup import Database, find, plain_fingerprint, pod_manifest
@@ -170,6 +171,10 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         print(__doc__.split('\n\n')[1], file=sys.stderr)
         return 2
     app, env = argv
+    instance = Instance.named(app, env)
+    if instance is None:
+        print(f'[ERROR] no instance {app}/{env}', file=sys.stderr)
+        return 2
     runner = runner or Runner.from_environment()
     if not runner.dry_run and os.environ.get('CONFIRM') != f'{app}/{env}':
         print(f'[ERROR] restore-sqlite replaces the live database of {app}/{env} and stops the app meanwhile. '
@@ -177,7 +182,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         return 2
     try:
         settings = RestoreSettings.from_env(os.environ)
-        db = database(runner, f'{app}-{env}')
+        db = database(runner, instance.namespace)
         restore(runner, db, settings.archive(db.namespace), settings.age_key,
                 stamp=dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ'))
     except (RecoveryError, CommandError, ValueError) as error:

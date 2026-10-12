@@ -25,6 +25,7 @@ from pathlib import Path
 import yaml
 
 from swhurl.apps import helmrelease
+from swhurl.apps.instance import ENVIRONMENTS, INSTANCE_ROOTS, Instance, instances
 
 NAMESPACE = 'messaging'
 UNIT = 'platform-nats'
@@ -128,18 +129,17 @@ def users_file(root: Path) -> tuple[Path, str] | None:
     if not key_file.is_file():
         return None
     users = [controller_user(key_file.read_text().strip())]
-    for env in ('staging', 'prod'):
-        for path in sorted((root / 'apps').glob(f'*/{env}/helmrelease.yaml')):
-            variables = helmrelease.variables(yaml.safe_load(path.read_text()))
-            if variables.get(NKEY_VARIABLE) and (published(variables) or subscribed(variables)):
-                users.append(user(str(variables[NKEY_VARIABLE]), env, path.parent.parent.name, published(variables),
-                                  subscribed(variables)))
+    found = instances(root / INSTANCE_ROOTS[0])
+    for each in (each for env in ENVIRONMENTS for each in found if each.env == env):  # one environment after the other
+        variables = helmrelease.variables(yaml.safe_load((each.folder(root) / 'helmrelease.yaml').read_text()))
+        if variables.get(NKEY_VARIABLE) and (published(variables) or subscribed(variables)):
+            users.append(user(str(variables[NKEY_VARIABLE]), each.env, each.app, published(variables), subscribed(variables)))
     return root / USERS_FILE, users_configmap(users)
 
 
 def manifests(app: str, env: str, publishes: list[str], subscribes: list[tuple[str, str]]) -> list[dict]:
     """The instance's stream (if it publishes) and one durable consumer per subscription."""
-    namespace = f'{app}-{env}'
+    namespace = Instance(app, env).namespace
     docs = []
     if publishes:
         docs.append({'apiVersion': 'jetstream.nats.io/v1beta2', 'kind': 'Stream',

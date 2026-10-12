@@ -24,8 +24,7 @@
 <section class="card" id="app-{{ g.app }}">
   <div class="card-head" style="--acts: 0">
     <h2><a href="/apps/{{ g.app }}/{{ env }}">{{ g.app }}</a></h2>
-    <p class="muted">team {{ g.team or 'unknown' }}</p>
-    <p class="uses"><span class="muted">Uses</span> {% for kind, name in g.uses %}{{ use(kind, name) }} {% else %}<span class="muted">nothing</span>{% endfor %}</p>
+    <p class="uses"><span class="muted">team {{ g.team or 'unknown' }} · uses</span> {% for kind, name in g.uses %}{{ use(kind, name) }} {% else %}<span class="muted">nothing</span>{% endfor %}</p>
   </div>
   {% if g.entries %}
   <div class="openlist catalogue">

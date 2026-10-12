@@ -7,7 +7,7 @@
   },
   "components": {
     "schemas": {
-      "Hello": {
+      "Shop": {
         "type": "object",
         "properties": {
           "message": {
@@ -18,50 +18,24 @@
             "type": "string"
           },
           "caller": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "app",
-                  "user",
-                  "anonymous"
-                ]
-              },
-              "id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
+            "$ref": "#/components/schemas/Caller"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
             },
-            "required": [
-              "type",
-              "id"
-            ]
+            "description": "What can be bought"
           },
-          "visits": {
-            "type": "integer",
-            "description": "How many times it was asked, when the app keeps a database"
-          },
-          "event": {
+          "latestOrders": {
             "type": [
-              "object",
+              "array",
               "null"
             ],
-            "properties": {
-              "type": {
-                "type": "string"
-              },
-              "id": {
-                "type": "string"
-              }
+            "items": {
+              "$ref": "#/components/schemas/Order"
             },
-            "required": [
-              "type",
-              "id"
-            ],
-            "description": "The event this request published, if any"
+            "description": "The newest five orders, from demo-orders; null if it could not be asked"
           },
           "traceId": {
             "type": [
@@ -74,8 +48,95 @@
           "message",
           "service",
           "caller",
-          "event",
+          "items",
+          "latestOrders",
           "traceId"
+        ]
+      },
+      "Caller": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "app",
+              "user",
+              "anonymous"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string",
+            "example": "tea"
+          },
+          "quantity": {
+            "type": "integer",
+            "example": 2
+          },
+          "placedBy": {
+            "type": "string",
+            "example": "demo-shop"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item",
+          "quantity",
+          "placedBy",
+          "at"
+        ]
+      },
+      "Bought": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          },
+          "boughtBy": {
+            "$ref": "#/components/schemas/Caller"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "order",
+          "boughtBy",
+          "traceId"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
         ]
       }
     },
@@ -84,14 +145,94 @@
   "paths": {
     "/": {
       "get": {
-        "summary": "Say hello and name the caller",
+        "summary": "The shop: what it sells and the latest orders",
         "responses": {
           "200": {
-            "description": "A greeting",
+            "description": "The shop",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Hello"
+                  "$ref": "#/components/schemas/Shop"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/buy": {
+      "post": {
+        "summary": "Buy something: the shop places the order with demo-orders",
+        "description": "Anyone who reaches the shop may buy: a signed-in person, or an app that declared a call to demo-shop. The order is placed in demo-orders by this app, with its own token. Send `item` and `quantity` as JSON or as query parameters.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "default": "tea",
+              "example": "tea"
+            },
+            "required": false,
+            "name": "item",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1,
+              "example": 2
+            },
+            "required": false,
+            "name": "quantity",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "item": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "default": "tea",
+                    "example": "tea"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 1,
+                    "example": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order demo-orders stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bought"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "demo-orders refused or could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

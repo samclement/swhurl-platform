@@ -1274,3 +1274,17 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **Checks:** `make verify-platform` reported the newest MongoDB backup and each of the four SQLite backups, on the host and in S3, as 0.0 to 0.1 h old. `prune-backups --dry-run` on the real directory would prune only that morning's MongoDB backup (two on one day) and keep 9.
 - **Offline:** `make check` passed (648 tests); the dry-run variants CI runs printed their plans.
 - **Not exercised:** the 03:30 timer running the new code with pruning on (first run 13 October), a real `make restore-sqlite` on an app instance, and a failed upload or a cut-short stream outside the unit tests.
+
+## One Notice and one ntfy sender (12 October 2026)
+
+`1dc8c3a` makes a message for a person one value ([`notice.py`](../tools/swhurl/notifications/notice.py)): `Notice` holds the title, message, priority and link and writes itself for ntfy, for an outbox entry and for the notify service; the checker, the notify service and the host heartbeat send through one sender, and the platform topic has one reader with one address rule. A refactor: what is sent and what an outbox stores did not change. Console image `src-b1bcfe7d3e4be21a` (`eb34a98`), which the checker and the notify service run too.
+
+- **Same messages as before:** run offline with the previous commit's tooling and the new, the checker's outbox entries, the notify service's entries for a request, an app's own message and a firing and a recovered ClickStack alert, both HyperDX webhook definitions, and every HTTP request (the heartbeat's and the checker's to ntfy, the checker's copy to the notify service with its token header) were identical.
+- **The checker, live:** the first `console-notifications` job on the new image posted `console deployed` to the platform topic (ntfy answered 200) and ended with nothing pending.
+- **The notify service, live:** a purchase of 12 tea through `demo-shop/staging` (port-forward with the sign-in header) made `demo-notifier` send `demo-notifier/staging: Big order`; the new pod accepted it for one channel and delivered it to channel `platform` a second later (ntfy answered 200). One real message.
+- **ClickStack's webhooks:** `DRY_RUN=true make clickstack-ntfy-webhook` and `clickstack-notify-webhook` each reported the live webhook up to date, so neither body changed.
+- **A fault that run found:** those two commands run with the system interpreter, which has no `httpx`, and the first draft imported it with the platform topic's reader. It is now imported only where a notice is sent, and a test loads the command without it.
+- **Host heartbeat:** the timer's 22:20 UTC run used the new code and succeeded (checker fresh, nothing to send); `make notifications-check` previewed 13 instances with nothing pending.
+- **Checks:** `make check` passed (659 tests); `Validate` passed on `1dc8c3a`; `make verify-platform` passed with no warnings (notification channels, notify service on the console's image, checker and heartbeat).
+- **Changed on purpose:** the ClickStack webhook command accepts the platform topic on any HTTPS ntfy server, as every other sender does; it used to refuse anything but `ntfy.sh`. The live topic is on `ntfy.sh`.
+- **Not exercised:** a real stale or recovered message from the host heartbeat, the checker's copy of an app message reaching the notify service (no app was deployed or failed in this window), and a ClickStack alert arriving at `/v1/alert` from HyperDX itself.

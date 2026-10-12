@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl.apps import calling, contract, events, helmrelease, ops
+from swhurl.apps import calling, contract, events, helmrelease, offers, ops
 from swhurl.apps.new import NAME_RE
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -290,6 +290,11 @@ def create(root: Path, app: str, source: dict, *, host: str | None = None, runne
         # What the platform derives per environment: production's own identity; its callers are
         # worked out from the production instances that exist (derive.sync_env, after this).
         main, workload = helmrelease.container(release), helmrelease.workload(release)
+        # What staging's image offers is carried after this (edit.carry_offers): the note of its commit
+        # without the documents would fail the policy check below.
+        annotations = release['metadata'].get('annotations') or {}
+        if annotations.pop(offers.ANNOTATION, None) is not None and not annotations:
+            release['metadata'].pop('annotations', None)
         variables = main.get('env') or {}
         if calling.ENVIRONMENT_VARIABLE in variables:
             variables[calling.ENVIRONMENT_VARIABLE] = 'prod'

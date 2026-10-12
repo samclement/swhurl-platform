@@ -1191,3 +1191,10 @@ Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-oct
 Promoting `swhurl-try-12` for the first time from the console opened pull request #58 and logged "set the Secret values on the branch first", although the only encrypted file was its generated production events key. The operator merged it (`64e9840`); `make app-status APP=swhurl-try-12 ENV=prod` shows the release installed and the reviewed image running. `515e239` (console image `src-3707c1ac9d0d5c1b`, deployed as `4d5ef34`) makes the job say that the pull request adds the generated events key and needs nothing set; `make verify-platform` passed.
 
 - **Not exercised:** the new wording on a real promotion (covered by `make test`); whether the auto-merge gate would accept such a pull request if the console did label it.
+
+## A new-app job interrupted by a console deploy (12 October 2026)
+
+The console's **Start a new app** for `test-1` created the repository `samclement/test-1`, its image webhook and its first image (`1-3cb751e`), then stopped: the console pod was replaced at 19:10:57 UTC by the deploy of `515e239` while the job waited for the build, and jobs are kept in the pod's memory (`/jobs/2` answered 404 afterwards). No platform pull request was opened. The operator finished it from a terminal with `make app-new NAME=test-1 ARGS="--from-repo samclement/test-1 --env staging --team insights --image …"` (`24fbfc1`).
+
+- `make app-status APP=test-1 ENV=staging`: release installed, the first image running and matching, 1/1 ready, team `insights`, signed-in access. Signed out, `https://staging-test-1.homelab.swhurl.com/` answers 302 and `http://` 301; its certificate is Ready. `make verify-platform` passed.
+- **Open:** a console deploy ends any running job without a trace, and an interrupted new-app job cannot be resumed from the console.

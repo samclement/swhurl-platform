@@ -1185,3 +1185,9 @@ Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-oct
 - **Notification checker:** its first runs on the new image completed with "11 instances, 0 pending" (the 10 app instances and the console).
 - **Not exercised:** a message sent by an app through the notify service, and a HyperDX alert reaching it (both recognise the sender's namespace through the new module; covered by `make test`); a change made from the console (a connection, a promotion) on the new image.
 - **Found, not caused by this change:** `make app-check APP=demo-shop ENV=staging` fails its `calls` rule, as it did at `ba9ce83`: checked alone, an instance is judged without the instances it calls or is called by. `make check-apps` passes.
+
+## Promotion of an app with events: the held pull request's wording (12 October 2026)
+
+Promoting `swhurl-try-12` for the first time from the console opened pull request #58 and logged "set the Secret values on the branch first", although the only encrypted file was its generated production events key. The operator merged it (`64e9840`); `make app-status APP=swhurl-try-12 ENV=prod` shows the release installed and the reviewed image running. `515e239` (console image `src-3707c1ac9d0d5c1b`, deployed as `4d5ef34`) makes the job say that the pull request adds the generated events key and needs nothing set; `make verify-platform` passed.
+
+- **Not exercised:** the new wording on a real promotion (covered by `make test`); whether the auto-merge gate would accept such a pull request if the console did label it.

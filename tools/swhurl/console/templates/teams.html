@@ -47,7 +47,8 @@
     </details>
   </div>
 </div>
-{% for name, description in teams.items() %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
+{# In alphabetical order, whatever order the registry lists them in. #}
+{% for name, description in teams | dictsort %}{% set apps = owned.get(name) or {} %}{% set count = apps | length %}{% set job = team_jobs.get(name) %}
 <section class="card" id="{{ name }}">
   <div class="card-head" style="--acts: 3">
     <h2>{{ name }}</h2>
@@ -93,7 +94,7 @@
           <div class="field">
             <label for="move-{{ name }}">Move its {{ count }} app(s) to</label>
             <select id="move-{{ name }}" name="move_apps_to" required>
-              {% for other in teams if other != name %}<option value="{{ other }}">{{ other }}</option>{% endfor %}
+              {% for other in teams | sort if other != name %}<option value="{{ other }}">{{ other }}</option>{% endfor %}
             </select>
             <span class="muted hint">A team that owns apps is not deleted on its own: the same pull request moves {{ apps | join(', ') }} first, so no app is left without a team.</span>
           </div>

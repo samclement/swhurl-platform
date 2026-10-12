@@ -1157,3 +1157,11 @@ Step 4 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-20
 - Two unit tests read this repository's own `apps/` and named `hello-ts`; they name `demo-shop` now.
 - Left: the empty namespaces `test-3-staging` and `test-3-prod` (and `test-1-staging`, from before); the GitHub repositories and packages of the four apps.
 
+## The platform team removed (12 October 2026)
+
+Steps 5 and 6 of [plan section 18](plan.md#18-demo-team-and-apps--decided-12-october-2026).
+
+- `make team-remove NAME=platform` removed the team, which owned nothing, and its route to the `platform` channel; the channel itself stays and `demo` notifies it. Three test fixtures that labelled a namespace with team `platform` are checked against this registry and name `demo` now.
+- The Teams page and New app list teams in alphabetical order.
+- The namespaces `test-3-staging` and `test-3-prod`, each holding only its leftover TLS Secret, were deleted with `kubectl delete ns` on the operator's word. `test-1-staging` was not: it holds a retained 1Gi claim (`pvc-0b74a34c…`) from an app removed on 2 October, with no backup.
+

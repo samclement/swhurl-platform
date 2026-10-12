@@ -86,7 +86,7 @@ elif argv[:3] == ['get', '--raw', '/.well-known/openid-configuration']:
     emit({'issuer': os.environ['ISSUER']})
 elif argv[:2] == ['get', 'namespaces']:  # isolation check: every instance in this checkout is in order
     emit({'items': [{'metadata': {'name': a + '-' + e, 'labels': {'platform.swhurl.com/app': a,
-                                                                  'platform.swhurl.com/team': 'platform'}}}
+                                                                  'platform.swhurl.com/team': 'demo'}}}
                     for a, e in json.loads(os.environ['INSTANCES'])]})
 elif argv[:2] == ['get', 'resourcequotas']:
     emit({'items': [{'metadata': {'namespace': a + '-' + e}, 'spec': {'hard': json.loads(os.environ['QUOTA'])}}

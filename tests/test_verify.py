@@ -73,7 +73,7 @@ def healthy(**overrides):
             'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '12-abcdef0'}}}]},
         # The isolation check walks the instances in this checkout: answer for each of them.
         'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
-            'platform.swhurl.com/app': app, contract.TEAM: 'platform'}}} for app, env in INSTANCES]},
+            'platform.swhurl.com/app': app, contract.TEAM: 'demo'}}} for app, env in INSTANCES]},
         'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
                              for app, env in INSTANCES]},
         'network-policies': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {
@@ -366,7 +366,7 @@ class ConsoleTokenTests(unittest.TestCase):
             verify.check_isolation(healthy(**overrides), report, root)
             return report.lines
         present = {'items': [{'metadata': {'name': 'w-staging', 'labels': {
-            'platform.swhurl.com/app': 'w', contract.TEAM: 'platform'}}}]}
+            'platform.swhurl.com/app': 'w', contract.TEAM: 'demo'}}}]}
         good = {'app-namespaces': present,
                 'quotas': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'hard': contract.QUOTA}}]},
                 'network-policies': {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {

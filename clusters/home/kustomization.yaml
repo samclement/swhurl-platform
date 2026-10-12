@@ -20,3 +20,4 @@ resources:
   - app-demo-orders-staging.yaml
   - app-demo-shop-staging.yaml
   - app-demo-shopper-staging.yaml
+  - app-demo-notifier-staging.yaml

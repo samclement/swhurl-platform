@@ -529,6 +529,7 @@ components:
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
         self.assertEqual(release['metadata']['annotations'][offers.ANNOTATION], 'abc1234')
         self.assertNotIn('offers', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'], 'documents, not resources')
+        self.assertEqual(self.env('orders')['SWHURL_API_PATH'], '/openapi.json', 'where it serves its description, from swhurl.yaml')
         self.assertEqual(offers.problems(instance, ['created', 'paid'], 'abc1234'), [])
         self.assertIn('describes created, paid', offers.problems(instance, ['created'], 'abc1234')[0])
         self.assertIn('the release says its offers are from 0000000', offers.problems(instance, ['created', 'paid'], '0000000')[0])

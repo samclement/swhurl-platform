@@ -21,7 +21,7 @@ import re
 import sys
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -307,9 +307,28 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 states = {f'{row.instance.app}/{row.instance.env}': row.state for row in cluster.apps(runner)}
             except cluster.ReadError:
                 states = None
+        # The live state only describes the latest change to an instance. If a newer PR has
+        # already merged, an older create/update row must not appear to still be rolling out
+        # just because the newer change removed or replaced that instance.
+        def merge_order(pull: stages.Pull | None) -> tuple[dt.datetime, int] | None:
+            if not pull or pull.state != 'merged' or not pull.when:
+                return None
+            try:
+                return dt.datetime.fromisoformat(pull.when.replace('Z', '+00:00')), pull.number
+            except ValueError:
+                return None
+
+        latest_merge: dict[str, tuple[dt.datetime, int]] = {}
+        for job in found:
+            order = merge_order(pulls.get(job.id))
+            if order and (job.unit not in latest_merge or order > latest_merge[job.unit]):
+                latest_merge[job.unit] = order
         rows = []
         for job in found:
             pull = pulls.get(job.id)
+            order = merge_order(pull)
+            if order and order < latest_merge.get(job.unit, order):
+                pull = replace(pull, fresh=False)
             live = None if states is None else states.get(job.unit, stages.ABSENT)
             when = ago(pull.when) if pull and pull.when else ''
             track = stages.track(job, pull and stages.Pull(**{**pull.__dict__, 'when': when}), live)

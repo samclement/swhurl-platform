@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import platform
-from swhurl.apps import helmrelease, ops, promotion
+from swhurl.apps import calling, helmrelease, ops, promotion
 from swhurl.apps.instance import Instance, instance_folder
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
@@ -40,6 +40,14 @@ def main_tree(runner: Runner, github: changes.GitHub, read: Callable[[Path], obj
         shutil.rmtree(work, ignore_errors=True)
 
 
+def admitting(root: Path, app: str, source: dict) -> list[str]:
+    """The production apps a first promotion of ``app`` also edits: each app staging calls that already
+    runs in production gains the new caller in its allowed callers and network policy. The merge gate
+    holds a promotion to its own app, so such a pull request is merged by a person."""
+    return [callee for callee in calling.declared_calls(helmrelease.variables(source))
+            if callee != app and instance_folder(root, callee, 'prod').is_dir()]
+
+
 def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     source, target = promotion.read(root, app)
     decision = promotion.decide(source, target)
@@ -50,9 +58,10 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     exposure = namespace.get('metadata', {}).get('labels', {}).get(promotion.contract.EXPOSURE)
     if exposure not in promotion.contract.EXPOSURES:
         raise EditError('staging needs a supported exposure label')
-    args = None
+    args, admits = None, []
     if decision.outcome == 'create':
         args = promotion.first_args(root, app, source, preview=True)
+        admits = admitting(root, app, source)
     needs_host = decision.outcome == 'create' and exposure == 'public'
     if target:
         addresses = helmrelease.hosts(target)
@@ -65,9 +74,10 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
             'configuration': promotion.fingerprint(root, app, 'staging'),
             'target': promotion.fingerprint(root, app, 'prod'), 'needs_host': needs_host,
             'secrets': args.secret_keys if args else [], 'storage': args.persistence if args else None,
+            'admits': admits,
             'address': ', '.join('https://' + address for address in addresses) or
             ('private (no route)' if not needs_host else ''),
-            'setup': bool(needs_host or args and args.secret_keys)}
+            'setup': bool(needs_host or args and args.secret_keys or admits)}
 
 
 def metadata(root: Path, app: str, image: str, setup: bool) -> dict:
@@ -117,7 +127,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
     if previous:
         job.lines.append('Reusing the existing promotion pull request')
         return previous.url
-    captured = {}
+    captured, admits, own_setup = {}, [], []
 
     def change(root: Path):
         source, target = promotion.read(root, app)
@@ -126,17 +136,28 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
         if promotion.fingerprint(root, app, 'staging') != form['configuration']:
             raise ActionError('staging configuration changed since review; refresh and review it again')
         args = promotion.first_args(root, app, source, host=form.get('host') or None) if target is None else None
-        setup = bool(args and (args.secret_keys or args.exposure == 'public'))
+        admits.extend(admitting(root, app, source) if target is None else [])
+        if args and (args.secret_keys or args.exposure == 'public'):
+            own_setup.append(True)
+        setup = bool(own_setup or admits)
         captured.update(metadata(root, app, image, setup))
+        if admits:
+            job.lines.append(f"Not merging automatically: it also lets {app} call {', '.join(admits)} in production, "
+                             "changing those apps' allowed callers and network policy; review them, then merge it yourself")
         argv = [app, f'--expect-image={image}', f'--expect-config={form["configuration"]}']
         if form.get('host'):
             argv.append(f'--host={form["host"]}')
         changes.run_tool(runner, job, root, 'app-promote', argv)
 
     def body(_root: Path) -> str:
-        instructions = ('\n\nBefore merging, review the production hostname, and if Secret stubs were created, set their values with '
-                        f'`sops apps/{app}/prod/secret.sops.yaml` and review Reloader registration.'
-                        if captured.get('setup') else '')
+        instructions = ''
+        if own_setup:
+            instructions += ('\n\nBefore merging, review the production hostname, and if Secret stubs were created, set their values with '
+                             f'`sops apps/{app}/prod/secret.sops.yaml` and review Reloader registration.')
+        if admits:
+            instructions += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
+                             "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy. The merge gate holds a "
+                             'promotion to its own app, so review those changes and merge this yourself.')
         return (f'Promote the reviewed staging image `{image}` to `{app}/prod`.' + instructions
                 + '\n\n<!-- swhurl-promotion ' + json.dumps(captured, sort_keys=True) + ' -->')
 

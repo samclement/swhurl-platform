@@ -108,6 +108,87 @@ class FakeGitHub:
                 and r.method == key.split(' ', 1)[0]]
 
 
+class ConsolePrProgressTests(unittest.TestCase):
+    def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None):
+        requests = []
+        pull = {'number': 7, 'title': 'apps: scale hello', 'html_url': 'https://github.com/x/pull/7',
+                'head': {'ref': 'console/scale-hello-staging-abc1234', 'sha': sha},
+                'created_at': '2026-10-01T07:00:00Z', 'labels': [{'name': label} for label in labels]}
+
+        def handle(request):
+            path = request.url.path.removeprefix('/repos/samclement/swhurl-platform')
+            requests.append(path)
+            if path == fail:
+                return httpx.Response(503, json={'message': 'Unavailable'})
+            answers = {'/pulls': [pull], '/actions/runs': {'workflow_runs': list(runs)},
+                       '/pulls/7': {'mergeable_state': mergeable}}
+            return httpx.Response(200, json=answers[path])
+
+        github = changes.GitHub('samclement/swhurl-platform', TOKEN, transport=httpx.MockTransport(handle))
+        return changes.console_prs(FakeRunner(), github)[0], requests
+
+    def test_validation_statuses_and_checks_urls(self):
+        cases = (
+            ('success', 'completed', 'Checks passed; awaiting merge verification'),
+            ('failure', 'completed', 'Failed validation; unmerged'),
+            ('cancelled', 'completed', 'Failed validation; unmerged'),
+            ('timed_out', 'completed', 'Failed validation; unmerged'),
+            ('action_required', 'completed', 'Failed validation; unmerged'),
+            (None, 'in_progress', 'Checks running'),
+            (None, 'queued', 'Checks pending'),
+            ('neutral', 'completed', 'Checks pending'),
+            ('skipped', 'completed', 'Checks pending'),
+        )
+        for conclusion, status, expected in cases:
+            with self.subTest(conclusion=conclusion, status=status):
+                run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': conclusion,
+                       'status': status, 'html_url': 'https://github.com/x/actions/runs/9'}
+                pr, requests = self.listed(runs=(run,))
+                self.assertEqual((pr.progress, pr.checks_url), (expected, run['html_url']))
+                self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7'])
+
+    def test_review_label_precedes_auto_merge_and_missing_sha_needs_no_checks(self):
+        cases = (
+            (('promotion-review-required', 'auto-merge'), HEAD, 'Review required: merge verification failed'),
+            ((), HEAD, 'Awaiting setup or manual review'),
+            (('auto-merge',), '', 'Awaiting setup or manual review'),
+        )
+        for labels, sha, expected in cases:
+            with self.subTest(labels=labels, sha=sha):
+                pr, requests = self.listed(labels=labels, sha=sha)
+                self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
+                self.assertEqual(requests, ['/pulls'])
+
+    def test_only_validate_for_this_sha_counts_and_first_matching_run_wins(self):
+        run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'failure', 'html_url': 'matching'}
+        runs = ({**run, 'head_sha': 'old', 'conclusion': 'success', 'html_url': 'wrong-sha'},
+                {**run, 'name': 'Other', 'conclusion': 'success', 'html_url': 'wrong-name'},
+                run, {**run, 'conclusion': 'success', 'html_url': 'older-match'})
+        pr, _requests = self.listed(runs=runs)
+        self.assertEqual((pr.progress, pr.checks_url), ('Failed validation; unmerged', 'matching'))
+        pr, _requests = self.listed(runs=runs[:2])
+        self.assertEqual((pr.progress, pr.checks_url), ('Checks pending', pr.url + '/checks'))
+
+    def test_conflict_overrides_validation_status(self):
+        for conclusion in ('success', 'failure', None):
+            with self.subTest(conclusion=conclusion):
+                run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': conclusion, 'html_url': 'checks'}
+                pr, _requests = self.listed(runs=(run,), mergeable='dirty')
+                self.assertEqual((pr.progress, pr.checks_url), ('Merge conflict; review required', 'checks'))
+
+    def test_read_failure_keeps_checks_url_available_at_that_point(self):
+        run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'success', 'html_url': 'checks'}
+        for fail, expected_url, expected_requests in (
+            ('/actions/runs', 'https://github.com/x/pull/7/checks', ['/pulls', '/actions/runs']),
+            ('/pulls/7', 'checks', ['/pulls', '/actions/runs', '/pulls/7']),
+        ):
+            with self.subTest(fail=fail):
+                pr, requests = self.listed(runs=(run,), fail=fail)
+                self.assertEqual((pr.progress, pr.checks_url),
+                                 ('Merge requested; check progress on GitHub', expected_url))
+                self.assertEqual(requests, expected_requests)
+
+
 class TreeRunner(FakeRunner):
     """A FakeRunner whose tooling commands edit the downloaded tree they run in, as app-new does."""
 

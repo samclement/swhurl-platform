@@ -140,6 +140,36 @@ class PullRequest:
     checks_url: str = ''
 
 
+def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str]:
+    """Describe review or validation progress and its best available checks link."""
+    checks_url = pull['html_url'] + '/checks'
+    if 'promotion-review-required' in labels:
+        return 'Review required: merge verification failed', checks_url
+    if AUTO_MERGE_LABEL not in labels or not pull['head'].get('sha'):
+        return 'Awaiting setup or manual review', checks_url
+    api = GitHubAPI(runner, github)
+    try:
+        runs = api.json('GET', f"/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=30")
+        checks = [r for r in runs.get('workflow_runs', [])
+                  if r.get('name') == 'Validate' and r.get('head_sha') == pull['head']['sha']]
+        latest = checks[0] if checks else {}
+        checks_url = latest.get('html_url', checks_url)
+        if latest.get('conclusion') == 'success':
+            progress = 'Checks passed; awaiting merge verification'
+        elif latest.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required'):
+            progress = 'Failed validation; unmerged'
+        else:
+            progress = 'Checks running' if latest.get('status') == 'in_progress' else 'Checks pending'
+        details = api.json('GET', f"/pulls/{pull['number']}")
+        if details.get('mergeable_state') == 'dirty':
+            progress = 'Merge conflict; review required'
+    except ActionError:
+        progress = 'Merge requested; check progress on GitHub'
+    finally:
+        api.client.close()
+    return progress, checks_url
+
+
 def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
     """Open pull requests the console made (``console/*`` branches), newest first."""
     runner.add_secret(github.token)
@@ -153,30 +183,7 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
         if not p['head']['ref'].startswith(BRANCH_PREFIX):
             continue
         labels = tuple(label['name'] for label in p.get('labels', []))
-        progress, checks_url = 'Awaiting setup or manual review', p['html_url'] + '/checks'
-        if 'promotion-review-required' in labels:
-            progress = 'Review required: merge verification failed'
-        elif AUTO_MERGE_LABEL in labels and p['head'].get('sha'):
-            api = GitHubAPI(runner, github)
-            try:
-                runs = api.json('GET', f"/actions/runs?head_sha={p['head']['sha']}&event=pull_request&per_page=30")
-                checks = [r for r in runs.get('workflow_runs', [])
-                          if r.get('name') == 'Validate' and r.get('head_sha') == p['head']['sha']]
-                latest = checks[0] if checks else {}
-                checks_url = latest.get('html_url', checks_url)
-                if latest.get('conclusion') == 'success':
-                    progress = 'Checks passed; awaiting merge verification'
-                elif latest.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required'):
-                    progress = 'Failed validation; unmerged'
-                else:
-                    progress = 'Checks running' if latest.get('status') == 'in_progress' else 'Checks pending'
-                details = api.json('GET', f"/pulls/{p['number']}")
-                if details.get('mergeable_state') == 'dirty':
-                    progress = 'Merge conflict; review required'
-            except ActionError:
-                progress = 'Merge requested; check progress on GitHub'
-            finally:
-                api.client.close()
+        progress, checks_url = pull_progress(runner, github, p, labels)
         out.append(PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10],
                                p.get('body') or '', labels, progress, checks_url))
     return out

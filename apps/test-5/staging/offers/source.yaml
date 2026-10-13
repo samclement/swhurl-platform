@@ -1,5 +1,0 @@
-# Read from the app's repository by make app-offers: do not edit.
-repository: samclement/test-5
-commit: 1d81c7e
-api: openapi.json
-events: asyncapi.yaml

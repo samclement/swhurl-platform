@@ -154,19 +154,12 @@ class ConnectionsTests(unittest.TestCase):
                                 {'metadata': {'name': 'reports-staging', 'labels': {'platform.swhurl.com/team': '<b>insights'}}}]}
         return fake(units=units, releases=releases, **{'kubectl get namespaces -l platform.swhurl.com/app': json.dumps(namespaces)})
 
-    def test_the_list_shows_each_apps_team_and_connections_and_filters_by_team(self):
+    def test_the_list_shows_each_apps_team_and_filters_by_team(self):
         runner = self.cluster()
         text = client(runner).get('/apps', headers=WHO).text
         self.assertIn('title="Show only team payments">payments</a>', text)
         self.assertIn('&lt;b&gt;insights', text, 'cluster values are escaped')
-        cells = [re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', text, re.S)]
-        listed = [tuple(cells[n:n + 5]) for n in range(0, len(cells), 5)]
-        for row in (('← incoming', 'call', 'reports', 'calls this app', '&lt;b&gt;insights'),
-                    ('→ outgoing', 'event', 'any subscriber', 'publishes paid', ''),
-                    ('← incoming', 'event', 'job', 'receives created', 'payments'),
-                    ('→ outgoing', 'call', 'orders', 'its API', 'payments'),
-                    ('→ outgoing', 'event', 'orders', 'receives created', 'payments')):
-            self.assertIn(row, listed, 'the opened row lists one connection per row, the same columns for each')
+        self.assertNotIn('class="compact connections"', text, 'the list is about what is deployed: connections are on the app page and the map')
         self.assertNotIn('/disconnect', text, 'changes are made on the app page')
         self.assertIn('>Staging only</span>', text)
         self.assertIn('<a href="/apps/reports/staging/promotion">Review promotion</a>', text)
@@ -244,6 +237,17 @@ class ConnectionsTests(unittest.TestCase):
         self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 2, 'only what it declared: its two events')
         self.assertIn('Publish an event</summary>', orders)
         self.assertNotIn('Describes itself', orders)
+        expected = {orders: [('← incoming', 'call', 'reports', 'calls this app', '&lt;b&gt;insights'),
+                             ('→ outgoing', 'event', 'any subscriber', 'publishes paid', ''),
+                             ('← incoming', 'event', 'job', 'receives created', 'payments')],
+                    text: [('→ outgoing', 'call', 'orders', 'its API', 'payments')],
+                    page('job'): [('→ outgoing', 'event', 'orders', 'receives created', 'payments')]}
+        for shown, rows in expected.items():
+            table = re.search(r'<table class="compact connections">.*?</table>', shown, re.S)[0]
+            listed = [tuple(re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', row, re.S))
+                      for row in re.findall(r'<tr>.*?</tr>', table, re.S)]
+            for row in rows:
+                self.assertIn(row, listed, 'one connection per row, the same columns for each')
 
     def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
         runner = self.cluster()

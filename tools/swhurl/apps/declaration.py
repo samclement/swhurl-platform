@@ -83,6 +83,65 @@ class Declaration:
     events_file: str = ''  # provides.eventsFile: where it keeps its AsyncAPI document
 
 
+def _resource_defaults(resources: dict, fail: Callable[[str], DeclarationError]) -> dict:
+    defaults: dict = {}
+    names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}
+    if set(resources) - set(names):
+        raise fail(f'resources may set {", ".join(names)} only')
+    for key, dest in names.items():
+        if resources.get(key) is not None:
+            if not isinstance(resources[key], str):
+                raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
+            defaults[dest] = resources[key]
+    return defaults
+
+
+def _event_defaults(declared: dict, fail: Callable[[str], DeclarationError]) -> dict:
+    defaults: dict = {}
+    if set(declared) - {'publish', 'subscribe'}:
+        raise fail('events may set publish and subscribe only')
+    for key, dest, pattern in (('publish', 'publish', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?'),
+                               ('subscribe', 'subscribe', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?')):
+        names = declared.get(key) or []
+        if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(pattern, n) for n in names) \
+                or len(set(names)) != len(names):
+            raise fail('events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)')
+        if names:
+            defaults[dest] = names
+    return defaults
+
+
+def _provides_defaults(provides: dict, kind: str, fail: Callable[[str], DeclarationError]) -> dict:
+    defaults: dict = {}
+    if set(provides) - {'api', 'apiFile', 'eventsFile'} or not isinstance(provides.get('api', '/'), str) \
+            or not provides.get('api', '/').startswith('/'):
+        raise fail('provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only')
+    for key in ('apiFile', 'eventsFile'):
+        # Where the app's repository keeps its OpenAPI and AsyncAPI documents: what it offers other apps.
+        path = provides.get(key)
+        if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
+            raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
+    if provides.get('apiFile') or provides.get('eventsFile'):
+        defaults['offers'] = True  # app-new reads them from the repository (make app-offers)
+    if provides.get('apiFile') and kind != 'web':
+        raise fail('provides.apiFile applies to kind web only')
+    if provides.get('api'):
+        if kind != 'web':
+            raise fail('provides.api applies to kind web only')
+        defaults['api_path'] = provides['api']
+    return defaults
+
+
+def _call_defaults(calls: list | None, fail: Callable[[str], DeclarationError]) -> dict:
+    defaults: dict = {}
+    if calls:
+        if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \
+                or len(set(calls)) != len(calls):
+            raise fail('calls must be a list of distinct app names')
+        defaults['calls'] = calls
+    return defaults
+
+
 def of(doc: object, source: str = FILE) -> Declaration:
     """The declaration a parsed document makes; DeclarationError naming the first problem."""
     def fail(message: str) -> DeclarationError:
@@ -135,49 +194,11 @@ def of(doc: object, source: str = FILE) -> Declaration:
         if problem := secret_key_problem(secrets):
             raise fail(problem)
         defaults['secret_keys'] = secrets
-    resources = field('resources', dict) or {}
-    names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}
-    if set(resources) - set(names):
-        raise fail(f'resources may set {", ".join(names)} only')
-    for key, dest in names.items():
-        if resources.get(key) is not None:
-            if not isinstance(resources[key], str):
-                raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
-            defaults[dest] = resources[key]
-    declared = field('events', dict) or {}
-    if set(declared) - {'publish', 'subscribe'}:
-        raise fail('events may set publish and subscribe only')
-    for key, dest, pattern in (('publish', 'publish', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?'),
-                               ('subscribe', 'subscribe', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?')):
-        names = declared.get(key) or []
-        if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(pattern, n) for n in names) \
-                or len(set(names)) != len(names):
-            raise fail('events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)')
-        if names:
-            defaults[dest] = names
+    defaults.update(_resource_defaults(field('resources', dict) or {}, fail))
+    defaults.update(_event_defaults(field('events', dict) or {}, fail))
     provides = field('provides', dict) or {}
-    if set(provides) - {'api', 'apiFile', 'eventsFile'} or not isinstance(provides.get('api', '/'), str) \
-            or not provides.get('api', '/').startswith('/'):
-        raise fail('provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only')
-    for key in ('apiFile', 'eventsFile'):
-        # Where the app's repository keeps its OpenAPI and AsyncAPI documents: what it offers other apps.
-        path = provides.get(key)
-        if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
-            raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
-    if provides.get('apiFile') or provides.get('eventsFile'):
-        defaults['offers'] = True  # app-new reads them from the repository (make app-offers)
-    if provides.get('apiFile') and kind != 'web':
-        raise fail('provides.apiFile applies to kind web only')
-    if provides.get('api'):
-        if kind != 'web':
-            raise fail('provides.api applies to kind web only')
-        defaults['api_path'] = provides['api']
-    calls = field('calls', list)
-    if calls:
-        if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \
-                or len(set(calls)) != len(calls):
-            raise fail('calls must be a list of distinct app names')
-        defaults['calls'] = calls
+    defaults.update(_provides_defaults(provides, kind, fail))
+    defaults.update(_call_defaults(field('calls', list), fail))
     if field('team', str):
         defaults['team'] = doc['team']  # checked against the registry by app-new
     if field('alerts', str):

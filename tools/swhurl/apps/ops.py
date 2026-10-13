@@ -111,10 +111,22 @@ class InstanceStatus:
     unit_suspended: bool = False
     release_suspended: bool = False
     unit_reason: str = ''  # the unit's Ready reason: tells waiting from failing
+    own_change: bool | None = None  # whether the commits its unit has yet to apply change its own files; None: not asked
 
     @property
     def applied(self) -> bool:
         return bool(self.desired_revision) and self.desired_revision == self.applied_revision
+
+    @property
+    def unaffected(self) -> bool:
+        """Its unit is behind Git's newest revision, but only by commits that leave its own files alone
+        (another app's deploy, a console change): whatever its unit waits for is not about this instance."""
+        return bool(self.desired_revision and self.applied_revision) and not self.applied and self.own_change is False
+
+    @property
+    def current(self) -> bool:
+        """Nothing of this instance waits in Git to be applied."""
+        return self.applied or self.unaffected
 
     @property
     def image_state(self) -> str:

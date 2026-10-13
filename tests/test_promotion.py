@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from swhurl import ROOT
-from swhurl.apps import contract, ops, promotion
+from swhurl.apps import contract, ops, promotion, state
 from swhurl.apps.instance import Instance
 from swhurl.apps.yaml_file import EditError
 
@@ -49,18 +49,55 @@ class PromotionTests(unittest.TestCase):
         status = ops.InstanceStatus(Instance('example', 'staging'), 'main@sha1:abc', 'main@sha1:abc',
                                     ('True', ''), ('True', ''), image, ['ghcr.io/example/app@' + DIGEST],
                                     [ops.Replicas('Deployment/example', 1, 1)], [], [], [])
-        self.assertEqual(promotion.source_problem(status, image, status.applied_revision), '')
+        self.assertEqual(promotion.source_problem(status, image), '')
         for changes in ({'unit_suspended': True}, {'release_suspended': True}, {'running_images': []},
                         {'release': None}, {'unit': ('False', 'failed')}, {'replicas': []},
                         {'replicas': [ops.Replicas('Deployment/example', 0, 0)]},
                         {'desired_revision': 'main@sha1:def'}, {'desired_image': image.replace('2-', '3-')}):
             with self.subTest(changes=changes):
-                self.assertTrue(promotion.source_problem(dataclasses.replace(status, **changes),
-                                                         image, status.applied_revision))
-        self.assertTrue(promotion.source_problem(None, image, 'abc'))
+                self.assertTrue(promotion.source_problem(dataclasses.replace(status, **changes), image))
+        self.assertTrue(promotion.source_problem(None, image))
         behind = dataclasses.replace(status, desired_revision='main@sha1:def')
-        self.assertIn('Flux is still applying the latest commit on main', promotion.source_problem(behind, image, status.applied_revision),
-                      "a commit for another app makes staging 'not applied' for a few seconds: say so, not 'unhealthy'")
+        self.assertIn('Flux is still applying the latest commit on main', promotion.source_problem(behind, image),
+                      "whether the unapplied commit changes this app is not known: say so, not 'unhealthy'")
+
+    def test_a_commit_that_leaves_staging_alone_does_not_hold_its_promotion(self):
+        """Any commit to main puts every unit behind for a few seconds; only one to the instance's own files is its change."""
+        image = 'ghcr.io/example/app:2-abcdef0@' + DIGEST
+        behind = ops.InstanceStatus(Instance('example', 'staging'), 'main@sha1:def', 'main@sha1:abc',
+                                    ('True', ''), ('True', ''), image, ['ghcr.io/example/app@' + DIGEST],
+                                    [ops.Replicas('Deployment/example', 1, 1)], [], [], [])
+        asked = []
+
+        def changed(paths):
+            return lambda applied, newest: asked.append((applied, newest)) or paths
+        for paths, problem in ((['docs/apps.md', 'apps/other/staging/helmrelease.yaml', 'apps/example/prod/helmrelease.yaml',
+                                 'apps/example-two/staging/helmrelease.yaml', 'clusters/home/app-example-prod.yaml'], ''),
+                               ([], ''),
+                               (['apps/example/staging/helmrelease.yaml'], 'a change to staging is in Git'),
+                               (['apps/example/staging/offers/openapi.json'], 'a change to staging is in Git'),
+                               (['clusters/home/app-example-staging.yaml'], 'a change to staging is in Git'),
+                               (None, 'Flux is still applying the latest commit on main')):
+            with self.subTest(paths=paths):
+                found = promotion.source_problem(promotion.settled(behind, changed(paths)), image)
+                self.assertIn(problem, found) if problem else self.assertEqual(found, '')
+        self.assertEqual(set(asked), {('abc', 'def')}, 'the two commits, without the branch')
+        # Its unit waits for a dependency or re-applies the same files after such a commit: that is not about this instance.
+        for unit, reason in ((('False', "dependency 'flux-system/platform-nats' is not ready"), 'DependencyNotReady'),
+                             (('Unknown', 'Reconciliation in progress'), 'Progressing')):
+            waiting = dataclasses.replace(behind, unit=unit, unit_reason=reason)
+            with self.subTest(unit=unit):
+                self.assertEqual(state.verdict(waiting).key, 'updating', 'unasked, every reader still sees it updating')
+                self.assertEqual(promotion.source_problem(promotion.settled(waiting, changed([])), image), '')
+                self.assertTrue(promotion.source_problem(promotion.settled(waiting, changed(['apps/example/staging/namespace.yaml'])), image))
+        failing = dataclasses.replace(behind, unit=('False', 'kustomize build failed'), unit_reason='BuildFailed')
+        self.assertIn('healthy', promotion.source_problem(promotion.settled(failing, changed([])), image))
+        unhealthy = dataclasses.replace(behind, release=('False', 'upgrade failed'))
+        self.assertIn('healthy', promotion.source_problem(promotion.settled(unhealthy, changed([])), image))
+        applied = dataclasses.replace(behind, desired_revision='main@sha1:abc')
+        asked.clear()
+        self.assertIs(promotion.settled(applied, changed(['apps/example/staging/helmrelease.yaml'])), applied)
+        self.assertEqual(asked, [], 'an applied instance needs no comparison')
 
 
 class FirstProductionTests(unittest.TestCase):

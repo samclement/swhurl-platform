@@ -319,7 +319,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if status is None:
             return page(request, 'error.html', status_code=404, error='No such app instance.')
         summary = next((a for a in cluster.summaries(rows) if a.app == found.app), None)
-        promotion_problem = gate.source_problem(status, status.desired_image, status.applied_revision)
+        promotion_problem = gate.source_problem(promotion.settled_status(runner, github, status), status.desired_image) if found.env == 'staging' else ''
         row = summary.envs.get(found.env) if summary else None
         return page(request, 'app.html', status=status, team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=row.connections if row else cluster.Connections(), connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
@@ -652,7 +652,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             existing = [pr for pr in changes.console_prs(runner, github) if promotion.matching(pr, app)]
             if existing:
                 return page(request, 'promotion.html', review={'app': app}, prs=existing)
-            status = ops.gather_status(runner, found)
+            status = promotion.staging_status(runner, github, found)
             if status is None:
                 raise actions.ActionError('staging is missing; deploy staging before promoting')
             reviewed = promotion.main_tree(runner, github, lambda root: promotion.review(root, app, status))
@@ -710,12 +710,12 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         app = found.app
         if found.env != 'staging':
             raise actions.ActionError('promote from the staging instance')
-        image, revision = form.get('image', ''), form.get('revision', '')
+        image = form.get('image', '')
         changes.checked_host(form.get('host', ''))
-        if not image or not revision or not form.get('configuration') or not form.get('target'):
+        if not image or not form.get('configuration') or not form.get('target'):
             raise actions.ActionError('refresh the staging app page and review the image before promotion')
         if not promotion.existing(runner, github, app, image):
-            problem = gate.source_problem(ops.gather_status(runner, found), image, revision)
+            problem = gate.source_problem(promotion.staging_status(runner, github, found), image)
             if problem:
                 raise actions.ActionError(problem)
 
@@ -725,10 +725,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 job.link = previous.url
                 job.lines.append('Reusing the existing promotion pull request')
                 return
-            problem = gate.source_problem(ops.gather_status(runner, found), image, revision)
+            staging = promotion.staging_status(runner, github, found)
+            problem = gate.source_problem(staging, image)
             if problem:
                 raise actions.ActionError(problem)
-            job.link = promotion.open_pr(runner, github, job, app, form)
+            job.link = promotion.open_pr(runner, github, job, app, form, staging)
         try:
             job = jobs.submit('promote', f'{app}/prod', request.state.identity, work)
         except actions.ActionError as error:

@@ -521,6 +521,19 @@ make app-promote APP=<app> ARGS="--expect-image=ghcr.io/<owner>/<app>:<tag>@sha2
 
 A mismatch or unhealthy staging refuses before production edits. In the console, **Review promotion** on Apps/Services or staging shows the exact image, destination and first-production changes, then **Promote to production** creates the PR. Eligible promotions merge automatically unless **Hold for manual review** is selected. Existing promotion PRs are recovered from GitHub after a restart and reused; a replacement image requires explicitly closing the old PR. See [merge controls and pending changes](console.md#auto-merge).
 
+### A commit elsewhere does not hold a promotion
+
+Every commit to `main` leaves every app's Flux unit one revision behind for a few seconds, and "Updating" on the console meanwhile. A promotion is held only by a commit that changes staging's own files (`apps/<app>/staging/` or its unit file `clusters/home/app-<app>-staging.yaml`) and is not applied yet:
+
+| Staging's unit is | The commits it has not applied change | Promotion |
+| --- | --- | --- |
+| at main's newest revision | nothing | goes ahead |
+| behind | another app, docs, the console | goes ahead, even while the unit waits for a dependency or re-applies |
+| behind | staging's own files | refused: "a change to staging is in Git and Flux has not applied it yet" |
+| behind | unknown (see below) | refused: "Flux is still applying the latest commit on main to staging" |
+
+The console asks GitHub to compare the two commits (one request, only when the unit is behind); `make app-promote` asks the checkout's own history (`git diff --name-only`). The answer is unknown, and the promotion waits as before, when GitHub cannot be read, the comparison lists 300 files or more, or the checkout does not have both commits (`git fetch`). The console tells the `app-promote` it runs which two commits it compared (`--source-unchanged`), because the tree it downloads has no history. What was reviewed is pinned by the image and the configuration hashes, not by the revision, so a commit elsewhere while the review page is open does not refuse it either.
+
 ### Console promotion: what happens, and when
 
 For example, promoting `weather-api/staging` selects its current healthy, digest-pinned image and proposes that image for `weather-api/prod`. The console's **Review promotion** page reads live staging health and compares the staging and production configuration in GitHub `main`. Submitting **Promote to production** rechecks that review, prepares the Git change with `main`'s own `app-promote` command, and opens a PR. The job finishing means the PR exists; it does not mean production has deployed.
@@ -559,7 +572,7 @@ sequenceDiagram
   Dash->>Dash: Create or update App dashboard with production line
 ```
 
-The review captures the staging image, applied revision, staging configuration hash and production configuration hash. The console checks again at submission, when the job starts, and after preparing the change; it refuses if staging stopped being healthy/current or either reviewed configuration changed. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back.
+The review captures the staging image, staging configuration hash and production configuration hash. The console checks again at submission, when the job starts, and after preparing the change; it refuses if staging stopped being healthy/current or either reviewed configuration changed. It also refuses the same digest (tags may differ while the digest is the same) and refuses a changed image repository. A known older `<run>-<sha>` image is called out as a rollback; database migrations are not rolled back.
 
 On **first promotion**, `app-promote` derives a production environment from the supported staging settings and adds `apps/<app>/prod/`, `clusters/home/app-<app>-prod.yaml` and the production unit registration. If the app has Secret keys, it creates a separate encrypted production Secret with `REPLACE_ME` values; SQLite/persistent storage gets a separate retained claim that starts empty. Staging data and credential values are never copied. A secret-bearing PR also adds the production namespace to Reloader's watch list. A public app must have a distinct production hostname; signed-in apps get the generated production host. The staging environment and production environment are separate namespaces, so the same Secret/PVC names resolve to independent resources.
 

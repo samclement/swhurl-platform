@@ -1,9 +1,11 @@
 """Shared staging → production decisions. Git decides existence; live status decides readiness."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,13 +81,39 @@ def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
 
 
-def source_problem(status: ops.InstanceStatus | None, image: str, revision: str) -> str:
+def sha(revision: str) -> str:
+    """The commit of a Flux revision (``main@sha1:<commit>``)."""
+    return revision.rsplit(':', 1)[-1]
+
+
+def settled(status: ops.InstanceStatus | None,
+            changed: Callable[[str, str], Iterable[str] | None]) -> ops.InstanceStatus | None:
+    """``status`` with ``own_change`` answered, when its unit is behind Git's newest revision: any commit to main
+    puts every unit behind for a few seconds, and only one that changes the instance's own files (its folder,
+    its unit file) is a change it waits for. ``changed(applied, newest)`` gives the paths that differ between
+    the two commits, or None when it cannot tell, which leaves the question open (and the instance not current)."""
+    if status is None or status.applied or not (status.desired_revision and status.applied_revision):
+        return status
+    paths = changed(sha(status.applied_revision), sha(status.desired_revision))
+    if paths is None:
+        return status
+    root = Path()
+    folder, unit = status.instance.folder(root).as_posix() + '/', status.instance.unit_file(root).as_posix()
+    return dataclasses.replace(status, own_change=any(p == unit or p.startswith(folder) for p in paths))
+
+
+def source_problem(status: ops.InstanceStatus | None, image: str) -> str:
+    """Why staging cannot be promoted now, or ''. The image pins what was reviewed; the caller pins staging's
+    configuration by its ``fingerprint``. ``status`` should be ``settled``, or any commit to main refuses."""
     if status is None:
         return 'staging no longer exists; refresh the app page'
-    if status.desired_image != image or status.applied_revision != revision:
+    if status.desired_image != image:
         return 'staging changed since this page was loaded; refresh and review it again'
-    if status.desired_revision and status.applied_revision and not status.applied:
-        # Any commit to main (another app's deploy, a console change) is "newer" until Flux has applied it here.
+    if status.desired_revision and status.applied_revision and not status.current:
+        if status.own_change:
+            return ('a change to staging is in Git and Flux has not applied it yet; wait a few seconds, refresh '
+                    'and review it again')
+        # Whether the unapplied commits change this app could not be read: any commit to main is "newer" until applied here.
         return ('Flux is still applying the latest commit on main to staging (a change landed moments ago, perhaps '
                 "another app's); wait a few seconds, refresh and promote again")
     return '' if state.runs(status) else 'staging must be healthy and running the reviewed digest before promotion'

@@ -23,6 +23,12 @@ spec:
       podSelector:
         matchLabels:
           app.kubernetes.io/instance: demo-shop
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: test-5-staging
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: test-5
     ports:
     - port: 8080
       protocol: TCP

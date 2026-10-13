@@ -71,7 +71,7 @@ spec:
               SWHURL_EVENTS_PUBLISH: created
               SWHURL_EVENTS_NKEY: UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
-              SWHURL_ALLOWED_CALLERS: demo-shop
+              SWHURL_ALLOWED_CALLERS: demo-shop,test-5
             probes:
               readiness:
                 enabled: true

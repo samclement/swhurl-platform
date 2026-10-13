@@ -11,10 +11,11 @@ from unittest import mock
 
 from starlette.testclient import TestClient
 
+from swhurl import kube
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
-from swhurl.run import FakeRunner, Result, SharedReads
+from swhurl.run import FakeRunner, Result, SharedReads, is_read
 
 REV = 'main@sha1:abc1234def'
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com'}
@@ -581,6 +582,18 @@ class StateTests(unittest.TestCase):
             at_once = cluster.platform_checks(shared)
         self.assertEqual(at_once, apart, 'checks run at once are reported as when run one after another')
         self.assertGreater(apart.count, 3)
+
+    def test_every_read_a_page_makes_is_one_the_pod_can_make_without_kubectl(self):
+        """A read ``kube.api_read`` does not know still works, through kubectl and ten times slower."""
+        for path in ('/', '/platform', '/apps', '/apps?view=map', '/apps/web/prod', '/catalogue', '/teams', '/units/app-web-prod'):
+            runner = fake(**CHECKS, **{
+                'kubectl -n flux-system get kustomization app-web-prod': json.dumps(unit('app-web-prod')),
+                'kubectl -n web-prod get': '{}'})
+            self.assertEqual(client(runner).get(path, headers=WHO).status_code, 200)
+            self.assertTrue(runner.calls, path)
+            for call in runner.calls:
+                with self.subTest(path=path, call=' '.join(call)):
+                    self.assertTrue(is_read(call) and kube.api_read(call))
 
     def test_a_dependency_wait_is_not_a_problem(self):
         waiting = unit('app-web-prod', ready='False', message="dependency 'flux-system/infra-base' is not ready")

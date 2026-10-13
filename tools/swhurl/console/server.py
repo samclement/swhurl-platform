@@ -34,7 +34,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from swhurl import ROOT, dashboards
+from swhurl import ROOT, dashboards, kube
 from swhurl.apps import contract, declaration, new, ops, repo
 from swhurl.apps import promotion as gate
 from swhurl.apps.instance import ENVIRONMENTS, Instance
@@ -806,6 +806,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     import uvicorn
     # Open job pages (event streams) are cut after 20 seconds of a shutdown; the jobs themselves are waited for (lifespan).
-    uvicorn.run(create_app(Runner(), dev_identity=DEV_IDENTITY if args.dev else None),
+    uvicorn.run(create_app(kube.runner(), dev_identity=DEV_IDENTITY if args.dev else None),
                 host=args.host, port=args.port, log_level='info', log_config=logconfig.CONFIG, timeout_graceful_shutdown=20)
     return 0

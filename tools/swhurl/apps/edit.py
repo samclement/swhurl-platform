@@ -334,7 +334,12 @@ def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, n
             settings |= {key: app_alerts.thresholds(f'{key}={value}')[key]}
     except ValueError as error:
         raise EditError(str(error)) from None
-    spec = app_alerts.OFF if none else '' if default else app_alerts.spec_of(settings)
+    if none:
+        spec = app_alerts.OFF
+    elif default:
+        spec = ''
+    else:
+        spec = app_alerts.spec_of(settings)
     edits = 0
     for namespace in namespaces:
         metadata = mapping(namespace.data, 'metadata')

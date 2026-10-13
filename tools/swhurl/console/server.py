@@ -204,7 +204,15 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     # What apps offer is described in Git (apps/<app>/<env>/offers/): through GitHub, or without a token
     # from this checkout if it has one (console --dev); the image has no apps/, so then not at all.
-    described = catalogue.Documents(documents or (platform_file if github else local_file if (ROOT / 'apps').is_dir() else None))
+    document_source = documents
+    if not document_source:
+        if github:
+            document_source = platform_file
+        elif (ROOT / 'apps').is_dir():
+            document_source = local_file
+        else:
+            document_source = None
+    described = catalogue.Documents(document_source)
 
     def offer_text(row: cluster.AppRow, event: str = '') -> str:
         """What an app's own documents say about its API, or about one of its events ('' if nothing)."""

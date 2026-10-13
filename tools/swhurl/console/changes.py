@@ -230,7 +230,14 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p))
         if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
-        job.lines += [f'{"D" if p not in after else "A" if p not in before else "M"} {p}' for p in changed]
+        for path in changed:
+            if path not in after:
+                status = 'D'
+            elif path not in before:
+                status = 'A'
+            else:
+                status = 'M'
+            job.lines.append(f'{status} {path}')
         encrypted = [p for p in changed if p.endswith('.sops.yaml')]
         if auto_merge and encrypted:
             auto_merge = False

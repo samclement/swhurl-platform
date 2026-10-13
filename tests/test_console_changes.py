@@ -16,7 +16,7 @@ import yaml
 from starlette.testclient import TestClient
 
 from swhurl import ROOT
-from swhurl.apps import channels, new, ops, promotion, repo
+from swhurl.apps import calling, channels, helmrelease, new, ops, promotion, repo
 from swhurl.apps.instance import Instance
 from swhurl.console import actions, changes, cluster, server
 from swhurl.console import promotion as console_promotion
@@ -735,6 +735,39 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual(jobs.get(1).state, 'succeeded')
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])
                 self.assertEqual('Merges itself when Validate passes' in self.api.sent('POST /pulls')[0]['body'], merges)
+
+    def test_a_first_promotion_that_changes_the_apps_it_calls_is_merged_by_a_person(self):
+        """The merge gate holds a promotion to its own app: one that edits its callees must not be labelled for it."""
+        release = yaml.safe_load(MAIN['apps/hello/staging/helmrelease.yaml'])
+        helmrelease.container(release).setdefault('env', {})[calling.callee_variable('orders')] = calling.callee_address('orders', 8080)
+        main = {rel: data for rel, data in MAIN.items() if 'hello/prod' not in rel and 'app-hello-prod' not in rel}
+        main['apps/hello/staging/helmrelease.yaml'] = yaml.safe_dump(release, sort_keys=False).encode()
+        main['apps/orders/prod/helmrelease.yaml'] = MAIN['apps/hello/prod/helmrelease.yaml']
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(MAIN, main, clear=True):
+            root = Path(tmp)
+            for rel, data in main.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_bytes(data)
+            good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
+            review = console_promotion.review(root, 'hello', good)
+            self.assertEqual((review['admits'], review['setup']), (['orders'], True))
+            (root / 'apps/orders/prod/helmrelease.yaml').unlink()
+            (root / 'apps/orders/prod').rmdir()
+            self.assertEqual(console_promotion.admitting(root, 'hello', release), [], 'a callee with no production is not edited')
+            c, jobs = self.client(tree_fake())
+            page = c.get('/apps/hello/staging/promotion', headers=WHO).text
+            self.assertIn('This also lets hello call orders in production', page)
+            self.assertNotIn('name="hold"', page, 'there is no automatic merge to hold')
+            form = {'image': IMAGE, 'revision': REVISION, 'configuration': review['configuration'], 'target': review['target']}
+            c.post('/apps/hello/staging/promote', data=form, headers=WHO)
+        job = jobs.get(1)
+        self.assertEqual(job.state, 'succeeded', job.lines)
+        self.assertTrue(any(line.startswith('Not merging automatically: it also lets hello call orders') for line in job.lines))
+        self.assertEqual(self.api.sent('POST /issues/7/labels'), [])
+        body = self.api.sent('POST /pulls')[0]['body']
+        self.assertIn('This also lets `hello` call `orders/prod`', body)
+        self.assertNotIn('Merges itself', body)
+        self.assertTrue(console_promotion.body_metadata(body)['setup'], 'so Activity says "By you, on GitHub" and it cannot be resumed')
 
     def test_a_change_the_tooling_refuses_shows_its_own_words_and_opens_nothing(self):
         """The console runs the same commands as make, so their refusals read the same in the job."""

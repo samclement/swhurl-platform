@@ -699,6 +699,20 @@ components:
             edit.expose(self.root, 'hello', 'staging', 'private')
         self.assertEqual({path: path.read_bytes() for path in before}, before)
 
+    def test_expose_refuses_bad_dependencies_without_any_writes(self):
+        unit = self.root / 'clusters/home/app-hello-staging.yaml'
+        original = unit.read_text()
+        for replacement, message in (('  dependsOn: {name: infra-base}\n', 'expected a list'),
+                                     ('  dependsOn: &shared\n  - name: infra-base\n', 'uses a YAML anchor')):
+            with self.subTest(message=message):
+                unit.write_text(original.replace(
+                    '  dependsOn:\n  - name: infra-base\n  - name: platform-oauth2-proxy\n', replacement))
+                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+                with self.assertRaisesRegex(edit.EditError, message):
+                    edit.expose(self.root, 'hello', 'staging', 'public', 'hello.example.com')
+                self.assertEqual({path: path.read_bytes() for path in before}, before)
+                self.assertEqual({path for path in self.root.rglob('*') if path.is_file()}, set(before))
+
     def test_scale_refuses_bad_values(self):
         for kwargs, message in (({}, 'at least one'), ({'replicas': 11}, '0 to 10'), ({'replicas': -1}, '0 to 10'),
                                 ({'cpu': '1core'}, 'quantity'), ({'memory': '64M'}, 'quantity'),

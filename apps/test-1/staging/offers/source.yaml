@@ -1,4 +1,0 @@
-# Read from the app's repository by make app-offers: do not edit.
-repository: samclement/test-1
-commit: 3cb751e
-api: openapi.json

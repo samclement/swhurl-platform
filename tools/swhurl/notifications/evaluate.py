@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import logging
+from dataclasses import dataclass
 
 from swhurl.apps import ops
 from swhurl.apps.instance import Instance
@@ -203,83 +204,102 @@ def prune_instances(state: dict, current: dict, releases: dict, now: float) -> N
                 del state['instances'][key]
 
 
-def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: bool = False) -> dict:
-    """``copies``: also queue each notice about an app for the notify service (set where one is configured)."""
-    state = copy.deepcopy(previous) if previous is not None else empty_state(now)
-    state['seen'] = {k: v for k, v in state['seen'].items() if v > now}
-    current = targets(data, copies)
-    releases = {object_key(r): r for r in data['releases']}
-    observe_instances(state, current, releases, data, now, base)
-    prune_instances(state, current, releases, now)
+@dataclass(frozen=True)
+class LifecycleEvent:
+    key: str
+    entry: dict
+    action: str | None
+    reason: str
+    uid: str
+    notice_key: str
 
-    events = sorted(data['events'], key=lambda e: timestamp(e.get('lastTimestamp') or e.get('eventTime')
-                                                          or e['metadata'].get('creationTimestamp')))
-    units = {v['unit']: k for k, v in state['instances'].items()}
-    for event in events:
-        obj = event.get('involvedObject') or {}
-        key = f"{obj.get('namespace', '')}/{obj.get('name', '')}"
-        kind, reason = obj.get('kind'), event.get('reason', '')
-        if kind == 'Kustomization' and obj.get('namespace') == 'flux-system':
-            key = units.get(obj.get('name'), '')
-        elif kind != 'HelmRelease':
-            continue
-        entry = state['instances'].get(key)
-        if not entry or (kind == 'HelmRelease' and entry.get('uid') and obj.get('uid') != entry['uid']):
-            continue
-        when = timestamp(event.get('lastTimestamp') or event.get('eventTime')
-                         or event['metadata'].get('creationTimestamp'))
-        if when <= state['started'] or now - when > HISTORY:
-            continue
-        action = SUCCESS.get(reason) if kind == 'HelmRelease' else None
-        if action is None and reason not in FAILURES:
-            continue
-        if action == 'deployed' and key in current:
-            fault, detail = health(current[key], releases.get(key), data, unit=False)
-            if fault not in {'', 'suspended'}:
-                # A custom release may disable Helm's wait; still require readiness evidence.
-                logging.getLogger(__name__).info('Holding %s deployed: %s', entry['title'], detail or fault)
-                continue
-        controller = event.get('reportingComponent') or (event.get('source') or {}).get('component', '')
-        expected = 'helm-controller' if kind == 'HelmRelease' else 'kustomize-controller'
-        if controller != expected:
-            continue
-        uid = obj.get('uid') or key
-        # Errors retry as the same action; successes have a distinct Kubernetes event occurrence.
-        attempt = (event['metadata'].get('annotations') or {}).get('helm.toolkit.fluxcd.io/token',
-                                                                 event['metadata']['uid'])
-        notice_key = (f"failure:{uid}:{attempt}:{reason}" if not action else
-                      f"event:{event['metadata']['uid']}:{event.get('count', 1)}:{when}")
-        if not action and notice_key in entry.get('failed_actions', []):
-            continue
-        if action == 'uninstalled' and entry.get('uninstalled') == uid:
-            continue
-        title = f"{entry['title']} {action or ('uninstall failed' if reason == 'UninstallFailed' else 'deployment failed')}"
-        message = f'Flux {reason} for {key}.'
-        chart = (event['metadata'].get('annotations') or {}).get('helm.toolkit.fluxcd.io/revision')
-        if chart:
-            message += f' Chart revision: {chart}.'
-        release = releases.get(key)
-        if release and reason in {'InstallSucceeded', 'UpgradeSucceeded'}:
-            condition = next((c for c in release.get('status', {}).get('conditions', [])
-                              if c.get('type') == 'Ready'), {})
-            if condition.get('message') == event.get('message'):
-                message += f' Requested image: {ops.desired_image(release)}.'
-        if action == 'uninstalled' and entry.get('retained'):
-            message += ' Storage is retained; data has not been deleted.'
-        if action == 'rolled back':
-            message += ' The requested upgrade failed; Helm restored the previous release.'
-            state['pending'] = [p for p in state['pending'] if p['title'] != f"{entry['title']} deployment failed"]
-        enqueue(state, notice_key, title, message, high=not action or action == 'rolled back',
-                click=link(base, entry, removed=action == 'uninstalled'), now=now, about=entry.get('about'))
-        if action == 'uninstalled':
-            entry['uninstalled'] = uid
-        if not action or action == 'rolled back':
-            # One combined incident instead of another immediate unhealthy alarm for the failed action.
-            record = entry['incident']
-            record.setdefault('since', now)
-            record.update(notified=True, last_notice=now)
-            if not action:
-                entry['failed_actions'] = [*entry.get('failed_actions', []), notice_key][-16:]
+
+def eligible_event(event: dict, state: dict, current: dict, releases: dict, data: dict,
+                   units: dict, now: float) -> LifecycleEvent | None:
+    """Resolve one event against current state; earlier events may already have changed it."""
+    obj = event.get('involvedObject') or {}
+    key = f"{obj.get('namespace', '')}/{obj.get('name', '')}"
+    kind, reason = obj.get('kind'), event.get('reason', '')
+    if kind == 'Kustomization' and obj.get('namespace') == 'flux-system':
+        key = units.get(obj.get('name'), '')
+    elif kind != 'HelmRelease':
+        return None
+    entry = state['instances'].get(key)
+    if not entry or (kind == 'HelmRelease' and entry.get('uid') and obj.get('uid') != entry['uid']):
+        return None
+    when = timestamp(event.get('lastTimestamp') or event.get('eventTime')
+                     or event['metadata'].get('creationTimestamp'))
+    if when <= state['started'] or now - when > HISTORY:
+        return None
+    action = SUCCESS.get(reason) if kind == 'HelmRelease' else None
+    if action is None and reason not in FAILURES:
+        return None
+    if action == 'deployed' and key in current:
+        fault, detail = health(current[key], releases.get(key), data, unit=False)
+        if fault not in {'', 'suspended'}:
+            # A custom release may disable Helm's wait; still require readiness evidence.
+            logging.getLogger(__name__).info('Holding %s deployed: %s', entry['title'], detail or fault)
+            return None
+    controller = event.get('reportingComponent') or (event.get('source') or {}).get('component', '')
+    expected = 'helm-controller' if kind == 'HelmRelease' else 'kustomize-controller'
+    if controller != expected:
+        return None
+    uid = obj.get('uid') or key
+    # Errors retry as the same action; successes have a distinct Kubernetes event occurrence.
+    attempt = (event['metadata'].get('annotations') or {}).get('helm.toolkit.fluxcd.io/token',
+                                                             event['metadata']['uid'])
+    notice_key = (f"failure:{uid}:{attempt}:{reason}" if not action else
+                  f"event:{event['metadata']['uid']}:{event.get('count', 1)}:{when}")
+    if not action and notice_key in entry.get('failed_actions', []):
+        return None
+    if action == 'uninstalled' and entry.get('uninstalled') == uid:
+        return None
+    return LifecycleEvent(key, entry, action, reason, uid, notice_key)
+
+
+def event_text(event: dict, evidence: LifecycleEvent, release: dict | None) -> tuple[str, str]:
+    """Build lifecycle notice wording without changing notification state."""
+    key, entry, action, reason = evidence.key, evidence.entry, evidence.action, evidence.reason
+    title = f"{entry['title']} {action or ('uninstall failed' if reason == 'UninstallFailed' else 'deployment failed')}"
+    message = f'Flux {reason} for {key}.'
+    chart = (event['metadata'].get('annotations') or {}).get('helm.toolkit.fluxcd.io/revision')
+    if chart:
+        message += f' Chart revision: {chart}.'
+    if release and reason in {'InstallSucceeded', 'UpgradeSucceeded'}:
+        condition = next((c for c in release.get('status', {}).get('conditions', [])
+                          if c.get('type') == 'Ready'), {})
+        if condition.get('message') == event.get('message'):
+            message += f' Requested image: {ops.desired_image(release)}.'
+    if action == 'uninstalled' and entry.get('retained'):
+        message += ' Storage is retained; data has not been deleted.'
+    if action == 'rolled back':
+        message += ' The requested upgrade failed; Helm restored the previous release.'
+    return title, message
+
+
+def apply_event(state: dict, event: dict, evidence: LifecycleEvent, releases: dict,
+                now: float, base: str) -> None:
+    """Queue the notice and immediately record deduplication and incident effects."""
+    entry, action, uid, notice_key = evidence.entry, evidence.action, evidence.uid, evidence.notice_key
+    title, message = event_text(event, evidence, releases.get(evidence.key))
+    if action == 'rolled back':
+        state['pending'] = [p for p in state['pending'] if p['title'] != f"{entry['title']} deployment failed"]
+    enqueue(state, notice_key, title, message, high=not action or action == 'rolled back',
+            click=link(base, entry, removed=action == 'uninstalled'), now=now, about=entry.get('about'))
+    if action == 'uninstalled':
+        entry['uninstalled'] = uid
+    if not action or action == 'rolled back':
+        # One combined incident instead of another immediate unhealthy alarm for the failed action.
+        record = entry['incident']
+        record.setdefault('since', now)
+        record.update(notified=True, last_notice=now)
+        if not action:
+            entry['failed_actions'] = [*entry.get('failed_actions', []), notice_key][-16:]
+
+
+def announce_removals(state: dict, current: dict, releases: dict, data: dict,
+                      now: float, base: str) -> None:
+    """Announce disappeared releases only after workload and reconciliation evidence is absent."""
     for key, entry in state['instances'].items():
         # Namespace deletion can remove its Events before the next scan. A previously
         # observed managed release disappearing after its unit is removed is also a
@@ -295,6 +315,25 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: b
             enqueue(state, f"removed:{entry['uid']}", f"{entry['title']} uninstalled", message,
                     high=False, click=link(base, entry, removed=True), now=now, about=entry.get('about'))
             entry['uninstalled'] = entry['uid']
+
+
+def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: bool = False) -> dict:
+    """``copies``: also queue each notice about an app for the notify service (set where one is configured)."""
+    state = copy.deepcopy(previous) if previous is not None else empty_state(now)
+    state['seen'] = {k: v for k, v in state['seen'].items() if v > now}
+    current = targets(data, copies)
+    releases = {object_key(r): r for r in data['releases']}
+    observe_instances(state, current, releases, data, now, base)
+    prune_instances(state, current, releases, now)
+
+    events = sorted(data['events'], key=lambda e: timestamp(e.get('lastTimestamp') or e.get('eventTime')
+                                                          or e['metadata'].get('creationTimestamp')))
+    units = {v['unit']: k for k, v in state['instances'].items()}
+    for event in events:
+        evidence = eligible_event(event, state, current, releases, data, units, now)
+        if evidence is not None:
+            apply_event(state, event, evidence, releases, now, base)
+    announce_removals(state, current, releases, data, now, base)
     state['last_success'] = now
     incident(state, state['monitor'], '', title='notification monitor', detail='',
              grace=GRACE, now=now, click=f'{base}/platform')

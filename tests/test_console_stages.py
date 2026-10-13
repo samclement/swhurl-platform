@@ -111,6 +111,19 @@ class PullStageTests(unittest.TestCase):
         self.assertEqual((closed.status, shape(closed)[-1]), ('stopped', ('Closed without merging', 'stopped')))
         self.assertEqual(self.track().status, 'unknown')
 
+    def test_closing_a_new_apps_pull_request_leaves_its_repository(self):
+        closed = stages.Pull(9, URL, 'closed', when='1 h ago')
+        self.assertIn('nothing changed', stages.track(job('scale', 'web/staging'), closed).outcome)
+        for action in (stages.NEW_APP_JOB, stages.FINISH_JOB):
+            self.assertEqual(stages.track(job(action, 'web/staging'), closed).outcome, '#9 was closed without merging: no instance '
+                             'was added, but the repository and image made for it still exist.')
+
+    def test_stages_that_start_at_the_same_line_keep_the_output(self):
+        cut = job('new app and repository', 'web/staging', lines=['… earlier output is not kept', 'b', 'p', 'o'],
+                  marks=[('repo', 0), ('build', 0), ('prepare', 2), ('open', 3)])
+        self.assertEqual([(s.stage.key, s.lines) for s in stages.sections(cut)],
+                         [('repo', ()), ('build', ('… earlier output is not kept', 'b')), ('prepare', ('p',)), ('open', ('o',))])
+
     def test_a_pull_request_without_its_job(self):
         track = stages.pull_track(stages.Pull(9, URL, 'open', 'passed', auto=True), 'console/promote-web-staging-abc1234')
         self.assertEqual(shape(track)[0], ('Pull request #9', 'done'))

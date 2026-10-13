@@ -18,6 +18,7 @@ from swhurl.apps.state import State
 from swhurl.console.actions import Job
 
 NEW_APP_JOB, FINISH_JOB = 'new app and repository', 'finish new app'
+NEW_APP_ACTIONS = (NEW_APP_JOB, FINISH_JOB, 'new')  # the jobs, and the action in their pull request's branch
 LABELS = {'fetch': 'Fetch source', 'apply': 'Apply unit', 'suspend': 'Suspend', 'resume': 'Resume',
           'repo': 'Create repository', 'build': 'Build image', 'prepare': 'Prepare change',
           'open': 'Open pull request', 'label': 'Change its label', 'pull': 'Pull request',
@@ -163,10 +164,12 @@ def job_stages(job: Job) -> list[Stage]:
 
 def sections(job: Job) -> list[Section]:
     """A job's output under the stage that wrote it, one section per stage of its kind."""
-    starts = dict(bounds(job))
-    order = sorted(starts.values()) + [len(job.lines)]
-    return [Section(stage, tuple(job.lines[starts[stage.key]:order[order.index(starts[stage.key]) + 1]])
-                    if stage.key in starts else (), stage.key in starts) for stage in job_stages(job)]
+    found = bounds(job)
+    # Each stage's output runs to the next stage's start: two can start at the same line (one wrote
+    # nothing, or the record's cut output took their starts with it), and only the later one has it.
+    spans = {key: (start, end) for (key, start), end in zip(found, [start for _, start in found[1:]] + [len(job.lines)], strict=True)}
+    return [Section(stage, tuple(job.lines[slice(*spans[stage.key])]) if stage.key in spans else (), stage.key in spans)
+            for stage in job_stages(job)]
 
 
 def end_label(action: str, target: str) -> str:
@@ -243,8 +246,11 @@ def after_pull(pull: Pull, action: str, target: str, live: State | str | None) -
         return track(merged, 'waiting', f'Merged, but {target} is {live.key}: open its page.', done,
                      [Stage('rollout', flux, 'waiting', live.detail), planned])
     if pull.state == 'closed':
+        # A new app's repository and image were made before its pull request: closing that leaves them.
+        left = ('no instance was added, but the repository and image made for it still exist'
+                if action in NEW_APP_ACTIONS else 'nothing changed')
         return track(Stage('merge', 'Closed without merging', 'stopped', pull.when, pull.url), 'stopped',
-                     f'{name} was closed without merging: nothing changed.',
+                     f'{name} was closed without merging: {left}.',
                      Stage('validate', 'Validate', 'todo'), [])
     return track(Stage('merge', 'Merge', 'todo', link=pull.url), 'unknown',
                  f'{name} could not be read from GitHub: open it there.')

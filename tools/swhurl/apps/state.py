@@ -63,13 +63,13 @@ def verdict(status: InstanceStatus) -> State:
         return unit
     if status.release and status.release[0] == 'False':
         return State('failing', status.release[1])
-    if unit.key == 'updating':
+    if unit.key == 'updating' and not status.unaffected:
         return unit
     if status.release is None:
         return State('unknown', 'the app release is missing')
     if not status.desired_revision or not status.applied_revision:
         return State('unknown', 'the desired or applied Git revision is missing')
-    if not status.applied:
+    if not status.current:
         return State('updating', 'a Git change is not applied yet')
     if status.image_state == 'different':
         return State('updating', 'a new image is rolling out (or failing to)')

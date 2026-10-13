@@ -613,9 +613,22 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
     p.add_argument('--expect-image', help='refuse if the source no longer names this exact repository, tag and digest')
     p.add_argument('--expect-config', help='refuse if the reviewed staging configuration hash changed')
     p.add_argument('--host', help='distinct production hostname for first public promotion')
+    p.add_argument('--source-unchanged', metavar='APPLIED..NEWEST', default='',
+                   help="the caller has checked that staging's own files are the same at these two commits "
+                        '(the console, whose copy of the repository has no history to compare)')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     runner = runner or Runner()
+
+    def changed(applied: str, newest: str) -> list[str] | None:
+        """The paths that differ between two commits, from the caller's word or this checkout's history."""
+        if args.source_unchanged == f'{applied}..{newest}':
+            return []
+        root = args.root.resolve()
+        if not (root / '.git').exists():
+            return None
+        found = runner.run(['git', '-C', root, 'diff', '--name-only', applied, newest], check=False)
+        return None if found.returncode else found.stdout.splitlines()
 
     def change():
         root = args.root.resolve()
@@ -626,8 +639,8 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
         if decision.outcome == 'same':
             raise EditError('production already runs this digest; same image in both')
         source_instance = Instance.named(args.app, 'staging')
-        status = ops.gather_status(runner, source_instance) if source_instance else None
-        problem = promotion.source_problem(status, decision.image, status.applied_revision if status else '')
+        status = promotion.settled(ops.gather_status(runner, source_instance), changed) if source_instance else None
+        problem = promotion.source_problem(status, decision.image)
         if problem:
             raise EditError(problem)
         return promote(root, args.app, expect_image=args.expect_image,

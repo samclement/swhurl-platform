@@ -13,8 +13,9 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, derive, edit, new, ops, policy
-from swhurl.run import CommandError
+from swhurl.apps import calling, contract, derive, edit, new, ops, policy, promotion
+from swhurl.apps.instance import Instance
+from swhurl.run import CommandError, FakeRunner
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
@@ -747,6 +748,32 @@ components:
             with self.subTest(app=app, env=env), self.assertRaises(edit.EditError):
                 edit.remove(self.root, app, env)
         self.assertTrue((self.root / 'apps/hello/prod').exists())
+
+    def test_promote_asks_what_changed_only_when_staging_is_behind(self):
+        """Behind main by a commit: the caller's word, else this checkout's history, says whether it changed staging."""
+        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine')
+                                .replace(self.staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        image = promotion.decide(*promotion.read(self.root, 'hello')).image
+        behind = ops.InstanceStatus(Instance('hello', 'staging'), 'main@sha1:def', 'main@sha1:abc', ('True', ''), ('True', ''),
+                                    image, [image.split(':')[0] + '@' + NEW_DIGEST], [ops.Replicas('Deployment/hello', 1, 1)], [], [], [])
+        diff = ('git', '-C', str(self.root.resolve()), 'diff', '--name-only', 'abc', 'def')
+
+        def refusal(argv=(), git=None, history=True):
+            (self.root / '.git').mkdir(exist_ok=True) if history else None
+            runner = FakeRunner()
+            if git is not None:
+                runner.on('git', **git)
+            with mock.patch.object(ops, 'gather_status', return_value=behind), mock.patch.object(edit, 'promote', return_value=None), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+                edit.main_promote(['hello', '--root', str(self.root), *argv], runner=runner)
+            return err.getvalue(), runner.calls
+        self.assertEqual(refusal(history=False)[1], [], 'a tree without history is not asked')
+        self.assertIn('Flux is still applying', refusal(history=False)[0])
+        self.assertEqual(refusal(['--source-unchanged=abc..def'], history=False), ('', []))
+        self.assertIn('Flux is still applying', refusal(['--source-unchanged=abc..other'], history=False)[0], 'a word about other commits')
+        self.assertEqual(refusal(git={'stdout': 'docs/apps.md\napps/hello/prod/helmrelease.yaml\n'}), ('', [diff]))
+        self.assertIn('a change to staging is in Git', refusal(git={'stdout': 'apps/hello/staging/helmrelease.yaml\n'})[0])
+        self.assertIn('Flux is still applying', refusal(git={'returncode': 128, 'stderr': 'bad object def'})[0], 'a commit not fetched here')
 
     def test_cli_refusals_exit_2(self):
         code, _ = self.quiet(edit.main_scale, ['hello', 'prod', '--root', str(self.root)])

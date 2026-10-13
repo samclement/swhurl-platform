@@ -40,6 +40,35 @@ def main_tree(runner: Runner, github: changes.GitHub, read: Callable[[Path], obj
         shutil.rmtree(work, ignore_errors=True)
 
 
+COMPARED_FILES = 300
+"""GitHub lists this many changed files in one answer; a comparison that fills it may have more."""
+
+
+def settled_status(runner: Runner, github: changes.GitHub | None, status: ops.InstanceStatus | None) -> ops.InstanceStatus | None:
+    """``status`` as the gate judges it: when its unit is behind Git's newest revision, GitHub is asked whether
+    the commits in between change the instance's own files (``promotion.settled``). One request, only then."""
+    def changed(applied: str, newest: str) -> list[str] | None:
+        if github is None:
+            return None
+        api = changes.GitHubAPI(runner, github)
+        try:
+            compared = api.json('GET', f'/compare/{applied}...{newest}')
+        except ActionError:
+            return None
+        finally:
+            api.client.close()
+        files = compared.get('files') or []
+        if compared.get('status') not in ('ahead', 'identical') or len(files) >= COMPARED_FILES:
+            return None
+        return [name for f in files for name in (f.get('filename'), f.get('previous_filename')) if name]
+    return promotion.settled(status, changed)
+
+
+def staging_status(runner: Runner, github: changes.GitHub | None, instance: Instance) -> ops.InstanceStatus | None:
+    """Staging read from the cluster, as the gate judges it."""
+    return settled_status(runner, github, ops.gather_status(runner, instance))
+
+
 def admitting(root: Path, app: str, source: dict) -> list[str]:
     """The production apps a first promotion of ``app`` also edits: each app staging calls that already
     runs in production gains the new caller in its allowed callers and network policy. The merge gate
@@ -51,7 +80,7 @@ def admitting(root: Path, app: str, source: dict) -> list[str]:
 def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     source, target = promotion.read(root, app)
     decision = promotion.decide(source, target)
-    problem = promotion.source_problem(status, decision.image, status.applied_revision)
+    problem = promotion.source_problem(status, decision.image)
     if problem:
         raise ActionError(problem)
     namespace = promotion.YamlFile(instance_folder(root, app, 'staging') / 'namespace.yaml').data
@@ -70,7 +99,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     else:
         addresses = ()
     return {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
-            'rollback': decision.rollback, 'revision': status.applied_revision,
+            'rollback': decision.rollback,
             'configuration': promotion.fingerprint(root, app, 'staging'),
             'target': promotion.fingerprint(root, app, 'prod'), 'needs_host': needs_host,
             'secrets': args.secret_keys if args else [], 'storage': args.persistence if args else None,
@@ -121,7 +150,10 @@ def existing(runner: Runner, github: changes.GitHub, app: str, image: str) -> ch
     return None
 
 
-def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: dict[str, str]) -> str:
+def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: dict[str, str],
+            staging: ops.InstanceStatus | None = None) -> str:
+    """``staging``: the status the job has just judged. When its unit is behind main by commits that leave it
+    alone, the tool is told which two commits were compared: it reads staging again, in a tree with no history."""
     image = form['image']
     previous = existing(runner, github, app, image)
     if previous:
@@ -145,6 +177,8 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
             job.lines.append(f"Not merging automatically: it also lets {app} call {', '.join(admits)} in production, "
                              "changing those apps' allowed callers and network policy; review them, then merge it yourself")
         argv = [app, f'--expect-image={image}', f'--expect-config={form["configuration"]}']
+        if staging and staging.unaffected:
+            argv.append(f'--source-unchanged={promotion.sha(staging.applied_revision)}..{promotion.sha(staging.desired_revision)}')
         if form.get('host'):
             argv.append(f'--host={form["host"]}')
         changes.run_tool(runner, job, root, 'app-promote', argv)
@@ -162,8 +196,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
                 + '\n\n<!-- swhurl-promotion ' + json.dumps(captured, sort_keys=True) + ' -->')
 
     def verify():
-        problem = promotion.source_problem(ops.gather_status(runner, Instance(app, 'staging')),
-                                           image, form['revision'])
+        problem = promotion.source_problem(staging_status(runner, github, Instance(app, 'staging')), image)
         if problem:
             raise ActionError(problem)
 

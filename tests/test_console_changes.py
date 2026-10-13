@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory() as tmp:
     for rel, data in MAIN.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(data)
-    PROMOTION = {'image': IMAGE, 'revision': REVISION,
+    PROMOTION = {'image': IMAGE,
                  'configuration': promotion.fingerprint(root, 'hello', 'staging'),
                  'target': promotion.fingerprint(root, 'hello', 'prod')}
 
@@ -62,6 +62,7 @@ class FakeGitHub:
     def __init__(self, fail: dict[str, tuple[int, str]] | None = None):
         self.requests: list[httpx.Request] = []
         self.fail = fail or {}
+        self.also: dict[str, object] = {}  # further answers, by "METHOD /path"
         self.github = changes.GitHub('samclement/swhurl-platform', TOKEN, transport=httpx.MockTransport(self.handle))
 
     def tarball(self) -> bytes:
@@ -98,6 +99,7 @@ class FakeGitHub:
                            {'number': 8, 'title': 'chore(deps): bump', 'html_url': 'https://github.com/x/pull/8',
                             'head': {'ref': 'renovate/x'}, 'created_at': '2026-10-01T07:00:00Z'}],
         }
+        answers.update(self.also)
         if key not in answers:
             return httpx.Response(404, json={'message': 'Not Found'})
         answer = answers[key]
@@ -774,7 +776,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             page = c.get('/apps/hello/staging/promotion', headers=WHO).text
             self.assertIn('This also lets hello call orders in production', page)
             self.assertNotIn('name="hold"', page, 'there is no automatic merge to hold')
-            form = {'image': IMAGE, 'revision': REVISION, 'configuration': review['configuration'], 'target': review['target']}
+            form = {'image': IMAGE, 'configuration': review['configuration'], 'target': review['target']}
             c.post('/apps/hello/staging/promote', data=form, headers=WHO)
         job = jobs.get(1)
         self.assertEqual(job.state, 'succeeded', job.lines)
@@ -828,7 +830,6 @@ class ChangeAppRouteTests(unittest.TestCase):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         cases = (({}, good, 'review the image'),
                  ({**PROMOTION, 'image': IMAGE.replace('2.0', '1.0')}, good, 'changed'),
-                 ({**PROMOTION, 'revision': 'old'}, good, 'changed'),
                  (PROMOTION, replace(good, release=('False', 'upgrade failed')), 'healthy'),
                  (PROMOTION, replace(good, running_images=['x@sha256:old']), 'healthy'),
                  (PROMOTION, replace(good, unit_suspended=True), 'healthy'),
@@ -864,7 +865,50 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(jobs.recent(), [])
         self.assertEqual(self.api.sent('POST /pulls'), [])
 
-    def test_review_page_submits_the_displayed_image_revision_and_configuration(self):
+    def test_a_commit_elsewhere_does_not_hold_a_promotion_and_one_to_staging_does(self):
+        """Staging's unit is one commit behind main: GitHub says which files that commit changed."""
+        good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
+        newer = 'fed9876' + '0' * 33
+        behind = replace(good, desired_revision='main@sha1:' + newer, unit=('Unknown', 'Reconciliation in progress'),
+                         unit_reason='Progressing')
+        compare = f'GET /compare/{HEAD}...{newer}'
+        elsewhere = {'status': 'ahead', 'files': [{'filename': 'docs/apps.md'}, {'filename': 'apps/orders/staging/helmrelease.yaml'}]}
+        cases = ((elsewhere, ''),
+                 ({'status': 'ahead', 'files': [{'filename': 'apps/hello/staging/helmrelease.yaml'}]}, 'a change to staging is in Git'),
+                 ({'status': 'ahead', 'files': [{'filename': 'apps/hello/old.yaml', 'previous_filename': 'apps/hello/staging/x.yaml'}]},
+                  'a change to staging is in Git'),
+                 ({'status': 'diverged', 'files': []}, 'Flux is still applying'),
+                 ({'status': 'ahead', 'files': [{'filename': f'docs/{n}.md'} for n in range(300)]}, 'Flux is still applying'),
+                 (None, 'Flux is still applying'))
+        for answer, problem in cases:
+            with self.subTest(answer=str(answer)[:60]):
+                runner = tree_fake().on('kubectl', 'get', 'namespace', stdout='{}')  # the app page reads its team
+                c, jobs = self.client(runner)
+                if answer is not None:
+                    self.api.also[compare] = answer
+                with mock.patch.object(ops, 'gather_status', return_value=behind):
+                    review = c.get('/apps/hello/staging/promotion', headers=WHO)
+                    page = c.get('/apps/hello/staging', headers=WHO)
+                    response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+                if problem:
+                    self.assertEqual((review.status_code, response.status_code), (409, 400))
+                    self.assertIn(problem, review.text)
+                    self.assertIn(problem, page.text)
+                    self.assertIn(problem, response.text)
+                    self.assertEqual((jobs.recent(), self.api.sent('POST /pulls')), ([], []))
+                else:
+                    self.assertEqual(review.status_code, 200, review.text)
+                    self.assertIn('See exactly what would go to production', page.text)
+                    self.assertEqual(jobs.get(1).state, 'succeeded', jobs.get(1).lines)
+                    self.assertIn(f'--source-unchanged={HEAD}..{newer}', self.tool_call(runner),
+                                  "the clone's own check is told what was compared: it has no history")
+                    self.assertEqual(len(self.api.sent('POST /pulls')), 1)
+        c, _ = self.client(tree_fake())
+        with mock.patch.object(ops, 'gather_status', return_value=good):
+            c.get('/apps/hello/staging/promotion', headers=WHO)
+        self.assertFalse([r for r in self.api.requests if '/compare/' in r.url.path], 'an applied staging asks GitHub nothing more')
+
+    def test_review_page_submits_the_displayed_image_and_configuration(self):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         c, _ = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', return_value=good):

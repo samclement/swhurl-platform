@@ -22,7 +22,7 @@
 {% if review.rollback %}<p class="warn">This promotes an older build: an image rollback. Database migrations are not reversed.</p>{% endif %}
 {% if review.secrets %}<p class="warn">Production needs its own values for {{ review.secrets | join(', ') }}. The PR creates encrypted placeholders; set the values with SOPS on its branch before merging.</p>{% endif %}
 <form class="wizard promotion-form" method="post" action="/apps/{{ review.app }}/staging/promote">
-{% for name in ('image', 'revision', 'configuration', 'target') %}<input type="hidden" name="{{ name }}" value="{{ review[name] }}">{% endfor %}
+{% for name in ('image', 'configuration', 'target') %}<input type="hidden" name="{{ name }}" value="{{ review[name] }}">{% endfor %}
 {% if review.needs_host %}<div class="field"><label for="host">Production public hostname</label><input id="host" name="host" required placeholder="app.example.com"><span class="muted hint">A distinct host outside the shared sign-in domain. Review DNS and TLS before manually merging this PR.</span></div>{% endif %}
 {% if review.admits %}<p class="warn">This also lets {{ review.app }} call {{ review.admits | join(', ') }} in production: the PR adds it to each one's allowed callers and network policy. Review those changes and merge the PR yourself on GitHub.</p>{% endif %}
 {% if review.setup %}<p class="muted">This PR {{ 'needs setup and manual review' if review.secrets or review.needs_host else 'does not merge itself: you merge it on GitHub' }}.</p>

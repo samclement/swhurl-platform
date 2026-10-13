@@ -17,6 +17,12 @@ spec:
       podSelector:
         matchLabels:
           app.kubernetes.io/name: traefik
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: demo-shop-prod
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: demo-shop
     ports:
     - port: 8080
       protocol: TCP

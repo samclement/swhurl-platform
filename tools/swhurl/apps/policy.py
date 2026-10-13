@@ -300,6 +300,95 @@ def check_events(docs: list[dict], release: dict, labels: dict) -> list[tuple[st
     return [('events', f'{problem}; make app-events sets them and make app-sync rewrites what follows') for problem in problems]
 
 
+def check_container(container: dict, pod_ctx: dict, where: str, env: str | None) -> list[tuple[str, str]]:
+    """Image, security, telemetry and resource rules for one container."""
+    violations: list[tuple[str, str]] = []
+    name = f"{where}/{container['name']}"
+    ctx = container.get('securityContext') or {}
+    image = container['image']
+    digest = '@sha256:' in image
+    tag = image.split('@')[0].rsplit('/', 1)[-1].partition(':')[2]
+    if not digest and (not tag or tag == 'latest'):
+        violations.append(('image-pinned', f'{name} image {image} has no version tag or digest'))
+    if env == 'prod' and not digest:
+        violations.append(('prod-digest', f'{name} image {image} must pin a digest in prod'))
+    if ctx.get('runAsNonRoot', pod_ctx.get('runAsNonRoot')) is not True:
+        violations.append(('non-root', f'{name} does not set runAsNonRoot'))
+    caps = (ctx.get('capabilities') or {}).get('drop') or []
+    if ctx.get('privileged') or ctx.get('allowPrivilegeEscalation') is not False or 'ALL' not in caps \
+            or (ctx.get('capabilities') or {}).get('add'):
+        violations.append(('no-escalation', f'{name} allows privilege escalation or extra capabilities'))
+    defined: dict[str, dict] = {}
+    for var in container.get('env') or []:
+        if f'$({OTLP_HOST_IP})' in str(var.get('value', '')):
+            source = defined.get(OTLP_HOST_IP, {}).get('valueFrom', {}).get('fieldRef', {}).get('fieldPath')
+            if source != 'status.hostIP':
+                violations.append(('otlp-host-ip', f"{name} uses $({OTLP_HOST_IP}) in {var['name']} without "
+                                   f'defining {OTLP_HOST_IP} from status.hostIP before it'))
+        defined[var['name']] = var
+    res = container.get('resources') or {}
+    if not {'cpu', 'memory'} <= set(res.get('requests') or {}) or 'memory' not in (res.get('limits') or {}):
+        violations.append(('resources', f'{name} lacks CPU/memory requests or a memory limit'))
+    return violations
+
+
+def check_pod(doc: dict, env: str | None) -> list[tuple[str, str]]:
+    """Pod rules followed by init and regular container rules in manifest order."""
+    violations: list[tuple[str, str]] = []
+    spec = pod_spec(doc)
+    if spec is None:
+        return violations
+    where = f"{doc['kind']}/{doc['metadata']['name']}"
+    if spec.get('automountServiceAccountToken') is not False:
+        violations.append(('no-sa-token', f'{where} mounts a service-account token'))
+    if any(spec.get(k) for k in ('hostNetwork', 'hostPID', 'hostIPC')) or \
+            any('hostPath' in v for v in spec.get('volumes') or []):
+        violations.append(('no-host-access', f'{where} uses host namespaces or hostPath'))
+    pod_ctx = spec.get('securityContext') or {}
+    for container in (spec.get('initContainers') or []) + spec['containers']:
+        violations += check_container(container, pod_ctx, where, env)
+    return violations
+
+
+def check_single_writer(doc: dict, rwo: set[str]) -> list[tuple[str, str]]:
+    """Replica and rollout rules for a workload mounting a ReadWriteOnce claim."""
+    violations: list[tuple[str, str]] = []
+    spec = pod_spec(doc)
+    claims = {v['persistentVolumeClaim']['claimName'] for v in (spec or {}).get('volumes') or []
+              if 'persistentVolumeClaim' in v}
+    if spec is None or not claims & rwo or doc['kind'] in ('Job', 'CronJob'):
+        return violations
+    where = f"{doc['kind']}/{doc['metadata']['name']}"
+    if doc['spec'].get('replicas', 1) > 1:
+        violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim and runs {doc["spec"]["replicas"]} replicas; at most 1'))
+    if doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate':
+        violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim, so it must stop the old pod first (strategy Recreate)'))
+    return violations
+
+
+def check_ingress(doc: dict, exposure: str | None) -> list[tuple[str, str]]:
+    """Exposure, shared-cookie and TLS rules for one Ingress."""
+    violations: list[tuple[str, str]] = []
+    where = f"Ingress/{doc['metadata']['name']}"
+    hosts = [r.get('host', '') for r in doc['spec'].get('rules') or []]
+    middleware = (doc['metadata'].get('annotations') or {}).get('traefik.ingress.kubernetes.io/router.middlewares', '')
+    if exposure == 'private':
+        violations.append(('exposure', f'{where}: private instances must not have an Ingress'))
+    elif exposure == 'authenticated-web':
+        if AUTH_MIDDLEWARE not in middleware:
+            violations.append(('exposure', f'{where} lacks the {AUTH_MIDDLEWARE} sign-in middleware'))
+        if not all(in_cookie_domain(h) for h in hosts):
+            violations.append(('exposure', f'{where}: authenticated hosts must be under {COOKIE_DOMAIN}'))
+    elif exposure == 'public' and any(in_cookie_domain(h) for h in hosts):
+        violations.append(('exposure', f'{where}: public hosts must be outside {COOKIE_DOMAIN} (shared sign-in cookie)'))
+    if any(in_cookie_domain(h) for h in hosts) and AUTH_MIDDLEWARE not in middleware and exposure != 'authenticated-web':
+        violations.append(('exposure', f'{where}: every route under {COOKIE_DOMAIN} needs sign-in'))
+    tls_hosts = {h for t in doc['spec'].get('tls') or [] for h in t.get('hosts') or []}
+    if set(hosts) - tls_hosts:
+        violations.append(('ingress-tls', f'{where}: hosts without TLS: {sorted(set(hosts) - tls_hosts)}'))
+    return violations
+
+
 def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str | None = None) -> list[tuple[str, str]]:
     """Return (rule, message) violations for one rendered instance."""
     violations: list[tuple[str, str]] = []
@@ -313,77 +402,16 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     violations += check_identity(docs, labels, signing_keys() if keys is None else keys)
 
     for doc in docs:
-        spec = pod_spec(doc)
-        if spec is None:
-            continue
-        where = f"{doc['kind']}/{doc['metadata']['name']}"
-        pod_ctx = spec.get('securityContext') or {}
-        if spec.get('automountServiceAccountToken') is not False:
-            violations.append(('no-sa-token', f'{where} mounts a service-account token'))
-        if any(spec.get(k) for k in ('hostNetwork', 'hostPID', 'hostIPC')) or \
-                any('hostPath' in v for v in spec.get('volumes') or []):
-            violations.append(('no-host-access', f'{where} uses host namespaces or hostPath'))
-        for container in (spec.get('initContainers') or []) + spec['containers']:
-            name = f"{where}/{container['name']}"
-            ctx = container.get('securityContext') or {}
-            image = container['image']
-            digest = '@sha256:' in image
-            tag = image.split('@')[0].rsplit('/', 1)[-1].partition(':')[2]
-            if not digest and (not tag or tag == 'latest'):
-                violations.append(('image-pinned', f'{name} image {image} has no version tag or digest'))
-            if env == 'prod' and not digest:
-                violations.append(('prod-digest', f'{name} image {image} must pin a digest in prod'))
-            if ctx.get('runAsNonRoot', pod_ctx.get('runAsNonRoot')) is not True:
-                violations.append(('non-root', f'{name} does not set runAsNonRoot'))
-            caps = (ctx.get('capabilities') or {}).get('drop') or []
-            if ctx.get('privileged') or ctx.get('allowPrivilegeEscalation') is not False or 'ALL' not in caps \
-                    or (ctx.get('capabilities') or {}).get('add'):
-                violations.append(('no-escalation', f'{name} allows privilege escalation or extra capabilities'))
-            defined: dict[str, dict] = {}
-            for var in container.get('env') or []:
-                if f'$({OTLP_HOST_IP})' in str(var.get('value', '')):
-                    source = defined.get(OTLP_HOST_IP, {}).get('valueFrom', {}).get('fieldRef', {}).get('fieldPath')
-                    if source != 'status.hostIP':
-                        violations.append(('otlp-host-ip', f"{name} uses $({OTLP_HOST_IP}) in {var['name']} without "
-                                           f'defining {OTLP_HOST_IP} from status.hostIP before it'))
-                defined[var['name']] = var
-            res = container.get('resources') or {}
-            if not {'cpu', 'memory'} <= set(res.get('requests') or {}) or 'memory' not in (res.get('limits') or {}):
-                violations.append(('resources', f'{name} lacks CPU/memory requests or a memory limit'))
+        violations += check_pod(doc, env)
 
     rwo = {d['metadata']['name'] for d in docs if d['kind'] == 'PersistentVolumeClaim'
            and 'ReadWriteOnce' in (d['spec'].get('accessModes') or [])}
     for doc in docs:
-        spec = pod_spec(doc)
-        claims = {v['persistentVolumeClaim']['claimName'] for v in (spec or {}).get('volumes') or []
-                  if 'persistentVolumeClaim' in v}
-        if spec is None or not claims & rwo or doc['kind'] in ('Job', 'CronJob'):
-            continue
-        where = f"{doc['kind']}/{doc['metadata']['name']}"
-        if doc['spec'].get('replicas', 1) > 1:
-            violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim and runs {doc["spec"]["replicas"]} replicas; at most 1'))
-        if doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate':
-            violations.append(('single-writer', f'{where} mounts a ReadWriteOnce claim, so it must stop the old pod first (strategy Recreate)'))
+        violations += check_single_writer(doc, rwo)
 
     for doc in docs:
         if doc['kind'] == 'Ingress':
-            where = f"Ingress/{doc['metadata']['name']}"
-            hosts = [r.get('host', '') for r in doc['spec'].get('rules') or []]
-            middleware = (doc['metadata'].get('annotations') or {}).get('traefik.ingress.kubernetes.io/router.middlewares', '')
-            if exposure == 'private':
-                violations.append(('exposure', f'{where}: private instances must not have an Ingress'))
-            elif exposure == 'authenticated-web':
-                if AUTH_MIDDLEWARE not in middleware:
-                    violations.append(('exposure', f'{where} lacks the {AUTH_MIDDLEWARE} sign-in middleware'))
-                if not all(in_cookie_domain(h) for h in hosts):
-                    violations.append(('exposure', f'{where}: authenticated hosts must be under {COOKIE_DOMAIN}'))
-            elif exposure == 'public' and any(in_cookie_domain(h) for h in hosts):
-                violations.append(('exposure', f'{where}: public hosts must be outside {COOKIE_DOMAIN} (shared sign-in cookie)'))
-            if any(in_cookie_domain(h) for h in hosts) and AUTH_MIDDLEWARE not in middleware and exposure != 'authenticated-web':
-                violations.append(('exposure', f'{where}: every route under {COOKIE_DOMAIN} needs sign-in'))
-            tls_hosts = {h for t in doc['spec'].get('tls') or [] for h in t.get('hosts') or []}
-            if set(hosts) - tls_hosts:
-                violations.append(('ingress-tls', f'{where}: hosts without TLS: {sorted(set(hosts) - tls_hosts)}'))
+            violations += check_ingress(doc, exposure)
         if doc['kind'] == 'PersistentVolumeClaim' and doc['spec'].get('storageClassName') not in STORAGE_CLASSES:
             violations.append(('storage-class', f"PersistentVolumeClaim/{doc['metadata']['name']} must use one of {sorted(STORAGE_CLASSES)}"))
     return violations

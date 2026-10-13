@@ -1,7 +1,10 @@
 """make app-hooks: the image webhook is created, repointed or left alone; the token stays off command lines."""
 import hashlib
+import io
 import json
 import unittest
+from contextlib import redirect_stdout
+from unittest import mock
 
 from swhurl.apps import hooks
 from swhurl.run import FakeRunner, Result
@@ -67,3 +70,20 @@ class AppHooksTests(unittest.TestCase):
         # Read from this repository's own apps/: demo-shop is one of the demo apps, which stay.
         found = hooks.auto_deploy_repositories()
         self.assertEqual(found.get('demo-shop'), 'samclement/demo-shop')
+
+    def test_command_output_distinguishes_existing_live_and_planned_webhooks(self):
+        for dry_run in (False, True):
+            for state in ('ok', 'created', 'updated'):
+                with self.subTest(dry_run=dry_run, state=state):
+                    runner = FakeRunner(dry_run=dry_run)
+                    out = io.StringIO()
+                    with mock.patch.object(hooks, 'read_token', return_value=TOKEN), \
+                            mock.patch.object(hooks, 'webhook_host', return_value=HOST), \
+                            mock.patch.object(hooks, 'auto_deploy_repositories', return_value={'notes': 'samclement/notes'}), \
+                            mock.patch.object(hooks, 'ensure', return_value=state), redirect_stdout(out):
+                        code = hooks.main([], runner)
+                    expected = 'is in place' if state == 'ok' else state
+                    if dry_run and state != 'ok':
+                        expected = f'would be {state}'
+                    self.assertEqual(code, 0)
+                    self.assertEqual(out.getvalue(), f'[OK] notes: image webhook on samclement/notes {expected}\n')

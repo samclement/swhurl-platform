@@ -128,6 +128,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             print(f'[ERROR] {app}: {error}', file=sys.stderr)
             failed += 1
             continue
-        outcome = 'is in place' if state == 'ok' else f'would be {state}' if runner.dry_run else state
+        if state == 'ok':
+            outcome = 'is in place'
+        elif runner.dry_run:
+            outcome = f'would be {state}'
+        else:
+            outcome = state
         print(f'[OK] {app}: image webhook on {repository} {outcome}')
     return 1 if failed else 0

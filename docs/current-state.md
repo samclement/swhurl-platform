@@ -1322,3 +1322,10 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **Refusal:** `make app-new NAME=nope-x ARGS="--from-repo samclement/nope-x ..."` stopped with `samclement/nope-x has no swhurl.yaml, or is private`.
 - **Offline:** `make check` passed (673 tests); `Validate` passed on `46c99d4`.
 - **Not exercised:** the Offers workflow on a new image (it runs the same `app-offers --all staging`), an app repository whose file `app-new` would refuse meeting `app-offers` on the live path (unit-tested), and GitHub's anonymous rate limit on the console's language lookup (one request per app per hour).
+
+## Conditional readability (13 October 2026)
+
+Stages of [plan section 19](plan.md#19-conditional-readability--approved-13-october-2026) preserve the decisions and outputs while giving comparison, validation and transition responsibilities their own names.
+
+- **Stage 1, log comparator (`668d780`):** 15 log tests passed, including ordered failures, missing-field defaults, attribute subsets, preserved fields and original-line checks with no fixture contents in diagnostics. Old and new code produced identical diagnostics for 380 comparisons across the 76 fixtures. `make check` passed (677 tests); the real collector accepted all 70 node and 6 event fixtures; CI passed.
+- **Stage 1 deployed:** console image `src-a6361a5dc7c5ebd3` (`88b68f3`). `make flux-reconcile` and `make verify-platform` passed; `demo-orders/staging` was Healthy with desired/applied revisions matching, 1/1 ready and TLS ready. Scheduled notification job `console-notifications-29864556` succeeded on this image.

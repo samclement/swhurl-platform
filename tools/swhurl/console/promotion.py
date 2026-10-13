@@ -54,7 +54,12 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     if decision.outcome == 'create':
         args = promotion.first_args(root, app, source, preview=True)
     needs_host = decision.outcome == 'create' and exposure == 'public'
-    addresses = helmrelease.hosts(target) if target else ((args.host,) if args and args.host else ())
+    if target:
+        addresses = helmrelease.hosts(target)
+    elif args and args.host:
+        addresses = (args.host,)
+    else:
+        addresses = ()
     return {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
             'rollback': decision.rollback, 'revision': status.applied_revision,
             'configuration': promotion.fingerprint(root, app, 'staging'),

@@ -62,6 +62,40 @@ class HeartbeatActionTests(unittest.TestCase):
         self.assertEqual((action, recovered), ('recover', empty))
         self.assertEqual(h.heartbeat_action(cronjob(), empty, NOW+120, 600)[0], 'none')
 
+    def test_freshness_boundary_future_success_and_invalid_timestamp(self):
+        empty = {'alerting_since': None, 'last_alert': None}
+        for age in (600, -60):
+            with self.subTest(age=age):
+                self.assertEqual(h.heartbeat_action(cronjob(age=age), empty, NOW, 600),
+                                 ('none', '', empty))
+        for last in ('not-a-time', 123, {'invalid': True}):
+            with self.subTest(last=last):
+                job = {'status': {'lastSuccessfulTime': last}}
+                action, reason, _state = h.heartbeat_action(job, empty, NOW, 600)
+                self.assertEqual((action, reason), ('alert', 'last successful time is invalid'))
+        self.assertEqual(h.heartbeat_action(cronjob(age=None), empty, NOW, 600)[:2],
+                         ('alert', 'no successful Job has completed'))
+        self.assertEqual(h.heartbeat_action(cronjob(age=601), empty, NOW, 600)[:2],
+                         ('alert', 'last success was 10 minutes ago'))
+
+    def test_transitions_leave_incoming_state_unchanged(self):
+        empty = {'alerting_since': None, 'last_alert': None}
+        alerting = {'alerting_since': NOW, 'last_alert': NOW}
+        cases = (
+            (cronjob(), empty, NOW, 'none'),
+            (None, empty, NOW, 'alert'),
+            (None, alerting, NOW + h.REMINDER_SECONDS - 1, 'none'),
+            (None, alerting, NOW + h.REMINDER_SECONDS, 'remind'),
+            (cronjob(), alerting, NOW, 'recover'),
+        )
+        for job, state, now, expected in cases:
+            with self.subTest(action=expected, now=now):
+                before = state.copy()
+                action, _reason, candidate = h.heartbeat_action(job, state, now, 600)
+                self.assertEqual(action, expected)
+                self.assertEqual(state, before)
+                self.assertIsNot(candidate, state)
+
     def test_duration_parser(self):
         self.assertEqual(h.parse_duration('1s'), 1)
         self.assertEqual(h.parse_duration('10m'), 600)

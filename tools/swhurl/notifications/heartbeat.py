@@ -52,30 +52,32 @@ def parse_duration(value: str) -> float:
     return amount * {'s': 1, 'm': 60, 'h': 3600}[match.group(2)]
 
 
+def freshness_problem(cronjob: dict | None, now: float, max_age: float) -> str | None:
+    """Describe stale or unavailable success evidence; None means the job is fresh."""
+    if cronjob is None:
+        return 'CronJob is missing'
+    if (cronjob.get('spec') or {}).get('suspend'):
+        return 'CronJob is suspended'
+    last = (cronjob.get('status') or {}).get('lastSuccessfulTime')
+    if not last:
+        return 'no successful Job has completed'
+    try:
+        taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')).timestamp()
+    except (AttributeError, TypeError, ValueError):
+        return 'last successful time is invalid'
+    if now - taken <= max_age:
+        return None
+    return f'last success was {int((now - taken) // 60)} minutes ago'
+
+
 def heartbeat_action(cronjob: dict | None, state: dict, now: float,
                      max_age: float) -> tuple[str, str, dict]:
     """Return the needed transition, reason and candidate state without I/O."""
-    reason = ''
-    if cronjob is None:
-        reason = 'CronJob is missing'
-    elif (cronjob.get('spec') or {}).get('suspend'):
-        reason = 'CronJob is suspended'
-    else:
-        last = (cronjob.get('status') or {}).get('lastSuccessfulTime')
-        if last:
-            try:
-                taken = dt.datetime.fromisoformat(last.replace('Z', '+00:00')).timestamp()
-            except (AttributeError, TypeError, ValueError):
-                reason = 'last successful time is invalid'
-            else:
-                if now - taken <= max_age:
-                    if state['alerting_since'] is not None:
-                        return 'recover', '', {'alerting_since': None, 'last_alert': None}
-                    return 'none', '', state.copy()
-                reason = f'last success was {int((now - taken) // 60)} minutes ago'
-        else:
-            reason = 'no successful Job has completed'
-
+    reason = freshness_problem(cronjob, now, max_age)
+    if reason is None:
+        if state['alerting_since'] is not None:
+            return 'recover', '', {'alerting_since': None, 'last_alert': None}
+        return 'none', '', state.copy()
     if state['alerting_since'] is None:
         return 'alert', reason, {'alerting_since': now, 'last_alert': now}
     if now - state['last_alert'] >= REMINDER_SECONDS:

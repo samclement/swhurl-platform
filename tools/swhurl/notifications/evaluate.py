@@ -168,12 +168,8 @@ def health(entry: dict, release: dict | None, data: dict, *, unit: bool = True) 
     return '', 'Workload is Ready and deployment is current'
 
 
-def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: bool = False) -> dict:
-    """``copies``: also queue each notice about an app for the notify service (set where one is configured)."""
-    state = copy.deepcopy(previous) if previous is not None else empty_state(now)
-    state['seen'] = {k: v for k, v in state['seen'].items() if v > now}
-    current = targets(data, copies)
-    releases = {object_key(r): r for r in data['releases']}
+def observe_instances(state: dict, current: dict, releases: dict, data: dict, now: float, base: str) -> None:
+    """Refresh active identities and health incidents in the candidate state."""
     for key, entry in current.items():
         record = state['instances'].setdefault(key, {'incident': {}})
         record.update({k: v for k, v in entry.items() if k != 'unit_object'})
@@ -195,12 +191,26 @@ def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: b
                      title=entry['title'], detail=detail,
                      grace=CONSOLE_GRACE if entry['console'] else GRACE, now=now, click=link(base, entry),
                      about=entry.get('about'))
+
+
+def prune_instances(state: dict, current: dict, releases: dict, now: float) -> None:
+    """Clear retired incidents and expire identities after confirmed uninstall."""
     # Keep identity after removal so a later Helm uninstall event still has an app/environment title.
     for key, entry in list(state['instances'].items()):
         if key not in current:
             entry['incident'].clear()
             if key not in releases and entry.get('uninstalled') and now - entry['last_active'] > HISTORY:
                 del state['instances'][key]
+
+
+def evaluate(previous: dict | None, data: dict, now: float, base: str, copies: bool = False) -> dict:
+    """``copies``: also queue each notice about an app for the notify service (set where one is configured)."""
+    state = copy.deepcopy(previous) if previous is not None else empty_state(now)
+    state['seen'] = {k: v for k, v in state['seen'].items() if v > now}
+    current = targets(data, copies)
+    releases = {object_key(r): r for r in data['releases']}
+    observe_instances(state, current, releases, data, now, base)
+    prune_instances(state, current, releases, now)
 
     events = sorted(data['events'], key=lambda e: timestamp(e.get('lastTimestamp') or e.get('eventTime')
                                                           or e['metadata'].get('creationTimestamp')))

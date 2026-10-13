@@ -66,6 +66,64 @@ def acknowledged(state, now):
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_evaluation_leaves_nested_previous_state_and_snapshot_unchanged(self):
+        data = healthy()
+        previous = n.evaluate(None, data, NOW, BASE, True)
+        previous['instances']['example-staging/example']['incident'] = {
+            'since': NOW, 'fault': 'unhealthy', 'notified': True, 'last_notice': NOW}
+        previous['pending'] = [{'key': 'pending', 'about': ['example', 'staging']}]
+        previous['seen'] = {'expired': NOW + 60}
+        original_state, original_data = copy.deepcopy(previous), copy.deepcopy(data)
+        result = n.evaluate(previous, data, NOW + 60, BASE, True)
+        self.assertEqual(previous, original_state)
+        self.assertEqual(data, original_data)
+        result['instances']['example-staging/example']['incident']['fault'] = 'changed'
+        result['pending'][0]['about'].append('changed')
+        self.assertEqual(previous, original_state)
+
+    def test_recreated_release_resets_old_incident_and_action_history(self):
+        for ready in (0, 1):
+            with self.subTest(ready=ready):
+                data = healthy()
+                previous = n.evaluate(None, data, NOW, BASE)
+                previous['instances']['example-staging/example'].update(
+                    incident={'since': NOW, 'fault': 'unhealthy', 'notified': True, 'last_notice': NOW},
+                    uninstalled='hr1', failed_actions=['failure:hr1:attempt:UpgradeFailed'])
+                data['releases'][0]['metadata'].update(uid='hr2', generation=3)
+                data['releases'][0]['status']['conditions'][0]['observedGeneration'] = 3
+                data['releases'][0]['spec']['values']['persistence'] = {'data': {'type': 'persistentVolumeClaim'}}
+                data['workloads'][0]['status']['readyReplicas'] = ready
+                result = n.evaluate(previous, data, NOW + 400, BASE)
+                record = result['instances']['example-staging/example']
+                self.assertEqual((record['uid'], record['generation'], record['retained']), ('hr2', 3, True))
+                self.assertNotIn('uninstalled', record)
+                self.assertNotIn('failed_actions', record)
+                self.assertEqual(record['incident'],
+                                 {'since': NOW + 400, 'fault': 'unhealthy'} if not ready else {})
+                self.assertEqual(result['pending'], [])
+
+    def test_seen_expiry_is_strict_and_does_not_discard_pending_notices(self):
+        data = healthy()
+        previous = n.evaluate(None, data, NOW, BASE)
+        previous['seen'] = {'past': NOW - 1, 'boundary': NOW, 'future': NOW + 1}
+        previous['pending'] = [{'key': 'pending', 'queued': NOW - n.HISTORY - 1}]
+        result = n.evaluate(previous, data, NOW, BASE)
+        self.assertEqual(result['seen'], {'future': NOW + 1})
+        self.assertEqual(result['pending'], previous['pending'])
+
+    def test_removed_identity_is_pruned_only_after_history_and_uninstall(self):
+        data = healthy()
+        previous = n.evaluate(None, data, NOW, BASE)
+        previous['instances']['example-staging/example']['uninstalled'] = 'hr1'
+        removed = {key: [] for key in data}
+        boundary = n.evaluate(previous, removed, NOW + n.HISTORY, BASE)
+        self.assertIn('example-staging/example', boundary['instances'])
+        expired = n.evaluate(previous, removed, NOW + n.HISTORY + 1, BASE)
+        self.assertEqual(expired['instances'], {})
+        still_present = {**removed, 'releases': data['releases']}
+        kept = n.evaluate(previous, still_present, NOW + n.HISTORY + 1, BASE)
+        self.assertIn('example-staging/example', kept['instances'])
+
     def test_deployment_waits_for_ready_even_if_helm_wait_was_disabled(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)

@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-prod
+  annotations:
+    platform.swhurl.com/offers: e43bf78
 spec:
   interval: 30m
   timeout: 3m
@@ -37,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-10
-              tag: 2-7191a37
-              digest: sha256:96f69fbc21872c5212ab7ec0c50eab3a43ad637e4b4e1e4971d6532887f85820
+              tag: 5-e43bf78
+              digest: sha256:e263c17d5636e2c9280bbc887224d3bed045a0eca5fb4e118d0947972d460aca
             resources:
               requests:
                 cpu: 10m
@@ -66,6 +68,10 @@ spec:
               OTEL_SERVICE_NAME: swhurl-try-10
               DATABASE_PATH: /data/app.db
               SWHURL_ALLOWED_CALLERS: swhurl-try-11,swhurl-try-12
+              SWHURL_API_PATH: /openapi.json
+              SWHURL_EVENTS_PUBLISH: visited
+              SWHURL_EVENTS_NKEY: UBVLFIHPHB7BHIWSWZ62QXVTPYFQRJ7G4BHW3G5DT4HN7XTTJ7UAOH4V
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:
               readiness:
                 enabled: true
@@ -90,8 +96,13 @@ spec:
                     port: 8080
                   periodSeconds: 5
                   failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: swhurl-try-10-events
         replicas: 1
         strategy: Recreate
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-10-events
     persistence:
       tmp:
         type: emptyDir

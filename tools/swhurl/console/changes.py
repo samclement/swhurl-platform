@@ -140,6 +140,7 @@ class PullRequest:
     labels: tuple[str, ...] = ()
     progress: str = 'Awaiting review'
     checks_url: str = ''
+    checks: str = ''  # Validate on its head: passed, failed, running, pending, conflict, or '' (not read)
 
 
 def refusal(runner: Runner, github: GitHub, number: int) -> str:
@@ -160,34 +161,51 @@ def refusal(runner: Runner, github: GitHub, number: int) -> str:
     return f'{words}; reason in its checks'
 
 
-def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str]:
-    """Describe review or validation progress and its best available checks link."""
+def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str, str]:
+    """Describe review or validation progress, its best available checks link, and how Validate went on
+    its head (``PullRequest.checks``), which is read whoever merges it."""
     checks_url = pull['html_url'] + '/checks'
-    if 'promotion-review-required' in labels:
-        return refusal(runner, github, pull['number']), checks_url
-    if AUTO_MERGE_LABEL not in labels or not pull['head'].get('sha'):
-        return 'Awaiting setup or manual review', checks_url
+    if not pull['head'].get('sha'):
+        return 'Awaiting setup or manual review', checks_url, ''
     api = GitHubAPI(runner, github)
     try:
         runs = api.json('GET', f"/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=30")
-        checks = [r for r in runs.get('workflow_runs', [])
-                  if r.get('name') == 'Validate' and r.get('head_sha') == pull['head']['sha']]
-        latest = checks[0] if checks else {}
+        found = [r for r in runs.get('workflow_runs', [])
+                 if r.get('name') == 'Validate' and r.get('head_sha') == pull['head']['sha']]
+        latest = found[0] if found else {}
         checks_url = latest.get('html_url', checks_url)
         if latest.get('conclusion') == 'success':
-            progress = 'Checks passed; awaiting merge verification'
+            checks, progress = 'passed', 'Checks passed; awaiting merge verification'
         elif latest.get('conclusion') in ('failure', 'cancelled', 'timed_out', 'action_required'):
-            progress = 'Failed validation; unmerged'
+            checks, progress = 'failed', 'Failed validation; unmerged'
+        elif latest.get('status') == 'in_progress':
+            checks, progress = 'running', 'Checks running'
         else:
-            progress = 'Checks running' if latest.get('status') == 'in_progress' else 'Checks pending'
+            checks, progress = 'pending', 'Checks pending'
         details = api.json('GET', f"/pulls/{pull['number']}")
         if details.get('mergeable_state') == 'dirty':
-            progress = 'Merge conflict; review required'
+            checks, progress = 'conflict', 'Merge conflict; review required'
     except ActionError:
-        progress = 'Merge requested; check progress on GitHub'
+        checks, progress = '', 'Merge requested; check progress on GitHub'
     finally:
         api.client.close()
-    return progress, checks_url
+    if 'promotion-review-required' in labels:
+        return refusal(runner, github, pull['number']), pull['html_url'] + '/checks', checks
+    if AUTO_MERGE_LABEL not in labels:
+        return 'Awaiting setup or manual review', pull['html_url'] + '/checks', checks
+    return progress, checks_url, checks
+
+
+def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str]:
+    """How a pull request that is no longer listed as open ended: ``('merged' | 'closed' | 'open', when)``."""
+    api = GitHubAPI(runner, github)
+    try:
+        pull = api.json('GET', f'/pulls/{number}')
+    finally:
+        api.client.close()
+    if pull.get('merged_at'):
+        return 'merged', pull['merged_at']
+    return ('closed', pull.get('closed_at') or '') if pull.get('state') == 'closed' else ('open', '')
 
 
 def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
@@ -203,9 +221,9 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
         if not p['head']['ref'].startswith(BRANCH_PREFIX):
             continue
         labels = tuple(label['name'] for label in p.get('labels', []))
-        progress, checks_url = pull_progress(runner, github, p, labels)
+        progress, checks_url, checks = pull_progress(runner, github, p, labels)
         out.append(PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10],
-                               p.get('body') or '', labels, progress, checks_url))
+                               p.get('body') or '', labels, progress, checks_url, checks))
     return out
 
 
@@ -245,6 +263,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
     api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
     try:
+        job.stage('prepare')
         head = api.json('GET', f'/git/ref/heads/{BASE}')['object']['sha']
         branch = branch_name(slug, head[:7])
         job.lines.append(f'Downloading {github.repo} {BASE} ({head[:7]})')
@@ -291,6 +310,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         if runner.dry_run:
             job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
             return ''
+        job.stage('open')
         entries = []
         for path in changed:
             if path not in after:

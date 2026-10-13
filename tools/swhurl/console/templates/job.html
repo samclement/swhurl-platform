@@ -7,11 +7,26 @@
 {% set label, link = (job.unit, job.link or '/activity') if job.unit.startswith('PR #') else target(job.unit) %}
 <p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
-  · <span id="job-mark">{{ st.job(job) }}</span> <span id="job-state" class="state {{ {'succeeded': 'healthy', 'failed': 'failing', 'interrupted': 'failing'}.get(job.state, 'updating') }}">{{ job.state | capitalize }}</span></h1>
-<p class="muted">Job #{{ job.id }} by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC<span id="job-live">{% if not job.finished %}; output updates live{% endif %}</span><span id="job-finished">{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }} UTC{% endif %}</span>.</p>
-<p id="job-link"{% if not job.link %} hidden{% endif %}><a id="job-link-anchor" href="{{ job.link }}">{{ job.link }}</a></p>
-<pre id="log">{% for line in job.lines %}{{ line | short }}
-{% else %}<span id="empty">waiting for output…</span>{% endfor %}</pre>
+  · {{ st.change_state(track) }}</h1>
+<p class="muted">Job #{{ job.id }} {{ job.state }}, by {{ job.identity }}, started {{ job.started.strftime('%H:%M:%S') }} UTC<span id="job-live">{% if not job.finished %}; output updates live{% endif %}</span><span id="job-finished">{% if job.finished %}, finished {{ job.finished.strftime('%H:%M:%S') }} UTC{% endif %}</span>.</p>
+{# The whole change, not only this job: re-read while something after the job is still moving (checks, the merge, Flux). #}
+<div id="track"{% if job.state != 'running' and not track.settled %} hx-get="/jobs/{{ job.id }}" hx-trigger="every 30s" hx-select="#track" hx-target="#track" hx-swap="outerHTML"{% endif %}>
+{{ st.track(track) }}
+{% if pr %}<p class="pull"><a href="{{ pr.url }}">Pull request #{{ pr.number }} {{ st.icon('external') }}</a> · <a href="{{ pr.checks_url or pr.url }}" title="Its checks on GitHub">{{ pr.progress }} {{ st.icon('external') }}</a></p>
+<p>{{ st.merging(pr) }}</p>{% endif %}
+</div>
+<p id="job-link"{% if not job.link or pr %} hidden{% endif %}><a id="job-link-anchor" href="{{ job.link }}">{{ job.link }}</a></p>
+<h2>Output</h2>
+{# One section per stage of the job, in order; a stage not reached yet is there but hidden, for its first line to show it. #}
+<div id="log">
+{% for sec in sections %}
+<details class="stage-log" id="stage-{{ sec.stage.key }}"{{ ' hidden' if not sec.started }}{{ ' open' if sec.stage.state in ('running', 'failed') or loop.last or sec.lines | length <= 12 }}>
+  <summary>{{ st.mark(sec.stage.mark) }} {{ sec.stage.label }} <span class="muted"><span class="count">{{ sec.lines | length }}</span> lines</span></summary>
+  <pre>{% for line in sec.lines %}{{ line | short }}
+{% endfor %}</pre>
+</details>
+{% endfor %}
+</div>
 {% if can_resume %}
 <form class="action-row" method="post" action="/jobs/{{ job.id }}/resume" data-confirm="Finish creating {{ job.unit }}? It uses the repository this job created and the choices made then (team, access, connections), waits for its image and opens the platform pull request. No second repository is created." data-confirm-label="Finish creating the app">
   <button class="primary">Finish creating this app</button>
@@ -20,29 +35,26 @@
 {% endif %}
 <p><a href="{{ link }}">Back to {{ label }}</a> · <a href="/activity">All activity</a></p>
 {% if job.state == 'running' and job.live %}<script>
-  const out = document.querySelector('#log');
   const es = new EventSource('/jobs/{{ job.id }}/events?after={{ job.lines | length }}');
+  // Part of this page as the server now renders it, in place: the scroll position and open sections stay.
+  const reread = (selector) => fetch(location.href).then(r => r.text()).then(text => {
+    const fresh = new DOMParser().parseFromString(text, 'text/html').querySelector(selector);
+    if (!fresh) return location.reload();
+    document.querySelector(selector).replaceWith(fresh);
+    if (window.htmx) htmx.process(fresh);
+  }).catch(() => location.reload());
+  let stage = '{{ (sections | selectattr("started") | list | last).stage.key }}';
   es.addEventListener('line', e => {
-    document.querySelector('#empty')?.remove();
-    out.insertAdjacentHTML('beforeend', JSON.parse(e.data).html + '\n');
+    const line = JSON.parse(e.data);
+    const section = document.getElementById('stage-' + line.stage);
+    section.hidden = false;
+    section.querySelector('pre').insertAdjacentHTML('beforeend', line.html + '\n');
+    section.querySelector('.count').textContent = section.querySelector('pre').textContent.split('\n').length - 1;
+    if (line.stage !== stage) { stage = line.stage; section.open = true; reread('#track'); }
   });
   // The console restarting cuts this stream; the page is read again, from whichever pod now answers.
   es.onerror = () => { es.close(); setTimeout(() => location.reload(), 3000); };
-  es.addEventListener('done', e => {
-    es.close();
-    const final = JSON.parse(e.data);
-    const succeeded = final.state === 'succeeded';
-    document.querySelector('#job-state').textContent = succeeded ? 'Succeeded' : 'Failed';
-    document.querySelector('#job-state').className = 'state ' + (succeeded ? 'healthy' : 'failing');
-    document.querySelector('#job-mark .mark').className = 'mark ' + (succeeded ? 'healthy' : 'failing');
-    document.querySelector('#job-live').textContent = '';
-    document.querySelector('#job-finished').textContent = ', finished ' + final.finished + ' UTC';
-    if (final.link) {
-      const link = document.querySelector('#job-link-anchor');
-      link.href = final.link;
-      link.textContent = final.link;
-      document.querySelector('#job-link').hidden = false;
-    }
-  });
+  // Finished: the page as it now is (the final state, the pull request, what happens next), with no stream.
+  es.addEventListener('done', () => { es.close(); reread('main'); });
 </script>{% endif %}
 {% endblock %}

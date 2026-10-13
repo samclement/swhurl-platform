@@ -200,8 +200,8 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
   </div>
 </section>
 
-<h2 id="jobs" class="part">Jobs on {{ i.app }}/{{ i.env }}</h2>
-{% if unit_jobs %}{{ st.jobs_list(unit_jobs) }}
+<h2 id="jobs" class="part">Changes to {{ i.app }}/{{ i.env }}</h2>
+{% if unit_jobs %}{{ st.changes_list(unit_jobs) }}
 {% else %}<p class="muted">None since the console started.</p>{% endif %}
 
 <section class="card danger" style="--acts: 0; margin-top: var(--gap-6)">

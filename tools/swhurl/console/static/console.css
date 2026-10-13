@@ -134,6 +134,9 @@ dialog .toolbar { justify-content: flex-end; margin: 0; }
 .mark.warn { color: var(--attention); } .mark.warn::before { content: "!"; }
 .mark.unknown { color: var(--attention); } .mark.unknown::before { content: "?"; }
 .mark.stopped { color: var(--muted); } .mark.stopped::before { content: "■"; }
+.mark.todo { color: var(--muted); } .mark.todo::before { content: "○"; }
+.mark.planned { color: var(--muted); } .mark.planned::before { content: "◎"; }
+.mark.reached { color: var(--ok); } .mark.reached::before { content: "◉"; }
 @keyframes turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .mark.updating::before { animation: none; } }
 .status { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; }
@@ -263,7 +266,37 @@ table.team-apps tr:last-child > td { border-bottom: 1px solid var(--line); }
 .openlist.catalogue .panel details.section { margin: 0; } .openlist.catalogue .panel details.section[open] > summary { margin-bottom: var(--gap-1); }
 .openlist.catalogue dl.foot { font-size: var(--size-detail); }
 .openlist.units .cols { grid-template-columns: 1rem minmax(0, 22rem) 9rem minmax(0, 1fr); padding-block: var(--gap-2); }
-.openlist.jobs .cols { grid-template-columns: 1rem 7rem minmax(0, 1.4fr) minmax(0, 1fr) 11rem minmax(0, 12rem); padding-block: var(--gap-2); }
+/* A change (Activity, an app's page): its state and name on one line, then its path as stages joined by a line,
+   the last one the terminal stop, then the sentence that says what happens next. */
+details.change > summary { display: grid; grid-template-columns: 1rem minmax(0, 1fr); gap: var(--gap-3); padding: var(--gap-3) var(--gap-4); }
+.change .top { display: flex; flex-wrap: wrap; gap: var(--gap-1) var(--gap-3); align-items: baseline; }
+.change .top .title { font-weight: 600; }
+.change .top .when { margin-left: auto; }
+ol.track { list-style: none; display: flex; flex-wrap: wrap; gap: var(--gap-2) 0; margin: var(--gap-3) 0 var(--gap-2); padding: 0; font-size: var(--size-detail); }
+.stage { display: flex; align-items: flex-start; }
+.stage + .stage::before { content: ""; flex: none; width: 1.75rem; margin: 0.72em var(--gap-1) 0; border-top: 2px solid var(--line); }
+.stage.done + .stage::before { border-top-color: color-mix(in oklch, var(--ok) 55%, var(--line)); }
+.stage .what { display: flex; flex-direction: column; max-width: 15rem; }
+.stage .name { font-weight: 600; white-space: nowrap; } .stage .name a { color: inherit; }
+.stage .note { color: var(--muted); overflow-wrap: anywhere; }
+.stage.todo .name, .stage.planned .name { color: var(--muted); font-weight: 400; }
+.stage.waiting .name { color: var(--attention); } .stage.failed .name { color: var(--critical); } .stage.reached .name { color: var(--ok); }
+.stage .node { display: flex; align-items: flex-start; gap: var(--gap-1); border: 1px solid transparent; border-radius: 10px; padding: 0 var(--gap-2) 0 2px; }
+.stage.planned .node { border: 1px dashed var(--line); }
+.stage.reached .node { border-color: color-mix(in oklch, var(--ok) 45%, var(--line)); background: color-mix(in oklch, var(--ok) 8%, var(--panel)); }
+p.outcome { margin: 0; font-size: var(--size-detail); max-width: 60em; }
+.panel p.pull, p.pull { display: flex; flex-wrap: wrap; gap: var(--gap-1) var(--gap-2); align-items: baseline; }
+#track { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap-1) var(--gap-4) var(--gap-3); margin: var(--gap-3) 0; }
+#track .merging, .change .panel .merging { white-space: normal; }
+#track p.pull { margin: var(--gap-2) 0 0; }
+details.stage-log { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); margin: 0 0 var(--gap-2); }
+details.stage-log > summary { cursor: pointer; padding: var(--gap-2) var(--gap-3); font-weight: 600; }
+details.stage-log > pre { margin: 0; border-top: 1px dashed var(--line); padding: var(--gap-2) var(--gap-3); max-height: 28rem; overflow-y: auto; }
+details.stage-log > pre:empty { display: none; }
+@media (max-width: 640px) {
+  ol.track { flex-direction: column; } .stage + .stage::before { display: none; }
+  .change .top .when { margin-left: 0; }
+}
 .cols.head { color: var(--muted); font-size: var(--size-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
              border-bottom: 1px solid var(--line); padding-block: var(--gap-2); }
 .openlist .group { background: var(--sunk); border-bottom: 1px solid var(--line); padding: var(--gap-2) var(--gap-4); font-size: var(--size-detail); font-weight: 600; }

@@ -60,7 +60,8 @@ class Flux:
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
         self.runner, self.now, self.sleep, self.clock = runner, now, sleep, clock
 
-    def run(self, action: str, unit: str) -> Iterator[str]:
+    def run(self, action: str, unit: str, stage: Callable[[str], None] = lambda key: None) -> Iterator[str]:
+        """``stage`` is told each stage as it begins (``Job.stage``)."""
         if action == 'reconcile':
             spec = self.runner.json(['kubectl', '-n', NAMESPACE, 'get', f'{KUSTOMIZATION}/{unit}', '-o', 'json'])['spec']
             if spec.get('suspend'):
@@ -68,15 +69,18 @@ class Flux:
             ref = spec.get('sourceRef') or {}
             if ref.get('kind') not in SOURCES:
                 raise ActionError(f'{unit} has an unsupported source kind {ref.get("kind")!r}')
+            stage('fetch')
             yield from self.request(ref['kind'], SOURCES[ref['kind']], ref['name'], ref.get('namespace', NAMESPACE))
         else:
             suspend = action == 'suspend'
+            stage(action)
             yield f'► {"suspending" if suspend else "resuming"} Kustomization {unit}'
             self.runner.run(['kubectl', '-n', NAMESPACE, 'patch', f'{KUSTOMIZATION}/{unit}', '--type=merge',
                              '--patch', json.dumps({'spec': {'suspend': suspend}})], mutating=True)
             if suspend:
                 yield f'✔ Kustomization {unit} suspended'
                 return
+        stage('apply')
         yield from self.request('Kustomization', KUSTOMIZATION, unit, NAMESPACE)
 
     def request(self, kind: str, resource: str, name: str, namespace: str) -> Iterator[str]:
@@ -124,6 +128,11 @@ class Job:
     owner: str = ''  # the pod running it
     resume: dict | None = None  # what a later job needs to finish this one, if it can be finished (never a secret)
     live: bool = True  # False for a record read from the store: another pod's job, or one from before a restart
+    marks: list[tuple[str, int]] = field(default_factory=list)  # (stage, the output line it starts at): stages.py
+
+    def stage(self, key: str) -> None:
+        """A stage of the job begins: its output from here on is that stage's."""
+        self.marks.append((key, len(self.lines)))
 
 
 class Jobs:
@@ -206,7 +215,7 @@ class Jobs:
             raise ActionError(f'no Flux unit named {unit!r}')
 
         def work(job: Job) -> None:
-            for line in self.flux.run(action, unit):
+            for line in self.flux.run(action, unit, job.stage):
                 job.lines.append(line)
         return self.submit(action, unit, identity, work)
 
@@ -248,10 +257,10 @@ class Jobs:
 
     def _keep(self, job: Job) -> None:
         """Write a running job's record as its output grows, so another pod can show it."""
-        seen = (len(job.lines), job.link)
+        seen = (len(job.lines), job.link, len(job.marks))
         while job.state == 'running':
             self.sleep(SAVE_EVERY)
-            now = (len(job.lines), job.link)
+            now = (len(job.lines), job.link, len(job.marks))
             if now != seen and job.state == 'running':
                 self.store.save(job)
                 seen = now

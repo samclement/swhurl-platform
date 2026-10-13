@@ -91,6 +91,14 @@ data:
               subscribe:
                 allow:
                 - _INBOX.prod.demo-orders.>
+          - nkey: UBVLFIHPHB7BHIWSWZ62QXVTPYFQRJ7G4BHW3G5DT4HN7XTTJ7UAOH4V
+            permissions:
+              publish:
+                allow:
+                - prod.swhurl-try-10.>
+              subscribe:
+                allow:
+                - _INBOX.prod.swhurl-try-10.>
           - nkey: UB5OTUGYUKWSQVCUQUMY5RE4P6KGHTUAEBQ76SWYQJ42IGP44PJE3PDR
             permissions:
               publish:

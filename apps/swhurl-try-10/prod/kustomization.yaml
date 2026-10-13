@@ -5,3 +5,5 @@ resources:
 - helmrelease.yaml
 - resourcequota.yaml
 - networkpolicy.yaml
+- events.sops.yaml
+- events.yaml

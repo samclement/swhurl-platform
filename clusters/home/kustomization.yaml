@@ -16,3 +16,4 @@ resources:
   - app-demo-orders-prod.yaml
   - app-swhurl-try-12-prod.yaml
   - app-test-1-staging.yaml
+  - app-swhurl-try-11-prod.yaml

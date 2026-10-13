@@ -57,6 +57,42 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaisesRegex(DeclarationError, message):
                 seed(bad)
 
+    def test_first_problem_follows_validation_order_and_names_the_source(self):
+        source = 'owner/app@revision:swhurl.yaml'
+        scenarios = [
+            ({'resources': {'memory': 64}, 'events': {'publish': ['Bad']}},
+             'resources.memory must be a quantity string, for example "64Mi"'),
+            ({'resources': {'gpu': '1', 'cpu': 1}}, 'resources may set cpu, memory, memoryLimit only'),
+            ({'resources': {'memory': 64, 'cpu': 1}},
+             'resources.cpu must be a quantity string, for example "64Mi"'),
+            ({'events': {'publish': ['Bad']}, 'provides': {'api': 'relative'}},
+             'events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)'),
+            ({'events': {'unknown': [], 'publish': ['Bad']}}, 'events may set publish and subscribe only'),
+            ({'provides': {'api': 'relative', 'apiFile': '../bad'}, 'calls': ['Bad']},
+             'provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only'),
+            ({'provides': {'eventsFile': '../events', 'apiFile': '../api'}},
+             'provides.apiFile is a file in the repository, such as openapi.json'),
+            ({'kind': 'worker', 'port': None, 'healthPath': None,
+              'provides': {'apiFile': 'api.json', 'api': '/api'}}, 'provides.apiFile applies to kind web only'),
+            ({'calls': ['Bad'], 'team': 1, 'stack': 1}, 'calls must be a list of distinct app names'),
+            ({'uid': True, 'resources': {'memory': 64}}, 'uid must be int'),
+        ]
+        for fields, expected in scenarios:
+            with self.subTest(fields=fields), self.assertRaises(DeclarationError) as error:
+                declaration.of({**WEB, **fields}, source)
+            self.assertEqual(str(error.exception), f'{source}: {expected}')
+
+    def test_empty_nested_values_and_zero_defaults_keep_their_existing_meaning(self):
+        expected = seed(WEB)
+        for empty in (None, {}):
+            with self.subTest(empty=empty):
+                self.assertEqual(seed({**WEB, 'resources': empty, 'events': empty, 'provides': empty}), expected)
+        self.assertEqual(seed({**WEB, 'resources': {'cpu': None}, 'events': {'publish': False, 'subscribe': ''},
+                               'calls': [], 'uid': 0, 'port': 0}), expected)
+        for field in ('resources', 'events', 'provides'):
+            with self.subTest(field=field), self.assertRaisesRegex(DeclarationError, f'{field} must be dict'):
+                seed({**WEB, field: False})
+
     def test_every_web_app_gets_the_same_startup_allowance(self):
         with self.assertRaisesRegex(DeclarationError, 'unknown field.*startupSeconds'):
             seed({**WEB, 'startupSeconds': 120})

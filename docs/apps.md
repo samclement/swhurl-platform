@@ -495,9 +495,23 @@ Renovate merges only when it runs, so a passing update can wait hours; tick "run
 
 ### Reusing a tested PR image
 
-The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) supports retaining a smoke-tested OCI image as a GitHub Actions artifact for one day. Stack workflow adoption is tracked in [the plan](plan.md#0-where-this-paused-and-what-is-left). The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
+The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) is used by TypeScript template `v0.2.4` and Kotlin template `v0.2.3` to retain a smoke-tested OCI image as a GitHub Actions artifact for one day. The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
 
 Main can publish that exact image when the checked-out source tree, immutable shared workflow, helper, build target, platform and resolved base/BuildKit image digests match. External base tags are resolved and pinned before building, so a changed tag cannot race the comparison. Source comparison includes the dependency files and caller workflow. A squash or merge commit with the same file tree is eligible even though its commit ID differs. The helper can load only the runtime from an OCI export into Docker for smoke tests and verifies its config digest, leaving the export and its provenance intact. OCI publication preserves the original PR's build attestations and verifies the published digest; the normal deployment tag names the merged commit.
+
+```mermaid
+flowchart LR
+    PR[PR build and smoke test] --> Archive[OCI image and proof: one day]
+    Archive --> Match{Main build inputs match?}
+    Match -->|yes| Copy[Publish the tested image]
+    Match -->|no or unavailable| Build[Build and smoke test]
+    Copy --> Registry[GHCR]
+    Build --> Registry
+    subgraph Cluster[k3s]
+        Flux[Flux image automation] --> App[Staging app]
+    end
+    Registry --> Flux
+```
 
 Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. A publication error fails the workflow. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off. The OCI copy utility is pinned by digest in the helper and updated through a reviewed tooling change.
 

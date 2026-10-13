@@ -1356,3 +1356,4 @@ Stages of [plan section 19](plan.md#19-conditional-readability--approved-13-octo
 `8e09e7f`, console image `src-fd3b804091dcf99e` (deployed as `a309603`): the promotion gate asks which files changed between the commit staging's unit applied and main's newest, and holds a promotion only for a change to staging's own folder or unit file ([apps](apps.md#a-commit-elsewhere-does-not-hold-a-promotion)); the review is no longer pinned to a revision. `make check` passed (703 tests); after `make flux-reconcile`, `make verify-platform` passed with the new image running.
 
 - **At rest:** through a port-forward, the review pages of `demo-orders`, `swhurl-try-13` and `test-1` answered 200 with every unit applied at `a309603`.
+- **Not exercised:** a promotion refused live for an unapplied change to staging's own files, and `make app-promote` asking a checkout's history while staging is behind (both covered by `make test`); a comparison of 300 files or more.

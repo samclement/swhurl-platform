@@ -14,7 +14,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, promotion
+from swhurl.apps import calling, contract, declaration, promotion
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.run import CommandError, FakeRunner, Result
@@ -193,10 +193,10 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("--alerts: 'latency' is not an alert: choose from error-logs, errors", err.getvalue())
         self.assertFalse((self.tmp / 'apps/api').exists())
         base = {'version': 1, 'kind': 'worker', 'autoDeploy': True}
-        self.assertEqual(contract.manifest_defaults(base | {'alerts': 'none'})['alerts'], 'none')
-        with self.assertRaisesRegex(contract.ManifestError, "alerts: errors='lots': give a number"):
-            contract.manifest_defaults(base | {'alerts': 'errors=lots'})
-        self.assertNotIn('alerts', contract.manifest_defaults(base))
+        self.assertEqual(declaration.of(base | {'alerts': 'none'}).seed['alerts'], 'none')
+        with self.assertRaisesRegex(declaration.DeclarationError, "alerts: errors='lots': give a number"):
+            declaration.of(base | {'alerts': 'errors=lots'})
+        self.assertNotIn('alerts', declaration.of(base).seed)
 
     def test_secret_stub_is_encrypted_and_namespace_watched(self):
         fake = self.tmp / 'bin'

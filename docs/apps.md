@@ -182,11 +182,16 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## swhurl.yaml
 
-What an app needs from the platform, kept in the app's own repository (the templates write it from your feature answers) and read by `app-new --from-repo`. Each field becomes an `app-new` default; flags on the command line still win. The name, environment, image and host belong to each instance and are never in the file. The schema is `manifest_defaults` in [`contract.py`](../tools/swhurl/apps/contract.py); unknown fields and other versions are refused.
+What an app says it needs from the platform, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. [`declaration.py`](../tools/swhurl/apps/declaration.py) is its one reader: unknown fields and other versions are refused wherever the file is read.
+
+The file has two lifetimes, and each field has one of them:
+
+- **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
+- **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself.
 
 ```yaml
 version: 1              # required; this platform reads version 1
-stack: kotlin           # which template the app came from (informational)
+stack: kotlin           # which template the app came from
 kind: web               # required: web or worker            --kind
 port: 8080              # web only (default 8080)            --port
 healthPath: /healthz    # web only, required                 --health-path
@@ -204,6 +209,27 @@ provides: {api: /openapi.json}   # optional, web only: where its API description
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
 ```
+
+| Field | Lifetime | After creation |
+| --- | --- | --- |
+| `version` | read again | Checked every time the file is read |
+| `stack` | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
+| `provides` | read again | `make app-offers` reads it at the commit of every new staging image (the Offers workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
+| `kind` | read once | Fixed: web or worker cannot change |
+| `autoDeploy` | read once | Fixed: staging always follows new images |
+| `port` | read once | Edit the instance's `helmrelease.yaml` ([operate an instance](#operate-an-instance)) |
+| `healthPath` | read once | Edit the instance's `helmrelease.yaml` |
+| `uid` | read once | Edit the instance's `helmrelease.yaml` |
+| `telemetry` | read once | Edit the instance's `helmrelease.yaml` |
+| `database` | read once | Edit the instance's files |
+| `databaseSize` | read once | Edit the instance's files |
+| `secrets` | read once | Edit the instance's files ([secrets](#secrets)) |
+| `resources` | read once | `make app-scale` |
+| `exposure` | read once | `make app-expose` |
+| `team` | read once | `make app-team` |
+| `alerts` | read once | `make app-alerts` |
+| `calls` | read once | `make app-calls` |
+| `events` | read once | `make app-events`; what the app publishes follows `provides.eventsFile` once it has one |
 
 ## Who can reach it
 

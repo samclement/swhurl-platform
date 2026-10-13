@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, app_alerts
+from swhurl import ROOT
 from swhurl.platform import base_domain, label
 
 CHART = 'app-template'
@@ -150,127 +150,6 @@ def secret_key_problem(keys: list[str]) -> str:
     if duplicates:
         return f'secret keys repeated: {", ".join(duplicates)}'
     return ''
-
-
-# swhurl.yaml: what an app needs from the platform, kept in the app's own repository (docs/apps.md).
-# app-new --from-repo / --manifest reads it; each field becomes an app-new default, and flags given
-# explicitly still win. Name, environment, image and host are per instance and never in the file.
-MANIFEST_FILE = 'swhurl.yaml'
-MANIFEST_VERSION = 1
-KINDS = ('web', 'worker')
-TELEMETRY = ('otlp', 'none')
-
-
-class ManifestError(ValueError):
-    pass
-
-
-def manifest_defaults(doc: object, source: str = MANIFEST_FILE) -> dict:
-    """app-new defaults from a swhurl.yaml document; raise ManifestError naming the first problem."""
-    def fail(message: str) -> ManifestError:
-        return ManifestError(f'{source}: {message}')
-
-    if not isinstance(doc, dict):
-        raise fail('must be a mapping')
-    if doc.get('version') != MANIFEST_VERSION:
-        raise fail(f'version must be {MANIFEST_VERSION} (this platform reads version {MANIFEST_VERSION})')
-    allowed = {'version', 'stack', 'kind', 'port', 'healthPath', 'uid', 'telemetry', 'database', 'databaseSize',
-               'secrets', 'resources', 'exposure', 'autoDeploy', 'team', 'calls', 'provides', 'events', 'alerts'}
-    unknown = sorted(set(doc) - allowed)
-    if unknown:
-        raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
-
-    def field(key: str, kind: type | tuple, choices: tuple = ()):
-        value = doc.get(key)
-        if value is None:
-            return None
-        if not isinstance(value, kind) or isinstance(value, bool) and kind is int:
-            raise fail(f'{key} must be {getattr(kind, "__name__", kind)}')
-        if choices and value not in choices:
-            raise fail(f'{key} must be one of {", ".join(choices)}')
-        return value
-
-    kind = field('kind', str, KINDS)
-    if not kind:
-        raise fail(f'kind is required ({", ".join(KINDS)})')
-    defaults: dict = {'kind': kind, 'uid': field('uid', int) or TEMPLATE_UID,
-                      'otlp': field('telemetry', str, TELEMETRY) == 'otlp',
-                      'auto_deploy': bool(field('autoDeploy', bool)),
-                      'exposure': field('exposure', str, EXPOSURES)
-                      or ('authenticated-web' if kind == 'web' else 'private')}
-    if kind == 'web':
-        defaults['port'] = field('port', int) or TEMPLATE_PORT
-        defaults['health_path'] = field('healthPath', str)
-        if not defaults['health_path']:
-            raise fail('healthPath is required for kind web (the app\'s readiness endpoint)')
-    elif any(doc.get(k) is not None for k in ('port', 'healthPath')):
-        raise fail('port and healthPath apply to kind web only')
-    if field('database', str, DATABASES):
-        defaults['database'] = doc['database']
-        if field('databaseSize', str):
-            defaults['database_size'] = doc['databaseSize']
-    elif doc.get('databaseSize') is not None:
-        raise fail('databaseSize needs database')
-    secrets = field('secrets', list)
-    if secrets:
-        if not all(isinstance(k, str) for k in secrets):
-            raise fail('secrets must be environment variable names (A-Z, 0-9, _)')
-        if problem := secret_key_problem(secrets):
-            raise fail(problem)
-        defaults['secret_keys'] = secrets
-    resources = field('resources', dict) or {}
-    names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}
-    if set(resources) - set(names):
-        raise fail(f'resources may set {", ".join(names)} only')
-    for key, dest in names.items():
-        if resources.get(key) is not None:
-            if not isinstance(resources[key], str):
-                raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
-            defaults[dest] = resources[key]
-    declared = field('events', dict) or {}
-    if set(declared) - {'publish', 'subscribe'}:
-        raise fail('events may set publish and subscribe only')
-    for key, dest, pattern in (('publish', 'publish', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?'),
-                               ('subscribe', 'subscribe', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?')):
-        names = declared.get(key) or []
-        if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(pattern, n) for n in names) \
-                or len(set(names)) != len(names):
-            raise fail('events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)')
-        if names:
-            defaults[dest] = names
-    provides = field('provides', dict) or {}
-    if set(provides) - {'api', 'apiFile', 'eventsFile'} or not isinstance(provides.get('api', '/'), str) \
-            or not provides.get('api', '/').startswith('/'):
-        raise fail('provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only')
-    for key in ('apiFile', 'eventsFile'):
-        # Where the app's repository keeps its OpenAPI and AsyncAPI documents: what it offers other apps.
-        path = provides.get(key)
-        if path is not None and (not isinstance(path, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*', path)):
-            raise fail(f'provides.{key} is a file in the repository, such as {"openapi.json" if key == "apiFile" else "asyncapi.yaml"}')
-    if provides.get('apiFile') or provides.get('eventsFile'):
-        defaults['offers'] = True  # app-new reads them from the repository (make app-offers)
-    if provides.get('apiFile') and kind != 'web':
-        raise fail('provides.apiFile applies to kind web only')
-    if provides.get('api'):
-        if kind != 'web':
-            raise fail('provides.api applies to kind web only')
-        defaults['api_path'] = provides['api']
-    calls = field('calls', list)
-    if calls:
-        if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \
-                or len(set(calls)) != len(calls):
-            raise fail('calls must be a list of distinct app names')
-        defaults['calls'] = calls
-    if field('team', str):
-        defaults['team'] = doc['team']  # checked against the registry by app-new
-    if field('alerts', str):
-        try:
-            app_alerts.thresholds(doc['alerts'])
-        except ValueError as error:
-            raise fail(f'alerts: {error}') from None
-        defaults['alerts'] = doc['alerts']
-    field('stack', str)
-    return defaults
 
 
 # Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a

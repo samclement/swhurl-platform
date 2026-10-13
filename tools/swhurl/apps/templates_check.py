@@ -18,9 +18,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl.apps import new, policy, promotion, repo
+from swhurl.apps import declaration, new, policy, promotion, repo
 from swhurl.apps.contract import (
-    MANIFEST_FILE,
     STACK_REVISIONS,
     STACKS,
     teams,
@@ -66,17 +65,17 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
     data = ['--data', f'app_name={NAME}'] + [arg for k, v in sorted(answers.items()) for arg in ('--data', f'{k}={v}')]
     runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', '--vcs-ref', STACK_REVISIONS[stack], *data, str(template), str(rendered)])
-    manifest = rendered / MANIFEST_FILE
+    manifest = rendered / declaration.FILE
     if runner.dry_run:
         return True
     if not manifest.is_file():
-        report.bad(f'{label}: the template rendered no {MANIFEST_FILE}')
+        report.bad(f'{label}: the template rendered no {declaration.FILE}')
         return False
     instances = []
     for env in ENVIRONMENTS:
         code, output = instance(root, manifest, env)
         if code:
-            report.bad(f'{label}: app-new refused its {MANIFEST_FILE} for {env}: {output.strip()}')
+            report.bad(f'{label}: app-new refused its {declaration.FILE} for {env}: {output.strip()}')
             return False
         instances.append(instance_folder(root, NAME, env))
     problems = [f'{path.name}: {p}' for path in instances for p in policy.evaluate(path, runner)]

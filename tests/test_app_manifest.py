@@ -1,6 +1,7 @@
 """swhurl.yaml: the schema, its mapping to app-new defaults, and reading it from GitHub; offline."""
 import io
 import json
+import re
 import tempfile
 import unittest
 import urllib.error
@@ -10,53 +11,55 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import contract
+from swhurl.apps import contract, declaration
 from swhurl.apps import new as app_new
-from swhurl.apps.contract import (
-    ManifestError,
-    manifest_defaults,
-)
+from swhurl.apps.declaration import DeclarationError
 
 WEB = {'version': 1, 'stack': 'typescript', 'kind': 'web', 'port': 8080, 'healthPath': '/healthz', 'uid': 65532,
        'telemetry': 'otlp', 'autoDeploy': True}
 
 
+def seed(doc):
+    """app-new's defaults from a parsed swhurl.yaml."""
+    return declaration.of(doc).seed
+
+
 class ManifestTests(unittest.TestCase):
     def test_a_template_manifest_maps_to_app_new_defaults(self):
-        self.assertEqual(manifest_defaults(WEB), {
+        self.assertEqual(seed(WEB), {
             'kind': 'web', 'exposure': 'authenticated-web', 'port': 8080, 'health_path': '/healthz',
             'uid': 65532, 'otlp': True, 'auto_deploy': True})
-        self.assertEqual(manifest_defaults({'version': 1, 'kind': 'worker', 'telemetry': 'otlp', 'autoDeploy': True}),
+        self.assertEqual(seed({'version': 1, 'kind': 'worker', 'telemetry': 'otlp', 'autoDeploy': True}),
                          {'kind': 'worker', 'exposure': 'private', 'uid': 65532, 'otlp': True, 'auto_deploy': True})
         for name in ('web', 'worker'):  # the fixtures other tests generate instances from
             doc = yaml.safe_load((ROOT / f'tests/fixtures/manifests/{name}.yaml').read_text())
-            self.assertEqual((manifest_defaults(doc)['kind'], manifest_defaults(doc)['auto_deploy']), (name, True))
+            self.assertEqual((seed(doc)['kind'], seed(doc)['auto_deploy']), (name, True))
 
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
                'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
                'team': 'payments', 'calls': ['orders', 'billing']}
-        self.assertEqual(manifest_defaults(doc), {
+        self.assertEqual(seed(doc), {
             'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': False, 'exposure': 'private',
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments', 'calls': ['orders', 'billing']})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
-        self.assertEqual(manifest_defaults(web)['api_path'], '/openapi.json')
-        manifest_defaults({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
-        self.assertTrue(manifest_defaults({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})['offers'], 'app-new reads the documents')
-        self.assertNotIn('offers', manifest_defaults(web))
+        self.assertEqual(seed(web)['api_path'], '/openapi.json')
+        seed({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
+        self.assertTrue(seed({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})['offers'], 'app-new reads the documents')
+        self.assertNotIn('offers', seed(web))
         for bad, message in (({**doc, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
                              ({**web, 'provides': {'events': []}}, 'apiFile and eventsFile only'),
                              ({**web, 'provides': {'apiFile': '../x'}}, 'a file in the repository, such as openapi.json'),
                              ({**web, 'provides': {'eventsFile': '/etc/x'}}, 'such as asyncapi.yaml'),
                              ({**doc, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only'), ({**doc, 'calls': ['Orders']}, 'distinct app names'),
                              ({**doc, 'calls': ['a', 'a']}, 'distinct app names')):
-            with self.subTest(bad=bad), self.assertRaisesRegex(ManifestError, message):
-                manifest_defaults(bad)
+            with self.subTest(bad=bad), self.assertRaisesRegex(DeclarationError, message):
+                seed(bad)
 
     def test_every_web_app_gets_the_same_startup_allowance(self):
-        with self.assertRaisesRegex(ManifestError, 'unknown field.*startupSeconds'):
-            manifest_defaults({**WEB, 'startupSeconds': 120})
+        with self.assertRaisesRegex(DeclarationError, 'unknown field.*startupSeconds'):
+            seed({**WEB, 'startupSeconds': 120})
         fail_after = int(contract.FAIL_AFTER.removesuffix('m')) * 60
         self.assertLessEqual(contract.STARTUP_SECONDS, fail_after - 60, 'Helm needs time to pull the image too')
         with tempfile.TemporaryDirectory() as root:
@@ -95,8 +98,55 @@ class ManifestTests(unittest.TestCase):
             (['kind', 'web'], 'must be a mapping'),
         ]
         for doc, message in cases:
-            with self.subTest(message=message), self.assertRaisesRegex(ManifestError, message):
-                manifest_defaults(doc)
+            with self.subTest(message=message), self.assertRaisesRegex(DeclarationError, message):
+                seed(doc)
+
+
+class LifetimeTests(unittest.TestCase):
+    """One file, two lifetimes: which fields are read once and which again, and the one way it is fetched."""
+
+    def test_every_field_is_seed_or_live_and_the_docs_say_the_same(self):
+        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE})
+        self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE], ['version', 'stack', 'provides'])
+        page = (ROOT / 'docs/apps.md').read_text()
+        section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
+        rows = dict(re.findall(r'^\| `([A-Za-z]+)` \| (read once|read again) \|', section, re.M))
+        self.assertEqual(rows, {item.name: 'read once' if item.read == declaration.SEED else 'read again'
+                                for item in declaration.FIELDS})
+        for item in declaration.FIELDS:
+            if item.then.startswith('make '):
+                with self.subTest(field=item.name):
+                    self.assertRegex(section, rf'(?m)^\| `{item.name}` \|.*`{re.escape(item.then.split(";")[0])}')
+
+    def test_the_live_fields_are_read_from_a_valid_file(self):
+        found = declaration.of({**WEB, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'asyncapi.yaml'}})
+        self.assertEqual((found.stack, found.api_path, found.api_file, found.events_file),
+                         ('typescript', '/openapi.json', 'openapi.json', 'asyncapi.yaml'))
+        self.assertEqual(declaration.of({'version': 1, 'kind': 'worker'}).stack, '')
+        with self.assertRaisesRegex(DeclarationError, 'x/y@abc1234:swhurl.yaml: kind is required'):
+            declaration.read('x/y', 'abc1234', opener=lambda request: b'version: 1\n')
+
+    def test_one_fetcher_tells_missing_from_unreachable(self):
+        seen = []
+
+        def opener(code=None, error=None):
+            def open_(request):
+                seen.append((request.full_url, request.get_header('Authorization')))
+                if code:
+                    raise urllib.error.HTTPError(request.full_url, code, 'No', {}, None)
+                if error:
+                    raise error
+                return yaml.safe_dump(WEB).encode()
+            return open_
+        self.assertEqual(declaration.read('x/y', token='t', opener=opener()).stack, 'typescript')
+        self.assertIsNone(declaration.read('x/y', 'abc1234', opener=opener(404)))
+        self.assertEqual(seen, [('https://api.github.com/repos/x/y/contents/swhurl.yaml', 'Bearer t'),
+                                ('https://api.github.com/repos/x/y/contents/swhurl.yaml?ref=abc1234', None)])
+        for failing in (opener(403), opener(error=urllib.error.URLError('down')), opener(error=OSError('away'))):
+            with self.assertRaises(declaration.Unreachable):
+                declaration.read('x/y', opener=failing)
+        with self.assertRaisesRegex(DeclarationError, 'larger than 512 KiB'):
+            declaration.read('x/y', opener=lambda request: b'#' * (declaration.MAX_BYTES + 1))
 
 
 class FromRepoTests(unittest.TestCase):

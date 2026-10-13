@@ -19,6 +19,12 @@ spec:
           app.kubernetes.io/name: traefik
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: swhurl-try-11-prod
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: swhurl-try-11
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: swhurl-try-12-prod
       podSelector:
         matchLabels:

@@ -1396,3 +1396,12 @@ Activity, an app page's **Changes** list and a job's page show a change as label
 - **Deployed:** the publish workflow pinned console image `src-04510fd4ee68b44c` in `cad907f`. `make flux-reconcile` reached every unit Ready at `cad907f`; `make verify-platform` passed; `make app-status APP=demo-orders ENV=staging` reported Healthy, desired/applied revisions matching and 1/1 ready.
 - **Activity route:** through a port-forward to the deployed console with an identity header, `/activity` returned 200. PR #62's row showed **Merged to main** and PR #64's row showed **Removed from staging**. Signed out, HTTP redirected to HTTPS and HTTPS redirected to Google sign-in.
 - **Not exercised:** an interactive signed-in browser session; the activity for a second update superseded by a newer update (the same latest-merge comparison handles it).
+
+## Activity edge cases settled (13 October 2026)
+
+`cd9a75d`, from a review of the stages: a job's own page settles a superseded change as Activity does; a stage whose start was cut with a record's output keeps its lines; how a pull request ended is read from GitHub once and kept, so a GitHub failure no longer turns finished rows to **Unknown**; a closed new-app pull request says its repository and image still exist.
+
+- **Offline:** `make check` passed; GitHub `Validate` passed on `cd9a75d`.
+- **Deployed:** the publish run pinned console image `src-60c33066dd95803e` in `df53bdf`; `make flux-reconcile` applied it, the console rolled out on it, `make verify-platform` passed, and a `console-notifications` and a `console-dashboards` job ran on the new image.
+- **Live, through a port-forward to the console's Service with the identity header set by hand:** job 8's page (the `test-5/staging` add that PR #64 later removed) ends at **Merged to main**, where it said Flux was still creating the instance; job 11's page ends at **Removed from staging**. `/activity` took 3.1 s on its first read in the new pod (six merged pull requests read from GitHub) and 0.7 s on the next, with no pull request read again. Signed out, `http://` redirected to `https://` and that to Google sign-in.
+- **Not exercised:** a signed-in browser session; a GitHub failure on the live console (tested offline); a record cut to 20 kB (the largest live one is 3.5 kB; tested offline); a closed-unmerged new-app pull request.

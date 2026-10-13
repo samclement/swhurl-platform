@@ -1414,3 +1414,12 @@ Activity, an app page's **Changes** list and a job's page show a change as label
 - **Deployed:** the publish run pinned console image `src-fe2b5ad2572a0704` in `a611b7d`; `make flux-reconcile` applied it, the console rolled out on it, `make verify-platform` passed, and a `console-notifications` and a `console-dashboards` job ran on the new image.
 - **Live, through a port-forward to the console's Service with the identity header set by hand:** the first `/activity` judged the six merged changes in the records and took 8.6 s (a pull request read, a comparison and a record write each, one after another); the next took 0.4 s and asked GitHub about none of them. The three promotions ended at **Live in prod**, both removals at **Removed from staging**, and the `test-5/staging` add that PR #64 later removed at **Merged to main** ("a later change to test-5/staging has been applied since"). `console/console-jobs` holds each ending (`live`, `removed`, `superseded`) on records written by earlier pods. Job pages 8 and 10 returned 200.
 - **Not exercised:** a signed-in browser session; a change followed live from its merge (the merge not applied yet, then the ending found); an instance failing after its merge, and its row staying in the first list; an open pull request with failed checks; GitHub unreadable for a comparison. All are tested offline.
+
+## Apps/Services list without the connections table (13 October 2026)
+
+`cf09270`: an opened row on Apps/Services shows each environment's deployment facts (image, web address, address inside the cluster, database) and its actions; connections are on the app's own page and on **Map**.
+
+- **Offline:** `make check` passed; GitHub `Validate` passed on `cf09270`.
+- **Deployed:** the publish run pinned console image `src-3a43a94d6f48dda0` in `25fa424`; `make flux-reconcile` applied it, the console rolled out on it and `make verify-platform` passed.
+- **Live, through a port-forward to the console's Service with the identity header set by hand:** `/apps` returned 200 with 16 environment panels and no connections table or **Connections** line; `/apps/demo-shop/staging` still has its connections table; `/apps?view=map` returned 200.
+- **Not exercised:** a signed-in browser session (how the opened row looks).

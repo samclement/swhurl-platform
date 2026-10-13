@@ -1,0 +1,48 @@
+# The events swhurl-try-10 publishes, as an AsyncAPI document (https://www.asyncapi.com/docs).
+# This file is the declaration: the platform reads it to show other apps what they can subscribe
+# to, and src/events.ts refuses to publish an event that is not here or a payload that does not
+# fit its schema. To add an event: a channel (its address is the event's name), a message with a
+# payload schema and an example, and a send operation.
+asyncapi: 3.0.0
+info:
+  title: swhurl-try-10
+  version: 0.1.0
+  description: "throwaway: team platform T2 callee (orders), delete me"
+channels:
+  visited:
+    address: visited
+    description: Someone asked swhurl-try-10 for its example route.
+    messages:
+      visited:
+        $ref: '#/components/messages/visited'
+operations:
+  publishVisited:
+    action: send
+    channel:
+      $ref: '#/channels/visited'
+components:
+  messages:
+    visited:
+      summary: One request to the example route
+      payload:
+        type: object
+        required: [path, caller]
+        additionalProperties: false
+        properties:
+          path:
+            type: string
+            description: The path that was asked for
+          caller:
+            type: object
+            required: [type, id]
+            properties:
+              type:
+                type: string
+                enum: [app, user, anonymous]
+              id:
+                type: [string, 'null']
+                description: The calling app's name or the person's email
+      examples:
+        - payload:
+            path: /
+            caller: {type: user, id: sam@example.com}

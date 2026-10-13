@@ -158,7 +158,9 @@ class ConsolePrProgressTests(unittest.TestCase):
             with self.subTest(labels=labels, sha=sha):
                 pr, requests = self.listed(labels=labels, sha=sha)
                 self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
-                self.assertEqual(requests, ['/pulls'])
+                # Validate is read whoever merges it (the stages on Activity), unless there is no head to read it for.
+                self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7'] if sha else ['/pulls'])
+                self.assertEqual(pr.checks, 'pending' if sha else '')
 
     def test_a_refused_merge_shows_the_gates_newest_reason_and_nobody_elses(self):
         held = ('promotion-review-required', 'auto-merge')
@@ -175,7 +177,7 @@ class ConsolePrProgressTests(unittest.TestCase):
             with self.subTest(expected=expected, fail=fail):
                 pr, requests = self.listed(labels=held, comments=comments, fail=fail)
                 self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
-                self.assertEqual(requests, ['/pulls', '/issues/7/comments'])
+                self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments'])
 
     def test_only_validate_for_this_sha_counts_and_first_matching_run_wins(self):
         run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'failure', 'html_url': 'matching'}
@@ -647,7 +649,9 @@ class NewAppRouteTests(unittest.TestCase):
         text = c.get('/activity', headers=WHO).text
         self.assertIn('#7 apps: add weather-api staging</a>', text, 'every pull request here is a console one: the prefix is left out')
         self.assertIn('Manual merge required', text)
-        self.assertIn('Merge plan', text)
+        self.assertIn('<span class="state suspended">Waiting for you</span>', text)
+        self.assertIn('Waiting for you: merge #7 on GitHub', text, 'a pull request no remembered job opened still shows its path')
+        self.assertIn('Live in staging', text)
         self.assertNotIn('pull/8', text)
         self.assertEqual(changes.console_prs(FakeRunner(), self.api.github)[0].opened, '2026-10-01')
         c, _ = self.client(tree_fake(), github=False)

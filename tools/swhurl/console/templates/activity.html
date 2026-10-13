@@ -3,31 +3,19 @@
 {% block title %}Activity{% endblock %}
 {% block main %}
 <h1>Activity</h1>
-{% call st.about() %}What the console has done, and what is waiting for you: pull requests it opened that are not merged yet, and every job started here.{% endcall %}
+{% call st.about() %}Every change started here, as the stages it goes through and where it ends. A change is more than its job: a promotion is finished when production runs it, not when its pull request is open. The last stage of each row is where it ends; the sentence under it says what happens next. ✓ done · ↻ running · ‖ waiting for you · ✕ failed · ○ not reached · ◎ where it ends · ◉ it got there.{% endcall %}
 
-<h2>Pull requests waiting for you</h2>
-{% if prs %}
-<div class="scroll">
-<table class="compact">
-  <tr><th>Pull request</th><th>Status</th><th>Merge plan</th><th>Opened</th></tr>
-  {% for pr in prs %}
-  <tr>
-    <td><a href="{{ pr.url }}" title="{{ pr.branch }}">#{{ pr.number }} {{ pr.title | replace('[console] ', '') }}</a></td>
-    <td><a class="plain" href="{{ pr.checks_url or pr.url }}" title="Its checks on GitHub">{{ pr.progress }} {{ st.icon('external') }}</a></td>
-    <td>{{ st.merging(pr) }}</td>
-    <td class="muted nowrap" title="{{ pr.opened }}">{{ pr.opened | ago }}</td>
-  </tr>
-  {% endfor %}
-</table>
-</div>
-{% elif prs_error %}<p class="muted">{{ prs_error }}</p>
-{% else %}<p class="muted">None open.</p>{% endif %}
+<h2>In progress or waiting for you</h2>
+{% if moving %}
+{{ st.changes_list(moving) }}
+{% else %}<p class="muted">Nothing is running and nothing waits for you.</p>{% endif %}
+{% if prs_error %}<p class="muted">{{ prs_error }}</p>{% endif %}
 
-<h2>Jobs</h2>
-{% if jobs %}
-{{ st.jobs_list(jobs) }}
+<h2>Finished</h2>
+{% if ended %}
+{{ st.changes_list(ended) }}
 {% else %}
-<p class="muted">No jobs since the console started. A job is a reconcile, suspend or resume (from a unit's page) or a pull request (from New app or an app's page).</p>
+<p class="muted">Nothing yet. A change is a reconcile, suspend or resume (from a unit's page) or a pull request (from New app or an app's page).</p>
 {% endif %}
-<p class="muted">This list is kept in memory and cleared when the console restarts; each job's audit line stays in ClickStack (search <code>[AUDIT]</code>).</p>
+<p class="muted">The newest 30 jobs are kept; each job's audit line stays in ClickStack (search <code>[AUDIT]</code>).</p>
 {% endblock %}

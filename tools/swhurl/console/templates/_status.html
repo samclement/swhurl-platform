@@ -15,24 +15,43 @@
   <form class="inline" method="post" action="/promotion-prs/{{ pr.number }}/{{ control }}" hx-post="/promotion-prs/{{ pr.number }}/{{ control }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Remove its auto-merge label: it then waits for you to merge it' if control == 'hold' else 'Label it auto-merge again: it merges itself once fresh checks pass' }}">{{ 'Hold' if control == 'hold' else 'Request auto-merge' }}</button></form>{% endif %}</span>{% endmacro %}
 {# What a list page is for, one click away: the list itself starts right under the title. #}
 {% macro about() %}<details class="about" id="about"><summary>{{ icon('info') }} About this page</summary><p class="lead">{{ caller() }}</p></details>{% endmacro %}
-{% macro jobs_list(jobs) %}
-{# One row per job; a row opens to the job's output, so reading it does not mean leaving the list. #}
-<div class="openlist jobs">
-  <div class="cols head" aria-hidden="true"><span></span><span>State</span><span>Job</span><span>Result</span><span>Started</span><span>By</span></div>
-  {% for j in jobs %}
-  <details class="openrow" id="job-{{ j.id }}">
-    <summary class="cols" title="Show or hide the output of job #{{ j.id }}">
+{# A change's whole path (stages.Track): each stage with its mark and label, the last one the terminal stop, then one
+   sentence saying what happens next or how it ended. A mark is never the only sign: each stage also says its state in words. #}
+{% macro track(t) %}
+<ol class="track" aria-label="Stages">
+  {% for s in t.stages %}<li class="stage {{ s.state }}"><span class="node">{{ mark(s.mark) }}<span class="what"><span class="name">{% if s.link %}<a href="{{ s.link }}">{{ s.label }}</a>{% else %}{{ s.label }}{% endif %}<span class="sr-only"> ({{ s.words }})</span></span>{% if s.note %}<span class="note">{{ s.note | short }}</span>{% endif %}</span></span></li>
+  {% endfor %}
+</ol>
+<p class="outcome">{{ t.outcome | short }}</p>
+{% endmacro %}
+{# The state that leads a change's row: in progress, waiting for you, failed, or where it ended. #}
+{% macro change_state(t) %}<span class="status {{ t.mark }}">{{ mark(t.mark) }}<span class="state {{ t.mark }}">{{ t.label }}</span></span>{% endmacro %}
+{% macro changes_list(rows) %}
+{# One row per change: its state, what it is, and its path. A row opens to its pull request's controls and its job's output. #}
+<div class="openlist changes">
+  {% for c in rows %}{% set j = c.job %}
+  <details class="openrow change" id="{{ c.id }}"{{ ' open' if c.track.status == 'waiting' and c.pr }}>
+    <summary title="Show or hide {{ 'the output of job #%d' % j.id if j else 'pull request #%d' % c.pr.number }}">
       <span class="chev" aria-hidden="true"></span>
-      <span class="cell">{{ job(j) }}<span class="state {{ {'failed': 'failing', 'interrupted': 'failing', 'succeeded': 'healthy'}.get(j.state, 'updating') }}"> {{ j.state | capitalize }}</span></span>
-      {% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<span class="cell wrap">{{ j.action }} <a href="{{ link }}">{{ label }}</a></span>
-      <span class="cell" data-label="Result">{% if j.link %}<a href="{{ j.link }}">Pull request {{ icon('external') }}</a>{% else %}<span class="muted">—</span>{% endif %}</span>
-      <span class="cell muted" data-label="Started" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %}</span>
-      <span class="cell muted" data-label="By">{{ j.identity }}</span>
+      <div class="about-change">
+        <div class="top">
+          {{ change_state(c.track) }}
+          {% if j %}{% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<span class="title">{{ j.action | capitalize }} <a href="{{ link }}">{{ label }}</a></span>
+          <span class="muted when" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">job #{{ j.id }} · {{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %} · {{ j.identity }}</span>
+          {% else %}<span class="title"><a href="{{ c.pr.url }}" title="{{ c.pr.branch }}">#{{ c.pr.number }} {{ c.pr.title | replace('[console] ', '') }}</a></span>
+          <span class="muted when" title="{{ c.pr.opened }}">opened {{ c.pr.opened | ago }}</span>{% endif %}
+        </div>
+        {{ track(c.track) }}
+      </div>
     </summary>
     <div class="panel">
-      <pre>{% for line in j.lines %}{{ line | short }}
+      {% if c.pr %}<p class="pull"><a href="{{ c.pr.url }}">Pull request #{{ c.pr.number }} {{ icon('external') }}</a> · <a href="{{ c.pr.checks_url or c.pr.url }}" title="Its checks on GitHub">{{ c.pr.progress }} {{ icon('external') }}</a></p>
+      <p>{{ merging(c.pr) }}</p>
+      {% elif j and j.link %}<p class="pull"><a href="{{ j.link }}">Pull request {{ icon('external') }}</a></p>{% endif %}
+      {% if j %}<pre>{% for line in j.lines %}{{ line | short }}
 {% else %}<span class="muted">no output yet</span>{% endfor %}</pre>
-      <p class="muted"><a href="/jobs/{{ j.id }}">Job #{{ j.id }} on its own page</a>{% if j.state == 'running' %}, where its output arrives live{% endif %}.</p>
+      <p class="muted"><a href="/jobs/{{ j.id }}">Job #{{ j.id }} on its own page</a>, with its output under each stage{% if j.state == 'running' %} as it arrives{% endif %}.</p>
+      {% else %}<p class="muted">The job that opened this is no longer remembered (the newest 30 are kept); its audit line is in ClickStack.</p>{% endif %}
     </div>
   </details>
   {% endfor %}

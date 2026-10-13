@@ -165,6 +165,7 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
                     opener: repo.Opener = repo._open) -> str:
     """Render, create, push and wait for the first image; return ``REPO:<run>-<sha>@sha256:…``."""
     req.check()
+    job.stage('repo')
     if repos.exists(req.name):
         raise ActionError(f'Repository {req.repo} already exists on GitHub. Setup stopped before creating a new '
                           'repository. Choose another name and retry from New app.')
@@ -213,6 +214,7 @@ def finish_app_repo(repos: AppRepos, job: Job, req: repo.Request, *, sleep: Call
 def published_image(repos: AppRepos, job: Job, req: repo.Request, commit: str, *, sleep: Callable[[float], None],
                     clock: Callable[[], float], opener: repo.Opener) -> str:
     """Wait for ``commit``'s app workflow run and return the image it published, ``REPO:<run>-<sha>@sha256:…``."""
+    job.stage('build')
     deadline, state = clock() + FIRST_RUN_TIMEOUT, ''
     while True:
         run = repos.run_for(req.name, commit)

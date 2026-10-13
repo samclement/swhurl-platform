@@ -21,6 +21,7 @@ import re
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -40,7 +41,7 @@ from swhurl.apps import promotion as gate
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import verdict
 from swhurl.apps.yaml_file import EditError
-from swhurl.console import actions, catalogue, changes, cluster, jobstore, logconfig, promotion, repos
+from swhurl.console import actions, catalogue, changes, cluster, jobstore, logconfig, promotion, repos, stages
 from swhurl.run import CommandError, Runner, SharedReads
 
 IDENTITY_HEADER = 'X-Auth-Request-Email'
@@ -129,6 +130,19 @@ def took(job: actions.Job) -> str:
 
 
 TEMPLATES.env.filters['took'] = took
+
+
+@dataclass(frozen=True)
+class ChangeRow:
+    """One change on Activity: a job with what became of its pull request, or an open pull request
+    whose job is no longer remembered."""
+    id: str
+    track: stages.Track
+    job: actions.Job | None = None
+    pr: changes.PullRequest | None = None  # its pull request while it is open: what Hold and Request auto-merge act on
+
+
+FRESH = dt.timedelta(hours=24)  # how long after its merge an instance's state is read as this change's outcome
 
 
 def in_place(request: Request) -> bool:
@@ -248,6 +262,64 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         except actions.ActionError as error:
             return [], f'Could not list open pull requests: {error}'
 
+    def pull_view(pr: changes.PullRequest) -> stages.Pull:
+        words, _control = promotion.merge_mode(pr)
+        refused = 'promotion-review-required' in pr.labels
+        reason = pr.progress if refused else words.removeprefix('Manual merge required').removeprefix(': ')
+        return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
+                           changes.AUTO_MERGE_LABEL in pr.labels and not refused, reason.split('. ')[0].rstrip('.'))
+
+    ended: dict[int, stages.Pull] = {}  # pull requests read as merged or closed: that does not change
+
+    def pull_of(number: int, url: str) -> stages.Pull:
+        """A job's pull request that is not among the open ones: how it ended."""
+        if number not in ended:
+            try:
+                state, when = changes.pull_state(runner, github, number)
+            except actions.ActionError:
+                return stages.Pull(number, url)
+            if state == 'open':
+                return stages.Pull(number, url, 'open', checks_url=url)
+            fresh = state == 'merged' and dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(when.replace('Z', '+00:00')) < FRESH
+            found = stages.Pull(number, url, state, when=when, fresh=fresh)
+            if fresh:  # read again until it is a day old
+                return found
+            ended[number] = found
+        return ended[number]
+
+    def change_rows(found: list[actions.Job], *, others: bool) -> tuple[list[ChangeRow], str]:
+        """Each job as a change with its whole path, and with ``others`` the open pull requests no
+        remembered job opened. Also why open pull requests could not be listed, if they could not."""
+        proposed = {job.id: stages.number(job) for job in found if job.state == 'succeeded' and not stages.control(job)}
+        proposed = {job_id: number for job_id, number in proposed.items() if number}
+        prs, prs_error = open_prs() if others or proposed else ([], '')
+        is_open = {pr.number: pr for pr in prs}
+        pulls = {}
+        for job in found:
+            number = proposed.get(job.id)
+            if number in is_open:
+                pulls[job.id] = pull_view(is_open[number])
+            elif number:
+                pulls[job.id] = stages.Pull(number, job.link) if prs_error or github is None else pull_of(number, job.link)
+        states: dict[str, object] | None = {}
+        if any(pull.state == 'merged' and pull.fresh for pull in pulls.values()):
+            try:
+                states = {f'{row.instance.app}/{row.instance.env}': row.state for row in cluster.apps(runner)}
+            except cluster.ReadError:
+                states = None
+        rows = []
+        for job in found:
+            pull = pulls.get(job.id)
+            live = None if states is None else states.get(job.unit, stages.ABSENT)
+            when = ago(pull.when) if pull and pull.when else ''
+            track = stages.track(job, pull and stages.Pull(**{**pull.__dict__, 'when': when}), live)
+            rows.append(ChangeRow(f'job-{job.id}', track, job, is_open.get(proposed.get(job.id))))
+        if others:
+            covered = set(proposed.values())
+            rows += [ChangeRow(f'pr-{pr.number}', stages.pull_track(pull_view(pr), pr.branch), pr=pr)
+                     for pr in prs if pr.number not in covered]
+        return rows, prs_error
+
     def overview(request: Request) -> Response:
         def read():
             checks, found, (prs, prs_error), rows = runner.together(
@@ -327,7 +399,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     scale_fields=changes.SCALE_FIELDS, github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
-                    summary=summary, state=verdict(status), unit_jobs=[j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')])
+                    summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
 
     def app(request: Request) -> Response:
         try:
@@ -379,7 +451,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         found = jobs.get(request.path_params['id'])
         if found is None:
             return page(request, 'error.html', status_code=404, error='No such job (only the newest jobs are kept).')
-        return page(request, 'job.html', job=found, can_resume=bool(resumable(found) and github and app_repos))
+        with runner.once():
+            (row,), _error = change_rows([found], others=False)
+        return page(request, 'job.html', job=found, track=row.track, sections=stages.sections(found), pr=row.pr,
+                    can_resume=bool(resumable(found) and github and app_repos))
 
     async def job_events(request: Request) -> Response:
         found = jobs.get(request.path_params['id'])
@@ -405,7 +480,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 new = found.lines[sent:]
                 for line in new:
                     sent += 1
-                    body = json.dumps({'html': str(short_hashes(line))}, ensure_ascii=False)
+                    body = json.dumps({'html': str(short_hashes(line)), 'stage': stages.stage_of(found, sent - 1)}, ensure_ascii=False)
                     yield f'id: {sent}\nevent: line\ndata: {body}\n\n'
                     last_activity = time.monotonic()
                 if finished and not new:
@@ -596,7 +671,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         except (actions.ActionError, repo.RepoError) as error:
             return new_repo_form(request, 400, str(error), form)
         try:
-            job = jobs.submit('new app and repository', chosen.target, request.state.identity,
+            job = jobs.submit(stages.NEW_APP_JOB, chosen.target, request.state.identity,
                               new_app_work(chosen, create=True), resume=chosen.record)
         except actions.ActionError as error:
             return new_repo_form(request, 409, str(error), form)
@@ -634,7 +709,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if github is None or app_repos is None:
             return page(request, 'error.html', status_code=409, error='Both GitHub tokens must be configured (console-github Secret).')
         try:
-            job = jobs.submit('finish new app', found.unit, request.state.identity,
+            job = jobs.submit(stages.FINISH_JOB, found.unit, request.state.identity,
                               new_app_work(changes.NewApp.from_record(told), create=False), resume=dict(told))
         except (KeyError, TypeError, ValueError):
             return page(request, 'error.html', status_code=409, error='The record of that job cannot be used to finish it; '
@@ -757,8 +832,11 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return await change_app(request)
 
     def activity(request: Request) -> Response:
-        prs, prs_error = open_prs()
-        return page(request, 'activity.html', jobs=jobs.recent(), prs=prs, prs_error=prs_error)
+        with runner.once():
+            rows, prs_error = change_rows(jobs.recent(), others=True)
+        # What is still moving or waiting for someone comes first; then what ended, newest first.
+        return page(request, 'activity.html', moving=[row for row in rows if not row.track.settled],
+                    ended=[row for row in rows if row.track.settled], prs_error=prs_error)
 
     def healthz(_request: Request) -> Response:
         return PlainTextResponse('ok\n')

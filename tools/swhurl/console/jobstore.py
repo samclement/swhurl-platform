@@ -35,7 +35,9 @@ def record(job: Job, redact) -> str:
     while True:
         raw = json.dumps({'id': job.id, 'action': job.action, 'unit': job.unit, 'identity': job.identity,
                           'started': job.started.isoformat(), 'finished': job.finished.isoformat() if job.finished else None,
-                          'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume, 'lines': lines},
+                          'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume, 'lines': lines,
+                          # Output cut from the front moves every later line up: the stages' starts move with it.
+                          'marks': [[stage, max(0, start - (len(job.lines) - len(lines)))] for stage, start in job.marks]},
                          ensure_ascii=False)
         if len(raw.encode()) <= RECORD_BYTES or len(lines) <= 1:
             return raw
@@ -50,7 +52,8 @@ def parse(raw: str) -> Job | None:
                     dt.datetime.fromisoformat(doc['started']), [str(line) for line in doc.get('lines') or []],
                     str(doc['state']), dt.datetime.fromisoformat(doc['finished']) if doc.get('finished') else None,
                     str(doc.get('link') or ''), str(doc.get('owner') or ''),
-                    doc['resume'] if isinstance(doc.get('resume'), dict) else None)
+                    doc['resume'] if isinstance(doc.get('resume'), dict) else None,
+                    marks=[(str(stage), int(start)) for stage, start in doc.get('marks') or []])
     except (ValueError, KeyError, TypeError):
         return None
     return found if found.state in ('running', 'succeeded', 'failed', 'interrupted') else None

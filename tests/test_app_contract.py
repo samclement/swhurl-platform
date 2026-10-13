@@ -406,6 +406,48 @@ class PolicyTests(unittest.TestCase):
             with self.subTest(instance=key):
                 self.assertEqual(app_policy.check(docs), [])
 
+    def test_multiple_violations_preserve_messages_and_traversal_order(self):
+        secure = {'runAsNonRoot': True, 'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}}
+        resources = {'requests': {'cpu': '10m', 'memory': '16Mi'}, 'limits': {'memory': '32Mi'}}
+        docs = [
+            {'kind': 'Namespace', 'metadata': {'labels': {
+                app_policy.ENVIRONMENT: 'prod', app_policy.EXPOSURE: 'public', app_policy.TEAM: 'demo'}}},
+            {'kind': 'Deployment', 'metadata': {'name': 'example'}, 'spec': {
+                'replicas': 2, 'template': {'spec': {
+                    'hostPID': True, 'securityContext': {'runAsNonRoot': True},
+                    'volumes': [{'persistentVolumeClaim': {'claimName': 'data'}}],
+                    'initContainers': [{'name': 'setup', 'image': 'r/setup:1',
+                                        'securityContext': secure, 'resources': resources}],
+                    'containers': [{'name': 'main', 'image': 'r/main:latest',
+                                    'securityContext': {'runAsNonRoot': False},
+                                    'env': [{'name': 'OTEL_EXPORTER_OTLP_ENDPOINT', 'value': 'http://$(HOST_IP):4318'},
+                                            {'name': 'HOST_IP', 'valueFrom': {'fieldRef': {'fieldPath': 'status.hostIP'}}}]}],
+                }}}},
+            {'kind': 'PersistentVolumeClaim', 'metadata': {'name': 'data'},
+             'spec': {'accessModes': ['ReadWriteOnce'], 'storageClassName': 'unsupported'}},
+            {'kind': 'Ingress', 'metadata': {'name': 'example'},
+             'spec': {'rules': [{'host': 'example.homelab.swhurl.com'}]}},
+        ]
+        self.assertEqual(app_policy.check(docs, known_teams={'demo': ''}, keys=''), [
+            ('no-sa-token', 'Deployment/example mounts a service-account token'),
+            ('no-host-access', 'Deployment/example uses host namespaces or hostPath'),
+            ('prod-digest', 'Deployment/example/setup image r/setup:1 must pin a digest in prod'),
+            ('image-pinned', 'Deployment/example/main image r/main:latest has no version tag or digest'),
+            ('prod-digest', 'Deployment/example/main image r/main:latest must pin a digest in prod'),
+            ('non-root', 'Deployment/example/main does not set runAsNonRoot'),
+            ('no-escalation', 'Deployment/example/main allows privilege escalation or extra capabilities'),
+            ('otlp-host-ip', 'Deployment/example/main uses $(HOST_IP) in OTEL_EXPORTER_OTLP_ENDPOINT without '
+             'defining HOST_IP from status.hostIP before it'),
+            ('resources', 'Deployment/example/main lacks CPU/memory requests or a memory limit'),
+            ('single-writer', 'Deployment/example mounts a ReadWriteOnce claim and runs 2 replicas; at most 1'),
+            ('single-writer', 'Deployment/example mounts a ReadWriteOnce claim, so it must stop the old pod first '
+             '(strategy Recreate)'),
+            ('storage-class', f'PersistentVolumeClaim/data must use one of {sorted(app_policy.STORAGE_CLASSES)}'),
+            ('exposure', 'Ingress/example: public hosts must be outside homelab.swhurl.com (shared sign-in cookie)'),
+            ('exposure', 'Ingress/example: every route under homelab.swhurl.com needs sign-in'),
+            ('ingress-tls', "Ingress/example: hosts without TLS: ['example.homelab.swhurl.com']"),
+        ])
+
     def test_otlp_fixture_renders_host_ip_before_its_use(self):
         names = [v['name'] for v in self.container(self.docs('smoke-web/staging'))['env']]
         self.assertLess(names.index('HOST_IP'), names.index('OTEL_EXPORTER_OTLP_ENDPOINT'))

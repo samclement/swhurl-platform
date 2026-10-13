@@ -22,6 +22,8 @@ MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
 PROMOTION_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
+REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
+REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
 
 
@@ -231,5 +233,10 @@ def main(argv=None, runner: Runner | None = None) -> int:
                        mutating=True, check=False)
             runner.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/issues/{number}/labels', '--input', '-'],
                        input=json.dumps({'labels': ['promotion-review-required']}), mutating=True, check=False)
+            # The reason, where the console's Activity reads it: one line, already redacted.
+            said = ' '.join(reason.split())[:REFUSAL_LIMIT]
+            runner.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/issues/{number}/comments', '--input', '-'],
+                       input=json.dumps({'body': f'{REFUSAL}{said}\n\nReview the changes and merge this yourself, or close it '
+                                                 'and review a fresh promotion.'}), mutating=True, check=False)
         return 1
     return 0

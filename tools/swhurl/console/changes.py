@@ -42,12 +42,14 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.console.actions import ActionError, Job
+from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT
 from swhurl.run import Runner
 
 DEFAULT_REPO = platform.GITHUB_REPO
 BASE = 'main'
 BRANCH_PREFIX = 'console/'
 AUTO_MERGE_LABEL = 'auto-merge'
+GATE_AUTHOR = 'github-actions[bot]'  # the Auto-merge workflow comments with GITHUB_TOKEN
 """A console PR with this label merges itself once Validate passes (.github/workflows/auto-merge.yml)."""
 AUTHOR = ('swhurl console', 'console@users.noreply.github.com')
 UNSET = ('', 'REPLACE_ME')
@@ -140,11 +142,29 @@ class PullRequest:
     checks_url: str = ''
 
 
+def refusal(runner: Runner, github: GitHub, number: int) -> str:
+    """Why the merge gate holds a PR: the newest reason it left as a comment. Anyone can comment on a
+    public repository, so only the workflow's own comments count."""
+    words = 'Auto-merge refused'
+    api = GitHubAPI(runner, github)
+    try:
+        comments = api.json('GET', f'/issues/{number}/comments?per_page=100')
+    except ActionError:
+        return f'{words}; reason in its checks'
+    finally:
+        api.client.close()
+    for comment in reversed(comments):
+        first = (comment.get('body') or '').split('\n', 1)[0]
+        if comment.get('user', {}).get('login') == GATE_AUTHOR and first.startswith(REFUSAL):
+            return f'{words}: {first.removeprefix(REFUSAL)[:REFUSAL_LIMIT]}'
+    return f'{words}; reason in its checks'
+
+
 def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str]:
     """Describe review or validation progress and its best available checks link."""
     checks_url = pull['html_url'] + '/checks'
     if 'promotion-review-required' in labels:
-        return 'Review required: merge verification failed', checks_url
+        return refusal(runner, github, pull['number']), checks_url
     if AUTO_MERGE_LABEL not in labels or not pull['head'].get('sha'):
         return 'Awaiting setup or manual review', checks_url
     api = GitHubAPI(runner, github)

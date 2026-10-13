@@ -98,7 +98,7 @@ def merge_mode(pr: changes.PullRequest) -> tuple[str, str]:
     """How an open console PR gets merged, and the one control that applies to it now:
     ``(words, 'hold' | 'resume' | '')``. Only a promotion can be held or handed back to auto-merge."""
     if 'promotion-review-required' in pr.labels:
-        return 'By you: merge verification failed', ''
+        return 'By you: auto-merge refused', ''
     promote = pr.branch.startswith('console/promote-')
     if changes.AUTO_MERGE_LABEL in pr.labels:
         return 'Itself, once checks pass', 'hold' if promote else ''

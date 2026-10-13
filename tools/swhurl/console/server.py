@@ -269,23 +269,24 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
                            changes.AUTO_MERGE_LABEL in pr.labels and not refused, reason.split('. ')[0].rstrip('.'))
 
-    ended: dict[int, stages.Pull] = {}  # pull requests read as merged or closed: that does not change
+    ended: dict[int, tuple[str, str]] = {}  # pull requests read as merged or closed, and when: that does not change
 
-    def pull_of(number: int, url: str) -> stages.Pull:
-        """A job's pull request that is not among the open ones: how it ended."""
+    def pull_of(number: int, url: str, *, read: bool = True) -> stages.Pull:
+        """A job's pull request that is not among the open ones: how it ended. With ``read`` false
+        (GitHub cannot be read now) only what was read before is known."""
         if number not in ended:
+            if not read:
+                return stages.Pull(number, url)
             try:
                 state, when = changes.pull_state(runner, github, number)
             except actions.ActionError:
                 return stages.Pull(number, url)
             if state == 'open':
                 return stages.Pull(number, url, 'open', checks_url=url)
-            fresh = state == 'merged' and dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(when.replace('Z', '+00:00')) < FRESH
-            found = stages.Pull(number, url, state, when=when, fresh=fresh)
-            if fresh:  # read again until it is a day old
-                return found
-            ended[number] = found
-        return ended[number]
+            ended[number] = state, when
+        state, when = ended[number]
+        fresh = state == 'merged' and dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(when.replace('Z', '+00:00')) < FRESH
+        return stages.Pull(number, url, state, when=when, fresh=fresh)
 
     def change_rows(found: list[actions.Job], *, others: bool) -> tuple[list[ChangeRow], str]:
         """Each job as a change with its whole path, and with ``others`` the open pull requests no
@@ -300,7 +301,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             if number in is_open:
                 pulls[job.id] = pull_view(is_open[number])
             elif number:
-                pulls[job.id] = stages.Pull(number, job.link) if prs_error or github is None else pull_of(number, job.link)
+                pulls[job.id] = pull_of(number, job.link, read=not prs_error and github is not None)
         states: dict[str, object] | None = {}
         if any(pull.state == 'merged' and pull.fresh for pull in pulls.values()):
             try:
@@ -471,7 +472,9 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if found is None:
             return page(request, 'error.html', status_code=404, error='No such job (only the newest jobs are kept).')
         with runner.once():
-            (row,), _error = change_rows([found], others=False)
+            # With the other changes to the same target: a newer merge there settles this one, as on Activity.
+            rows, _error = change_rows([j for j in jobs.recent() if j.unit == found.unit], others=False)
+        row = next(row for row in rows if row.job.id == found.id)
         return page(request, 'job.html', job=found, track=row.track, sections=stages.sections(found), pr=row.pr,
                     can_resume=bool(resumable(found) and github and app_repos))
 

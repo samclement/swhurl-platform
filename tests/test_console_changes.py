@@ -736,6 +736,38 @@ class ChangeAppRouteTests(unittest.TestCase):
     def tool_call(self, runner):
         return next(c for c in runner.calls if c[:3] == (sys.executable, '-m', 'swhurl'))
 
+    def merged(self, jobs):
+        """Two finished changes to hello/staging whose pull requests merged, #2 after #1, and the calls made to read them."""
+        for number in (1, 2):
+            jobs.submit('scale', 'hello/staging', 'sam@swhurl.com',
+                        lambda job, number=number: setattr(job, 'link', f'https://github.com/x/pull/{number}'))
+        now = server.dt.datetime.now(server.dt.UTC)
+        when = {n: (now - server.dt.timedelta(hours=3 - n)).isoformat() for n in (1, 2)}
+        return mock.Mock(side_effect=lambda _runner, _github, number: ('merged', when[number]))
+
+    def test_a_jobs_own_page_settles_a_superseded_change_as_activity_does(self):
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(changes, 'console_prs', return_value=[]), \
+                mock.patch.object(changes, 'pull_state', self.merged(jobs)), mock.patch.object(cluster, 'apps', return_value=[]):
+            older, newer = (c.get(f'/jobs/{n}', headers=WHO).text for n in (1, 2))
+        self.assertIn('Merged to main', older)
+        self.assertNotIn('waiting for Flux', older, 'the instance now is the newer change\'s doing')
+        self.assertIn('waiting for Flux to create hello/staging', newer)
+
+    def test_how_a_pull_request_ended_is_read_once_and_outlives_a_github_failure(self):
+        c, jobs = self.client(tree_fake())
+        read = self.merged(jobs)
+        with mock.patch.object(changes, 'pull_state', read), mock.patch.object(cluster, 'apps', return_value=[]):
+            with mock.patch.object(changes, 'console_prs', return_value=[]):
+                for _ in range(2):
+                    c.get('/activity', headers=WHO)
+            self.assertEqual(read.call_count, 2, 'once per pull request, however fresh its merge')
+            with mock.patch.object(changes, 'console_prs', side_effect=actions.ActionError('rate limited')):
+                text = c.get('/activity', headers=WHO).text
+        self.assertIn('Could not list open pull requests', text)
+        self.assertNotIn('could not be read from GitHub', text, 'what was read before is still known')
+        self.assertEqual(read.call_count, 2)
+
     def test_scale_promote_and_remove_run_the_clones_commands(self):
         cases = (
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},

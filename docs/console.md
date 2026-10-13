@@ -40,7 +40,7 @@ Reconcile infra-base    ✓ Fetch source ── ✓ Apply unit ── ◉ Applie
 | ◎ / ◉ | is the terminal stop: where the change ends, drawn from the start (◎) and filled once it got there (◉) |
 
 - **The stages inside the console** (up to **Open pull request**, or all of a reconcile, suspend or resume) come from the job, which marks each as it begins; the job's page shows its output under each stage, the long ones closed.
-- **Validate and Merge** come from the pull request: its `Validate` run, its labels and whether it is open, merged or closed (**Closed without merging** is a terminal stop: nothing changed).
+- **Validate and Merge** come from the pull request: its `Validate` run, its labels and whether it is open, merged or closed (**Closed without merging** is a terminal stop: nothing changed, except that a new app's repository and image, made before its pull request, still exist). How a pull request ended is read from GitHub once and kept, so a later GitHub failure leaves those rows as they were.
 - **Flux applies it** and **Live in …** come from the instance's state (as on every page) once the pull request is merged: healthy is live, updating is still applying, failing is a failed stage. This is read for a day after the merge, and only for the latest merged change to that instance; after that the instance's state belongs to later changes and the row ends at **Merged to main**. A removal ends at **Removed from …** when the instance is gone. A change to a team or channel ends at **On main**.
 - **The state leading the row** is one of **In progress**, **Waiting for you**, **Failed**, **Interrupted**, **Closed**, **Unknown** (GitHub or the cluster could not be read) or, for a change that got there, its terminal stop.
 

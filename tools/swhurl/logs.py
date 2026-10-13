@@ -70,42 +70,66 @@ def fixture_payload(cases: list[dict]) -> dict:
     return {'resourceLogs': resources}
 
 
+def _record_attributes(record: dict) -> dict:
+    return {a['key']: unpack(a['value']) for a in record.get('attributes', [])}
+
+
+def _check_expected(name: str, expected: dict, record: dict, attrs: dict) -> list[str]:
+    errors = []
+    for key, value in expected.items():
+        if key == 'attributes':
+            for field, expected_value in value.items():
+                if attrs.get(field) != expected_value:
+                    errors.append(f'{name}: incorrect attribute {field}')
+            continue
+        actual = unpack(record.get('body', {})) if key == 'body' else record.get(key, 0)
+        if actual != value:
+            errors.append(f'{name}: incorrect {key}')
+    return errors
+
+
+def _check_preserved(case: dict, record: dict, attrs: dict) -> list[str]:
+    errors = []
+    for key, value in case.get('record', {}).items():
+        if key not in case['expected'] and record.get(key) != value:
+            errors.append(f'{case["name"]}: existing {key} changed')
+    for key, value in case.get('attributes', {}).items():
+        if attrs.get(key) != value:
+            errors.append(f'{case["name"]}: existing attribute {key} changed')
+    return errors
+
+
+def _check_original(case: dict, attrs: dict) -> list[str]:
+    original = case.get('original', case['input'])
+    if not isinstance(original, str) or case['expected'].get('body', original) == original:
+        return []
+    if attrs.get('log.record.original') != original:
+        return [f'{case["name"]}: original line missing or changed']
+    return []
+
+
+def _check_case(case: dict, matches: list[tuple[dict, dict]]) -> list[str]:
+    name = case['name']
+    if case.get('dropped'):
+        if matches:
+            return [f'{name}: expected the record to be dropped, got {len(matches)}']
+        return []
+    if len(matches) != 1:
+        return [f'{name}: expected one record, got {len(matches)}']
+    record, attrs = matches[0]
+    return [*_check_expected(name, case['expected'], record, attrs),
+            *_check_preserved(case, record, attrs), *_check_original(case, attrs)]
+
+
 def check_records(cases: list[dict], found: list[dict]) -> list[str]:
     """Compare expected fields without including log contents in a failure message."""
     indexed: dict[str, list[tuple[dict, dict]]] = {}
     for record in found:
-        attrs = {a['key']: unpack(a['value']) for a in record.get('attributes', [])}
+        attrs = _record_attributes(record)
         indexed.setdefault(attrs.get('test.case', ''), []).append((record, attrs))
     errors = []
     for case in cases:
-        matches = indexed.get(case['name'], [])
-        if case.get('dropped'):
-            if matches:
-                errors.append(f'{case["name"]}: expected the record to be dropped, got {len(matches)}')
-            continue
-        if len(matches) != 1:
-            errors.append(f'{case["name"]}: expected one record, got {len(matches)}')
-            continue
-        record, attrs = matches[0]
-        expected = case['expected']
-        for key, value in expected.items():
-            actual = attrs if key == 'attributes' else unpack(record.get('body', {})) if key == 'body' else record.get(key, 0)
-            if key == 'attributes':
-                for field, expected_value in value.items():
-                    if attrs.get(field) != expected_value:
-                        errors.append(f'{case["name"]}: incorrect attribute {field}')
-            elif actual != value:
-                errors.append(f'{case["name"]}: incorrect {key}')
-        for key, value in case.get('record', {}).items():
-            if key not in expected and record.get(key) != value:
-                errors.append(f'{case["name"]}: existing {key} changed')
-        for key, value in case.get('attributes', {}).items():
-            if attrs.get(key) != value:
-                errors.append(f'{case["name"]}: existing attribute {key} changed')
-        original = case.get('original', case['input'])
-        if isinstance(original, str) and expected.get('body', original) != original:
-            if attrs.get('log.record.original') != original:
-                errors.append(f'{case["name"]}: original line missing or changed')
+        errors.extend(_check_case(case, indexed.get(case['name'], [])))
     return errors
 
 
@@ -116,7 +140,7 @@ def _fixtures_complete(cases: list[dict], found: list[dict]) -> bool:
     flush. Duplicates and records that should have been dropped are reported by ``check_records``."""
     seen = set()
     for record in found:
-        attrs = {a['key']: unpack(a['value']) for a in record.get('attributes', [])}
+        attrs = _record_attributes(record)
         seen.add(attrs.get('test.case', ''))
     return all(case['name'] in seen for case in cases if not case.get('dropped'))
 

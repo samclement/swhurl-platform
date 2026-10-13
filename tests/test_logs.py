@@ -42,6 +42,52 @@ class LogsTests(unittest.TestCase):
         self.assertTrue(logs._fixtures_complete([kept, dropped], [record('kept')]), 'a dropped case is never waited for')
         self.assertFalse(logs._fixtures_complete([kept, dropped], [record('noise', 'y')]))
 
+    def test_fixture_comparison_keeps_missing_field_defaults_and_attribute_subsets(self):
+        case = {'name': 'defaults', 'input': {}, 'expected': {'body': None, 'severityNumber': 0,
+                'attributes': {'absent': None}}, 'record': {'traceId': None}}
+        record = {'attributes': logs.attributes({'test.case': 'defaults', 'extra': 'allowed'})}
+        self.assertEqual(logs.check_records([case], [record]), [])
+        case['expected']['severityNumber'] = 9
+        self.assertEqual(logs.check_records([case], [record]), ['defaults: incorrect severityNumber'])
+
+    def test_fixture_comparison_reports_all_failures_in_order_without_values(self):
+        sensitive = 'SENSITIVE-FIXTURE-CONTENT'
+        case = {'name': 'order', 'input': sensitive,
+                'expected': {'severityNumber': 9, 'attributes': {'first': sensitive, 'second': sensitive},
+                             'body': 'changed', 'traceId': 'expected-override'},
+                'record': {'traceId': 'initial-trace', 'spanId': sensitive},
+                'attributes': {'first': 'initial-value', 'kept': sensitive}}
+        record = {'body': logs.any_value(sensitive), 'attributes': logs.attributes({'test.case': 'order'})}
+        errors = logs.check_records([case], [record])
+        self.assertEqual(errors, ['order: incorrect severityNumber', 'order: incorrect attribute first',
+                                 'order: incorrect attribute second', 'order: incorrect body',
+                                 'order: incorrect traceId', 'order: existing spanId changed',
+                                 'order: existing attribute first changed', 'order: existing attribute kept changed',
+                                 'order: original line missing or changed'])
+        self.assertNotIn(sensitive, '\n'.join(errors))
+
+    def test_original_line_is_required_only_for_changed_string_bodies(self):
+        scenarios = [
+            ({'input': 'same', 'expected': {'body': 'same'}}, {}),
+            ({'input': 'same', 'expected': {}}, {}),
+            ({'input': {'message': 'structured'}, 'expected': {'body': 'parsed'}}, {}),
+            ({'input': 'framed', 'original': 'line', 'expected': {'body': 'parsed'}},
+             {'log.record.original': 'line'}),
+        ]
+        for fields, attrs in scenarios:
+            with self.subTest(fields=fields):
+                case = {'name': 'original', **fields}
+                record = {'body': logs.any_value(fields['expected'].get('body', fields['input'])),
+                          'attributes': logs.attributes({'test.case': 'original', **attrs})}
+                self.assertEqual(logs.check_records([case], [record]), [])
+
+    def test_fixture_errors_follow_case_order_and_ignore_unrequested_records(self):
+        cases = [{'name': 'second', 'input': 'x', 'expected': {}},
+                 {'name': 'first', 'input': 'x', 'expected': {}}]
+        unknown = {'attributes': logs.attributes({'test.case': 'unrequested'})}
+        self.assertEqual(logs.check_records(cases, [unknown]),
+                         ['second: expected one record, got 0', 'first: expected one record, got 0'])
+
     def test_a_duplicated_record_is_reported_as_one_instead_of_waiting_for_the_deadline(self):
         cases = [{'name': 'a', 'input': 'x', 'expected': {'body': 'x'}}, {'name': 'b', 'input': 'x', 'expected': {'body': 'x'}}]
         record = lambda name: {'body': logs.any_value('x'), 'attributes': logs.attributes({'test.case': name})}  # noqa: E731

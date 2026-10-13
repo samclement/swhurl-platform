@@ -274,6 +274,8 @@ image published → GitHub webhook (package events) → Receiver app-images
 - **Route:** the same Ingress as the push webhook.
 - **GitHub side:** one webhook per app repository, content type `application/json`, events: packages and registry packages. `make app-repo` and the console's **Start a new app** create it; `make app-hooks` creates or repoints it for every app (idempotent), which is how an app whose webhook could not be created at the time gets one. `make verify-platform` lists each app's webhook and its latest delivery.
 
+If a published image is waiting while its `ImageRepository` scan predates the publication, inspect the app repository's **Settings → Webhooks → Recent Deliveries**. Check the event and delivery time alongside its HTTP status: the latest successful delivery reported by `make verify-platform` can be an earlier publication or a `ping`. Redelivering a signed package event, or requesting a GitHub ping, starts the existing scan; the policy then chooses the newest registry tag and image automation commits it to Git. Recurring missing package events need separate investigation; the hourly fallback still operates.
+
 ## Certificates, ingress and storage
 
 - **Issuers:** `selfsigned`, `letsencrypt-staging` and `letsencrypt-prod` (HTTP-01 through Traefik), plain manifests with no settings substituted. `infra-issuers` waits for cert-manager, so a fresh bootstrap cannot race its CRDs.

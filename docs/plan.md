@@ -8,6 +8,8 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
+**TypeScript compilation once — approved 13 October 2026:** template `v0.2.2` (`0c0d3c7`, TypeScript template PR #36) compiles and tests inside Docker and packages that tested output. All seven local and GitHub build/smoke combinations passed, including SQLite restart persistence; invalid types, a failed test and an old Dockerfile with the new input each stop image creation. Older workflow callers retain their runner checks until a reviewed Copier update adopts the matching Dockerfile and input. Left: validate and deploy the catalogue pin, adopt the release on `demo-shop/staging`, verify live and record timings in [current state](current-state.md).
+
 **Conditional readability — implementation completed 13 October 2026:** [section 19](#19-conditional-readability--approved-13-october-2026). Stages 1–5b are committed, published and live verified ([evidence](current-state.md#conditional-readability-13-october-2026)); the final scan found no chained production ternaries. The signed-in browser check for stage 3d is still pending. No further refactor is authorized by the original outline; reviewed candidates and their boundaries are recorded in section 19.
 
 1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **On hold while the incident reviewer is rolled back.** No private-repository or image change was implemented. The 9 October design in section 4 remains a record for reconsideration, not the next execution task.

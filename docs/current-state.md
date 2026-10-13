@@ -1300,3 +1300,25 @@ Exercised with reconciles of `platform-reloader`, started through a port-forward
 - **A stall this deploy met, not caused by the change:** the `console-notifications` CronJob started no job from 22:44 to 22:49 UTC. Helm updated it as its 22:44 job was created; the k3s controller logged `error syncing CronJobController console/console-notifications ... the server could not find the requested resource` four times and did not queue it again (`console-dashboards`, updated in the same second, carried on). Adding and removing an annotation on the CronJob made the controller look again: job `29864089` ran on the new image within ten seconds, delivered `console deployed`, and the jobs after it ran each minute. The gap was under the heartbeat's ten minutes, so no stale alert was sent. The symptom and fix are in [troubleshooting](operations.md#troubleshooting).
 - **Not exercised:** a failing check of each kind on the live cluster (the unit tests cover them), the `live-test-team-scenario` test whose ClickHouse reads moved to `clickstack.clickhouse`, and whether that CronJob stall recurs on a later console deploy.
 
+
+## Each command stated once (13 October 2026)
+
+`41b5dd3`: [`commands.py`](../tools/swhurl/commands.py) states every command once, and the Makefile, `make help`, the usage lines and the [commands page](commands.md) follow it ([plan](plan.md) section 0, item 15, candidate 9). Console image `src-6c5f85889fd70b6c` (`6178a8d`).
+
+- **After the deploy:** `make flux-reconcile` reached every unit Ready at `6178a8d`; `make verify-platform` passed with 99 `[OK]` lines and no warnings; `console-notifications` and `console-dashboards` jobs ran each minute on the new image (no CronJob stall this time).
+- **Through `make`, on the live cluster:** `make app-status APP=test-1 ENV=staging` (and with `APP` and `ENV` from the environment) showed Healthy; `make verify-logs MINUTES=5` read five minutes; `make app-scale APP=x` stopped with `Usage: make app-scale APP=<app> ENV=<env> ARGS="--replicas N ..."` and exit 2; `make team-edit NAME=nope ARGS='--description "two words"'` reached the command's own refusal with the quoted words as one argument.
+- **Dry runs:** each of the 31 targets that take `DRY_RUN=true` was run against executables that record every call and fail: the 19 marked as planning (20 with `reconcile`) called none, the others stopped at their first read. `make test` now does the same for the planning ones on every run.
+- **Offline:** `make check` passed (670 tests); `Validate` passed on `41b5dd3`. The first full run caught four tests that named the old registry or `check-config`, and showed that `apps/ops.py` needs its own error handling (its tests call it directly), so that handler stayed.
+- **Changed for the operator:** `make help` groups targets and shows what each touches; `check-config` is gone (its two checks are in `make check-repo`) and `make install` is `flux-reconcile` then `verify-platform`; `make app-new` without `ARGS` is refused by `make` with its usage line; recipes no longer echo the `python3 -m swhurl` line they run.
+- **Not exercised:** the host timers' `make` units after this change (they run `make backup-mongodb`, `make backup-sqlite` and `make notifications-heartbeat` at their next times; `verify-platform` reports each), `make console-dev` and `make flux-install` through the new rule, and tab completion of targets in zsh.
+
+## swhurl.yaml: fields read once or read again (13 October 2026)
+
+`46c99d4`: [`declaration.py`](../tools/swhurl/apps/declaration.py) owns an app's `swhurl.yaml` ([plan](plan.md) section 0, item 15, candidate 10; [apps](apps.md#swhurlyaml)). Console image `src-efc2400fd2e3fb5c` (`a5eeb58`).
+
+- **Every live app's file passes the one validation:** all 12 instances' files were read from GitHub through the new reader at their image's commit and at the default branch: 24 reads, none refused.
+- **Same result as before:** `make app-offers ARGS="--all staging"` read 9 staging instances and reported each unchanged; the working tree stayed clean.
+- **After the deploy:** `make flux-reconcile` reached every unit Ready at `a5eeb58`; `make verify-platform` passed with 99 `[OK]` lines and no warnings; jobs of both CronJobs ran on the new image. The deployed console, read through a port-forward with the sign-in header, showed a language for all 9 apps on **Apps/Services** and **Teams** (7 TypeScript, 2 Kotlin), now read through the GitHub API without a token.
+- **Refusal:** `make app-new NAME=nope-x ARGS="--from-repo samclement/nope-x ..."` stopped with `samclement/nope-x has no swhurl.yaml, or is private`.
+- **Offline:** `make check` passed (673 tests); `Validate` passed on `46c99d4`.
+- **Not exercised:** the Offers workflow on a new image (it runs the same `app-offers --all staging`), an app repository whose file `app-new` would refuse meeting `app-offers` on the live path (unit-tested), and GitHub's anonymous rate limit on the console's language lookup (one request per app per hour).

@@ -437,13 +437,8 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     return instance
 
 
-def expose(root: Path, app: str, env: str, exposure: str, host: str | None = None) -> Path:
-    """Change who can reach an instance: its route, sign-in, Namespace label and unit dependencies."""
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    app_values = values(document.data)
-    ingress = mapping(app_values, 'ingress') if 'ingress' in app_values else None
-    route = mapping(ingress, 'main') if ingress and 'main' in ingress else None
+def validate_main_route(route: dict | None) -> str | None:
+    """Refuse ambiguous or shared route nodes and return the existing host."""
     if route:
         hosts, tls = route.get('hosts'), route.get('tls')
         if (not isinstance(hosts, list) or len(hosts) != 1 or not isinstance(hosts[0], dict)
@@ -455,14 +450,11 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
         for value in (hosts, hosts[0], tls, tls[0], tls[0]['hosts']):
             if value.yaml_anchor() or getattr(value, 'merge', None):
                 raise EditError('main ingress uses a YAML anchor or merge; edit shared settings by hand')
-    current_host = route['hosts'][0]['host'] if route else None
-    namespace_path, unit_path = instance / 'namespace.yaml', instance_unit_file(root, app, env)
-    namespace, unit = YamlFile(namespace_path), YamlFile(unit_path)
-    labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
-    unit_spec = mapping(unit.data, 'spec')
-    current = labels.get(EXPOSURE)
-    if exposure != 'private' and 'service' not in app_values:
-        raise EditError(f'{app}/{env} is a worker (no Service): it can only be private')
+    return route['hosts'][0]['host'] if route else None
+
+
+def resolve_host(app: str, env: str, exposure: str, host: str | None, current_host: str | None) -> str | None:
+    """Choose a route host and enforce the shared sign-in cookie boundary."""
     if exposure == 'authenticated-web':
         host = host or (current_host if current_host and in_cookie_domain(current_host) else default_host(app, env))
         if not in_cookie_domain(host):
@@ -475,8 +467,11 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
             raise EditError(f'public hosts must be outside {default_host("x", "prod")[2:]}: the sign-in cookie would reach them')
     elif host:
         raise EditError('a private instance has no route; drop --host')
-    if (exposure, host) == (current, current_host):
-        raise EditError(f'{app}/{env} is already {exposure}' + (f' at {host}' if host else ''))
+    return host
+
+
+def update_route(app_values: dict, route: dict | None, app: str, exposure: str, host: str | None) -> None:
+    """Edit the existing route in place, preserving custom settings and YAML nodes."""
     issuer = ((route or {}).get('annotations') or {}).get('cert-manager.io/cluster-issuer', 'letsencrypt-prod')
     ingress = mapping(app_values, 'ingress', create=True)
     if exposure == 'private':
@@ -503,7 +498,10 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
             annotations.pop(key, None)
     else:
         ingress['main'] = ingress_values(app, host, exposure, issuer)
-    labels[EXPOSURE] = exposure
+
+
+def update_dependencies(unit_spec: dict, exposure: str) -> None:
+    """Keep custom Flux dependencies while updating the exposure dependencies."""
     dependencies = unit_spec.setdefault('dependsOn', [])
     if not isinstance(dependencies, list) or any(not isinstance(d, dict) or 'name' not in d for d in dependencies):
         raise EditError('dependsOn: expected a list of named Flux dependencies')
@@ -516,6 +514,29 @@ def expose(root: Path, app: str, env: str, exposure: str, host: str | None = Non
     for name in depends_on(exposure):
         if not any(d['name'] == name for d in dependencies):
             dependencies.append({'name': name})
+
+
+def expose(root: Path, app: str, env: str, exposure: str, host: str | None = None) -> Path:
+    """Change who can reach an instance: its route, sign-in, Namespace label and unit dependencies."""
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    app_values = values(document.data)
+    ingress = mapping(app_values, 'ingress') if 'ingress' in app_values else None
+    route = mapping(ingress, 'main') if ingress and 'main' in ingress else None
+    current_host = validate_main_route(route)
+    namespace_path, unit_path = instance / 'namespace.yaml', instance_unit_file(root, app, env)
+    namespace, unit = YamlFile(namespace_path), YamlFile(unit_path)
+    labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
+    unit_spec = mapping(unit.data, 'spec')
+    current = labels.get(EXPOSURE)
+    if exposure != 'private' and 'service' not in app_values:
+        raise EditError(f'{app}/{env} is a worker (no Service): it can only be private')
+    host = resolve_host(app, env, exposure, host, current_host)
+    if (exposure, host) == (current, current_host):
+        raise EditError(f'{app}/{env} is already {exposure}' + (f' at {host}' if host else ''))
+    update_route(app_values, route, app, exposure, host)
+    labels[EXPOSURE] = exposure
+    update_dependencies(unit_spec, exposure)
     # Render every file before writing any, so unsupported YAML cannot cause a
     # partially saved exposure edit. Policy still validates the resulting files.
     edits = [(file.path, file.render()) for file in (document, namespace, unit)]

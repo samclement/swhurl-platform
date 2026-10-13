@@ -31,11 +31,11 @@ flowchart LR
 | App | Stack | Where | What it shows | Read about it |
 | --- | --- | --- | --- | --- |
 | [`demo-orders`](https://github.com/samclement/demo-orders) | TypeScript, web, SQLite | staging, prod | An API only other apps may use; its API and its event described in its own repository; a database the platform keeps and backs up | [Calling another app](#calling-another-app), [what an app offers](#what-an-app-offers), [backups](operations.md#backups-and-recovery) |
-| [`demo-shop`](https://github.com/samclement/demo-shop) | TypeScript, web | staging | Calling another app with a platform-issued token; telling a signed-in person from an app | [Calling another app](#calling-another-app), [who can reach it](#who-can-reach-it) |
+| [`demo-shop`](https://github.com/samclement/demo-shop) | TypeScript, web | staging, prod | Calling another app with a platform-issued token; telling a signed-in person from an app | [Calling another app](#calling-another-app), [who can reach it](#who-can-reach-it) |
 | [`demo-shopper`](https://github.com/samclement/demo-shopper) | TypeScript, worker | staging | A worker; an app calling another as itself; the steady traffic | [Stacks and features](#stacks-and-features) |
 | [`demo-notifier`](https://github.com/samclement/demo-notifier) | Kotlin, worker | staging | Receiving another app's event; a message to the team; the second stack | [Events](#events), [notifications](#notifications) |
 
-All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com`, `https://staging-demo-orders.homelab.swhurl.com` and `https://demo-orders.homelab.swhurl.com`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
+All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com`, `https://demo-shop.homelab.swhurl.com`, `https://staging-demo-orders.homelab.swhurl.com` and `https://demo-orders.homelab.swhurl.com`. Staging is a separate rollout and failure boundary, not a separate trust boundary.
 
 **See it work.** Each step is something you can open:
 

@@ -1183,7 +1183,10 @@ class AppReposTests(unittest.TestCase):
         from swhurl.console import repos
         api = FakeAppGitHub(existing=('notes',))
         client = repos.AppRepos(repo_runner(), api.config)
-        with self.assertRaisesRegex(actions.ActionError, 'already exists on GitHub'):
+        with self.assertRaisesRegex(
+                actions.ActionError,
+                r'Repository samclement/notes already exists on GitHub\. Setup stopped before creating a new '
+                r'repository\. Choose another name and retry from New app\.'):
             repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
         self.assertEqual(api.writes(), [])
         self.assertEqual(client.runner.calls, [], 'nothing rendered')

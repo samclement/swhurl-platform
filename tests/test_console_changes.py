@@ -109,7 +109,7 @@ class FakeGitHub:
 
 
 class ConsolePrProgressTests(unittest.TestCase):
-    def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None):
+    def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=()):
         requests = []
         pull = {'number': 7, 'title': 'apps: scale hello', 'html_url': 'https://github.com/x/pull/7',
                 'head': {'ref': 'console/scale-hello-staging-abc1234', 'sha': sha},
@@ -121,7 +121,7 @@ class ConsolePrProgressTests(unittest.TestCase):
             if path == fail:
                 return httpx.Response(503, json={'message': 'Unavailable'})
             answers = {'/pulls': [pull], '/actions/runs': {'workflow_runs': list(runs)},
-                       '/pulls/7': {'mergeable_state': mergeable}}
+                       '/pulls/7': {'mergeable_state': mergeable}, '/issues/7/comments': list(comments)}
             return httpx.Response(200, json=answers[path])
 
         github = changes.GitHub('samclement/swhurl-platform', TOKEN, transport=httpx.MockTransport(handle))
@@ -149,7 +149,6 @@ class ConsolePrProgressTests(unittest.TestCase):
 
     def test_review_label_precedes_auto_merge_and_missing_sha_needs_no_checks(self):
         cases = (
-            (('promotion-review-required', 'auto-merge'), HEAD, 'Review required: merge verification failed'),
             ((), HEAD, 'Awaiting setup or manual review'),
             (('auto-merge',), '', 'Awaiting setup or manual review'),
         )
@@ -158,6 +157,23 @@ class ConsolePrProgressTests(unittest.TestCase):
                 pr, requests = self.listed(labels=labels, sha=sha)
                 self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
                 self.assertEqual(requests, ['/pulls'])
+
+    def test_a_refused_merge_shows_the_gates_newest_reason_and_nobody_elses(self):
+        held = ('promotion-review-required', 'auto-merge')
+        gate, person = {'login': 'github-actions[bot]'}, {'login': 'someone'}
+        said = [{'user': gate, 'body': 'Auto-merge refused: production changed after review\n\nReview the changes.'},
+                {'user': gate, 'body': 'Auto-merge refused: diff includes unrelated edits\n\nReview the changes.'},
+                {'user': person, 'body': 'Auto-merge refused: <b>trust me</b>'}, {'user': gate, 'body': 'another note'}]
+        cases = ((said, None, 'Auto-merge refused: diff includes unrelated edits'),
+                 (said[2:], None, 'Auto-merge refused; reason in its checks'),
+                 ((), None, 'Auto-merge refused; reason in its checks'),
+                 ([{'user': gate, 'body': 'Auto-merge refused: ' + 'x' * 400}], None, 'Auto-merge refused: ' + 'x' * 300),
+                 (said, '/issues/7/comments', 'Auto-merge refused; reason in its checks'))
+        for comments, fail, expected in cases:
+            with self.subTest(expected=expected, fail=fail):
+                pr, requests = self.listed(labels=held, comments=comments, fail=fail)
+                self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
+                self.assertEqual(requests, ['/pulls', '/issues/7/comments'])
 
     def test_only_validate_for_this_sha_counts_and_first_matching_run_wins(self):
         run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'failure', 'html_url': 'matching'}
@@ -891,7 +907,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Held: waits for you', 'resume'))
         self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})), ('By you, on GitHub', ''), 'setup is never automatic')
         self.assertEqual(mode(pr(labels=('promotion-review-required',), meta={'image': IMAGE})),
-                         ('By you: merge verification failed', ''))
+                         ('By you: auto-merge refused', ''))
         self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Itself, once checks pass', ''),
                          'only a promotion can be held')
         self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), ('By you, on GitHub', ''))

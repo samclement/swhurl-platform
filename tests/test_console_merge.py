@@ -243,3 +243,30 @@ class MergeTests(unittest.TestCase):
             self.check(runner)
         self.assertEqual(sum(self.slept), merge.VALIDATE_WAIT)
         self.assertEqual(self.pushes(runner), [])
+
+
+class RefusalTests(unittest.TestCase):
+    """A refused merge leaves its reason on the pull request, where the console's Activity reads it."""
+
+    def test_a_refusal_swaps_the_label_and_comments_the_reason_on_one_line(self):
+        runner = FakeRunner().on('gh', 'api')
+        sent = []
+        real = runner.run
+        runner.run = lambda args, **kwargs: (sent.append((tuple(args), kwargs.get('input'))), real(args, **kwargs))[1]
+        with mock.patch.object(merge, 'merge', side_effect=merge.Hold('diff includes\nunrelated   edits ' + 'x' * 400)), \
+                mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(merge.main(['59', HEAD], runner), 1)
+        paths = [next(arg for arg in args if arg.startswith('repos/')) for args, _ in sent]
+        self.assertEqual(paths, [f'repos/{REPO}/issues/59/labels/auto-merge', f'repos/{REPO}/issues/59/labels',
+                                 f'repos/{REPO}/issues/59/comments'])
+        body = json.loads(sent[-1][1])['body']
+        first = body.split('\n', 1)[0]
+        self.assertTrue(first.startswith(merge.REFUSAL + 'diff includes unrelated edits x'))
+        self.assertEqual(len(first), len(merge.REFUSAL) + merge.REFUSAL_LIMIT)
+
+    def test_a_race_with_main_is_retried_and_says_nothing(self):
+        runner = FakeRunner()
+        with mock.patch.object(merge, 'merge', side_effect=merge.Hold('main moved during validation; retry against the new base')), \
+                mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(merge.main(['59', HEAD], runner), 1)
+        self.assertEqual(runner.calls, [])

@@ -166,7 +166,8 @@ def create_app_repo(runner: Runner, repos: AppRepos, job: Job, req: repo.Request
     """Render, create, push and wait for the first image; return ``REPO:<run>-<sha>@sha256:…``."""
     req.check()
     if repos.exists(req.name):
-        raise ActionError(f'{req.repo} already exists on GitHub; choose another name (nothing was created)')
+        raise ActionError(f'Repository {req.repo} already exists on GitHub. Setup stopped before creating a new '
+                          'repository. Choose another name and retry from New app.')
     scratch = Path(tempfile.mkdtemp(prefix='app-repo-'))
     try:
         work = scratch / req.name

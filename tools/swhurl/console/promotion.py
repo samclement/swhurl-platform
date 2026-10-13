@@ -127,14 +127,19 @@ def merge_mode(pr: changes.PullRequest) -> tuple[str, str]:
     """How an open console PR gets merged, and the one control that applies to it now:
     ``(words, 'hold' | 'resume' | '')``. Only a promotion can be held or handed back to auto-merge."""
     if 'promotion-review-required' in pr.labels:
-        return 'By you: auto-merge refused', ''
+        return 'Manual merge required: auto-merge was refused', ''
     promote = pr.branch.startswith('console/promote-')
     if changes.AUTO_MERGE_LABEL in pr.labels:
-        return 'Itself, once checks pass', 'hold' if promote else ''
+        return 'Auto-merge after checks', 'hold' if promote else ''
     meta = body_metadata(pr.body) if promote else {}
     if meta and not meta.get('setup'):
-        return 'Held: waits for you', 'resume'
-    return 'By you, on GitHub', ''
+        return 'Manual merge required: held by you', 'resume'
+    if promote and meta.get('setup'):
+        return 'Manual merge required: setup needs your review', ''
+    plan = re.search(r'(?m)^\*\*Merge plan:\*\* (.+)$', pr.body)
+    if plan:
+        return plan.group(1), ''
+    return 'Manual merge required', ''
 
 
 def matching(pr: changes.PullRequest, app: str) -> bool:
@@ -209,7 +214,10 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
 
     return changes.open_pr(runner, github, job, slug=f'promote-{app}-staging',
                            title=f'apps: promote {app}/staging to {app}/prod', body=body, change=change,
-                           auto_merge=lambda: form.get('hold') != 'on' and not captured.get('setup'), verify=verify)
+                           auto_merge=lambda: form.get('hold') != 'on' and not captured.get('setup'),
+                           manual_merge_reason=lambda: (f'also changes the allowed callers and network policy for {", ".join(admits)}'
+                                                        if admits else 'needs production setup review' if own_setup else ''),
+                           verify=verify)
 
 
 def control(runner: Runner, github: changes.GitHub, number: int, action: str) -> str:

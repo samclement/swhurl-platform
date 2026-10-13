@@ -236,7 +236,7 @@ def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
 
 def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str | Callable[[Path], str],
             change: Callable[[Path], None], auto_merge: bool | Callable[[], bool] = False,
-            verify: Callable[[], None] | None = None) -> str:
+            manual_merge_reason: str | Callable[[], str] = '', verify: Callable[[], None] | None = None) -> str:
     """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL.
 
     With ``auto_merge`` the PR is labelled to merge itself once Validate passes, unless it adds or changes an
@@ -253,6 +253,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         change(tree)
         body = body(tree) if callable(body) else body
         auto_merge = auto_merge() if callable(auto_merge) else auto_merge
+        manual_merge_reason = manual_merge_reason() if callable(manual_merge_reason) else manual_merge_reason
         after = snapshot(tree)
         changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p))
         if not changed:
@@ -266,13 +267,25 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
                 status = 'M'
             job.lines.append(f'{status} {path}')
         encrypted = [p for p in changed if p.endswith('.sops.yaml')]
-        if auto_merge and encrypted:
+        if encrypted:
             auto_merge = False
             if all(Path(p).name == events.SECRET_FILE for p in encrypted):  # generated whole: nothing is left to fill in
-                job.lines.append("Not merging automatically: it adds the app's events key, generated and encrypted here with "
-                                 'nothing to set; review it, then merge it yourself')
+                encrypted_reason = "adds the app's generated encrypted events key"
             else:
-                job.lines.append('Not merging automatically: set the Secret values on the branch first, then merge it yourself')
+                encrypted_reason = 'needs Secret values to be set on the pull request branch'
+        else:
+            encrypted_reason = ''
+        manual_reasons = []
+        if manual_merge_reason:
+            manual_reasons.append(manual_merge_reason)
+        if encrypted_reason:
+            manual_reasons.append(encrypted_reason)
+        if not auto_merge and not manual_reasons:
+            manual_reasons.append('needs manual review')
+        if not auto_merge:
+            reason = ' and '.join(manual_reasons)
+            plan = f'Manual merge required: this pull request {reason}. Review the changes, then merge it yourself.'
+            job.lines.append(f'Merge plan: {plan}')
         if verify:
             verify()
         if runner.dry_run:
@@ -294,7 +307,8 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         job.lines.append(f'Committed {commit[:7]} [console] {title}')
         job.lines.append(f'Creating branch {branch}')
         api.call('POST', '/git/refs', {'ref': f'refs/heads/{branch}', 'sha': commit})
-        note = '\n\nMerges itself when Validate passes (label `auto-merge`; remove it to merge by hand).' if auto_merge else ''
+        note = ('\n\nMerges itself when Validate and the trusted merge checks pass (label `auto-merge`; '
+                'remove it to merge by hand).') if auto_merge else f'\n\n**Merge plan:** {plan}'
         pr = api.json('POST', '/pulls', {'title': f'[console] {title}', 'head': branch, 'base': BASE,
                                          'body': f'{body}{note}\n\nRequested-by: {job.identity}'})
         url = pr['html_url']
@@ -382,6 +396,16 @@ class Connections:
     publish: tuple[str, ...] = ()
 
     @classmethod
+    def from_flags(cls, flags: tuple[str, ...]) -> Connections:
+        """Recover call and subscription choices from the app job's saved CLI flags."""
+        values = {}
+        for flag in flags:
+            field, separator, value = flag.removeprefix('--').partition('=')
+            if separator and field in ('calls', 'subscribe', 'publish'):
+                values[field] = tuple(value.split(','))
+        return cls(values.get('calls', ()), values.get('subscribe', ()), values.get('publish', ()))
+
+    @classmethod
     def from_form(cls, form: Mapping[str, str]) -> Connections:
         chosen = cls(*(tuple(name.strip() for name in form.get(field, '').split(',') if name.strip())
                        for field in ('calls', 'subscribe', 'publish')))
@@ -396,6 +420,12 @@ class Connections:
     def touches_others(self) -> bool:
         """A call or a subscription also changes the other app: its allowed callers, the NATS users."""
         return bool(self.calls or self.subscribe)
+
+    @property
+    def manual_merge_reason(self) -> str:
+        """Name the existing app settings changed by calls or subscriptions."""
+        affected = set(self.calls) | {event.split('.', 1)[0] for event in self.subscribe}
+        return f'also changes existing app settings for {", ".join(sorted(affected))}' if affected else ''
 
     def check_offered(self, callable_apps: set[str], offered_events: set[str]) -> None:
         """Refuse a choice outside the lists the form offered, before a repository is created for an
@@ -471,6 +501,7 @@ class Change:
     auto_merge: bool = False
     touches_others: bool = False  # it also changes another app, whose team reviews it
     preface: str = ''
+    manual_merge_reason: str = ''
 
     @property
     def body(self) -> str:
@@ -495,7 +526,8 @@ class Change:
         else:
             raise ActionError('no such change')
         return cls(kind, f'{app}/{env}', f'{kind}-{app}-{env}', f'apps: {INSTANCE_CHANGES[kind]} {app}/{env}', commands,
-                   ' && '.join(command.as_make() for command in commands), touches_others=touches_others)
+                   ' && '.join(command.as_make() for command in commands), touches_others=touches_others,
+                   manual_merge_reason=chosen.manual_merge_reason if touches_others else '')
 
     @classmethod
     def to_team(cls, action: str, form: Mapping[str, str]) -> Change:
@@ -556,7 +588,8 @@ class Change:
     def open(self, runner: Runner, github: GitHub, job: Job) -> str:
         """Open the pull request; returns its URL."""
         return open_pr(runner, github, job, slug=self.slug, title=self.title, body=self.body,
-                       change=lambda clone: self.apply(runner, job, clone), auto_merge=self.auto_merge)
+                       change=lambda clone: self.apply(runner, job, clone), auto_merge=self.auto_merge,
+                       manual_merge_reason=self.manual_merge_reason)
 
 
 NEW_APP = 'new-app'  # a job's resume record: the New app form's choices
@@ -645,5 +678,6 @@ class NewApp:
         return Change('new app and repository', self.target, f'new-{self.name}-staging', f'apps: add {self.target}',
                       (Command('app-new', argv),), f'make app-new NAME={self.name} ARGS="{" ".join(argv[1:])}"',
                       auto_merge=not self.touches_others, touches_others=self.touches_others,
+                      manual_merge_reason=Connections.from_flags(self.flags).manual_merge_reason,
                       preface=(f'The console created https://github.com/{made.repo} from [{template}](https://github.com/{template}) '
                                'and waited for its first image.\n\n'))

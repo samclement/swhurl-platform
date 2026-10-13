@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shop
-              tag: 8-71e0154 # {"$imagepolicy": "flux-system:demo-shop-staging:tag"}
-              digest: sha256:e583fdecf5154f0478ecb829751a232cdc373fea6b5e81f86376e0e5c83c1111 # {"$imagepolicy": "flux-system:demo-shop-staging:digest"}
+              tag: 13-c897251 # {"$imagepolicy": "flux-system:demo-shop-staging:tag"}
+              digest: sha256:e00553231d11cd02222b8a770b49552a4aa9e11a0db6656cda955121d8ee186d # {"$imagepolicy": "flux-system:demo-shop-staging:digest"}
             resources:
               requests:
                 cpu: 10m

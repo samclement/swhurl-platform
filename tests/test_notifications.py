@@ -160,6 +160,54 @@ class LifecycleTests(unittest.TestCase):
         data['events'] = [event(data)]
         self.assertEqual(own(n.evaluate(state, data, NOW+60, BASE)), [])
 
+    def test_event_input_order_is_sorted_before_failure_and_rollback_updates(self):
+        data = healthy()
+        previous = n.evaluate(None, data, NOW, BASE, True)
+        data['events'] = [event(data, 'RollbackSucceeded', when=NOW + 2, uid='rollback'),
+                          event(data, 'UpgradeFailed', when=NOW + 1, uid='failure')]
+        result = n.evaluate(previous, data, NOW + 60, BASE, True)
+        self.assertEqual([notice['title'] for notice in result['pending']],
+                         ['example/staging rolled back', 'example/staging rolled back'])
+        self.assertEqual(result['instances']['example-staging/example']['failed_actions'],
+                         ['failure:hr1:failure:UpgradeFailed'])
+        self.assertEqual(result['instances']['example-staging/example']['incident'],
+                         {'since': NOW + 60, 'notified': True, 'last_notice': NOW + 60})
+
+    def test_failure_attempts_are_deduplicated_immediately_and_history_keeps_last_sixteen(self):
+        data = healthy()
+        previous = n.evaluate(None, data, NOW, BASE)
+        failures = []
+        for index in range(18):
+            failure = event(data, 'UpgradeFailed', when=NOW + index + 1, uid=f'event-{index}')
+            failure['metadata']['annotations'] = {'helm.toolkit.fluxcd.io/token': f'attempt-{index}'}
+            failures.append(failure)
+        retry = copy.deepcopy(failures[-1])
+        retry['metadata']['uid'] = 'retry'
+        retry['lastTimestamp'] = dt.datetime.fromtimestamp(NOW + 19, dt.UTC).isoformat()
+        data['events'] = [*failures, retry]
+        result = n.evaluate(previous, data, NOW + 60, BASE)
+        self.assertEqual(len(result['pending']), 18)
+        self.assertEqual(result['instances']['example-staging/example']['failed_actions'],
+                         [f'failure:hr1:attempt-{index}:UpgradeFailed' for index in range(2, 18)])
+
+    def test_event_time_fallback_and_history_boundary_with_source_controller(self):
+        for fallback in ('eventTime', 'creationTimestamp'):
+            with self.subTest(fallback=fallback):
+                data = healthy()
+                previous = n.evaluate(None, data, NOW - n.HISTORY - 1, BASE)
+                notice = event(data, when=NOW - n.HISTORY)
+                notice.pop('lastTimestamp')
+                notice.pop('reportingComponent')
+                notice['source'] = {'component': 'helm-controller'}
+                if fallback == 'eventTime':
+                    notice['eventTime'] = notice['metadata']['creationTimestamp']
+                    notice['metadata']['creationTimestamp'] = dt.datetime.fromtimestamp(NOW - n.HISTORY - 1, dt.UTC).isoformat()
+                data['events'] = [notice]
+                result = n.evaluate(previous, data, NOW, BASE)
+                self.assertEqual([item['title'] for item in result['pending']], ['example/staging deployed'])
+                self.assertIn(str(NOW - n.HISTORY), result['pending'][0]['key'])
+                self.assertEqual(n.evaluate(previous, data, NOW + 1, BASE)['pending'], [])
+
     def test_same_pass_upgrade_failure_and_rollback_are_combined(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)

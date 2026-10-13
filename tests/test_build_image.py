@@ -204,6 +204,23 @@ class ReuseTests(unittest.TestCase):
             build.retain(runner, state, archive, self.work / 'proof.json', self.env)
         self.assertFalse((self.work / 'proof.json').exists())
 
+    def test_load_selects_the_runtime_without_changing_the_archive(self):
+        archive = self.work / 'image.oci.tar'
+        _, config = oci_image(archive)
+        before = build.file_hash(archive)
+        runner = (FakeRunner().on('docker', 'run', stdout='copied')
+                  .on('docker', 'inspect', stdout=config))
+        build.load(runner, archive)
+        self.assertEqual(build.file_hash(archive), before)
+        self.assertIn('docker-daemon:app:smoke', runner.calls[0])
+        self.assertIn(f'{self.work}:/image:ro', runner.calls[0])
+        self.assertIn('--override-arch', runner.calls[0])
+        self.assertNotIn('--all', runner.calls[0])
+        runner = (FakeRunner().on('docker', 'run', stdout='copied')
+                  .on('docker', 'inspect', stdout='sha256:' + 'f' * 64))
+        with self.assertRaisesRegex(build.Rebuild, 'loaded smoke-test'):
+            build.load(runner, archive)
+
     def test_publication_preserves_digest_and_never_rebuilds_or_runs_the_candidate(self):
         state, folder, _proof, digest = self.retained()
         self.main_env()

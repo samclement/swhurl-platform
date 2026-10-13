@@ -226,6 +226,18 @@ def retain(runner: Runner, state: dict, archive: Path, output: Path, environment
     return proof
 
 
+def load(runner: Runner, archive: Path) -> None:
+    """Load the runtime for smoke tests without discarding the OCI provenance."""
+    _, config = archive_image(archive)
+    runner.run(['docker', 'run', '--rm', '--volume', f'{archive.parent}:/image:ro',
+                '--volume', '/var/run/docker.sock:/var/run/docker.sock', SKOPEO, 'copy',
+                '--override-os', 'linux', '--override-arch', 'amd64',
+                f'oci-archive:/image/{archive.name}', 'docker-daemon:app:smoke'], mutating=True)
+    actual = runner.output(['docker', 'inspect', '--format', '{{.Id}}', 'app:smoke']).strip()
+    if actual != config:
+        raise Rebuild('loaded smoke-test runtime differs from the retained OCI image')
+
+
 def publish(runner: Runner, state: dict, reference: str, environment: dict[str, str]) -> str:
     if not state.get('reuse') or not DIGEST.fullmatch(state.get('image_digest', '')):
         raise Rebuild('this run has no verified retained image')
@@ -258,7 +270,7 @@ def outputs(path: Path | None, values: dict) -> None:
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'retain', 'publish'))
+    parser.add_argument('action', choices=('prepare', 'load', 'retain', 'publish'))
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--recipe', default='')
@@ -269,6 +281,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     args = parser.parse_args(argv)
     if args.action == 'retain' and (args.archive is None or args.proof is None):
         parser.error('retain requires --archive and --proof')
+    if args.action == 'load' and args.archive is None:
+        parser.error('load requires --archive')
     runner = runner or Runner.from_environment()
     for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
         runner.add_secret(os.environ.get(key))
@@ -285,6 +299,9 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             outputs(output, {k: v for k, v in state.items() if k in
                              ('reuse', 'retain', 'dockerfile', 'builder_image', 'key', 'candidate_run', 'image_digest')})
             print('[OK] ' + runner.redact(state['reason']))
+        elif args.action == 'load':
+            load(runner, args.archive)
+            print('[OK] Loaded the OCI runtime for smoke tests; original export is unchanged')
         elif args.action == 'retain':
             proof = retain(runner, json.loads(args.state.read_text()), args.archive, args.proof, dict(os.environ))
             outputs(output, {'artifact': 'swhurl-tested-' + proof['key']})

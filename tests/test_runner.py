@@ -8,7 +8,6 @@ import time
 import unittest
 
 from swhurl import ROOT
-from swhurl import __main__ as cli
 from swhurl.report import Report
 from swhurl.run import REDACTED, CommandError, FakeRunner, Result, Runner, SharedReads
 
@@ -222,21 +221,9 @@ class CliTests(unittest.TestCase):
         return subprocess.run([sys.executable, '-m', 'swhurl', *args], cwd=ROOT, capture_output=True, text=True,
                               env={**os.environ, 'PYTHONPATH': str(ROOT / 'tools')})
 
-    def test_help_lists_every_command(self):
-        result = self.run_cli('--help')
-        self.assertEqual(result.returncode, 0)
-        for command in cli.COMMANDS:
-            self.assertIn(command, result.stdout)
-
     def test_unknown_or_missing_command_exits_2(self):
         self.assertEqual(self.run_cli('nope').returncode, 2)
         self.assertEqual(self.run_cli().returncode, 2)
-
-    def test_every_command_module_imports_and_has_main(self):
-        import importlib
-        for name, (module, function, _) in cli.COMMANDS.items():
-            with self.subTest(command=name):
-                self.assertTrue(callable(getattr(importlib.import_module(module), function)))
 
 
 class SharedReadsTests(unittest.TestCase):

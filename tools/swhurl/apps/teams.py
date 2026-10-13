@@ -173,7 +173,7 @@ def listed_channels(root: Path) -> tuple[YamlFile, list]:
 
 
 def set_decryption(root: Path) -> None:
-    """The notify unit decrypts exactly while it holds an encrypted file (make check-config requires the two to agree)."""
+    """The notify unit decrypts exactly while it holds an encrypted file (make check-repo requires the two to agree)."""
     path = root / channels.UNIT_FILE
     if not path.is_file():
         return

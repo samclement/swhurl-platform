@@ -76,31 +76,15 @@ jobs:
       - name: Lint remaining bash
         run: pipx run --spec shellcheck-py==0.11.0.1 shellcheck -x $(git ls-files '*.sh')
 
-      - name: Test operator safety and app contract
+      - name: Test operator safety, app contract and dry runs
         env:
           REQUIRE_HELM: '1'
         run: make test
 
-      - name: Run operator dry runs
-        run: |
-          set -Eeuo pipefail
-          ./host/install-timer.sh dns --dry-run
-          ./host/install-timer.sh backup --dry-run
-          ./host/install-timer.sh heartbeat --dry-run
-          make install DRY_RUN=true
-          make backup-mongodb DRY_RUN=true
-          make live-test-restore-mongodb DRY_RUN=true
-          make live-test-restore-sqlite DRY_RUN=true
-          make live-test-lifecycle DRY_RUN=true
-          make live-test-reloader DRY_RUN=true
-          make live-test-app-template DRY_RUN=true
-          make live-test-call-identity DRY_RUN=true
-          make live-test-network-policy DRY_RUN=true
-          make live-test-team-scenario DRY_RUN=true
-          kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
-          make platform-certs-staging DRY_RUN=true
-          make platform-certs-prod DRY_RUN=true
-          make help
+      # The dry runs are not listed here: make test runs every target whose DRY_RUN=true only plans
+      # (tools/swhurl/commands.py says which).
+      - name: Render the lifecycle test fixture
+        run: kubectl kustomize tests/fixtures/lifecycle-app >/dev/null
 
   repo:
     name: Validate manifests, schemas and documentation

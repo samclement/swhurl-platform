@@ -215,6 +215,7 @@ def validate(runner: Runner, report: Report, root: Path = ROOT) -> int:
     attempt(check_unit_table, report, root)
     attempt(check_shell_syntax, runner, report)
     attempt(check_secrets, report, root)
+    attempt(check_config, report, root)
     settings = attempt(platform_settings, root)
     paths = attempt(active_paths, root)
     if settings is not None and paths is not None:
@@ -231,24 +232,19 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     return validate(runner or Runner(cwd=ROOT), report or Report())
 
 
-def check_config(argv: list[str] | None = None, root: Path = ROOT) -> int:
-    """Local checks that need no cluster.
+def check_config(report: Report, root: Path = ROOT) -> None:
+    """Every Flux unit that decrypts SOPS has an encrypted Secret in its path, and the settings the platform substitutes exist.
 
-    Every Flux unit that decrypts SOPS has at least one encrypted Secret in its
-    path (derived from the unit definitions, not a hand-kept list), and the
-    settings the platform substitutes exist.
+    The units come from their definitions, not a hand-kept list.
     """
     for unit, files in platform.decrypted_secret_files(root).items():
         if not files:
-            print(f'{unit} decrypts SOPS but its path has no *.sops.yaml Secret')
-            return 1
+            fail(f'{unit} decrypts SOPS but its path has no *.sops.yaml Secret')
     try:
         values = load_settings((root / platform.SETTINGS).read_text())
     except (OSError, SettingsError) as error:
-        print(f'platform-settings unreadable: {error}')
-        return 1
+        fail(f'platform-settings unreadable: {error}')
     for key in ('BASE_DOMAIN', 'CERT_ISSUER'):
         if not values.get(key):
-            print(f'{key} missing from platform-settings')
-            return 1
-    return 0
+            fail(f'{key} missing from platform-settings')
+    report.ok('Decrypting units have Secrets; platform-settings has BASE_DOMAIN and CERT_ISSUER')

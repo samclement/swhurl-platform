@@ -51,7 +51,8 @@ class ManifestPolicyTests(unittest.TestCase):
         named = set()
         for path in (ROOT / 'tools/swhurl').rglob('*.py'):
             named |= set(re.findall(r"'((?:cluster|infra|platform)-[a-z0-9-]+)'", path.read_text()))
-        other = {'platform-settings', 'platform-system', 'platform-certs', 'platform-signing-keys'}  # not units
+        other = {'platform-settings', 'platform-system', 'platform-certs', 'platform-signing-keys',
+                 'platform-certs-staging', 'platform-certs-prod'}  # not units
         self.assertLessEqual(named - other, {unit.name for unit in platform.units()})
         self.assertLessEqual({events.NAMESPACE, channels.NAMESPACE, jobstore.NAMESPACE, state.STATE_NAMESPACE,
                               heartbeat.CRONJOB_NAMESPACE, 'platform-system'}, platform.namespaces())

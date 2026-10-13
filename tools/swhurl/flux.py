@@ -111,6 +111,15 @@ def wait(runner: Runner, report: Report, timeout: float, interval: float = 2,
         sleep(interval)
 
 
+def reconcile_main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    """``reconcile <unit>``: fetch Git and reconcile one Flux unit."""
+    if not argv or len(argv) != 1:
+        print('usage: reconcile <unit> (see flux get kustomizations)', file=sys.stderr)
+        return 2
+    return (runner or Runner.from_environment()).attached(
+        ['flux', 'reconcile', 'kustomization', argv[0], '-n', 'flux-system', '--with-source', '--timeout=20m'], mutating=True)
+
+
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(prog='swhurl flux-wait', description=__doc__.split('\n\n')[0])
     parser.add_argument('--timeout', type=float, default=1200, help='seconds (default 1200)')

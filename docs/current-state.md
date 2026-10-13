@@ -1350,3 +1350,9 @@ Stages of [plan section 19](plan.md#19-conditional-readability--approved-13-octo
 - **Offline:** `make check` passed (697 tests); `Validate` passed on `dcbeaac`.
 - **Not exercised:** opening such a promotion from the deployed console (it creates a real pull request; the route is unit-tested through to the unlabelled pull request and its body), and a call from `swhurl-try-11/prod` to its callees.
 - **The gate's reason on Activity (`00f0041`):** the gate comments `Auto-merge refused: <reason>` on a pull request it holds and Activity shows the newest such comment from the workflow as the status ([console](console.md#auto-merge)). `make check` passed (700 tests); `Validate` passed on `00f0041`. Image `src-11d59e917fd20abe` (`ca11503`) deployed; `make flux-reconcile` and `make verify-platform` passed with no warnings and jobs of both CronJobs ran on it. **Not exercised:** a live refusal (no held pull request is open; the comment and its reading are unit-tested, including a look-alike comment from another account being ignored).
+
+## A commit elsewhere does not hold a promotion (13 October 2026)
+
+`8e09e7f`, console image `src-fd3b804091dcf99e` (deployed as `a309603`): the promotion gate asks which files changed between the commit staging's unit applied and main's newest, and holds a promotion only for a change to staging's own folder or unit file ([apps](apps.md#a-commit-elsewhere-does-not-hold-a-promotion)); the review is no longer pinned to a revision. `make check` passed (703 tests); after `make flux-reconcile`, `make verify-platform` passed with the new image running.
+
+- **At rest:** through a port-forward, the review pages of `demo-orders`, `swhurl-try-13` and `test-1` answered 200 with every unit applied at `a309603`.

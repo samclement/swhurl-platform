@@ -40,27 +40,17 @@ def main_tree(runner: Runner, github: changes.GitHub, read: Callable[[Path], obj
         shutil.rmtree(work, ignore_errors=True)
 
 
-COMPARED_FILES = 300
-"""GitHub lists this many changed files in one answer; a comparison that fills it may have more."""
-
-
 def settled_status(runner: Runner, github: changes.GitHub | None, status: ops.InstanceStatus | None) -> ops.InstanceStatus | None:
     """``status`` as the gate judges it: when its unit is behind Git's newest revision, GitHub is asked whether
     the commits in between change the instance's own files (``promotion.settled``). One request, only then."""
     def changed(applied: str, newest: str) -> list[str] | None:
         if github is None:
             return None
-        api = changes.GitHubAPI(runner, github)
         try:
-            compared = api.json('GET', f'/compare/{applied}...{newest}')
+            contained, paths = changes.changed_since(runner, github, applied, newest)
         except ActionError:
             return None
-        finally:
-            api.client.close()
-        files = compared.get('files') or []
-        if compared.get('status') not in ('ahead', 'identical') or len(files) >= COMPARED_FILES:
-            return None
-        return [name for f in files for name in (f.get('filename'), f.get('previous_filename')) if name]
+        return paths if contained else None
     return promotion.settled(status, changed)
 
 

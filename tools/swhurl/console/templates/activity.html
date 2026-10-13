@@ -8,7 +8,7 @@
 <h2>In progress or waiting for you</h2>
 {% if moving %}
 {{ st.changes_list(moving) }}
-{% else %}<p class="muted">Nothing is running and nothing waits for you.</p>{% endif %}
+{% else %}<p class="muted">Nothing is running, nothing waits for you and nothing that failed is left open.</p>{% endif %}
 {% if prs_error %}<p class="muted">{{ prs_error }}</p>{% endif %}
 
 <h2>Finished</h2>

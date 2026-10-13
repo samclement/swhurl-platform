@@ -7,7 +7,8 @@ the start so the outcome is known before it is reached.
 
 The stages inside the console come from the job: it marks each as it begins (``Job.stage``), which
 also groups its output. The ones after it (Validate, Merge, Flux applying it) come from the pull
-request and the instance's live state, read by the caller: nothing here reads anything.
+request and from how far the merge has got on the cluster (``judge``), read by the caller: nothing
+here reads anything.
 """
 from __future__ import annotations
 
@@ -29,7 +30,9 @@ MARKS = {'done': ('healthy', 'done'), 'running': ('updating', 'running now'), 'f
          'reached': ('reached', 'reached'), 'planned': ('planned', 'where it ends, not reached')}
 # A whole change's status as the mark and word that lead its row.
 STATUS = {'running': ('updating', 'In progress'), 'waiting': ('suspended', 'Waiting for you'), 'done': ('healthy', ''),
-          'failed': ('failing', 'Failed'), 'interrupted': ('failing', 'Interrupted'), 'stopped': ('stopped', 'Closed'), 'unknown': ('unknown', 'Unknown')}
+          'failed': ('failing', 'Failed'), 'interrupted': ('failing', 'Interrupted'), 'stopped': ('stopped', 'Closed'), 'unknown': ('unknown', 'Unknown'),
+          # Failed, but not over: its pull request is still open, or the instance it reached is failing.
+          'blocked': ('failing', 'Failed')}
 ABSENT = 'absent'  # an instance read from the cluster and not there
 PULL = re.compile(r'/pull/(\d+)$')
 BRANCH = re.compile(r'console/([a-z]+)-(.+)-(staging|prod)-[0-9a-f]{7,40}')
@@ -85,7 +88,47 @@ class Pull:
     auto: bool = False  # labelled to merge itself
     reason: str = ''  # why it waits for a person, when known
     when: str = ''  # when it was merged or closed, as words ("3 h ago")
-    fresh: bool = True  # merged recently enough that the instance's state now says how this change went
+    commit: str = ''  # the commit that merged it into main
+
+
+ENDINGS = ('live', 'zero', 'removed', 'superseded')
+
+
+@dataclass(frozen=True)
+class Rollout:
+    """How far a merged change to an instance has got on the cluster (``judge``). One of ``ENDINGS`` is
+    how the change ended: it is kept with the job and never judged again, so nothing that happens to the
+    instance later is this change's doing. Anything else is still being judged."""
+    state: str  # an ending, or applying, creating, removing, failing, held, unread
+    detail: str = ''
+    word: str = ''  # for held: the instance's state (suspended)
+
+
+def judge(action: str, live: State | str | None, contained: bool | None, superseded: bool = False) -> Rollout:
+    """``live`` is the instance's state, ``ABSENT``, or None when the cluster was not read. ``contained``:
+    whether what Flux has applied to the instance (or, for one that is absent, fetched) includes the merge;
+    None when GitHub could not say. ``superseded``: a later commit to the instance's own files is applied too."""
+    if live is None:
+        return Rollout('unread', 'the cluster could not be read')
+    if contained is None:
+        return Rollout('unread', 'GitHub could not say whether Flux has applied the merge')
+    if contained and superseded:
+        return Rollout('superseded')
+    if action == 'remove':
+        return Rollout('removed') if contained and live == ABSENT else Rollout('removing')
+    if not contained:
+        return Rollout('applying', 'the merge is not applied yet')
+    if live == ABSENT:
+        return Rollout('creating', 'not created yet')
+    if live.key in ('healthy', 'stopped'):
+        return Rollout('live' if live.key == 'healthy' else 'zero')
+    if live.key == 'updating':
+        return Rollout('applying', live.detail)
+    if live.key == 'failing':
+        return Rollout('failing', live.detail)
+    if live.key == 'unknown':
+        return Rollout('unread', live.detail or 'the instance could not be read')
+    return Rollout('held', live.detail, live.key)
 
 
 @dataclass(frozen=True)
@@ -180,9 +223,9 @@ def end_label(action: str, target: str) -> str:
     return f'Removed from {env}' if action == 'remove' else f'Live in {env}'
 
 
-def after_pull(pull: Pull, action: str, target: str, live: State | str | None) -> tuple[list[Stage], str, str]:
+def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> tuple[list[Stage], str, str]:
     """Validate, Merge, Flux applying it and the terminal stop: ``(stages, status, outcome)``.
-    ``live`` is the instance's state, ``ABSENT``, or None when it was not read."""
+    ``landed`` is how far a merged change to an instance has got; None when it was not judged."""
     end = end_label(action, target)
     instance = end != 'On main'
     then = f'then {end[0].lower()}{end[1:]}' if instance else 'and is then on main'
@@ -204,7 +247,7 @@ def after_pull(pull: Pull, action: str, target: str, live: State | str | None) -
             return track(Stage('merge', 'Merge', 'waiting', 'merge conflict', pull.url), 'waiting',
                          f'Waiting for you: {name} conflicts with main. Resolve it on the pull request, or close it and start again.')
         if pull.checks == 'failed':
-            return track(Stage('merge', 'Merge', 'todo', link=pull.url), 'failed',
+            return track(Stage('merge', 'Merge', 'todo', link=pull.url), 'blocked',
                          f'Validate failed on {name}: nothing is merged. Fix it on the pull request, or close it.')
         if pull.auto:
             verifying = pull.checks == 'passed'
@@ -218,33 +261,34 @@ def after_pull(pull: Pull, action: str, target: str, live: State | str | None) -
     if pull.state == 'merged':
         merged = Stage('merge', 'Merge', 'done', f'merged {pull.when}'.strip(), pull.url)
         reached = Stage('end', end, 'reached')
-        if not instance or not pull.fresh:
-            # After a day the instance's state says how later changes went, not this one.
-            return track(merged, 'done', f'Merged {pull.when}.'.replace(' .', '.'), done,
-                         [reached if not instance else Stage('end', 'Merged to main', 'reached')])
+        if not instance:
+            return track(merged, 'done', f'Merged {pull.when}.'.replace(' .', '.'), done, [reached])
         flux = LABELS['rollout']
-        if action == 'remove':
-            if live == ABSENT:
-                return track(merged, 'done', f'{target} is removed.', done, [Stage('rollout', flux, 'done'), reached])
-            return track(merged, 'running', f'Merged; Flux is removing {target}.', done,
-                         [Stage('rollout', flux, 'running' if live is not None else 'todo'), planned])
-        if live is None:
-            return track(merged, 'unknown', f'Merged; the cluster could not be read to say whether {target} runs it.', done)
-        if live == ABSENT:
-            return track(merged, 'running', f'Merged; waiting for Flux to create {target}.', done,
-                         [Stage('rollout', flux, 'running', 'not created yet'), planned])
-        if live.key in ('healthy', 'stopped'):
-            note = 'scaled to zero' if live.key == 'stopped' else ''
-            return track(merged, 'done', f'{target} runs it.' if not note else f'{target} is applied and scaled to zero.', done,
-                         [Stage('rollout', flux, 'done'), Stage('end', end, 'reached', note)])
-        if live.key == 'updating':
-            return track(merged, 'running', f'Merged; Flux is applying it to {target}.', done,
-                         [Stage('rollout', flux, 'running', live.detail), planned])
-        if live.key == 'failing':
-            return track(merged, 'failed', f'Merged, but {target} is failing: open its page.', done,
-                         [Stage('rollout', flux, 'failed', live.detail), planned])
-        return track(merged, 'waiting', f'Merged, but {target} is {live.key}: open its page.', done,
-                     [Stage('rollout', flux, 'waiting', live.detail), planned])
+        found = landed or Rollout('unread', 'it was not read')
+
+        def applied(status: str, outcome: str, state: str, note: str = '', end: Stage = planned):
+            return track(merged, status, outcome, done, [Stage('rollout', flux, state, note), end])
+
+        if found.state == 'superseded':  # the instance now is a later change's doing
+            return track(merged, 'done', f'Merged {pull.when}; a later change to {target} has been applied since.'.replace(' ;', ';'),
+                         done, [Stage('end', 'Merged to main', 'reached')])
+        if found.state == 'live':
+            return applied('done', f'{target} runs it.', 'done', end=reached)
+        if found.state == 'zero':
+            return applied('done', f'{target} is applied and scaled to zero.', 'done', end=Stage('end', end, 'reached', 'scaled to zero'))
+        if found.state == 'removed':
+            return applied('done', f'{target} is removed.', 'done', end=reached)
+        if found.state == 'removing':
+            return applied('running', f'Merged; Flux is removing {target}.', 'running')
+        if found.state == 'creating':
+            return applied('running', f'Merged; waiting for Flux to create {target}.', 'running', found.detail)
+        if found.state == 'applying':
+            return applied('running', f'Merged; Flux is applying it to {target}.', 'running', found.detail)
+        if found.state == 'failing':
+            return applied('blocked', f'Merged, but {target} is failing: open its page.', 'failed', found.detail)
+        if found.state == 'held':
+            return applied('waiting', f'Merged, but {target} is {found.word}: open its page.', 'waiting', found.detail)
+        return track(merged, 'unknown', f'Merged; whether {target} runs it is not known: {found.detail}.', done)
     if pull.state == 'closed':
         # A new app's repository and image were made before its pull request: closing that leaves them.
         left = ('no instance was added, but the repository and image made for it still exist'
@@ -256,7 +300,7 @@ def after_pull(pull: Pull, action: str, target: str, live: State | str | None) -
                  f'{name} could not be read from GitHub: open it there.')
 
 
-def track(job: Job, pull: Pull | None = None, live: State | str | None = None) -> Track:
+def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) -> Track:
     """The whole path of the change ``job`` started."""
     stages = job_stages(job)
     flux = job.action in ('reconcile', 'suspend', 'resume')
@@ -283,7 +327,7 @@ def track(job: Job, pull: Pull | None = None, live: State | str | None = None) -
         return Track((*stages, Stage('end', end, 'reached', said.removeprefix('✔ applied revision '))), 'done', f'{end}.')
     if pull is None:  # a dry run, or a job that had nothing to propose
         return Track((*stages, Stage('end', 'No pull request opened', 'reached')), 'done', 'No pull request was opened.')
-    rest, status, outcome = after_pull(pull, job.action, job.unit, live)
+    rest, status, outcome = after_pull(pull, job.action, job.unit, rollout)
     return Track((*stages, *rest), status, outcome)
 
 

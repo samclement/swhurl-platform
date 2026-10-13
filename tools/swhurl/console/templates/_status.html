@@ -30,7 +30,7 @@
 {# One row per change: its state, what it is, and its path. A row opens to its pull request's controls and its job's output. #}
 <div class="openlist changes">
   {% for c in rows %}{% set j = c.job %}
-  <details class="openrow change" id="{{ c.id }}"{{ ' open' if c.track.status == 'waiting' and c.pr }}>
+  <details class="openrow change" id="{{ c.id }}"{{ ' open' if c.track.status in ('waiting', 'blocked') and c.pr }}>
     <summary title="Show or hide {{ 'the output of job #%d' % j.id if j else 'pull request #%d' % c.pr.number }}">
       <span class="chev" aria-hidden="true"></span>
       <div class="about-change">

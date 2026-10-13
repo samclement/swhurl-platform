@@ -68,8 +68,8 @@ class JobStageTests(unittest.TestCase):
 
 
 class PullStageTests(unittest.TestCase):
-    def track(self, live=None, action='promote', unit='web/prod', **pull):
-        return stages.track(job(action, unit), stages.Pull(9, URL, **pull), live)
+    def track(self, rollout=None, action='promote', unit='web/prod', **pull):
+        return stages.track(job(action, unit), stages.Pull(9, URL, **pull), rollout)
 
     def test_an_open_pull_request_says_who_merges_it(self):
         auto = self.track(state='open', checks='running', auto=True)
@@ -79,32 +79,68 @@ class PullStageTests(unittest.TestCase):
         manual = self.track(state='open', checks='passed', reason='held by you')
         self.assertEqual(shape(manual)[2:4], [('Validate', 'done'), ('Merge', 'waiting')])
         self.assertEqual((manual.status, manual.outcome), ('waiting', 'Waiting for you: merge #9 on GitHub (held by you); then live in prod.'))
-        self.assertEqual(self.track(state='open', checks='failed', auto=True).status, 'failed')
+        failed = self.track(state='open', checks='failed', auto=True)
+        self.assertEqual((failed.status, failed.label, failed.settled), ('blocked', 'Failed', False), 'open: someone still has to act')
         self.assertIn('conflicts with main', self.track(state='open', checks='conflict', auto=True).outcome)
         team = self.track(action='team-add', unit='team:payments', state='open')
         self.assertEqual(shape(team)[-1], ('On main', 'planned'))
         self.assertTrue(team.outcome.endswith('it is then on main.'))
 
-    def test_a_merged_pull_request_ends_where_the_instance_is(self):
-        cases = ((State('healthy'), 'done', ('Flux applies it', 'done'), ('Live in prod', 'reached')),
-                 (State('updating', 'rolling out'), 'running', ('Flux applies it', 'running'), ('Live in prod', 'planned')),
-                 (State('failing', 'crash'), 'failed', ('Flux applies it', 'failed'), ('Live in prod', 'planned')),
-                 (State('suspended'), 'waiting', ('Flux applies it', 'waiting'), ('Live in prod', 'planned')),
-                 (stages.ABSENT, 'running', ('Flux applies it', 'running'), ('Live in prod', 'planned')),
+    def test_a_merged_pull_request_ends_where_its_rollout_got(self):
+        R = stages.Rollout
+        cases = ((R('live'), 'done', ('Flux applies it', 'done'), ('Live in prod', 'reached')),
+                 (R('zero'), 'done', ('Flux applies it', 'done'), ('Live in prod', 'reached')),
+                 (R('applying', 'rolling out'), 'running', ('Flux applies it', 'running'), ('Live in prod', 'planned')),
+                 (R('creating'), 'running', ('Flux applies it', 'running'), ('Live in prod', 'planned')),
+                 (R('failing', 'crash'), 'blocked', ('Flux applies it', 'failed'), ('Live in prod', 'planned')),
+                 (R('held', '', 'suspended'), 'waiting', ('Flux applies it', 'waiting'), ('Live in prod', 'planned')),
+                 (R('unread', 'the cluster could not be read'), 'unknown', ('Flux applies it', 'todo'), ('Live in prod', 'planned')),
                  (None, 'unknown', ('Flux applies it', 'todo'), ('Live in prod', 'planned')))
-        for live, status, rollout, end in cases:
-            with self.subTest(live=live):
-                track = self.track(live, state='merged', when='2 min ago')
-                self.assertEqual((track.status, shape(track)[-2], shape(track)[-1]), (status, rollout, end))
+        for rollout, status, flux, end in cases:
+            with self.subTest(rollout=rollout):
+                track = self.track(rollout, state='merged', when='2 min ago')
+                self.assertEqual((track.status, shape(track)[-2], shape(track)[-1]), (status, flux, end))
                 self.assertEqual(track.stages[3].note, 'merged 2 min ago')
-        self.assertEqual(self.track(State('healthy'), state='merged').label, 'Live in prod')
-        removed = self.track(stages.ABSENT, action='remove', unit='web/staging', state='merged')
+        self.assertEqual(self.track(R('live'), state='merged').label, 'Live in prod')
+        failing = self.track(R('failing', 'crash'), state='merged')
+        self.assertEqual((failing.label, failing.settled), ('Failed', False), 'a failing rollout is not over')
+        removed = self.track(R('removed'), action='remove', unit='web/staging', state='merged')
         self.assertEqual((removed.status, removed.label), ('done', 'Removed from staging'))
-        self.assertEqual(self.track(State('healthy'), action='remove', unit='web/staging', state='merged').status, 'running')
+        self.assertEqual(self.track(R('removing'), action='remove', unit='web/staging', state='merged').status, 'running')
+        team = self.track(action='team-add', unit='team:payments', state='merged', when='1 h ago')
+        self.assertEqual((team.status, team.label), ('done', 'On main'))
 
-    def test_an_old_merge_is_not_judged_by_the_instance_now(self):
-        old = self.track(State('failing', 'a later change'), state='merged', when='3 days ago', fresh=False)
-        self.assertEqual((old.status, shape(old)[-1], old.outcome), ('done', ('Merged to main', 'reached'), 'Merged 3 days ago.'))
+    def test_a_superseded_merge_ends_on_main(self):
+        old = self.track(stages.Rollout('superseded'), state='merged', when='3 days ago')
+        self.assertEqual((old.status, shape(old)[-1]), ('done', ('Merged to main', 'reached')))
+        self.assertEqual(old.outcome, 'Merged 3 days ago; a later change to web/prod has been applied since.')
+
+    def test_a_rollout_is_judged_against_the_merge_not_the_instance_alone(self):
+        judge = stages.judge
+        healthy, failing = State('healthy'), State('failing', 'crash')
+        self.assertEqual(judge('scale', healthy, True).state, 'live')
+        self.assertEqual(judge('scale', State('stopped'), True).state, 'zero')
+        self.assertEqual(judge('scale', healthy, False).state, 'applying', 'healthy on what ran before the merge')
+        self.assertEqual(judge('scale', failing, False).state, 'applying', 'failing before the merge is not its doing')
+        self.assertEqual(judge('scale', failing, True), stages.Rollout('failing', 'crash'))
+        self.assertEqual(judge('scale', failing, True, superseded=True).state, 'superseded', 'a later change is failing')
+        self.assertEqual(judge('scale', State('updating', 'x'), True).state, 'applying')
+        self.assertEqual(judge('scale', State('suspended', 'x'), True), stages.Rollout('held', 'x', 'suspended'))
+        self.assertEqual(judge('scale', State('unknown', 'no pods read'), True).state, 'unread')
+        self.assertEqual(judge('new app and repository', stages.ABSENT, True).state, 'creating')
+        self.assertEqual(judge('new app and repository', stages.ABSENT, True, superseded=True).state, 'superseded', 'added, then removed')
+        self.assertEqual(judge('remove', stages.ABSENT, True).state, 'removed')
+        self.assertEqual(judge('remove', stages.ABSENT, False).state, 'removing', 'Flux has not fetched the merge')
+        self.assertEqual(judge('remove', healthy, False).state, 'removing')
+        self.assertEqual(judge('remove', healthy, True, superseded=True).state, 'superseded', 'removed, then added again')
+        self.assertEqual(judge('scale', None, None).state, 'unread')
+        self.assertEqual(judge('scale', healthy, None).state, 'unread')
+        self.assertEqual({s for s in stages.ENDINGS}, {'live', 'zero', 'removed', 'superseded'}, 'failing is never kept: it can recover')
+
+    def test_an_ending_survives_the_store(self):
+        kept = jobstore.parse(jobstore.record(Job(1, 'scale', 'web/prod', 'x', NOW, state='succeeded', ending={'state': 'live'}), str))
+        self.assertEqual(kept.ending, {'state': 'live'})
+        self.assertIsNone(jobstore.parse(jobstore.record(job(), str)).ending)
 
     def test_closed_or_unreadable(self):
         closed = self.track(state='closed', when='1 h ago')

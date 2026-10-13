@@ -1092,7 +1092,9 @@ class ActionTests(unittest.TestCase):
             asked.append(request.url.path.rsplit('/', 1)[1])
             if request.url.path.endswith('/pulls'):
                 return httpx.Response(200, json=[])
-            return httpx.Response(200, json={'state': 'closed', 'merged_at': dt.datetime.now(dt.UTC).isoformat()})
+            if '/compare/merged...' in request.url.path:  # what Flux has applied contains the merge, and nothing of theirs since
+                return httpx.Response(200, json={'status': 'ahead', 'files': [{'filename': 'docs/x.md'}]})
+            return httpx.Response(200, json={'state': 'closed', 'merged_at': dt.datetime.now(dt.UTC).isoformat(), 'merge_commit_sha': 'merged'})
 
         runner = fake()
         jobs = actions.Jobs(runner, inline=True)

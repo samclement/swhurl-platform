@@ -196,16 +196,37 @@ def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str,
     return progress, checks_url, checks
 
 
-def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str]:
-    """How a pull request that is no longer listed as open ended: ``('merged' | 'closed' | 'open', when)``."""
+def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str, str]:
+    """How a pull request that is no longer listed as open ended: ``('merged' | 'closed' | 'open', when, commit)``,
+    the commit being the one that merged it into main."""
     api = GitHubAPI(runner, github)
     try:
         pull = api.json('GET', f'/pulls/{number}')
     finally:
         api.client.close()
     if pull.get('merged_at'):
-        return 'merged', pull['merged_at']
-    return ('closed', pull.get('closed_at') or '') if pull.get('state') == 'closed' else ('open', '')
+        return 'merged', pull['merged_at'], pull.get('merge_commit_sha') or ''
+    return ('closed', pull.get('closed_at') or '', '') if pull.get('state') == 'closed' else ('open', '', '')
+
+
+COMPARED_FILES = 300
+"""GitHub lists this many changed files in one answer; a comparison that fills it may have more."""
+
+
+def changed_since(runner: Runner, github: GitHub, base: str, head: str) -> tuple[bool, list[str] | None]:
+    """Whether commit ``head`` contains ``base`` and, if so, the paths changed after it (None when there
+    may be more than GitHub lists). Two commits always compare the same: the answer can be kept."""
+    api = GitHubAPI(runner, github)
+    try:
+        compared = api.json('GET', f'/compare/{base}...{head}')
+    finally:
+        api.client.close()
+    if compared.get('status') not in ('ahead', 'identical'):
+        return False, None
+    files = compared.get('files') or []
+    if len(files) >= COMPARED_FILES:
+        return True, None
+    return True, [name for f in files for name in (f.get('filename'), f.get('previous_filename')) if name]
 
 
 def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:

@@ -493,6 +493,14 @@ Apps from a template update their own dependencies. The Renovate GitHub App is i
 
 Renovate merges only when it runs, so a passing update can wait hours; tick "run again" on the repository's Dependency Dashboard issue to hurry it. The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them. A version written inside a template's `*.jinja` file is invisible to Renovate; keep versions in plain files.
 
+### Reusing a tested PR image
+
+The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) supports retaining a smoke-tested OCI image as a GitHub Actions artifact for one day. Stack workflow adoption is tracked in [the plan](plan.md#0-where-this-paused-and-what-is-left). The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
+
+Main can publish that exact image when the checked-out source tree, immutable shared workflow, helper, build target, platform and resolved base/BuildKit image digests match. External base tags are resolved and pinned before building, so a changed tag cannot race the comparison. Source comparison includes the dependency files and caller workflow. A squash or merge commit with the same file tree is eligible even though its commit ID differs. OCI publication preserves the original PR's build attestations and verifies the published digest; the normal deployment tag names the merged commit.
+
+Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. A publication error fails the workflow. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off. The OCI copy utility is pinned by digest in the helper and updated through a reviewed tooling change.
+
 ## Promote to production
 
 Try staging, then run **in your own terminal**:

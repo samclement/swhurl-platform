@@ -246,6 +246,8 @@ INTERNAL = (
     Command('make', 'Run a make target: its arguments come from the make variables in the environment', run='swhurl.commands:make', internal=True),
     Command('console', 'Serve the web console (the pod; --dev: loopback, fixed identity)', run='swhurl.console.server:main', internal=True),
     Command('console-merge', 'CI: validate and merge an eligible console pull request', run='swhurl.console.merge:main', internal=True),
+    Command('app-build-image', 'CI: retain a tested PR image and reuse it only for matching main build inputs',
+            run='swhurl.apps.build_image:main', internal=True),
     Command('notify-serve', "Serve the notify service: accept messages about apps and deliver them to their team's channels",
             run='swhurl.notifications.service:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',

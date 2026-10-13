@@ -10,7 +10,7 @@ from swhurl import ROOT, platform, validate
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
 
-SETTINGS = 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: platform-settings}\ndata: {CERT_ISSUER: x}\n'
+SETTINGS = 'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: platform-settings}\ndata: {CERT_ISSUER: x, BASE_DOMAIN: example.test}\n'
 KUSTOMIZATION = 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources: []\n'
 
 

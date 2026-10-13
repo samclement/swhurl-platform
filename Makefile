@@ -1,306 +1,65 @@
 SHELL := /usr/bin/env bash
-# Operator interface. Recipes stay aliases and plain sequencing; logic lives in
-# tools/swhurl (see docs/contributing.md). `## text` after a target is its help line.
+# Operator interface. Every target is stated once, in tools/swhurl/commands.py: its
+# variables, help line and what it touches (make help prints them; a test fails when a
+# target here and a command there differ). Recipes here stay plain sequencing and host
+# scripts; logic lives in tools/swhurl (see docs/contributing.md).
 SWHURL := PYTHONPATH=$(CURDIR)/tools python3 -m swhurl
-SWHURL_APPS := PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl
 DRY_RUN ?= false
-INSTALL_STEPS = $(if $(SKIP_VERIFY),flux-reconcile,check-config flux-reconcile verify-platform)
+INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
+.DEFAULT_GOAL := help
 
-.PHONY: help
-help: ## List targets (generated from the ## comments in this Makefile)
-	@$(SWHURL) make-help
+# Commands: `swhurl make <target>` reads the make variables (APP=, ENV=, ARGS=, ...) from
+# the environment, refuses a missing one and runs the command's function.
+COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
+	clickstack-bootstrap clickstack-dashboards clickstack-notify-webhook clickstack-ntfy-webhook \
+	app-repo app-hooks app-new app-expose team-add team-edit team-remove team-channel channel-add channel-remove \
+	app-team app-alerts platform-signing-keys app-calls app-events app-offers app-sync app-promote \
+	app-status app-logs app-reconcile app-check app-scale app-remove console-image console-dev \
+	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
+	check-repo check-apps check-templates check-otel check-secrets \
+	live-test-lifecycle live-test-reloader live-test-app-template live-test-restore-mongodb live-test-restore-sqlite \
+	live-test-call-identity live-test-network-policy live-test-team-scenario
 
-# Deploy and verify --------------------------------------------------------------
+.PHONY: $(COMMANDS)
+$(COMMANDS):
+	@DRY_RUN=$(DRY_RUN) $(SWHURL) make $@
+
+# Sequencing --------------------------------------------------------------------
 
 .PHONY: flux-reconcile
-flux-reconcile: ## Fetch Git, reconcile the source layer and the stack, wait for every unit at that revision
+flux-reconcile:
 	flux reconcile source git swhurl-platform -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-sources -n flux-system --timeout=20m
 	flux reconcile kustomization cluster-stack -n flux-system --timeout=20m
 	$(SWHURL) flux-wait
 
 .PHONY: install
-install: ## check-config, flux-reconcile, verify-platform (SKIP_VERIFY=1 skips the checks; DRY_RUN=true plans)
+install:
 	@$(if $(filter true,$(DRY_RUN)),printf 'Plan (install):\n'; printf '  - make %s\n' $(INSTALL_STEPS),$(foreach step,$(INSTALL_STEPS),$(MAKE) $(step) &&) true)
 
-.PHONY: reconcile
-reconcile: ## UNIT=<name> Fetch Git and reconcile one Flux unit (for example after changing its Secret)
-	@[[ -n "$(UNIT)" ]] || { echo "Usage: make reconcile UNIT=<name> (see flux get kustomizations)" >&2; exit 2; }
-	flux reconcile kustomization $(UNIT) -n flux-system --with-source --timeout=20m
-
-.PHONY: verify-platform
-verify-platform: ## Live: every platform check, read-only (never prints keys)
-	@$(SWHURL) verify-platform
-
-.PHONY: notifications-check
-notifications-check: ## Live: preview lifecycle/health notifications without sending or saving (read-only)
-	@$(SWHURL_APPS) notifications-check --dry-run
-
-.PHONY: notifications-heartbeat
-notifications-heartbeat: ## Live: alert if the notification checker is stale (ARGS=--dry-run previews)
-	@$(SWHURL_APPS) notifications-heartbeat $(ARGS)
-
-.PHONY: verify-logs
-verify-logs: ## Live: summarize fresh log parsing, severity and trace coverage (no bodies; MINUTES=15)
-	@$(SWHURL) verify-logs --minutes $(or $(MINUTES),15)
-
-.PHONY: flux-install
-flux-install: ## Install or upgrade the Flux controllers at the pinned version with the settings in Git (DRY_RUN=true shows the live diff)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) flux-install
-
 .PHONY: flux-bootstrap
-flux-bootstrap: ## Apply the root units and sources (Flux must already be installed)
+flux-bootstrap:
 	@echo "[INFO] Requires Flux controllers already installed (see docs/bootstrap.md)."
 	kubectl apply -k clusters/home/flux-system
 
-# Apps ---------------------------------------------------------------------------
-
-.PHONY: app-new
-app-new: ## NAME=<app> ARGS="--from-repo OWNER/<app> --image ..." Generate the staging instance of an app made by app-repo (ARGS=--help for options)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-new NAME=<app> ARGS='--from-repo OWNER/<app> --env staging --image ghcr.io/OWNER/<app>:TAG@DIGEST' (make app-repo prints it)" >&2; exit 2; }
-	$(SWHURL_APPS) app-new $(NAME) $(ARGS)
-
-.PHONY: app-promote
-app-promote: ## APP=<app> Create production from staging or update its image (Git edit; ARGS=--expect-image=... or --host=...)
-	@[[ -n "$(APP)" ]] || { echo "Usage: make app-promote APP=<app>" >&2; exit 2; }
-	$(SWHURL_APPS) app-promote $(APP) $(ARGS)
-
-.PHONY: app-scale
-app-scale: ## APP= ENV= ARGS="--replicas N --cpu Q --memory Q --memory-limit Q" Change replicas or resources (Git edit)
-	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-scale APP=<app> ENV=<env> ARGS='--replicas 2'" >&2; exit 2; }
-	$(SWHURL_APPS) app-scale $(APP) $(ENV) $(ARGS)
-
-.PHONY: app-expose
-app-expose: ## APP= ENV= ARGS="--exposure private|authenticated-web|public [--host H]" Change who can reach an instance (Git edit)
-	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-expose APP=<app> ENV=<env> ARGS='--exposure public --host app.example.com'" >&2; exit 2; }
-	$(SWHURL_APPS) app-expose $(APP) $(ENV) $(ARGS)
-
-.PHONY: app-alerts
-app-alerts: ## APP= ARGS="--error-logs N|none --errors N|none | --none | --default" Change an app's default alerts in every environment (Git edit)
-	@[[ -n "$(APP)" && -n "$(ARGS)" ]] || { echo "Usage: make app-alerts APP=<app> ARGS='--error-logs 20'" >&2; exit 2; }
-	$(SWHURL_APPS) app-alerts $(APP) $(ARGS)
-
-.PHONY: app-team
-app-team: ## APP= ARGS="--team T" Move an app (every environment) to a team in apps/teams.yaml; adds a missing quota and NetworkPolicy (Git edit)
-	@[[ -n "$(APP)" && -n "$(ARGS)" ]] || { echo "Usage: make app-team APP=<app> ARGS='--team payments'" >&2; exit 2; }
-	$(SWHURL_APPS) app-team $(APP) $(ARGS)
-
-.PHONY: platform-signing-keys
-platform-signing-keys: ## Refresh apps/signing-keys.json from the cluster and rewrite the instances that carry it (Git edit)
-	$(SWHURL_APPS) platform-signing-keys
-
-.PHONY: team-add
-team-add: ## NAME= [DESCRIPTION=] Register a team in apps/teams.yaml (Git edit)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-add NAME=<team> [DESCRIPTION='what it owns']" >&2; exit 2; }
-	$(SWHURL_APPS) team-add $(NAME) --description "$(DESCRIPTION)"
-
-.PHONY: team-edit
-team-edit: ## NAME= ARGS="--description TEXT | --rename NEW | --notify CHANNEL" Change a team; a rename relabels its apps (Git edit)
-	@[[ -n "$(NAME)" && -n "$(ARGS)" ]] || { echo "Usage: make team-edit NAME=<team> ARGS='--rename new-name'" >&2; exit 2; }
-	$(SWHURL_APPS) team-edit $(NAME) $(ARGS)
-
-.PHONY: team-channel
-team-channel: ## NAME= [ARGS="--remove"] Give a team its notification channel or a new address; prompts without showing it (Git edit)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-channel NAME=<team> [ARGS=--remove]" >&2; exit 2; }
-	$(SWHURL_APPS) team-channel $(NAME) $(ARGS)
-
-.PHONY: channel-add
-channel-add: ## NAME= [ARGS="--replace"] Add a notification channel; prompts for its address without showing it (Git edit)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make channel-add NAME=<channel> [ARGS=--replace]" >&2; exit 2; }
-	$(SWHURL_APPS) channel-add $(NAME) $(ARGS)
-
-.PHONY: channel-remove
-channel-remove: ## NAME= Remove a notification channel no team notifies (Git edit)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make channel-remove NAME=<channel>" >&2; exit 2; }
-	$(SWHURL_APPS) channel-remove $(NAME)
-
-.PHONY: team-remove
-team-remove: ## NAME= [ARGS="--move-apps-to OTHER"] Remove a team; refused while it owns apps unless they are moved (Git edit)
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make team-remove NAME=<team> [ARGS='--move-apps-to other']" >&2; exit 2; }
-	$(SWHURL_APPS) team-remove $(NAME) $(ARGS)
-
-.PHONY: app-calls
-app-calls: ## APP= ENV= ARGS="--add orders | --remove orders" Change which apps an instance may call; updates the callees (Git edit)
-	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-calls APP=<app> ENV=<env> ARGS='--add orders'" >&2; exit 2; }
-	$(SWHURL_APPS) app-calls $(APP) $(ENV) $(ARGS)
-
-.PHONY: app-events
-app-events: ## APP= ENV= ARGS="--publish created --subscribe orders.created" Set the events an instance publishes and receives (Git edit)
-	@[[ -n "$(APP)" && -n "$(ENV)" && -n "$(ARGS)" ]] || { echo "Usage: make app-events APP=<app> ENV=<env> ARGS='--publish created'" >&2; exit 2; }
-	$(SWHURL_APPS) app-events $(APP) $(ENV) $(ARGS)
-
-.PHONY: app-offers
-app-offers: ## APP= ENV= (or ARGS="--all staging") Read what an app offers, its API and event documents, from its repository (Git edit)
-	@[[ -n "$(APP)" && -n "$(ENV)" || -n "$(ARGS)" ]] || { echo "Usage: make app-offers APP=<app> ENV=<env>, or ARGS='--all staging'" >&2; exit 2; }
-	$(SWHURL_APPS) app-offers $(APP) $(ENV) $(ARGS)
-
-.PHONY: app-sync
-app-sync: ## Rewrite what the platform derives in every instance: identity, signing keys, allowed callers (Git edit)
-	$(SWHURL_APPS) app-sync
-
-.PHONY: app-remove
-app-remove: ## APP= ENV= Delete an instance's files and unregister its unit (Git edit; Flux uninstalls on push)
-	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make app-remove APP=<app> ENV=<env>" >&2; exit 2; }
-	$(SWHURL_APPS) app-remove $(APP) $(ENV)
-
-.PHONY: app-repo
-app-repo: ## NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite"] [DESCRIPTION=] Create the app's GitHub repository from a template; wait for its first image
-	@[[ -n "$(NAME)" ]] || { echo "Usage: make app-repo NAME=<app> [STACK=typescript]" >&2; exit 2; }
-	@DRY_RUN=$(DRY_RUN) STACK="$(STACK)" ANSWERS="$(ANSWERS)" DESCRIPTION="$(DESCRIPTION)" $(SWHURL) app-repo $(NAME)
-
-.PHONY: app-hooks
-app-hooks: ## Create or repoint the image webhook on every auto-deploy app's repository (idempotent; DRY_RUN=true)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) app-hooks
-
-.PHONY: app-status app-logs app-reconcile app-check
-app-status app-logs app-reconcile app-check: ## APP=<app> ENV=<env> Operate one app instance
-	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make $@ APP=<app> ENV=<staging|prod>" >&2; exit 2; }
-	@$(SWHURL) app $(@:app-%=%) $(APP) $(ENV)
-
-.PHONY: console-image
-console-image: ## Pin platform/console to the image published for this commit (Git edit)
-	$(SWHURL) console-image
-
-.PHONY: console-dev
-console-dev: ## Web console on http://127.0.0.1:8080 as a fixed dev identity (needs uv; PORT=)
-	PYTHONPATH=$(CURDIR)/tools uv run --frozen python -m swhurl console --dev --port $(or $(PORT),8080)
-
-# Settings -----------------------------------------------------------------------
-
-.PHONY: platform-certs-staging platform-certs-prod
-platform-certs-staging platform-certs-prod: ## Set CERT_ISSUER in platform-settings (Git edit only; commit + push, then flux-reconcile)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) platform-certs $(@:platform-certs-%=letsencrypt-%)
-
-# Lifecycle, backup and recovery -------------------------------------------------
-
-.PHONY: suspend resume destroy-data
-suspend resume destroy-data: ## TARGET=... [CONFIRM=...] Suspend/resume a unit or release; destroy released data
-	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) lifecycle $@ "$(TARGET)"
-
-.PHONY: clickstack-bootstrap
-clickstack-bootstrap: ## Live: register the ClickStack admin and set the team ingestion key from SOPS (idempotent)
-	@DRY_RUN=$(DRY_RUN) TIMEOUT_SECS=$(TIMEOUT_SECS) $(SWHURL) clickstack-bootstrap
-
-.PHONY: clickstack-dashboards
-clickstack-dashboards: ## Live: a ClickStack dashboard per app in Git (create, update; delete removed apps' ones). DRY_RUN=true lists changes
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-dashboards
-
-.PHONY: clickstack-notify-webhook
-clickstack-notify-webhook: ## Live: create/update the ClickStack webhook that hands every app's default alerts to the notify service (DRY_RUN=true previews)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-notify-webhook
-
-.PHONY: clickstack-ntfy-webhook
-clickstack-ntfy-webhook: ## Live: create/update ClickStack's reusable webhook to the platform ntfy topic (DRY_RUN=true previews)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) clickstack-ntfy-webhook
-
-.PHONY: backup-mongodb
-backup-mongodb: ## Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-mongodb
-
-.PHONY: backup-sqlite
-backup-sqlite: ## Encrypted backup of every app's SQLite database to BACKUP_DIR/sqlite and S3, then prune
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) backup-sqlite
-
-.PHONY: restore-sqlite
-restore-sqlite: ## APP= ENV= CONFIRM=<app>/<env> Restore an app's SQLite database from its newest backup (stops the app meanwhile)
-	@[[ -n "$(APP)" && -n "$(ENV)" ]] || { echo "Usage: make restore-sqlite APP=<app> ENV=<env> CONFIRM=<app>/<env>" >&2; exit 2; }
-	@DRY_RUN=$(DRY_RUN) CONFIRM="$(CONFIRM)" $(SWHURL) restore-sqlite $(APP) $(ENV)
-
-# Offline checks (CI runs `make check`) -------------------------------------------
-
 .PHONY: check
-check: ## All offline checks: the same as CI (run in parallel; each target's output is kept together)
+check:
 	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-templates check-otel check-lint
 
-.PHONY: check-repo
-check-repo: ## Render active Flux paths, schemas, SOPS structure, shell syntax, doc links
-	$(SWHURL) check-repo
-
 .PHONY: test
-test: ## Unit tests for the tooling, console, manifests and command safety (needs uv)
+test:
 	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py
 
-.PHONY: check-apps
-check-apps: ## Render every app instance and check the app contract
-	$(SWHURL) check-apps
-
-.PHONY: check-templates
-check-templates: ## Render every stack template combination; each swhurl.yaml must pass app-new and the app policy (needs network)
-	$(SWHURL_APPS) check-templates
-
-.PHONY: check-otel
-check-otel: ## Render the OTel collectors and validate their config with that exact otelcol-k8s release (warns on deprecated names)
-	$(SWHURL) check-otel
-
 .PHONY: check-lint
-check-lint: ## Lint the Python tooling and the bash that stays (needs uv)
+check-lint:
 	uvx ruff@0.16.9 check tools tests
 	uvx --from shellcheck-py==0.11.0.1 shellcheck -x $$(git ls-files --cached --others --exclude-standard '*.sh')
 
-.PHONY: check-config
-check-config: ## Decrypting units have Secrets, platform-settings has its keys
-	@$(SWHURL) check-config
+# Host timers (host/install-timer.sh) -------------------------------------------
 
-.PHONY: check-secrets
-check-secrets: ## Decrypt tracked Secrets locally; flag placeholders and double encoding (never prints values)
-	$(SWHURL) check-secrets
-
-# Live tests (throwaway resources, cleaned up) -----------------------------------
-
-.PHONY: live-test-lifecycle
-live-test-lifecycle: ## Prove suspend/uninstall/destroy-data/Orphan on a throwaway app
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-lifecycle
-
-.PHONY: live-test-reloader
-live-test-reloader: ## Prove Reloader restarts only opted-in workloads in watched namespaces
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-reloader
-
-.PHONY: live-test-app-template
-live-test-app-template: ## Deploy the generated app fixtures through Flux, check, remove
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-app-template
-
-.PHONY: live-test-restore-mongodb
-live-test-restore-mongodb: ## Restore the latest MongoDB backup into a throwaway namespace and check it
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-mongodb
-
-.PHONY: live-test-restore-sqlite
-live-test-restore-sqlite: ## Back up a throwaway app's SQLite database, change it, restore it and check it
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-restore-sqlite
-
-.PHONY: live-test-call-identity
-live-test-call-identity: ## Prove a callee with no API token can verify a caller's audience-bound token (SKIP_ROTATION=true)
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-call-identity
-
-.PHONY: live-test-network-policy
-live-test-network-policy: ## Prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes
-	@DRY_RUN=$(DRY_RUN) $(SWHURL) live-test-network-policy
-
-.PHONY: live-test-team-scenario
-live-test-team-scenario: ## CALLER= CALLEE= SUBSCRIBER= [ENV=staging] One request through a call and an event on three deployed apps, checked in ClickStack
-	@DRY_RUN=$(DRY_RUN) CALLER="$(CALLER)" CALLEE="$(CALLEE)" SUBSCRIBER="$(SUBSCRIBER)" ENV="$(ENV)" $(SWHURL) live-test-team-scenario
-
-# Host ---------------------------------------------------------------------------
-
-.PHONY: host-dns
-host-dns: ## Install or update the Route53 dynamic DNS timer (records in host/dns.env)
-	@./host/install-timer.sh dns $(if $(filter true,$(DRY_RUN)),--dry-run)
-
-.PHONY: host-backup
-host-backup: ## Install or update the daily backup-mongodb systemd timer (uploads to S3; needs sudo)
-	@./host/install-timer.sh backup $(if $(filter true,$(DRY_RUN)),--dry-run)
-
-.PHONY: host-backup-delete
-host-backup-delete: ## Remove the backup timer (backups are kept)
-	@./host/install-timer.sh backup --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
-
-.PHONY: host-heartbeat
-host-heartbeat: ## Install or update the five-minute notification heartbeat systemd timer (needs sudo)
-	@./host/install-timer.sh heartbeat $(if $(filter true,$(DRY_RUN)),--dry-run)
-
-.PHONY: host-heartbeat-delete
-host-heartbeat-delete: ## Remove the notification heartbeat timer
-	@./host/install-timer.sh heartbeat --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
-
-.PHONY: host-dns-delete
-host-dns-delete: ## Remove the dynamic DNS timer
-	@./host/install-timer.sh dns --delete $(if $(filter true,$(DRY_RUN)),--dry-run)
+TIMERS := host-dns host-backup host-heartbeat
+.PHONY: $(TIMERS) $(TIMERS:=-delete)
+$(TIMERS):
+	@./host/install-timer.sh $(@:host-%=%) $(if $(filter true,$(DRY_RUN)),--dry-run)
+$(TIMERS:=-delete):
+	@./host/install-timer.sh $(patsubst host-%-delete,%,$@) --delete $(if $(filter true,$(DRY_RUN)),--dry-run)

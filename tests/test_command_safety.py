@@ -15,7 +15,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, flux, platform
+from swhurl import ROOT, commands, flux, platform
 from swhurl.apps import calling, channels, contract
 
 KEY = 'fixture-private-ingestion-token'
@@ -181,10 +181,29 @@ elif 'secret' in argv:
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertFalse(self.calls.exists(), 'A refused destroy-data called a cluster tool')
 
-    def test_lifecycle_test_dry_run_never_calls_cluster_tools(self):
-        result = subprocess.run(['make', 'live-test-lifecycle', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_every_dry_run_that_plans_calls_no_cluster_tool(self):
+        """Every target whose DRY_RUN=true only prints a plan (commands.PLAN), so CI keeps no list of them."""
+        targets = [name for name, command in commands.TARGETS.items()
+                   if command.dry_run == commands.PLAN and not command.missing({})]
+        self.assertGreater(len(targets), 15)
+
+        def plan(target):
+            return subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT, capture_output=True, text=True,
+                                  env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')))
+
+        with ThreadPoolExecutor() as pool:
+            results = dict(zip(targets, pool.map(plan, targets), strict=True))
+        for target, result in results.items():
+            with self.subTest(target=target):
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(result.stdout.strip(), 'a plan says what would happen')
+        self.assertFalse(self.calls.exists(), 'A dry run that plans called a cluster tool')
+        self.assertFalse((self.bin / 'backups').exists(), 'A dry run that plans wrote files')
+
+    def test_a_missing_variable_stops_a_target_before_any_tool(self):
+        result = subprocess.run(['make', 'app-reconcile', 'APP=web'], cwd=ROOT, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('Usage: make app-reconcile APP=<app> ENV=<env>', result.stderr)
         self.assertFalse(self.calls.exists())
 
     def test_sqlite_restore_test_dry_run_never_calls_cluster_tools(self):
@@ -203,12 +222,6 @@ elif 'secret' in argv:
                 self.assertIn('CONFIRM=notes/staging', result.stderr)
                 self.assertFalse(self.calls.exists(), 'A refused restore-sqlite called a cluster tool')
 
-    def test_reloader_test_dry_run_never_calls_cluster_tools(self):
-        result = subprocess.run(['make', 'live-test-reloader', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(self.calls.exists())
-
     def test_install_stops_at_the_first_failing_step(self):
         result = subprocess.run(['make', 'install'], cwd=ROOT, env=dict(self.env, FLUX_FAIL='1'),
                                 capture_output=True, text=True)
@@ -217,7 +230,7 @@ elif 'secret' in argv:
         self.assertEqual(calls, ['flux'], 'verify-platform must not run after a failed reconcile')
 
     def test_install_plan_respects_skip_verify(self):
-        for extra, steps in (([], ['check-config', 'flux-reconcile', 'verify-platform']),
+        for extra, steps in (([], ['flux-reconcile', 'verify-platform']),
                              (['SKIP_VERIFY=1'], ['flux-reconcile'])):
             with self.subTest(args=extra):
                 result = subprocess.run(['make', '--no-print-directory', 'install', 'DRY_RUN=true', *extra], cwd=ROOT,

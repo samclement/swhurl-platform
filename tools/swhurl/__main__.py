@@ -1,94 +1,25 @@
 """``python3 -m swhurl <command> [args]``: one entry point for operator commands.
 
-Each command is a function ``(argv) -> int`` in a module. Modules are
-imported only when their command runs, so one broken command cannot stop the
-others. The Makefile calls these; operators normally use ``make``.
+The commands are stated once, in :mod:`swhurl.commands`. The Makefile calls
+these; operators normally use ``make``.
 """
 from __future__ import annotations
 
-import importlib
 import sys
 
-COMMANDS = {
-    # command: (module, function, summary)
-    'console-merge': ('swhurl.console.merge', 'main', 'CI: validate and merge an eligible console PR'),
-    'notifications-check': ('swhurl.notifications', 'main', 'Evaluate lifecycle/health notifications (--dry-run reads only)'),
-    'notify-serve': ('swhurl.notifications.service', 'main', 'Serve the notify service: accept messages about apps and deliver them to their team\'s channels'),
-    'notifications-heartbeat': ('swhurl.notifications.heartbeat', 'main',
-                                 'Alert if the notification checker is stale (host timer)'),
-    'make-help': ('swhurl.makehelp', 'main', 'List Makefile targets from their ## comments'),
-    'check-repo': ('swhurl.validate', 'main', 'Render active Flux paths, check schemas, SOPS, shell and doc links'),
-    'check-config': ('swhurl.validate', 'check_config', 'Check required Secret files and settings exist (no cluster)'),
-    'verify-platform': ('swhurl.verify', 'main', 'Run every live platform check (read-only)'),
-    'flux-install': ('swhurl.flux', 'install_main', 'Install or upgrade the Flux controllers with the settings in Git'),
-    'flux-wait': ('swhurl.flux', 'main', 'Wait for every Flux unit to apply the fetched Git revision (read-only)'),
-    'platform-certs': ('swhurl.settings', 'platform_certs', 'Set CERT_ISSUER in platform-settings (Git edit only)'),
-    'check-secrets': ('swhurl.secrets_check', 'main', 'Decrypt tracked Secrets in memory and flag problems'),
-    'app': ('swhurl.apps.ops', 'main', 'Operate one app instance: status, logs, reconcile, check'),
-    'app-new': ('swhurl.apps.new', 'main', 'Generate an app instance'),
-    'app-repo': ('swhurl.apps.repo', 'main', 'Create an app repository from a stack template; wait for its first image'),
-    'app-hooks': ('swhurl.apps.hooks', 'main', 'Create or repoint the image webhook on every auto-deploy app repository'),
-    'app-promote': ('swhurl.apps.edit', 'main_promote', 'Create production from staging or update its image (Git edit)'),
-    'app-scale': ('swhurl.apps.edit', 'main_scale', 'Change replicas or resources of an app instance (Git edit)'),
-    'app-expose': ('swhurl.apps.edit', 'main_expose', 'Change who can reach an app instance: private, signed-in or public (Git edit)'),
-    'app-alerts': ('swhurl.apps.edit', 'main_alerts', 'Change an app\'s default alerts in every environment: thresholds, or none (Git edit)'),
-    'app-team': ('swhurl.apps.edit', 'main_team', 'Move an app to a registered team; adds its quota and NetworkPolicy if missing (Git edit)'),
-    'platform-signing-keys': ('swhurl.apps.keys', 'main', 'Refresh the cluster\'s public token-signing keys in Git and in every web app (Git edit)'),
-    'team-add': ('swhurl.apps.teams', 'main_add', 'Register a team in apps/teams.yaml (Git edit)'),
-    'team-edit': ('swhurl.apps.teams', 'main_edit', 'Change a team\'s description, name or channels; a rename relabels its apps (Git edit)'),
-    'team-remove': ('swhurl.apps.teams', 'main_remove', 'Remove a team that owns no app, or move its apps to another first (Git edit)'),
-    'team-channel': ('swhurl.apps.teams', 'main_team_channel', 'Give a team its notification channel (address from standard input), replace its address or remove it (Git edit)'),
-    'channel-add': ('swhurl.apps.teams', 'main_channel_add', 'Add a notification channel as an encrypted Secret; the address comes from standard input (Git edit)'),
-    'channel-remove': ('swhurl.apps.teams', 'main_channel_remove', 'Remove a notification channel no team notifies (Git edit)'),
-    'app-calls': ('swhurl.apps.edit', 'main_calls', 'Change which apps an instance may call; updates the callees too (Git edit)'),
-    'app-events': ('swhurl.apps.edit', 'main_events', 'Set the events an instance publishes and receives; creates its NATS key the first time (Git edit)'),
-    'app-offers': ('swhurl.apps.edit', 'main_offers', "Read what an app offers (its API and event documents) from its repository at its image's commit (Git edit)"),
-    'app-sync': ('swhurl.apps.edit', 'main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, callers (Git edit)'),
-    'app-remove': ('swhurl.apps.edit', 'main_remove', 'Delete an app instance from Git; Flux uninstalls it on push'),
-    'check-otel': ('swhurl.otel', 'main', 'Validate each OTel collector config with the collector version it will run'),
-    'verify-logs': ('swhurl.logs', 'main', 'Inspect fresh log format coverage without printing log bodies'),
-    'check-apps': ('swhurl.apps.policy', 'main', 'Render app instances and check the app contract'),
-    'check-templates': ('swhurl.apps.templates_check', 'main', 'Render every stack template combination; its swhurl.yaml must pass app-new and the app policy'),
-    'lifecycle': ('swhurl.lifecycle', 'main', 'suspend | resume | destroy-data a Flux unit, release or volume'),
-    'live-test-lifecycle': ('swhurl.livetests.lifecycle', 'main', 'Live: prove suspend/uninstall/destroy-data/Orphan on a throwaway app'),
-    'live-test-reloader': ('swhurl.livetests.reloader', 'main', 'Live: prove Reloader restarts only opted-in workloads in watched namespaces'),
-    'live-test-app-template': ('swhurl.livetests.app_template', 'main', 'Live: deploy the generated app fixtures through Flux, check, remove'),
-    'live-test-call-identity': ('swhurl.livetests.call_identity', 'main', 'Live: prove a callee without an API token can verify a caller\'s audience-bound token'),
-    'live-test-network-policy': ('swhurl.livetests.network_policy', 'main', 'Live: prove a NetworkPolicy on app pods blocks other namespaces but not Traefik or probes'),
-    'live-test-team-scenario': ('swhurl.livetests.team_scenario', 'main', 'Live: one request through a call and an event on three deployed apps, checked in ClickStack'),
-    'clickstack-bootstrap': ('swhurl.clickstack', 'main', 'Live: register the ClickStack admin and set the team ingestion key from SOPS'),
-    'clickstack-dashboards': ('swhurl.dashboards', 'main', 'Live: create or update a ClickStack dashboard per app in Git; delete those of removed apps (--cluster: per app on the cluster)'),
-    'clickstack-notify-webhook': ('swhurl.clickstack_ntfy', 'main_notify', 'Live: keep the ClickStack webhook that hands app alerts to the notify service'),
-    'clickstack-ntfy-webhook': ('swhurl.clickstack_ntfy', 'main', 'Live: keep ClickStack\'s reusable webhook on the platform ntfy topic'),
-    'backup-mongodb': ('swhurl.recovery', 'backup_mongodb', 'Encrypted ClickStack MongoDB backup to BACKUP_DIR, then prune'),
-    'backup-sqlite': ('swhurl.sqlite_backup', 'backup_sqlite', 'Encrypted backup of every app SQLite database, then prune and copy to S3'),
-    'restore-sqlite': ('swhurl.sqlite_restore', 'main', 'Restore one app SQLite database from its backup (stops the app meanwhile)'),
-    'live-test-restore-sqlite': ('swhurl.livetests.restore_sqlite', 'main', 'Live: back up and restore a throwaway app SQLite database'),
-    'live-test-restore-mongodb': ('swhurl.recovery', 'restore_test_mongodb', 'Restore the latest backup into a throwaway namespace and check it'),
-    'console': ('swhurl.console.server', 'main', 'Serve the web console (--dev: loopback, fixed identity; needs uv run)'),
-    'console-image': ('swhurl.images', 'main', 'Pin the console HelmRelease to the image published for this checkout (Git edit)'),
-    'prune-backups': ('swhurl.recovery', 'prune_backups', 'Prune ClickStack MongoDB backups to the retention set'),
-}
-
-
-def usage() -> str:
-    width = max(map(len, COMMANDS))
-    lines = ['usage: python3 -m swhurl <command> [args]', '', 'commands:']
-    lines += [f'  {name:<{width}}  {summary}' for name, (_, _, summary) in COMMANDS.items()]
-    return '\n'.join(lines)
+from swhurl import commands
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if not argv or argv[0] in ('-h', '--help', 'help'):
-        print(usage())
+    if not argv or argv[0] in ('-h', '--help'):
+        print(commands.usage())
         return 0 if argv else 2
-    command, rest = argv[0], argv[1:]
-    if command not in COMMANDS:
-        print(f'unknown command: {command}\n\n{usage()}', file=sys.stderr)
+    command = commands.COMMANDS.get(argv[0])
+    if command is None or not command.run:
+        print(f'unknown command: {argv[0]}\n\n{commands.usage()}', file=sys.stderr)
         return 2
-    module_name, function, _ = COMMANDS[command]
-    return getattr(importlib.import_module(module_name), function)(rest)
+    return commands.call(command, argv[1:])
 
 
 if __name__ == '__main__':

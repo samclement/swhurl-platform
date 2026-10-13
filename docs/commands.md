@@ -1,19 +1,24 @@
 # Commands
 
-Every `make` target, grouped by task. **Cluster** means the target reads or changes the live cluster; **Git** means it edits files for you to commit; **GitHub** means it creates a repository there. `help` prints the same list from the `##` comment on each target in the Makefile; a test fails if a target is missing from this page. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting.
+Every `make` target, grouped by task. Each is stated once, in [`tools/swhurl/commands.py`](../tools/swhurl/commands.py): its variables, its help line, whether it takes `DRY_RUN=true` and what it touches. `make help` prints that list, a target refuses a missing variable with its usage line, and a test fails when a row here differs from it in name, variables, the † mark or the first word of **Touches**.
+
+**Touches:** **Local** is this checkout at most (some read the network); **Git** edits files for you to commit; **Cluster (read)** reads the live cluster; **Cluster** changes it; **Cluster (throwaway)** creates and removes labelled test resources; **GitHub** creates or changes a repository there; **Host** installs system units. Targets marked † accept `DRY_RUN=true` to print the plan (or run only read-only checks) without acting. Variables in `[]` are optional.
 
 ## Deploy and verify
 
 | Target | Does | Touches |
 | --- | --- | --- |
 | `flux-reconcile` | Fetch Git, reconcile the source layer and the stack, then wait until every unit is Ready at that revision, or at a newer one if a commit lands meanwhile (`swhurl flux-wait`: stops at the first unit that fails, skips suspended ones) | Cluster |
-| `install` † | `check-config`, `flux-reconcile`, `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
+| `install` † | `flux-reconcile`, then `verify-platform` (`SKIP_VERIFY=1` skips the checks) | Cluster |
 | `verify-platform` | Every live check of the platform, listed in [operations](operations.md#check-health); warns or fails, never prints a key | Cluster (read), S3 (list) |
+| `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
+| `notifications-heartbeat [ARGS=--dry-run]` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |
+| `verify-logs [MINUTES=15]` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES` is 1 to 1440 | Cluster (read) |
 | `clickstack-bootstrap` † | After a ClickStack install: register the admin from SOPS if no team exists, set the team ingestion key to `CLICKSTACK_INGESTION_KEY`; idempotent, never prints values ([services](services.md#clickstack-and-otel)) | Cluster |
-| `clickstack-dashboards` | A HyperDX dashboard per app in `apps/`: create, update to match Git, delete those of removed apps; `DRY_RUN=true` lists changes. The scheduled job does the same from the cluster's HelmReleases, so this is for a check or the cases it skips ([apps](apps.md#dashboards)) | Cluster |
+| `clickstack-dashboards` † | A HyperDX dashboard per app in `apps/`: create, update to match Git, delete those of removed apps; `DRY_RUN=true` lists changes. The scheduled job does the same from the cluster's HelmReleases, so this is for a check or the cases it skips ([apps](apps.md#dashboards)) | Cluster |
 | `clickstack-ntfy-webhook` † | Create or update the reusable [ClickStack ntfy webhook](services.md#clickstack-and-otel) from the live platform topic in `console/notification-ntfy`; `DRY_RUN=true` previews without writing. Run after rotating that topic | Cluster |
 | `clickstack-notify-webhook` † | Create or update the `swhurl notify` webhook in HyperDX, which hands every app's [default alerts](apps.md#alerts) to the [notify service](services.md#notify-service) with the secret from the live `notify/notify-alerts`; `DRY_RUN=true` previews without writing. Idempotent; run it once after bootstrap and again after changing that secret | Cluster |
-| `reconcile UNIT=<name>` | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
+| `reconcile UNIT=<name>` † | Fetch Git and reconcile one Flux unit, for example after changing its Secret | Cluster |
 | `flux-install` † | Install or upgrade the Flux controllers at `FLUX_VERSION` in `tools/swhurl/flux.py` with the patches in `clusters/home/flux-system/install`; refuses a different `flux` CLI; `DRY_RUN=true` prints the live diff | Cluster |
 | `flux-bootstrap` | Apply the root units and sources in `clusters/home/flux-system` (Flux must already be installed) | Cluster |
 
@@ -38,9 +43,9 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `platform-signing-keys` | Read the cluster's public token-signing keys and write them to `apps/signing-keys.json` and into every web app instance ([calling another app](apps.md#calling-another-app)). Needed only when the cluster's service-account key changes | Git edit (reads the cluster) |
 | `app-calls APP= ENV= ARGS="--add A,B"` or `"--remove C"` | Change which apps an instance may call. Writes the caller's address variable and token file, and the callee's allowed callers and NetworkPolicy, in one change ([calling another app](apps.md#calling-another-app)) | Git edit |
 | `app-events APP= ENV= ARGS="--add-subscribe APP.EVENT"`, `"--remove-subscribe …"`, `"--add-publish A"`, `"--remove-publish A"`, or `"--publish A,B --subscribe APP.EVENT"` | Change the events an instance publishes and the `<app>.<event>` pairs it receives: add or remove names as `app-calls` does, or replace a whole list (`""` clears it). The first time, it creates the instance's NATS key and encrypts its seed. Writes the stream and consumers, and regenerates the NATS user list ([events](apps.md#events)) | Git edit (needs `sops`) |
-| `app-offers APP= ENV=` or `ARGS="--all staging"` | Read what an app offers from its repository, at the commit its image was built from: the OpenAPI and AsyncAPI documents its `swhurl.yaml` names. Keeps them in `apps/<app>/<env>/offers/` and sets what the instance publishes from the AsyncAPI document ([what an app offers](apps.md#what-an-app-offers)). The Offers workflow runs it after every new staging image | Git edit (reads GitHub; needs `sops` the first time an app describes events) |
+| `app-offers [APP=] [ENV=]` or `[ARGS="--all staging"]` | Read what an app offers from its repository, at the commit its image was built from: the OpenAPI and AsyncAPI documents its `swhurl.yaml` names. Keeps them in `apps/<app>/<env>/offers/` and sets what the instance publishes from the AsyncAPI document ([what an app offers](apps.md#what-an-app-offers)). The Offers workflow runs it after every new staging image | Git edit (reads GitHub; needs `sops` the first time an app describes events) |
 | `app-sync` | Rewrite what the platform derives in every instance: its identity variables, the signing keys, each callee's allowed callers and NetworkPolicy, each instance's stream and consumers, and the NATS user list. Run it after `platform-signing-keys`; otherwise the other commands keep these in step | Git edit |
-| `app-promote APP=` | Create production from staging, or update its image; staging → production only; `ARGS="--expect-image=..."` guards the reviewed image ([promotion](apps.md#promote-to-production)) | Git |
+| `app-promote APP= [ARGS="--expect-image=..."]` | Create production from staging, or update its image; staging → production only; `--expect-image` guards the reviewed image ([promotion](apps.md#promote-to-production)) | Git |
 | `app-status APP= ENV=` | Its state (the console's verdict), whether Git is applied and the running image matches it (compared by digest), replicas, who can reach it, route, certificate, failing containers | Cluster (read) |
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
@@ -48,7 +53,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `app-scale APP= ENV= ARGS="..."` | Change `--replicas` (0 to 10), `--cpu`, `--memory` or `--memory-limit` | Git |
 | `app-remove APP= ENV=` | Delete the instance's files, its unit file and registration, and its Reloader namespace; warns when a retained volume will be kept | Git |
 | `console-image` | Pin `platform/console` and the [notify service](services.md#notify-service) to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run. The publish run does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |
-| `console-dev` | The [console](console.md) on `http://127.0.0.1:8080` (`PORT=`) as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub | Cluster (read) |
+| `console-dev [PORT=8080]` | The [console](console.md) on `http://127.0.0.1:8080` as a fixed dev identity. It uses your kubeconfig, so its buttons act with your rights, and opens real PRs if `GITHUB_TOKEN` is set. Needs `uv` | Cluster, GitHub |
 
 App creation/editing and template checks use `uv` with locked dependencies. App creation and edits fail if requested policy validation cannot run. Scale, expose and promote accept handwritten YAML; see [editing boundaries and formatting trade-offs](apps.md#operate-an-instance).
 
@@ -70,22 +75,19 @@ App creation/editing and template checks use `uv` with locked dependencies. App 
 
 ## Offline checks
 
-Verbs: `check-*` never touch the cluster, `verify-*` read the live cluster, `live-test-*` create and remove throwaway resources on it.
+Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it (both tested against the Touches column); `live-test-*` act on the live cluster, on throwaway resources except where the row says otherwise.
 
 | Target | Does | Touches |
 | --- | --- | --- |
 | `check` | `check-repo`, `test`, `check-apps`, `check-templates`, `check-otel`, `check-lint` in parallel: everything CI runs. Run before every push | Local |
-| `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links, and compare the [Flux units table](architecture.md#flux-units) with the units in Git | Local |
-| `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules (runs in `uv`'s locked environment, test classes in parallel) | Local |
+| `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links, check that every unit that decrypts has a Secret file and that `BASE_DOMAIN` and `CERT_ISSUER` are set, and compare the [Flux units table](architecture.md#flux-units) with the units in Git | Local |
+| `test` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules, and every dry run that plans without touching anything (runs in `uv`'s locked environment, test classes in parallel) | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy | Local |
 | `check-templates` | Render every combination of each stack template's questions; each `swhurl.yaml` must pass `app-new` and the app policy in staging and prod ([apps](apps.md#stacks-and-features)) | Local (reads GitHub; needs `sops` for a template that declares events) |
 | `check-otel` | Render both collectors and validate with the exact `otelcol-k8s` release and feature gates (binary cached and SHA-256 checked); run log fixtures through their actual processors and container framing; warn on deprecated component names | Local |
-| `notifications-check` | Preview [lifecycle and health notifications](services.md#alerts) from the live cluster without posting or changing incident state | Cluster (read) |
-| `notifications-heartbeat` | Check `console-notifications`; by default alert on stale/missing/suspended status, remind hourly and send recovery when it succeeds again. Pass `ARGS=--dry-run` to preview without posting or saving state | Cluster (read); ntfy and local state on transitions |
-| `verify-logs` | Summarize fresh ClickStack log parser, severity, trace and original-line coverage per running container; report quiet containers separately, without printing bodies. `MINUTES=15` (1–1440) | Live, read-only |
 | `check-lint` | Ruff on the Python tooling and ShellCheck on the remaining bash (needs `uv`) | Local |
-| `check-config` | The required Secret files and the `BASE_DOMAIN` and `CERT_ISSUER` settings exist | Local |
 | `check-secrets` | Decrypt every tracked Secret in memory; fail on empty or `REPLACE_ME`, warn on probable double encoding. Needs the age key, so CI cannot run it | Local |
+| `help` | List every target with its variables, the † mark and what it touches | Local |
 
 ## Live tests
 

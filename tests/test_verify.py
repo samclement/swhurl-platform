@@ -1,4 +1,4 @@
-"""verify-platform and check-config: every branch, offline, against the fake cluster (fakecluster.py)."""
+"""verify-platform and check-repo's required Secrets and settings: every branch, offline, against the fake cluster (fakecluster.py)."""
 import datetime as dt
 import io
 import json
@@ -470,9 +470,11 @@ class VerifyConfigTests(unittest.TestCase):
 
     def run_config(self, root=None):
         out = io.StringIO()
-        with mock.patch('sys.stdout', out):
-            code = validate.check_config([], **({'root': root} if root else {}))
-        return code, out.getvalue()
+        try:
+            validate.check_config(Report(out), **({'root': root} if root else {}))
+        except validate.ValidationError as error:
+            return 1, str(error)
+        return 0, out.getvalue()
 
     def test_passes_on_this_repo(self):
         self.assertEqual(self.run_config()[0], 0)

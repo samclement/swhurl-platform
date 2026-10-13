@@ -71,18 +71,6 @@ data:
               subscribe:
                 allow:
                 - _INBOX.staging.swhurl-try-13.>
-          - nkey: UBBXBKSNIQOYZA4KZUUJGBLIYYVMIEEFQZSNQAFBZIJOK2HL6KGWUTNE
-            permissions:
-              publish:
-                allow:
-                - staging.test-5.>
-                - $JS.API.CONSUMER.INFO.staging-demo-orders.test-5_created
-                - $JS.API.CONSUMER.MSG.NEXT.staging-demo-orders.test-5_created
-                - $JS.ACK.staging-demo-orders.test-5_created.>
-                - $JS.API.STREAM.INFO.staging-demo-orders
-              subscribe:
-                allow:
-                - _INBOX.staging.test-5.>
           - nkey: UDFZTKCTUPLTYYXTE66IHVRDCRYTS5MVGF7JTMDSBHQ3GH6ETX4WMIAV
             permissions:
               publish:

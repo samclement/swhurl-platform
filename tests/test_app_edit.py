@@ -511,7 +511,7 @@ components:
         self.with_units()
         self.built_from_a_repository()
         runner = self.sops()
-        manifest = 'version: 1\nkind: web\nprovides: {api: /openapi.json, apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {api: /openapi.json, apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
         api = '{"openapi": "3.1.0", "info": {"title": "orders", "version": "0.1.0"}, "paths": {"/": {}}}\n'
         opener, seen = self.repository({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': self.ASYNCAPI})
         changed, _ = self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
@@ -547,7 +547,7 @@ components:
         self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
 
         # An app that stops describing itself keeps what it publishes; only the documents go.
-        opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\n'})
+        opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\nhealthPath: /healthz\n'})
         self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
         self.assertNotIn('annotations', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'])
@@ -558,7 +558,7 @@ components:
         self.built_from_a_repository()
         instance = self.root / 'apps/orders/staging'
         before = (instance / 'helmrelease.yaml').read_text()
-        manifest = 'version: 1\nkind: web\nprovides: {apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
         api = 'openapi: 3.0.1\npaths: {}\n'
         cases = (({}, 'has no swhurl.yaml'),
                  ({'swhurl.yaml': manifest, 'openapi.json': api}, r'names asyncapi.yaml \(provides.eventsFile\), which samclement/orders@abc1234 does not have'),
@@ -567,7 +567,8 @@ components:
                  ({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': self.ASYNCAPI.replace('address: paid', 'address: Paid.Up')},
                   'an event is a lowercase name'),
                  ({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': '{asyncapi: 3.0.0, channels: [oops'}, 'not valid YAML'),
-                 ({'swhurl.yaml': 'provides: {apiFile: ../../etc/passwd}'}, 'is not a file in the repository'))
+                 ({'swhurl.yaml': manifest.replace('openapi.json', '../../etc/passwd')}, 'provides.apiFile is a file in the repository'),
+                 ({'swhurl.yaml': 'version: 1\nkind: web\n'}, 'samclement/orders@abc1234:swhurl.yaml: healthPath is required'))
         for files, message in cases:
             with self.subTest(message=message), self.assertRaisesRegex(edit.EditError, message):
                 edit.set_offers(self.root, 'orders', 'staging', opener=self.repository(files)[0], runner=self.sops())
@@ -588,7 +589,7 @@ components:
         def opener(request):
             if '/repos/samclement/billing/' in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 500, 'Server Error', {}, None)
-            return b'version: 1\nkind: web\n'
+            return b'version: 1\nkind: web\nhealthPath: /healthz\n'
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
             code = edit.main_offers(['--all', 'staging', '--root', str(self.root)], opener=opener)
         self.assertEqual(code, 1)
@@ -601,7 +602,7 @@ components:
         self.with_units()
         self.built_from_a_repository()
         runner = self.sops()
-        manifest = 'version: 1\nkind: web\nprovides: {eventsFile: asyncapi.yaml}\n'
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
         self.quiet(edit.set_offers, self.root, 'orders', 'staging',
                    opener=self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': self.ASYNCAPI})[0], runner=runner)
         staging = self.root / 'apps/orders/staging/helmrelease.yaml'

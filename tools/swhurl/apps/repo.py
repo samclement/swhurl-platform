@@ -96,18 +96,6 @@ def template_questions(stack: str, opener: Opener | None = None) -> list[Questio
     return parse_questions(body.decode())
 
 
-def app_stack(repository: str, opener: Opener | None = None) -> str:
-    """The stack an app was made from (``typescript``, ``kotlin``), read from the ``swhurl.yaml`` at the
-    head of its own repository (anonymously; app repositories are public). Empty when it names none."""
-    url = f'https://raw.githubusercontent.com/{repository}/HEAD/swhurl.yaml'
-    try:
-        _, body = (opener or _open)(urllib.request.Request(url, headers={'User-Agent': 'swhurl-app-repo'}))
-        doc = yaml.safe_load(body.decode()) or {}
-    except (urllib.error.URLError, OSError, ValueError, yaml.YAMLError) as error:
-        raise RepoError(f'could not read {repository}/swhurl.yaml: {error}') from None
-    return str(doc.get('stack', '')) if isinstance(doc, dict) else ''
-
-
 def check_answers(answers: dict[str, str], questions: list[Question]) -> None:
     by_name = {q.name: q for q in questions}
     for key, value in answers.items():

@@ -166,6 +166,24 @@ def api(text: str, name: str) -> Api:
 
 
 @dataclass(frozen=True)
+class Source:
+    """offers/source.yaml: where an instance's documents came from and what their files are called."""
+    repository: str
+    commit: str
+    api: str = ''  # file name in the directory, '' without an API description
+    events: str = ''
+
+    @classmethod
+    def parse(cls, text: str) -> Source:
+        doc = _document(text, f'{OFFERS_DIR}/{SOURCE_FILE}')
+        return cls(*(str(doc.get(key) or '') for key in ('repository', 'commit', 'api', 'events')))
+
+    def document(self) -> dict:
+        """What the file holds: a document without one is not named."""
+        return {key: value for key, value in vars(self).items() if value}
+
+
+@dataclass(frozen=True)
 class Offers:
     """What an instance keeps in its offers directory."""
     repository: str
@@ -180,15 +198,15 @@ def read(instance: Path) -> Offers | None:
     folder = instance / OFFERS_DIR
     if not (folder / SOURCE_FILE).is_file():
         return None
-    source = _document((folder / SOURCE_FILE).read_text(), f'{OFFERS_DIR}/{SOURCE_FILE}')
-    api, event_file = str(source.get('api') or ''), str(source.get('events') or '')
+    source = Source.parse((folder / SOURCE_FILE).read_text())
+    api, event_file = source.api, source.events
     for name in filter(None, (api, event_file)):
         if '/' in name or not (folder / name).is_file():
             raise OfferError(f'{OFFERS_DIR}/{SOURCE_FILE} names {name}, which is not in {OFFERS_DIR}/')
     if api:
         check_api((folder / api).read_text(), f'{OFFERS_DIR}/{api}')
     described = tuple(events((folder / event_file).read_text(), f'{OFFERS_DIR}/{event_file}')) if event_file else None
-    return Offers(str(source.get('repository') or ''), str(source.get('commit') or ''), api, event_file, described)
+    return Offers(source.repository, source.commit, api, event_file, described)
 
 
 def problems(instance: Path, published: list[str], annotation: str = '') -> list[str]:

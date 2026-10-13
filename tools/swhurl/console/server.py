@@ -35,7 +35,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from swhurl import ROOT, dashboards
-from swhurl.apps import contract, new, ops, repo
+from swhurl.apps import contract, declaration, new, ops, repo
 from swhurl.apps import promotion as gate
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import verdict
@@ -459,7 +459,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
     stacks_cache: dict[str, tuple[float, str]] = {}
 
     def stacks(apps: list[str]) -> dict[str, str]:
-        """Each app's stack (its language), from its own repository: kept for an hour, since an app does
+        """Each app's stack (its language), from the swhurl.yaml on its repository's default branch: kept for an hour, since an app does
         not change language, and a failure for 5 minutes, after which the rest are not asked for either
         (GitHub being away must not make the page wait once per app)."""
         reachable = True
@@ -470,9 +470,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             found = ''
             if reachable:
                 try:
-                    found = repo.app_stack(f'{contract.APP_OWNER}/{app}', **({'opener': repo_opener} if repo_opener else {}))
-                except repo.RepoError:
+                    opener = {'opener': lambda request: repo_opener(request)[1]} if repo_opener else {}
+                    declared = declaration.read(f'{contract.APP_OWNER}/{app}', **opener)
+                    found = declared.stack if declared else ''
+                except declaration.Unreachable:
                     reachable = False
+                except declaration.DeclarationError:
+                    pass  # a file the platform would refuse names no stack
             stacks_cache[app] = (time.monotonic(), found)
         return {app: stacks_cache[app][1] for app in apps}
 

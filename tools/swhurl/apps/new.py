@@ -25,15 +25,12 @@ import os
 import re
 import shlex
 import sys
-import urllib.error
-import urllib.request
-from collections.abc import Callable
 from pathlib import Path
 
 import yaml
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import policy
+from swhurl.apps import declaration, policy
 from swhurl.apps.calling import (
     API_VARIABLE,
     NOTIFY,
@@ -62,7 +59,6 @@ from swhurl.apps.contract import (
     FAIL_AFTER,
     IMAGE_AUTOMATION_FILE,
     MANAGED,
-    MANIFEST_FILE,
     NETWORK_POLICY_FILE,
     QUOTA_FILE,
     RELOAD,
@@ -71,12 +67,10 @@ from swhurl.apps.contract import (
     STARTUP_PERIOD,
     STARTUP_SECONDS,
     TEAM,
-    ManifestError,
     add_image_markers,
     default_host,
     image_policy_name,
     in_cookie_domain,
-    manifest_defaults,
     network_policy,
     otlp_variables,
     resource_quota,
@@ -444,41 +438,20 @@ def watch_namespace(root: Path, namespace: str) -> None:
 
 
 REPO_RE = re.compile(r'^(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:@(?P<ref>[A-Za-z0-9_./-]+))?$')
-Opener = Callable[[urllib.request.Request], bytes]
 
 
-def _open(request: urllib.request.Request) -> bytes:
-    with urllib.request.urlopen(request, timeout=30) as reply:  # noqa: S310 (https only, built below)
-        return reply.read()
-
-
-def fetch_manifest(spec: str, *, token: str = '', opener: Opener = _open,
-                   api: str = 'https://api.github.com') -> str:
-    """swhurl.yaml from ``OWNER/REPO[@REF]`` on GitHub (default branch without a ref)."""
+def declared(spec: str, *, token: str = '', opener: declaration.Opener = declaration._open) -> dict:
+    """app-new's defaults from the swhurl.yaml of ``OWNER/REPO[@REF]`` on GitHub (default branch without a ref)."""
     match = REPO_RE.match(spec)
     if not match:
         raise GenerationError(f'--from-repo must be OWNER/REPO or OWNER/REPO@REF: {spec}')
-    url = f'{api}/repos/{match["repo"]}/contents/{MANIFEST_FILE}' + (f'?ref={match["ref"]}' if match['ref'] else '')
-    headers = {'Accept': 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28',
-               'User-Agent': 'swhurl-app-new'}
-    if token:
-        headers['Authorization'] = f'Bearer {token}'
     try:
-        return opener(urllib.request.Request(url, headers=headers)).decode()
-    except urllib.error.HTTPError as error:
-        hint = f'{spec} has no {MANIFEST_FILE}, or is private (set GITHUB_TOKEN)' if error.code == 404 else error.reason
-        raise GenerationError(f'could not read {MANIFEST_FILE} from {spec}: {error.code} {hint}') from None
-    except urllib.error.URLError as error:
-        raise GenerationError(f'could not reach GitHub for {spec}: {error.reason}') from None
-
-
-def load_manifest(text: str, source: str) -> dict:
-    try:
-        return manifest_defaults(yaml.safe_load(text), source)
-    except yaml.YAMLError as error:
-        raise GenerationError(f'{source}: not valid YAML: {error}') from None
-    except ManifestError as error:
+        found = declaration.read(match['repo'], match['ref'] or '', token=token, opener=opener)
+    except declaration.DeclarationError as error:
         raise GenerationError(str(error)) from None
+    if found is None:
+        raise GenerationError(f'could not read {declaration.FILE} from {spec}: {spec} has no {declaration.FILE}, or is private (set GITHUB_TOKEN)')
+    return found.seed
 
 
 def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
@@ -487,9 +460,9 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('name')
     source = p.add_mutually_exclusive_group()
     source.add_argument('--from-repo', metavar='OWNER/REPO[@REF]',
-                        help=f"the app's repository: defaults from its {MANIFEST_FILE} on GitHub")
+                        help=f"the app's repository: defaults from its {declaration.FILE} on GitHub")
     source.add_argument('--manifest', type=Path, metavar='PATH',
-                        help=f'defaults from a local {MANIFEST_FILE} (check-templates and tests)')
+                        help=f'defaults from a local {declaration.FILE} (check-templates and tests)')
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
@@ -540,7 +513,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     return p
 
 
-def parse_args(argv=None, opener: Opener = _open) -> argparse.Namespace:
+def parse_args(argv=None, opener: declaration.Opener = declaration._open) -> argparse.Namespace:
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument('--from-repo')
     pre.add_argument('--manifest', type=Path)
@@ -549,14 +522,14 @@ def parse_args(argv=None, opener: Opener = _open) -> argparse.Namespace:
     if known.from_repo and known.manifest:
         raise GenerationError('--from-repo and --manifest cannot be combined')
     if known.from_repo:
-        text = fetch_manifest(known.from_repo, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
-        defaults = load_manifest(text, f'{known.from_repo}:{MANIFEST_FILE}')
+        defaults = declared(known.from_repo, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
     elif known.manifest:
         try:
-            text = known.manifest.read_text()
+            defaults = declaration.parse(known.manifest.read_text(), str(known.manifest)).seed
         except OSError as error:
             raise GenerationError(f'cannot read {known.manifest}: {error.strerror}') from None
-        defaults = load_manifest(text, str(known.manifest))
+        except declaration.DeclarationError as error:
+            raise GenerationError(str(error)) from None
     return parser(defaults).parse_args(argv)
 
 
@@ -569,12 +542,12 @@ def platform_origin_problem(args) -> str | None:
     if parse_image(args.image)['repository'] != f'ghcr.io/{repository}':
         return f'the image must be ghcr.io/{repository}, which the app repository publishes; {create}'
     if not auto_deploys(args):
-        return (f'{repository} must deploy to staging automatically: set autoDeploy: true in its {MANIFEST_FILE} '
+        return (f'{repository} must deploy to staging automatically: set autoDeploy: true in its {declaration.FILE} '
                 '(the stack templates do)')
     return None
 
 
-def main(argv=None, opener: Opener = _open) -> int:
+def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
     try:
         args = parse_args(argv, opener)
     except GenerationError as error:

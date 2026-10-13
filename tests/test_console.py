@@ -93,7 +93,7 @@ def fake(units=UNITS, releases=RELEASES, **extra):
 
 
 def client(runner, **kwargs):
-    kwargs.setdefault('repo_opener', lambda request: ({}, b'stack: typescript\n'))  # no test here reaches GitHub
+    kwargs.setdefault('repo_opener', lambda request: ({}, b'version: 1\nkind: worker\nstack: typescript\n'))  # no test here reaches GitHub
     return TestClient(server.create_app(runner, **kwargs))
 
 

@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import events, helmrelease, nkeys, offers, ops, promotion
+from swhurl.apps import declaration, events, helmrelease, nkeys, offers, ops, promotion
 from swhurl.apps.calling import (
     API_VARIABLE,
     callee_address,
@@ -35,7 +35,6 @@ from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     EXPOSURE,
     EXPOSURES,
-    MANIFEST_FILE,
     TEAM,
     default_host,
     in_cookie_domain,
@@ -193,9 +192,8 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
     release = instance / 'helmrelease.yaml'
     before = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
     if files:
-        source = {'repository': repository, 'commit': commit}
-        source |= {key: name for key, name in (('api', next((n for n in files if n != offers.EVENTS_NAME), '')),
-                                               ('events', offers.EVENTS_NAME if offers.EVENTS_NAME in files else '')) if name}
+        source = offers.Source(repository, commit, next((n for n in files if n != offers.EVENTS_NAME), ''),
+                               offers.EVENTS_NAME if offers.EVENTS_NAME in files else '').document()
         wanted = {offers.SOURCE_FILE: '# Read from the app\'s repository by make app-offers: do not edit.\n' + dump([source]), **files}
         folder.mkdir(exist_ok=True)
         for path in folder.iterdir():
@@ -239,7 +237,7 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
 def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
                runner: Runner | None = None) -> bool:
     """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
-    documents its swhurl.yaml names (provides.apiFile, provides.eventsFile). Returns whether anything changed."""
+    documents its swhurl.yaml names (provides, the file's live field: declaration.py). Returns whether anything changed."""
     instance = instance_dir(root, app, env)
     image = helmrelease.image(YamlFile(instance / 'helmrelease.yaml').data)
     repository = str(image.get('repository', ''))
@@ -248,28 +246,25 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
     repository = repository.removeprefix('ghcr.io/')
     try:
         commit = offers.commit_of(str(image.get('tag', '')))
-        manifest = offers.fetch(repository, commit, MANIFEST_FILE, token=token, opener=opener)
-        if manifest is None:
-            raise offers.OfferError(f'{repository}@{commit} has no {MANIFEST_FILE} (or the repository is private: set GITHUB_TOKEN)')
-        provides = (offers._document(manifest, MANIFEST_FILE).get('provides') or {})
+        declared = declaration.read(repository, commit, token=token, opener=opener)
+        if declared is None:
+            raise offers.OfferError(f'{repository}@{commit} has no {declaration.FILE} (or the repository is private: set GITHUB_TOKEN)')
         files, described = {}, None
-        for key, kind in (('apiFile', 'api'), ('eventsFile', 'events')):
-            path = provides.get(key)
+        for key, kind, path in (('apiFile', 'api', declared.api_file), ('eventsFile', 'events', declared.events_file)):
             if not path:
                 continue
             text = offers.fetch(repository, commit, str(path), token=token, opener=opener)
             if text is None:
-                raise offers.OfferError(f'{MANIFEST_FILE} names {path} (provides.{key}), which {repository}@{commit} does not have')
+                raise offers.OfferError(f'{declaration.FILE} names {path} (provides.{key}), which {repository}@{commit} does not have')
             if kind == 'api':
                 offers.check_api(text, str(path))
                 files['openapi' + (Path(str(path)).suffix or '.yaml')] = text
             else:
                 described = offers.events(text, str(path))
                 files[offers.EVENTS_NAME] = text
-    except offers.OfferError as error:
+    except (offers.OfferError, declaration.DeclarationError) as error:
         raise EditError(str(error)) from None
-    served = provides.get('api')
-    served = served if isinstance(served, str) and re.fullmatch(r'/[A-Za-z0-9_./-]*', served) else ''
+    served = declared.api_path if re.fullmatch(r'/[A-Za-z0-9_./-]*', declared.api_path) else ''
     changed = write_offers(root, app, env, repository, commit, files, described, api_path=served, runner=runner)
     what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n != offers.EVENTS_NAME), ''),
                                    described is not None and f'events: {", ".join(e.name for e in described) or "none"}']))

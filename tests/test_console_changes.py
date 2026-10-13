@@ -1070,15 +1070,14 @@ class TeamsPageTests(unittest.TestCase):
             asked.append(request.full_url)
             if 'ghost' in request.full_url:
                 raise OSError('GitHub is away')
-            return {}, b'version: 1\nstack: kotlin\n'
+            return {}, b'version: 1\nkind: worker\nstack: kotlin\n'
         c = self.client(repo_opener=opener)
         page = c.get('/teams', headers=WHO).text
-        self.assertEqual(asked[0], 'https://raw.githubusercontent.com/samclement/billing/HEAD/swhurl.yaml')
+        self.assertEqual(asked[0], 'https://api.github.com/repos/samclement/billing/contents/swhurl.yaml')
         self.assertEqual(page.count('<span class="pill">Kotlin</span>'), 1, 'billing; orders is not asked for once GitHub fails')
         self.assertEqual(len(asked), 2, 'after one failure the rest are not asked for: the page must not wait once per app')
         c.get('/teams', headers=WHO)
         self.assertEqual(len(asked), 2, 'kept: an app does not change language')
-        self.assertEqual(repo.app_stack('x/y', lambda request: ({}, b'')), '', 'a repository that names no stack')
 
     def test_changes_run_the_clones_team_commands_and_wait_for_review(self):
         cases = (

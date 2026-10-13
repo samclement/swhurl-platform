@@ -63,8 +63,8 @@ class Documents:
             source_text = self.reader(f'{folder}/{offers.SOURCE_FILE}')
             if source_text is None:
                 return Described(problem=f'{folder}/ is not in Git yet'), False
-            source = offers._document(source_text, offers.SOURCE_FILE)
-            api_name, events_name = str(source.get('api') or ''), str(source.get('events') or '')
+            source = offers.Source.parse(source_text)
+            api_name, events_name = source.api, source.events
             api_text = self.reader(f'{folder}/{api_name}') if api_name else None
             events_text = self.reader(f'{folder}/{events_name}') if events_name else None
             found = Described(offers.api(api_text, api_name) if api_text else None,
@@ -73,7 +73,7 @@ class Documents:
             return Described(problem=str(error)), False
         except Exception as error:  # noqa: BLE001 (the page renders without descriptions whatever the reader raised)
             return Described(problem=f'could not be read from Git: {type(error).__name__}'), False
-        return found, str(source.get('commit') or '') == commit
+        return found, source.commit == commit
 
 
 @dataclass(frozen=True)

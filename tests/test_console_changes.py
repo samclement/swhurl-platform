@@ -299,6 +299,7 @@ class FormTests(unittest.TestCase):
                          (changes.Command('app-calls', ('hello', 'staging', '--add=orders,billing')),
                           changes.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created', '--add-publish=seen'))))
         self.assertTrue(change.touches_others, 'a call or a subscription changes the other app too')
+        self.assertEqual(change.manual_merge_reason, 'also changes existing app settings for billing, orders')
         publishing = changes.Change.to_instance('connect', hello, {'publish': 'seen, gone'})
         self.assertEqual(publishing.commands, (changes.Command('app-events', ('hello', 'staging', '--add-publish=seen,gone')),))
         self.assertFalse(publishing.touches_others)
@@ -408,7 +409,9 @@ class OpenPrTests(unittest.TestCase):
                         change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
         self.assertEqual(api.sent('POST /issues/7/labels'), [])
         self.assertNotIn('Merges itself', api.sent('POST /pulls')[0]['body'])
-        self.assertIn('Not merging automatically: set the Secret values on the branch first, then merge it yourself', job.lines)
+        self.assertIn('Manual merge required: this pull request needs Secret values to be set on the pull request branch.',
+                      api.sent('POST /pulls')[0]['body'])
+        self.assertTrue(any(line.startswith('Merge plan: Manual merge required') for line in job.lines))
 
         def with_events_key(tree):  # an app that publishes or subscribes: its NATS key is generated whole
             (tree / 'apps/x/prod').mkdir(parents=True)
@@ -417,8 +420,8 @@ class OpenPrTests(unittest.TestCase):
         changes.open_pr(runner, api.github, job, slug='promote-x-staging', title='t', body='b', auto_merge=True,
                         change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
         self.assertEqual(api.sent('POST /issues/7/labels'), [], 'still reviewed by a person')
-        self.assertIn("Not merging automatically: it adds the app's events key, generated and encrypted here with nothing to set; "
-                      'review it, then merge it yourself', job.lines)
+        self.assertIn("Manual merge required: this pull request adds the app's generated encrypted events key.",
+                      api.sent('POST /pulls')[0]['body'])
         self.assertFalse(any('set the Secret values' in line for line in job.lines))
 
         api = FakeGitHub(fail={'POST /issues/7/labels': (403, 'Resource not accessible')})
@@ -427,6 +430,22 @@ class OpenPrTests(unittest.TestCase):
                               change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
         self.assertEqual(url, 'https://github.com/x/pull/7', 'a failed label leaves the PR for a person')
         self.assertTrue(any(line.startswith('Could not label it auto-merge') for line in job.lines))
+
+    def test_manual_merge_plan_names_existing_apps_changed_by_new_app_connections(self):
+        def connect_to_existing_app(tree):
+            path = tree / 'apps/demo-orders/staging/review-for-test.yaml'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('needs-review: true\n')
+
+        api, job = FakeGitHub(), actions.Job(1, 'new app', 'test-5/staging', 'sam@swhurl.com', None)
+        changes.open_pr(tree_fake(), api.github, job, slug='new-test-5-staging',
+                        title='apps: add test-5/staging', body='generated app', auto_merge=False,
+                        manual_merge_reason='also changes existing app settings for demo-orders',
+                        change=connect_to_existing_app)
+        body = api.sent('POST /pulls')[0]['body']
+        self.assertIn('**Merge plan:** Manual merge required:', body)
+        self.assertIn('also changes existing app settings for demo-orders', body)
+        self.assertTrue(any('also changes existing app settings for demo-orders' in line for line in job.lines))
 
     def test_commits_exactly_the_changed_files_on_a_console_branch(self):
         def edit(tree):
@@ -453,7 +472,8 @@ class OpenPrTests(unittest.TestCase):
         (pr,) = api.sent('POST /pulls')
         self.assertEqual((pr['head'], pr['base'], pr['title']),
                          ('console/new-weather-api-staging-abc1234', 'main', '[console] apps: add weather-api staging'))
-        self.assertEqual(job.lines[2:6], ['D README.md', 'M apps/hello/staging/helmrelease.yaml', 'A apps/x/run.sh',
+        self.assertEqual(job.lines[2:7], ['D README.md', 'M apps/hello/staging/helmrelease.yaml', 'A apps/x/run.sh',
+                                          'Merge plan: Manual merge required: this pull request needs manual review. Review the changes, then merge it yourself.',
                                           'Committed def5678 [console] apps: add weather-api staging'])
         self.assertIn('Opened https://github.com/x/pull/7', job.lines)
 
@@ -613,6 +633,10 @@ class NewAppRouteTests(unittest.TestCase):
         self.assertIn(f'\n\nGenerated by the console with:\n\n    make app-new NAME=weather-api ARGS="--from-repo={chosen.request.repo} ', change.body)
         calling = changes.NewApp.from_form({**NEW, 'calls': 'orders'}, [], teams, *offered).change(IMAGE)
         self.assertFalse(calling.auto_merge, "the other team's review is its consent")
+        self.assertEqual(calling.manual_merge_reason, 'also changes existing app settings for orders')
+        subscribing = changes.NewApp.from_form({**NEW, 'subscribe': 'orders.created'}, [], teams,
+                                                {'orders'}, {'orders.created'}).change(IMAGE)
+        self.assertEqual(subscribing.manual_merge_reason, 'also changes existing app settings for orders')
         for record in ({}, {**chosen.record, 'name': '../x'}, {**chosen.record, 'stack': 'cobol'},
                        {**chosen.record, 'extra': ['weather-api; rm']}, {**chosen.record, 'extra': None}):
             with self.subTest(record=record), self.assertRaises((KeyError, TypeError, ValueError)):
@@ -622,7 +646,8 @@ class NewAppRouteTests(unittest.TestCase):
         c, _ = self.client(tree_fake())
         text = c.get('/activity', headers=WHO).text
         self.assertIn('#7 apps: add weather-api staging</a>', text, 'every pull request here is a console one: the prefix is left out')
-        self.assertIn('By you, on GitHub', text)
+        self.assertIn('Manual merge required', text)
+        self.assertIn('Merge plan', text)
         self.assertNotIn('pull/8', text)
         self.assertEqual(changes.console_prs(FakeRunner(), self.api.github)[0].opened, '2026-10-01')
         c, _ = self.client(tree_fake(), github=False)
@@ -752,7 +777,7 @@ class ChangeAppRouteTests(unittest.TestCase):
                 c.post(path, data=form, headers=WHO)
                 self.assertEqual(jobs.get(1).state, 'succeeded')
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])
-                self.assertEqual('Merges itself when Validate passes' in self.api.sent('POST /pulls')[0]['body'], merges)
+                self.assertEqual('Merges itself when Validate and the trusted merge checks pass' in self.api.sent('POST /pulls')[0]['body'], merges)
 
     def test_a_first_promotion_that_changes_the_apps_it_calls_is_merged_by_a_person(self):
         """The merge gate holds a promotion to its own app: one that edits its callees must not be labelled for it."""
@@ -780,12 +805,12 @@ class ChangeAppRouteTests(unittest.TestCase):
             c.post('/apps/hello/staging/promote', data=form, headers=WHO)
         job = jobs.get(1)
         self.assertEqual(job.state, 'succeeded', job.lines)
-        self.assertTrue(any(line.startswith('Not merging automatically: it also lets hello call orders') for line in job.lines))
+        self.assertTrue(any(line.startswith('Merge plan: Manual merge required') and 'orders' in line for line in job.lines))
         self.assertEqual(self.api.sent('POST /issues/7/labels'), [])
         body = self.api.sent('POST /pulls')[0]['body']
         self.assertIn('This also lets `hello` call `orders/prod`', body)
         self.assertNotIn('Merges itself', body)
-        self.assertTrue(console_promotion.body_metadata(body)['setup'], 'so Activity says "By you, on GitHub" and it cannot be resumed')
+        self.assertTrue(console_promotion.body_metadata(body)['setup'], 'the promotion needs review and cannot be resumed')
 
     def test_a_change_the_tooling_refuses_shows_its_own_words_and_opens_nothing(self):
         """The console runs the same commands as make, so their refusals read the same in the job."""
@@ -935,7 +960,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             fresh, fresh_jobs = self.client(tree_fake())
             response = fresh.get('/apps/hello/staging/promotion', headers=WHO)
             self.assertIn(pr.url, response.text)
-            self.assertIn('Held: waits for you', response.text)
+            self.assertIn('Manual merge required: held by you', response.text)
             self.assertIn('action="/promotion-prs/9/resume"', response.text)
             self.assertNotIn('action="/promotion-prs/9/hold"', response.text, 'only the control that applies now')
             self.assertEqual(fresh_jobs.recent(), [])
@@ -947,14 +972,20 @@ class ChangeAppRouteTests(unittest.TestCase):
             body = '<!-- swhurl-promotion ' + json.dumps(meta) + ' -->' if meta else ''
             return changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9', branch, '2026-10-03', body, labels)
         mode = server.promotion.merge_mode
-        self.assertEqual(mode(pr(labels=('auto-merge',), meta={'image': IMAGE})), ('Itself, once checks pass', 'hold'))
-        self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Held: waits for you', 'resume'))
-        self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})), ('By you, on GitHub', ''), 'setup is never automatic')
+        self.assertEqual(mode(pr(labels=('auto-merge',), meta={'image': IMAGE})), ('Auto-merge after checks', 'hold'))
+        self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Manual merge required: held by you', 'resume'))
+        self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})),
+                         ('Manual merge required: setup needs your review', ''), 'setup is never automatic')
         self.assertEqual(mode(pr(labels=('promotion-review-required',), meta={'image': IMAGE})),
-                         ('By you: auto-merge refused', ''))
-        self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Itself, once checks pass', ''),
+                         ('Manual merge required: auto-merge was refused', ''))
+        self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Auto-merge after checks', ''),
                          'only a promotion can be held')
-        self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), ('By you, on GitHub', ''))
+        self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), ('Manual merge required', ''))
+        manual = changes.PullRequest(9, 'new hello', 'https://github.com/x/pull/9',
+                                     'console/new-hello-staging-abcdef0', '2026-10-03',
+                                     '**Merge plan:** Manual merge required: this pull request also changes existing app settings for orders.')
+        self.assertEqual(mode(manual),
+                         ('Manual merge required: this pull request also changes existing app settings for orders.', ''))
 
     def test_existing_pr_requires_explicit_replacement_for_another_image(self):
         pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',

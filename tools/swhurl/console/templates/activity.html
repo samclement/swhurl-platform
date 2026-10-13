@@ -9,7 +9,7 @@
 {% if prs %}
 <div class="scroll">
 <table class="compact">
-  <tr><th>Pull request</th><th>Status</th><th>Merged by</th><th>Opened</th></tr>
+  <tr><th>Pull request</th><th>Status</th><th>Merge plan</th><th>Opened</th></tr>
   {% for pr in prs %}
   <tr>
     <td><a href="{{ pr.url }}" title="{{ pr.branch }}">#{{ pr.number }} {{ pr.title | replace('[console] ', '') }}</a></td>

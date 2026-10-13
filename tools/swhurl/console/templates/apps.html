@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% import "_status.html" as st %}
-{% import "_connections.html" as links with context %}
 {% block title %}Apps/Services{% endblock %}
 {% macro link(view_, team_, env_, show_='') %}/apps?{{ ({'view': view_, 'team': team_, 'env': env_} | urlencode) ~ ('&show=' ~ show_ if show_) }}{% endmacro %}
 {# One environment in an app's row: its state, the running tag (the link to its page) and an arrow to its web address. #}
@@ -18,9 +17,7 @@
         <dt>Web address</dt><dd>{% for host in row.hosts %}<a href="https://{{ host }}">{{ host }} {{ st.icon('external') }}</a>{{ ' ' }}{% else %}<span class="muted">none{{ '' if c.address else ': a worker' }}</span>{% endfor %}</dd>
         {% if c.address %}<dt>In the cluster</dt><dd><code>{{ c.address }}</code></dd>{% endif %}
         <dt>Database</dt><dd>{% if row.database_path %}<span class="pill">SQLite</span> <code>{{ row.database_path }}</code>{% elif row.database_path is none %}<span class="muted">release unknown</span>{% else %}<span class="muted">none</span>{% endif %}</dd>
-        {% if not c.rows %}<dt>Connections</dt><dd class="muted">none</dd>{% endif %}
       </dl>
-      {% if c.rows %}{{ links.table(c, a.app, env) }}{% endif %}
       <div class="toolbar">
         <a href="/apps/{{ a.app }}/{{ env }}">Use, connect or operate {{ a.app }}/{{ env }}</a>
         {% if job %}{{ st.running(job, refresh_url) }}

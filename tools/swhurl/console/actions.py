@@ -129,6 +129,7 @@ class Job:
     resume: dict | None = None  # what a later job needs to finish this one, if it can be finished (never a secret)
     live: bool = True  # False for a record read from the store: another pod's job, or one from before a restart
     marks: list[tuple[str, int]] = field(default_factory=list)  # (stage, the output line it starts at): stages.py
+    ending: dict | None = None  # how its merged change ended on the cluster, once known (stages.Rollout): never judged again
 
     def stage(self, key: str) -> None:
         """A stage of the job begins: its output from here on is that stage's."""
@@ -194,6 +195,12 @@ class Jobs:
         with self._lock:
             self._refresh()
             return [*reversed(self._jobs.values()), *sorted(self._before.values(), key=lambda job: -job.id)]
+
+    def settle(self, job: Job, ending: dict) -> None:
+        """Keep how a finished job's change ended. Any pod may: the one that ran it is done with its record."""
+        job.ending = ending
+        if self.store:
+            self.store.save(job)
 
     def drain(self, timeout: float = DRAIN) -> bool:
         """Stop taking jobs and wait for the running ones (the pod is being stopped); False if some outlast ``timeout``."""

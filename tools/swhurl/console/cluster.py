@@ -66,6 +66,7 @@ class AppRow:
     database_path: str | None = None  # None: release missing; empty: no SQLite configured
     team: str = ''  # from the namespace label; '' when unknown
     connections: Connections = Connections()
+    applied: str = ''  # the Git revision its Flux unit last applied
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,15 @@ def items(runner: Runner, args: list[str]) -> list[dict]:
 NOT_READ = State('unknown', 'its state was not read for this page')
 
 
+def fetched(runner: Runner) -> str:
+    """The newest Git revision Flux has fetched; '' when it has none."""
+    try:
+        source = runner.json(SOURCE) or {}
+    except CommandError as error:
+        raise ReadError(str(error)) from None
+    return ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
+
+
 def apps(runner: Runner, states: bool = True) -> list[AppRow]:
     """Every app instance, from what runs: its Flux unit, its HelmRelease (image, hosts and the
     platform's SWHURL_* variables, which say who it calls and what events it handles), its
@@ -218,7 +228,7 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts,
                            str(variables.get('DATABASE_PATH', '')) if release else None,
-                           teams.get(instance.namespace, ''), connections))
+                           teams.get(instance.namespace, ''), connections, status.applied_revision))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 
 

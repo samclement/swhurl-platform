@@ -3,8 +3,9 @@
 One key per job in the ConfigMap ``console/console-jobs``, written by the pod that runs the job as
 it starts, as its output grows and as it ends. A pod that starts later reads them: it shows what
 ran before it, and a job whose pod is gone without finishing it is ``interrupted``. Each pod
-writes only its own jobs' keys, so the pod finishing its jobs and the one replacing it never undo
-each other. Bounded: the newest ``KEEP`` jobs, each record at most ``RECORD_BYTES``.
+writes only its own jobs' keys while they run, so the pod finishing its jobs and the one replacing
+it never undo each other; how a finished job's change ended (``Job.ending``) is added by whichever
+pod finds out. Bounded: the newest ``KEEP`` jobs, each record at most ``RECORD_BYTES``.
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ def record(job: Job, redact) -> str:
     while True:
         raw = json.dumps({'id': job.id, 'action': job.action, 'unit': job.unit, 'identity': job.identity,
                           'started': job.started.isoformat(), 'finished': job.finished.isoformat() if job.finished else None,
-                          'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume, 'lines': lines,
+                          'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume, 'ending': job.ending, 'lines': lines,
                           # Output cut from the front moves every later line up: the stages' starts move with it.
                           'marks': [[stage, max(0, start - (len(job.lines) - len(lines)))] for stage, start in job.marks]},
                          ensure_ascii=False)
@@ -53,7 +54,8 @@ def parse(raw: str) -> Job | None:
                     str(doc['state']), dt.datetime.fromisoformat(doc['finished']) if doc.get('finished') else None,
                     str(doc.get('link') or ''), str(doc.get('owner') or ''),
                     doc['resume'] if isinstance(doc.get('resume'), dict) else None,
-                    marks=[(str(stage), int(start)) for stage, start in doc.get('marks') or []])
+                    marks=[(str(stage), int(start)) for stage, start in doc.get('marks') or []],
+                    ending=doc['ending'] if isinstance(doc.get('ending'), dict) else None)
     except (ValueError, KeyError, TypeError):
         return None
     return found if found.state in ('running', 'succeeded', 'failed', 'interrupted') else None

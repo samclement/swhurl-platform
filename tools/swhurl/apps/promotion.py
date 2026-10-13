@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl.apps import calling, contract, events, helmrelease, ops, per_environment, state
-from swhurl.apps.instance import NAME_RE, instance_folder, instance_unit_file
+from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
 
@@ -86,6 +86,13 @@ def sha(revision: str) -> str:
     return revision.rsplit(':', 1)[-1]
 
 
+def touches(instance: Instance, paths: Iterable[str]) -> bool:
+    """Whether any of ``paths`` is one of the instance's own files: its folder or its unit file."""
+    root = Path()
+    folder, unit = instance.folder(root).as_posix() + '/', instance.unit_file(root).as_posix()
+    return any(p == unit or p.startswith(folder) for p in paths)
+
+
 def settled(status: ops.InstanceStatus | None,
             changed: Callable[[str, str], Iterable[str] | None]) -> ops.InstanceStatus | None:
     """``status`` with ``own_change`` answered, when its unit is behind Git's newest revision: any commit to main
@@ -97,9 +104,7 @@ def settled(status: ops.InstanceStatus | None,
     paths = changed(sha(status.applied_revision), sha(status.desired_revision))
     if paths is None:
         return status
-    root = Path()
-    folder, unit = status.instance.folder(root).as_posix() + '/', status.instance.unit_file(root).as_posix()
-    return dataclasses.replace(status, own_change=any(p == unit or p.startswith(folder) for p in paths))
+    return dataclasses.replace(status, own_change=touches(status.instance, paths))
 
 
 def source_problem(status: ops.InstanceStatus | None, image: str) -> str:

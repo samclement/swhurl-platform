@@ -142,7 +142,7 @@ class ChangeRow:
     pr: changes.PullRequest | None = None  # its pull request while it is open: what Hold and Request auto-merge act on
 
 
-FRESH = dt.timedelta(hours=24)  # how long after its merge an instance's state is read as this change's outcome
+COMPARISONS = 500  # answers kept to "what changed between these two commits"
 
 
 def in_place(request: Request) -> bool:
@@ -269,7 +269,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
                            changes.AUTO_MERGE_LABEL in pr.labels and not refused, reason.split('. ')[0].rstrip('.'))
 
-    ended: dict[int, tuple[str, str]] = {}  # pull requests read as merged or closed, and when: that does not change
+    ended: dict[int, tuple[str, str, str]] = {}  # pull requests read as merged or closed, when and by which commit: that does not change
 
     def pull_of(number: int, url: str, *, read: bool = True) -> stages.Pull:
         """A job's pull request that is not among the open ones: how it ended. With ``read`` false
@@ -278,15 +278,55 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             if not read:
                 return stages.Pull(number, url)
             try:
-                state, when = changes.pull_state(runner, github, number)
+                state, when, commit = changes.pull_state(runner, github, number)
             except actions.ActionError:
                 return stages.Pull(number, url)
             if state == 'open':
                 return stages.Pull(number, url, 'open', checks_url=url)
-            ended[number] = state, when
-        state, when = ended[number]
-        fresh = state == 'merged' and dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(when.replace('Z', '+00:00')) < FRESH
-        return stages.Pull(number, url, state, when=when, fresh=fresh)
+            ended[number] = state, when, commit
+        state, when, commit = ended[number]
+        return stages.Pull(number, url, state, when=when, commit=commit)
+
+    compared: dict[tuple[str, str], tuple[bool, list[str] | None]] = {}  # two commits always compare the same
+
+    def since(merge: str, applied: str) -> tuple[bool, list[str] | None] | None:
+        """Whether commit ``applied`` contains ``merge`` and what changed after it; None when GitHub cannot say."""
+        if not applied:
+            return False, None
+        if merge == applied:
+            return True, []
+        if (merge, applied) not in compared:
+            if not merge or github is None:
+                return None
+            try:
+                found = changes.changed_since(runner, github, merge, applied)
+            except actions.ActionError:
+                return None
+            if len(compared) >= COMPARISONS:
+                compared.clear()
+            compared[merge, applied] = found
+        return compared[merge, applied]
+
+    def rollout_of(job: actions.Job, pull: stages.Pull, rows: dict[str, cluster.AppRow] | None) -> stages.Rollout:
+        """How far the merged change ``job`` started has got on the cluster (docs/console.md#stages-of-a-change):
+        judged against the commit that merged it, and kept with the job once it has ended."""
+        if job.ending and job.ending.get('state') in stages.ENDINGS:
+            return stages.Rollout(job.ending['state'])
+        if rows is None:
+            return stages.judge(job.action, None, None)
+        row = rows.get(job.unit)
+        # An instance that is not there has applied nothing: what Flux has fetched says whether the merge reached the cluster.
+        try:
+            revision = row.applied if row else cluster.fetched(runner)
+        except cluster.ReadError:
+            return stages.judge(job.action, None, None)
+        found = since(pull.commit, gate.sha(revision))
+        contained, paths = found or (None, None)
+        superseded = bool(contained) and (paths is None or gate.touches(Instance(*job.unit.split('/', 1)), paths))
+        rollout = stages.judge(job.action, row.state if row else stages.ABSENT, contained, superseded)
+        if rollout.state in stages.ENDINGS:
+            jobs.settle(job, {'state': rollout.state})
+        return rollout
 
     def change_rows(found: list[actions.Job], *, others: bool) -> tuple[list[ChangeRow], str]:
         """Each job as a change with its whole path, and with ``others`` the open pull requests no
@@ -302,37 +342,22 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 pulls[job.id] = pull_view(is_open[number])
             elif number:
                 pulls[job.id] = pull_of(number, job.link, read=not prs_error and github is not None)
-        states: dict[str, object] | None = {}
-        if any(pull.state == 'merged' and pull.fresh for pull in pulls.values()):
+        def lands(job: actions.Job) -> bool:
+            """A merged change to an instance: where it ends is on the cluster."""
+            pull = pulls.get(job.id)
+            return bool(pull and pull.state == 'merged' and stages.end_label(job.action, job.unit) != 'On main')
+
+        states: dict[str, cluster.AppRow] | None = {}
+        if any(lands(job) and not job.ending for job in found):
             try:
-                states = {f'{row.instance.app}/{row.instance.env}': row.state for row in cluster.apps(runner)}
+                states = {f'{row.instance.app}/{row.instance.env}': row for row in cluster.apps(runner)}
             except cluster.ReadError:
                 states = None
-        # The live state only describes the latest change to an instance. If a newer PR has
-        # already merged, an older create/update row must not appear to still be rolling out
-        # just because the newer change removed or replaced that instance.
-        def merge_order(pull: stages.Pull | None) -> tuple[dt.datetime, int] | None:
-            if not pull or pull.state != 'merged' or not pull.when:
-                return None
-            try:
-                return dt.datetime.fromisoformat(pull.when.replace('Z', '+00:00')), pull.number
-            except ValueError:
-                return None
-
-        latest_merge: dict[str, tuple[dt.datetime, int]] = {}
-        for job in found:
-            order = merge_order(pulls.get(job.id))
-            if order and (job.unit not in latest_merge or order > latest_merge[job.unit]):
-                latest_merge[job.unit] = order
         rows = []
         for job in found:
             pull = pulls.get(job.id)
-            order = merge_order(pull)
-            if order and order < latest_merge.get(job.unit, order):
-                pull = replace(pull, fresh=False)
-            live = None if states is None else states.get(job.unit, stages.ABSENT)
-            when = ago(pull.when) if pull and pull.when else ''
-            track = stages.track(job, pull and stages.Pull(**{**pull.__dict__, 'when': when}), live)
+            rollout = rollout_of(job, pull, states) if lands(job) else None
+            track = stages.track(job, pull and replace(pull, when=ago(pull.when) if pull.when else ''), rollout)
             rows.append(ChangeRow(f'job-{job.id}', track, job, is_open.get(proposed.get(job.id))))
         if others:
             covered = set(proposed.values())
@@ -472,9 +497,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         if found is None:
             return page(request, 'error.html', status_code=404, error='No such job (only the newest jobs are kept).')
         with runner.once():
-            # With the other changes to the same target: a newer merge there settles this one, as on Activity.
-            rows, _error = change_rows([j for j in jobs.recent() if j.unit == found.unit], others=False)
-        row = next(row for row in rows if row.job.id == found.id)
+            (row,), _error = change_rows([found], others=False)
         return page(request, 'job.html', job=found, track=row.track, sections=stages.sections(found), pr=row.pr,
                     can_resume=bool(resumable(found) and github and app_repos))
 

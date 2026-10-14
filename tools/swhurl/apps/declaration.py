@@ -152,7 +152,7 @@ def _call_defaults(calls: list | None, fail: Callable[[str], DeclarationError]) 
     return defaults
 
 
-def _flag_problem(name: str, flag: object) -> str:
+def flag_problem(name: str, flag: object) -> str:
     """Why one declared flag cannot be used, or ''. The templates' generators apply the same rules."""
     if not isinstance(name, str) or len(name) > 40 or not FLAG_NAME.fullmatch(name):
         return f'flag name {name!r} must be kebab case, each part starting with a letter (new-checkout), at most 40 characters'
@@ -266,8 +266,10 @@ def of(doc: object, source: str = FILE) -> Declaration:
         defaults['alerts'] = doc['alerts']
     flags = field('flags', dict) or {}
     for name, flag in flags.items():
-        if problem := _flag_problem(name, flag):
+        if problem := flag_problem(name, flag):
             raise fail(problem)
+    if flags:
+        defaults['offers'] = True  # app-new keeps them beside the instance from the start (make app-offers)
     return Declaration(defaults, field('stack', str) or '', provides.get('api') or '',
                        provides.get('apiFile') or '', provides.get('eventsFile') or '', flags)
 

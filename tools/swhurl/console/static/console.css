@@ -233,6 +233,10 @@ h1 + .tabs { margin-top: var(--gap-2); }
 table.connections { margin: var(--gap-3) 0; }
 table.connections td.act { text-align: right; width: 6rem; }
 table.connections form.inline { margin: 0; }
+table.flags td.actions { white-space: nowrap; text-align: right; }
+table.flags form.inline { margin: 0; }
+table.flags input[type=number] { width: 7rem; }
+table.flags tr.changed td { background: color-mix(in oklch, var(--accent) 8%, var(--panel)); }
 table.team-apps { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; table-layout: fixed; }
 table.team-apps th, table.team-apps td { padding: 10px var(--gap-3); vertical-align: baseline; white-space: nowrap; }
 table.team-apps th:first-child, table.team-apps td:first-child { padding-left: var(--gap-5); width: 30%; }

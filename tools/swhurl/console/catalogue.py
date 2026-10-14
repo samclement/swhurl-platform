@@ -27,6 +27,7 @@ class Described:
     api: offers.Api | None = None
     events: tuple[offers.Event, ...] = ()
     problem: str = ''
+    flags: dict | None = None  # the image's feature flags (name -> declaration); None without flags.json
 
 
 class Documents:
@@ -67,8 +68,10 @@ class Documents:
             api_name, events_name = source.api, source.events
             api_text = self.reader(f'{folder}/{api_name}') if api_name else None
             events_text = self.reader(f'{folder}/{events_name}') if events_name else None
+            flags_text = self.reader(f'{folder}/{source.flags}') if source.flags else None
             found = Described(offers.api(api_text, api_name) if api_text else None,
-                              tuple(offers.events(events_text, events_name)) if events_text else ())
+                              tuple(offers.events(events_text, events_name)) if events_text else (),
+                              flags=offers.flags(flags_text, source.flags) if flags_text else None)
         except offers.OfferError as error:
             return Described(problem=str(error)), False
         except Exception as error:  # noqa: BLE001 (the page renders without descriptions whatever the reader raised)

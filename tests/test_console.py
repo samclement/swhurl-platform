@@ -296,6 +296,89 @@ channels:
             return files.get(path)
         return reader
 
+    FLAGS = {'shout': {'type': 'boolean', 'description': 'Say hello in capitals', 'default': False, 'staging': True},
+             'max-items': {'type': 'integer', 'min': 1, 'max': 100, 'default': 20},
+             'banner': {'type': 'string', 'enum': ['none', 'sale'], 'default': 'none'}}
+
+    class Flags:
+        """Stands in for the console's NATS key-value store."""
+        def __init__(self, overrides=None, fail=None):
+            self.stored, self.fail, self.calls = dict(overrides or {}), fail, []
+
+        def overrides(self, env, app, names):
+            if self.fail:
+                raise self.fail
+            return {n: self.stored[(env, app, n)] for n in names if (env, app, n) in self.stored}
+
+        def set(self, env, app, name, value):
+            self.calls.append(('set', env, app, name, value))
+            self.stored[(env, app, name)] = value
+
+        def clear(self, env, app, name):
+            self.calls.append(('clear', env, app, name))
+            self.stored.pop((env, app, name), None)
+
+    def flags_page_cluster(self):
+        runner = self.described_cluster()
+        release = next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'orders-staging')
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-orders-staging')))
+        runner.on('kubectl', '-n', 'orders-staging', 'get', 'helmrelease', stdout=json.dumps(release))
+        runner.on('kubectl', '-n', 'orders-staging', 'get', stdout=json.dumps({'items': []}))
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
+        return runner
+
+    def flag_documents(self):
+        files = {'apps/orders/staging/offers/source.yaml': 'repository: samclement/orders\ncommit: abc1234\nflags: flags.json\n',
+                 'apps/orders/staging/offers/flags.json': json.dumps(self.FLAGS)}
+        return files.get
+
+    def test_the_app_page_shows_each_declared_flag_with_its_override(self):
+        store = self.Flags({('staging', 'orders', 'shout'): False})
+        text = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store).get('/apps/orders/staging', headers=WHO).text
+        self.assertIn('<h2>Feature flags</h2>', text)
+        row = text[text.index('<code>shout</code>'):text.index('<code>max-items</code>')]
+        self.assertIn('Say hello in capitals', row)
+        self.assertIn('<td><code>true</code></td>', row, 'declared for staging')
+        self.assertIn('<span class="pill attention" title="Set from the console; clear it to return to the declared value">false</span>', row)
+        self.assertIn('value="clear"', row, 'an override can be cleared')
+        others = text[text.index('<code>max-items</code>'):text.index('</table>', text.index('<code>max-items</code>'))]
+        self.assertIn('min="1" max="100"', others, 'a number is bounded as declared')
+        self.assertIn('<option selected>none</option><option>sale</option>', others, 'a string with an enum is a choice')
+        self.assertNotIn('value="clear"', others, 'nothing to clear without an override')
+
+    def test_a_flag_is_set_and_cleared_as_its_declared_type_and_audited(self):
+        store = self.Flags()
+        c = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store)
+        with self.assertLogs('swhurl.console.audit', 'INFO') as logged:
+            reply = c.post('/apps/orders/staging/flags/max-items', data={'action': 'set', 'value': '42'}, headers=ORIGIN, follow_redirects=False)
+            c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=ORIGIN, follow_redirects=False)
+        self.assertEqual((reply.status_code, reply.headers['location']), (303, '/apps/orders/staging?flag=max-items#flags'))
+        self.assertEqual(store.calls, [('set', 'staging', 'orders', 'max-items', 42), ('clear', 'staging', 'orders', 'shout')])
+        self.assertEqual([r.getMessage() for r in logged.records],
+                         ['[AUDIT] sam@swhurl.com flag orders/staging max-items = 42', '[AUDIT] sam@swhurl.com flag orders/staging shout cleared'])
+        for name, value, message in (('max-items', '500', 'outside min and max'), ('max-items', '1.5', 'give a whole number'),
+                                     ('banner', 'loud', 'must be one of none, sale'), ('shout', 'yes', 'choose true or false'),
+                                     ('gone', 'true', 'does not declare gone')):
+            with self.subTest(name=name, value=value):
+                reply = c.post(f'/apps/orders/staging/flags/{name}', data={'action': 'set', 'value': value}, headers=ORIGIN)
+                self.assertEqual(reply.status_code, 400)
+                self.assertIn(message, reply.text)
+        self.assertEqual(len(store.calls), 2, 'a refused value is not written')
+        self.assertEqual(c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=WHO).status_code, 403,
+                         'only from a console page')
+
+    def test_without_its_nats_key_the_console_says_so_and_writes_nothing(self):
+        from swhurl.console import flagstore
+        c = client(self.flags_page_cluster(), documents=self.flag_documents())
+        with mock.patch.dict('os.environ', {flagstore.SEED_VARIABLE: ''}):
+            c = client(self.flags_page_cluster(), documents=self.flag_documents())
+            text = c.get('/apps/orders/staging', headers=WHO).text
+            self.assertIn('This console has no NATS key', text)
+            self.assertIn('<button type="submit" disabled>Set</button>', text)
+            self.assertEqual(c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=ORIGIN).status_code, 409)
+        broken = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=self.Flags(fail=flagstore.FlagStoreError('NATS did not answer in time')))
+        self.assertIn('Overrides could not be read: NATS did not answer in time', broken.get('/apps/orders/staging', headers=WHO).text)
+
     def test_the_catalogue_lists_every_api_and_event_with_what_its_app_says_about_it(self):
         from swhurl.console import catalogue
         reads = []

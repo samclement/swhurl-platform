@@ -95,7 +95,7 @@ class ManifestPolicyTests(unittest.TestCase):
                 self.assertIn(hr['metadata']['namespace'], watched, 'opt-in outside a watched namespace never reloads')
         console = yaml.safe_load((ROOT / 'platform/console/helmrelease.yaml').read_text())
         self.assertEqual(console['spec']['values']['controllers']['main']['annotations']
-                         ['secret.reloader.stakater.com/reload'], 'console-github')
+                         ['secret.reloader.stakater.com/reload'], 'console-github,console-nats')
         self.assertIn('console', watched)
 
     def test_sign_in_passes_the_email_the_console_reads(self):

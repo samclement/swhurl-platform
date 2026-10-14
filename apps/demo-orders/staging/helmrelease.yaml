@@ -4,7 +4,7 @@ metadata:
   name: demo-orders
   namespace: demo-orders-staging
   annotations:
-    platform.swhurl.com/offers: 868c731
+    platform.swhurl.com/offers: 69a0586
 spec:
   interval: 30m
   timeout: 3m

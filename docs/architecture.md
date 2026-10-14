@@ -2,7 +2,7 @@
 
 One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the operator commands listed in [how changes reach the cluster](#how-changes-reach-the-cluster).
 
-For a navigable map of the repository's change path, system boundaries, and implementation files, open the [repository blueprint](repository-blueprint.html).
+The [repository blueprint](repository-blueprint.html) is a navigable map of the change path, system boundaries and implementation files. It is a snapshot of commit `dc80dbc` (10 October 2026) and predates NATS, the notify service and the Catalogue; this page is current.
 
 ## Principles
 
@@ -78,6 +78,7 @@ flowchart LR
   base --> nats[platform-nats]
   traefik[infra-traefik]
   base --> app["app-APP-ENV (one per app instance)"]
+  imageauto -. if staging .-> app
   auth -. if signed-in .-> app
   nats -. if it declares events .-> app
 ```
@@ -101,7 +102,7 @@ flowchart LR
 | `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-nats` | NATS JetStream and its stream controller, the generated user list and a NetworkPolicy, in `messaging` (`platform/nats`; [services](services.md#nats)) | infra-base | SOPS |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
-| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-nats if it declares events | SOPS if it has a Secret |
+| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats if it declares events | SOPS if it has a Secret |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 
@@ -119,8 +120,8 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 
 | Change | Who writes it | Path to `main` | Reviewed before it deploys | Details |
 | --- | --- | --- | --- | --- |
-| Anything in the repo: manifests, app values, Secrets (SOPS), settings | You, by hand or with a Git-only `make` target (`app-new`, `app-promote`, `app-scale`, `app-remove`, `platform-certs-*`, `console-image`) | Direct push | `make check` locally; CI runs after the push, it does not gate Flux | [README](../README.md#make-a-change), [commands](commands.md) |
-| New app, promote, scale, uninstall from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Validate; review follows the [console policy](console.md#auto-merge) | [console](console.md#use-it) |
+| Anything in the repo: manifests, app values, Secrets (SOPS), settings | You, by hand or with a `make` target that only edits files (for example `app-new`, `app-promote`, `app-scale`, `team-add`, `console-image`; the full list is in [commands](commands.md)) | Direct push | `make check` locally; CI runs after the push, it does not gate Flux | [README](../README.md#make-a-change), [commands](commands.md) |
+| New app, promote, scale, access, connections, events, uninstall, teams and channels from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Validate; review follows the [console policy](console.md#auto-merge) | [console](console.md#use-it) |
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | The "Publish console image" run (`github-actions[bot]`) | Direct push, after Validate passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
 | A staging app's image pin | Flux image automation (`fluxcdbot`, with a deploy key that can write only this repository) | Direct push when the app publishes a newer `<run>-<sha>` image | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
@@ -165,7 +166,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |
-| `make clickstack-dashboards` | Writes app dashboards through HyperDX's API; HyperDX keeps dashboards in its database, not in files Flux could apply ([apps](apps.md#dashboards)) |
+| The `console-dashboards` CronJob, and `make clickstack-dashboards` by hand | Write app dashboards through HyperDX's API; HyperDX keeps dashboards in its database, not in files Flux could apply ([apps](apps.md#dashboards)) |
 | `make host-dns`, `make host-backup` | systemd units on the host, not in the cluster ([commands](commands.md#host)) |
 
 ## C4 views
@@ -219,8 +220,10 @@ flowchart TB
     end
     flux[Flux controllers<br/>flux-system, applies everything here]
     reloader[Reloader<br/>platform-system]
-    console[Console<br/>console, read-only]
+    console[Console<br/>console: reads; patches Flux units]
     notifications[Lifecycle and health checker<br/>console, own ConfigMap state]
+    notify[Notify service<br/>notify]
+    nats[(NATS JetStream<br/>messaging)]
     app[demo-orders, app-template<br/>demo-orders-staging, demo-orders-prod]
   end
 
@@ -229,6 +232,9 @@ flowchart TB
   oauth -- OIDC --> google
   traefik -- route --> app
   traefik -- route --> console
+  app -- events --> nats
+  app -- team messages --> notify -- team channels --> ntfy
+  notifications -- app messages --> notify
   console -- reads Flux, workloads --> flux
   flux -- release Events --> notifications
   app -- health and running image --> notifications

@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shopper
-              tag: 3-bcb2b92 # {"$imagepolicy": "flux-system:demo-shopper-staging:tag"}
-              digest: sha256:0b8a59745eef6cda4c7266c2e98c8f767fb6cfeedcc31e5e5eaf36d1a98654bf # {"$imagepolicy": "flux-system:demo-shopper-staging:digest"}
+              tag: 9-3fe6beb # {"$imagepolicy": "flux-system:demo-shopper-staging:tag"}
+              digest: sha256:d3042b5dd381fe41cefe4c15cf8607dac64323df0d569d913901e1eef475de8a # {"$imagepolicy": "flux-system:demo-shopper-staging:digest"}
             resources:
               requests:
                 cpu: 10m

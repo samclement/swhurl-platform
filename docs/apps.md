@@ -483,7 +483,7 @@ The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "
 
 ## Dependency updates in app repositories
 
-Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). TypeScript apps from template `v0.2.2` compile and test inside Docker once, then package that tested JavaScript. Existing TypeScript apps adopt the Dockerfile and Container workflow input together through a reviewed [template update](#template-updates); updating only the shared workflow version keeps their older runner checks. A failed compilation or test prevents image publication.
+Apps from a template update their own dependencies. The Renovate GitHub App is installed for all repositories (a config file required), so a new app's repository is registered on Renovate's next run; its `renovate.json` extends its template's shared `renovate-preset.json` (TypeScript: npm packages, OpenTelemetry grouped; Kotlin: Gradle plugins and libraries, Kotlin and Micronaut grouped). Every pull request runs the app's checks from the template's shared `app.yml`: compilation and type-checking, tests, an image build, and a smoke test that starts the image as the cluster does, from the app's `swhurl.yaml` (details in each template's README). The [compile-once build](#compiling-typescript-once) and [tested image reuse](#reusing-a-tested-pr-image) below remove repeated work. A failed compilation or test prevents image publication.
 
 | Situation | What validates an update | What deploys |
 | --- | --- | --- |
@@ -493,11 +493,26 @@ Apps from a template update their own dependencies. The Renovate GitHub App is i
 
 Renovate merges only when it runs, so a passing update can wait hours; tick "run again" on the repository's Dependency Dashboard issue to hurry it. The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them. A version written inside a template's `*.jinja` file is invisible to Renovate; keep versions in plain files.
 
+### Compiling TypeScript once
+
+For example, a demo-orders PR changes an order route. The older build type-checks, compiles and tests on the runner, then compiles again in Docker to make the image. The current build compiles and type-checks once inside Docker, runs the tests against that JavaScript, and packages the tested output. A failed test stops the image build. Kotlin already runs its Gradle checks and packaging together in the image build.
+
+TypeScript templates from `v0.2.2` provide this build. The Dockerfile's `checked-runtime` target depends on the test stage; tests, development dependencies and fixtures stay in build stages. Dependency installation is cached separately from source changes. Tests therefore need to run inside the build container, using the files copied there rather than tools installed only on the GitHub runner.
+
+Existing TypeScript apps adopt the Dockerfile and caller's `checks-in-image: true` together through a reviewed [template update](#template-updates). A workflow-only version upgrade retains the older runner checks. This optimisation applies whenever an image needs building, including a main run that cannot reuse a PR image.
+
 ### Reusing a tested PR image
 
-The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) is used by TypeScript template `v0.2.4` and Kotlin template `v0.2.3` to retain a smoke-tested OCI image as a GitHub Actions artifact for one day. The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
+After the demo-orders PR passes, a matching merge can publish its already tested image. The main job downloads and verifies that image, then copies it to GHCR; compilation, tests, image building and the smoke test have already succeeded on the PR. Staging deploys the published digest through the usual Flux path, and production still uses explicit promotion.
 
-Main can publish that exact image when the checked-out source tree, immutable shared workflow, helper, build target, platform and resolved base/BuildKit image digests match. External base tags are resolved and pinned before building, so a changed tag cannot race the comparison. Source comparison includes the dependency files and caller workflow. A squash or merge commit with the same file tree is eligible even though its commit ID differs. The helper can load only the runtime from an OCI export into Docker for smoke tests and verifies its config digest, leaving the export and its provenance intact. OCI publication preserves the original PR's build attestations and verifies the published digest; the normal deployment tag names the merged commit.
+| Optimisation | Work saved | Work still needed |
+| --- | --- | --- |
+| Compile TypeScript once | Repeated compilation within an ordinary build | Tests and an image smoke test on each ordinary build |
+| Reuse the tested PR image | A second build and smoke test on a matching main merge | Build-input comparison, artifact download and verification, registry copy, and staging health checks |
+
+The internal `app-build-image` command in [`build_image.py`](../tools/swhurl/apps/build_image.py) is used by TypeScript template `v0.2.5` and Kotlin template `v0.2.4` to retain a smoke-tested OCI image as a GitHub Actions artifact for one day. The artifact contains the image and a proof binding its runtime config to the image that passed the smoke test. It is reconstructible from Git and needs no backup or in-cluster service; its logs and failures stay in GitHub Actions.
+
+Main can publish that exact image when the checked-out source tree, immutable shared workflow, helper, build target, platform and resolved base/BuildKit image digests match. External base tags are resolved and pinned before building, so a changed tag cannot race the comparison. Source comparison includes the whole tracked file tree: dependency locks, the caller workflow and README changes all count. A squash or merge commit with the same file tree is eligible even though its commit ID differs. The helper loads the runnable part of the OCI export into Docker for smoke tests and verifies its config digest, leaving the export and its provenance intact. OCI publication preserves the original PR's build attestations and verifies the published digest. The deployment tag names the merged commit; the preserved provenance describes the original PR build.
 
 ```mermaid
 flowchart LR
@@ -513,7 +528,16 @@ flowchart LR
     Registry --> Flux
 ```
 
-Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. A publication error fails the workflow. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off. The OCI copy utility, Skopeo, is pinned by digest to an immutable upstream release in the helper and updated through a reviewed tooling change. Rolling upstream tags can lose their previous digests after a rebuild, so a digest from a rolling tag is unsuitable for this pin.
+Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off.
+
+The trade-offs are:
+
+- **More work on the PR.** Exporting the full OCI image, loading its runtime and uploading an artifact add time and use GitHub artifact storage. The one-day lifetime limits storage, but a PR merged later needs a fresh successful run to reuse its image. Lookup and input-comparison work also happens before a fallback build.
+- **Conservative reuse.** An intervening dependency update, a changed base-image tag or even an app README edit can force a normal build. Keeping the whole tracked tree in the comparison avoids guessing which files affect a custom app's image.
+- **Dependence on registries and artifacts.** Skopeo copies the runtime into Docker for the smoke test and the complete OCI image into GHCR for publication. It is pinned by digest to an [immutable upstream release](https://github.com/podman-container-tools/image_build#readme), because rolling upstream tags can lose their previous digests after a rebuild. CI still needs those registries to be available. Candidate lookup problems fall back to a build; runtime loading, smoke-test, proof or publication failures stop the job.
+- **Main relies on the PR's checks.** A match skips repeating them and preserves the PR build's provenance. The subsequent [staging health check](#operate-an-instance) remains necessary: the CI smoke test runs without the live platform's sign-in, service calls and event credentials.
+
+[Measured job times and successful reuse/fallback runs](current-state.md#tested-pr-image-reuse-13-to-14-october-2026) show the benefit and its limits. Cache warmth, image size, registry latency and runner queues affect elapsed time; these optimisations save repeated work, and individual timings are not a speed guarantee.
 
 ## Promote to production
 

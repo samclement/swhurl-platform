@@ -513,7 +513,7 @@ flowchart LR
     Registry --> Flux
 ```
 
-Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. A publication error fails the workflow. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off. The OCI copy utility is pinned by digest in the helper and updated through a reviewed tooling change.
+Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. A publication error fails the workflow. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off. The OCI copy utility, Skopeo, is pinned by digest to an immutable upstream release in the helper and updated through a reviewed tooling change. Rolling upstream tags can lose their previous digests after a rebuild, so a digest from a rolling tag is unsuitable for this pin.
 
 ## Promote to production
 

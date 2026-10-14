@@ -24,7 +24,8 @@ SCHEMA = 1
 PLATFORM = 'linux/amd64'
 BUILDKIT = 'moby/buildkit:buildx-stable-1'
 # Skopeo 1.22.3; OCI copies preserve the PR's runtime and build attestations.
-SKOPEO = 'quay.io/skopeo/stable@sha256:97772f3c64fd2fba720b2bafaf37239dc44d8b1c625c8383c64044832efe9ed9'
+# Pin an immutable upstream release: rolling stable tags are rebuilt and their old digests disappear.
+SKOPEO = 'quay.io/skopeo/stable:v1.22.3-immutable@sha256:c0ee1f4edca5c01cb8d5611124f92f3cc47196ecab68aee5d0f90834e00574d5'
 DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
 GIT_SHA = re.compile(r'^[0-9a-f]{40,64}$')
 REPOSITORY = re.compile(r'^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$')

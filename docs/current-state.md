@@ -1469,3 +1469,9 @@ Image automation pinned the final shop image in `054a906` and notifier image in 
 Signed-out shop and console requests returned HTTP 301 and HTTPS 302 with certificate verification enabled. Through a temporary Service port-forward, the shop returned 200 for `/healthz`, `/openapi.json` and `/` with a simulated user header. This does not exercise a real Google-signed-in browser session.
 
 The configured package hooks reported successful prior deliveries but these publishes again needed signed GitHub pings to trigger the normal image scan and Git automation, as in the earlier TypeScript build change. Fixing that existing delivery gap remains tracked in the plan. Rapid bot pushes also left a cancelled GitHub Pages deployment active; it was cancelled through the Pages API and the latest publish retried. No throwaway app repositories, packages or cluster services were created for this change.
+
+## Skopeo dependency repair and remaining template adoption (14 October 2026)
+
+The six remaining Copier adoption PRs compiled and passed their app tests, then stopped at OCI runtime loading: Quay returned `MANIFEST_UNKNOWN` for the helper's pinned rolling Skopeo digest `97772f3…`. No failing app PR merged. All six existing staging instances were Healthy at platform `9acbd9a`, with matching desired/running images and 1/1 ready replicas; `make verify-platform` passed.
+
+The repair pins upstream `v1.22.3-immutable` at `c0ee1f4…`. The old and replacement images both report Skopeo 1.22.3, upstream commit `92397d5ba399784c6e2f9f229a4244b724743dba`. The 13 helper tests passed. A real copy of demo-shop's retained OCI export preserved root digest `cee493c…` with its provenance, and loading its runtime through the daemon transport preserved config `5206f6e…`. Template and app publication evidence follows after downstream checks complete.

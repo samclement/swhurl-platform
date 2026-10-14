@@ -768,7 +768,8 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
         p.error('give APP and ENV, or --all ENV')
     root, token = args.root.resolve(), os.environ.get('GITHUB_TOKEN', '')
     if not args.all:
-        return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener), True)
+        # A change is checked against the app policy: run() takes the instance's folder, not set_offers' answer.
+        return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener) and instance_dir(root, args.app, args.env), True)
     failed = 0
     for app in instances_in(root, args.all):
         image = helmrelease.image(YamlFile(instance_folder(root, app, args.all) / 'helmrelease.yaml').data)

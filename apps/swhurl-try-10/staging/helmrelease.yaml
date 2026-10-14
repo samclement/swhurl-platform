@@ -4,7 +4,7 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
-    platform.swhurl.com/offers: c178a9e
+    platform.swhurl.com/offers: d3897b0
 spec:
   interval: 30m
   timeout: 3m

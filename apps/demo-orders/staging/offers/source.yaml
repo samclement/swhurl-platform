@@ -1,5 +1,5 @@
 # Read from the app's repository by make app-offers: do not edit.
 repository: samclement/demo-orders
-commit: 69a0586
+commit: 6009ee1
 api: openapi.json
 events: asyncapi.yaml

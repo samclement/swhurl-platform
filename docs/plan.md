@@ -32,7 +32,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Left from 1:** `'staging'`/`'prod'` literals in `apps/promotion.py`, `apps/edit.py` and the console's `merge.py`, `promotion.py` and `server.py`; unit names built by hand in `livetests/app_template.py` and in test fixtures.
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
-16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage, and a Retire pull request that ends each flag. Needs the operator's approval of the proposed decisions and a choice of how Retire reaches the app repository; the NATS questions are settled ([spike](#spike-findings-14-october-2026-local-podman-nothing-deployed)).
+16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage; the developer removes a flag from the code when it is settled. Needs the operator's approval of the proposed decisions; the NATS questions are settled ([spike](#spike-findings-14-october-2026-local-podman-nothing-deployed)).
 
 ### Delivered
 
@@ -1106,7 +1106,7 @@ Keep `dashboards.sync` (13) and `clickstack.bootstrap` (13) as they are: each re
 
 An app reads typed feature flags whose values differ per environment, and the operator changes a value from the console without a new image or a restart. A flag is temporary: it ends by being removed from the code, not left on.
 
-Example: `demo-shop` declares `new-checkout` (boolean, default `false`). Its code reads `if (flags.newCheckout)`. The operator turns it on in production from the app page; within a second the next request takes the new branch. Once confirmed, **Retire** opens a pull request in `samclement/demo-shop` that fixes the value and marks the flag for removal.
+Example: `demo-shop` declares `new-checkout` (boolean, default `false`). Its code reads `if (flags.newCheckout)`. The operator turns it on in production from the app page; within a second the next request takes the new branch. Once the new behaviour is settled, the developer deletes the flag from the code and from `swhurl.yaml`; when that image runs, the app page marks the leftover override as no longer declared and offers **Clear**.
 
 ### One declaration, three uses
 
@@ -1187,17 +1187,17 @@ export async function watchFlags() {
 | NATS key-value storage, not plain events, carries overrides | A flag is state: a watch delivers the stored value to a starting pod, where an event would be missed and the pod would revert |
 | The console writes overrides to NATS directly; they are not in Git | Takes effect in under a second. Losing them is safe (apps fall back to `swhurl.yaml`); every change is in the console's audit log in ClickStack and the bucket keeps a short history per key. This is the one runtime value kept outside Git |
 | One bucket per environment; an app may only watch `<env>.<app>.>`, only the console may write | Staging and production stay apart, as events do; an app cannot read or change another's flags |
-| **Retire** opens a pull request in the app repository setting `retired: true` (one final value); the accessor becomes a deprecated constant | The compiler's warnings list the branches to delete while the PR still passes CI; deleting the declaration afterwards makes any leftover use a compile error |
-| Overrides survive a new image; the console marks an override whose flag the running image no longer declares, and one older than 14 days | Stale overrides are visible without being removed behind the operator's back |
+| Removing a flag is the developer's change in the app repository: delete the declaration and the code that reads it. The platform never edits an app repository for flags | Only the developer knows which branch to keep and what goes with it. Deleting the declaration removes the generated accessor, so the compiler lists every use left behind; the console needs no access to app repositories |
+| Overrides survive a new image; the console marks an override whose flag the running image no longer declares, and one older than 14 days, each with **Clear** | Stale overrides are visible without being removed behind the operator's back |
 
 ### Stages
 
 | # | Stage | Ends in |
 | --- | --- | --- |
-| 1 | `flags` in `declaration.py` (types, bounds, `enum`, per-environment values, `retired`); template code generation and the helper reading declared values in both stacks; a template CI check; pinned in `STACK_REVISIONS` | `make check-templates` green; an app reads declared values with nothing new in the cluster |
+| 1 | `flags` in `declaration.py` (types, bounds, `enum`, per-environment values); template code generation and the helper reading declared values in both stacks; a template CI check; pinned in `STACK_REVISIONS` | `make check-templates` green; an app reads declared values with nothing new in the cluster |
 | 2 | Buckets `flags-staging` and `flags-prod` (NACK `KeyValue`); app permissions on their own keys from `make app-sync`; a console NATS user that may write; the helper's watch and readiness wait | A live throwaway app changes behaviour from a `nats kv put`, and keeps it across a pod restart |
 | 3 | Offers workflow keeps `offers/flags.json`; console **Adjust** and **Clear** on the app page, typed from the schema, audited | A flip from the signed-in console reaches a live app without a restart |
-| 4 | Console **Retire** pull request; stale and undeclared overrides shown | A retired flag's PR passes CI in a throwaway app |
+| 4 | Console marks overrides older than 14 days and ones the running image no longer declares | Deleting a flag from a throwaway app's code shows its override as undeclared, and **Clear** removes it |
 
 ### Spike findings (14 October 2026; local podman, nothing deployed)
 
@@ -1213,4 +1213,4 @@ Run against the versions in use: server `nats:2.15.0-alpine`, `nats@2.29.3` (Typ
   ```
   Both clients put the filter in the create subject, so watching `prod.demo-orders.>`, `prod.>` or `>` is refused, as are reading another app's key (`STREAM.MSG.GET`) and writing any key. A hand-made request on the allowed subject with a wider filter in its body, or with several filters, is refused by the server. As with events, jnats reports a refusal only as a timeout plus `Permissions Violation` in the log.
 - **Both clients say when the stored values have arrived:** `initializedFn` in `nats.js`'s `kv.watch` and `KeyValueWatcher.endOfData()` in jnats, each after delivering the stored values and before later changes. A deleted key arrives as `DEL` (TypeScript) or `DELETE` (Kotlin).
-- **The console cannot open pull requests in app repositories today.** `GITHUB_TOKEN` is limited to this repository, and `APP_REPOS_TOKEN` has no Pull requests permission; its client ([`repos.py`](../tools/swhurl/console/repos.py)) also refuses any write to a repository it did not create in the same job ([tokens](console.md#github-tokens)). Retire therefore needs a decision: add Pull requests (read and write) to `APP_REPOS_TOKEN` and a narrow, tested method that writes only `swhurl.yaml` on a `console/*` branch; or have Retire show the `swhurl.yaml` change and a link that opens GitHub's editor, with no new token permission.
+- **The console needs no access to app repositories:** removing a flag is the developer's change (decision above). `GITHUB_TOKEN` is limited to this repository and `APP_REPOS_TOKEN` writes only to a repository created in the same job ([tokens](console.md#github-tokens)), and neither changes.

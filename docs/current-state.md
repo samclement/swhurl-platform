@@ -1582,3 +1582,14 @@ Typed feature flags declared in `swhurl.yaml` ([apps](apps.md#feature-flags); [p
 - **Spike for stage 2** (local podman, NATS 2.15.0, `nats@2.29.3`, `jnats 2.26.4`): findings in [plan section 20](plan.md#spike-findings-14-october-2026-local-podman-nothing-deployed).
 
 Not exercised: an app created from `v0.2.6` on the cluster; an existing app's Renovate update to `v0.2.6`.
+
+## Feature flags stage 2 (14 October 2026)
+
+Every app instance has its own NATS key, and apps on templates `v0.2.7` watch their flag overrides ([apps](apps.md#feature-flags)).
+
+- **Identities** (`6f40614`): `make app-sync` created keys for the six instances without events (`demo-shop` staging and prod, `demo-shopper` staging, `swhurl-try-11` staging and prod, `swhurl-try-17` staging). After `make flux-reconcile` all units were Ready at that revision; each of the six restarted once and was Ready with its own `SWHURL_EVENTS_NKEY`. `make verify-platform`: NATS running and all nine existing streams and consumers present. Its only failures were the SQLite backups (28 h old: the installed host unit predates `make backup-sqlite`) and the console image not yet deployed.
+- **Buckets:** unit `platform-flags` Ready; `flags-staging` and `flags-prod` Ready in NATS.
+- **Templates `v0.2.7`:** TypeScript [PR #41](https://github.com/samclement/swhurl-app-template-typescript/pull/41) (`fcaa769`) and Kotlin [PR #30](https://github.com/samclement/swhurl-app-template-kotlin/pull/30) (`38c6d57`), each with all eight Template combinations passing. Kotlin's `main` run failed once in the worker, SQLite, events and flags smoke test: the test stopped the container about 4 s after start, before the JVM had migrated. It passed on re-run, and in five local runs. Locally, against NATS 2.15.0 with the platform's generated permissions and real nkeys, both stacks changed their answer on a put, kept the override across a restart, ignored a wrong type, returned to the declared value on delete, and with NATS unreachable answered `/healthz` 503 for 5 s, then 200 with declared values.
+- **Live** (`40da68b`, throwaway `swhurl-try-18` staging from `v0.2.7` with `flags=example`): `app-new` created its key. It answered `HELLO FROM SWHURL-TRY-18` (declared). After `nats kv put flags-staging staging.swhurl-try-18.shout false`, run with the console's NATS key from a temporary `nats-box` pod in `console`, the same pod answered `hello from swhurl-try-18`. That held after `rollout restart`; deleting the key brought back `HELLO …`. The app logged `flag override set` and `flag override cleared`. The console's user was refused another app's reply subject.
+
+Not exercised: a Kotlin app on the cluster with overrides; a first promotion creating production's key for an app without events; the console's own deployment using its NATS Secret (stage 3).

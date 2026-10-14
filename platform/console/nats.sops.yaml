@@ -1,0 +1,25 @@
+# The console's NATS seed: it writes feature flag overrides (docs/apps.md#feature-flags). The public
+# key is platform/nats/console-nkey.pub, listed in platform/nats/users.yaml by make app-sync.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: console-nats
+    namespace: console
+type: Opaque
+stringData:
+    NATS_SEED: ENC[AES256_GCM,data:oZ4MUi370yOMhzSYaZd8O7yra7xN3SRgoI0UyKfjS9C2Lt2JAu5CMNrZFpZx4QfeECpqZUvLS/40Uw==,iv:Emr1owSamtVKrnl+EysVPn9FQat5tfMq+PcLDOUHgFs=,tag:fLXr5xVQOZsGWELWh1wfHw==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBnUjE3RzlZbWtIVlRLMTEr
+            NU03Mlk5akwwcGowTzB0K1VFMUFjS0sxSzJzCkkrVitUY0FOZkJhTmlGTGhoVjRU
+            QjJuQTFpZ2taZmtDa0ZMSjZzbzVEZjgKLS0tIGtvSE9RRTlMekVwdFBVTlRiOVdJ
+            OFhWUStFVFVhWmJETkl1V1dudlJBR1kKXfqF34VPh+r2B9/OY/uen60NZTCRU39T
+            3dMqPUCFRCFMoqhufKuS7XyXx8imsMhWBrsOyXzBqsgcrdVNob2TnQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-14T20:22:59Z"
+    mac: ENC[AES256_GCM,data:0V9zB5Esyuopyb3/8J2yxtCqdZKEZNoKk4o65GqyCidiJgUcZ/fcUEZ09k46uV5tqGLaS7qguvQV2zBHOjlcEcrzRJMphunyNatmE+SGBVk1ZzDPGLuXznaGva4/89NUvqs7UCS880RmCHjp7PCMf3WFwT09PX1XRBSF5eU5zu0=,iv:rIKbrKRAZGFjttl3FUd2oTOI5qWMFX26iEPUsZTzpFU=,tag:hyZZjMajTb8iDrba7Vb5cg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

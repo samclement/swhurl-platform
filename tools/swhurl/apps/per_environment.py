@@ -80,7 +80,7 @@ SETTINGS = (
             'it has one', later=HELD, where=VARIABLE),
     Setting(events.SUBSCRIBE_VARIABLE, DECLARED, STRIP, 'what it receives: declared in production (make app-events ENV=prod)',
             where=VARIABLE),
-    Setting(events.URL_VARIABLE, DERIVED, STRIP, 'follows from declaring events', where=VARIABLE),
+    Setting(events.URL_VARIABLE, DERIVED, STRIP, "follows from the instance's NATS key", where=VARIABLE),
     Setting(events.NKEY_VARIABLE, GENERATED, STRIP, "the environment's own NATS key", where=VARIABLE),
     Setting(contract.RELOAD, DERIVED, CARRY, "restart on a Secret change; staging's events Secret is taken out of it"),
     Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them",

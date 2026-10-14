@@ -10,4 +10,5 @@ resources:
   - notification-secret.sops.yaml
   - networkpolicy.yaml
   - secret.sops.yaml
+  - nats.sops.yaml
   - helmrelease.yaml

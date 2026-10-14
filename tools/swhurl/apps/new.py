@@ -30,7 +30,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import declaration, policy
+from swhurl.apps import declaration, events, policy
 from swhurl.apps.calling import (
     API_VARIABLE,
     NOTIFY,
@@ -560,9 +560,13 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
         if problem:
             raise GenerationError(problem)
         written = generate(args, args.root.resolve())
-        if args.calls or args.publish or args.subscribe:
+        if events.has_nats(args.root.resolve()) or args.calls or args.publish or args.subscribe:
             from swhurl.apps import edit  # edit imports this module
             try:
+                if events.has_nats(args.root.resolve()):
+                    # Every instance signs in to NATS as itself: its feature flag overrides, and events if it declares them.
+                    edit.nats_key(args.root.resolve(), args.name, args.env)
+                    edit.sync_env(args.root.resolve(), args.env)
                 if args.calls:
                     edit.set_calls(args.root.resolve(), args.name, args.env, add=args.calls)
                 if args.publish or args.subscribe:
@@ -571,7 +575,7 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
             except edit.EditError as error:
                 # Nothing half-made: the instance without its calls or events would start and fail.
                 edit.remove(args.root.resolve(), args.name, args.env)
-                raise GenerationError(f'--calls, --publish or --subscribe: {error}') from None
+                raise GenerationError(f'NATS key, --calls, --publish or --subscribe: {error}') from None
         if getattr(args, 'offers', False) and args.from_repo:
             # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the
             # documents beside the instance from the start, and publish what the events document says.

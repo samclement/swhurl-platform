@@ -64,6 +64,8 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-17
+              SWHURL_EVENTS_NKEY: UASQVQ3LUAK2GWSUGHUYGEIQNQLTE6DMMQYJEBID4B7735A7ASQMZQOU
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:
               readiness:
                 enabled: true
@@ -88,6 +90,11 @@ spec:
                     port: 8080
                   periodSeconds: 5
                   failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: swhurl-try-17-events
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-17-events
     persistence:
       tmp:
         type: emptyDir

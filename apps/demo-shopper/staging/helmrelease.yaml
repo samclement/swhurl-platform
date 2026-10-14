@@ -63,6 +63,13 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: demo-shopper
               SWHURL_SERVICE_DEMO_SHOP_URL: http://demo-shop.demo-shop-$(SWHURL_ENV).svc.cluster.local:8080
+              SWHURL_EVENTS_NKEY: UBTEFDHXMWLBQALKXYVDS3WWMVTEAEATHTX36DHE5ENJAFUTGYBCX62N
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+            envFrom:
+            - secretRef:
+                name: demo-shopper-events
+        annotations:
+          secret.reloader.stakater.com/reload: demo-shopper-events
     persistence:
       tmp:
         type: emptyDir

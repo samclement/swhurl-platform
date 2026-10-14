@@ -69,6 +69,8 @@ spec:
               SWHURL_SERVICE_SWHURL_TRY_10_URL: http://swhurl-try-10.swhurl-try-10-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_SERVICE_SWHURL_TRY_12_URL: http://swhurl-try-12.swhurl-try-12-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_API_PATH: /openapi.json
+              SWHURL_EVENTS_NKEY: UAC7DWRMXAYFNAFO3HJ32BHIGGPNWPF2JKXSJ7RR4YDCWNFY5FRMGEZX
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:
               readiness:
                 enabled: true
@@ -93,6 +95,11 @@ spec:
                     port: 8080
                   periodSeconds: 5
                   failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: swhurl-try-11-events
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-11-events
     persistence:
       tmp:
         type: emptyDir

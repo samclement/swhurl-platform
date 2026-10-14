@@ -1,5 +1,5 @@
 # Who may connect to NATS: app instances (every app namespace carries the app
-# label) and the stream controller beside it. It selects the NATS pods only.
+# label), the stream controller beside it and the console (flag overrides). It selects the NATS pods only.
 # What a connected app may then do is decided by its NATS user (users.yaml).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -19,6 +19,10 @@ spec:
               - key: platform.swhurl.com/app
                 operator: Exists
         - podSelector: {}
+        # The console writes feature flag overrides.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: console
       ports:
         - port: 4222
           protocol: TCP

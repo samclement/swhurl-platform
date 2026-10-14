@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: demo-shopper-events
+    namespace: demo-shopper-staging
+type: Opaque
+stringData:
+    SWHURL_EVENTS_SEED: ENC[AES256_GCM,data:R+pZVVox3h38Yr86UJlynKYlD+i2OU1FYqdeNJwB6LzgOTaHNGK5iexrH52vG8QLLM8o0Td/lQkJpQ==,iv:CA00Udohu418NsdFrCvnJBngKkLEx9KsF5hECDjCA9E=,tag:y9DdiBhVO4E+rwjhuRJYTA==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAzZFhhTFRXbzZrSDY2YWJY
+            RXhnTytldXJLZWlEV0tYaENxZnZ1Q0k4dHdvCmJJM1lubmtCQWViR1dHalo2dWx1
+            Vy9uSklxK1JVZHdLTG1sUXdiY2hsckkKLS0tIGxIUDJFRjJpWi9SVVZrZ2pPR3Fl
+            N3NmSXpRNjFPbjdWV0g4VTZwbWZTeXMKZJe4lAK0OCHtAHTqkWzhP4pRuc2wJ8rH
+            ZmQFRKKUsY0OObrUYVmTKSDO5ieciTi3w3wvT2FalVCJwIyjRE64Cw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-14T20:23:29Z"
+    mac: ENC[AES256_GCM,data:sNv7BNfmfaOvkgM04m+swbRNNn0hj0ZkQwamQ3wGPAJUroSDWbvR3LNsc/tV15eb3avk9TptxKHkYfaBUTMDYYzgqZiNYr0Z3xA5TB54qyEUx/8JedFzaHO2tkxHxKAagbPtyY3gZouiFuZ56sPRCBEqS4sKLyIekOac0mDf0MA=,iv:G0AKS5Ld/lE/M9S8OoxzHFrAYL/eQqtQF4NnqVeymlc=,tag:iEimHIIBdcuS4rblCPPFZQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

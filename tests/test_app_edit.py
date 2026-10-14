@@ -407,10 +407,12 @@ class EditTests(unittest.TestCase):
         users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
         self.assertEqual(users['UCONTROLLER']['publish']['allow'], ['$JS.API.>'])
         self.assertEqual(users[self.env('orders')['SWHURL_EVENTS_NKEY']], {
-            'publish': {'allow': ['staging.orders.>']},  # its whole prefix: a new image may carry a new event
+            # Its own flag overrides, and its whole prefix: a new image may carry a new event.
+            'publish': {'allow': [*events.flag_permissions('staging', 'orders'), 'staging.orders.>']},
             'subscribe': {'allow': ['_INBOX.staging.orders.>']}})
         self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']], {
-            'publish': {'allow': ['$JS.API.CONSUMER.INFO.staging-orders.hello_created',
+            'publish': {'allow': [*events.flag_permissions('staging', 'hello'),
+                                  '$JS.API.CONSUMER.INFO.staging-orders.hello_created',
                                   '$JS.API.CONSUMER.MSG.NEXT.staging-orders.hello_created',
                                   '$JS.ACK.staging-orders.hello_created.>',
                                   '$JS.API.STREAM.INFO.staging-orders']},  # the Java client asks before it binds
@@ -420,7 +422,8 @@ class EditTests(unittest.TestCase):
                          + policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
         self.assertEqual(policy.check_calls(instances), {})
-        self.assertEqual(policy.check_event_users(self.root), [])
+        self.assertCountEqual(policy.check_event_users(self.root), [  # every instance needs its own key
+            f'event-users: {app}/prod has no NATS key; make app-sync creates it' for app in ('hello', 'orders')])
 
         with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
             edit.remove(self.root, 'orders', 'staging')
@@ -428,17 +431,46 @@ class EditTests(unittest.TestCase):
             edit.set_events(self.root, 'orders', 'staging', publish=['paid'], runner=runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,cancelled,paid', 'a refused change is undone')
 
+        # Without events an instance keeps its NATS identity (its flag overrides), and loses its consumers.
         self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
-        self.assertFalse(any(key.startswith('SWHURL_EVENTS_') for key in self.env('hello')))
+        self.assertNotIn('SWHURL_EVENTS_SUBSCRIBE', self.env('hello'))
+        self.assertEqual(self.env('hello')['SWHURL_EVENTS_URL'], events.URL)
         self.assertFalse((self.root / 'apps/hello/staging/events.yaml').exists())
-        self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
-        release = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
-        self.assertNotIn({'secretRef': {'name': 'hello-events'}},
-                         release['spec']['values']['controllers']['main']['containers']['main'].get('envFrom', []))
+        self.assertTrue((self.root / 'apps/hello/staging/events.sops.yaml').exists())
+        listed = yaml.safe_load((self.root / 'apps/hello/staging/kustomization.yaml').read_text())['resources']
+        self.assertIn('events.sops.yaml', listed)
+        self.assertNotIn('events.yaml', listed)
         unit = yaml.safe_load((self.root / 'clusters/home/app-hello-staging.yaml').read_text())['spec']
-        self.assertNotIn({'name': 'platform-nats'}, unit['dependsOn'])
-        self.assertEqual(len(yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data'][
-            'values.yaml'])['config']['merge']['authorization']['users']), 2, 'the controller and orders remain')
+        self.assertIn({'name': 'platform-nats'}, unit['dependsOn'])
+        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
+        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
+        self.assertEqual(users[self.env('hello')['SWHURL_EVENTS_NKEY']]['publish']['allow'],
+                         events.flag_permissions('staging', 'hello'))
+        self.assertEqual(len(users), 3, 'the controller, orders and hello')
+
+    def test_app_sync_gives_every_instance_its_own_nats_key_and_the_console_a_writer(self):
+        from swhurl.apps import events
+        self.with_units()
+        (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE\n')
+        runner = self.sops()
+        for app in ('hello', 'orders'):
+            for env in ('staging', 'prod'):
+                self.assertTrue(edit.nats_key(self.root, app, env, runner=runner))
+                self.assertFalse(edit.nats_key(self.root, app, env, runner=runner), 'an instance keeps its key')
+        self.quiet(derive.sync, self.root)
+        self.assertEqual(policy.check_event_users(self.root), [])
+        self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
+                                             {'platform.swhurl.com/environment': 'prod'}), [])
+        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
+        users = {u['nkey']: u['permissions'] for u in users['config']['merge']['authorization']['users']}
+        self.assertEqual(users[self.env('hello', 'prod')['SWHURL_EVENTS_NKEY']]['publish']['allow'],
+                         events.flag_permissions('prod', 'hello'), 'its own keys in its own environment only')
+        console = users['UCONSOLE']
+        self.assertIn('$KV.flags-staging.>', console['publish']['allow'])
+        self.assertIn('$KV.flags-prod.>', console['publish']['allow'])
+        self.assertEqual(console['subscribe']['allow'], ['_INBOX.console.>'])
+        self.assertFalse([rule for rule in console['publish']['allow'] if 'staging.' in rule and 'flags' not in rule],
+                         'the console touches no event subjects')
 
     def test_events_are_added_and_removed_one_at_a_time_like_calls(self):
         self.with_units()

@@ -32,7 +32,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Left from 1:** `'staging'`/`'prod'` literals in `apps/promotion.py`, `apps/edit.py` and the console's `merge.py`, `promotion.py` and `server.py`; unit names built by hand in `livetests/app_template.py` and in test fixtures.
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
-16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage, and a Retire pull request that ends each flag. Needs the operator's approval of the proposed decisions; three open questions to settle first.
+16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage, and a Retire pull request that ends each flag. Needs the operator's approval of the proposed decisions and a choice of how Retire reaches the app repository; the NATS questions are settled ([spike](#spike-findings-14-october-2026-local-podman-nothing-deployed)).
 
 ### Delivered
 
@@ -1199,8 +1199,18 @@ export async function watchFlags() {
 | 3 | Offers workflow keeps `offers/flags.json`; console **Adjust** and **Clear** on the app page, typed from the schema, audited | A flip from the signed-in console reaches a live app without a restart |
 | 4 | Console **Retire** pull request; stale and undeclared overrides shown | A retired flag's PR passes CI in a throwaway app |
 
-### Open questions
+### Spike findings (14 October 2026; local podman, nothing deployed)
 
-- Can the console's GitHub token open pull requests in app repositories? Retire needs it; otherwise Retire gives a branch and a link.
-- Is the NATS version's filtered consumer-create permission enough to limit a watch to `<env>.<app>.>`? Spike in stage 2.
-- Does the pinned NATS client in each stack signal the end of the initial values (for the readiness wait)?
+Run against the versions in use: server `nats:2.15.0-alpine`, `nats@2.29.3` (TypeScript template) and `jnats 2.26.4` (Kotlin template), with an app user allowed only what is listed below.
+
+- **An app can be limited to its own keys.** These publish permissions (plus `subscribe: _INBOX.>`) let `demo-shop` watch `prod.demo-shop.>` and nothing else:
+  ```
+  $JS.API.INFO
+  $JS.API.STREAM.INFO.KV_flags-prod
+  $JS.API.CONSUMER.CREATE.KV_flags-prod.*.$KV.flags-prod.prod.demo-shop.>
+  $JS.API.CONSUMER.DELETE.KV_flags-prod.*
+  $JS.API.CONSUMER.INFO.KV_flags-prod.*      # jnats only: it reads its own consumer after creating it
+  ```
+  Both clients put the filter in the create subject, so watching `prod.demo-orders.>`, `prod.>` or `>` is refused, as are reading another app's key (`STREAM.MSG.GET`) and writing any key. A hand-made request on the allowed subject with a wider filter in its body, or with several filters, is refused by the server. As with events, jnats reports a refusal only as a timeout plus `Permissions Violation` in the log.
+- **Both clients say when the stored values have arrived:** `initializedFn` in `nats.js`'s `kv.watch` and `KeyValueWatcher.endOfData()` in jnats, each after delivering the stored values and before later changes. A deleted key arrives as `DEL` (TypeScript) or `DELETE` (Kotlin).
+- **The console cannot open pull requests in app repositories today.** `GITHUB_TOKEN` is limited to this repository, and `APP_REPOS_TOKEN` has no Pull requests permission; its client ([`repos.py`](../tools/swhurl/console/repos.py)) also refuses any write to a repository it did not create in the same job ([tokens](console.md#github-tokens)). Retire therefore needs a decision: add Pull requests (read and write) to `APP_REPOS_TOKEN` and a narrow, tested method that writes only `swhurl.yaml` on a `console/*` branch; or have Retire show the `swhurl.yaml` change and a link that opens GitHub's editor, with no new token permission.

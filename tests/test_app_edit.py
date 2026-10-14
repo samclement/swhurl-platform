@@ -586,6 +586,30 @@ components:
         self.assertNotIn('annotations', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'])
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
 
+    def test_declared_flags_are_kept_with_the_images_commit_and_carried_by_promotion(self):
+        import json
+
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        manifest = ('version: 1\nkind: web\nhealthPath: /healthz\n'
+                    'flags: {shout: {type: boolean, description: Say hello in capitals, default: false, staging: true}}\n')
+        opener, _ = self.repository({'swhurl.yaml': manifest})
+        self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        instance = self.root / 'apps/orders/staging'
+        self.assertEqual({p.name for p in (instance / 'offers').iterdir()}, {'source.yaml', 'flags.json'})
+        found = offers.read(instance)
+        self.assertEqual((found.api, found.events, found.flags), ('', '', 'flags.json'), 'not mistaken for an API description')
+        self.assertEqual(found.declared, {'shout': {'type': 'boolean', 'description': 'Say hello in capitals', 'default': False, 'staging': True}})
+        self.assertEqual(offers.problems(instance, [], 'abc1234'), [])
+        staging = instance / 'helmrelease.yaml'
+        staging.write_text(staging.read_text().replace(staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
+        self.assertEqual(offers.read(self.root / 'apps/orders/prod').declared, found.declared, 'production gets the image\'s flags')
+        (instance / 'offers/flags.json').write_text(json.dumps({'shout': {'type': 'boolean', 'default': 'yes'}}))
+        self.assertIn("flags.shout.default must be a boolean, not 'yes'", offers.problems(instance, [], 'abc1234')[0])
+
     def test_offers_that_cannot_be_used_are_refused_and_change_nothing(self):
         self.with_units()
         self.built_from_a_repository()

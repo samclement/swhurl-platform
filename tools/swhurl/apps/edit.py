@@ -17,6 +17,7 @@ quotes and key order. Unsupported custom structures are refused explicitly.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -206,8 +207,9 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
     release = instance / 'helmrelease.yaml'
     before = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
     if files:
-        source = offers.Source(repository, commit, next((n for n in files if n != offers.EVENTS_NAME), ''),
-                               offers.EVENTS_NAME if offers.EVENTS_NAME in files else '').document()
+        source = offers.Source(repository, commit, next((n for n in files if n not in (offers.EVENTS_NAME, offers.FLAGS_NAME)), ''),
+                               offers.EVENTS_NAME if offers.EVENTS_NAME in files else '',
+                               offers.FLAGS_NAME if offers.FLAGS_NAME in files else '').document()
         wanted = {offers.SOURCE_FILE: '# Read from the app\'s repository by make app-offers: do not edit.\n' + dump([source]), **files}
         folder.mkdir(exist_ok=True)
         for path in folder.iterdir():
@@ -276,12 +278,15 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
             else:
                 described = offers.events(text, str(path))
                 files[offers.EVENTS_NAME] = text
+        if declared.flags:  # what the console's flag form is built from (docs/apps.md#feature-flags)
+            files[offers.FLAGS_NAME] = json.dumps(declared.flags, indent=2) + '\n'
     except (offers.OfferError, declaration.DeclarationError) as error:
         raise EditError(str(error)) from None
     served = declared.api_path if re.fullmatch(r'/[A-Za-z0-9_./-]*', declared.api_path) else ''
     changed = write_offers(root, app, env, repository, commit, files, described, api_path=served, runner=runner)
-    what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n != offers.EVENTS_NAME), ''),
-                                   described is not None and f'events: {", ".join(e.name for e in described) or "none"}']))
+    what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n not in (offers.EVENTS_NAME, offers.FLAGS_NAME)), ''),
+                                   described is not None and f'events: {", ".join(e.name for e in described) or "none"}',
+                                   declared.flags and f'flags: {", ".join(declared.flags)}']))
     print(f'[OK] {app}/{env} at {commit} offers {what or "nothing"}' + ('' if changed else ' (unchanged)'))
     return changed
 
@@ -298,7 +303,7 @@ def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
             raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
                             f'(make app-offers APP={app} ENV=staging; the Offers workflow does it after each new image)')
     folder = instance_folder(root, app, 'staging') / offers.OFFERS_DIR
-    files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events))} if found else {}
+    files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events, found.flags))} if found else {}
     served = str(helmrelease.variables(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
     return write_offers(root, app, 'prod', found.repository if found else '', found.commit if found else '', files,
                         list(found.described) if found and found.described is not None else None,

@@ -15,6 +15,7 @@ the policy check can use it.
 """
 from __future__ import annotations
 
+import json
 import re
 import urllib.error
 import urllib.request
@@ -27,6 +28,7 @@ import yaml
 OFFERS_DIR = 'offers'
 SOURCE_FILE = 'source.yaml'
 EVENTS_NAME = 'asyncapi.yaml'
+FLAGS_NAME = 'flags.json'  # the feature flags swhurl.yaml declares, as JSON (docs/apps.md#feature-flags)
 ANNOTATION = 'platform.swhurl.com/offers'
 """On the instance's HelmRelease: the commit its offers were read at. The console sees from it that
 the app describes itself, without a variable that would restart the app when it changes."""
@@ -172,11 +174,12 @@ class Source:
     commit: str
     api: str = ''  # file name in the directory, '' without an API description
     events: str = ''
+    flags: str = ''  # FLAGS_NAME when the image declares feature flags
 
     @classmethod
     def parse(cls, text: str) -> Source:
         doc = _document(text, f'{OFFERS_DIR}/{SOURCE_FILE}')
-        return cls(*(str(doc.get(key) or '') for key in ('repository', 'commit', 'api', 'events')))
+        return cls(*(str(doc.get(key) or '') for key in ('repository', 'commit', 'api', 'events', 'flags')))
 
     def document(self) -> dict:
         """What the file holds: a document without one is not named."""
@@ -191,6 +194,23 @@ class Offers:
     api: str = ''  # file name in the directory, '' without an API description
     events: str = ''
     described: tuple[Event, ...] | None = None  # None without an events document
+    flags: str = ''
+    declared: dict | None = None  # the image's feature flags (name -> declaration); None without them
+
+
+def flags(text: str, name: str = FLAGS_NAME) -> dict:
+    """The feature flags a kept flags.json declares; OfferError if it is not what swhurl.yaml allows."""
+    from swhurl.apps import declaration  # beside the reader: policy imports this module
+    try:
+        found = json.loads(text)
+    except ValueError as error:
+        raise OfferError(f'{name} is not JSON: {error}') from None
+    if not isinstance(found, dict):
+        raise OfferError(f'{name} must map flag names to their declarations')
+    for flag, declared in found.items():
+        if problem := declaration.flag_problem(flag, declared):
+            raise OfferError(f'{name}: {problem}')
+    return found
 
 
 def read(instance: Path) -> Offers | None:
@@ -200,13 +220,14 @@ def read(instance: Path) -> Offers | None:
         return None
     source = Source.parse((folder / SOURCE_FILE).read_text())
     api, event_file = source.api, source.events
-    for name in filter(None, (api, event_file)):
+    for name in filter(None, (api, event_file, source.flags)):
         if '/' in name or not (folder / name).is_file():
             raise OfferError(f'{OFFERS_DIR}/{SOURCE_FILE} names {name}, which is not in {OFFERS_DIR}/')
     if api:
         check_api((folder / api).read_text(), f'{OFFERS_DIR}/{api}')
     described = tuple(events((folder / event_file).read_text(), f'{OFFERS_DIR}/{event_file}')) if event_file else None
-    return Offers(source.repository, source.commit, api, event_file, described)
+    declared = flags((folder / source.flags).read_text(), f'{OFFERS_DIR}/{source.flags}') if source.flags else None
+    return Offers(source.repository, source.commit, api, event_file, described, source.flags, declared)
 
 
 def problems(instance: Path, published: list[str], annotation: str = '') -> list[str]:

@@ -1,8 +1,9 @@
-"""NATS nkeys for apps: an Ed25519 key pair in NATS's text encoding.
+"""NATS nkeys: an Ed25519 key pair in NATS's text encoding, and the signature that proves it.
 
 An app proves who it is to NATS by signing a challenge with its seed (a secret, in the app's
 encrypted Secret); the server's configuration lists only public keys, so it holds no secret and
-can live in Git, and a new app's key needs nothing decrypted (the console can only encrypt).
+can live in Git, and a new app's key needs nothing decrypted. The console also signs in itself, to
+write feature flag overrides (console/flagstore.py), so it signs NATS's challenge here too.
 
 Pure Python on purpose: the console image has no crypto library or openssl binary, and a key is
 derived once per app. The curve arithmetic is RFC 8032's reference; tests pin its test vectors.
@@ -16,6 +17,7 @@ import secrets
 _P = 2**255 - 19
 _D = -121665 * pow(121666, _P - 2, _P) % _P
 _SQRT_M1 = pow(2, (_P - 1) // 4, _P)
+_L = 2**252 + 27742317777372353535851937790883648493  # the order of the base point
 USER, SEED = 20 << 3, 18 << 3  # nkeys prefix bytes: encoded keys start with "U" and "SU"
 
 
@@ -39,21 +41,43 @@ def _add(a: tuple, b: tuple) -> tuple:
     return e * f % _P, g * h % _P, f * g % _P, e * h % _P
 
 
-def public_key(seed: bytes) -> bytes:
-    """The 32-byte Ed25519 public key of a 32-byte seed."""
-    if len(seed) != 32:
-        raise ValueError('an Ed25519 seed is 32 bytes')
-    scalar = int.from_bytes(hashlib.sha512(seed).digest()[:32], 'little')
-    scalar = (scalar & ((1 << 254) - 8)) | (1 << 254)
-    point, addend = (0, 1, 1, 0), _BASE
+def _multiply(scalar: int, point: tuple = _BASE) -> tuple:
+    found, addend = (0, 1, 1, 0), point
     while scalar:
         if scalar & 1:
-            point = _add(point, addend)
+            found = _add(found, addend)
         addend = _add(addend, addend)
         scalar >>= 1
+    return found
+
+
+def _compress(point: tuple) -> bytes:
     inverse = pow(point[2], _P - 2, _P)
     x, y = point[0] * inverse % _P, point[1] * inverse % _P
     return (y | ((x & 1) << 255)).to_bytes(32, 'little')
+
+
+def _expand(seed: bytes) -> tuple[int, bytes]:
+    if len(seed) != 32:
+        raise ValueError('an Ed25519 seed is 32 bytes')
+    digest = hashlib.sha512(seed).digest()
+    scalar = int.from_bytes(digest[:32], 'little')
+    return (scalar & ((1 << 254) - 8)) | (1 << 254), digest[32:]
+
+
+def public_key(seed: bytes) -> bytes:
+    """The 32-byte Ed25519 public key of a 32-byte seed."""
+    return _compress(_multiply(_expand(seed)[0]))
+
+
+def sign(seed: bytes, message: bytes) -> bytes:
+    """The 64-byte Ed25519 signature of ``message`` (RFC 8032 section 5.1.6)."""
+    scalar, prefix = _expand(seed)
+    public = _compress(_multiply(scalar))
+    r = int.from_bytes(hashlib.sha512(prefix + message).digest(), 'little') % _L
+    nonce = _compress(_multiply(r))
+    k = int.from_bytes(hashlib.sha512(nonce + public + message).digest(), 'little') % _L
+    return nonce + ((r + k * scalar) % _L).to_bytes(32, 'little')
 
 
 def _crc16(data: bytes) -> int:
@@ -77,6 +101,18 @@ def encode_public(key: bytes) -> str:
 def encode_seed(seed: bytes) -> str:
     """A user's seed ("SU..."), what the client keeps secret."""
     return _encode(bytes([SEED | USER >> 5, (USER & 31) << 3]) + seed)
+
+
+def decode_seed(text: str) -> bytes:
+    """The 32-byte seed of a user's seed in text form ("SU..."); ValueError if it is not one."""
+    try:
+        raw = base64.b32decode(text.strip() + '=' * (-len(text.strip()) % 8))
+    except ValueError:
+        raise ValueError('not an nkey seed') from None
+    if len(raw) != 36 or raw[:2] != bytes([SEED | USER >> 5, (USER & 31) << 3]) \
+            or int.from_bytes(raw[34:], 'little') != _crc16(raw[:34]):
+        raise ValueError('not a user nkey seed')
+    return raw[2:34]
 
 
 def generate() -> tuple[str, str]:

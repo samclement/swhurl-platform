@@ -42,9 +42,9 @@ spec:
         # The chart creates this ServiceAccount; rbac.yaml binds it.
         serviceAccount:
           name: console
-        # Restart when the GitHub token changes (namespace console is in platform-reloader's list).
+        # Restart when the GitHub token or the NATS key changes (namespace console is in platform-reloader's list).
         annotations:
-          secret.reloader.stakater.com/reload: console-github
+          secret.reloader.stakater.com/reload: console-github,console-nats
         # A pod being replaced finishes its running jobs first (the longest waits ten minutes for an
         # app's first build, then opens a pull request); actions.DRAIN stays inside this.
         pod:
@@ -59,10 +59,13 @@ spec:
               CONSOLE_REPO: samclement/swhurl-platform
             # GITHUB_TOKEN: create console/* branches and open PRs; APP_REPOS_TOKEN: create new app
             # repositories; IMAGE_WEBHOOK_TOKEN: sign the image webhook added to them
-            # (secret.sops.yaml; docs/console.md#github-tokens).
+            # (secret.sops.yaml; docs/console.md#github-tokens). NATS_SEED: write feature flag
+            # overrides (nats.sops.yaml; docs/apps.md#feature-flags).
             envFrom:
             - secretRef:
                 name: console-github
+            - secretRef:
+                name: console-nats
             resources:
               requests:
                 cpu: 10m

@@ -1571,3 +1571,14 @@ The operator authorised deleting the undeployed GitHub repositories and their GH
 `make destroy-data TARGET=pvc/test-5-staging/test-5 CONFIRM=pvc/test-5-staging/test-5` passed its dry-run guards, then removed the claim and PV `pvc-d7d26dc1-d1a6-4cab-b58d-51fc5f5dce51`. The local-path provisioner logged successful deletion of its host directory at 07:08:07 UTC. The abandoned `test-5-staging` namespace, containing only its default ConfigMap, default ServiceAccount and TLS Secret after data removal, is also gone. Existing backups remain subject to normal retention. `make verify-platform` passed after the live cleanup, and `make app-status APP=<app> ENV=<env>` reported Healthy for all 14 remaining instances with 1/1 ready replicas and matching image digests.
 
 All 11 same-named GHCR container packages are also deleted, including their 68 package versions. A separate local classic token with `read:packages` and `delete:packages` supplied package access; the fine-grained repository cleanup token cannot manage packages. Before deletion, a live check found no workload, HelmRelease or ImageRepository using those packages. Each package DELETE succeeded and its subsequent GET returned 404; the final owner package listing contains none of the 11 targets and still contains all five deployed test packages. Local cleanup credentials are SOPS-encrypted under the Git-ignored `secrets/` directory and are not deployed to the cluster.
+
+## Feature flags stage 1 (14 October 2026)
+
+Typed feature flags declared in `swhurl.yaml` ([apps](apps.md#feature-flags); [plan section 20](plan.md#20-feature-flags--proposed-14-october-2026-not-started)). Nothing new runs in the cluster.
+
+- **Templates `v0.2.6`:** TypeScript [PR #40](https://github.com/samclement/swhurl-app-template-typescript/pull/40) (`5462053`) and Kotlin [PR #28](https://github.com/samclement/swhurl-app-template-kotlin/pull/28) (`3ace0c1`), each tag on a commit with the same tree as the tested PR. All eight Template workflow combinations passed on each, three of them with `flags=example`.
+- **Locally, before the PRs:** the `flags=example` web image answered `HELLO FROM FLAG-APP` with `SWHURL_ENV=staging` and `hello from flag-app` with `prod` and with no environment, in both stacks (podman). A boolean set to `"yes"` failed the TypeScript build, and six bad declarations failed `./gradlew flags`, each with the platform's message. Every flag type, a keyword name (`` `in` ``) and a string with quotes and `$` compiled in Kotlin; removing a flag the example code reads failed the compile at that line.
+- **Pinned** in `STACK_REVISIONS`; `make check-templates` passed all 64 combinations.
+- **Spike for stage 2** (local podman, NATS 2.15.0, `nats@2.29.3`, `jnats 2.26.4`): findings in [plan section 20](plan.md#spike-findings-14-october-2026-local-podman-nothing-deployed).
+
+Not exercised: an app created from `v0.2.6` on the cluster; an existing app's Renovate update to `v0.2.6`.

@@ -143,7 +143,8 @@ class LifetimeTests(unittest.TestCase):
 
     def test_every_field_is_seed_or_live_and_the_docs_say_the_same(self):
         self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE})
-        self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE], ['version', 'stack', 'provides'])
+        self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
+                         ['version', 'stack', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
         rows = dict(re.findall(r'^\| `([A-Za-z]+)` \| (read once|read again) \|', section, re.M))
@@ -183,6 +184,45 @@ class LifetimeTests(unittest.TestCase):
                 declaration.read('x/y', opener=failing)
         with self.assertRaisesRegex(DeclarationError, 'larger than 512 KiB'):
             declaration.read('x/y', opener=lambda request: b'#' * (declaration.MAX_BYTES + 1))
+
+
+class FlagTests(unittest.TestCase):
+    """flags: typed values per environment; the templates' generators refuse what this refuses."""
+
+    def test_typed_flags_with_values_per_environment_are_kept_as_written(self):
+        flags = {'new-checkout': {'type': 'boolean', 'description': 'Use the new checkout', 'default': False, 'staging': True},
+                 'max-basket-items': {'type': 'integer', 'min': 1, 'max': 100, 'default': 20, 'prod': 10},
+                 'discount-rate': {'type': 'number', 'max': 0.5, 'default': 0, 'staging': 0.25},
+                 'banner': {'type': 'string', 'enum': ['none', 'sale'], 'default': 'none'},
+                 'motto': {'type': 'string', 'default': ''}}
+        self.assertEqual(declaration.of({**WEB, 'flags': flags}).flags, flags)
+        self.assertEqual(declaration.of(WEB).flags, {})
+
+    def test_a_flag_that_does_not_fit_its_type_is_refused(self):
+        cases = [
+            ({'New': {'type': 'boolean', 'default': True}}, "flag name 'New' must be kebab case"),
+            ({'a-1': {'type': 'boolean', 'default': True}}, 'each part starting with a letter'),
+            ({'a': True}, 'flags.a must be a mapping'),
+            ({'a': {'type': 'json', 'default': 1}}, 'flags.a.type must be one of boolean, integer, number, string'),
+            ({'a': {'type': 'boolean'}}, 'flags.a.default is required'),
+            ({'a': {'type': 'boolean', 'default': 'yes'}}, "flags.a.default must be a boolean, not 'yes'"),
+            ({'a': {'type': 'integer', 'default': True}}, 'flags.a.default must be an integer, not True'),
+            ({'a': {'type': 'integer', 'default': 1.5}}, 'flags.a.default must be an integer'),
+            ({'a': {'type': 'integer', 'default': 2**31}}, 'flags.a.default must be an integer'),
+            ({'a': {'type': 'number', 'default': float('inf')}}, 'flags.a.default must be a number'),
+            ({'a': {'type': 'boolean', 'default': True, 'min': 1}}, 'flags.a may not set min'),
+            ({'a': {'type': 'boolean', 'default': True, 'dev': False}}, 'flags.a may not set dev'),
+            ({'a': {'type': 'integer', 'default': 5, 'min': 10}}, 'flags.a.default is outside min and max'),
+            ({'a': {'type': 'integer', 'default': 5, 'prod': 101, 'max': 100}}, 'flags.a.prod is outside min and max'),
+            ({'a': {'type': 'integer', 'default': 5, 'min': 9, 'max': 1}}, 'flags.a.min is above its max'),
+            ({'a': {'type': 'integer', 'default': 5, 'max': 1.5}}, 'flags.a.max must be an integer'),
+            ({'a': {'type': 'string', 'default': 'x', 'enum': []}}, 'flags.a.enum must list distinct strings'),
+            ({'a': {'type': 'string', 'default': 'x', 'enum': ['y']}}, 'flags.a.default must be one of y'),
+            ({'a': {'type': 'string', 'default': 'x', 'description': 3}}, 'flags.a.description must be text'),
+        ]
+        for flags, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(DeclarationError, re.escape(message)):
+                declaration.of({**WEB, 'flags': flags})
 
 
 class FromRepoTests(unittest.TestCase):

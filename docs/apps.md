@@ -140,13 +140,14 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 | `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
 | `api` | `none` (default), `openapi` | Web only. An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | The link on the app page (`provides.api`), and the document kept beside each instance (`provides.apiFile`; [what an app offers](#what-an-app-offers)) |
 | `events` | `none` (default), `asyncapi` | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` for a worker). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema | Its NATS key and stream at creation, and what it publishes from the document from then on ([what an app offers](#what-an-app-offers)). Every app can publish and subscribe without this feature: it adds the description |
+| `flags` | `none` (default), `example` | Every app can declare [feature flags](#feature-flags) and read them through generated typed accessors; `example` declares one, `shout` (on in staging only), which the example route or work loop reads | Nothing yet: `app-new` and `make check-templates` check the declarations |
 
 Either way the app listens on 8080 (web), runs as UID 65532 writing only to `/tmp` (and `/data` with a database), sends traces and metrics over OpenTelemetry, logs JSON linked to its traces, and publishes `ghcr.io/<owner>/<app>:<run>-<sha>` from `main`. Nothing in the app's repository names the cluster: its [`swhurl.yaml`](#swhurlyaml) says what it needs, and this repo writes the manifests. Each template's README is the guide on the app's side. The catalogue pins reviewed template commits in `STACK_REVISIONS` in [`contract.py`](../tools/swhurl/apps/contract.py). Questions, rendering and contract checks all use that commit. Template releases have immutable version tags; Copier records the tag when it describes the pinned commit. Deliberate catalogue updates change the pin and run `make check-templates` before release. App workflow versions are pinned to release tags and bumped by Renovate. The shared Renovate preset keeps dependency rules consistent; [template updates](#template-updates) apply generated-file changes through reviewed PRs.
 
 **How templates are tested.** Two halves, so neither grows with the other:
 
-- **The template's own CI** (its Template workflow) renders combinations of its questions and, for each, type-checks, tests, builds the image and smoke-tests it. It builds the defaults, each non-default choice on its own and all non-defaults together for each kind (seven per stack), not every combination: that grows with the number of choices rather than doubling with each question. Each combination keeps its own image build cache. SQLite runtime checks apply migrations and write through the actual image, restart with the same data directory, then verify migration history and previous rows are preserved and new writes work. Database inspection uses a disposable copy including WAL files. Both stacks use the same conformance assertions; each retains its own compiler, tests and build.
-- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into staging with `app-new --manifest` (a local file instead of `--from-repo`, writing to a scratch `--root`), then production through the promotion conversion; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing (32 combinations today), and catches a template declaring something the platform refuses before anyone creates an app from it.
+- **The template's own CI** (its Template workflow) renders combinations of its questions and, for each, type-checks, tests, builds the image and smoke-tests it. It builds the defaults, each non-default choice on its own and all non-defaults together for each kind (eight per stack), not every combination: that grows with the number of choices rather than doubling with each question. Each combination keeps its own image build cache. SQLite runtime checks apply migrations and write through the actual image, restart with the same data directory, then verify migration history and previous rows are preserved and new writes work. Database inspection uses a disposable copy including WAL files. Both stacks use the same conformance assertions; each retains its own compiler, tests and build.
+- **This repo's `make check-templates`** (in `make check` and CI; needs network) clones each template, renders every combination with Copier and turns each `swhurl.yaml` into staging with `app-new --manifest` (a local file instead of `--from-repo`, writing to a scratch `--root`), then production through the promotion conversion; each must pass the [app policy](#the-app-policy) and the two must not drift. It builds nothing (64 combinations today), and catches a template declaring something the platform refuses before anyone creates an app from it.
 
 ### Template updates
 
@@ -208,6 +209,8 @@ calls: [orders]         # optional: apps this one calls; each must exist in stag
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
+flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
+  new-checkout: {type: boolean, default: false, staging: true}
 ```
 
 | Field | Lifetime | After creation |
@@ -230,6 +233,7 @@ events: {publish: [created], subscribe: [orders.created]}   # optional   --publi
 | `alerts` | read once | `make app-alerts` |
 | `calls` | read once | `make app-calls` |
 | `events` | read once | `make app-events`; what the app publishes follows `provides.eventsFile` once it has one |
+| `flags` | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
 
 ## Who can reach it
 
@@ -412,6 +416,42 @@ flowchart LR
 | Not for | The operator's platform topic, which gets the [deployment and health messages](services.md#notification-expectations) by itself, or an app's own end users |
 
 The [request contract](services.md#notify-service) is the same one the platform's own messages use. The address and the token are the platform's: `make app-sync` rewrites them and `make check-apps` fails when they are missing (rules `identity`, `call-tokens`). `notify` cannot be an app's name.
+
+## Feature flags
+
+An app declares its flags in its `swhurl.yaml`, each with a type, a default and, if it differs, a value for staging or production. The build turns the declaration into typed accessors, so the code reads a flag as a property and the compiler catches a wrong name or type:
+
+```yaml
+flags:
+  new-checkout:
+    type: boolean
+    description: Use the new checkout flow
+    default: false
+    staging: true                 # staging runs the new flow; production keeps the default
+  max-basket-items: {type: integer, min: 1, max: 100, default: 20}
+  banner: {type: string, enum: [none, sale], default: none}
+```
+
+```ts
+import { flags } from "./flags.js";                  // TypeScript: src/flags.ts, generated by scripts/flags.mjs
+if (flags.newCheckout) { … }                         // boolean; flags.maxBasketItems is a number
+```
+
+```kotlin
+if (Flags.newCheckout) { … }                         // Kotlin: generated by ./gradlew flags; maxBasketItems is an Int
+```
+
+| What | Rule |
+| --- | --- |
+| Name | Kebab case, each part starting with a letter, at most 40 characters; `new-checkout` becomes `newCheckout` |
+| Types | `boolean`, `integer` (32 bits: `Int` in Kotlin), `number` (`Double`) and `string`. `min` and `max` bound a number; `enum` limits a string |
+| Values | `default` is required; `staging` and `prod` are optional. Every value must fit the type and its bounds |
+| Which value | The one for `SWHURL_ENV` if declared, otherwise the default; outside the platform (local development) the default |
+| Where it is checked | The generator, in every build, type-check and test run (the app's CI fails); `make app-new` and `make check-templates`, which refuse the same declarations |
+
+The generated file is not committed (`src/flags.ts` is ignored; Kotlin writes it under `build/`), so `swhurl.yaml` is the only place a flag is written. A changed value travels with the image: staging runs it after the next build, production after a [promotion](#promote-to-production). Changing a value without a new image is planned ([plan section 20](plan.md#20-feature-flags--proposed-14-october-2026-not-started)).
+
+**Removing a flag** is the app developer's change: delete it from `swhurl.yaml` and the build no longer generates its accessor, so the compiler lists each place that still reads it.
 
 ## Secrets
 

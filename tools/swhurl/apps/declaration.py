@@ -14,6 +14,8 @@ The name, environment, image and host belong to each instance and are never in t
 """
 from __future__ import annotations
 
+import dataclasses
+import math
 import re
 import urllib.error
 import urllib.request
@@ -24,6 +26,7 @@ import yaml
 
 from swhurl import app_alerts
 from swhurl.apps.contract import DATABASES, EXPOSURES, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.instance import ENVIRONMENTS
 
 FILE = 'swhurl.yaml'
 VERSION = 1
@@ -61,7 +64,13 @@ FIELDS = (
     Field('calls', SEED, 'make app-calls'),
     Field('events', SEED, 'make app-events; what it publishes follows provides.eventsFile once the app has one'),
     Field('provides', LIVE, "by make app-offers, at the commit of every new staging image (the Offers workflow)"),
+    Field('flags', LIVE, "by the app's own build, which generates a typed accessor for each flag"),
 )
+FLAG_NAME = re.compile(r'[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*')
+"""A flag's name: kebab case where each part starts with a letter, so its camelCase accessor is unique."""
+FLAG_TYPES = {'boolean': (bool,), 'integer': (int,), 'number': (int, float), 'string': (str,)}
+INT_RANGE = (-2**31, 2**31 - 1)
+"""An integer flag is an Int in Kotlin: 32 bits."""
 
 
 class DeclarationError(ValueError):
@@ -81,6 +90,7 @@ class Declaration:
     api_path: str = ''  # provides.api: where a web app serves its API description
     api_file: str = ''  # provides.apiFile: where the repository keeps its OpenAPI document
     events_file: str = ''  # provides.eventsFile: where it keeps its AsyncAPI document
+    flags: dict = dataclasses.field(default_factory=dict)  # flags: name -> its declaration, as written
 
 
 def _resource_defaults(resources: dict, fail: Callable[[str], DeclarationError]) -> dict:
@@ -140,6 +150,53 @@ def _call_defaults(calls: list | None, fail: Callable[[str], DeclarationError]) 
             raise fail('calls must be a list of distinct app names')
         defaults['calls'] = calls
     return defaults
+
+
+def _flag_problem(name: str, flag: object) -> str:
+    """Why one declared flag cannot be used, or ''. The templates' generators apply the same rules."""
+    if not isinstance(name, str) or len(name) > 40 or not FLAG_NAME.fullmatch(name):
+        return f'flag name {name!r} must be kebab case, each part starting with a letter (new-checkout), at most 40 characters'
+    if not isinstance(flag, dict):
+        return f'flags.{name} must be a mapping with type and default'
+    kind = flag.get('type')
+    if kind not in FLAG_TYPES:
+        return f'flags.{name}.type must be one of {", ".join(FLAG_TYPES)}'
+    allowed = {'type', 'description', 'default', *ENVIRONMENTS} | ({'min', 'max'} if kind in ('integer', 'number') else set()) \
+        | ({'enum'} if kind == 'string' else set())
+    if unknown := sorted(set(flag) - allowed):
+        return f'flags.{name} may not set {", ".join(unknown)} (a {kind} flag sets {", ".join(sorted(allowed))})'
+    if not isinstance(flag.get('description', ''), str):
+        return f'flags.{name}.description must be text'
+    if 'default' not in flag:
+        return f'flags.{name}.default is required'
+
+    def typed(value: object) -> bool:
+        if not isinstance(value, FLAG_TYPES[kind]) or isinstance(value, bool) and kind != 'boolean':
+            return False
+        if kind == 'integer':
+            return INT_RANGE[0] <= value <= INT_RANGE[1]
+        return kind != 'number' or math.isfinite(value)
+    for bound in ('min', 'max'):
+        if bound in flag and not (isinstance(flag[bound], (int, float)) and not isinstance(flag[bound], bool)
+                                  and (kind == 'number' or isinstance(flag[bound], int))):
+            return f'flags.{name}.{bound} must be a{"n integer" if kind == "integer" else " number"}'
+    if 'min' in flag and 'max' in flag and flag['min'] > flag['max']:
+        return f'flags.{name}.min is above its max'
+    enum = flag.get('enum')
+    if enum is not None and (not isinstance(enum, list) or not enum or not all(isinstance(v, str) for v in enum)
+                             or len(set(enum)) != len(enum)):
+        return f'flags.{name}.enum must list distinct strings'
+    for key in ('default', *ENVIRONMENTS):
+        if key not in flag:
+            continue
+        value = flag[key]
+        if not typed(value):
+            return f'flags.{name}.{key} must be a{"n" if kind == "integer" else ""} {kind}, not {value!r}'
+        if kind in ('integer', 'number') and not (flag.get('min', value) <= value <= flag.get('max', value)):
+            return f'flags.{name}.{key} is outside min and max'
+        if enum is not None and value not in enum:
+            return f'flags.{name}.{key} must be one of {", ".join(enum)}'
+    return ''
 
 
 def of(doc: object, source: str = FILE) -> Declaration:
@@ -207,8 +264,12 @@ def of(doc: object, source: str = FILE) -> Declaration:
         except ValueError as error:
             raise fail(f'alerts: {error}') from None
         defaults['alerts'] = doc['alerts']
+    flags = field('flags', dict) or {}
+    for name, flag in flags.items():
+        if problem := _flag_problem(name, flag):
+            raise fail(problem)
     return Declaration(defaults, field('stack', str) or '', provides.get('api') or '',
-                       provides.get('apiFile') or '', provides.get('eventsFile') or '')
+                       provides.get('apiFile') or '', provides.get('eventsFile') or '', flags)
 
 
 def parse(text: str, source: str = FILE) -> Declaration:

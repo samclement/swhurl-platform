@@ -29,7 +29,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 | Health, Secrets, certificate mode, lifecycle, chart updates, backups, troubleshooting | `docs/operations.md` |
 | Every `make` target | `docs/commands.md` |
 | Shared services, settings, keys, known issues | `docs/services.md` |
-| The demo apps; app lifecycle: template, create, access, teams and isolation, calling another app, events, what an app offers, notifications, secrets, telemetry, deploy, dependency updates, promote, operate, remove; app policy | `docs/apps.md` |
+| The demo apps; app lifecycle: template, create, access, teams and isolation, calling another app, events, what an app offers, notifications, feature flags, secrets, telemetry, deploy, dependency updates, promote, operate, remove; app policy | `docs/apps.md` |
 | Web console: use, deploy, token, protection | `docs/console.md` |
 | Flux units, dependencies, ownership, deletion, how changes reach the cluster | `docs/architecture.md` |
 | Validation, change checklist, docs and diagram conventions | `docs/contributing.md` |

@@ -1520,3 +1520,34 @@ Submitted Kotlin web/no-database/no-API/no-events app `swhurl-try-16`, team `dem
 | Verified HTTPS sign-in redirect | 353 | HTTP 301 and HTTPS 302, certificate verification enabled |
 
 Workflow and PR observations were polled roughly every five seconds; readiness rows use Kubernetes condition timestamps. The HTTPS observer initially saw Traefik's self-signed default certificate just after the Certificate became Ready, stopped, and was resumed; 353 s is the confirmed upper bound, not the instant the route first became usable. `make app-status APP=swhurl-try-16 ENV=staging` reports Healthy, 1/1 ready, matching digest and Ready TLS. `make verify-platform` passed at `d05a6e8`. No database or app Secret was created. The repository, package and staging instance remain for operator cleanup.
+
+### Changes and validation
+
+Kotlin [template PR #27](https://github.com/samclement/swhurl-app-template-kotlin/pull/27), merged as `03872aa`, releases `v0.2.5`: an independent `java-runtime` Docker stage for `jlink`, shared registry cache tags keyed by effective Gradle kind/database/API settings, legacy cache imports, and four one-second container liveness observations instead of fixed ten-second waits. SQLite still checks migrations, writes and persistence across restart. The seven-combination [PR run 38515364232](https://github.com/samclement/swhurl-app-template-kotlin/actions/runs/38515364232) and [main run 38515618757](https://github.com/samclement/swhurl-app-template-kotlin/actions/runs/38515618757) passed, including retained OCI/runtime identity proof on the default combination. The main builds wrote the new public cache tags. Every workflow shell block passed `bash -n`; an extracted liveness function observed a healthy container four times and failed on the second observation of a crashed one. Failures after that observation window remain outside the smoke test.
+
+Platform `4a87c7c` limits new-app merge-result validation to parallel `check-repo` and `check-apps`, retaining the scope, current-head validation, hold-label and base-race checks. The unit-registration comment now agrees with the frozen test fixture. `FakeRunner` tests prove new-app checks precede the push; failed validation, a moved base and shared/encrypted changes cannot push. Operator commits still require full `make check`; it passed 749 tests, all 32 staging/production policy combinations, schemas, lint and collector fixtures, and host/fixture `bash -n` passed. No protected Flux-system file was changed. [Console publish 38515985648](https://github.com/samclement/swhurl-platform/actions/runs/38515985648) pinned `src-38226a17dc2ca9d6` in `9b99499`; reconciliation and platform/app verification passed, and both checker jobs scheduled at 05:21 UTC succeeded on it.
+
+Catalogue `89a666e` pins the tested Kotlin release commit. `make check` passed again with that pin. [Publish 38516349011](https://github.com/samclement/swhurl-platform/actions/runs/38516349011) pinned `src-ddcdf7bf68de1adf` in `4196932`. A verification started during the console/notify rollout reported those two units reconciling; after they settled, `make verify-platform` passed. Both checker jobs scheduled at 05:26 UTC succeeded on the new image.
+
+### Equivalent creation after deployment
+
+Submitted `swhurl-try-17` through the updated deployed console at 05:25:22 UTC with the baseline's same stack, features, description, team and exposure. Its Copier answers record `v0.2.5`. [Image run 38516590629](https://github.com/samclement/swhurl-try-17/actions/runs/38516590629) passed; its log shows the `java-runtime` `jlink` stage `CACHED`, and app compilation/tests still ran. [Platform PR #67](https://github.com/samclement/swhurl-platform/pull/67) passed app-only Validate and the narrowed merge gate, auto-merging as `9ea0250`.
+
+| Milestone or duration | Before (`swhurl-try-16`) | After (`swhurl-try-17`) |
+| --- | --- | --- |
+| Image build step | 72 s | 68 s |
+| Smoke-test step | 16 s | 10 s |
+| Complete image CI job, excluding queue | 115 s | 122 s |
+| Image workflow observed complete after submission | 148 s | 159 s |
+| Platform PR observed open after submission | 169 s | 178 s |
+| Merge-verification step | 71 s | 21 s |
+| Merge accepted after submission | 252 s | 212 s |
+| Deployment Available after submission | 312 s | 247 s |
+| Certificate Ready after submission | 309 s | 253 s |
+| Verified HTTPS redirect observed after submission | 353 s upper bound | 260 s |
+
+The narrowed gate removed 50 s in this pair, and app availability was about 65 s earlier. These are two individual fresh repositories, not a controlled benchmark. Runner setup, input verification, registry transfer and rollout times differ: the complete first-image workflow was slower after the change despite the cached runtime and shorter smoke test. Rollout variation also contributes to the availability difference. The baseline HTTPS observer interruption prevents attributing the full HTTPS difference to the optimisations. Prebuilt starter images or persistent runners were not implemented; compilation and CI setup remain first-image costs.
+
+At `9ea0250`, `make verify-platform` passed, and `make app-status` for each of the 15 registered instances reported Healthy. Both apps answered signed-out HTTP with 301 and HTTPS with 302 using certificate verification. Service port-forwards returned 200 from `/healthz` and `/` with a simulated signed-in identity; `swhurl-try-17` reported the correct app name and user caller. A real Google-signed-in browser request remains unexercised. Both apps use existing telemetry, probes and digest verification; neither adds an app Secret, persistent volume, backup destination or cluster service beyond its normal app resources.
+
+**Operator cleanup:** public repositories [swhurl-try-16](https://github.com/samclement/swhurl-try-16) and [swhurl-try-17](https://github.com/samclement/swhurl-try-17), their same-named GHCR container packages, and both staging instances remain. No repository, namespace or data was deleted in this work.

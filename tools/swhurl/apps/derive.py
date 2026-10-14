@@ -96,12 +96,13 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: 
 
 def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, publishers: dict[str, list[str]],
                 ) -> tuple[list[tuple[Path, str]], tuple[str, ...], tuple[str, ...], dict | None]:
-    """What follows from the events an instance declares (SWHURL_EVENTS_PUBLISH / _SUBSCRIBE):
-    ``(file edits, files to list, files to delete and unlist, its NATS user or None)``.
+    """What follows from an instance's NATS key and the events it declares (SWHURL_EVENTS_PUBLISH /
+    _SUBSCRIBE): ``(file edits, files to list, files to delete and unlist, its NATS user or None)``.
 
-    In the release (edited in place): the NATS address, the reference to the Secret holding the
-    app's seed, and Reloader restarting the app when that Secret changes. Beside it: the stream and
-    consumers (events.yaml), and the unit waiting for platform-nats and decrypting.
+    An instance with a key (every instance where the platform has NATS) gets, in the release (edited
+    in place): the NATS address, the reference to the Secret holding the app's seed, and Reloader
+    restarting the app when that Secret changes; beside it, the unit waiting for platform-nats and
+    decrypting. One that declares events also gets its stream and consumers (events.yaml).
     ``publishers`` maps each app of this environment to the events it publishes.
     """
     main, workload = container(release), controller(release)
@@ -115,16 +116,17 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
     refs = main.get('envFrom')
     annotations = workload.get('annotations') or {}
     reloads = [name for name in str(annotations.get(RELOAD, '')).split(',') if name]
+    keyed = bool(variables.get(events.NKEY_VARIABLE)) and (instance / events.SECRET_FILE).is_file()
     unit_path = instance_unit_file(root, app, env)
-    if not (publishes or subscribes) and not unit_path.is_file():
+    if not keyed and not unit_path.is_file():
         unit_path = None  # an instance without its unit (a test tree) has nothing to undo there
     unit = YamlFile(unit_path) if unit_path else None
     unit_spec = mapping(unit.data, 'spec') if unit else {}
     dependencies = unit_spec.get('dependsOn') or []
     edits: list[tuple[Path, str]] = []
-    if publishes or subscribes:
-        if not variables.get(events.NKEY_VARIABLE) or not (instance / events.SECRET_FILE).is_file():
-            raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
+    if (publishes or subscribes) and not keyed:
+        raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
+    if keyed:
         if variables.get(events.URL_VARIABLE) != events.URL:
             variables[events.URL_VARIABLE] = events.URL
         if refs is None:
@@ -137,9 +139,12 @@ def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, p
             unit_spec.setdefault('dependsOn', dependencies).append({'name': events.UNIT})
         if 'decryption' not in unit_spec:
             unit_spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
-        edits.append((instance / events.EVENTS_FILE, dump(events.manifests(app, env, publishes, subscribes))))
         user = events.user(str(variables[events.NKEY_VARIABLE]), env, app, publishes, subscribes)
-        listed, unlisted = (events.SECRET_FILE, events.EVENTS_FILE), ()
+        if publishes or subscribes:
+            edits.append((instance / events.EVENTS_FILE, dump(events.manifests(app, env, publishes, subscribes))))
+            listed, unlisted = (events.SECRET_FILE, events.EVENTS_FILE), ()
+        else:
+            listed, unlisted = (events.SECRET_FILE,), (events.EVENTS_FILE,)
     else:
         for key in (events.URL_VARIABLE, events.NKEY_VARIABLE):
             variables.pop(key, None)

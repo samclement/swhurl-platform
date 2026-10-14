@@ -119,6 +119,33 @@ def changed_list(what: str, current: list[str], replace: list[str] | None, add: 
     return [name for name in current if name not in remove] + add
 
 
+def nats_key(root: Path, app: str, env: str, *, runner: Runner | None = None) -> bool:
+    """Give an instance its own NATS key if it has none (docs/apps.md#events): the seed in its encrypted
+    Secret, the public key on its release. Whether one was made; sync_env wires what follows."""
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    variables = mapping(container(document.data), 'env', create=True)
+    secret = instance / events.SECRET_FILE
+    if variables.get(events.NKEY_VARIABLE) and secret.is_file():
+        return False
+    # The seed goes from memory into a file that sops encrypts in place: it is never printed.
+    seed, public = nkeys.generate()
+    secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
+                             'metadata': {'name': events.secret_name(app), 'namespace': Instance(app, env).namespace},
+                             'type': 'Opaque', 'stringData': {events.SEED_VARIABLE: seed}}]))
+    try:
+        (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
+    except CommandError as error:
+        secret.unlink(missing_ok=True)
+        raise EditError(f'could not SOPS-encrypt {secret.name}; nothing was changed: {error}') from None
+    if 'sops:' not in secret.read_text():
+        secret.unlink()
+        raise EditError(f'{secret.name} was not encrypted; removed it')
+    variables[events.NKEY_VARIABLE] = public
+    document.save()
+    return True
+
+
 def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
                add_publish: list[str] | None = None, remove_publish: list[str] | None = None,
                add_subscribe: list[str] | None = None, remove_subscribe: list[str] | None = None,
@@ -148,31 +175,18 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
             variables.pop(key, None)
     active = bool(events.published(variables) or events.subscribed(variables))
     before = document.path.read_text()
-    secret = instance / events.SECRET_FILE
-    created = False
-    if active and not (variables.get(events.NKEY_VARIABLE) and secret.is_file()):
-        # The seed goes from memory into a file that sops encrypts in place: it is never printed.
-        seed, public = nkeys.generate()
-        secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
-                                 'metadata': {'name': events.secret_name(app), 'namespace': Instance(app, env).namespace},
-                                 'type': 'Opaque', 'stringData': {events.SEED_VARIABLE: seed}}]))
-        try:
-            (runner or Runner()).run(['sops', '--encrypt', '--in-place', str(secret)])
-        except CommandError as error:
-            secret.unlink(missing_ok=True)
-            raise EditError(f'could not SOPS-encrypt {secret.name}; nothing was changed: {error}') from None
-        if 'sops:' not in secret.read_text():
-            secret.unlink()
-            raise EditError(f'{secret.name} was not encrypted; removed it')
-        variables[events.NKEY_VARIABLE] = public
-        created = True
     document.save()
+    try:
+        created = active and nats_key(root, app, env, runner=runner)
+    except EditError:
+        document.path.write_text(before)
+        raise
     try:
         sync_env(root, env)
     except EditError:
         document.path.write_text(before)
         if created:
-            secret.unlink(missing_ok=True)
+            (instance / events.SECRET_FILE).unlink(missing_ok=True)
         raise
     now = helmrelease.variables(YamlFile(instance / 'helmrelease.yaml').data)
     print(f'[OK] {app}/{env} publishes: {", ".join(events.published(now)) or "nothing"}; '
@@ -380,6 +394,8 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         if missing:
             raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
         result = promotion.create(root, app, src, host=host, runner=runner)
+        if events.has_nats(root):
+            nats_key(root, app, target, runner=runner)  # production's own identity, never staging's
         sync_env(root, target)  # production's own callers and callees
         carry_offers(root, app, runner=runner)
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
@@ -765,7 +781,15 @@ def main_sync(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-sync', description='Rewrite what the platform derives in every instance')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: sync(args.root.resolve()), False)
+    def keys_then_sync():
+        root = args.root.resolve()
+        if events.has_nats(root):  # every instance has its own NATS key; one made before that gets it here
+            for env in ENVIRONMENTS:
+                for app in instances_in(root, env):
+                    if nats_key(root, app, env):
+                        print(f'[OK] {app}/{env}: created its NATS key ({events.SECRET_FILE})')
+        return sync(root)
+    return run(keys_then_sync, False)
 
 
 def main_remove(argv: list[str] | None = None) -> int:

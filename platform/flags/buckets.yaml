@@ -1,0 +1,32 @@
+# Feature flag overrides (docs/apps.md#feature-flags): one NATS key-value bucket per environment,
+# created by the stream controller (platform/nats). A key is <env>.<app>.<flag> holding the
+# override as JSON; only the console writes, and each app may watch only its own keys
+# (tools/swhurl/apps/events.py). An app falls back to its declared values, so the buckets are
+# not backed up. In their own unit: the KeyValue type comes from the controller in platform-nats.
+apiVersion: jetstream.nats.io/v1beta2
+kind: KeyValue
+metadata:
+  name: flags-staging
+  namespace: messaging
+spec:
+  bucket: flags-staging
+  description: Feature flag overrides for staging
+  history: 5
+  maxValueSize: 1024
+  maxBytes: 1048576
+  storage: file
+  replicas: 1
+---
+apiVersion: jetstream.nats.io/v1beta2
+kind: KeyValue
+metadata:
+  name: flags-prod
+  namespace: messaging
+spec:
+  bucket: flags-prod
+  description: Feature flag overrides for production
+  history: 5
+  maxValueSize: 1024
+  maxBytes: 1048576
+  storage: file
+  replicas: 1

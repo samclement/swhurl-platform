@@ -47,7 +47,8 @@ across the instances of one environment (source manifests, not rendered):
 
 and, for the whole tree:
 
-  event-users         platform/nats/users.yaml is what the instances' declarations generate
+  event-users         every instance has its own NATS key, and platform/nats/users.yaml is what the
+                      instances generate
   notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
                       routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
 
@@ -107,6 +108,7 @@ from swhurl.apps.contract import (
     teams,
 )
 from swhurl.apps.instance import INSTANCE_ROOTS
+from swhurl.apps.instance import instances as instances_under
 from swhurl.run import Runner
 
 EXCEPTIONS_KEY = EXCEPTIONS
@@ -285,13 +287,16 @@ def check_events(docs: list[dict], release: dict, labels: dict) -> list[tuple[st
     declared = [d for d in docs if d['kind'] in ('Stream', 'Consumer')]
     referenced = events.secret_name(app) in helmrelease.secret_references(release)
     problems = []
+    identity = referenced or variables.get(events.URL_VARIABLE) or variables.get(events.NKEY_VARIABLE)
+    key = str(variables.get(events.NKEY_VARIABLE, ''))
+    if (identity or publishes or subscribes) and (variables.get(events.URL_VARIABLE) != events.URL
+                                                  or not (key.startswith('U') and len(key) == 56) or not referenced):
+        # A NATS identity (every instance where the platform has NATS) is whole or absent.
+        problems.append(f'needs {events.URL_VARIABLE}, a public key in {events.NKEY_VARIABLE} and the {events.secret_name(app)} Secret reference')
     if not (publishes or subscribes):
-        if declared or referenced or variables.get(events.URL_VARIABLE) or variables.get(events.NKEY_VARIABLE):
-            problems.append('declares no events but carries a stream, consumer, NATS address, key or Secret reference')
+        if declared:
+            problems.append('declares no events but carries a stream or consumer')
     else:
-        key = str(variables.get(events.NKEY_VARIABLE, ''))
-        if variables.get(events.URL_VARIABLE) != events.URL or not (key.startswith('U') and len(key) == 56) or not referenced:
-            problems.append(f'needs {events.URL_VARIABLE}, a public key in {events.NKEY_VARIABLE} and the {events.secret_name(app)} Secret reference')
         wanted = events.manifests(app, env, publishes, subscribes)
         def shape(doc):
             return doc['kind'], doc['metadata']['name'], doc['spec']
@@ -509,14 +514,18 @@ def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
 
 
 def check_event_users(root: Path = ROOT) -> list[str]:
-    """Whether the NATS user list is what the instances generate (rule event-users)."""
+    """Whether every instance has its NATS key and the NATS user list is what the instances generate
+    (rule event-users)."""
     wanted = events.users_file(root)
     if not wanted:
         return []
+    problems = [f'event-users: {each.app}/{each.env} has no NATS key; make app-sync creates it'
+                for each in instances_under(root / INSTANCE_ROOTS[0])
+                if not helmrelease.variables(yaml.safe_load((each.folder(root) / 'helmrelease.yaml').read_text())).get(events.NKEY_VARIABLE)]
     path, text = wanted
-    if path.is_file() and path.read_text() == text:
-        return []
-    return [f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it']
+    if not (path.is_file() and path.read_text() == text):
+        problems.append(f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it')
+    return problems
 
 
 def platform_image(instance: Path) -> list[str]:

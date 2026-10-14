@@ -69,6 +69,8 @@ spec:
               OTEL_SERVICE_NAME: demo-shop
               SWHURL_SERVICE_DEMO_ORDERS_URL: http://demo-orders.demo-orders-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_ALLOWED_CALLERS: demo-shopper
+              SWHURL_EVENTS_NKEY: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
             probes:
               readiness:
                 enabled: true
@@ -93,6 +95,11 @@ spec:
                     port: 8080
                   periodSeconds: 5
                   failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: demo-shop-events
+        annotations:
+          secret.reloader.stakater.com/reload: demo-shop-events
     persistence:
       tmp:
         type: emptyDir

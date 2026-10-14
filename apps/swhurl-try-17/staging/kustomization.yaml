@@ -6,3 +6,4 @@ resources:
 - resourcequota.yaml
 - networkpolicy.yaml
 - image-automation.yaml
+- events.sops.yaml

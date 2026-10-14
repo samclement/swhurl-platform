@@ -537,7 +537,7 @@ The trade-offs are:
 - **Dependence on registries and artifacts.** Skopeo copies the runtime into Docker for the smoke test and the complete OCI image into GHCR for publication. It is pinned by digest to an [immutable upstream release](https://github.com/podman-container-tools/image_build#readme), because rolling upstream tags can lose their previous digests after a rebuild. CI still needs those registries to be available. Candidate lookup problems fall back to a build; runtime loading, smoke-test, proof or publication failures stop the job.
 - **Main relies on the PR's checks.** A match skips repeating them and preserves the PR build's provenance. The subsequent [staging health check](#operate-an-instance) remains necessary: the CI smoke test runs without the live platform's sign-in, service calls and event credentials.
 
-[Measured job times and successful reuse/fallback runs](current-state.md#tested-pr-image-reuse-13-to-14-october-2026) show the benefit and its limits. Cache warmth, image size, registry latency and runner queues affect elapsed time; these optimisations save repeated work, and individual timings are not a speed guarantee.
+[Initial reuse/fallback evidence](current-state.md#tested-pr-image-reuse-13-to-14-october-2026) and the [eight-app rollout timings](current-state.md#skopeo-dependency-repair-and-remaining-template-adoption-14-october-2026) show the benefit and its limits. Cache warmth, image size, registry latency and runner queues affect elapsed time; these optimisations save repeated work, and individual timings are not a speed guarantee.
 
 ## Promote to production
 

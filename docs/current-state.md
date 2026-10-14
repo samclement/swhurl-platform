@@ -1593,3 +1593,13 @@ Every app instance has its own NATS key, and apps on templates `v0.2.7` watch th
 - **Live** (`40da68b`, throwaway `swhurl-try-18` staging from `v0.2.7` with `flags=example`): `app-new` created its key. It answered `HELLO FROM SWHURL-TRY-18` (declared). After `nats kv put flags-staging staging.swhurl-try-18.shout false`, run with the console's NATS key from a temporary `nats-box` pod in `console`, the same pod answered `hello from swhurl-try-18`. That held after `rollout restart`; deleting the key brought back `HELLO …`. The app logged `flag override set` and `flag override cleared`. The console's user was refused another app's reply subject.
 
 Not exercised: a Kotlin app on the cluster with overrides; a first promotion creating production's key for an app without events; the console's own deployment using its NATS Secret (stage 3).
+
+## Feature flags stage 3 (14 October 2026)
+
+The app page's **Feature flags** card sets and clears overrides ([console](console.md#use-it), [apps](apps.md#feature-flags)).
+
+- **Deployed:** `d3f5eaa` (console image `src-568b72c7a51cac04`, deployed by `cd053d0`). The console Deployment reads the `console-nats` Secret, and its two CronJobs ran on the new image. `55370b4` read `swhurl-try-18`'s flags into `offers/flags.json` with `make app-offers`. It also fixes that command, which on any change to a single instance handed `True` to the policy check as the instance's folder (an existing bug; the Offers workflow's `--all` was not affected).
+- **Live,** through a port-forward to the console with the identity and `Origin` headers that oauth2-proxy and a console page send: the card showed `shout` as boolean, declared `true`, no override. **Set** `false` answered 303 to the card; the card then showed override `false`, and the app answered `hello from swhurl-try-18`. **Clear** brought back `HELLO FROM SWHURL-TRY-18`. `yes` was refused with 400. The same app pod ran throughout. The audit log has `[AUDIT] sam.clement@gmail.com flag swhurl-try-18/staging shout = false` and `… cleared`.
+- **Checks:** `make check` passed. The console's NATS client was tested against NATS 2.15.0 with the generated console permissions: read, set, clear; an unknown key refused; a missing bucket reported. Its signatures match RFC 8032 test 1 and openssl.
+
+Not exercised: the card in a real signed-in browser; production overrides; the Offers workflow writing `flags.json` after a new image.

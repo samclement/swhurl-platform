@@ -654,6 +654,14 @@ components:
         self.assertIn('[ERROR] billing/staging: could not read swhurl.yaml from samclement/billing@abc1234: 500', err.getvalue())
         self.assertNotIn('hello', out.getvalue() + err.getvalue(), 'an image no app repository built is skipped')
 
+        # One instance: a change is checked against the app policy, on the instance's folder.
+        manifest = b'version: 1\nkind: web\nhealthPath: /healthz\nflags: {shout: {type: boolean, default: false}}\n'
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, \
+                mock.patch.object(edit, 'check_generated', return_value=0) as checked:
+            code = edit.main_offers(['orders', 'staging', '--root', str(self.root)], opener=lambda request: manifest)
+        self.assertEqual((code, err.getvalue()), (0, ''))
+        checked.assert_called_once_with(self.root.resolve() / 'apps/orders/staging')
+
     def test_promotion_carries_what_the_promoted_image_offers(self):
         from swhurl.apps import offers
         self.with_units()

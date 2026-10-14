@@ -32,7 +32,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Left from 1:** `'staging'`/`'prod'` literals in `apps/promotion.py`, `apps/edit.py` and the console's `merge.py`, `promotion.py` and `server.py`; unit names built by hand in `livetests/app_template.py` and in test fixtures.
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
-16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage; the developer removes a flag from the code when it is settled. Needs the operator's approval of the proposed decisions; the NATS questions are settled ([spike](#spike-findings-14-october-2026-local-podman-nothing-deployed)).
+16. **Feature flags: stage 1 delivered 14 October 2026** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started), [evidence](current-state.md#feature-flags-stage-1-14-october-2026)): apps declare typed flags in `swhurl.yaml` and read generated accessors (templates `v0.2.6`). Next: stage 2, NATS key-value buckets, app permissions (the spike's list, including `CONSUMER.INFO` for Kotlin) and the helper's watch with the readiness wait.
 
 ### Delivered
 
@@ -1115,7 +1115,7 @@ The `flags` field of [`swhurl.yaml`](apps.md#swhurlyaml) (lifetime: read again, 
 ```yaml
 flags:
   new-checkout:
-    type: boolean            # boolean, number or string
+    type: boolean            # boolean, integer, number or string
     description: Use the new checkout flow
     default: false
     prod: false              # optional value per environment; otherwise the default
@@ -1151,14 +1151,14 @@ flowchart TB
 
 The value of a flag is the first of: the override in NATS, the declared value for `SWHURL_ENV`, the declared default.
 
-- **Start.** The helper reads the declared values from the `swhurl.yaml` in the image, then watches its own keys on the connection the events helper already opens. A NATS KV watch first delivers every stored value, then each change, so **a restarted pod gets its overrides back**; only clearing the key (or losing NATS data) returns it to the declared value. The app reports not ready until the stored values have arrived, with a timeout of a few seconds so it still starts on its declared values when NATS is down.
+- **Start.** The generated code carries the declared values (stage 1), then the helper watches its own keys on the connection the events helper already opens. A NATS KV watch first delivers every stored value, then each change, so **a restarted pod gets its overrides back**; only clearing the key (or losing NATS data) returns it to the declared value. The app reports not ready until the stored values have arrived, with a timeout of a few seconds so it still starts on its declared values when NATS is down.
 - **Change.** The console writes a key; the watch's loop sets the map entry (or deletes it, for a cleared key); the next accessor read returns the new value. A request already past the `if` keeps its branch.
 - **Local development.** No `SWHURL_ENV` or NATS: the declared defaults.
 
 Sketch of the TypeScript helper (Kotlin has the same shape with jnats's `KeyValueWatcher` and a `ConcurrentHashMap`; check the calls against the client version the template pins):
 
 ```ts
-const declared = loadDeclaredValues();            // swhurl.yaml in the image, for SWHURL_ENV
+const declared = loadDeclaredValues();            // from the code generated from swhurl.yaml, for SWHURL_ENV
 const overrides = new Map<string, unknown>();
 
 export const store = {
@@ -1194,7 +1194,7 @@ export async function watchFlags() {
 
 | # | Stage | Ends in |
 | --- | --- | --- |
-| 1 | `flags` in `declaration.py` (types, bounds, `enum`, per-environment values); template code generation and the helper reading declared values in both stacks; a template CI check; pinned in `STACK_REVISIONS` | `make check-templates` green; an app reads declared values with nothing new in the cluster |
+| 1 | `flags` in `declaration.py` (types `boolean`, `integer` (32 bits), `number`, `string`; bounds, `enum`, per-environment values); each template generates typed accessors from `swhurl.yaml` at build (`scripts/flags.mjs`, `gradle/flags.gradle.kts`) with the same checks, and a `flags` question (`none`, `example`) adds an example flag; pinned in `STACK_REVISIONS` | `make check-templates` green on 64 combinations; each template's CI builds an app with a flag. **Done 14 Oct** (templates `v0.2.6`) |
 | 2 | Buckets `flags-staging` and `flags-prod` (NACK `KeyValue`); app permissions on their own keys from `make app-sync`; a console NATS user that may write; the helper's watch and readiness wait | A live throwaway app changes behaviour from a `nats kv put`, and keeps it across a pod restart |
 | 3 | Offers workflow keeps `offers/flags.json`; console **Adjust** and **Clear** on the app page, typed from the schema, audited | A flip from the signed-in console reaches a live app without a restart |
 | 4 | Console marks overrides older than 14 days and ones the running image no longer declares | Deleting a flag from a throwaway app's code shows its override as undeclared, and **Clear** removes it |

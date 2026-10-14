@@ -32,6 +32,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Left from 1:** `'staging'`/`'prod'` literals in `apps/promotion.py`, `apps/edit.py` and the console's `merge.py`, `promotion.py` and `server.py`; unit names built by hand in `livetests/app_template.py` and in test fixtures.
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
+16. **Feature flags: proposed 14 October 2026, not started** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started)): typed flags declared in `swhurl.yaml` with values per environment, overrides from the console delivered to apps through NATS key-value storage, and a Retire pull request that ends each flag. Needs the operator's approval of the proposed decisions; three open questions to settle first.
 
 ### Delivered
 
@@ -1098,3 +1099,108 @@ The AST scan triages functions; it is not a complexity target. The remaining can
 - `console/merge.check_promotion` (15): separate shared review checks from first-production regeneration. Preserve Git comparisons as authority, image/offer commit consistency and current refusals.
 
 Keep `dashboards.sync` (13) and `clickstack.bootstrap` (13) as they are: each reads clearly as ordered lifecycle work, and splitting it would obscure the required phase order. `promotion.create` already names its preparation, policy, race, publish and rollback phases. No code changes were made for this final review.
+
+## 20. Feature flags — proposed 14 October 2026, not started
+
+### Goal
+
+An app reads typed feature flags whose values differ per environment, and the operator changes a value from the console without a new image or a restart. A flag is temporary: it ends by being removed from the code, not left on.
+
+Example: `demo-shop` declares `new-checkout` (boolean, default `false`). Its code reads `if (flags.newCheckout)`. The operator turns it on in production from the app page; within a second the next request takes the new branch. Once confirmed, **Retire** opens a pull request in `samclement/demo-shop` that fixes the value and marks the flag for removal.
+
+### One declaration, three uses
+
+The `flags` field of [`swhurl.yaml`](apps.md#swhurlyaml) (lifetime: read again, with each image) is the only place a flag is described:
+
+```yaml
+flags:
+  new-checkout:
+    type: boolean            # boolean, number or string
+    description: Use the new checkout flow
+    default: false
+    prod: false              # optional value per environment; otherwise the default
+  max-basket-items:
+    type: number
+    min: 1
+    max: 100
+    default: 20
+  banner:
+    type: string
+    enum: [none, sale, outage]
+    default: none
+```
+
+```mermaid
+flowchart TB
+  decl["swhurl.yaml flags<br/>(app repository)"]
+  decl -- "build: code generation" --> code["1. App code<br/>if (flags.newCheckout) …"]
+  decl -- "Offers workflow, per image" --> schema["apps/&lt;app&gt;/&lt;env&gt;/offers/flags.json"]
+  schema --> form["3. Console form<br/>toggle, bounded number, choice"]
+  form -- "checked against the type;<br/>put &lt;env&gt;.&lt;app&gt;.&lt;flag&gt;" --> kv[("NATS KV bucket flags-&lt;env&gt;")]
+  kv -- "2. watch message" --> helper["helper in the app<br/>updates its in-memory map"]
+  helper --> code
+```
+
+| Use | Derived from the declaration as | Type enforced by |
+| --- | --- | --- |
+| 1. App code | A generated typed accessor per flag (`flags.newCheckout: boolean`), a getter so a changed value is seen on the next read | The compiler; the template's CI checks the declaration's values against their types |
+| 2. The message | Key `<env>.<app>.<flag>` in the bucket `flags-<env>`; value as JSON (`true`, `42`, `"sale"`) | The console before writing; the helper ignores and logs a value of the wrong type |
+| 3. Console form | The schema of the image each environment runs, kept beside the API and event documents by the [Offers workflow](apps.md#what-an-app-offers) | The form's controls and the console's check; `declaration.py` refuses a bad declaration |
+
+### How a value reaches the code
+
+The value of a flag is the first of: the override in NATS, the declared value for `SWHURL_ENV`, the declared default.
+
+- **Start.** The helper reads the declared values from the `swhurl.yaml` in the image, then watches its own keys on the connection the events helper already opens. A NATS KV watch first delivers every stored value, then each change, so **a restarted pod gets its overrides back**; only clearing the key (or losing NATS data) returns it to the declared value. The app reports not ready until the stored values have arrived, with a timeout of a few seconds so it still starts on its declared values when NATS is down.
+- **Change.** The console writes a key; the watch's loop sets the map entry (or deletes it, for a cleared key); the next accessor read returns the new value. A request already past the `if` keeps its branch.
+- **Local development.** No `SWHURL_ENV` or NATS: the declared defaults.
+
+Sketch of the TypeScript helper (Kotlin has the same shape with jnats's `KeyValueWatcher` and a `ConcurrentHashMap`; check the calls against the client version the template pins):
+
+```ts
+const declared = loadDeclaredValues();            // swhurl.yaml in the image, for SWHURL_ENV
+const overrides = new Map<string, unknown>();
+
+export const store = {
+  get<T>(name: string, type: string, fallback: T): T {
+    const value = overrides.has(name) ? overrides.get(name) : declared[name];
+    return typeof value === type ? (value as T) : fallback;
+  },
+};
+
+export async function watchFlags() {
+  const prefix = `${process.env.SWHURL_ENV}.${process.env.SWHURL_APP}.`;
+  const kv = await new Kvm(await connection()).open(`flags-${process.env.SWHURL_ENV}`);
+  for await (const entry of await kv.watch({ key: `${prefix}>` })) {
+    const name = entry.key.slice(prefix.length);
+    if (entry.operation === "PUT") overrides.set(name, entry.json());
+    else overrides.delete(name);
+  }
+}
+```
+
+### Proposed decisions (not yet approved)
+
+| Decision | Why |
+| --- | --- |
+| Flags are declared in `swhurl.yaml`, with values per environment | The declaration sits beside the code that reads it; a changed declared value travels with the image, so production gets it only by promotion |
+| NATS key-value storage, not plain events, carries overrides | A flag is state: a watch delivers the stored value to a starting pod, where an event would be missed and the pod would revert |
+| The console writes overrides to NATS directly; they are not in Git | Takes effect in under a second. Losing them is safe (apps fall back to `swhurl.yaml`); every change is in the console's audit log in ClickStack and the bucket keeps a short history per key. This is the one runtime value kept outside Git |
+| One bucket per environment; an app may only watch `<env>.<app>.>`, only the console may write | Staging and production stay apart, as events do; an app cannot read or change another's flags |
+| **Retire** opens a pull request in the app repository setting `retired: true` (one final value); the accessor becomes a deprecated constant | The compiler's warnings list the branches to delete while the PR still passes CI; deleting the declaration afterwards makes any leftover use a compile error |
+| Overrides survive a new image; the console marks an override whose flag the running image no longer declares, and one older than 14 days | Stale overrides are visible without being removed behind the operator's back |
+
+### Stages
+
+| # | Stage | Ends in |
+| --- | --- | --- |
+| 1 | `flags` in `declaration.py` (types, bounds, `enum`, per-environment values, `retired`); template code generation and the helper reading declared values in both stacks; a template CI check; pinned in `STACK_REVISIONS` | `make check-templates` green; an app reads declared values with nothing new in the cluster |
+| 2 | Buckets `flags-staging` and `flags-prod` (NACK `KeyValue`); app permissions on their own keys from `make app-sync`; a console NATS user that may write; the helper's watch and readiness wait | A live throwaway app changes behaviour from a `nats kv put`, and keeps it across a pod restart |
+| 3 | Offers workflow keeps `offers/flags.json`; console **Adjust** and **Clear** on the app page, typed from the schema, audited | A flip from the signed-in console reaches a live app without a restart |
+| 4 | Console **Retire** pull request; stale and undeclared overrides shown | A retired flag's PR passes CI in a throwaway app |
+
+### Open questions
+
+- Can the console's GitHub token open pull requests in app repositories? Retire needs it; otherwise Retire gives a branch and a link.
+- Is the NATS version's filtered consumer-create permission enough to limit a watch to `<env>.<app>.>`? Spike in stage 2.
+- Does the pinned NATS client in each stack signal the end of the initial values (for the readiness wait)?

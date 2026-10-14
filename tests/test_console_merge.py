@@ -59,6 +59,11 @@ class MergeTests(unittest.TestCase):
             dst = Path(args[-2])
             shutil.copytree(self.root, dst)
             if dst.name == 'candidate':
+                if self.pr['head']['ref'].startswith('console/new-fresh-'):
+                    fresh = new.parse_args(['fresh', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging',
+                                            '--no-auto-deploy', '--image', IMAGE])
+                    new.generate(fresh, dst)
+                    return Result(args)
                 source, target = promotion.read(dst, 'example')
                 if target is None:
                     with mock.patch.object(policy, 'evaluate', return_value=[]):
@@ -213,14 +218,36 @@ class MergeTests(unittest.TestCase):
             self.check(runner)
         self.assertEqual(self.pushes(runner), [])
 
-    def test_new_app_runs_every_check_before_the_push(self):
+    def test_new_app_checks_the_merge_result_before_the_push(self):
+        self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
+        self.files = ['apps/fresh/staging/helmrelease.yaml', 'clusters/home/app-fresh-staging.yaml',
+                      'clusters/home/kustomization.yaml']
+        runner = self.runner()
+        self.check(runner)
+        checks = ('make', '-j2', '--output-sync=target', 'check-repo', 'check-apps')
+        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [checks])
+        self.assertTrue(self.pushes(runner))
+        self.assertLess(runner.calls.index(checks), runner.calls.index(self.pushes(runner)[0]))
+
+    def test_new_app_validation_failure_and_base_race_never_push(self):
         self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
         self.files = ['apps/fresh/staging/helmrelease.yaml']
-        runner = self.runner()
-        with mock.patch.object(merge, 'scope'):
-            self.check(runner)
-        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [('make', 'check')])
-        self.assertTrue(self.pushes(runner))
+        for runner, error in ((self.runner(validation=1), CommandError),
+                              (self.runner(current='d' * 40), merge.Hold)):
+            with self.subTest(error=error), self.assertRaises(error):
+                self.check(runner)
+            self.assertEqual(self.pushes(runner), [])
+
+    def test_new_app_scope_still_refuses_shared_and_encrypted_files(self):
+        self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
+        for filename in ('platform/nats/users.yaml', 'apps/example/staging/helmrelease.yaml',
+                         'apps/fresh/staging/secret.sops.yaml'):
+            self.files = ['apps/fresh/staging/helmrelease.yaml', filename]
+            runner = self.runner()
+            with self.subTest(filename=filename), self.assertRaises(merge.Hold):
+                self.check(runner)
+            self.assertEqual([call for call in runner.calls if call[0] == 'make'], [])
+            self.assertEqual(self.pushes(runner), [])
 
     def test_waits_for_a_running_validate_then_merges(self):
         running = '[{"databaseId": 1, "status": "in_progress", "conclusion": ""}]'

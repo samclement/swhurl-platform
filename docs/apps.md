@@ -493,6 +493,14 @@ Apps from a template update their own dependencies. The Renovate GitHub App is i
 
 Renovate merges only when it runs, so a passing update can wait hours; tick "run again" on the repository's Dependency Dashboard issue to hurry it. The repositories keep GitHub's **Allow auto-merge** off: with no branch protection, GitHub would merge without waiting for checks, while Renovate's own automerge waits for them. A version written inside a template's `*.jinja` file is invisible to Renovate; keep versions in plain files.
 
+### First builds of new apps
+
+A new app's first commit goes directly to `main`, so there is no tested PR image to reuse. Its workflow builds and smoke-tests its own generated code, publishes the image, and the console pins that digest in the staging PR. Deployment pulls the published image; it builds nothing. Both stacks import shared registry caches written by their template's `main` builds, so a new repository can reuse dependency layers without an Actions cache of its own. An unavailable cache takes the ordinary build path. Template cache publication happens before the smoke test finishes; the app workflow still validates its own image before publication.
+
+Kotlin templates from `v0.2.5` keep the trimmed Java runtime (`jlink`) in an independent Docker stage, so changed app source does not rebuild it. Shared dependency cache tags distinguish the actual kind, database and API inputs in `gradle.properties`; events change source but share dependency layers. Older kind/database tags remain importable while those tags warm up. Compilation and tests still run when the app's inputs differ. Both stacks observe container liveness every second for four seconds after a web app answers or a worker starts, and again after a SQLite restart. This catches early crashes immediately but does not cover failures after that window; live staging health checks remain necessary.
+
+The platform PR's [merge gate](console.md#auto-merge) validates its merge result with manifest/schema and app-policy checks, without rerunning unrelated tooling, template or collector checks for an eligible app-only diff. Repository creation, runner queues, image publication, platform validation, Flux/Helm rollout, application startup and certificate issuance still contribute to the time from submission to a working HTTPS route. [Measured creation timings](current-state.md#new-app-creation-speed-14-october-2026) distinguish those stages; single samples are not speed guarantees.
+
 ### Compiling TypeScript once
 
 For example, a demo-orders PR changes an order route. The older build type-checks, compiles and tests on the runner, then compiles again in Docker to make the image. The current build compiles and type-checks once inside Docker, runs the tests against that JavaScript, and packages the tested output. A failed test stops the image build. Kotlin already runs its Gradle checks and packaging together in the image build.

@@ -21,7 +21,7 @@ from swhurl.run import CommandError, Runner
 MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
-PROMOTION_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
+MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
@@ -178,9 +178,9 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
                 check_promotion(base, candidate, app, pr.get('body') or '', files, runner)
             elif instance_folder(base, app, 'staging').exists():
                 raise Hold('new-app PR overwrites an existing staging instance')
-            # A promotion's files are pinned above to the reviewed image or conversion, so only the checks
-            # that read app instances can change. A new app's unit is only read by the tests: run them all.
-            runner.run(['make', *(PROMOTION_CHECKS if action == 'promote' else ['check'])], cwd=candidate)
+            # scope holds both actions to app files, their unit and its registration. check-repo renders
+            # the registered unit; tooling tests read frozen fixtures, and templates/OTel are unchanged.
+            runner.run(['make', *MERGE_CHECKS], cwd=candidate)
             # Recheck the human's hold and the exact PR head after the potentially long validation.
             eligible(runner.json(['gh', 'api', pr_path]), sha, repo)
             current = runner.output(['git', 'ls-remote', 'origin', 'refs/heads/main'], cwd=root).split()[0]

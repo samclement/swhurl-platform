@@ -1502,3 +1502,21 @@ Catalogue commit `37c7e7e` passed `make check` (747 tests, all 32 policy combina
 At platform `f6ef5bd`, `make flux-reconcile`, `make verify-platform` and all eight staging `make app-status` checks passed: each app is Healthy, running its published tested digest with 1/1 ready replicas. All five web apps have Ready TLS; Service port-forwards returned 200 for `/healthz` and each API description, and signed-out ingress requests returned HTTP 301 and verified-TLS HTTPS 302. A real Google-signed-in browser session remains unexercised by this rollout. No production pin changed and no promotion ran.
 
 Image automation scanned these publications and committed every staging pin without manual GitHub pings. Concurrent image-pin writers caused a transient rejected push (`cannot lock ref`, `774824b` versus `64b3124`); both commits reached main, every image automation became Ready and Flux fetched the subsequent revision. The earlier intermittent package-event delivery gap remains tracked separately. No new app repository, package, service, credential or backup destination was created.
+
+## New app creation speed (14 October 2026)
+
+### Baseline
+
+Submitted Kotlin web/no-database/no-API/no-events app `swhurl-try-16`, team `demo`, authenticated exposure, through the deployed console's `/new/repo` route at 05:05:07 UTC. The request used a Service port-forward and a hand-set identity header; it exercises the deployed creation job, not Google browser sign-in. The catalogue used Kotlin `v0.2.4` (`ac45c53`). [Image run 38514791717](https://github.com/samclement/swhurl-try-16/actions/runs/38514791717) passed; [platform PR #66](https://github.com/samclement/swhurl-platform/pull/66) auto-merged as `d05a6e8`.
+
+| Milestone | Seconds after submission | Evidence |
+| --- | --- | --- |
+| Image workflow observed complete | 148 | Build 72 s, smoke test 16 s, publication 5 s; dependency layer cached, app compilation and `jlink` ran |
+| Platform PR observed open | 169 | Console job 13 finished at 05:07:50 UTC |
+| Merge accepted | 252 | GitHub `merged_at` 05:09:20 UTC; gate's merge step took 71 s, including the full `make check` |
+| Deployment created | 278 | Observed Kubernetes Deployment |
+| Certificate Ready | 309 | Certificate Ready condition transition at 05:10:17 UTC |
+| Deployment Available | 312 | Available condition transition at 05:10:20 UTC |
+| Verified HTTPS sign-in redirect | 353 | HTTP 301 and HTTPS 302, certificate verification enabled |
+
+Workflow and PR observations were polled roughly every five seconds; readiness rows use Kubernetes condition timestamps. The HTTPS observer initially saw Traefik's self-signed default certificate just after the Certificate became Ready, stopped, and was resumed; 353 s is the confirmed upper bound, not the instant the route first became usable. `make app-status APP=swhurl-try-16 ENV=staging` reports Healthy, 1/1 ready, matching digest and Ready TLS. `make verify-platform` passed at `d05a6e8`. No database or app Secret was created. The repository, package and staging instance remain for operator cleanup.

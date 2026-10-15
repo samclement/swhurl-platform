@@ -6,7 +6,8 @@ the value as JSON. The app watches its own keys; the console signs in with its o
 
 A key-value bucket is a JetStream stream ``KV_<bucket>`` whose subjects are ``$KV.<bucket>.<key>``:
 
-    read     request $JS.API.STREAM.MSG.GET.KV_<bucket>  {"last_by_subj": "$KV.<bucket>.<key>"}
+    list     request $JS.API.STREAM.INFO.KV_<bucket>  {"subjects_filter": "$KV.<bucket>.<env>.<app>.*"}
+    read     request $JS.API.STREAM.MSG.GET.KV_<bucket>  {"last_by_subj": "$KV.<bucket>.<key>"} (with when it was stored)
     write    publish $KV.<bucket>.<key> with a reply subject: JetStream answers with the stored sequence
     clear    the same with the header ``KV-Operation: DEL`` and no value (the app's watch sees a delete)
 
@@ -18,9 +19,11 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import secrets
 import socket
 from dataclasses import dataclass
+from datetime import datetime
 
 from swhurl.apps import events, nkeys
 
@@ -28,6 +31,7 @@ SEED_VARIABLE = 'NATS_SEED'
 URL_VARIABLE = 'NATS_URL'  # the in-cluster address unless set (a local console --dev port-forwards)
 TIMEOUT = 5.0
 NO_VALUE = object()  # a key that was never set or was cleared
+STALE_DAYS = 14  # an override older than this is marked on the app page
 
 
 class FlagStoreError(RuntimeError):
@@ -69,6 +73,22 @@ def typed(flag: dict, text: str) -> object:
     return value
 
 
+@dataclass(frozen=True)
+class Override:
+    """One stored override: its value (``NO_VALUE`` if not JSON) and when it was written."""
+    value: object
+    at: datetime | None = None
+
+
+def stored_at(text: str) -> datetime | None:
+    """NATS's message time (RFC 3339 with nanoseconds) as a datetime; None if it cannot be read."""
+    match = re.fullmatch(r'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?(Z|[+-]\d\d:\d\d)', text or '')
+    if not match:
+        return None
+    fraction = (match[2] or '')[:7]
+    return datetime.fromisoformat(match[1] + fraction + match[3].replace('Z', '+00:00'))
+
+
 class _Connection:
     """One NATS connection, signed in with an nkey: requests and publishes with a reply, nothing else."""
 
@@ -80,6 +100,13 @@ class _Connection:
             raise FlagStoreError(f'cannot reach NATS at {url}: {error}') from None
         self.buffer = b''
         self.inbox = f'{events.CONSOLE_INBOX}.{secrets.token_hex(8)}'
+        try:
+            self._sign_in(seed)
+        except BaseException:
+            self.sock.close()
+            raise
+
+    def _sign_in(self, seed: str) -> None:
         info = json.loads(self._line().removeprefix(b'INFO '))
         raw = nkeys.decode_seed(seed)
         signature = base64.urlsafe_b64encode(nkeys.sign(raw, info.get('nonce', '').encode())).decode().rstrip('=')
@@ -162,14 +189,19 @@ class FlagStore:
     def _connect(self) -> _Connection:
         return _Connection(self.url, self.seed)
 
-    def overrides(self, env: str, app: str, names: list[str]) -> dict[str, object]:
-        """The override of each named flag that has one (decoded JSON)."""
-        found: dict[str, object] = {}
+    def overrides(self, env: str, app: str) -> dict[str, Override]:
+        """Every override stored for the app, declared or not, by flag name."""
+        found: dict[str, Override] = {}
+        prefix = f'$KV.{bucket(env)}.{key(env, app, "")}'
         connection = self._connect()
         try:
-            for name in names:
-                _, body = connection.request(f'$JS.API.STREAM.MSG.GET.KV_{bucket(env)}',
-                                             json.dumps({'last_by_subj': f'$KV.{bucket(env)}.{key(env, app, name)}'}).encode())
+            _, body = connection.request(f'$JS.API.STREAM.INFO.KV_{bucket(env)}', json.dumps({'subjects_filter': prefix + '*'}).encode())
+            answer = json.loads(body or b'{}')
+            if 'error' in answer:
+                raise FlagStoreError(f'listing overrides: {answer["error"].get("description", answer["error"])}')
+            for subject in sorted((answer.get('state') or {}).get('subjects') or {}):
+                name = subject.removeprefix(prefix)
+                _, body = connection.request(f'$JS.API.STREAM.MSG.GET.KV_{bucket(env)}', json.dumps({'last_by_subj': subject}).encode())
                 answer = json.loads(body or b'{}')
                 if 'error' in answer:
                     if answer['error'].get('code') == 404:
@@ -180,9 +212,10 @@ class FlagStore:
                 if 'KV-Operation' in head:  # cleared (DEL) or purged: no override
                     continue
                 try:
-                    found[name] = json.loads(base64.b64decode(message.get('data') or ''))
+                    value = json.loads(base64.b64decode(message.get('data') or ''))
                 except ValueError:
-                    found[name] = NO_VALUE  # not JSON: the app ignores it too
+                    value = NO_VALUE  # not JSON: the app ignores it too
+                found[name] = Override(value, stored_at(message.get('time', '')))
         finally:
             connection.close()
         return found

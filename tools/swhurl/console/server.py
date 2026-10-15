@@ -463,26 +463,32 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
 
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
-        """Each flag the instance's image declares, with its override; and why overrides could not be read."""
+        """Each flag the instance's image declares, with its override, then each override of a flag it does
+        not declare; and why overrides could not be read. An override older than STALE_DAYS is ``stale``."""
         declared = described.of(found.app, found.env, offers_commit)
-        if not declared.flags:
-            return [], declared.problem
         problem, overrides = '', {}
         if flags is None:
-            problem = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.'
+            problem = 'This console has no NATS key (console-nats Secret), so overrides cannot be read or set.' if declared.flags else ''
         else:
             try:
-                overrides = flags.overrides(found.env, found.app, list(declared.flags))
+                overrides = flags.overrides(found.env, found.app)
             except flagstore.FlagStoreError as error:
                 problem = f'Overrides could not be read: {error}'
-        rows = []
-        for name, flag in declared.flags.items():
-            value = flag.get(found.env, flag['default'])
-            override = overrides.get(name, flagstore.NO_VALUE)
-            rows.append({'name': name, 'flag': flag, 'declared': value, 'override': override,
-                         'overridden': override is not flagstore.NO_VALUE,
-                         'effective': value if override is flagstore.NO_VALUE else override})
-        return rows, problem
+        if not declared.flags and not overrides:
+            return [], problem or declared.problem
+        now = dt.datetime.now(dt.UTC)
+
+        def row(name: str, flag: dict | None) -> dict:
+            value = flag.get(found.env, flag['default']) if flag else None
+            override = overrides.get(name)
+            age = (now - override.at).days if override and override.at else None
+            return {'name': name, 'flag': flag or {}, 'declared': value, 'undeclared': flag is None,
+                    'override': override.value if override else flagstore.NO_VALUE, 'overridden': override is not None,
+                    'age': age, 'stale': age is not None and age >= flagstore.STALE_DAYS,
+                    'effective': value if override is None else override.value}
+        declared_flags = declared.flags or {}
+        return [row(name, flag) for name, flag in declared_flags.items()] + \
+            [row(name, None) for name in overrides if name not in declared_flags], problem
 
     async def change_flag(request: Request) -> Response:
         """Set or clear one flag's override: written to NATS at once (no PR), and to the audit log."""
@@ -497,11 +503,13 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             rows = await asyncio.to_thread(cluster.apps, runner)
             row = next((r for r in rows if r.instance == found), None)
             declared = described.of(app, env, row.connections.offers if row else '').flags or {}
-            if name not in declared:
-                raise ValueError(f'{app}/{env} runs an image that does not declare {name}')
             if form.get('action') == 'clear':
+                if not declaration.FLAG_NAME.fullmatch(name):
+                    raise ValueError('not a flag name')
                 await asyncio.to_thread(flags.clear, env, app, name)
                 done = 'cleared'
+            elif name not in declared:
+                raise ValueError(f'{app}/{env} runs an image that does not declare {name}')
             else:
                 value = flagstore.typed(declared[name], form.get('value', ''))
                 await asyncio.to_thread(flags.set, env, app, name, value)

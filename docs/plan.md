@@ -33,6 +33,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
 16. **Feature flags: delivered 15 October 2026** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started), [evidence](current-state.md#feature-flags-stage-4-15-october-2026)): typed flags in `swhurl.yaml`; every instance has its own NATS key; apps on templates `v0.2.7` watch their overrides; the app page's **Feature flags** card sets and clears them, shows when each was set, and marks overrides older than 14 days or for a flag the image no longer declares, proven live on the throwaway `swhurl-try-18`. Left: a signed-in browser check of the card (operator). Follow-ups: the Kotlin template's smoke test stops a worker 4 s after start, before a slow JVM has migrated SQLite (one failed `main` run of `v0.2.7`, passed on re-run): wait for migrations instead; reinstall the host backup unit (`make host-backup`, operator) so it runs `make backup-sqlite` again. Operator: delete the GitHub repository and package `swhurl-try-18` once its instance is removed (`make app-remove`).
+17. **Needs and grants in `swhurl.yaml`, then egress: decided 15 October 2026, not started** ([section 21](#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started)). `swhurl.yaml` keeps only what the image needs, read again with each image; grants (access, calls, subscriptions, team, alerts, and new egress rules) live only in this repository. This replaces candidate 10's two lifetimes. Next: stage 1 (wording). Stage 3 and stage 5 each have open questions for the operator.
 
 ### Delivered
 
@@ -1214,3 +1215,86 @@ Run against the versions in use: server `nats:2.15.0-alpine`, `nats@2.29.3` (Typ
   Both clients put the filter in the create subject, so watching `prod.demo-orders.>`, `prod.>` or `>` is refused, as are reading another app's key (`STREAM.MSG.GET`) and writing any key. A hand-made request on the allowed subject with a wider filter in its body, or with several filters, is refused by the server. As with events, jnats reports a refusal only as a timeout plus `Permissions Violation` in the log.
 - **Both clients say when the stored values have arrived:** `initializedFn` in `nats.js`'s `kv.watch` and `KeyValueWatcher.endOfData()` in jnats, each after delivering the stored values and before later changes. A deleted key arrives as `DEL` (TypeScript) or `DELETE` (Kotlin).
 - **The console needs no access to app repositories:** removing a flag is the developer's change (decision above). `GITHUB_TOKEN` is limited to this repository and `APP_REPOS_TOKEN` writes only to a repository created in the same job ([tokens](console.md#github-tokens)), and neither changes.
+
+## 21. Needs and grants in `swhurl.yaml`, then egress — decided 15 October 2026, not started
+
+### Decision (operator, 15 October 2026)
+
+Today each `swhurl.yaml` field is read once (at creation) or read again (with each image), and most are read once: an edit in the app's repository afterwards changes nothing and nothing says so ([apps](apps.md#swhurlyaml)). Replaced by one rule, chosen over reporting drift on read-once fields and over reading every field again:
+
+- **A need** is what the image requires to run. It lives in `swhurl.yaml`, next to the code that requires it, and every need is read again with each staging image; a promotion carries it to production with the image.
+- **A grant** is what the platform allows the app: who can reach it, what it may reach, who owns it. It lives only in this repository and changes only through a `make app-*` command or the console. It is never in `swhurl.yaml`, so a push to an app's repository cannot widen what the app may do.
+
+Example, after this section is done: `demo-shop` moves to port 9090. The developer changes the code and `port: 9090` in one commit; staging runs the new image with port 9090, and production gets both with the next promotion. Letting `demo-shop` call `demo-orders`, or reach `api.stripe.com`, is not in that file: it is **Connect to an app** or `make app-calls` / `make app-egress` on the platform.
+
+| Field | Kind | After a change in the app's repository |
+| --- | --- | --- |
+| `version`, `stack` | need | As today |
+| `kind` | need | Refused: web or worker cannot change |
+| `port`, `healthPath`, `uid`, `telemetry` | need | Written to the instance with the image |
+| `database`, `databaseSize` | need | Adding one creates the volume; removing one is refused while the volume exists (data is never deleted by a push) |
+| `resources` | need: the image's minimum | `make app-scale` may set more, never less; a minimum above the quota is refused |
+| `secrets` | need: the variable names | A new name adds an empty key, shown as "value missing" until the operator sets it; a removed name keeps its value, shown as unused |
+| `provides`, `flags`, `events.publish` | need | As today |
+| `team`, `exposure`, `alerts`, `calls`, `events.subscribe` | grant | Refused in `swhurl.yaml`; the error names the command. Chosen at creation on the console's New app form or as `app-new` flags |
+| `egress` (new) | grant | Never in `swhurl.yaml`; `make app-egress` or the console, per environment |
+| `autoDeploy` | dropped | Always true; accepted and ignored until every repository has dropped it, then refused |
+
+Operator answers on the same day: `resources` is the image's minimum; `secrets` names are needs; existing grant fields are removed from app repositories and then refused; egress is per environment and enforced by a proxy.
+
+### Docs and console wording (subtle)
+
+"Need" and "grant" become glossary terms (replacing the two lifetimes in **Declaration**), and the [`swhurl.yaml`](apps.md#swhurlyaml) section is ordered by them. The console says it in captions, not new sections: **Connect** and **Use** say they are granted here; **Operate**'s Scale form shows the image's minimum; the "Call this from my app" box stops pointing at `swhurl.yaml`. The templates' READMEs change the same way.
+
+### Stages
+
+| # | Stage | Ends in |
+| --- | --- | --- |
+| 1 | Glossary, `apps.md` and console captions use need and grant; templates' README and `platform.ts`/Kotlin helper messages point grants at the platform; template release without `autoDeploy` | Docs and captions only; `make check` green |
+| 2 | Remove grant fields from app repositories by PR: `calls` in `demo-shop` and `demo-shopper`, `events.subscribe` in `demo-notifier` (the instances already hold them); then `declaration.py` refuses grant fields and `app-new` takes them only as flags or form choices | Every instance's file passes at its image's commit and at the default branch (as for candidate 10) |
+| 3 | Needs applied with each staging image: the instance's `helmrelease.yaml` (port, probes, uid, telemetry, resources floor), volume and secret keys follow the image's `swhurl.yaml` | A throwaway app changes its port in code and staging serves on it without a platform edit |
+| 4 | Promotion carries needs (a row in `SETTINGS` for each); the auto-merge gate holds a promotion that adds a database or a secret name | A promotion of the stage 3 change merges itself; one adding a secret name waits |
+| 5 | Egress, below | |
+
+**Open questions for stage 3** (ask the operator before starting):
+
+1. **The image and its needs must change together.** Today Flux image automation commits the new tag, and the Offers workflow reads `swhurl.yaml` in a later commit, so a port change would run on the old port for a minute or two and fail its probes. Options: the workflow writes the tag and the needs in one commit (replacing Flux's `ImageUpdateAutomation` for staging), or the tag commit is held until the needs are written. Wants a `decision-brief`.
+2. **A need the policy refuses** (a minimum above the quota, a removed database): does the image still deploy with the old needs, or wait? Today a refused offers document keeps the old one and the image deploys.
+3. **Secret values on a new name:** is an empty key in staging acceptable until the operator sets it, or should the image wait?
+
+### Stage 5: egress grants
+
+Every app may reach any address today: the generated NetworkPolicy has `policyTypes: [Ingress]` only ([teams and isolation](apps.md#teams-and-isolation)), and k3s's kube-router enforces IPs and ports, not names. The design keeps the CNI and adds a proxy:
+
+```mermaid
+flowchart LR
+  subgraph demo-shop-staging
+    shop["demo-shop<br/>HTTPS_PROXY=http://egress.egress:30101"]
+  end
+  subgraph egress
+    proxy["proxy<br/>port 30101: api.stripe.com:443"]
+  end
+  shop -- "CONNECT api.stripe.com:443" --> proxy
+  proxy -- allowed --> internet((internet))
+  shop -. "direct: refused by its NetworkPolicy" .-x internet
+```
+
+- **One port per instance** on a shared proxy in an `egress` namespace. The proxy's own NetworkPolicy admits each port only from its instance's namespace, so the port says which app is asking, and the proxy only checks that port's list of hosts.
+- **The grant:** `make app-egress APP=demo-shop ENV=staging ARGS="--add api.stripe.com"` (port 443 by default; `*.example.com` allowed), and an **Egress** list in the app page's **Connect** section. Per environment: staging may use a sandbox host; a promotion shows the difference and never widens production by itself (a `SETTINGS` row).
+- **Generated:** the instance's NetworkPolicy gains `Egress` and allows only CoreDNS on 53, the node IP on 4317 and 4318 (OTLP), declared callees, NATS when the app has a key, the notify service and its proxy port; and the proxy configuration with every instance's port and list.
+- **Apps use it** through the template: `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (cluster addresses, the node IP) from the platform, `NODE_USE_ENV_PROXY=1` for TypeScript, `-Dhttps.proxyHost`/`-Dhttps.proxyPort` in `JAVA_TOOL_OPTIONS` for Kotlin; a client that ignores them is refused rather than leaking.
+- **Hosts and ports only.** Paths inside HTTPS are not checked: that needs a proxy that decrypts and a CA every app trusts.
+
+| # | Step | Ends in |
+| --- | --- | --- |
+| E1 | Proxy deployed allowing everything, every app sending through it; its access log in ClickStack; `new-component-checklist` | A day of logs showing which hosts each app reaches |
+| E2 | `make app-egress`, console form, `make check-apps` rule, generated proxy configuration, seeded from E1's log | Grants in Git for every instance that reaches outside |
+| E3 | Proxy refuses ungranted hosts; NetworkPolicies gain `Egress` | From another pod of a throwaway app: a granted host answers, an ungranted one and a direct connection are refused; DNS, OTLP, calls, events and notify still work |
+
+**Open questions for stage 5:**
+
+1. **Proxy:** Squid (port ACLs with `myportname`, short config) or Envoy (more verbose, better metrics). Leaning Squid.
+2. **Traffic other than HTTP(S)** (SMTP, an outside database): none is known. Add a `--cidr` grant enforced by the NetworkPolicy alone, or refuse until needed?
+3. **A proxy outage stops every app's outbound traffic.** One replica on a single node is accepted, or a `verify-platform` check and a notification only?
+4. **Stable port numbers per instance:** kept in the instance's files (`apps/<app>/<env>/egress.yaml`) so a regeneration never moves them.
+5. **Refused requests:** a default alert on the proxy's refusals per app, or only visible in its logs?

@@ -22,6 +22,7 @@ A recommendation is only useful if the operator can see what it rests on. Past b
    - consistency with how similar things are already done;
    - fewer commands or places for the operator to remember;
    - stays in sync as the platform changes (charts, tooling, policy);
+   - deploy latency and commits per change (push to serving, and to settled), build time, and duplication: one writer for each fact;
    - testable with `FakeRunner` or a throwaway live test;
    - fits the repo's boundaries (`AGENTS.md`, `docs/architecture.md`).
 5. **Recommendation.** One option, the main reason, and what it costs.

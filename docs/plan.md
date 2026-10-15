@@ -33,7 +33,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Words with more than one meaning,** for the glossary when their module is touched: alert, retention, lifecycle, recovery, event, capability, channel, offers/provides/describes, web/worker, contract/policy. `Job.unit` also holds `app/env`, `team:name` and `PR #n`, so "one job per unit" does not stop a reconcile and a pull request on the same instance running together (not verified).
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
 16. **Feature flags: delivered 15 October 2026** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started), [evidence](current-state.md#feature-flags-stage-4-15-october-2026)): typed flags in `swhurl.yaml`; every instance has its own NATS key; apps on templates `v0.2.7` watch their overrides; the app page's **Feature flags** card sets and clears them, shows when each was set, and marks overrides older than 14 days or for a flag the image no longer declares, proven live on the throwaway `swhurl-try-18`. Left: a signed-in browser check of the card (operator). Follow-ups: the Kotlin template's smoke test stops a worker 4 s after start, before a slow JVM has migrated SQLite (one failed `main` run of `v0.2.7`, passed on re-run): wait for migrations instead; reinstall the host backup unit (`make host-backup`, operator) so it runs `make backup-sqlite` again. Operator: delete the GitHub repository and package `swhurl-try-18` once its instance is removed (`make app-remove`).
-17. **Needs and grants in `swhurl.yaml`, then egress: decided 15 October 2026, not started** ([section 21](#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started)). `swhurl.yaml` keeps only what the image needs, read again with each image; grants (access, calls, subscriptions, team, alerts, and new egress rules) live only in this repository. This replaces candidate 10's two lifetimes. Next: stage 1 (wording). Stage 3 and stage 5 each have open questions for the operator.
+17. **Needs and grants in `swhurl.yaml`, then egress: decided 15 October 2026, not started** ([section 21](#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started)). `swhurl.yaml` keeps the app's identity, what the image needs and what it offers, read again with each image; grants (access, calls, subscriptions, team, alerts, and new egress rules) live only in this repository. This replaces candidate 10's two lifetimes. Next: stage 1 (wording). Stage 3 is split into 3a, 3b and 3c, one session each. The stage 3 and stage 5 questions were answered on 15 October; stage 3a needs a GitHub token in `flux-system` (confirm before adding it).
 
 ### Delivered
 
@@ -1229,13 +1229,13 @@ Example, after this section is done: `demo-shop` moves to port 9090. The develop
 
 | Field | Kind | After a change in the app's repository |
 | --- | --- | --- |
-| `version`, `stack` | need | As today |
-| `kind` | need | Refused: web or worker cannot change |
+| `version`, `stack` | identity | As today |
+| `kind` | identity | Refused: web or worker cannot change |
 | `port`, `healthPath`, `uid`, `telemetry` | need | Written to the instance with the image |
 | `database`, `databaseSize` | need | Adding one creates the volume; removing one is refused while the volume exists (data is never deleted by a push) |
 | `resources` | need: the image's minimum | `make app-scale` may set more, never less; a minimum above the quota is refused |
 | `secrets` | need: the variable names | A new name adds an empty key, shown as "value missing" until the operator sets it; a removed name keeps its value, shown as unused |
-| `provides`, `flags`, `events.publish` | need | As today |
+| `provides`, `flags`, `events.publish` | offer | As today: read with each image; the auto-merge gate holds a change to what the app publishes |
 | `team`, `exposure`, `alerts`, `calls`, `events.subscribe` | grant | Refused in `swhurl.yaml`; the error names the command. Chosen at creation on the console's New app form or as `app-new` flags |
 | `egress` (new) | grant | Never in `swhurl.yaml`; `make app-egress` or the console, per environment |
 | `autoDeploy` | dropped | Always true; accepted and ignored until every repository has dropped it, then refused |
@@ -1244,23 +1244,36 @@ Operator answers on the same day: `resources` is the image's minimum; `secrets` 
 
 ### Docs and console wording (subtle)
 
-"Need" and "grant" become glossary terms (replacing the two lifetimes in **Declaration**), and the [`swhurl.yaml`](apps.md#swhurlyaml) section is ordered by them. The console says it in captions, not new sections: **Connect** and **Use** say they are granted here; **Operate**'s Scale form shows the image's minimum; the "Call this from my app" box stops pointing at `swhurl.yaml`. The templates' READMEs change the same way.
+**Four kinds of setting (operator, 15 October 2026).** Each kind follows one rule when the app's repository changes, which is the only reason to tell them apart:
+
+| Kind | Fields | After a change in the app's repository |
+| --- | --- | --- |
+| **Identity** | `version`, `stack`, `kind` (the name is the repository's) | Refused (`version` changes only by a schema migration) |
+| **Need**: what the image needs to run | `port`, `healthPath`, `uid`, `telemetry`, `resources`, `database`, `secrets` | Applied with the image; the promotion gate holds a new database or secret name |
+| **Offer**: what other apps can use | `provides`, `flags`, `events.publish` | Read with the image ([what an app offers](apps.md#what-an-app-offers)); the auto-merge gate holds a change to what the app publishes |
+| **Grant**: what the platform allows | `team`, `exposure`, `alerts`, `calls`, `events.subscribe`, `egress` | Never in `swhurl.yaml`; `make app-*` or the console |
+
+`swhurl.yaml` holds identity, needs and offers, and stays flat: the templates order fields by kind under a comment header for each (with a last comment that grants are set on the platform), and the platform knows each field's kind. Nesting them (`needs:`, `offers:`) was rejected: a schema version, a migration in every app repository and both templates, and two parsers meanwhile, for nothing the platform needs.
+
+"Identity", "need", "offer" and "grant" become glossary terms (replacing the two lifetimes in **Declaration**), and the [`swhurl.yaml`](apps.md#swhurlyaml) section is ordered by them. The console says it in captions, not new sections: **Connect** and **Use** say they are granted here; **Operate**'s Scale form shows the image's minimum; the "Call this from my app" box stops pointing at `swhurl.yaml`. The templates' READMEs change the same way.
 
 ### Stages
 
 | # | Stage | Ends in |
 | --- | --- | --- |
-| 1 | Glossary, `apps.md` and console captions use need and grant; templates' README and `platform.ts`/Kotlin helper messages point grants at the platform; template release without `autoDeploy` | Docs and captions only; `make check` green |
+| 1 | Glossary, `apps.md` and console captions use identity, need, offer and grant; templates' `swhurl.yaml` ordered by kind with a header per kind; templates' README and `platform.ts`/Kotlin helper messages point grants at the platform; template release without `autoDeploy` | Docs and captions only; `make check` green |
 | 2 | Remove grant fields from app repositories by PR: `calls` in `demo-shop` and `demo-shopper`, `events.subscribe` in `demo-notifier` (the instances already hold them); then `declaration.py` refuses grant fields and `app-new` takes them only as flags or form choices | Every instance's file passes at its image's commit and at the default branch (as for candidate 10) |
-| 3 | Needs applied with each staging image: the instance's `helmrelease.yaml` (port, probes, uid, telemetry, resources floor), volume and secret keys follow the image's `swhurl.yaml` | A throwaway app changes its port in code and staging serves on it without a platform edit |
-| 4 | Promotion carries needs (a row in `SETTINGS` for each); the auto-merge gate holds a promotion that adds a database or a secret name | A promotion of the stage 3 change merges itself; one adding a secret name waits |
+| 3a | One commit per image: dispatch token (confirm first), `Alert` with a `githubdispatch` Provider on the staging `ImagePolicy` objects, a workflow that writes tag, digest and offers in one commit (taking over from the Offers workflow), hourly scheduled run; then the staging `ImageUpdateAutomation` objects removed | A push to a throwaway app reaches staging in one bot commit; push-to-serving time measured against today's |
+| 3b | Needs applied with each staging image: the workflow writes the instance's `helmrelease.yaml` (port, probes, uid, telemetry, resources floor); a refused need holds the image | A throwaway app changes its port in code and staging serves on it without a platform edit; a minimum above the quota keeps the old image |
+| 3c | Databases and secret names follow the image: a new database creates the volume (removing one is refused while it exists); a new secret name is added `optional: true` and shown as "value missing"; `make app-secret` accepts a name the image does not declare yet | A throwaway app adds a secret name and deploys without its value; setting the value first leaves nothing missing |
+| 4 | Promotion carries needs (a row in `SETTINGS` for each); the auto-merge gate holds a promotion that adds a database or a secret name | A promotion of the stage 3 change merges itself; one adding a secret name waits until production has its value |
 | 5 | Egress, below | |
 
-**Open questions for stage 3** (ask the operator before starting):
+**Stage 3 decisions (operator, 15 October 2026).** Chosen to keep staging deploys fast with one writer per image:
 
-1. **The image and its needs must change together.** Today Flux image automation commits the new tag, and the Offers workflow reads `swhurl.yaml` in a later commit, so a port change would run on the old port for a minute or two and fail its probes. Options: the workflow writes the tag and the needs in one commit (replacing Flux's `ImageUpdateAutomation` for staging), or the tag commit is held until the needs are written. Wants a `decision-brief`.
-2. **A need the policy refuses** (a minimum above the quota, a removed database): does the image still deploy with the old needs, or wait? Today a refused offers document keeps the old one and the image deploys.
-3. **Secret values on a new name:** is an empty key in staging acceptable until the operator sets it, or should the image wait?
+1. **One commit per image.** Flux's `ImagePolicy` still picks the tag (the image webhook is unchanged), and an `Alert` on it with a `githubdispatch` Provider starts a workflow here. That workflow takes over from the Offers workflow: it reads `swhurl.yaml` at the image's commit and writes the tag, digest, needs and offers in one commit. The staging `ImageUpdateAutomation` objects and fluxcdbot's commits go away. An hourly scheduled run and `workflow_dispatch` catch a lost dispatch. The new image reaches staging about 25 s later than today (the run takes 20 to 30 s), but staging is settled sooner: one commit and one reconcile instead of two. Caching the run's tool setup wins some of that back. The Provider needs a GitHub token that can dispatch to this repository, in `flux-system`: confirm with the operator before adding it. Rejected: keeping two commits (a port change stalls the rollout until the 3-minute Helm timeout), holding the tag with an approved-tags filter (B with more parts), and dispatching from each app's CI (a token in every app repository).
+2. **A refused need holds the image.** The run commits nothing for that app, fails and names the need; staging keeps its previous image and the other apps still deploy. This matches what a refused offers document does today.
+3. **A new secret name deploys with the key absent** (`optional: true`, not an empty value), shown as "value missing" in the console and by `verify-platform`. `make app-secret` may set a name the image does not declare yet, so the value can be set before the push. The template helpers fail with a message that names the secret and the command. Production never runs without the value: the stage 4 gate holds a promotion until production has it.
 
 ### Stage 5: egress grants
 
@@ -1287,14 +1300,13 @@ flowchart LR
 
 | # | Step | Ends in |
 | --- | --- | --- |
-| E1 | Proxy deployed allowing everything, every app sending through it; its access log in ClickStack; `new-component-checklist` | A day of logs showing which hosts each app reaches |
+| E1 | Proxy (Squid, two replicas) deployed allowing everything, every app sending through it; its access log in ClickStack; `new-component-checklist` | A day of logs showing which hosts each app reaches |
 | E2 | `make app-egress`, console form, `make check-apps` rule, generated proxy configuration, seeded from E1's log | Grants in Git for every instance that reaches outside |
-| E3 | Proxy refuses ungranted hosts; NetworkPolicies gain `Egress` | From another pod of a throwaway app: a granted host answers, an ungranted one and a direct connection are refused; DNS, OTLP, calls, events and notify still work |
+| E3 | Proxy refuses ungranted hosts and refusals alert the app's team; NetworkPolicies gain `Egress` | From another pod of a throwaway app: a granted host answers, an ungranted one and a direct connection are refused; DNS, OTLP, calls, events and notify still work |
 
-**Open questions for stage 5:**
+**Stage 5 decisions (operator, 15 October 2026):**
 
-1. **Proxy:** Squid (port ACLs with `myportname`, short config) or Envoy (more verbose, better metrics). Leaning Squid.
-2. **Traffic other than HTTP(S)** (SMTP, an outside database): none is known. Add a `--cidr` grant enforced by the NetworkPolicy alone, or refuse until needed?
-3. **A proxy outage stops every app's outbound traffic.** One replica on a single node is accepted, or a `verify-platform` check and a notification only?
-4. **Stable port numbers per instance:** kept in the instance's files (`apps/<app>/<env>/egress.yaml`) so a regeneration never moves them.
-5. **Refused requests:** a default alert on the proxy's refusals per app, or only visible in its logs?
+1. **Squid with two replicas.** Every grant changes the configuration, and Reloader restarts the proxy on each change. With one replica, every app's outbound traffic would stop for a few seconds on every grant; two replicas rolling one at a time avoid that for about 30 MB. On one node they protect against restarts and crashes, not node loss. `verify-platform` checks the proxy. Envoy would reload without a restart and has JSON logs and metrics, but it is only worth choosing for a single replica (the generated configuration makes its verbosity irrelevant).
+2. **No `--cidr` grant until a need exists.** No traffic other than HTTP(S) is known. Adding it later is one flag and one generated NetworkPolicy rule.
+3. **Stable port numbers per instance** are kept in the instance's files (`apps/<app>/<env>/egress.yaml`), so a regeneration never moves them.
+4. **Refusals alert the app's team by default**, through the existing app alerts (`app-alerts`), at most once per host per hour. They go to the team's channel, not the operator. A refusal usually means a new dependency without a grant.

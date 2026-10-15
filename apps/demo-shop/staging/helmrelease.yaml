@@ -4,7 +4,7 @@ metadata:
   name: demo-shop
   namespace: demo-shop-staging
   annotations:
-    platform.swhurl.com/offers: 'c9a263b'
+    platform.swhurl.com/offers: '9266dc6'
 spec:
   interval: 30m
   timeout: 3m

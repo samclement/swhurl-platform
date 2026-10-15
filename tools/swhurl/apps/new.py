@@ -542,8 +542,7 @@ def platform_origin_problem(args) -> str | None:
     if parse_image(args.image)['repository'] != f'ghcr.io/{repository}':
         return f'the image must be ghcr.io/{repository}, which the app repository publishes; {create}'
     if not auto_deploys(args):
-        return (f'{repository} must deploy to staging automatically: set autoDeploy: true in its {declaration.FILE} '
-                '(the stack templates do)')
+        return f'{repository} must deploy to staging automatically: leave out --no-auto-deploy'
     return None
 
 

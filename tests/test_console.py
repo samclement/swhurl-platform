@@ -779,6 +779,30 @@ class AppDetailTests(unittest.TestCase):
                 self.assertIn(detail, response.text)
                 self.assertNotIn('No such app instance', response.text)
 
+    def test_the_scale_form_shows_the_minimum_the_running_image_declares(self):
+        asked = []
+
+        def opener(request):
+            asked.append(request.full_url)
+            return {}, b'version: 1\nkind: web\nhealthPath: /h\nresources: {cpu: 100m, memoryLimit: 384Mi}\n'
+        def answers(tag):
+            found = {f'kubectl -n {"flux-system" if kind in ("kustomization", "gitrepository") else "web-prod"} get {kind}': json.dumps(value)
+                     for kind, value in (('kustomization', unit('app-web-prod')),
+                                         ('gitrepository', {'status': {'artifact': {'revision': 'main@sha1:fff0000'}}}),
+                                         ('helmrelease', {**release('web-prod', 'web', tag=tag), 'status': unit('web')['status']}),
+                                         ('pods', {'items': []}), ('deploy,statefulset,daemonset', {'items': []}),
+                                         ('ingress', {'items': []}), ('certificate', {'items': []}))}
+            return fake(**found)
+        app = client(answers('12-abc1234'), repo_opener=opener)
+        for _ in range(2):
+            text = app.get('/apps/web/prod', headers=WHO).text
+            self.assertIn("The image's minimum, from its <code>swhurl.yaml</code>: cpu request 100m, memory limit 384Mi.", text)
+        self.assertEqual([url for url in asked if 'ref=abc1234' in url],
+                         ['https://api.github.com/repos/samclement/web/contents/swhurl.yaml?ref=abc1234'], 'a commit is read once')
+        text = client(answers('1.0'), repo_opener=opener).get('/apps/web/prod', headers=WHO).text
+        self.assertNotIn("image's minimum", text, 'a tag that names no commit says nothing')
+        self.assertIn('Calls and subscriptions are granted here', text)
+
     def test_a_later_read_failure_does_not_show_partial_health(self):
         runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
                                   stdout=json.dumps(unit('app-web-prod')))

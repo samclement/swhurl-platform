@@ -47,7 +47,7 @@
 <section class="card" id="use" style="--acts: {{ 2 if status.routes else 1 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Use</h2>
-    <p class="muted">Its web address, and who can reach it.</p>
+    <p class="muted">Its web address, and who can reach it: granted here, not in the app's repository.</p>
     {% if status.routes %}<a class="button primary act" style="--slot: 0; --wide: 9rem" href="https://{{ status.routes[0] }}">Open {{ st.icon('external') }}</a>{% endif %}
     <details class="act" name="app-form" style="--slot: {{ 1 if status.routes else 0 }}; --wide: 9rem">
       <summary class="button">{{ st.icon('edit') }} Change access</summary>
@@ -73,7 +73,7 @@
 <section class="card" id="connect" style="--acts: {{ 1 if c.offers else 2 }}; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
-    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}.</p>
+    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls and subscriptions are granted here, not in the app's repository.</p>
     <details class="act" name="app-form" style="--slot: {{ 0 if c.offers else 1 }}; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
@@ -108,9 +108,7 @@
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>
-      <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
-      <pre><code>calls: [{{ i.app }}]</code></pre>
-      <p class="muted">Afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
+      <p class="muted">A call is granted on the platform. When you create your app, tick {{ i.app }} under <strong>Connections</strong> on the <a href="/new">New app</a> form; afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
       <pre><code>make app-calls APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add {{ i.app }}"</code></pre>
       <p class="muted">Then, in your code (the stack templates' helper):</p>
       <pre><code>service("{{ i.app }}").fetch("/")        // TypeScript
@@ -120,9 +118,7 @@ platform.call("{{ i.app }}", "/")        // Kotlin</code></pre>
     {% if c.publishes %}
     <details class="disclose help" id="how-to-subscribe">
       <summary>{{ st.icon('info') }} <strong>Subscribe to its events</strong> <span class="muted">— what another app adds to receive them</span></summary>
-      <p class="muted">Before your app is created, in its <code>swhurl.yaml</code>:</p>
-      <pre><code>events: {subscribe: [{{ i.app }}.{{ c.publishes[0] }}]}</code></pre>
-      <p class="muted">Afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
+      <p class="muted">Receiving events is granted on the platform. When you create your app, tick {{ i.app }}.{{ c.publishes[0] }} under <strong>Connections</strong> on the <a href="/new">New app</a> form; afterwards, your app page's <strong>Connect to an app</strong>, or:</p>
       <pre><code>make app-events APP=&lt;your app&gt; ENV={{ i.env }} ARGS="--add-subscribe {{ i.app }}.{{ c.publishes[0] }}"</code></pre>
       <p class="muted">Then, in your code:</p>
       <pre><code>subscribe("{{ i.app }}.{{ c.publishes[0] }}", async (event) => { ... })        // TypeScript
@@ -200,7 +196,8 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
         <fieldset>
           <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-          <span class="muted hint">Replicas, CPU and memory. Empty fields keep their current value, shown in grey.</span>
+          <span class="muted hint">Replicas, CPU and memory. Empty fields keep their current value, shown in grey.
+            {%- if minimum is not none %} {% if minimum %}The image's minimum, from its <code>swhurl.yaml</code>: {% for field, flag, label in scale_fields if field in minimum %}{{ label | lower }} {{ minimum[field] }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% else %}The image declares no minimum in its <code>swhurl.yaml</code>.{% endif %}{% endif %}</span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
       </form>

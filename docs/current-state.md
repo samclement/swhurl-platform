@@ -1624,3 +1624,14 @@ Not exercised: an override older than 14 days on the cluster; the card in a real
 
 Not exercised: a new app created from `v0.2.8` (`make check-templates` renders every combination through `app-new` offline); the pages in a real signed-in browser. Existing apps still carry `autoDeploy: true` until they take the template update.
 
+## Needs and grants stage 2 (15 October 2026)
+
+[Plan section 21](plan.md#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started), stage 2: grants leave `swhurl.yaml`.
+
+- **App repositories:** the three that still held a grant dropped it by PR (the instances already held each one): `demo-shop` #12 (`calls`, merged as `c9a263b`), `demo-shopper` #8 (`calls`, `53f1668`), `demo-notifier` #7 (`events.subscribe`, `a82c785`). Their staging images deployed (`221f6df`, `f1a7470`, `5b01f5a`), and the Offers workflow passed on each.
+- **Platform:** `ea79a0b`: `declaration.py` refuses `team`, `exposure`, `alerts`, `calls` and `events.subscribe` wherever the file is read, naming the command (`samclement/demo-shop@346bbfb:swhurl.yaml: calls: a grant, set on the platform, not in this file (make app-calls, or the console); remove it`). `app-new` takes grants only as flags or New app form choices. Console image `src-aca200e4f6a901d3` (`106a940`).
+- **Production:** `demo-shop/prod` ran `346bbfb`, whose file held `calls`. It was promoted to `30-c9a263b` (`30c2e74`), carrying the eight earlier staging changes (dependency and template updates). It is Healthy at that revision.
+- **End check:** each of the 15 instances' `swhurl.yaml` passes `declaration.read` at its image's commit and at the default branch (0 refused). `make check` passed (767 tests, 64 template renders), and so did `make verify-platform`.
+
+Not exercised: creating a new app after the change (the template renders go through `app-new` offline in `make check-templates`).
+

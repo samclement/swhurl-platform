@@ -3,8 +3,6 @@ kind: HelmRelease
 metadata:
   name: swhurl-try-18
   namespace: swhurl-try-18-staging
-  annotations:
-    platform.swhurl.com/offers: 0230ea4
 spec:
   interval: 30m
   timeout: 3m

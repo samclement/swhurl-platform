@@ -1603,3 +1603,13 @@ The app page's **Feature flags** card sets and clears overrides ([console](conso
 - **Checks:** `make check` passed. The console's NATS client was tested against NATS 2.15.0 with the generated console permissions: read, set, clear; an unknown key refused; a missing bucket reported. Its signatures match RFC 8032 test 1 and openssl.
 
 Not exercised: the card in a real signed-in browser; production overrides; the Offers workflow writing `flags.json` after a new image.
+
+## Feature flags stage 4 (15 October 2026)
+
+The **Feature flags** card shows when each override was set, marks one older than 14 days, and adds a row for an override whose flag the running image no longer declares ([console](console.md#use-it), [apps](apps.md#feature-flags)).
+
+- **Deployed:** `93817d5` (console image `src-f05750d73857f1ec`, deployed by `a5a432d`). The console now lists an app's keys with `$JS.API.STREAM.INFO.KV_flags-<env>` and a subject filter, a request its NATS user already had.
+- **Live** on the throwaway `swhurl-try-18`, through a port-forward to the console with the identity and `Origin` headers: **Set** `shout` = `false` (303). `swhurl-try-18` `ec421df` then deleted the flag from `swhurl.yaml` and the code. Its staging image deployed (`4e24567`), and the Offers workflow removed its `offers/` (`4b7de7d`), since the image offers nothing. The card then showed `shout | not declared | false, set today | unused` with **Clear** only. **Clear** answered 303, and the card says the image declares no flags. The audit log has `[AUDIT] sam.clement@gmail.com flag swhurl-try-18/staging shout cleared`. This also exercised the Offers workflow after a new image.
+- **Checks:** `make check` passed. The 14-day mark is covered by a test with a 20-day-old override. `make verify-platform` fails only on SQLite backups 37 h old (the host backup unit, operator).
+
+Not exercised: an override older than 14 days on the cluster; the card in a real signed-in browser; production overrides.

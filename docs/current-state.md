@@ -1613,3 +1613,14 @@ The **Feature flags** card shows when each override was set, marks one older tha
 - **Checks:** `make check` passed. The 14-day mark is covered by a test with a 20-day-old override. `make verify-platform` fails only on SQLite backups 37 h old (the host backup unit, operator).
 
 Not exercised: an override older than 14 days on the cluster; the card in a real signed-in browser; production overrides.
+
+## Needs and grants stage 1 (15 October 2026)
+
+[Plan section 21](plan.md#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started), stage 1: wording, and `autoDeploy` dropped from the templates.
+
+- **Platform:** `b26f5b0` gives each `swhurl.yaml` field a kind (identity, need, offer, grant) in `declaration.py`, tested against the [`swhurl.yaml`](apps.md#swhurlyaml) table; `autoDeploy` is accepted and ignored (a file without it auto-deploys). Console image `src-70a778150e1b8869` (deployed by `f422cbd`).
+- **Live**, through a port-forward to the console with the identity header: the Use and Connect captions say access, calls and subscriptions are granted on the platform, and the "Call this from my app" and "Subscribe to its events" boxes point at the New app form and Connect to an app, not `swhurl.yaml`. The Scale form reads the running image's `swhurl.yaml` at its tag's commit: `demo-notifier/staging` (Kotlin) shows "cpu request 100m, memory request 192Mi, memory limit 384Mi"; `demo-shop`, `demo-orders` and `demo-shopper` show "declares no minimum". `make verify-platform` passed.
+- **Templates `v0.2.8`:** TypeScript `4584ef7` (PR #43), Kotlin `e865907` (PR #32): `swhurl.yaml` under one comment per kind, ending with a note that grants are set on the platform, and no `autoDeploy`; README, the call helper's error and the events comments point calls and subscriptions at the platform. All template CI combinations passed on the PRs and on `main`; pinned in `STACK_REVISIONS`.
+
+Not exercised: a new app created from `v0.2.8` (`make check-templates` renders every combination through `app-new` offline); the pages in a real signed-in browser. Existing apps still carry `autoDeploy: true` until they take the template update.
+

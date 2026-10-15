@@ -9,8 +9,8 @@ The cluster is live. [Current state](docs/current-state.md) records what has bee
 | Part | What it gives you | More |
 | --- | --- | --- |
 | Console | A signed-in web page at `console.homelab.swhurl.com`. It lists every app, team and Flux unit, starts new apps, connects apps and promotes them to production. | [Console](#console) |
-| Apps | One GitHub repository per app, made from a TypeScript or Kotlin template, with a staging and a production instance. The app's `swhurl.yaml` declares its team, the apps it calls, its events, its database and its telemetry. | [Apps](#apps) |
-| Shared services | Google sign-in, logs, metrics and traces in ClickStack, events on NATS, notifications to phones through ntfy, and restarts when a Secret changes. | [Shared services](#shared-services) |
+| Apps | One GitHub repository per app, made from a TypeScript or Kotlin template, with a staging and a production instance. The app's `swhurl.yaml` declares its team, the apps it calls, its events, its feature flags, its database and its telemetry. | [Apps](#apps) |
+| Shared services | Google sign-in, logs, metrics and traces in ClickStack, events and feature flags on NATS, notifications to phones through ntfy, and restarts when a Secret changes. | [Shared services](#shared-services) |
 | Delivery | Git is the only way in. Flux applies `main`, image automation deploys each new staging build, and the console and Renovate open pull requests. | [Delivery](#delivery) |
 | Cluster and host | k3s with cert-manager, Let's Encrypt, Traefik and retained local storage, plus host timers for dynamic DNS, backups and a heartbeat. | [Cluster and host](#cluster-and-host) |
 
@@ -32,14 +32,14 @@ The console is where you see the platform and change it without a terminal. Sign
 | --- | --- |
 | Overview | See one verdict for the whole platform, what needs attention and what is changing now |
 | Apps/Services | See every app with its team, language and what runs in staging and production. **Map** draws who calls whom and who receives which event. |
-| An app's page | See its address, connections, image and environment. Change who can reach it, connect it to another app, scale it, promote it or uninstall it. |
+| An app's page | See its address, connections, feature flags, image and environment. Override a flag, change who can reach it, connect it to another app, scale it, promote it or uninstall it. |
 | Catalogue | Read the APIs and events each app offers, with routes, payload fields and a code sample, and add an app as a user of one |
 | Teams | Create, rename and delete teams and give each a notification channel |
 | Platform | See every live check and Flux unit. Reconcile, suspend or resume a unit. |
 | New app | Create the app's repository from a template, wait for its first image and open the pull request that adds it to staging |
 | Activity | Follow each change from pull request through merge to the cluster running it |
 
-Reconcile, suspend and resume act on the cluster at once. Every other button opens a pull request against this repository, and the ones that are easy to undo merge themselves once checks pass. Outside this repository the console creates one thing, a new app's GitHub repository.
+Reconcile, suspend, resume and feature flag overrides take effect at once. Every other button opens a pull request against this repository, and the ones that are easy to undo merge themselves once checks pass. Outside this repository the console creates one thing, a new app's GitHub repository.
 
 Details: [pages and buttons](docs/console.md#use-it), [stages of a change](docs/console.md#stages-of-a-change), [auto-merge](docs/console.md#auto-merge), [how the console deploys itself](docs/console.md#deploy-a-new-console), [how it is protected](docs/console.md#how-it-is-protected).
 
@@ -54,7 +54,7 @@ An app's life:
 3. [Promote it](docs/apps.md#promote-to-production) with **Review promotion** or `make app-promote`.
 4. [Operate](docs/apps.md#operate-an-instance) or [remove](docs/apps.md#remove-an-app) it.
 
-What an app can declare, and what the platform builds from each declaration, is in [how apps work together](docs/architecture.md#how-apps-work-together). Each capability has its own section: [teams and isolation](docs/apps.md#teams-and-isolation), [calling another app](docs/apps.md#calling-another-app), [events](docs/apps.md#events), [what an app offers](docs/apps.md#what-an-app-offers), [notifications](docs/apps.md#notifications), [secrets](docs/apps.md#secrets), [telemetry](docs/apps.md#telemetry).
+What an app can declare, and what the platform builds from each declaration, is in [how apps work together](docs/architecture.md#how-apps-work-together). Each capability has its own section: [teams and isolation](docs/apps.md#teams-and-isolation), [calling another app](docs/apps.md#calling-another-app), [events](docs/apps.md#events), [feature flags](docs/apps.md#feature-flags), [what an app offers](docs/apps.md#what-an-app-offers), [notifications](docs/apps.md#notifications), [secrets](docs/apps.md#secrets), [telemetry](docs/apps.md#telemetry).
 
 ## Shared services
 
@@ -62,7 +62,7 @@ What an app can declare, and what the platform builds from each declaration, is 
 | --- | --- | --- |
 | Sign-in | oauth2-proxy with Google. An app gets it by being `authenticated-web`. | [Sign-in](docs/services.md#sign-in) |
 | ClickStack and OTel | Collects every pod's logs, node and cluster metrics, and apps' OTLP traces. HyperDX shows them, with one dashboard and default alerts per app. | [ClickStack and OTel](docs/services.md#clickstack-and-otel), [dashboards](docs/apps.md#dashboards) |
-| NATS JetStream | Carries the events apps declare, with one NATS user per app limited to its events | [NATS](docs/services.md#nats) |
+| NATS JetStream | Carries the events apps declare and holds feature flag overrides, with one NATS user per app instance limited to its own events and flags | [NATS](docs/services.md#nats) |
 | Notifications | Flux alerts, a once-a-minute health checker and the notify service send messages to ntfy, to the operator and to each team's channel | [Alerts](docs/services.md#alerts) |
 | Reloader | Restarts a workload when a Secret it uses changes | [Reloader](docs/services.md#reloader) |
 
@@ -112,7 +112,7 @@ One machine runs k3s. cert-manager gets certificates from Let's Encrypt, the pac
 | --- | --- |
 | `clusters/home/` | Flux entrypoint: sources, settings and one Flux unit per capability or app instance |
 | `infra/` | Namespaces, storage classes, cert-manager, issuers, Traefik settings |
-| `platform/` | Sign-in, ClickStack and its operators, OTel collectors, Reloader, NATS, alerts, the notify service, the console and the Flux webhooks, with their encrypted Secrets |
+| `platform/` | Sign-in, ClickStack and its operators, OTel collectors, Reloader, NATS and the feature flag buckets, alerts, the notify service, the console and the Flux webhooks, with their encrypted Secrets |
 | `apps/<app>/<env>/` | Generated app instances. Each app's code lives in its own repository, made from a [stack template](docs/apps.md#stacks-and-features). |
 | `images/` | Container images built from this repo (the console) |
 | `tools/swhurl/` | Python operator tooling behind every `make` target, and the console's code |

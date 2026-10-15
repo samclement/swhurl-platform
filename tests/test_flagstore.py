@@ -5,6 +5,7 @@ import socket
 import socketserver
 import threading
 import unittest
+from datetime import UTC, datetime
 
 from swhurl.apps import nkeys
 from swhurl.console import flagstore
@@ -43,13 +44,16 @@ class FakeNats(socketserver.BaseRequestHandler):
 
     def answer(self, subject, head, payload, reply):
         store = self.server.store
-        if subject.startswith('$JS.API.STREAM.MSG.GET.'):
+        if subject.startswith('$JS.API.STREAM.INFO.'):
+            wanted = json.loads(payload)['subjects_filter'].removesuffix('*')
+            answer = {'state': {'subjects': {k: 1 for k in store if k.startswith(wanted)}}}
+        elif subject.startswith('$JS.API.STREAM.MSG.GET.'):
             wanted = json.loads(payload)['last_by_subj']
             if wanted not in store:
                 answer = {'error': {'code': 404, 'description': 'no message found'}}
             else:
                 stored_head, data = store[wanted]
-                answer = {'message': {'subject': wanted, 'data': base64.b64encode(data).decode(),
+                answer = {'message': {'subject': wanted, 'data': base64.b64encode(data).decode(), 'time': '2026-10-01T09:30:00.123456789Z',
                                       **({'hdrs': base64.b64encode(stored_head.encode()).decode()} if stored_head else {})}}
         elif subject.startswith('$KV.flags-staging.'):
             store[subject] = (head, payload)
@@ -74,20 +78,27 @@ class FlagStoreTests(unittest.TestCase):
         self.store = flagstore.FlagStore(f'nats://127.0.0.1:{self.server.server_address[1]}', self.seed)
 
     def test_the_console_signs_in_with_its_key_and_signs_the_servers_nonce(self):
-        self.store.overrides('staging', 'orders', [])
+        self.store.overrides('staging', 'orders')
         connect, = self.server.connects
         raw = nkeys.decode_seed(self.seed)
         self.assertEqual(connect['nkey'], self.server.allowed)
         self.assertEqual(base64.urlsafe_b64decode(connect['sig'] + '=='), nkeys.sign(raw, NONCE.encode()))
         self.assertTrue(connect['headers'], 'a clear is a header')
 
+    def values(self, app='orders'):
+        return {name: o.value for name, o in self.store.overrides('staging', app).items()}
+
     def test_set_read_and_clear_on_the_wire(self):
-        self.assertEqual(self.store.overrides('staging', 'orders', ['shout', 'banner']), {})
+        self.assertEqual(self.values(), {})
         self.store.set('staging', 'orders', 'shout', False)
         self.store.set('staging', 'orders', 'banner', 'sale')
-        self.assertEqual(self.store.overrides('staging', 'orders', ['shout', 'banner']), {'shout': False, 'banner': 'sale'})
+        self.store.set('staging', 'orders-v2', 'shout', True)
+        self.assertEqual(self.values(), {'shout': False, 'banner': 'sale'}, 'every key of the app, and only its own')
+        self.assertEqual(self.store.overrides('staging', 'orders')['shout'].at,
+                         datetime(2026, 10, 1, 9, 30, 0, 123456, tzinfo=UTC), 'when NATS stored it')
         self.store.clear('staging', 'orders', 'shout')
-        self.assertEqual(self.store.overrides('staging', 'orders', ['shout', 'banner']), {'banner': 'sale'})
+        self.assertEqual(self.values(), {'banner': 'sale'})
+        self.server.writes.pop(2)
         self.assertEqual(self.server.writes, [
             ('$KV.flags-staging.staging.orders.shout', '', b'false'),
             ('$KV.flags-staging.staging.orders.banner', '', b'"sale"'),
@@ -95,14 +106,14 @@ class FlagStoreTests(unittest.TestCase):
 
     def test_a_refusal_or_a_missing_bucket_is_an_error_not_a_hang(self):
         with self.assertRaisesRegex(flagstore.FlagStoreError, 'NATS refused the console: Authorization Violation'):
-            flagstore.FlagStore(self.store.url, nkeys.generate()[0]).overrides('staging', 'orders', ['shout'])
+            flagstore.FlagStore(self.store.url, nkeys.generate()[0]).overrides('staging', 'orders')
         with self.assertRaisesRegex(flagstore.FlagStoreError, r'nothing answers \$KV.flags-prod'):
             self.store.set('prod', 'orders', 'shout', True)
         with socket.socket() as unused:
             unused.bind(('127.0.0.1', 0))
             port = unused.getsockname()[1]
         with self.assertRaisesRegex(flagstore.FlagStoreError, 'cannot reach NATS'):
-            flagstore.FlagStore(f'nats://127.0.0.1:{port}', self.seed).overrides('staging', 'orders', ['shout'])
+            flagstore.FlagStore(f'nats://127.0.0.1:{port}', self.seed).overrides('staging', 'orders')
 
     def test_a_form_value_becomes_the_declared_type(self):
         integer = {'type': 'integer', 'min': 1, 'max': 100, 'default': 20}
@@ -115,6 +126,11 @@ class FlagStoreTests(unittest.TestCase):
                                     ({'type': 'string', 'enum': ['a'], 'default': 'a'}, 'b', 'must be one of a')):
             with self.subTest(text=text), self.assertRaisesRegex(ValueError, message):
                 flagstore.typed(flag, text)
+
+    def test_a_stored_time_is_read_to_the_microsecond(self):
+        self.assertEqual(flagstore.stored_at('2026-10-01T09:30:00Z'), datetime(2026, 10, 1, 9, 30, tzinfo=UTC))
+        self.assertEqual(flagstore.stored_at('2026-10-01T10:30:00.5+01:00'), datetime(2026, 10, 1, 9, 30, 0, 500000, tzinfo=UTC))
+        self.assertIsNone(flagstore.stored_at('yesterday'))
 
     def test_from_env_needs_the_seed(self):
         self.assertIsNone(flagstore.FlagStore.from_env({}))

@@ -305,10 +305,12 @@ channels:
         def __init__(self, overrides=None, fail=None):
             self.stored, self.fail, self.calls = dict(overrides or {}), fail, []
 
-        def overrides(self, env, app, names):
+        def overrides(self, env, app):
+            from swhurl.console import flagstore
             if self.fail:
                 raise self.fail
-            return {n: self.stored[(env, app, n)] for n in names if (env, app, n) in self.stored}
+            return {n: v if isinstance(v, flagstore.Override) else flagstore.Override(v, dt.datetime.now(dt.UTC))
+                    for (e, a, n), v in self.stored.items() if (e, a) == (env, app)}
 
         def set(self, env, app, name, value):
             self.calls.append(('set', env, app, name, value))
@@ -366,6 +368,31 @@ channels:
         self.assertEqual(len(store.calls), 2, 'a refused value is not written')
         self.assertEqual(c.post('/apps/orders/staging/flags/shout', data={'action': 'clear'}, headers=WHO).status_code, 403,
                          'only from a console page')
+
+    def test_an_old_override_and_one_the_image_no_longer_declares_are_marked_and_can_be_cleared(self):
+        from swhurl.console import flagstore
+        old = dt.datetime.now(dt.UTC) - dt.timedelta(days=20)
+        store = self.Flags({('staging', 'orders', 'max-items'): flagstore.Override(50, old),
+                            ('staging', 'orders', 'shout'): flagstore.Override(False, dt.datetime.now(dt.UTC)),
+                            ('staging', 'orders', 'old-banner'): flagstore.Override('sale', old)})
+        c = client(self.flags_page_cluster(), documents=self.flag_documents(), flags=store)
+        text = c.get('/apps/orders/staging', headers=WHO).text
+        shout = text[text.index('<code>shout</code>'):text.index('<code>max-items</code>')]
+        self.assertIn('<span class="muted">set today</span>', shout)
+        items = text[text.index('<code>max-items</code>'):text.index('<code>banner</code>')]
+        self.assertIn('<span class="warn" title="Older than 14 days', items)
+        self.assertIn('set 20 days ago', items)
+        gone = text[text.index('<code>old-banner</code>'):text.index('</table>', text.index('<code>old-banner</code>'))]
+        self.assertIn('not declared</span>', gone)
+        self.assertIn('<span class="muted">unused</span>', gone)
+        self.assertNotIn('value="set"', gone, 'an undeclared flag has no type to set')
+        self.assertIn('value="clear"', gone)
+        reply = c.post('/apps/orders/staging/flags/old-banner', data={'action': 'clear'}, headers=ORIGIN, follow_redirects=False)
+        self.assertEqual(reply.status_code, 303)
+        self.assertEqual(store.calls, [('clear', 'staging', 'orders', 'old-banner')])
+        self.assertEqual(c.post('/apps/orders/staging/flags/old-banner', data={'action': 'set', 'value': 'x'}, headers=ORIGIN).status_code, 400)
+        self.assertEqual(c.post('/apps/orders/staging/flags/a.b', data={'action': 'clear'}, headers=ORIGIN).status_code, 400,
+                         'a clear names one key, never a wildcard')
 
     def test_without_its_nats_key_the_console_says_so_and_writes_nothing(self):
         from swhurl.console import flagstore

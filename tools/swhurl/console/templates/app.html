@@ -145,13 +145,20 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
       <tr><th>Flag</th><th>Type</th><th>Declared</th><th>Override</th><th>Now</th><th><span class="sr-only">Change</span></th></tr>
       {% for f in flag_rows %}
       {% set fl = f.flag %}
-      <tr{% if f.name == flag_changed %} class="changed"{% endif %}>
+      <tr class="{% if f.name == flag_changed %}changed{% endif %}{% if f.undeclared %} undeclared{% endif %}">
         <td><code>{{ f.name }}</code>{% if fl.description %}<br><span class="muted">{{ fl.description }}</span>{% endif %}</td>
+        {% if f.undeclared %}
+        <td colspan="2"><span class="pill attention" title="The image {{ i.env }} runs does not declare this flag, so the app ignores the override">not declared</span></td>
+        {% else %}
         <td><span class="pill">{{ fl.type }}</span>{% if fl.min is defined or fl.max is defined %} <span class="muted">{{ fl.min if fl.min is defined else '' }}…{{ fl.max if fl.max is defined else '' }}</span>{% endif %}</td>
         <td><code>{{ f.declared | tojson }}</code></td>
-        <td>{% if f.overridden %}<span class="pill attention" title="Set from the console; clear it to return to the declared value">{{ f.override | tojson if f.override is not none else 'not JSON' }}</span>{% else %}<span class="muted">none</span>{% endif %}</td>
-        <td><code>{{ f.effective | tojson }}</code></td>
+        {% endif %}
+        <td>{% if f.overridden %}<span class="pill attention" title="Set from the console; clear it to return to the declared value">{{ f.override | tojson if f.override is not none else 'not JSON' }}</span>
+          {%- if f.age is not none %}<br><span class="{{ 'warn' if f.stale else 'muted' }}"{% if f.stale %} title="Older than 14 days: make it the declared value in swhurl.yaml, or remove the flag, then clear it"{% endif %}>set {{ 'today' if f.age == 0 else (f.age ~ ' day' ~ ('' if f.age == 1 else 's') ~ ' ago') }}</span>{% endif %}
+          {%- else %}<span class="muted">none</span>{% endif %}</td>
+        <td>{% if f.undeclared %}<span class="muted">unused</span>{% else %}<code>{{ f.effective | tojson }}</code>{% endif %}</td>
         <td class="actions">
+          {% if not f.undeclared %}
           <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/flags/{{ f.name }}" class="inline">
             <input type="hidden" name="action" value="set">
             <label class="sr-only" for="flag-{{ f.name }}">New value of {{ f.name }}</label>
@@ -166,17 +173,18 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
             {% endif %}
             <button type="submit"{% if not flags_writable %} disabled{% endif %}>Set</button>
           </form>
+          {% endif %}
           {% if f.overridden %}
           <form method="post" action="/apps/{{ i.app }}/{{ i.env }}/flags/{{ f.name }}" class="inline">
             <input type="hidden" name="action" value="clear">
-            <button type="submit" class="quiet"{% if not flags_writable %} disabled{% endif %} title="Back to the declared value">Clear</button>
+            <button type="submit" class="quiet"{% if not flags_writable %} disabled{% endif %} title="{{ 'Remove the override' if f.undeclared else 'Back to the declared value' }}">Clear</button>
           </form>
           {% endif %}
         </td>
       </tr>
       {% endfor %}
     </table>
-    <p class="muted">Changes are written to the audit log. An override stays until it is cleared, also across restarts and new images; remove a settled flag from the app's code and <code>swhurl.yaml</code>.</p>
+    <p class="muted">Changes are written to the audit log. An override stays until it is cleared, also across restarts and new images: one older than 14 days is marked, as is one for a flag the image no longer declares. Remove a settled flag from the app's code and <code>swhurl.yaml</code>.</p>
     {% else %}
     <p class="muted">The image {{ i.env }} runs declares no feature flags. Declare them in the app's <code>swhurl.yaml</code> (<a href="https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags">how</a>).</p>
     {% endif %}

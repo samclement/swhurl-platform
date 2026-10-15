@@ -468,6 +468,8 @@ flowchart LR
 | Who may write | Only the console, from the app page's **Feature flags** card ([console](console.md#use-it)), which checks the value against the declaration and records each change in its audit log; an app may watch only its own keys |
 | Templates | `v0.2.7` and later; an app on an older template ignores overrides |
 
+The card marks an override older than 14 days (make the value the declared one in `swhurl.yaml`, or remove the flag, then clear it) and one for a flag the running image no longer declares, which the app ignores; neither is removed for you.
+
 Overrides are not in Git and not backed up: if NATS loses them, every app returns to its declared values.
 
 **Removing a flag** is the app developer's change: delete it from `swhurl.yaml` and the build no longer generates its accessor, so the compiler lists each place that still reads it.

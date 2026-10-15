@@ -2,7 +2,7 @@
 
 One k3s node, one Git repository, one Flux. Flux reconciles `clusters/home` and everything it references; nothing reaches the cluster any other way except the operator commands listed in [how changes reach the cluster](#how-changes-reach-the-cluster).
 
-The [repository blueprint](repository-blueprint.html) is a navigable map of the change path, system boundaries and implementation files. It is a snapshot of commit `dc80dbc` (10 October 2026) and predates NATS, the notify service and the Catalogue; this page is current.
+The [repository blueprint](repository-blueprint.html) is a navigable map of the change path, system boundaries and implementation files. It is a snapshot of commit `3221727` (15 October 2026); where it differs from this page, this page is current. Rebuild it with the `repository-blueprint` skill.
 
 ## Principles
 

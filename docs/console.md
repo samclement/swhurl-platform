@@ -1,6 +1,6 @@
 # Console
 
-A web page at `https://console.<BASE_DOMAIN>` (`console.homelab.swhurl.com`) for looking at the platform and changing it without a terminal. Sign in with the same Google account as every other signed-in host. It changes the cluster in only three ways (reconcile, suspend and resume a Flux unit), besides keeping its own [job record](#jobs-and-restarts); every other change is a **pull request** it opens against this repo, which follows the [review and auto-merge policy](#auto-merge). The one thing it creates directly is a new app's own repository (**New app**).
+A web page at `https://console.<BASE_DOMAIN>` (`console.homelab.swhurl.com`) for looking at the platform and changing it without a terminal. Sign in with the same Google account as every other signed-in host. It changes the platform directly in only two ways: it reconciles, suspends and resumes a Flux unit, and it sets and clears [feature flag](apps.md#feature-flags) overrides in NATS. Besides that it keeps its own [job record](#jobs-and-restarts). Every other change is a **pull request** it opens against this repo, which follows the [review and auto-merge policy](#auto-merge). The one thing it creates directly is a new app's own repository (**New app**).
 
 App change jobs use the same [YAML editor and validation rules](apps.md#operate-an-instance) as the CLI. Handwritten comments and settings survive targeted edits. If validation cannot run or fails, the job fails without opening a pull request; its temporary checkout is discarded.
 

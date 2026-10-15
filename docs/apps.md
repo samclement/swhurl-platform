@@ -121,7 +121,7 @@ make app-status APP=weather-api ENV=staging    # expect "running: matches desire
 
 `make app-repo` refuses a name that already exists on GitHub. Console setup stops before creating a repository in that case; choose another name and retry from **New app**. For a free name, `make app-repo` creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes (the console's job prints the line too).
 
-**Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes) and its `swhurl.yaml` must set `autoDeploy: true`, as the stack templates do. There is no route for an image built elsewhere or a public image such as nginx: `make check-apps` (and so CI and the console's merge gate) fails an instance committed by hand that is not such an app ([the app policy](#the-app-policy)). Tests are the one exception: the throwaway live tests (`make live-test-*`) deploy nginx and BusyBox images from fixture manifests into labelled test namespaces and remove them afterwards.
+**Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, and the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes); staging always follows its new images. There is no route for an image built elsewhere or a public image such as nginx: `make check-apps` (and so CI and the console's merge gate) fails an instance committed by hand that is not such an app ([the app policy](#the-app-policy)). Tests are the one exception: the throwaway live tests (`make live-test-*`) deploy nginx and BusyBox images from fixture manifests into labelled test namespaces and remove them afterwards.
 
 ### Stacks and features
 
@@ -183,57 +183,67 @@ Every instance runs non-root with no service-account token, all capabilities dro
 
 ## swhurl.yaml
 
-What an app says it needs from the platform, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. [`declaration.py`](../tools/swhurl/apps/declaration.py) is its one reader: unknown fields and other versions are refused wherever the file is read.
+What the app is, what its image needs and what it offers other apps, kept in the app's own repository (the templates write it from your feature answers). The name, environment, image and host belong to each instance and are never in the file. [`declaration.py`](../tools/swhurl/apps/declaration.py) is its one reader: unknown fields and other versions are refused wherever the file is read.
 
-The file has two lifetimes, and each field has one of them:
+Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates write them in this order under a comment for each:
+
+- **Identity**: what the app is. `version`, `stack`, `kind`.
+- **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
+- **Offer**: what other apps can use. `provides`, `flags`, `events.publish`.
+- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. `app-new` still reads one from the file at creation, and the templates write none.
+
+Separately, each field is read at one of two times:
 
 - **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
 - **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself.
 
+`autoDeploy` is accepted and ignored: staging always follows new images.
+
 ```yaml
+# Identity
 version: 1              # required; this platform reads version 1
 stack: kotlin           # which template the app came from
 kind: web               # required: web or worker            --kind
+# Needs: what the image needs to run
 port: 8080              # web only (default 8080)            --port
 healthPath: /healthz    # web only, required                 --health-path
 uid: 65532              # default 65532                      --uid
 telemetry: otlp         # otlp or none (default)             --otlp
-autoDeploy: true        # staging follows new images (required: app-new refuses false)
+resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional, the image's minimum: --cpu, --memory, --memory-limit
 database: sqlite        # optional; databaseSize: 1Gi        --database, --database-size
 secrets: [API_TOKEN]    # optional: variable names           --secret-keys
-resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional: --cpu, --memory, --memory-limit
-exposure: authenticated-web   # optional; default: web apps authenticated-web, workers private
-team: payments          # a name in apps/teams.yaml; required here or as --team (there is no default)
-alerts: error-logs=20,errors=none   # optional: its own default-alert thresholds, or none   --alerts
-calls: [orders]         # optional: apps this one calls; each must exist in staging   --calls
+# Offers: what other apps can use
 provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
-events: {publish: [created], subscribe: [orders.created]}   # optional   --publish, --subscribe
+events: {publish: [created]}     # optional, until the app has provides.eventsFile   --publish
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
+# Grants (team, exposure, alerts, calls, events.subscribe) are set on the platform: the New app form,
+# app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
 ```
 
-| Field | Lifetime | After creation |
-| --- | --- | --- |
-| `version` | read again | Checked every time the file is read |
-| `stack` | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
-| `provides` | read again | `make app-offers` reads it at the commit of every new staging image (the Offers workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
-| `kind` | read once | Fixed: web or worker cannot change |
-| `autoDeploy` | read once | Fixed: staging always follows new images |
-| `port` | read once | Edit the instance's `helmrelease.yaml` ([operate an instance](#operate-an-instance)) |
-| `healthPath` | read once | Edit the instance's `helmrelease.yaml` |
-| `uid` | read once | Edit the instance's `helmrelease.yaml` |
-| `telemetry` | read once | Edit the instance's `helmrelease.yaml` |
-| `database` | read once | Edit the instance's files |
-| `databaseSize` | read once | Edit the instance's files |
-| `secrets` | read once | Edit the instance's files ([secrets](#secrets)) |
-| `resources` | read once | `make app-scale` |
-| `exposure` | read once | `make app-expose` |
-| `team` | read once | `make app-team` |
-| `alerts` | read once | `make app-alerts` |
-| `calls` | read once | `make app-calls` |
-| `events` | read once | `make app-events`; what the app publishes follows `provides.eventsFile` once it has one |
-| `flags` | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
+| Field | Kind | Read | After creation |
+| --- | --- | --- | --- |
+| `version` | identity | read again | Checked every time the file is read |
+| `stack` | identity | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
+| `kind` | identity | read once | Fixed: web or worker cannot change |
+| `port` | need | read once | Edit the instance's `helmrelease.yaml` ([operate an instance](#operate-an-instance)) |
+| `healthPath` | need | read once | Edit the instance's `helmrelease.yaml` |
+| `uid` | need | read once | Edit the instance's `helmrelease.yaml` |
+| `telemetry` | need | read once | Edit the instance's `helmrelease.yaml` |
+| `resources` | need | read once | `make app-scale`; the app page's **Scale** form shows the minimum the running image declares |
+| `database` | need | read once | Edit the instance's files |
+| `databaseSize` | need | read once | Edit the instance's files |
+| `secrets` | need | read once | Edit the instance's files ([secrets](#secrets)) |
+| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Offers workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
+| `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
+| `events.publish` | offer | read once | `make app-events`; once the app has `provides.eventsFile`, that file says what it publishes |
+| `team` | grant | read once | `make app-team` |
+| `exposure` | grant | read once | `make app-expose` |
+| `alerts` | grant | read once | `make app-alerts` |
+| `calls` | grant | read once | `make app-calls` |
+| `events.subscribe` | grant | read once | `make app-events` |
+| `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
 
 ## Who can reach it
 
@@ -247,7 +257,7 @@ Set it with `--exposure` at creation, and change it later with `make app-expose 
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, `team:` in `swhurl.yaml`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected; `app-new` still reads `team:` from `swhurl.yaml`), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
 
@@ -275,7 +285,7 @@ The policy selects the app's own pods (`app.kubernetes.io/instance: <app>`), nev
 An app says which apps it calls, and the platform gives it their address and a credential, and tells each callee who may call it. For example, `demo-shop` calling `demo-orders`:
 
 ```
-make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or calls: [demo-orders] in swhurl.yaml at creation
+make app-calls APP=demo-shop ENV=staging ARGS="--add demo-orders"     # or the app page's Connect to an app; at creation, --calls or the New app form
 ```
 
 ```mermaid
@@ -317,12 +327,7 @@ An app can publish events and receive other apps' events without knowing who is 
 make app-events APP=demo-notifier ENV=staging ARGS="--add-subscribe demo-orders.created"   # or the Catalogue's Add an app
 ```
 
-or, before the subscriber is created, in its `swhurl.yaml`:
-
-```yaml
-events:
-  subscribe: [demo-orders.created]      # <app>.<event>
-```
+or, when the subscriber is created, `--subscribe demo-orders.created` or the New app form's **Connections**. Receiving an event is a [grant](#swhurlyaml): it is set on the platform, not in the app's repository.
 
 What `demo-orders` publishes is not declared on the platform at all: it [describes its events](#what-an-app-offers) in its own `asyncapi.yaml`, and the platform reads that. An app that does not describe them declares the list instead: `make app-events APP=<app> ENV=staging ARGS="--publish created,cancelled"`, or `events: {publish: [created, cancelled]}` in `swhurl.yaml`.
 
@@ -763,7 +768,7 @@ make app-alerts APP=orders ARGS="--none"               # no default alerts at al
 make app-alerts APP=orders ARGS="--default"            # back to the platform's
 ```
 
-or at creation with `alerts:` in `swhurl.yaml` (`alerts: error-logs=20,errors=none`, or `alerts: none`). It is the `platform.swhurl.com/alerts` annotation on the app's namespaces, so it follows a promotion; `make check-apps` (rule `alerts`) refuses a value it cannot read. The word is `none`, not `off`, which YAML would read as false.
+or at creation with `app-new --alerts` (`--alerts error-logs=20,errors=none`, or `--alerts none`). It is the `platform.swhurl.com/alerts` annotation on the app's namespaces, so it follows a promotion; `make check-apps` (rule `alerts`) refuses a value it cannot read. The word is `none`, not `off`, which YAML would read as false.
 
 ## Remove an app
 

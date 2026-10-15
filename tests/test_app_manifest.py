@@ -40,7 +40,7 @@ class ManifestTests(unittest.TestCase):
                'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
                'team': 'payments', 'calls': ['orders', 'billing']}
         self.assertEqual(seed(doc), {
-            'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': False, 'exposure': 'private',
+            'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': True, 'exposure': 'private',
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments', 'calls': ['orders', 'billing']})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
@@ -139,21 +139,32 @@ class ManifestTests(unittest.TestCase):
 
 
 class LifetimeTests(unittest.TestCase):
-    """One file, two lifetimes: which fields are read once and which again, and the one way it is fetched."""
+    """Each field's kind and when it is read today, and the one way the file is fetched."""
 
-    def test_every_field_is_seed_or_live_and_the_docs_say_the_same(self):
-        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE})
+    def test_every_field_has_a_kind_and_a_time_and_the_docs_say_the_same(self):
+        kinds = (declaration.IDENTITY, declaration.NEED, declaration.OFFER, declaration.GRANT, declaration.DROPPED)
+        self.assertEqual({item.kind for item in declaration.FIELDS}, set(kinds))
+        self.assertEqual([item.kind for item in declaration.FIELDS], sorted((item.kind for item in declaration.FIELDS), key=kinds.index),
+                         'FIELDS is ordered by kind, as the page and the templates are')
+        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
                          ['version', 'stack', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
-        rows = dict(re.findall(r'^\| `([A-Za-z]+)` \| (read once|read again) \|', section, re.M))
-        self.assertEqual(rows, {item.name: 'read once' if item.read == declaration.SEED else 'read again'
-                                for item in declaration.FIELDS})
+        rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored) \|', section, re.M)
+        read = {declaration.SEED: 'read once', declaration.LIVE: 'read again', declaration.IGNORED: 'ignored'}
+        self.assertEqual(rows, [(item.name, item.kind, read[item.read]) for item in declaration.FIELDS])
         for item in declaration.FIELDS:
             if item.then.startswith('make '):
                 with self.subTest(field=item.name):
-                    self.assertRegex(section, rf'(?m)^\| `{item.name}` \|.*`{re.escape(item.then.split(";")[0])}')
+                    self.assertRegex(section, rf'(?m)^\| `{re.escape(item.name)}` \|.*`{re.escape(item.then.split(";")[0])}')
+
+    def test_auto_deploy_is_accepted_and_ignored(self):
+        for doc in ({'version': 1, 'kind': 'worker'}, {'version': 1, 'kind': 'worker', 'autoDeploy': False}):
+            with self.subTest(doc=doc):
+                self.assertTrue(seed(doc)['auto_deploy'])
+        with self.assertRaisesRegex(DeclarationError, 'autoDeploy must be bool'):
+            seed({'version': 1, 'kind': 'worker', 'autoDeploy': 'yes'})
 
     def test_the_live_fields_are_read_from_a_valid_file(self):
         found = declaration.of({**WEB, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'asyncapi.yaml'}})

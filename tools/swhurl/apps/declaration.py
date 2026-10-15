@@ -1,12 +1,22 @@
-"""swhurl.yaml: what an app says it needs from the platform, kept in the app's own repository.
+"""swhurl.yaml: what an app is, needs and offers, kept in the app's own repository.
 
-One file, two lifetimes, and ``FIELDS`` says which each field has (docs/apps.md#swhurlyaml shows the
-same table, and a test compares them):
+Each field is one of four kinds, and ``FIELDS`` says which (docs/apps.md#swhurlyaml shows the same table,
+and a test compares them; GLOSSARY.md defines the words):
+
+- **identity**: what the app is (``version``, ``stack``, ``kind``).
+- **need**: what the image needs to run (port, probes, user, telemetry, resources, database, secret names).
+- **offer**: what other apps can use (``provides``, ``flags``, ``events.publish``).
+- **grant**: what the platform allows the app (team, exposure, alerts, calls, ``events.subscribe``). It
+  belongs to this repository; ``app-new`` still takes one from the file at creation.
+
+Separately, each field is read at one of two times today:
 
 - **seed**: read once, when ``app-new`` creates the staging instance. From then on the instance in
   this repository is the truth; a later edit of the field in the app's repository changes nothing,
   and the command named beside it is how the instance changes.
 - **live**: read again from the app's repository, so an edit there reaches the platform.
+
+``autoDeploy`` is accepted and ignored: staging always follows new images.
 
 Every reader goes through ``read`` (GitHub, at a ref) or ``parse`` (text in hand), so the file has
 one fetcher and one validation: unknown fields and other versions are refused wherever it is read.
@@ -33,38 +43,41 @@ VERSION = 1
 KINDS = ('web', 'worker')
 TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
-SEED, LIVE = 'seed', 'live'
+SEED, LIVE, IGNORED = 'seed', 'live', 'ignored'
+IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 INSTANCE = "the instance's files"
 Opener = Callable[[urllib.request.Request], bytes]
 
 
 @dataclass(frozen=True)
 class Field:
-    name: str
-    read: str  # SEED or LIVE
+    name: str  # a top-level field, or events.publish and events.subscribe, which differ in kind
+    kind: str  # IDENTITY, NEED, OFFER, GRANT or DROPPED
+    read: str  # SEED, LIVE or IGNORED
     then: str  # seed: what changes the instance afterwards; live: when it is read again
 
 
 FIELDS = (
-    Field('version', LIVE, 'every time the file is read: another version is refused'),
-    Field('stack', LIVE, "by the console, from the repository's default branch, for the language it shows"),
-    Field('kind', SEED, 'nothing: web or worker is fixed at creation'),
-    Field('port', SEED, INSTANCE),
-    Field('healthPath', SEED, INSTANCE),
-    Field('uid', SEED, INSTANCE),
-    Field('telemetry', SEED, INSTANCE),
-    Field('autoDeploy', SEED, 'nothing: staging always follows new images'),
-    Field('database', SEED, INSTANCE),
-    Field('databaseSize', SEED, INSTANCE),
-    Field('secrets', SEED, INSTANCE),
-    Field('resources', SEED, 'make app-scale'),
-    Field('exposure', SEED, 'make app-expose'),
-    Field('team', SEED, 'make app-team'),
-    Field('alerts', SEED, 'make app-alerts'),
-    Field('calls', SEED, 'make app-calls'),
-    Field('events', SEED, 'make app-events; what it publishes follows provides.eventsFile once the app has one'),
-    Field('provides', LIVE, "by make app-offers, at the commit of every new staging image (the Offers workflow)"),
-    Field('flags', LIVE, "by the app's own build, which generates a typed accessor for each flag"),
+    Field('version', IDENTITY, LIVE, 'every time the file is read: another version is refused'),
+    Field('stack', IDENTITY, LIVE, "by the console, from the repository's default branch, for the language it shows"),
+    Field('kind', IDENTITY, SEED, 'nothing: web or worker is fixed at creation'),
+    Field('port', NEED, SEED, INSTANCE),
+    Field('healthPath', NEED, SEED, INSTANCE),
+    Field('uid', NEED, SEED, INSTANCE),
+    Field('telemetry', NEED, SEED, INSTANCE),
+    Field('resources', NEED, SEED, 'make app-scale'),
+    Field('database', NEED, SEED, INSTANCE),
+    Field('databaseSize', NEED, SEED, INSTANCE),
+    Field('secrets', NEED, SEED, INSTANCE),
+    Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Offers workflow)"),
+    Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
+    Field('events.publish', OFFER, SEED, 'make app-events; once the app has provides.eventsFile, that file instead'),
+    Field('team', GRANT, SEED, 'make app-team'),
+    Field('exposure', GRANT, SEED, 'make app-expose'),
+    Field('alerts', GRANT, SEED, 'make app-alerts'),
+    Field('calls', GRANT, SEED, 'make app-calls'),
+    Field('events.subscribe', GRANT, SEED, 'make app-events'),
+    Field('autoDeploy', DROPPED, IGNORED, 'nothing: staging always follows new images'),
 )
 FLAG_NAME = re.compile(r'[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*')
 """A flag's name: kebab case where each part starts with a letter, so its camelCase accessor is unique."""
@@ -208,7 +221,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
         raise fail('must be a mapping')
     if doc.get('version') != VERSION:
         raise fail(f'version must be {VERSION} (this platform reads version {VERSION})')
-    allowed = {item.name for item in FIELDS}
+    allowed = {item.name.split('.')[0] for item in FIELDS}
     unknown = sorted(set(doc) - allowed)
     if unknown:
         raise fail(f'unknown field(s) {", ".join(unknown)}; allowed: {", ".join(sorted(allowed))}')
@@ -226,9 +239,10 @@ def of(doc: object, source: str = FILE) -> Declaration:
     kind = field('kind', str, KINDS)
     if not kind:
         raise fail(f'kind is required ({", ".join(KINDS)})')
+    field('autoDeploy', bool)
     defaults: dict = {'kind': kind, 'uid': field('uid', int) or TEMPLATE_UID,
                       'otlp': field('telemetry', str, TELEMETRY) == 'otlp',
-                      'auto_deploy': bool(field('autoDeploy', bool)),
+                      'auto_deploy': True,  # autoDeploy is accepted and ignored (checked as a boolean above)
                       'exposure': field('exposure', str, EXPOSURES)
                       or ('authenticated-web' if kind == 'web' else 'private')}
     if kind == 'web':

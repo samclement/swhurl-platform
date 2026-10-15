@@ -192,10 +192,9 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(self.gen('api', '--image', 'r/api:1', '--health-path', '/h', '--alerts', 'latency=5'), 2)
         self.assertIn("--alerts: 'latency' is not an alert: choose from error-logs, errors", err.getvalue())
         self.assertFalse((self.tmp / 'apps/api').exists())
-        base = {'version': 1, 'kind': 'worker', 'autoDeploy': True}
-        self.assertEqual(declaration.of(base | {'alerts': 'none'}).seed['alerts'], 'none')
-        with self.assertRaisesRegex(declaration.DeclarationError, "alerts: errors='lots': give a number"):
-            declaration.of(base | {'alerts': 'errors=lots'})
+        base = {'version': 1, 'kind': 'worker'}
+        with self.assertRaisesRegex(declaration.DeclarationError, r'alerts: a grant, set on the platform, not in this file \(make app-alerts'):
+            declaration.of(base | {'alerts': 'none'})
         self.assertNotIn('alerts', declaration.of(base).seed)
 
     def test_secret_stub_is_encrypted_and_namespace_watched(self):
@@ -235,7 +234,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(env('p'), {}, 'without --otlp nothing is written')
 
     def test_a_template_manifest_fills_its_conventions_and_derives_the_host(self):
-        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', TEMPLATE_IMAGE,
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         values = yaml.safe_load((self.tmp / 'apps/w/staging/helmrelease.yaml').read_text())['spec']['values']
         main = values['controllers']['main']['containers']['main']
@@ -246,7 +245,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
 
     def test_auto_deploy_watches_the_image_and_marks_staging_only(self):
-        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', TEMPLATE_IMAGE,
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         with mock.patch.object(app_policy, 'evaluate', return_value=[]):
             source, _ = promotion.read(self.tmp, 'w')
@@ -277,17 +276,17 @@ class GeneratorTests(unittest.TestCase):
     def test_auto_deploy_needs_a_template_tag_and_digest(self):
         for image in ('ghcr.io/samclement/w:1.0@sha256:' + 'a' * 64, 'ghcr.io/samclement/w:12-abcdef0'):
             with self.subTest(image=image), redirect_stderr(io.StringIO()) as err:
-                self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image', image,
+                self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', image,
                                                '--root', str(self.tmp), '--no-policy-check']), 2)
             self.assertIn('automatic deploys need', err.getvalue())
-        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--no-auto-deploy',
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--no-auto-deploy',
                                        '--image', 'ghcr.io/samclement/w:1.0', '--root', str(self.tmp),
                                        '--no-policy-check']), 0)
 
     def test_in_the_platform_repository_only_a_platform_created_app_is_generated(self):
         def problem(*argv):
             return app_new.platform_origin_problem(app_new.parse_args(
-                ['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', *argv]))
+                ['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', *argv]))
         ours = argparse.Namespace(name='w', env='staging', from_repo='samclement/w@v1', image=TEMPLATE_IMAGE,
                                   auto_deploy=True)
         self.assertIsNone(app_new.platform_origin_problem(ours))
@@ -314,10 +313,10 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(contract.strip_image_markers(text), (text, None))
 
     def test_explicit_flags_beat_the_manifest(self):
-        args = app_new.parse_args(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
+        args = app_new.parse_args(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
                                    '--no-otlp', '--port', '3000', '--exposure', 'private'])
         self.assertEqual((args.otlp, args.port, args.exposure, args.health_path), (False, 3000, 'private', '/healthz'))
-        worker = app_new.parse_args(['q', '--manifest', str(MANIFESTS / 'worker.yaml'), '--env', 'staging', '--image', 'r/q:1'])
+        worker = app_new.parse_args(['q', '--manifest', str(MANIFESTS / 'worker.yaml'), '--team', 'demo', '--env', 'staging', '--image', 'r/q:1'])
         self.assertEqual((worker.kind, worker.exposure, worker.otlp), ('worker', 'private', True))
 
     def test_signed_in_host_is_derived_per_environment(self):
@@ -624,7 +623,7 @@ class PlatformImageTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp)
         (self.tmp / 'clusters/home').mkdir(parents=True)
         (self.tmp / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
-        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging', '--image',
+        self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image',
                                        TEMPLATE_IMAGE, '--root', str(self.tmp), '--no-policy-check']), 0)
         self.staging = self.tmp / 'apps/w/staging'
 

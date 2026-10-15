@@ -172,7 +172,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |
 | `--exposure`, `--host` | Who can reach it ([below](#who-can-reach-it)); default `private` |
-| `--team` | Required (here or as `team:` in `swhurl.yaml`): the owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)) |
+| `--team` | Required: the owning team, a name in `apps/teams.yaml` ([teams and isolation](#teams-and-isolation)) |
 | `--secret-keys A,B` | An encrypted Secret stub ([secrets](#secrets)): set the values before pushing and also `git add platform/reloader` |
 | `--otlp` / `--no-otlp` | The app has an OpenTelemetry SDK: points it at the cluster collector ([telemetry](#telemetry)) |
 | `--database sqlite` | A retained volume (`--database-size`, default 1Gi) at `/data`, with the database file `/data/app.db` passed to the app as `DATABASE_PATH`; backed up daily |
@@ -190,9 +190,9 @@ Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates 
 - **Identity**: what the app is. `version`, `stack`, `kind`.
 - **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
 - **Offer**: what other apps can use. `provides`, `flags`, `events.publish`.
-- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. `app-new` still reads one from the file at creation, and the templates write none.
+- **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
 
-Separately, each field is read at one of two times:
+Separately, each field the file may hold is read at one of two times:
 
 - **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
 - **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself.
@@ -218,8 +218,8 @@ provides: {api: /openapi.json}   # optional, web only: where its API description
 events: {publish: [created]}     # optional, until the app has provides.eventsFile   --publish
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
-# Grants (team, exposure, alerts, calls, events.subscribe) are set on the platform: the New app form,
-# app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
+# Grants (team, exposure, alerts, calls, events.subscribe) are refused here. Set them on the platform: the
+# New app form or app-new flags, then make app-team, app-expose, app-alerts, app-calls, app-events or the app page.
 ```
 
 | Field | Kind | Read | After creation |
@@ -238,11 +238,11 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Offers workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
 | `events.publish` | offer | read once | `make app-events`; once the app has `provides.eventsFile`, that file says what it publishes |
-| `team` | grant | read once | `make app-team` |
-| `exposure` | grant | read once | `make app-expose` |
-| `alerts` | grant | read once | `make app-alerts` |
-| `calls` | grant | read once | `make app-calls` |
-| `events.subscribe` | grant | read once | `make app-events` |
+| `team` | grant | refused | `make app-team`, or `--team` and the New app form at creation |
+| `exposure` | grant | refused | `make app-expose`, or `--exposure` at creation (default: web apps signed-in, workers private) |
+| `alerts` | grant | refused | `make app-alerts`, or `--alerts` at creation |
+| `calls` | grant | refused | `make app-calls`, or `--calls` and the New app form's **Connections** at creation |
+| `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` and the New app form's **Connections** at creation |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
 
 ## Who can reach it
@@ -257,7 +257,7 @@ Set it with `--exposure` at creation, and change it later with `make app-expose 
 
 ## Teams and isolation
 
-Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected; `app-new` still reads `team:` from `swhurl.yaml`), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
+Every app belongs to one **team**: a name registered in [`apps/teams.yaml`](../apps/teams.yaml), written as the `platform.swhurl.com/team` label on each of the app's namespaces. There is no default team: name one at creation (`--team`, or the console's team choice, where none is preselected), or `make app-new` refuses and change it for every environment at once with `make app-team APP=demo-shop ARGS="--team <team>"`. A team is a name, not a set of people: it says who owns an app and lets you filter by owner; it grants nobody access.
 
 Manage teams on the console's **Teams** page or with `make team-add`, `make team-edit` and `make team-remove`. The registry and the apps that name a team change together, so no app is left naming a team that is gone (`make check-apps` rule `team` would fail):
 

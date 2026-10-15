@@ -112,7 +112,7 @@ class FirstProductionTests(unittest.TestCase):
 
     def staging(self, kind='web', *extra):
         from swhurl.apps import new
-        args = new.parse_args(['example', '--manifest', str(MANIFESTS / f'{kind}.yaml'), '--env', 'staging',
+        args = new.parse_args(['example', '--manifest', str(MANIFESTS / f'{kind}.yaml'), '--team', 'demo', '--env', 'staging',
                                '--image', 'ghcr.io/example/app:2-abcdef0@' + DIGEST,
                                '--no-auto-deploy', *extra])
         new.generate(args, self.root)
@@ -188,7 +188,7 @@ class FirstProductionTests(unittest.TestCase):
         from swhurl.apps import edit, new, policy
         from swhurl.run import FakeRunner
         for name, extra in (('orders', []), ('reports', ['--calls', 'orders'])):
-            args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging',
+            args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
         edit.set_calls(self.root, 'reports', 'staging', add=['orders'])

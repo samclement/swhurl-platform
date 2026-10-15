@@ -30,7 +30,7 @@ class MergeTests(unittest.TestCase):
         (self.root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
         for env in ('staging', 'prod'):
             image = IMAGE if env == 'staging' else IMAGE.replace('2-', '1-').replace('a' * 64, 'c' * 64)
-            args = new.parse_args(['example', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', env, '--no-auto-deploy', '--image', image])
+            args = new.parse_args(['example', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', env, '--no-auto-deploy', '--image', image])
             new.generate(args, self.root)
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr = {'state': 'open', 'head': {'ref': 'console/promote-example-staging-aaaaaaa', 'sha': HEAD,
@@ -60,7 +60,7 @@ class MergeTests(unittest.TestCase):
             shutil.copytree(self.root, dst)
             if dst.name == 'candidate':
                 if self.pr['head']['ref'].startswith('console/new-fresh-'):
-                    fresh = new.parse_args(['fresh', '--manifest', str(MANIFESTS / 'web.yaml'), '--env', 'staging',
+                    fresh = new.parse_args(['fresh', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                             '--no-auto-deploy', '--image', IMAGE])
                     new.generate(fresh, dst)
                     return Result(args)

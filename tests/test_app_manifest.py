@@ -38,11 +38,11 @@ class ManifestTests(unittest.TestCase):
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
                'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
-               'team': 'payments', 'calls': ['orders', 'billing']}
+               'events': {'publish': ['created']}}
         self.assertEqual(seed(doc), {
             'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': True, 'exposure': 'private',
             'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
-            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'team': 'payments', 'calls': ['orders', 'billing']})
+            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'publish': ['created']})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
         self.assertEqual(seed(web)['api_path'], '/openapi.json')
         seed({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
@@ -52,8 +52,7 @@ class ManifestTests(unittest.TestCase):
                              ({**web, 'provides': {'events': []}}, 'apiFile and eventsFile only'),
                              ({**web, 'provides': {'apiFile': '../x'}}, 'a file in the repository, such as openapi.json'),
                              ({**web, 'provides': {'eventsFile': '/etc/x'}}, 'such as asyncapi.yaml'),
-                             ({**doc, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only'), ({**doc, 'calls': ['Orders']}, 'distinct app names'),
-                             ({**doc, 'calls': ['a', 'a']}, 'distinct app names')):
+                             ({**doc, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only')):
             with self.subTest(bad=bad), self.assertRaisesRegex(DeclarationError, message):
                 seed(bad)
 
@@ -66,15 +65,17 @@ class ManifestTests(unittest.TestCase):
             ({'resources': {'memory': 64, 'cpu': 1}},
              'resources.cpu must be a quantity string, for example "64Mi"'),
             ({'events': {'publish': ['Bad']}, 'provides': {'api': 'relative'}},
-             'events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)'),
-            ({'events': {'unknown': [], 'publish': ['Bad']}}, 'events may set publish and subscribe only'),
-            ({'provides': {'api': 'relative', 'apiFile': '../bad'}, 'calls': ['Bad']},
+             'events.publish lists event names (created)'),
+            ({'events': {'unknown': [], 'publish': ['Bad']}}, 'events may set publish only'),
+            ({'provides': {'api': 'relative', 'apiFile': '../bad'}},
              'provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only'),
             ({'provides': {'eventsFile': '../events', 'apiFile': '../api'}},
              'provides.apiFile is a file in the repository, such as openapi.json'),
             ({'kind': 'worker', 'port': None, 'healthPath': None,
               'provides': {'apiFile': 'api.json', 'api': '/api'}}, 'provides.apiFile applies to kind web only'),
-            ({'calls': ['Bad'], 'team': 1, 'stack': 1}, 'calls must be a list of distinct app names'),
+            ({'resources': {'memory': 64}, 'calls': [], 'team': 'payments', 'events': {'subscribe': ['a.b']}},
+             'team, calls, events.subscribe: a grant, set on the platform, not in this file '
+             '(make app-team; make app-calls; make app-events, or the console); remove it'),
             ({'uid': True, 'resources': {'memory': 64}}, 'uid must be int'),
         ]
         for fields, expected in scenarios:
@@ -87,8 +88,8 @@ class ManifestTests(unittest.TestCase):
         for empty in (None, {}):
             with self.subTest(empty=empty):
                 self.assertEqual(seed({**WEB, 'resources': empty, 'events': empty, 'provides': empty}), expected)
-        self.assertEqual(seed({**WEB, 'resources': {'cpu': None}, 'events': {'publish': False, 'subscribe': ''},
-                               'calls': [], 'uid': 0, 'port': 0}), expected)
+        self.assertEqual(seed({**WEB, 'resources': {'cpu': None}, 'events': {'publish': False, 'subscribe': None},
+                               'calls': None, 'uid': 0, 'port': 0}), expected)
         for field in ('resources', 'events', 'provides'):
             with self.subTest(field=field), self.assertRaisesRegex(DeclarationError, f'{field} must be dict'):
                 seed({**WEB, field: False})
@@ -146,13 +147,13 @@ class LifetimeTests(unittest.TestCase):
         self.assertEqual({item.kind for item in declaration.FIELDS}, set(kinds))
         self.assertEqual([item.kind for item in declaration.FIELDS], sorted((item.kind for item in declaration.FIELDS), key=kinds.index),
                          'FIELDS is ordered by kind, as the page and the templates are')
-        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED})
+        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
                          ['version', 'stack', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
-        rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored) \|', section, re.M)
-        read = {declaration.SEED: 'read once', declaration.LIVE: 'read again', declaration.IGNORED: 'ignored'}
+        rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored|refused) \|', section, re.M)
+        read = {declaration.SEED: 'read once', declaration.LIVE: 'read again', declaration.IGNORED: 'ignored', declaration.REFUSED: 'refused'}
         self.assertEqual(rows, [(item.name, item.kind, read[item.read]) for item in declaration.FIELDS])
         for item in declaration.FIELDS:
             if item.then.startswith('make '):

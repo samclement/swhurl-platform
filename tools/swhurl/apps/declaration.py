@@ -7,9 +7,9 @@ and a test compares them; GLOSSARY.md defines the words):
 - **need**: what the image needs to run (port, probes, user, telemetry, resources, database, secret names).
 - **offer**: what other apps can use (``provides``, ``flags``, ``events.publish``).
 - **grant**: what the platform allows the app (team, exposure, alerts, calls, ``events.subscribe``). It
-  belongs to this repository; ``app-new`` still takes one from the file at creation.
+  belongs to this repository and is refused in the file, naming the command that sets it.
 
-Separately, each field is read at one of two times today:
+Separately, each field the file may hold is read at one of two times today:
 
 - **seed**: read once, when ``app-new`` creates the staging instance. From then on the instance in
   this repository is the truth; a later edit of the field in the app's repository changes nothing,
@@ -34,8 +34,7 @@ from dataclasses import dataclass
 
 import yaml
 
-from swhurl import app_alerts
-from swhurl.apps.contract import DATABASES, EXPOSURES, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.contract import DATABASES, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
 from swhurl.apps.instance import ENVIRONMENTS
 
 FILE = 'swhurl.yaml'
@@ -43,7 +42,7 @@ VERSION = 1
 KINDS = ('web', 'worker')
 TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
-SEED, LIVE, IGNORED = 'seed', 'live', 'ignored'
+SEED, LIVE, IGNORED, REFUSED = 'seed', 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 INSTANCE = "the instance's files"
 Opener = Callable[[urllib.request.Request], bytes]
@@ -53,8 +52,8 @@ Opener = Callable[[urllib.request.Request], bytes]
 class Field:
     name: str  # a top-level field, or events.publish and events.subscribe, which differ in kind
     kind: str  # IDENTITY, NEED, OFFER, GRANT or DROPPED
-    read: str  # SEED, LIVE or IGNORED
-    then: str  # seed: what changes the instance afterwards; live: when it is read again
+    read: str  # SEED, LIVE, IGNORED or REFUSED (every grant)
+    then: str  # seed: what changes the instance afterwards; live: when it is read again; refused: what sets it
 
 
 FIELDS = (
@@ -72,11 +71,11 @@ FIELDS = (
     Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Offers workflow)"),
     Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
     Field('events.publish', OFFER, SEED, 'make app-events; once the app has provides.eventsFile, that file instead'),
-    Field('team', GRANT, SEED, 'make app-team'),
-    Field('exposure', GRANT, SEED, 'make app-expose'),
-    Field('alerts', GRANT, SEED, 'make app-alerts'),
-    Field('calls', GRANT, SEED, 'make app-calls'),
-    Field('events.subscribe', GRANT, SEED, 'make app-events'),
+    Field('team', GRANT, REFUSED, 'make app-team'),
+    Field('exposure', GRANT, REFUSED, 'make app-expose'),
+    Field('alerts', GRANT, REFUSED, 'make app-alerts'),
+    Field('calls', GRANT, REFUSED, 'make app-calls'),
+    Field('events.subscribe', GRANT, REFUSED, 'make app-events'),
     Field('autoDeploy', DROPPED, IGNORED, 'nothing: staging always follows new images'),
 )
 FLAG_NAME = re.compile(r'[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*')
@@ -122,15 +121,13 @@ def _resource_defaults(resources: dict, fail: Callable[[str], DeclarationError])
 def _event_defaults(declared: dict, fail: Callable[[str], DeclarationError]) -> dict:
     defaults: dict = {}
     if set(declared) - {'publish', 'subscribe'}:
-        raise fail('events may set publish and subscribe only')
-    for key, dest, pattern in (('publish', 'publish', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?'),
-                               ('subscribe', 'subscribe', r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.[a-z]([a-z0-9-]{0,38}[a-z0-9])?')):
-        names = declared.get(key) or []
-        if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(pattern, n) for n in names) \
-                or len(set(names)) != len(names):
-            raise fail('events.publish lists event names (created); events.subscribe lists <app>.<event> (orders.created)')
-        if names:
-            defaults[dest] = names
+        raise fail('events may set publish only')
+    names = declared.get('publish') or []
+    if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', n) for n in names) \
+            or len(set(names)) != len(names):
+        raise fail('events.publish lists event names (created)')
+    if names:
+        defaults['publish'] = names
     return defaults
 
 
@@ -152,16 +149,6 @@ def _provides_defaults(provides: dict, kind: str, fail: Callable[[str], Declarat
         if kind != 'web':
             raise fail('provides.api applies to kind web only')
         defaults['api_path'] = provides['api']
-    return defaults
-
-
-def _call_defaults(calls: list | None, fail: Callable[[str], DeclarationError]) -> dict:
-    defaults: dict = {}
-    if calls:
-        if not all(isinstance(name, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', name) for name in calls) \
-                or len(set(calls)) != len(calls):
-            raise fail('calls must be a list of distinct app names')
-        defaults['calls'] = calls
     return defaults
 
 
@@ -239,12 +226,17 @@ def of(doc: object, source: str = FILE) -> Declaration:
     kind = field('kind', str, KINDS)
     if not kind:
         raise fail(f'kind is required ({", ".join(KINDS)})')
+    present = {item.name for item in FIELDS if item.read == REFUSED and doc.get(item.name) is not None}
+    if isinstance(doc.get('events'), dict) and doc['events'].get('subscribe') is not None:
+        present.add('events.subscribe')
+    if refused := [item for item in FIELDS if item.name in present]:
+        raise fail(f'{", ".join(item.name for item in refused)}: a grant, set on the platform, not in this file '
+                   f'({"; ".join(dict.fromkeys(item.then for item in refused))}, or the console); remove it')
     field('autoDeploy', bool)
     defaults: dict = {'kind': kind, 'uid': field('uid', int) or TEMPLATE_UID,
                       'otlp': field('telemetry', str, TELEMETRY) == 'otlp',
                       'auto_deploy': True,  # autoDeploy is accepted and ignored (checked as a boolean above)
-                      'exposure': field('exposure', str, EXPOSURES)
-                      or ('authenticated-web' if kind == 'web' else 'private')}
+                      'exposure': 'authenticated-web' if kind == 'web' else 'private'}
     if kind == 'web':
         defaults['port'] = field('port', int) or TEMPLATE_PORT
         defaults['health_path'] = field('healthPath', str)
@@ -269,15 +261,6 @@ def of(doc: object, source: str = FILE) -> Declaration:
     defaults.update(_event_defaults(field('events', dict) or {}, fail))
     provides = field('provides', dict) or {}
     defaults.update(_provides_defaults(provides, kind, fail))
-    defaults.update(_call_defaults(field('calls', list), fail))
-    if field('team', str):
-        defaults['team'] = doc['team']  # checked against the registry by app-new
-    if field('alerts', str):
-        try:
-            app_alerts.thresholds(doc['alerts'])
-        except ValueError as error:
-            raise fail(f'alerts: {error}') from None
-        defaults['alerts'] = doc['alerts']
     flags = field('flags', dict) or {}
     for name, flag in flags.items():
         if problem := flag_problem(name, flag):

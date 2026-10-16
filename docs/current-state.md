@@ -1635,3 +1635,15 @@ Not exercised: a new app created from `v0.2.8` (`make check-templates` renders e
 
 Not exercised: creating a new app after the change (the template renders go through `app-new` offline in `make check-templates`).
 
+
+## Needs and grants stage 3a (16 October 2026)
+
+[Plan section 21](plan.md#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started), stage 3a: one commit per staging image.
+
+- **Change:** `5f5105f`. An `image-dispatch` Alert on the apps' ImagePolicies sends to a `githubdispatch` Provider (`github-dispatch`), which starts the Deploy workflow (`.github/workflows/deploy.yml`, replacing the Offers workflow). `make app-deploy` reads the newest tag the policy's filter accepts from GHCR, and its digest (the sha256 of the stored manifest, which matched Flux's `latestRef` for `demo-shop:34-5dcc9c2`), then the image's offers; the run commits both. The 10 staging ImageUpdateAutomations and the setter markers are gone (`kubectl -n flux-system get imageupdateautomations`: none). Console image `src-e83d068f6a619c6c` (`57983e1`); both CronJobs scheduled on it at 04:09.
+- **Token (operator's choice):** the console's `GITHUB_TOKEN`, a fine-grained token for `swhurl-platform` only (it reads the repository, gets 404 on a private one), with no expiry; `POST /dispatches` returned 204 and GitHub named `contents=write`. Copied with sops into `platform/image-automation/dispatch-secret.sops.yaml` without being printed; `make check-secrets` compares the two copies.
+- **End check:** a README commit to `swhurl-try-18` (`2146eec`, 04:06:43) reached staging in one bot commit, `ef1f612` `deploy: swhurl-try-18 (deploy workflow)` (04:08:23); the pod running `4-2146eec` was Ready at 04:08:57. The image was published and the dispatch run started at 04:07:42; that push gave one dispatch run, not one per policy.
+- **Timing, push to Ready:** 134 s, against 68 to 89 s (median 77 s) for five deploys the same night through image automation (`demo-shop`, `demo-shopper`, `demo-orders`, `swhurl-try-10`, `swhurl-try-11`), whose tag commit landed 0 to 3 s after the build and pod Ready about 25 s later. The new path spends 41 s from dispatch to commit (5 s queued, 1 s first job, about 8 s for the second runner, 11 s tool setup of which 4 s is sops, 18 s deploy, check and commit), and 34 s from commit to Ready. The plan expected about 25 s more than before; it is about 55 s more.
+- **Validation:** `make check` passed (766 tests, 64 template renders); Validate passed on `5f5105f`; the push-started Deploy run read every staging app and changed nothing (25 s); `make verify-platform` passed, every app `newest image …, deployed`.
+
+Not exercised: a refused offer holding an image live (unit-tested), a lost dispatch caught by the hourly run, and a new app created after the change. Left installed and unused: the write deploy key (`platform/image-automation/secret.sops.yaml`, GitHub deploy key `flux-image-automation`) and the image-automation-controller; removing them changes `flux-system`.

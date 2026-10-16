@@ -93,8 +93,11 @@ spec:
             envFrom:
             - secretRef:
                 name: swhurl-try-18-events
+            - secretRef:
+                name: swhurl-try-18-secret
+                optional: true
         annotations:
-          secret.reloader.stakater.com/reload: swhurl-try-18-events
+          secret.reloader.stakater.com/reload: swhurl-try-18-events,swhurl-try-18-secret
     persistence:
       tmp:
         type: emptyDir

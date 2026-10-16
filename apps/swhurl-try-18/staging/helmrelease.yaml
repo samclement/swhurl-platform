@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: swhurl-try-18
   namespace: swhurl-try-18-staging
+  annotations:
+    platform.swhurl.com/secrets: API_TOKEN,WEBHOOK_KEY
 spec:
   interval: 30m
   timeout: 3m
@@ -37,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-18
-              tag: 14-66f1ddc
-              digest: sha256:1eec32cab2ab6347f83780d3320f4b2c1e18b9ddacd386d2042e54ba0222f6bb
+              tag: 15-52f0eb4
+              digest: sha256:88cb499493f9eb95eda5947d1474ab20de8ecac393d9a48e9d874507f7196dd4
             resources:
               requests:
                 cpu: 10m

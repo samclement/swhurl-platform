@@ -4,7 +4,7 @@ metadata:
   name: swhurl-try-12
   namespace: swhurl-try-12-staging
   annotations:
-    platform.swhurl.com/offers: 11b7d5c
+    platform.swhurl.com/offers: 48caa60
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-12
-              tag: 33-11b7d5c
-              digest: sha256:17f295c3ad74dad355937d96ffea451cbd8067d64f2f7f4b050d59760d3a69c9
+              tag: 37-48caa60
+              digest: sha256:7beae0a592136b1d600462579c5895522bea6381430d7b2ee48d17936aeea408
             resources:
               requests:
                 cpu: 100m

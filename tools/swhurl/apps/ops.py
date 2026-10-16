@@ -18,7 +18,10 @@ from swhurl import ROOT
 from swhurl.apps import helmrelease, policy
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
+    SECRET_FILE,
     TEAM,
+    declared_secrets,
+    stored_secrets,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance
 from swhurl.apps.state import ready_reason, verdict
@@ -108,6 +111,7 @@ class InstanceStatus:
     exposure: str = ''  # private, authenticated-web or public, from the live routes
     variables: dict[str, str] = field(default_factory=dict)  # the container's variables, as the HelmRelease sets them
     secret: str = ''  # the Secret whose keys become variables (envFrom), if any
+    secret_names: list[str] = field(default_factory=list)  # the secret names its image needs (swhurl.yaml's secrets)
     unit_suspended: bool = False
     release_suspended: bool = False
     unit_reason: str = ''  # the unit's Ready reason: tells waiting from failing
@@ -207,8 +211,8 @@ def hint(reason: str, last: str, instance: Instance, settings: dict[str, str]) -
         return ('The node cannot pull the image: check the tag and digest exist, and that the GHCR package is public '
                 '(the cluster has no registry credentials; on GitHub: the package\'s settings, Change visibility).')
     if reason == 'CreateContainerConfigError':
-        return (f'A Secret or key it uses is missing: set the values in apps/{app}/{env}/secret.sops.yaml '
-                '(make check-secrets finds REPLACE_ME), commit and push.')
+        return (f'A Secret or key it uses is missing: set the value in your own terminal with make app-secret APP={app} ENV={env} '
+                'NAME=<name> (make check-secrets finds REPLACE_ME), commit and push.')
     if reason in ('CrashLoopBackOff', 'Error'):
         port = settings.get('port', "the instance's port")
         return (f'It starts and exits: read why with make app-logs APP={app} ENV={env} PREVIOUS=true. Usual causes: '
@@ -291,13 +295,32 @@ def status_of(instance: Instance, unit: dict, source: dict, release: dict | None
         exposure=live_exposure(ingresses),
         variables=shown_variables(release)[0],
         secret=shown_variables(release)[1],
+        secret_names=declared_secrets(release),
         unit_suspended=bool((unit.get('spec') or {}).get('suspend')),
         release_suspended=bool(((release or {}).get('spec') or {}).get('suspend')),
         unit_reason=ready_reason(unit),
     )
 
 
-def status_lines(found: InstanceStatus, team: str = '') -> list[str]:
+SET, MISSING, UNUSED = 'set', 'value missing', 'unused'
+
+
+def secret_states(declared: list[str], stored: list[str]) -> dict[str, str]:
+    """Each secret name, in the image's order then the Secret's: set, value missing (the image needs it,
+    the Secret has no value) or unused (a value no name of the image asks for)."""
+    states = {name: SET if name in stored else MISSING for name in declared}
+    return states | {name: UNUSED for name in stored if name not in states}
+
+
+def stored_in_checkout(instance: Instance, root=ROOT) -> list[str] | None:
+    """The keys the instance's Secret holds values for in this checkout; None without one (the console image)."""
+    if not (root / 'apps').is_dir():
+        return None
+    path = root / 'apps' / instance.app / instance.env / SECRET_FILE
+    return stored_secrets(path.read_text()) if path.is_file() else []
+
+
+def status_lines(found: InstanceStatus, team: str = '', stored: list[str] | None = None) -> list[str]:
     instance = found.instance
     note = '' if found.applied else '  <- not yet applied'
     lines = [
@@ -325,6 +348,11 @@ def status_lines(found: InstanceStatus, team: str = '') -> list[str]:
         lines.append(f"Env        set by the platform: {', '.join(found.variables)}")
     if found.secret:
         lines.append(f'Secrets    every key of Secret {found.secret} (values not shown)')
+    if stored is not None and (states := secret_states(found.secret_names, stored)):
+        lines.append('           ' + ', '.join(f'{name} ({state})' for name, state in states.items()))
+        if MISSING in states.values():
+            i = found.instance
+            lines.append(f'           set a missing value in your own terminal: make app-secret APP={i.app} ENV={i.env} NAME=<name>')
     if found.problems:
         lines.append('Problems')
         for p in found.problems:
@@ -339,7 +367,7 @@ def status(runner: Runner, instance: Instance) -> int:
     if found is None:
         print(f'[ERROR] Flux unit {instance.unit} not found', file=sys.stderr)
         return 1
-    for line in status_lines(found, team_of(runner, instance)):
+    for line in status_lines(found, team_of(runner, instance), stored_in_checkout(instance)):
         print(line)
     return 0
 

@@ -197,24 +197,18 @@ class GeneratorTests(unittest.TestCase):
             declaration.of(base | {'alerts': 'none'})
         self.assertNotIn('alerts', declaration.of(base).seed)
 
-    def test_secret_stub_is_encrypted_and_namespace_watched(self):
-        fake = self.tmp / 'bin'
-        fake.mkdir()
-        (fake / 'sops').write_text('#!/bin/sh\nfor f; do :; done\nprintf "sops:\\n  fake: true\\n" >> "$f"\n')
-        (fake / 'sops').chmod(0o755)
+    def test_secret_names_without_values_and_namespace_watched(self):
         reloader = self.tmp / 'platform/reloader/helmrelease.yaml'
         reloader.parent.mkdir(parents=True)
         reloader.write_text('    reloader:\n      namespaces: [ingress, logging]\n')
-        old_path = os.environ['PATH']
-        os.environ['PATH'] = f'{fake}:{old_path}'
-        try:
-            self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
-        finally:
-            os.environ['PATH'] = old_path
-        secret = (self.tmp / 'apps/s/staging/secret.sops.yaml').read_text()
-        self.assertIn('sops:', secret)
+        self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
+        self.assertFalse((self.tmp / 'apps/s/staging/secret.sops.yaml').exists(), 'values are set later, with make app-secret')
+        release = yaml.safe_load((self.tmp / 'apps/s/staging/helmrelease.yaml').read_text())
+        self.assertEqual(release['metadata']['annotations'], {'platform.swhurl.com/secrets': 'A,B'})
+        self.assertEqual(release['spec']['values']['controllers']['main']['containers']['main']['envFrom'],
+                         [{'secretRef': {'name': 's-secret', 'optional': True}}], 'the app starts before its first value')
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-s-staging.yaml').read_text())
-        self.assertEqual(unit['spec']['decryption']['secretRef']['name'], 'sops-age')
+        self.assertNotIn('decryption', unit['spec'], 'nothing to decrypt yet')
         self.assertIn('namespaces: [ingress, logging, s-staging]', reloader.read_text())
 
     def test_otlp_points_the_sdk_at_the_node_collector(self):
@@ -316,15 +310,14 @@ class GeneratorTests(unittest.TestCase):
                 self.assertFalse((self.tmp / 'apps/n').exists())
         self.assertEqual(contract.secret_key_problem(['API_TOKEN', 'OTELX', 'PORT']), '')
 
-    def test_missing_sops_leaves_no_plaintext(self):
+    def test_secret_names_need_no_sops(self):
         old_path = os.environ['PATH']
         os.environ['PATH'] = str(self.tmp)  # no sops (and nothing else) on PATH
         try:
-            self.assertEqual(self.gen('n', *WEB, '--secret-keys', 'A'), 2)
+            self.assertEqual(self.gen('n', *WEB, '--secret-keys', 'A'), 0)
         finally:
             os.environ['PATH'] = old_path
-        self.assertFalse(list(self.tmp.rglob('*.sops.yaml')), 'plaintext Secret stub left behind')
-        self.assertFalse((self.tmp / 'apps/n').exists() and any((self.tmp / 'apps/n').rglob('*.yaml')))
+        self.assertFalse(list(self.tmp.rglob('*.sops.yaml')), 'no Secret file until a value is set')
 
     def test_committed_fixtures_match_generator(self):
         with tempfile.TemporaryDirectory(dir=FIXTURES.parent) as tmp:

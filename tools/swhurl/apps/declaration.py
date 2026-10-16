@@ -15,7 +15,7 @@ Separately, each field the file may hold is read at one of two times:
   this repository is the truth; a later edit of the field in the app's repository changes nothing,
   and the command named beside it is how the instance changes.
 - **live**: read again from the app's repository, so an edit there reaches the platform. The needs
-  that shape the release (``Needs``) are written with every new staging image (edit.deploy_staging).
+  (``Needs``) are written with every new staging image (edit.deploy_staging).
 
 ``autoDeploy`` is accepted and ignored: staging always follows new images.
 
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 
 import yaml
 
-from swhurl.apps.contract import DATABASES, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
+from swhurl.apps.contract import DATABASES, DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
 from swhurl.apps.instance import ENVIRONMENTS
 
 FILE = 'swhurl.yaml'
@@ -45,7 +45,6 @@ TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 SEED, LIVE, IGNORED, REFUSED = 'seed', 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
-INSTANCE = "the instance's files"
 WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
 Opener = Callable[[urllib.request.Request], bytes]
 
@@ -67,9 +66,9 @@ FIELDS = (
     Field('uid', NEED, LIVE, WITH_IMAGE),
     Field('telemetry', NEED, LIVE, WITH_IMAGE),
     Field('resources', NEED, LIVE, WITH_IMAGE + ', as the minimum: make app-scale may set more, never less'),
-    Field('database', NEED, SEED, INSTANCE),
-    Field('databaseSize', NEED, SEED, INSTANCE),
-    Field('secrets', NEED, SEED, INSTANCE),
+    Field('database', NEED, LIVE, WITH_IMAGE + ': a new one creates its volume; removing one is refused while it exists'),
+    Field('databaseSize', NEED, LIVE, WITH_IMAGE + ', for a new database: a volume keeps the size it was created with'),
+    Field('secrets', NEED, LIVE, WITH_IMAGE + ': a new name deploys without its value until make app-secret sets it'),
     Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Deploy workflow)"),
     Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
     Field('events.publish', OFFER, SEED, 'make app-events; once the app has provides.eventsFile, that file instead'),
@@ -104,6 +103,9 @@ class Needs:
     uid: int
     otlp: bool
     minimum: dict  # resources the image needs at least, by app-scale option: cpu, memory, memory_limit
+    database: str = ''  # sqlite, or '' for none
+    database_size: str = ''  # the volume a new database is created with
+    secrets: tuple[str, ...] = ()  # the secret variable names it reads
 
 
 @dataclass(frozen=True)
@@ -121,7 +123,9 @@ class Declaration:
     def needs(self) -> Needs:
         seed = self.seed
         return Needs(seed['kind'], seed.get('port'), seed.get('health_path') or '', seed['uid'], seed['otlp'],
-                     {key: seed[key] for key in RESOURCES if key in seed})
+                     {key: seed[key] for key in RESOURCES if key in seed}, seed.get('database') or '',
+                     seed.get('database_size') or (DEFAULT_DATABASE_SIZE if seed.get('database') else ''),
+                     tuple(seed.get('secret_keys') or ()))
 
 
 RESOURCES = {'cpu': 'cpu', 'memory': 'memory', 'memory_limit': 'memoryLimit'}

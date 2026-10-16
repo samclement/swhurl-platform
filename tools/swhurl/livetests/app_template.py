@@ -69,10 +69,15 @@ def body(t: LiveTest) -> None:
     t.check(not exposed, 'worker has no Service or Ingress', 'worker exposes a Service or Ingress')
 
     ns = 'smoke-web-staging'
-    stored = ((t.get('-n', ns, 'get', 'secret', 'smoke-web-secret') or {}).get('data') or {}).get('GREETING', '')
+    # Staging declares GREETING without a value (make app-secret sets one): the app runs without it.
+    absent = t.runner.run(['kubectl', '-n', ns, 'exec', 'deploy/smoke-web', '--', 'printenv', 'GREETING'], check=False)
+    t.check(absent.returncode != 0 and not absent.stdout.strip(), 'a declared secret without a value: the app runs without it',
+            f'GREETING reached the container without a value: {absent.stdout.strip()!r}')
+    # A first production gets placeholders, encrypted with SOPS, which its own Flux unit decrypts.
+    stored = ((t.get('-n', 'smoke-data-prod', 'get', 'secret', 'smoke-data-secret') or {}).get('data') or {}).get('GREETING', '')
     t.check(base64.b64decode(stored).decode() == 'REPLACE_ME',
             "SOPS Secret decrypted by the app's own Flux unit", 'Secret not decrypted')
-    injected = t.runner.run(['kubectl', '-n', ns, 'exec', 'deploy/smoke-web', '--', 'printenv', 'GREETING'],
+    injected = t.runner.run(['kubectl', '-n', 'smoke-data-prod', 'exec', 'deploy/smoke-data', '--', 'printenv', 'GREETING'],
                             check=False).stdout.strip()
     t.check(injected == 'REPLACE_ME', 'Secret injected into the container', 'Secret not injected')
     pod_spec = ((t.get('-n', ns, 'get', 'deploy', 'smoke-web') or {}).get('spec') or {}).get('template', {}).get('spec', {})

@@ -12,8 +12,9 @@ local swhurl.yaml instead, for make check-templates and tests, which write to an
 Writes apps/NAME/ENV/ and clusters/home/app-NAME-ENV.yaml, and registers
 the unit in clusters/home/kustomization.yaml. Refuses to overwrite, to expose a
 worker, to put a public app inside the shared sign-in cookie domain, and to
-create production directly (use app-promote). Secret stubs are SOPS-encrypted
-before this script returns, so plaintext never reaches Git.
+create production directly (use app-promote). Secret names are recorded without
+values (make app-secret sets them); a first production's placeholders are
+SOPS-encrypted before this script returns, so plaintext never reaches Git.
 
 The output is ordinary YAML: edit it by hand afterwards. `make check-apps`
 checks the rendered result.
@@ -63,10 +64,13 @@ from swhurl.apps.contract import (
     QUOTA_FILE,
     RELOAD,
     RETAINED_STORAGE_CLASS,
+    SECRET_FILE,
+    SECRET_NAMES,
     SQLITE_PATH,
     STARTUP_PERIOD,
     STARTUP_SECONDS,
     TEAM,
+    app_secret,
     default_host,
     image_policy_name,
     in_cookie_domain,
@@ -198,7 +202,8 @@ def build_values(args) -> dict:
     if args.database == 'sqlite':
         container['env'][DATABASE_PATH_VARIABLE] = SQLITE_PATH
     if args.secret_keys:
-        container['envFrom'] = [{'secretRef': {'name': f'{args.name}-secret'}}]
+        # Optional: the app starts before the Secret has its first value (make app-secret).
+        container['envFrom'] = [{'secretRef': {'name': app_secret(args.name), 'optional': True}}]
     if args.kind == 'web':
         def probe():
             return {'enabled': True, 'custom': True,
@@ -216,7 +221,7 @@ def build_values(args) -> dict:
         controller['replicas'] = 1
         controller['strategy'] = 'Recreate'
     if args.secret_keys:
-        controller['annotations'] = {RELOAD: f'{args.name}-secret'}
+        controller['annotations'] = {RELOAD: app_secret(args.name)}
 
     values: dict = {
         'defaultPodOptions': {
@@ -308,7 +313,8 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     release = {
         'apiVersion': 'helm.toolkit.fluxcd.io/v2',
         'kind': 'HelmRelease',
-        'metadata': {'name': args.name, 'namespace': namespace},
+        'metadata': {'name': args.name, 'namespace': namespace,
+                     **({'annotations': {SECRET_NAMES: ','.join(args.secret_keys)}} if args.secret_keys else {})},
         'spec': {
             'interval': '30m',
             'timeout': FAIL_AFTER,
@@ -321,8 +327,11 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
         },
     }
     resources = ['namespace.yaml', 'helmrelease.yaml', QUOTA_FILE, NETWORK_POLICY_FILE]
-    if args.secret_keys:
-        resources.insert(1, 'secret.sops.yaml')
+    # Staging starts with the names and no values (make app-secret sets them). A first production gets
+    # placeholders, so make check-secrets refuses it until every value is set: it never runs without one.
+    placeholders = bool(args.secret_keys) and args.env == 'prod'
+    if placeholders:
+        resources.insert(1, SECRET_FILE)
     release_text = dump([release])
     if auto_deploys(args):
         resources.append(IMAGE_AUTOMATION_FILE)
@@ -348,7 +357,7 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
         'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform'},
         'path': './' + instance.relative_to(root).as_posix(),
     }
-    if args.secret_keys:
+    if placeholders:
         spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
     # App unit: default MirrorPrune, so removing it from Git uninstalls the instance.
     spec |= {'prune': True, 'wait': True, 'timeout': FAIL_AFTER}
@@ -361,8 +370,8 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
             written.append(path)
-        if args.secret_keys:
-            written.append(write_encrypted_secret(instance, f'{args.name}-secret', namespace, args.secret_keys, runner=runner))
+        if placeholders:
+            written.append(write_encrypted_secret(instance, app_secret(args.name), namespace, args.secret_keys, runner=runner))
     except Exception:
         for path in written:
             path.unlink(missing_ok=True)
@@ -376,7 +385,7 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
 
 
 def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str], *, runner: Runner | None = None) -> Path:
-    path = instance / 'secret.sops.yaml'
+    path = instance / SECRET_FILE
     secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': name, 'namespace': namespace},
               'type': 'Opaque', 'stringData': {k: 'REPLACE_ME' for k in keys}}
     path.write_text(dump([secret]))
@@ -481,7 +490,7 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
-                   help='comma-separated keys for an encrypted Secret stub (values REPLACE_ME)')
+                   help='comma-separated secret variable names the app reads; values set later with make app-secret')
     p.add_argument('--otlp', action=argparse.BooleanOptionalAction, default=False,
                    help='the app has an OpenTelemetry SDK: point it at the cluster collector (OTEL_* env)')
     p.add_argument('--auto-deploy', action=argparse.BooleanOptionalAction, default=False,
@@ -575,7 +584,8 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
     for path in written:
         print(f'[OK] wrote {path.relative_to(args.root.resolve())}')
     if args.secret_keys:
-        print(f'[INFO] Set real values: sops {written[-1].relative_to(args.root.resolve())}')
+        print(f'[INFO] Values missing for {", ".join(args.secret_keys)}: in your own terminal, make app-secret '
+              f'APP={args.name} ENV={args.env} NAME=<name> for each (the app starts without them)')
     if args.policy_check:
         return check_generated(instance_folder(args.root.resolve(), args.name, args.env))
     print('[INFO] Next: make check-apps, then commit, push and make flux-reconcile')

@@ -149,7 +149,7 @@ class LifetimeTests(unittest.TestCase):
                          'FIELDS is ordered by kind, as the page and the templates are')
         self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
-                         ['version', 'stack', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'provides', 'flags'])
+                         ['version', 'stack', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'database', 'databaseSize', 'secrets', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
         rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored|refused) \|', section, re.M)

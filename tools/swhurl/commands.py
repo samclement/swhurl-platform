@@ -171,6 +171,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
               Var('APP', '<app>', required=False), Var('ENV', '<env>', required=False), args('"--all staging"', required=False)),
         _edit('app-deploy', 'edit:main_deploy', "Bring staging to each app's newest image, with what it needs and offers (the Deploy workflow runs it)",
               Var('APP', '<app>', required=False), args('"--refresh"', required=False)),
+        _edit('app-secret', 'edit:main_secret', 'Set one secret value of an instance, read from standard input or asked for '
+              'without echo (needs the age key: run it in your own terminal)', APP, ENV, Var('NAME', '<VARIABLE>')),
         _edit('app-sync', 'edit:main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, allowed callers'),
         _edit('app-promote', 'edit:main_promote', 'Create production from staging or update its image',
               APP, args('"--expect-image=... | --host=..."', required=False)),

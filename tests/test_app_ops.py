@@ -208,7 +208,7 @@ class HintTests(unittest.TestCase):
                     'ran out of memory (limit 128Mi)', 'make app-scale APP=web ENV=prod'),
             'pull': (self.problem({'waiting': {'reason': 'ImagePullBackOff'}}), 'cannot pull the image', 'public'),
             'secret': (self.problem({'waiting': {'reason': 'CreateContainerConfigError'}}),
-                       'apps/web/prod/secret.sops.yaml', 'check-secrets'),
+                       'make app-secret APP=web ENV=prod', 'check-secrets'),
             'crash': (self.problem({'waiting': {'reason': 'CrashLoopBackOff'}}, last='Error'),
                       'PREVIOUS=true', 'port other than 8080'),
             'probe': (self.problem({'running': {}}), '/healthz on port 8080', '--health-path'),

@@ -137,6 +137,34 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
 
 
+def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """Every secret name an instance's image needs has a value in Git (warns otherwise: the app runs without it);
+    a value no name asks for is reported. Reads Git only: names from the release, keys from the Secret file."""
+    from swhurl.apps.ops import MISSING, UNUSED, secret_states
+    report.section('App secrets')
+    found = False
+    for instance in instances(root / INSTANCE_ROOTS[0]):
+        folder = root / INSTANCE_ROOTS[0] / instance.app / instance.env
+        declared = contract.declared_secrets(yaml.safe_load((folder / 'helmrelease.yaml').read_text()))
+        path = folder / contract.SECRET_FILE
+        states = secret_states(declared, contract.stored_secrets(path.read_text()) if path.is_file() else [])
+        if not states:
+            continue
+        found = True
+        missing = [name for name, state in states.items() if state == MISSING]
+        unused = [name for name, state in states.items() if state == UNUSED]
+        label = f'{instance.app}/{instance.env}'
+        if missing:
+            report.warn(f'{label}: value missing for {", ".join(missing)}, so the app runs without it; set it in your own '
+                        f'terminal: make app-secret APP={instance.app} ENV={instance.env} NAME={missing[0]}')
+        else:
+            report.ok(f'{label}: every secret its image needs has a value')
+        if unused:
+            report.info(f'{label}: {", ".join(unused)} set, but its image no longer asks for it')
+    if not found:
+        report.ok('no app declares secrets')
+
+
 def check_image_webhooks(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """The app-images Receiver is Ready and each auto-deploy app's repository calls it (docs/services.md#image-webhook)."""
     report.section('Image Webhooks')

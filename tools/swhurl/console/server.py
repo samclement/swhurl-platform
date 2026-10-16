@@ -453,7 +453,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         promotion_problem = gate.source_problem(promotion.settled_status(runner, github, status), status.desired_image) if found.env == 'staging' else ''
         row = summary.envs.get(found.env) if summary else None
         flag_list, flag_problem = flag_rows(found, row.connections.offers if row else '')
-        return page(request, 'app.html', status=status, flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
+        return page(request, 'app.html', status=status, secret_states=secret_states(found, status), flag_rows=flag_list, flag_problem=flag_problem, flags_writable=flags is not None,
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=row.connections if row else cluster.Connections(), connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
@@ -461,6 +461,17 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
+
+    def secret_states(found: Instance, status: ops.InstanceStatus) -> dict[str, str] | None:
+        """Each secret name and whether Git has its value (ops.secret_states); None when Git cannot be read.
+        Only the Secret file's key names are read: SOPS leaves them in plain text, the values stay encrypted."""
+        if document_source is None:
+            return None
+        try:
+            text = document_source(f'apps/{found.app}/{found.env}/{contract.SECRET_FILE}')
+        except Exception:  # noqa: BLE001 (GitHub unavailable: the page says unknown, it does not fail)
+            return None
+        return ops.secret_states(status.secret_names, contract.stored_secrets(text))
 
     def flag_rows(found: Instance, offers_commit: str) -> tuple[list[dict], str]:
         """Each flag the instance's image declares, with its override, then each override of a flag it does

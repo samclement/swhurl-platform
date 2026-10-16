@@ -224,18 +224,23 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     keys = []
     # Events are declared per environment (make app-events ENV=prod): the staging key stays in staging.
     refs = [ref for ref in container.get('envFrom', []) if ref != {'secretRef': {'name': events.secret_name(app)}}]
-    if refs and refs != [{'secretRef': {'name': f'{app}-secret'}}]:
+    if refs and refs not in ([{'secretRef': {'name': contract.app_secret(app)}}],
+                             [{'secretRef': {'name': contract.app_secret(app), 'optional': True}}]):
         raise EditError('only the platform-managed app Secret reference is supported on first promotion')
-    if refs:
-        secret = YamlFile(instance / 'secret.sops.yaml').data
+    stored = (instance / contract.SECRET_FILE).is_file()
+    if stored:
+        secret = YamlFile(instance / contract.SECRET_FILE).data
         if 'sops' not in secret:
             raise EditError('staging app Secret must be encrypted')
-        keys = list(secret.get('stringData') or secret.get('data') or {})
+    if refs:
+        # Production gets a placeholder for every name the image needs and every value staging has.
+        keys = list(dict.fromkeys(contract.declared_secrets(source)
+                                  + (contract.stored_secrets((instance / contract.SECRET_FILE).read_text()) if stored else [])))
         if not keys or contract.secret_key_problem(keys):
             raise EditError('staging app Secret needs supported environment variable keys')
     kustomization = YamlFile(instance / 'kustomization.yaml').data
     only(kustomization, {'apiVersion', 'kind', 'resources'}, 'kustomization')
-    expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({'secret.sops.yaml'} if refs else set())
+    expected = {'namespace.yaml', 'helmrelease.yaml', *contract.ISOLATION_FILES} | ({contract.SECRET_FILE} if stored else set())
     resources = set(kustomization.get('resources', [])) - per_environment.NOT_CARRIED
     if resources != expected or {p.name for p in instance.iterdir() if p.is_file()} - per_environment.NOT_CARRIED != expected | {
             'kustomization.yaml'}:

@@ -104,7 +104,7 @@ from swhurl.apps.contract import (
     image_policy_name,
     in_cookie_domain,
     network_policy,
-    quantity,
+    over_quota,
     teams,
 )
 from swhurl.apps.instance import INSTANCE_ROOTS
@@ -211,20 +211,15 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
     quotas = [d for d in docs if d['kind'] == 'ResourceQuota']
     if len(quotas) != 1 or quotas[0]['spec'].get('hard') != QUOTA:
         violations.append(('quota', f'the instance needs exactly one ResourceQuota with the platform sizes {QUOTA}'))
-    needed = {key: quantity(value) for key, value in QUOTA_HEADROOM.items()}
+    workloads = []
     for doc in docs:
         spec = pod_spec(doc)
         if spec is None or doc['kind'] not in ('Deployment', 'StatefulSet'):
             continue
         rolling = doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate'
         pods = doc['spec'].get('replicas', 1) + (1 if rolling else 0)
-        needed['pods'] += pods
-        for container in spec['containers']:
-            resources = container.get('resources') or {}
-            for key, section, name in (('requests.cpu', 'requests', 'cpu'), ('requests.memory', 'requests', 'memory'),
-                                       ('limits.memory', 'limits', 'memory')):
-                needed[key] += pods * quantity((resources.get(section) or {}).get(name, 0))
-    over = [key for key, value in needed.items() if value > quantity(QUOTA[key])]
+        workloads.append((pods, [container.get('resources') or {} for container in spec['containers']]))
+    over = over_quota(workloads)
     if over:
         violations.append(('quota', f'replicas and sizes exceed the namespace quota for {", ".join(over)} '
                                     f'(allowed {QUOTA}, less {QUOTA_HEADROOM} kept free)'))

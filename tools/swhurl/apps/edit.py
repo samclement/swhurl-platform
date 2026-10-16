@@ -7,6 +7,7 @@
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
     app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
     app-offers APP ENV | --all ENV                 read what an app offers (its API and event documents) from its repository
+    app-deploy [APP] [--refresh]                   bring staging to the newest image, with what it needs and offers
     app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -26,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import declaration, events, helmrelease, images, nkeys, offers, ops, promotion
+from swhurl.apps import declaration, events, helmrelease, images, nkeys, offers, ops, policy, promotion
 from swhurl.apps.calling import (
     API_VARIABLE,
     callee_address,
@@ -41,6 +42,9 @@ from swhurl.apps.contract import (
     TEAM,
     default_host,
     in_cookie_domain,
+    otlp_variables,
+    over_quota,
+    quantity,
     teams,
 )
 from swhurl.apps.derive import (
@@ -252,21 +256,39 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
     return after != before
 
 
-def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
-               runner: Runner | None = None) -> bool:
-    """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
-    documents its swhurl.yaml names (provides, the file's live field: declaration.py). Returns whether anything changed."""
-    instance = instance_dir(root, app, env)
-    image = helmrelease.image(YamlFile(instance / 'helmrelease.yaml').data)
-    repository = str(image.get('repository', ''))
+def image_source(release: dict, app: str, env: str) -> tuple[str, str]:
+    """``(OWNER/REPO, commit)`` the image a release runs was built from."""
+    repository = str(helmrelease.image(release).get('repository', ''))
     if not repository.startswith('ghcr.io/'):
         raise EditError(f'{app}/{env} runs {repository or "no image"}: only an app published from its own GitHub repository has offers')
-    repository = repository.removeprefix('ghcr.io/')
     try:
-        commit = offers.commit_of(str(image.get('tag', '')))
+        return repository.removeprefix('ghcr.io/'), offers.commit_of(str(helmrelease.image(release).get('tag', '')))
+    except offers.OfferError as error:
+        raise EditError(str(error)) from None
+
+
+def image_declaration(release: dict, app: str, env: str, *, token: str = '',
+                      opener: offers.Opener = offers._open) -> declaration.Declaration:
+    """The swhurl.yaml of the image a release runs, read at the commit it was built from."""
+    repository, commit = image_source(release, app, env)
+    try:
         declared = declaration.read(repository, commit, token=token, opener=opener)
-        if declared is None:
-            raise offers.OfferError(f'{repository}@{commit} has no {declaration.FILE} (or the repository is private: set GITHUB_TOKEN)')
+    except declaration.DeclarationError as error:
+        raise EditError(str(error)) from None
+    if declared is None:
+        raise EditError(f'{repository}@{commit} has no {declaration.FILE} (or the repository is private: set GITHUB_TOKEN)')
+    return declared
+
+
+def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
+               runner: Runner | None = None, declared: declaration.Declaration | None = None) -> bool:
+    """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
+    documents its swhurl.yaml names (provides, the file's live field: declaration.py); ``declared`` is
+    that file when the caller has read it already. Returns whether anything changed."""
+    release = YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data
+    repository, commit = image_source(release, app, env)
+    declared = declared or image_declaration(release, app, env, token=token, opener=opener)
+    try:
         files, described = {}, None
         for key, kind, path in (('apiFile', 'api', declared.api_file), ('eventsFile', 'events', declared.events_file)):
             if not path:
@@ -301,34 +323,110 @@ def newest_image(root: Path, app: str, *, opener: offers.Opener = offers._open) 
         raise EditError(str(error)) from None
 
 
+PROBES = ('readiness', 'liveness', 'startup')
+SCALED = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'), ('memory_limit', 'limits', 'memory'))
+"""Each resource app-scale sets (its option, by declaration.RESOURCES) and where it is in the container."""
+
+
+def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
+    """Write what the image needs into its release (in place): the port and health path of a web app
+    (Service and probes), the user it runs as, its telemetry variables, and resources raised to the
+    image's minimum. Returns what changed. A need the instance cannot take is refused (EditError) and
+    the release is left part-changed: the caller restores it."""
+    app_values, main, workload = values(release), container(release), controller(release)
+    changes: list[str] = []
+    port = service_port(app_values)
+    if (port is None) != (needs.kind == 'worker'):
+        raise EditError(f'kind: {needs.kind}, but the instance is a {"worker" if port is None else "web app"}: '
+                        'web or worker is fixed at creation (create a new app for the other kind)')
+    if needs.port is not None and port != needs.port:
+        app_values['service']['main']['ports']['http']['port'] = needs.port
+        changes.append(f'port {port} -> {needs.port}')
+    paths = set()
+    for name in PROBES if needs.port is not None else ():
+        check = (((main.get('probes') or {}).get(name) or {}).get('spec') or {}).get('httpGet')
+        if check is None:
+            continue
+        paths.add(check.get('path'))
+        for key, value in (('path', needs.health_path), ('port', needs.port)):
+            if check.get(key) != value:
+                check[key] = value
+    if paths - {needs.health_path}:
+        changes.append(f'health path {", ".join(sorted(map(str, paths - {needs.health_path})))} -> {needs.health_path}')
+    security = mapping(mapping(app_values, 'defaultPodOptions'), 'securityContext')
+    if security.get('runAsUser') != needs.uid:
+        if 'data' in (app_values.get('persistence') or {}):
+            raise EditError(f'uid {needs.uid}: {app} keeps a volume whose files belong to uid {security.get("runAsUser")}, '
+                            'and a new image does not change who owns them (keep the uid, or move the data by hand)')
+        changes.append(f'uid {security.get("runAsUser")} -> {needs.uid}')
+        for key in ('runAsUser', 'runAsGroup', 'fsGroup'):
+            security[key] = needs.uid
+    variables = mapping(main, 'env', create=True)
+    telemetry = otlp_variables(app)
+    if needs.otlp and any(key not in variables for key in telemetry):
+        for key, value in telemetry.items():
+            variables.setdefault(key, value)
+        changes.append('telemetry otlp')
+    elif not needs.otlp and any(key in variables for key in telemetry):
+        for key in telemetry:
+            variables.pop(key, None)
+        changes.append('telemetry none')
+    resources = mapping(main, 'resources', create=True)
+    for field, section, key in SCALED:
+        minimum, current = needs.minimum.get(field), (resources.get(section) or {}).get(key)
+        if minimum is not None and (current is None or quantity(current) < quantity(minimum)):
+            mapping(resources, section, create=True)[key] = minimum
+            changes.append(f'{section}.{key} {current} -> {minimum} (the image\'s minimum)')
+    requests, limits = resources.get('requests') or {}, resources.get('limits') or {}
+    if 'memory' in requests and 'memory' in limits and quantity(requests['memory']) > quantity(limits['memory']):
+        raise EditError(f'resources: a memory request of {requests["memory"]} is above the memory limit {limits["memory"]}; '
+                        'declare memoryLimit too')
+    rolling = (workload.get('strategy') or 'RollingUpdate') != 'Recreate'
+    if over := over_quota([(workload.get('replicas', 1) + rolling, [resources])]):
+        raise EditError(f"resources: the image's minimum {needs.minimum} at {workload.get('replicas', 1)} replica(s) "
+                        f'exceeds the namespace quota for {", ".join(over)}')
+    return changes
+
+
 def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
-                   runner: Runner | None = None, found: images.Image | None = None) -> bool:
+                   runner: Runner | None = None, found: images.Image | None = None, refresh: bool = False) -> bool:
     """Staging runs the newest image its ImagePolicy accepts (``found``, or read now), with what that
-    image offers: the tag and digest from the registry (images.py), then the offers read at its commit.
-    Offers already read at that commit are not read again. A refused offer holds the image: the
-    instance keeps what it had. Returns whether anything changed."""
+    image needs and offers: the tag and digest from the registry (images.py), then its swhurl.yaml read
+    at its commit, whose needs are written into the release (apply_needs) and whose offers beside it.
+    An image already deployed is not read again unless ``refresh``. A refused need or offer holds the
+    image: the instance keeps what it had. Returns whether anything changed."""
     found = found or newest_image(root, app, opener=opener)
-    release = instance_dir(root, app, 'staging') / 'helmrelease.yaml'
+    instance = instance_dir(root, app, 'staging')
+    release = instance / 'helmrelease.yaml'
     before = release.read_bytes()
     document = YamlFile(release)
     image = promotion.image_of(document.data)
     moved = (image.get('tag'), image.get('digest')) != (found.tag, found.digest)
     read_at = ((document.data.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION)
-    if not moved and offers.IMAGE_COMMIT.match(found.tag) and read_at == offers.commit_of(found.tag):
-        print(f'[OK] {app}/staging runs its newest image {found.tag}; its offers were read at {read_at}')
+    if not refresh and not moved and offers.IMAGE_COMMIT.match(found.tag) and read_at == offers.commit_of(found.tag):
+        print(f'[OK] {app}/staging runs its newest image {found.tag}; its needs and offers were read at {read_at}')
         return False
-    previous = image.get('tag')
-    if moved:
-        image['tag'], image['digest'] = found.tag, found.digest
-        document.save()
+    previous, port = image.get('tag'), service_port(values(document.data))
+    image['tag'], image['digest'] = found.tag, found.digest
     try:
-        changed = set_offers(root, app, 'staging', token=token, opener=opener, runner=runner)
+        declared = image_declaration(document.data, app, 'staging', token=token, opener=opener)
+        needed = apply_needs(document.data, app, declared.needs)
+        document.save()
+        production = instance_folder(root, app, 'prod')
+        if (production / 'helmrelease.yaml').is_file() and (drift := policy.drift([production, instance])):
+            raise EditError(f"{'; '.join(drift)}: a promotion does not carry what an image needs yet, so a need "
+                            'may change only for an app without production')
+        changed = set_offers(root, app, 'staging', token=token, opener=opener, runner=runner, declared=declared)
+        if service_port(values(YamlFile(release).data)) != port:
+            sync_env(root, 'staging')  # its callers' address and its NetworkPolicy
     except EditError:
         release.write_bytes(before)
         raise
     if moved:
         print(f'[OK] {app}/staging: image {previous} -> {found.tag}')
-    return changed or moved
+    if needed:
+        print(f'[OK] {app}/staging needs: {", ".join(needed)}')
+    return changed or moved or bool(needed)
 
 
 def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
@@ -466,8 +564,24 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     return instance_folder(root, app, 'prod')
 
 
+def image_minimum(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open) -> dict:
+    """The resources the image ``app/env`` runs needs at least (``resources`` in its swhurl.yaml), by
+    app-scale option; empty for an image no app repository built. Unreachable GitHub is a warning:
+    the next image raises anything below its minimum."""
+    release = YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data
+    image = helmrelease.image(release)
+    if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
+        return {}
+    try:
+        return image_declaration(release, app, env, token=token, opener=opener).needs.minimum
+    except EditError as error:
+        print(f"[WARN] could not read the image's minimum resources, so they are not checked: {error}", file=sys.stderr)
+        return {}
+
+
 def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: str | None = None,
-          memory: str | None = None, memory_limit: str | None = None) -> Path:
+          memory: str | None = None, memory_limit: str | None = None, minimum: dict | None = None) -> Path:
+    """Change replicas or resources; never resources below ``minimum``, what the image needs (image_minimum)."""
     if replicas is None and not (cpu or memory or memory_limit):
         raise EditError('give at least one of --replicas, --cpu, --memory, --memory-limit')
     if replicas is not None and not 0 <= replicas <= MAX_REPLICAS:
@@ -476,6 +590,11 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
                                  (memory_limit, MEMORY_RE, '--memory-limit')):
         if value and not pattern.match(value):
             raise EditError(f'{flag} {value!r} is not a quantity like ' + ('100m or 0.5' if flag == '--cpu' else '64Mi'))
+    below = [f'--{field.replace("_", "-")} {value} (at least {(minimum or {})[field]})'
+             for field, value in (('cpu', cpu), ('memory', memory), ('memory_limit', memory_limit))
+             if value and field in (minimum or {}) and quantity(value) < quantity(minimum[field])]
+    if below:
+        raise EditError(f"below the image's minimum, from resources in its {declaration.FILE}: {', '.join(below)}")
     instance = instance_dir(root, app, env)
     document = YamlFile(instance / 'helmrelease.yaml')
     main = controller(document.data)
@@ -714,7 +833,7 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
         return 1
 
 
-def main_scale(argv: list[str] | None = None) -> int:
+def main_scale(argv: list[str] | None = None, opener: offers.Opener = offers._open) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-scale', description='Change replicas or resources of an app instance')
     p.add_argument('app')
     p.add_argument('env', choices=ENVIRONMENTS)
@@ -724,8 +843,14 @@ def main_scale(argv: list[str] | None = None) -> int:
     p.add_argument('--memory-limit')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
-    return run(lambda: scale(args.root.resolve(), args.app, args.env, replicas=args.replicas, cpu=args.cpu,
-                             memory=args.memory, memory_limit=args.memory_limit), True)
+
+    def change():
+        root = args.root.resolve()
+        lowered = args.cpu or args.memory or args.memory_limit
+        minimum = image_minimum(root, args.app, args.env, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener) if lowered else {}
+        return scale(root, args.app, args.env, replicas=args.replicas, cpu=args.cpu,
+                     memory=args.memory, memory_limit=args.memory_limit, minimum=minimum)
+    return run(change, True)
 
 
 def main_expose(argv: list[str] | None = None) -> int:
@@ -825,13 +950,16 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
 
 def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._open) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-deploy',
-                                description="Bring staging to each app's newest image, with what that image offers")
+                                description="Bring staging to each app's newest image, with what that image needs and offers")
     p.add_argument('app', nargs='?', help='one app (default: every staging instance with an ImagePolicy)')
+    p.add_argument('--refresh', action='store_true',
+                   help="read swhurl.yaml again for an image staging already runs (after a change to how the platform applies it)")
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     root, token = args.root.resolve(), os.environ.get('GITHUB_TOKEN', '')
     if args.app:
-        return run(lambda: deploy_staging(root, args.app, token=token, opener=opener) and instance_dir(root, args.app, 'staging'), True)
+        return run(lambda: deploy_staging(root, args.app, token=token, opener=opener, refresh=args.refresh)
+                   and instance_dir(root, args.app, 'staging'), True)
     deployed = [app for app in instances_in(root, 'staging')  # built from an app repository: not a fixture or a pinned image
                 if (instance_folder(root, app, 'staging') / IMAGE_AUTOMATION_FILE).is_file()]
 
@@ -847,7 +975,7 @@ def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._o
         try:
             if isinstance(found[app], EditError):
                 raise found[app]
-            deploy_staging(root, app, token=token, opener=opener, found=found[app])
+            deploy_staging(root, app, token=token, opener=opener, found=found[app], refresh=args.refresh)
         except EditError as error:  # the others still deploy; this one keeps its image
             failed += 1
             print(f'[ERROR] {app}/staging: {error}', file=sys.stderr)

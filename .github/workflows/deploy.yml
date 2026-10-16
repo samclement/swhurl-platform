@@ -1,18 +1,20 @@
 name: Deploy
 
-# Brings each staging app to its newest image, with what that image offers, in one commit
+# Brings each staging app to its newest image, with what that image needs and offers, in one commit
 # (make app-deploy; docs/apps.md#deploy-a-new-image). For each staging instance with an ImagePolicy:
 # the newest tag the policy accepts and its digest, read from GHCR with the policy's own filter, and
-# the API, event and flag documents its swhurl.yaml names at the image's commit.
+# at the image's commit its swhurl.yaml: the needs written into the release (port, health path, uid,
+# telemetry, minimum resources) and the API, event and flag documents it names.
 #
 # Flux starts it: when an app's ImagePolicy picks a new image, the image-dispatch Alert sends a
 # repository_dispatch here (platform/image-automation/dispatch.yaml). The hourly run and a manual
 # run catch a lost dispatch. A push does not start it, so reverting a pin holds until the next run.
 #
 # The commit is pushed with GITHUB_TOKEN, which starts no workflows (so not this one again, and not
-# Validate): the app policy is therefore checked here before pushing. An image whose offers the
-# platform cannot use, or which drops an event another app still receives, fails this run and is
-# held: that app keeps its image and offers; the others still deploy.
+# Validate): the app policy is therefore checked here before pushing. An image whose needs or offers
+# the platform cannot use, or which drops an event another app still receives, fails this run and is
+# held: that app keeps its image and what it had; the others still deploy. A manual run with refresh
+# reads the images staging already runs again.
 #
 # Runs may overlap (no concurrency group: a waiting run must never be replaced by one that ends
 # early). Each reads main afresh, and one whose push loses to another's reads and deploys again.
@@ -22,6 +24,11 @@ on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
+    inputs:
+      refresh:
+        description: Read swhurl.yaml again for images staging already runs
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # push the commit to main
@@ -120,6 +127,7 @@ jobs:
         name: Deploy, check and commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # reads the app repositories (a higher rate limit than anonymous)
+          REFRESH: ${{ inputs.refresh && '--refresh' || '' }}
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
@@ -133,7 +141,7 @@ jobs:
             git reset --quiet --hard origin/main
             git clean --quiet -fd apps platform
             failed=0
-            PYTHONPATH=tools python3 -m swhurl app-deploy > deployed.txt 2>&1 || failed=1
+            PYTHONPATH=tools python3 -m swhurl app-deploy $REFRESH > deployed.txt 2>&1 || failed=1
             tee -a "$GITHUB_STEP_SUMMARY" < deployed.txt
             if [ -z "$(git status --porcelain -- apps platform clusters)" ]; then
               echo "Nothing changed." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -143,9 +151,9 @@ jobs:
             moved=$(sed -n 's|^\[OK\] \([a-z0-9-]*\)/staging: image .*|\1|p' deployed.txt | paste -sd, - | sed 's/,/, /g')
             git add apps platform/nats/users.yaml platform/reloader/helmrelease.yaml clusters/home
             git commit --quiet -F - <<EOF
-          deploy: ${moved:-what the staging apps offer} (deploy workflow)
+          deploy: ${moved:-what the staging apps need and offer} (deploy workflow)
 
-          $(grep '^\[OK\].*: image ' deployed.txt || true)
+          $(grep -E '^\[OK\] [a-z0-9-]+/staging(: image | needs: )' deployed.txt || true)
           EOF
             if git push --quiet origin HEAD:main; then
               git show --stat --format='%h %s' HEAD | tee -a "$GITHUB_STEP_SUMMARY"

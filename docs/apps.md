@@ -195,7 +195,7 @@ Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates 
 Separately, each field the file may hold is read at one of two times:
 
 - **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
-- **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself.
+- **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself. The needs `port`, `healthPath`, `uid`, `telemetry` and `resources` are read at the commit of every new staging image and written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)).
 
 `autoDeploy` is accepted and ignored: staging always follows new images.
 
@@ -226,12 +226,12 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | --- | --- | --- | --- |
 | `version` | identity | read again | Checked every time the file is read |
 | `stack` | identity | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
-| `kind` | identity | read once | Fixed: web or worker cannot change |
-| `port` | need | read once | Edit the instance's `helmrelease.yaml` ([operate an instance](#operate-an-instance)) |
-| `healthPath` | need | read once | Edit the instance's `helmrelease.yaml` |
-| `uid` | need | read once | Edit the instance's `helmrelease.yaml` |
-| `telemetry` | need | read once | Edit the instance's `helmrelease.yaml` |
-| `resources` | need | read once | `make app-scale`; the app page's **Scale** form shows the minimum the running image declares |
+| `kind` | identity | read once | Fixed: web or worker cannot change; an image that changes it is held |
+| `port` | need | read again | With every new staging image: the Service, the probes, its callers' addresses and its NetworkPolicy follow |
+| `healthPath` | need | read again | With every new staging image: the readiness, liveness and startup probes |
+| `uid` | need | read again | With every new staging image: the pod's user, group and `fsGroup`; held while the instance keeps a volume, whose files belong to the old user |
+| `telemetry` | need | read again | With every new staging image: `otlp` adds the `OTEL_*` variables, `none` removes them |
+| `resources` | need | read again | With every new staging image, as the minimum: a lower request or limit is raised to it, a higher one kept. `make app-scale` may set more, never less; the app page's **Scale** form shows it. A minimum above the [quota](#teams-and-isolation) holds the image |
 | `database` | need | read once | Edit the instance's files |
 | `databaseSize` | need | read once | Edit the instance's files |
 | `secrets` | need | read once | Edit the instance's files ([secrets](#secrets)) |
@@ -537,11 +537,15 @@ An instance runs the image named by `repository`, `tag` and `digest` in its Helm
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
   → image webhook → image-reflector-controller scans the registry at once
   → ImagePolicy <app>-staging picks the highest <run>; the image-dispatch Alert starts the Deploy workflow here
-  → make app-deploy: the newest tag and digest from GHCR (the policy's filter), and the offers at <sha>
+  → make app-deploy: the newest tag and digest from GHCR (the policy's filter); at <sha>, what swhurl.yaml needs and offers
   → one commit to apps/<app>/staging as github-actions[bot] → push webhook → Flux applies → the Deployment rolls
 ```
 
-The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by hand (`gh workflow run deploy.yml`), which catches a lost webhook or dispatch, and `make app-deploy [APP=<app>]` does the same locally. An image whose offers are refused is held: the run fails naming the problem, that app keeps its image and the others still deploy. A policy reports its newest image at every reconcile, so most dispatches end at the run's first step ("Staging already runs it"), before any setup. The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it, and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
+The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by hand (`gh workflow run deploy.yml`), which catches a lost webhook or dispatch, and `make app-deploy [APP=<app>]` does the same locally. A policy reports its newest image at every reconcile, so most dispatches end at the run's first step ("Staging already runs it"), before any setup. The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it, and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
+
+**What the image needs comes with it.** The run reads `swhurl.yaml` at the image's commit and writes its [needs](#swhurlyaml) into the release with the tag. Example: the developer changes the code and `port: 9090` in one commit; staging's next release has the new image, Service port 9090, probes on 9090, and its callers' `SWHURL_SERVICE_*_URL` and its NetworkPolicy on 9090. An image already deployed is not read again; after a change to how the platform applies a need, `make app-deploy ARGS=--refresh` (or `gh workflow run deploy.yml -f refresh=true`) reads every staging image again.
+
+**A refused image is held.** An image whose needs or offers the instance cannot take fails the run naming the problem; that app keeps its image and the others still deploy. Needs are refused when the kind changes, the minimum resources exceed the quota or the memory limit, the uid changes on an instance with a volume, or, until a promotion carries needs, when a need of an app with a production instance changes (the env-drift rule would otherwise fail every deploy).
 
 **Check it:** `make app-status APP=<app> ENV=staging` compares the main controller/container's running image with Git by digest (sidecars and other controllers keep their own images): each pod's spec names the digest it was given, and a pull by digest guarantees that content (the node's own image ID can name another digest for the same image, when two builds published identical content). It reports `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails ([operate an instance](#operate-an-instance)).
 

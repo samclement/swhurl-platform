@@ -63,7 +63,7 @@ class ManifestTests(unittest.TestCase):
              'resources.memory must be a quantity string, for example "64Mi"'),
             ({'resources': {'gpu': '1', 'cpu': 1}}, 'resources may set cpu, memory, memoryLimit only'),
             ({'resources': {'memory': 64, 'cpu': 1}},
-             'resources.cpu must be a quantity string, for example "64Mi"'),
+             'resources.cpu must be a quantity string, for example "100m"'),
             ({'events': {'publish': ['Bad']}, 'provides': {'api': 'relative'}},
              'events.publish lists event names (created)'),
             ({'events': {'unknown': [], 'publish': ['Bad']}}, 'events may set publish only'),
@@ -149,7 +149,7 @@ class LifetimeTests(unittest.TestCase):
                          'FIELDS is ordered by kind, as the page and the templates are')
         self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
-                         ['version', 'stack', 'provides', 'flags'])
+                         ['version', 'stack', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
         rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored|refused) \|', section, re.M)

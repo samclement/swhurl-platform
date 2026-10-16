@@ -78,7 +78,6 @@ RESOURCES = (
     Resource('helm.toolkit.fluxcd.io', 'v2', 'helmreleases', 'helmrelease', 'HelmRelease'),
     Resource('source.toolkit.fluxcd.io', 'v1', 'gitrepositories', 'gitrepository', 'GitRepository'),
     Resource('image.toolkit.fluxcd.io', 'v1', 'imagepolicies', 'imagepolicy', 'ImagePolicy'),
-    Resource('image.toolkit.fluxcd.io', 'v1', 'imageupdateautomations', 'imageupdateautomation', 'ImageUpdateAutomation'),
     Resource('notification.toolkit.fluxcd.io', 'v1', 'receivers', 'receiver', 'Receiver'),
     Resource('notification.toolkit.fluxcd.io', 'v1beta3', 'alerts', 'alert', 'Alert'),
     Resource('notification.toolkit.fluxcd.io', 'v1beta3', 'providers', 'provider', 'Provider'),

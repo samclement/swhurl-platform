@@ -1,8 +1,8 @@
 # When an app's staging ImagePolicy reports its newest image, start the Deploy workflow
 # (.github/workflows/deploy.yml), which writes the tag, digest and offers in one commit
-# (docs/apps.md#deploy-a-new-image). The token is a fine-grained one for this repository alone,
-# Contents: read and write, which repository_dispatch requires (dispatch-secret.sops.yaml;
-# rotate it before it expires: docs/operations.md#secrets).
+# (docs/apps.md#deploy-a-new-image). The token is the console's GITHUB_TOKEN, fine-grained for this
+# repository alone; repository_dispatch needs its Contents: read and write (dispatch-secret.sops.yaml;
+# rotate both copies together: docs/operations.md#secrets).
 apiVersion: notification.toolkit.fluxcd.io/v1beta3
 kind: Provider
 metadata:

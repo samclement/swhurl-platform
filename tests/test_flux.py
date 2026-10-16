@@ -139,7 +139,12 @@ class InstallTests(unittest.TestCase):
                                  '-f', '-'))
         self.assertEqual(sum('rollout' in c for c in runner.calls), len(flux.CONTROLLERS))
         export = next(c for c in runner.calls if c[:3] == ('flux', 'install', '--export'))
-        self.assertIn('--components-extra=image-reflector-controller,image-automation-controller', export)
+        self.assertIn('--components-extra=image-reflector-controller', export)
+        # A component the cluster no longer runs is deleted after the rollouts: applying never prunes.
+        label = 'app.kubernetes.io/component=image-automation-controller,app.kubernetes.io/part-of=flux'
+        self.assertEqual(runner.calls[-2:], [
+            ('kubectl', '-n', 'flux-system', 'delete', 'deployment,serviceaccount', '-l', label, '--ignore-not-found'),
+            ('kubectl', 'delete', 'customresourcedefinitions', '-l', label, '--ignore-not-found')])
 
     def test_refuses_a_different_flux_cli(self):
         runner, _ = self.runner(client='flux: v9.9.9\n')
@@ -161,7 +166,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertIn('+ --requeue-dependency=5s', text)
         self.assertFalse([c for c in runner.calls if c[:2] == ('kubectl', 'apply') or 'rollout' in c])
-        self.assertEqual(len(runner.planned), 1 + len(flux.CONTROLLERS))  # apply, then each rollout
+        self.assertEqual(len(runner.planned), 1 + len(flux.CONTROLLERS) + 2 * len(flux.REMOVED_COMPONENTS))  # apply, rollouts, deletes
 
     def test_required_args_come_from_the_patch_files(self):
         self.assertEqual(flux.required_args(), {'kustomize-controller': ['--requeue-dependency=5s']})

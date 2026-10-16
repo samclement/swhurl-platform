@@ -15,7 +15,7 @@ The shared services every app can rely on. Each is its own Flux unit ([architect
 | Reloader | `platform-reloader` · [`platform/reloader`](../platform/reloader) | `platform-system` | — | reloader |
 | [NATS](#nats) | `platform-nats` · [`platform/nats`](../platform/nats) | `messaging` | — | nats, nack |
 | [Console](console.md) | `platform-console` · [`platform/console`](../platform/console) | `console` | `console.` | app-template, image from this repo |
-| [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux image controllers (from `make flux-install`) |
+| [Image automation](apps.md#deploy-a-new-image) | `platform-image-automation` · [`platform/image-automation`](../platform/image-automation) | `flux-system` | — | Flux's image reflector (from `make flux-install`) and a `githubdispatch` Provider |
 | [Alerts](#alerts) | `platform-alerts` · [`platform/alerts`](../platform/alerts) | `flux-system` | — | The Flux notification Provider and Alert, to ntfy.sh |
 | [Notify service](#notify-service) and [notification channels](#notification-channels) | `platform-notify` · [`platform/notify`](../platform/notify) | `notify` | — | app-template, the console's image; channel Secrets and the generated routes as plain manifests |
 | [Push webhook](#push-webhook) and [image webhook](#image-webhook) | `platform-flux-webhook` · [`platform/flux-webhook`](../platform/flux-webhook) | `flux-system` | `flux-webhook.` | plain manifests (two Flux `Receiver`s) |

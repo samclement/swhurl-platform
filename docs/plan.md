@@ -1275,6 +1275,16 @@ Operator answers on the same day: `resources` is the image's minimum; `secrets` 
 2. **A refused need holds the image.** The run commits nothing for that app, fails and names the need; staging keeps its previous image and the other apps still deploy. This matches what a refused offers document does today.
 3. **A new secret name deploys with the key absent** (`optional: true`, not an empty value), shown as "value missing" in the console and by `verify-platform`. `make app-secret` may set a name the image does not declare yet, so the value can be set before the push. The template helpers fail with a message that names the secret and the command. Production never runs without the value: the stage 4 gate holds a promotion until production has it.
 
+### What stage 3a settled (16 October 2026)
+
+For stages 3b to 4, which build on it ([evidence](current-state.md#needs-and-grants-stage-3a-16-october-2026)):
+
+- **Where needs go next:** `edit.deploy_staging` (`make app-deploy`) is the one writer of a staging image. It reads the newest tag from GHCR with the ImagePolicy's own filter (`apps/images.py`; the dispatch is only a trigger, so the hourly and manual runs take the same path), writes tag and digest, then reads offers; on a refusal it restores the release, which holds the image. Stage 3b adds the needs to that function, before the offers read, under the same restore.
+- **It skips an unchanged image** whose offers were read at its commit (the annotation `platform.swhurl.com/offers`). Stage 3b must decide what re-applies needs when the platform's mapping changes but the image does not (today `make app-offers --all staging` is the only way to force offers).
+- **Workflow:** one job, no concurrency group (a waiting run must not be replaced by one that ends early), five push attempts that re-read `main`, no `push` trigger (a reverted pin holds until the next run, the hourly one at the latest). Every ImagePolicy repeats its report at each reconcile; the first step ends a dispatch for an image staging already runs.
+- **Token:** the console's `GITHUB_TOKEN` in `platform/image-automation/dispatch-secret.sops.yaml`; `make check-secrets` compares the copies (`SHARED` in `secrets_check.py`).
+- **Timing:** about 10 s from image to commit (2 s before). Most of what is left is GitHub Actions queueing and setup.
+
 ### Stage 5: egress grants
 
 Every app may reach any address today: the generated NetworkPolicy has `policyTypes: [Ingress]` only ([teams and isolation](apps.md#teams-and-isolation)), and k3s's kube-router enforces IPs and ports, not names. The design keeps the CNI and adds a proxy:

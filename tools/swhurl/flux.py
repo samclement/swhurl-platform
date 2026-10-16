@@ -36,9 +36,12 @@ INSTALL = 'clusters/home/flux-system/install'
 # The Flux release the cluster runs: make flux-install installs it and refuses any other flux CLI.
 # Renovate does not see it; to upgrade, see docs/operations.md (chart and tool updates).
 FLUX_VERSION = '2.8.1'
-# Controllers beyond flux install's default four: image automation deploys newer app images to
-# staging (platform/image-automation, docs/apps.md#deploy-a-new-image).
-EXTRA_COMPONENTS = ('image-reflector-controller', 'image-automation-controller')
+# Controllers beyond flux install's default four: the image reflector picks each app's newest staging
+# image, and its ImagePolicy report starts the Deploy workflow (docs/apps.md#deploy-a-new-image).
+EXTRA_COMPONENTS = ('image-reflector-controller',)
+# Components this cluster ran once and no longer does: make flux-install deletes what flux install
+# labelled with them (its Deployment, ServiceAccount and CRDs), since applying never prunes.
+REMOVED_COMPONENTS = ('image-automation-controller',)
 CONTROLLERS = ('source-controller', 'kustomize-controller', 'helm-controller', 'notification-controller',
                *EXTRA_COMPONENTS)
 KUSTOMIZATIONS = 'kustomizations.kustomize.toolkit.fluxcd.io'
@@ -187,6 +190,11 @@ def install_main(argv: list[str] | None = None, runner: Runner | None = None, ro
         for name in CONTROLLERS:
             runner.run(['kubectl', '-n', 'flux-system', 'rollout', 'status', f'deployment/{name}', '--timeout=5m'],
                        mutating=True)
+        for name in REMOVED_COMPONENTS:
+            label = f'app.kubernetes.io/component={name},app.kubernetes.io/part-of=flux'
+            runner.run(['kubectl', '-n', 'flux-system', 'delete', 'deployment,serviceaccount', '-l', label,
+                        '--ignore-not-found'], mutating=True)
+            runner.run(['kubectl', 'delete', 'customresourcedefinitions', '-l', label, '--ignore-not-found'], mutating=True)
         if not runner.dry_run:
             print('[OK] Flux controllers applied and rolled out')
         return 0

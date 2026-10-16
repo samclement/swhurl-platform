@@ -98,7 +98,7 @@ flowchart LR
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `platform-alerts` | The ntfy Provider and the infrastructure/source failure Alert, with their SOPS Secret (`platform/alerts`) | infra-base | SOPS |
 | `platform-notify` | The [notify service](services.md#notify-service) with its RBAC, outbox ConfigMap and NetworkPolicy, one SOPS Secret per [notification channel](services.md#notification-channels) and the generated team routes (`platform/notify`). Defined in its own file, `clusters/home/platform-notify.yaml`, because `make channel-add` and `make channel-remove` edit it | infra-base | SOPS while a channel exists |
-| `platform-image-automation` | The `github-dispatch` Provider and `image-dispatch` Alert that start the [Deploy workflow](apps.md#deploy-a-new-image), the dispatch token Secret, and the unused write `GitRepository` (SSH, deploy key) with its SOPS Secret (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its staging unit | infra-base | SOPS |
+| `platform-image-automation` | The `github-dispatch` Provider and `image-dispatch` Alert that start the [Deploy workflow](apps.md#deploy-a-new-image), and the dispatch token Secret (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-nats` | NATS JetStream and its stream controller, the generated user list and a NetworkPolicy, in `messaging` (`platform/nats`; [services](services.md#nats)) | infra-base | SOPS |
 | `platform-flags` | The two NATS key-value buckets of [feature flag](apps.md#feature-flags) overrides, `flags-staging` and `flags-prod`, in `messaging` (`platform/flags`) | platform-nats | — |
@@ -163,7 +163,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | Command | Why it is not a commit |
 | --- | --- |
 | `make flux-bootstrap` | Applies the root units and sources that tell Flux what to reconcile; Flux does not reconcile itself |
-| `make flux-install` | Installs Flux's controllers, including the image reflector (which picks each staging image) and the image automation controller, which nothing uses now (the version, components and patches are in Git; the upstream manifests are rendered at install time) |
+| `make flux-install` | Installs Flux's controllers, including the image reflector, which picks each staging image, and deletes a component the cluster no longer runs (the version, components and patches are in Git; the upstream manifests are rendered at install time) |
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |

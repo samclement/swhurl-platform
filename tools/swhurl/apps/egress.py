@@ -93,11 +93,13 @@ def squid_conf(assigned: dict[Instance, int]) -> str:
         'shutdown_lifetime 3 seconds',
         'logformat egress instance=%{instance}note client=%>a method=%rm host=%>rd:%>rP status=%>Hs/%Ss '
         'bytes=%<st ms=%tr',
-        'access_log stdio:/dev/stdout logformat=egress',
-        'cache_log stdio:/dev/stderr',
         f'http_port {HEALTH_PORT} name=health',
         'acl health myportname health',
         'http_access deny health',
+        '# Requests only: the kubelet\'s probes connect every few seconds and send none.',
+        'acl request has request',
+        'access_log stdio:/dev/stdout logformat=egress request',
+        'cache_log stdio:/dev/stderr',
     ]
     for each, port in sorted(assigned.items(), key=lambda item: item[1]):
         lines += [f'http_port {port} name={each.namespace}', f'acl {each.namespace} myportname {each.namespace}',

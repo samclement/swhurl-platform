@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -564,9 +565,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     paths = [Path(a).resolve() for a in argv or []] or instances()
     failed = 0
     call_problems = check_calls(paths)
-    for instance in paths:
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:  # each render is kustomize and helm processes
+        evaluated = list(pool.map(lambda instance: evaluate(instance, runner), paths))
+    for instance, found in zip(paths, evaluated, strict=True):
         label = instance.relative_to(ROOT) if instance.is_relative_to(ROOT) else instance
-        problems = evaluate(instance, runner) + call_problems.get(instance, [])
+        problems = found + call_problems.get(instance, [])
         if problems:
             failed += 1
             print(f'[BAD] {label}')

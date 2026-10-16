@@ -696,8 +696,9 @@ components:
         self.assertEqual((image['tag'], image['digest']), ('10-def5678', 'sha256:' + hashlib.sha256(b'manifest of 10-def5678').hexdigest()),
                          'the digest is the hash of the manifest the registry stores')
         self.assertEqual(offers.read(release.parent).commit, 'def5678', 'offers read at the new image\'s commit')
-        self.assertFalse(self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', tags, {'swhurl.yaml': manifest}))[0],
-                         'nothing newer: nothing changes')
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', tags, {}))
+        self.assertFalse(changed, 'nothing newer: nothing changes')
+        self.assertIn('its offers were read at def5678', out, 'and the repository is not read again (it would 404 here)')
 
         # A newer image whose offers are refused is held: staging keeps the image and offers it had.
         before = {p: p.read_bytes() for p in release.parent.rglob('*') if p.is_file()}

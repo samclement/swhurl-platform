@@ -49,6 +49,8 @@ and, for the whole tree:
 
   event-users         every instance has its own NATS key, and platform/nats/users.yaml is what the
                       instances generate
+  egress-ports        every instance has its own port on the egress proxy, and platform/egress/proxy.yaml
+                      is what the instances generate (make app-sync rewrites it)
   notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
                       routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
 
@@ -75,7 +77,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import channels, events, helmrelease, offers, per_environment
+from swhurl.apps import channels, egress, events, helmrelease, offers, per_environment
 from swhurl.apps.calling import (
     ENVIRONMENT_VARIABLE,
     TOKEN_SECONDS,
@@ -587,6 +589,12 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         if problems:
             failed += 1
             print(f'[BAD] {events.USERS_FILE}')
+            for problem in problems:
+                print(f'       {problem}')
+        problems = egress.problems(ROOT)
+        if problems:
+            failed += 1
+            print(f'[BAD] {egress.PROXY_FILE}')
             for problem in problems:
                 print(f'       {problem}')
         problems = channels.problems(ROOT)

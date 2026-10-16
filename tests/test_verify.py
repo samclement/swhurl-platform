@@ -51,7 +51,7 @@ class VerifyPlatformTests(unittest.TestCase):
         self.assertEqual(report.lines[:3], ['\n== Flux Kustomizations ==', '[OK] homelab-a', '[OK] homelab-b'])
         self.assertEqual([line for line in report.lines if line.startswith('\n==')],
                          ['\n== Flux Kustomizations ==', '\n== Flux Controllers ==', '\n== Runtime Secrets ==', '\n== Ingestion Key Sync ==',
-                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== App secrets ==', '\n== Events ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
+                          '\n== ClickStack Sign-up ==', '\n== Ingress ==', '\n== Image Automation ==', '\n== App isolation ==', '\n== Call identity ==', '\n== App secrets ==', '\n== Events ==', '\n== Egress proxy ==', '\n== Alerts ==', '\n== Notification channels ==', '\n== Notify service ==', '\n== Retention ==', '\n== Backups ==', '\n== App SQLite backups ==',
                       '\n== Push Webhook ==', '\n== Image Webhooks ==', '\n== App dashboards and alerts ==', '\n== Notifications ==', '\n== Notification heartbeat ==',
                       '\n== Console ==', '\n== Console GitHub Token =='])
         self.assertEqual(report.failures, 0)
@@ -387,7 +387,7 @@ class AllowedChecksTests(unittest.TestCase):
                          ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * len(apps_answers()['policies']['items'])
                          + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, secrets, events, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, secrets, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

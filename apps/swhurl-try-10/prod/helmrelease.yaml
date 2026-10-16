@@ -72,6 +72,11 @@ spec:
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UBVLFIHPHB7BHIWSWZ62QXVTPYFQRJ7G4BHW3G5DT4HN7XTTJ7UAOH4V
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30113
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30113
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30113 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30113 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             probes:
               readiness:
                 enabled: true

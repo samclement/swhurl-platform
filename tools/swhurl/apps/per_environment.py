@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from swhurl.apps import contract, events, helmrelease, offers
+from swhurl.apps import contract, egress, events, helmrelease, offers
 from swhurl.apps.calling import API_VARIABLE, CALLERS_VARIABLE, ENVIRONMENT_VARIABLE, TOKENS_VOLUME
 from swhurl.apps.instance import Instance
 
@@ -82,6 +82,10 @@ SETTINGS = (
             where=VARIABLE),
     Setting(events.URL_VARIABLE, DERIVED, STRIP, "follows from the instance's NATS key", where=VARIABLE),
     Setting(events.NKEY_VARIABLE, GENERATED, STRIP, "the environment's own NATS key", where=VARIABLE),
+    Setting(egress.HTTPS_VARIABLE, GENERATED, STRIP, "the environment's own port on the egress proxy (make app-sync)",
+            where=VARIABLE),
+    Setting(egress.HTTP_VARIABLE, GENERATED, STRIP, 'as HTTPS_PROXY', where=VARIABLE),
+    Setting(egress.JAVA_VARIABLE, GENERATED, STRIP, 'the same port for the JVM', where=VARIABLE),
     Setting(contract.RELOAD, DERIVED, CARRY, "restart on a Secret change; staging's events Secret is taken out of it"),
     Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them",
             later=WITH_OFFERS, where=ANNOTATION),

@@ -76,6 +76,7 @@ flowchart LR
   base --> console[platform-console]
   auth --> console
   base --> nats[platform-nats] --> flags[platform-flags]
+  base --> egress[platform-egress]
   traefik[infra-traefik]
   base --> app["app-APP-ENV (one per app instance)"]
   imageauto -. if staging .-> app
@@ -101,6 +102,7 @@ flowchart LR
 | `platform-image-automation` | The `github-dispatch` Provider and `image-dispatch` Alert that start the [Deploy workflow](apps.md#deploy-a-new-image), and the dispatch token Secret (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-nats` | NATS JetStream and its stream controller, the generated user list and a NetworkPolicy, in `messaging` (`platform/nats`; [services](services.md#nats)) | infra-base | SOPS |
+| `platform-egress` | The [egress proxy](services.md#egress-proxy) app instances reach outside the cluster through, its generated ports, configuration and NetworkPolicy, in `egress` (`platform/egress`) | infra-base | — |
 | `platform-flags` | The two NATS key-value buckets of [feature flag](apps.md#feature-flags) overrides, `flags-staging` and `flags-prod`, in `messaging` (`platform/flags`) | platform-nats | — |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats (its NATS key) | SOPS (its NATS key) |

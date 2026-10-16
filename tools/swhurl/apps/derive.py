@@ -10,6 +10,8 @@ declaration (edit.py) or on make app-sync:
                         callers and NetworkPolicy
     events              the NATS address and Secret reference, the stream and consumers, the unit's
                         dependency, and the NATS user list (platform/nats/users.yaml)
+    egress              the instance's own port on the egress proxy (kept once given) and what points
+                        its HTTP clients there; the proxy's ports and configuration (platform/egress/proxy.yaml)
     isolation           the quota and NetworkPolicy files and their kustomization entries
 
 The strict accessors at the top read a HelmRelease for editing in place (comments kept) and refuse
@@ -19,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from swhurl.apps import channels, events, helmrelease
+from swhurl.apps import channels, egress, events, helmrelease
 from swhurl.apps.calling import (
     CALLERS_VARIABLE,
     TOKENS_VOLUME,
@@ -206,6 +208,9 @@ def sync_env(root: Path, env: str) -> list[Path]:
                 raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
     keys = signing_keys(root)
     publishers = {app: events.published(helmrelease.variables(doc.data)) for app, doc in releases.items()}
+    proxied = egress.proxy_file(root) is not None  # not in the scratch roots of tests and template checks
+    proxy_ports = egress.ports(root) if proxied else {}
+    used = set(proxy_ports.values())
     edits: list[tuple[Path, str]] = []
     deletions: list[Path] = []
     for app, doc in releases.items():
@@ -217,6 +222,14 @@ def sync_env(root: Path, env: str) -> list[Path]:
                 variables.insert(index, key, value)
             elif variables[key] != value:
                 variables[key] = value
+        if proxied:
+            port = proxy_ports.get(Instance(app, env))
+            if port is None:
+                port = egress.free_port(used)
+                used.add(port)
+            for key, value in egress.variables(port).items():
+                if variables.get(key) != value:
+                    variables[key] = value
         for callee in calls[app]:
             if variables[callee_variable(callee)] != callee_address(callee, ports[callee]):
                 variables[callee_variable(callee)] = callee_address(callee, ports[callee])
@@ -244,7 +257,10 @@ def sync_env(root: Path, env: str) -> list[Path]:
     users = [(path, text) for path, text in users_edit(root) if not path.exists() or path.read_text() != text]
     for path, text in users:  # after the instances are written: it reads every environment from disk
         path.write_text(text)
-    return [path for path, _ in changed] + deletions + [path for path, _ in users]
+    proxy = [found for found in [egress.proxy_file(root)] if found and (not found[0].exists() or found[0].read_text() != found[1])]
+    for path, text in proxy:  # as the user list
+        path.write_text(text)
+    return [path for path, _ in changed] + deletions + [path for path, _ in users] + [path for path, _ in proxy]
 
 def sync(root: Path) -> Path | None:
     changed = [path for env in ENVIRONMENTS for path in sync_env(root, env)]

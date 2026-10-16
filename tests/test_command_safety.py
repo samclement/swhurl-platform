@@ -76,6 +76,8 @@ elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
 elif argv[:3] == ['-n', 'messaging', 'get']:
     emit({'status': {'readyReplicas': 1}})
+elif argv[:3] == ['-n', 'egress', 'get']:
+    emit({'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}})
 elif len(argv) > 1 and argv[0] == 'get' and argv[1].startswith('streams.jetstream'):
     emit({'items': []})
 elif argv[:3] == ['get', '--raw', '/openid/v1/jwks']:

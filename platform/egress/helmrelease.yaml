@@ -1,0 +1,108 @@
+# The egress proxy: app instances reach outside the cluster through it, each on a port of its own
+# (docs/services.md#egress-proxy). Squid, with no cache, logging every request to stdout.
+#
+# Which ports exist and what Squid does on each is not written here: proxy.yaml (generated from the
+# app instances by make app-sync) supplies the configuration and the Service ports through valuesFrom.
+# The chart's checksum of its ConfigMap restarts the pods on a change, one at a time.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: egress
+  namespace: egress
+spec:
+  interval: 30m
+  timeout: 5m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  valuesFrom:
+    - kind: ConfigMap
+      name: egress-proxy
+      valuesKey: values.yaml
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # proxy, Squid's own user in the image
+        runAsUser: 13
+        runAsGroup: 13
+        fsGroup: 13
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        # Two, replaced one at a time: a new port restarts the proxy, and apps keep a way out meanwhile.
+        replicas: 2
+        strategy: RollingUpdate
+        rollingUpdate:
+          unavailable: 0
+          surge: 1
+        containers:
+          main:
+            image:
+              repository: docker.io/ubuntu/squid
+              tag: 6.6-24.04_edge
+              digest: sha256:8a3baed477e2c282ab8aa5edad442f69873246964f225c5c2ae8364b6610963c
+            command: [squid, -N, -f, /etc/squid/squid.conf]
+            resources:
+              requests:
+                cpu: 10m
+                memory: 48Mi
+              limits:
+                memory: 192Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 3128
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 3128
+    persistence:
+      config:
+        type: configMap
+        identifier: config
+        globalMounts:
+        - path: /etc/squid/squid.conf
+          subPath: squid.conf
+          readOnly: true
+      tmp:
+        type: emptyDir
+        sizeLimit: 16Mi
+        globalMounts:
+        - path: /tmp
+      run:
+        type: emptyDir
+        sizeLimit: 16Mi
+        globalMounts:
+        - path: /run
+    service:
+      main:
+        controller: main
+        ports:
+          health:
+            port: 3128

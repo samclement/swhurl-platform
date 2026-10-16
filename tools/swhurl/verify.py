@@ -76,6 +76,8 @@ CHECKS = (
              'Every secret name an app\'s image needs has a value in Git (a missing one warns)'),
     Check.of('events', 'cluster host', apps.check_events,  # reads platform/nats/users.yaml
              'NATS and its controller run, and every declared stream and consumer exists'),
+    Check.of('egress', 'cluster host', apps.check_egress,  # reads platform/egress/proxy.yaml
+             'The egress proxy runs both replicas, with a port of its own for every app instance'),
     Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),
     Check.of('channels', 'cluster host', notifications.check_channels,  # reads apps/teams.yaml and platform/notify
              "The team routes are Git's and every channel has its Secret (a team without a channel warns)"),

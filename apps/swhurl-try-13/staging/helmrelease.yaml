@@ -65,6 +65,11 @@ spec:
               SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited,swhurl-try-12.visited
               SWHURL_EVENTS_NKEY: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30108
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30108
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30108 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30108 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             envFrom:
             - secretRef:
                 name: swhurl-try-13-events

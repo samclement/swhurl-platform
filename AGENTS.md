@@ -71,6 +71,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - **A local `console --dev` left running serves old Python with new templates** (templates are read from disk on each request), which looks like a bug in the new code. `uv run` starts a child that outlives the wrapper's PID: stop it by its listening port and check nothing listens before trusting a page.
 - **`pkill -f <pattern>` matches the shell running it** when the pattern also appears elsewhere on that command line, and kills the whole step. Stop a local server by its PID (`$!` in a script) or its listening port.
 - **zsh does not split `$VAR` into words:** a command kept in a variable fails with "no such file"; put multi-step live checks in a `bash` script.
+- **Checking from inside an app pod:** `kubectl exec ... node -e` (or a second JVM) starts another runtime in the app's container and can take it over its memory limit, restarting the app. Use `kubectl debug <pod> --profile=restricted --image=docker.io/curlimages/curl:<version>`: it shares the pod's network and namespace (so NetworkPolicy applies as to the app) but not its container's limit or env.
 - **OTel node metrics** on k3s use host networking and the kubelet at `127.0.0.1:10250`.
 - **Reloader** only acts in namespaces listed in its HelmRelease; add the namespace before opting a workload in (`make app-new --secret-keys` does).
 - **`nginx-unprivileged`** listens on IPv4 only with a read-only root; use `127.0.0.1` inside the pod.

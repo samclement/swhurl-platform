@@ -1673,3 +1673,18 @@ Not exercised live: a kind change, a uid change on an instance with a volume, th
 - **Then set:** `make app-secret ... NAME=API_TOKEN` took the `sops set --value-stdin` path on the existing file (`9c2313e`); Reloader restarted the pod, which then had both values (hashes match), and `verify-platform` reported `every secret its image needs has a value`.
 
 Not exercised live: a database added by a push (unit-tested, including its namespace annotation); the console's Environment section in a signed-in browser (template and handler covered by the console tests); a first promotion of an app with secret names after this change (the fixture path renders it offline).
+
+## Egress stage E1 (16 October 2026)
+
+[Plan section 21](plan.md#stage-5-egress-grants), stage 5 step E1: every app instance reaches outside through the [egress proxy](services.md#egress-proxy), which allows everything and logs each request.
+
+- **Change:** `18fcce3` (proxy, unit `platform-egress`, ports in each instance's `HTTPS_PROXY`, rule `egress-ports`, check `egress`) and `60df6cb` (log requests only: the kubelet's TCP probes made a line every few seconds). `make check` passed. Before deploying, the generated `squid.conf` ran in `ubuntu/squid:6.6-24.04_edge` locally as uid 13 with a read-only root: a `CONNECT` on an instance's port logged that instance, the health port answered 403.
+- **Rollout:** all 15 instances restarted with their port (staging 30101 to 30110, production 30111 to 30115); both proxy replicas Ready. A configuration change (`60df6cb`) rolled the two pods one at a time through the chart's checksum, without Reloader.
+- **From `swhurl-try-18` (TypeScript):** Node's own `fetch` to `https://example.com/` returned 200 through its port, logged `instance=swhurl-try-18-staging … host=example.com:443 status=200/TCP_TUNNEL`. A debug container in the same pod: its own port 30110 answered 200; another instance's port (30101) and the health port timed out (NetworkPolicy); `http://notify.notify.svc.cluster.local:8080/healthz` answered 200 directly. The first check ran a second `node` process in the app container, which took the pod over its 128Mi limit: the app restarted once (lesson: check from a debug container, not `exec node`).
+- **JVM apps:** `demo-notifier`, `swhurl-try-12` (both environments) and `swhurl-try-17` log `Picked up JAVA_TOOL_OPTIONS` with their own port; no OTLP export errors since. `HOST_IP` is first in the rendered env, so `$(HOST_IP)` in `NO_PROXY` and `http.nonProxyHosts` expands.
+- **Nothing in the cluster went through the proxy:** its log held only the test requests, no `.svc` host and no node address.
+- **ClickStack:** the lines are in `otel_logs` as service `egress` (`api.github.com:443` at 16:17:08, 20 s after the request).
+- `make verify-platform`: `[OK] the egress proxy runs 2 replicas`, `[OK] 15 instance(s) each have a port of their own`.
+
+Not exercised live: a new app or first promotion getting its port (unit-tested); an app whose HTTP client ignores the variables (it still connects directly until E3).
+

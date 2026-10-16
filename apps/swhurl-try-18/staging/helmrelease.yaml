@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-18
-              tag: 6-232c499
-              digest: sha256:a82a573d66226320f39f1de68ad089616e3f7b67192db39c483b182ade6b2910
+              tag: 11-bb13eba
+              digest: sha256:b8d51062a36b93d258b3e80c5593274f86e132d9b2cc10382989a4021fe822b3
             resources:
               requests:
                 cpu: 10m
@@ -73,21 +73,21 @@ spec:
                 spec:
                   httpGet:
                     path: /healthz
-                    port: 8080
+                    port: 9090
               liveness:
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /healthz
-                    port: 8080
+                    port: 9090
               startup:
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /healthz
-                    port: 8080
+                    port: 9090
                   periodSeconds: 5
                   failureThreshold: 24
             envFrom:
@@ -115,7 +115,7 @@ spec:
         controller: main
         ports:
           http:
-            port: 8080
+            port: 9090
     ingress:
       main:
         className: traefik

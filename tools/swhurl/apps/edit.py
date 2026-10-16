@@ -27,7 +27,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from swhurl import ROOT, app_alerts
+from swhurl import ROOT, app_alerts, platform
 from swhurl.apps import declaration, events, helmrelease, images, nkeys, offers, ops, policy, promotion
 from swhurl.apps.calling import (
     API_VARIABLE,
@@ -1119,6 +1119,12 @@ def main_secret(argv: list[str] | None = None, runner: Runner | None = None) -> 
     p.add_argument('name', help='the variable name, such as API_TOKEN')
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
+    if runner is None:  # the age key as make check-secrets finds it
+        key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(ROOT / platform.AGE_KEY)
+        if not Path(key_file).is_file():
+            print(f'[ERROR] age key not found at {key_file}; set SOPS_AGE_KEY_FILE', file=sys.stderr)
+            return 2
+        runner = Runner(env={'SOPS_AGE_KEY_FILE': key_file})
     if sys.stdin.isatty():
         import getpass
         value = getpass.getpass(f'{args.name} for {args.app}/{args.env} (not shown): ')

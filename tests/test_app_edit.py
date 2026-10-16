@@ -821,6 +821,78 @@ components:
             edit.deploy_staging(self.root, 'orders', opener=self.registry(
                 'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\n'}))
 
+    def test_a_new_image_brings_its_database_and_secret_names(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        self.without_production()
+        instance = self.root / 'apps/orders/staging'
+        base = 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\nflags: {shout: {type: boolean, default: false}}\n'
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+            edit.deploy_staging(self.root, 'orders', opener=self.registry(
+                'orders', ['8-def5678'], {'swhurl.yaml': base + 'database: sqlite\nsecrets: [API_TOKEN, WEBHOOK_KEY]\n'}))
+        self.assertIn('needs: database sqlite on a new 1Gi volume, secret names +API_TOKEN, +WEBHOOK_KEY', out.getvalue())
+        self.assertIn('value missing for API_TOKEN, WEBHOOK_KEY (the app runs without it)', err.getvalue())
+        release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
+        values = release['spec']['values']
+        main = values['controllers']['main']
+        self.assertEqual((values['persistence']['data']['size'], values['persistence']['data']['storageClass'],
+                          main['containers']['main']['env']['DATABASE_PATH'], main['replicas'], main['strategy']),
+                         ('1Gi', 'local-path-retain', '/data/app.db', 1, 'Recreate'))
+        self.assertEqual(release['metadata']['annotations']['platform.swhurl.com/secrets'], 'API_TOKEN,WEBHOOK_KEY')
+        self.assertIn({'secretRef': {'name': 'orders-secret', 'optional': True}}, main['containers']['main']['envFrom'])
+        self.assertIn('orders-secret', main['annotations']['secret.reloader.stakater.com/reload'])
+        namespace = yaml.safe_load((instance / 'namespace.yaml').read_text())
+        self.assertEqual(namespace['metadata']['annotations']['kustomize.toolkit.fluxcd.io/prune'], 'disabled')
+        self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
+        self.assertFalse((instance / 'secret.sops.yaml').exists(), 'no value is invented')
+
+        # A push never deletes data or resizes a volume: those images are held.
+        before = {p: p.read_bytes() for p in self.root.rglob('*.yaml')}
+        for declared, message in ((base + 'secrets: [API_TOKEN, WEBHOOK_KEY]\n', 'database: none, but orders keeps its database volume'),
+                                  (base + 'database: sqlite\ndatabaseSize: 2Gi\nsecrets: [API_TOKEN, WEBHOOK_KEY]\n',
+                                   'databaseSize 2Gi, but the volume was created with 1Gi')):
+            with self.subTest(message=message), self.assertRaisesRegex(edit.EditError, message):
+                edit.deploy_staging(self.root, 'orders', opener=self.registry('orders', ['9-0000000'], {'swhurl.yaml': declared}))
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
+
+        # A dropped name goes from the release; the Secret reference stays for any value already set.
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['10-1111111'], {'swhurl.yaml': base + 'database: sqlite\nsecrets: [API_TOKEN]\n'}))
+        self.assertIn('secret names -WEBHOOK_KEY', out)
+
+    def test_a_secret_value_reaches_sops_on_standard_input_only(self):
+        from swhurl.run import FakeRunner, Result
+        self.with_units()
+        self.without_production()
+        seen = []
+
+        def sops(args, given):
+            seen.append((args, given))
+            if args[1] == '--encrypt':
+                return Result(args, 0, given.replace('s3cret-value', 'ENC[AES256_GCM,data:x]') + 'sops:\n  age: []\n')
+            return Result(args, 0, '')
+        runner = FakeRunner().on('sops', handler=sops)
+        instance = self.root / 'apps/orders/staging'
+        self.quiet(edit.set_secret, self.root, 'orders', 'staging', 'API_TOKEN', 's3cret-value', runner=runner)
+        stored = (instance / 'secret.sops.yaml').read_text()
+        self.assertNotIn('s3cret-value', stored)
+        self.assertEqual(contract.stored_secrets(stored), ['API_TOKEN'])
+        self.assertIn('secret.sops.yaml', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'])
+        unit = yaml.safe_load((self.root / 'clusters/home/app-orders-staging.yaml').read_text())
+        self.assertEqual(unit['spec']['decryption']['secretRef']['name'], 'sops-age')
+        self.assertIn({'secretRef': {'name': 'orders-secret', 'optional': True}},
+                      yaml.safe_load((instance / 'helmrelease.yaml').read_text())['spec']['values']['controllers']['main']['containers']['main']['envFrom'])
+        # The second value goes into the existing file with sops set, again on standard input.
+        _, out = self.quiet(edit.set_secret, self.root, 'orders', 'staging', 'WEBHOOK_KEY', 'other "value"', runner=runner)
+        self.assertEqual(seen[-1], (('sops', 'set', '--value-stdin', 'apps/orders/staging/secret.sops.yaml', '["stringData"]["WEBHOOK_KEY"]'),
+                                    json.dumps('other "value"')))
+        self.assertIn('not among the secrets its image declares yet', out)
+        self.assertFalse(any('s3cret-value' in ' '.join(args) or 'other' in ' '.join(args) for args, _ in seen), 'never on a command line')
+        for name, value, message in (('HOST_IP', 'x', 'reserved for the platform'), ('API_TOKEN', '', 'no value for API_TOKEN')):
+            with self.subTest(name=name), self.assertRaisesRegex(edit.EditError, message):
+                edit.set_secret(self.root, 'orders', 'staging', name, value, runner=runner)
+
     def test_promotion_carries_what_the_promoted_image_offers(self):
         from swhurl.apps import offers
         self.with_units()

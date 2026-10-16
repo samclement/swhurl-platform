@@ -165,6 +165,31 @@ def secret_key_problem(keys: list[str]) -> str:
     return ''
 
 
+# An app's own Secret: every key becomes a variable (envFrom, optional so the app starts before its first
+# value is set). The names its image needs (swhurl.yaml's secrets) are noted on the HelmRelease; the values
+# live in SECRET_FILE, which only the operator can write (make app-secret): a name without a value there
+# is "value missing", a value no name asks for is unused.
+SECRET_FILE = 'secret.sops.yaml'
+SECRET_NAMES = label('secrets')
+"""On an app's HelmRelease: the secret names its image needs, comma-separated."""
+
+
+def app_secret(app: str) -> str:
+    return f'{app}-secret'
+
+
+def declared_secrets(release: dict | None) -> list[str]:
+    """The secret names a release notes its image needs."""
+    text = str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(SECRET_NAMES, ''))
+    return [name for name in text.split(',') if name]
+
+
+def stored_secrets(text: str | None) -> list[str]:
+    """The keys an app's SECRET_FILE holds a value for, from its text (SOPS leaves key names readable)."""
+    docs = [d for d in yaml.safe_load_all(text or '') if isinstance(d, dict)]
+    return [str(key) for doc in docs for key in (doc.get('stringData') or doc.get('data') or {})]
+
+
 # Stacks: one Copier template repository each (docs/plan.md section 8). make app-repo renders one into a
 # new repository; the template's own CI renders it and runs the shared app checks on the result.
 STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',

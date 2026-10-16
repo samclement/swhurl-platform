@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: smoke-data
   namespace: smoke-data-prod
+  annotations:
+    platform.swhurl.com/secrets: GREETING
 spec:
   interval: 30m
   timeout: 3m
@@ -60,8 +62,14 @@ spec:
               SWHURL_ENV: prod
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               DATABASE_PATH: /data/app.db
+            envFrom:
+            - secretRef:
+                name: smoke-data-secret
+                optional: true
         replicas: 1
         strategy: Recreate
+        annotations:
+          secret.reloader.stakater.com/reload: smoke-data-secret
     persistence:
       tmp:
         type: emptyDir

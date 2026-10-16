@@ -51,6 +51,7 @@ In the order of an app's life ([apps](apps.md)): create, set access, promote, op
 | `app-logs APP= ENV=` | Recent workload logs (`FOLLOW=true`, `TAIL=N`, `PREVIOUS=true` for the last crashed container) | Cluster (read) |
 | `app-reconcile APP= ENV=` | Fetch Git and reconcile only that instance | Cluster |
 | `app-check APP= ENV=` | Render one instance and check it against the app policy | Local |
+| `app-secret APP= ENV= NAME=` | Set one secret value of an instance, read from standard input or asked for without echo, into `apps/<app>/<env>/secret.sops.yaml` through `sops` (needs the age key: run it in your own terminal). A name the image does not declare yet is accepted ([secrets](apps.md#secrets)) | Git |
 | `app-scale APP= ENV= ARGS="..."` | Change `--replicas` (0 to 10), `--cpu`, `--memory` or `--memory-limit`; never below the minimum in the running image's `swhurl.yaml` | Git |
 | `app-remove APP= ENV=` | Delete the instance's files, its unit file and registration, and its Reloader namespace; warns when a retained volume will be kept | Git |
 | `console-image` | Pin `platform/console` and the [notify service](services.md#notify-service) to the [console](console.md#deploy-a-new-console) image published for this commit: the `src-<hash>` tag of its inputs and its digest on GHCR. Refuses with uncommitted inputs or before the publish run. The publish run does this itself (`--expect src-<hash> --commit`); by hand it is the fallback | Git |

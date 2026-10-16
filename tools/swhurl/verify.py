@@ -72,6 +72,8 @@ CHECKS = (
              'Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods'),
     Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads apps/signing-keys.json
              "The signing keys and token issuer apps were given are the cluster's"),
+    Check.of('secrets', 'host', apps.check_secrets,  # reads the instances in Git, never a value
+             'Every secret name an app\'s image needs has a value in Git (a missing one warns)'),
     Check.of('events', 'cluster host', apps.check_events,  # reads platform/nats/users.yaml
              'NATS and its controller run, and every declared stream and consumer exists'),
     Check.of('alerts', 'cluster', flux.check_alerts, 'The Flux failure Alert exists and its provider does (a missing Alert warns)'),

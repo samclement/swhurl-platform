@@ -24,6 +24,7 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 | `image-automation` | Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise) | Cluster (read) |
 | `isolation` | Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods | Cluster (read), this host |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this host |
+| `secrets` | Every secret name an app's image needs has a value in Git (a missing one warns) | this host |
 | `events` | NATS and its controller run, and every declared stream and consumer exists | Cluster (read), this host |
 | `alerts` | The Flux failure Alert exists and its provider does (a missing Alert warns) | Cluster (read) |
 | `channels` | The team routes are Git's and every channel has its Secret (a team without a channel warns) | Cluster (read), this host |

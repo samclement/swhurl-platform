@@ -181,8 +181,8 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
     def body(_root: Path) -> str:
         instructions = ''
         if own_setup:
-            instructions += ('\n\nBefore merging, review the production hostname, and if Secret stubs were created, set their values with '
-                             f'`sops apps/{app}/prod/secret.sops.yaml` and review Reloader registration.')
+            instructions += ('\n\nBefore merging, review the production hostname, and if Secret placeholders were created, set each value on this branch '
+                             f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal) and review Reloader registration.')
         if admits:
             instructions += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
                              "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy. The merge gate holds a "

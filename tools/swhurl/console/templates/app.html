@@ -233,7 +233,8 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
         <dt>From the platform</dt>
         <dd>{% for name, value in status.variables.items() %}<div><code>{{ name }}</code> <span class="muted mono">{{ value }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
         <dt>Your secrets</dt>
-        <dd>{% if status.secret %}every key of the Secret <code>{{ status.secret }}</code>, as a variable of the same name. Names and values are in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a> (encrypted; edit with <code>sops</code>){% else %}<span class="muted">none</span>{% endif %}</dd>
+        <dd>{% if secret_states %}{% for name, state in secret_states.items() %}<div><code>{{ name }}</code> {% if state == 'value missing' %}<span class="pill attention">value missing</span>{% elif state == 'unused' %}<span class="pill">unused</span>{% else %}<span class="muted">set</span>{% endif %}</div>{% endfor %}{% endif %}
+          {%- if status.secret %}<div class="muted">Every key of the Secret <code>{{ status.secret }}</code> arrives as a variable of the same name; the names come from the image's <code>swhurl.yaml</code>. Values are encrypted in <a href="https://github.com/samclement/swhurl-platform/blob/main/apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml"><code>apps/{{ i.app }}/{{ i.env }}/secret.sops.yaml</code></a>; set one in your own terminal with <code>make app-secret APP={{ i.app }} ENV={{ i.env }} NAME=&lt;name&gt;</code>.</div>{% elif not secret_states %}<span class="muted">none</span>{% endif %}</dd>
       </dl>
     </details>
   </div>

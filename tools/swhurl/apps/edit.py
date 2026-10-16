@@ -8,6 +8,7 @@
     app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
     app-offers APP ENV | --all ENV                 read what an app offers (its API and event documents) from its repository
     app-deploy [APP] [--refresh]                   bring staging to the newest image, with what it needs and offers
+    app-secret APP ENV NAME                        set one secret value, read from standard input (needs the age key)
     app-sync                                       rewrite what the platform derives in every instance
     app-remove APP ENV                             delete the instance's files and unregister its unit
 
@@ -36,15 +37,26 @@ from swhurl.apps.calling import (
 )
 from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
+    DATA_MOUNT,
+    DATABASE_PATH_VARIABLE,
     EXPOSURE,
     EXPOSURES,
     IMAGE_AUTOMATION_FILE,
+    RELOAD,
+    RETAINED_STORAGE_CLASS,
+    SECRET_FILE,
+    SECRET_NAMES,
+    SQLITE_PATH,
     TEAM,
+    app_secret,
+    declared_secrets,
     default_host,
     in_cookie_domain,
     otlp_variables,
     over_quota,
     quantity,
+    secret_key_problem,
+    stored_secrets,
     teams,
 )
 from swhurl.apps.derive import (
@@ -66,6 +78,7 @@ from swhurl.apps.new import (
     depends_on,
     dump,
     ingress_values,
+    watch_namespace,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -328,10 +341,29 @@ SCALED = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'), ('memory
 """Each resource app-scale sets (its option, by declaration.RESOURCES) and where it is in the container."""
 
 
+def secret_reference(main: dict, workload: dict, app: str) -> None:
+    """The app's own Secret as variables (envFrom), optional so the app starts before its first value, and
+    Reloader restarting it when a value changes."""
+    name = app_secret(app)
+    refs = main.get('envFrom')
+    found = next((ref for ref in refs or [] if (ref.get('secretRef') or {}).get('name') == name), None)
+    if found is None:
+        if refs is None:
+            main['envFrom'] = []
+        main['envFrom'].append({'secretRef': {'name': name, 'optional': True}})
+    elif found['secretRef'].get('optional') is not True:
+        found['secretRef']['optional'] = True
+    annotations = workload.get('annotations') or {}
+    reloads = [n for n in str(annotations.get(RELOAD, '')).split(',') if n]
+    if name not in reloads:
+        mapping(workload, 'annotations', create=True)[RELOAD] = ','.join([*reloads, name])
+
+
 def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
     """Write what the image needs into its release (in place): the port and health path of a web app
-    (Service and probes), the user it runs as, its telemetry variables, and resources raised to the
-    image's minimum. Returns what changed. A need the instance cannot take is refused (EditError) and
+    (Service and probes), the user it runs as, its telemetry variables, a new database's volume, the
+    secret names it reads (a new one arrives without a value), and resources raised to the image's
+    minimum. Returns what changed. A need the instance cannot take is refused (EditError) and
     the release is left part-changed: the caller restores it."""
     app_values, main, workload = values(release), container(release), controller(release)
     changes: list[str] = []
@@ -371,6 +403,40 @@ def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
         for key in telemetry:
             variables.pop(key, None)
         changes.append('telemetry none')
+    persistence = mapping(app_values, 'persistence', create=True)
+    if needs.database and DATABASE_PATH_VARIABLE not in variables:
+        if 'data' in persistence:
+            raise EditError(f'database: {needs.database}, but {app} already has a volume of its own: add the database by hand')
+        # As app-new makes it: a retained volume, one writer, stop-first updates (rule single-writer).
+        persistence['data'] = {'type': 'persistentVolumeClaim', 'storageClass': RETAINED_STORAGE_CLASS,
+                               'accessMode': 'ReadWriteOnce', 'size': needs.database_size, 'retain': True,
+                               'globalMounts': [{'path': DATA_MOUNT}]}
+        variables[DATABASE_PATH_VARIABLE] = SQLITE_PATH
+        if 'replicas' in workload:
+            workload['replicas'] = 1
+        else:
+            workload.insert(0, 'replicas', 1)
+        workload['strategy'] = 'Recreate'
+        changes.append(f'database {needs.database} on a new {needs.database_size} volume')
+    elif not needs.database and DATABASE_PATH_VARIABLE in variables:
+        raise EditError(f'database: none, but {app} keeps its database volume, and a push never deletes data: keep '
+                        'database in swhurl.yaml, or remove the data on purpose (make destroy-data, docs/operations.md#lifecycle)')
+    elif needs.database and str(persistence['data'].get('size')) != needs.database_size:
+        raise EditError(f'databaseSize {needs.database_size}, but the volume was created with {persistence["data"].get("size")}, '
+                        'and a volume keeps its size: declare that size again')
+    named = declared_secrets(release)
+    if list(needs.secrets) != named:
+        annotations = mapping(mapping(release, 'metadata'), 'annotations', create=True)
+        if needs.secrets:
+            annotations[SECRET_NAMES] = ','.join(needs.secrets)
+        else:
+            del annotations[SECRET_NAMES]
+            if not annotations:
+                del release['metadata']['annotations']
+        changes.append('secret names ' + ', '.join([f'+{n}' for n in needs.secrets if n not in named]
+                                                   + [f'-{n}' for n in named if n not in needs.secrets]))
+    if needs.secrets:
+        secret_reference(main, workload, app)
     resources = mapping(main, 'resources', create=True)
     for field, section, key in SCALED:
         minimum, current = needs.minimum.get(field), (resources.get(section) or {}).get(key)
@@ -398,7 +464,8 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
     found = found or newest_image(root, app, opener=opener)
     instance = instance_dir(root, app, 'staging')
     release = instance / 'helmrelease.yaml'
-    before = release.read_bytes()
+    touched = [release, instance / 'namespace.yaml', root / 'platform/reloader/helmrelease.yaml']
+    before = {path: path.read_bytes() for path in touched if path.is_file()}
     document = YamlFile(release)
     image = promotion.image_of(document.data)
     moved = (image.get('tag'), image.get('digest')) != (found.tag, found.digest)
@@ -412,6 +479,15 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
         declared = image_declaration(document.data, app, 'staging', token=token, opener=opener)
         needed = apply_needs(document.data, app, declared.needs)
         document.save()
+        if 'data' in (values(document.data).get('persistence') or {}):
+            namespace = YamlFile(instance / 'namespace.yaml')
+            metadata = mapping(namespace.data, 'metadata')
+            if (metadata.get('annotations') or {}).get(PRUNE_DISABLED) != 'disabled':
+                # The namespace, and with it the claim, stays when the unit goes (destroy-data deletes it).
+                mapping(metadata, 'annotations', create=True)[PRUNE_DISABLED] = 'disabled'
+                namespace.save()
+        if declared.needs.secrets:
+            watch_namespace(root, Instance(app, 'staging').namespace)
         production = instance_folder(root, app, 'prod')
         if (production / 'helmrelease.yaml').is_file() and (drift := policy.drift([production, instance])):
             raise EditError(f"{'; '.join(drift)}: a promotion does not carry what an image needs yet, so a need "
@@ -420,13 +496,65 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
         if service_port(values(YamlFile(release).data)) != port:
             sync_env(root, 'staging')  # its callers' address and its NetworkPolicy
     except EditError:
-        release.write_bytes(before)
+        for path, content in before.items():
+            path.write_bytes(content)
         raise
     if moved:
         print(f'[OK] {app}/staging: image {previous} -> {found.tag}')
     if needed:
         print(f'[OK] {app}/staging needs: {", ".join(needed)}')
+    missing = [name for name in declared.needs.secrets if name not in stored_secrets(
+        (instance / SECRET_FILE).read_text() if (instance / SECRET_FILE).is_file() else '')]
+    if missing:
+        print(f'[WARN] {app}/staging: value missing for {", ".join(missing)} (the app runs without it): '
+              f'make app-secret APP={app} ENV=staging NAME={missing[0]}', file=sys.stderr)
     return changed or moved or bool(needed)
+
+
+def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner: Runner | None = None) -> Path:
+    """Set one value of ``app/env``'s Secret (SECRET_FILE), encrypting it as it is written: the value goes
+    to sops on standard input, never on a command line or unencrypted to disk. A name the image does not
+    declare yet is accepted, so a value can be set before the push that needs it."""
+    if problem := secret_key_problem([name]):
+        raise EditError(problem)
+    if not value:
+        raise EditError(f'no value for {name}: give it on standard input')
+    instance = instance_dir(root, app, env)
+    path, runner = instance / SECRET_FILE, runner or Runner()
+    relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
+    try:
+        if path.is_file():
+            if 'stringData' not in YamlFile(path).data:
+                raise EditError(f'{relative} keeps its values under data, not stringData: set {name} with sops by hand')
+            runner.run(['sops', 'set', '--value-stdin', relative, f'["stringData"]["{name}"]'], input=json.dumps(value), cwd=root)
+        else:
+            text = dump([{'apiVersion': 'v1', 'kind': 'Secret',
+                          'metadata': {'name': app_secret(app), 'namespace': Instance(app, env).namespace},
+                          'type': 'Opaque', 'stringData': {name: value}}])
+            encrypted = runner.run(['sops', '--encrypt', '--filename-override', relative, '--input-type', 'yaml',
+                                    '--output-type', 'yaml', '/dev/stdin'], input=text, cwd=root).stdout
+            if 'sops:' not in encrypted or 'ENC[' not in encrypted:
+                raise EditError(f'sops did not encrypt {relative}; nothing was written')
+            path.write_text(encrypted)
+    except CommandError as error:
+        raise EditError(f'sops could not set {name} in {relative} (it needs the age key: age.agekey or SOPS_AGE_KEY_FILE): '
+                        f'{error}') from None
+    document = YamlFile(instance / 'helmrelease.yaml')
+    secret_reference(container(document.data), controller(document.data), app)
+    document.save()
+    kustomization = YamlFile(instance / 'kustomization.yaml')
+    if SECRET_FILE not in kustomization.data['resources']:
+        kustomization.data['resources'].insert(1, SECRET_FILE)
+        kustomization.save()
+    unit = YamlFile(instance_unit_file(root, app, env))
+    if 'decryption' not in mapping(unit.data, 'spec'):
+        unit.data['spec']['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
+        unit.save()
+    watch_namespace(root, Instance(app, env).namespace)
+    print(f'[OK] {app}/{env}: {name} set (value not shown)')
+    if name not in declared_secrets(document.data):
+        print(f'[INFO] {name} is not among the secrets its image declares yet: the app receives it all the same')
+    return instance
 
 
 def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
@@ -543,7 +671,8 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         carry_offers(root, app, runner=runner)
         print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
         if (instance_folder(root, app, target) / 'secret.sops.yaml').is_file():  # not the events key, which is made here
-            print(f'[INFO] Set production secrets with sops apps/{app}/prod/secret.sops.yaml before merging')
+            print(f'[INFO] Set production secrets before merging, in your own terminal: make app-secret APP={app} ENV=prod NAME=<name> '
+                  '(make check-secrets lists the placeholders left)')
         return result
     if host:
         raise EditError('--host applies only to first production; change existing routes with app-expose')
@@ -980,6 +1109,22 @@ def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._o
             failed += 1
             print(f'[ERROR] {app}/staging: {error}', file=sys.stderr)
     return 1 if failed else 0
+
+
+def main_secret(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-secret', description='Set one secret value of an app instance '
+                                '(read from standard input, or asked for without echo); needs the age key')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('name', help='the variable name, such as API_TOKEN')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    if sys.stdin.isatty():
+        import getpass
+        value = getpass.getpass(f'{args.name} for {args.app}/{args.env} (not shown): ')
+    else:
+        value = sys.stdin.read().removesuffix('\n')
+    return run(lambda: set_secret(args.root.resolve(), args.app, args.env, args.name, value, runner=runner), True)
 
 
 def main_sync(argv: list[str] | None = None) -> int:

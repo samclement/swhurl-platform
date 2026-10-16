@@ -12,10 +12,6 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./apps/smoke-web/staging
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
   prune: true
   wait: true
   timeout: 3m

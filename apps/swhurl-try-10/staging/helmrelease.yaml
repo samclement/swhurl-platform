@@ -4,7 +4,7 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
-    platform.swhurl.com/offers: '15e3026'
+    platform.swhurl.com/offers: '01895c4'
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-10
-              tag: 25-15e3026
-              digest: sha256:9b883f2310ddc59f862017d06fc74b1eac45dadbd8606d2f16419f50f5a0d04a
+              tag: 28-01895c4
+              digest: sha256:0a697a4b22ac5aa4e2d4e5ab90b6cba69be346fd11866eee33fc6b18def71e4a
             resources:
               requests:
                 cpu: 10m

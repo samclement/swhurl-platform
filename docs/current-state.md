@@ -1661,3 +1661,15 @@ Not exercised: a refused offer holding an image live (unit-tested), a lost dispa
 - **End check, hold:** `resources: {cpu: "1"}` (`b3576df`) built and published `12-b3576df`; its Deploy run failed with `[ERROR] swhurl-try-18/staging: resources: the image's minimum {'cpu': '1'} at 1 replica(s) exceeds the namespace quota for requests.cpu`, committed nothing, and staging kept `11-bb13eba`. Reverted in `66f1ddc`.
 
 Not exercised live: a kind change, a uid change on an instance with a volume, the drift hold for an app with production, `app-scale` below the minimum, and `--refresh` from the workflow (each unit-tested).
+
+## Needs and grants stage 3c (16 October 2026)
+
+[Plan section 21](plan.md#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started), stage 3c: databases and secret names follow the image.
+
+- **Change:** `5ebe630`, with `6d8018c` (`app-secret` finds the age key as `check-secrets` does) and `b9ffeb4` (`app-status` names the app's own Secret). Before pushing, `app-deploy --refresh` on a scratch copy changed no staging instance (the two SQLite apps declare the size their volume has). `make check` passed (771 tests); the app-template fixtures were regenerated, with `smoke-data`'s production placeholder encrypted by the real `sops`.
+- **Templates `v0.2.10`:** `secret(name)` (TypeScript `ac210c7`, #46; Kotlin `caa835d`, #34) fails with the name and `make app-secret APP=… ENV=… NAME=…`; READMEs document it; 8 checks each passed; pinned in `STACK_REVISIONS`.
+- **End check, value first:** `make app-secret APP=swhurl-try-18 ENV=staging NAME=WEBHOOK_KEY` (a dummy value on stdin) wrote an encrypted `secret.sops.yaml` (no plaintext in it; `check-secrets` 0 errors) and the optional reference (`c97d24f`); its own unit decrypted it, and the pod had the value (sha256 compared, never printed) before any image declared it.
+- **End check, name first:** `swhurl-try-18` pushed `secrets: [API_TOKEN, WEBHOOK_KEY]` (`52f0eb4`, 07:00:09). One bot commit, `46e7d12` (07:01:36), carried image `15-52f0eb4` and the names; the run warned `value missing for API_TOKEN`. The pod rolled out Healthy without `API_TOKEN` and with `WEBHOOK_KEY`; `make app-status` showed `API_TOKEN (value missing), WEBHOOK_KEY (set)`, and `verify-platform` warned under App secrets with the command.
+- **Then set:** `make app-secret ... NAME=API_TOKEN` took the `sops set --value-stdin` path on the existing file (`9c2313e`); Reloader restarted the pod, which then had both values (hashes match), and `verify-platform` reported `every secret its image needs has a value`.
+
+Not exercised live: a database added by a push (unit-tested, including its namespace annotation); the console's Environment section in a signed-in browser (template and handler covered by the console tests); a first promotion of an app with secret names after this change (the fixture path renders it offline).

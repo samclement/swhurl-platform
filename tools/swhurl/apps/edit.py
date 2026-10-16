@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts
@@ -292,21 +293,30 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
     return changed
 
 
-def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
-                   runner: Runner | None = None) -> bool:
-    """Staging runs the newest image its ImagePolicy accepts, with what that image offers: the tag and
-    digest from the registry (images.py), then the offers read at its commit. A refused offer holds the
-    image: the instance keeps what it had. Returns whether anything changed."""
-    instance = instance_dir(root, app, 'staging')
-    release = instance / 'helmrelease.yaml'
+def newest_image(root: Path, app: str, *, opener: offers.Opener = offers._open) -> images.Image:
+    """The image ``app``'s staging ImagePolicy picks from the registry now."""
     try:
-        found = images.newest(images.policy(instance / IMAGE_AUTOMATION_FILE), opener=opener)
+        return images.newest(images.policy(instance_dir(root, app, 'staging') / IMAGE_AUTOMATION_FILE), opener=opener)
     except (images.ImageError, OSError) as error:
         raise EditError(str(error)) from None
+
+
+def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
+                   runner: Runner | None = None, found: images.Image | None = None) -> bool:
+    """Staging runs the newest image its ImagePolicy accepts (``found``, or read now), with what that
+    image offers: the tag and digest from the registry (images.py), then the offers read at its commit.
+    Offers already read at that commit are not read again. A refused offer holds the image: the
+    instance keeps what it had. Returns whether anything changed."""
+    found = found or newest_image(root, app, opener=opener)
+    release = instance_dir(root, app, 'staging') / 'helmrelease.yaml'
     before = release.read_bytes()
     document = YamlFile(release)
     image = promotion.image_of(document.data)
     moved = (image.get('tag'), image.get('digest')) != (found.tag, found.digest)
+    read_at = ((document.data.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION)
+    if not moved and offers.IMAGE_COMMIT.match(found.tag) and read_at == offers.commit_of(found.tag):
+        print(f'[OK] {app}/staging runs its newest image {found.tag}; its offers were read at {read_at}')
+        return False
     previous = image.get('tag')
     if moved:
         image['tag'], image['digest'] = found.tag, found.digest
@@ -822,12 +832,22 @@ def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._o
     root, token = args.root.resolve(), os.environ.get('GITHUB_TOKEN', '')
     if args.app:
         return run(lambda: deploy_staging(root, args.app, token=token, opener=opener) and instance_dir(root, args.app, 'staging'), True)
-    failed = 0
-    for app in instances_in(root, 'staging'):
-        if not (instance_folder(root, app, 'staging') / IMAGE_AUTOMATION_FILE).is_file():
-            continue  # not built from an app repository (a fixture, a pinned third-party image)
+    deployed = [app for app in instances_in(root, 'staging')  # built from an app repository: not a fixture or a pinned image
+                if (instance_folder(root, app, 'staging') / IMAGE_AUTOMATION_FILE).is_file()]
+
+    def newest(app: str) -> images.Image | EditError:
         try:
-            deploy_staging(root, app, token=token, opener=opener)
+            return newest_image(root, app, opener=opener)
+        except EditError as error:
+            return error
+    with ThreadPoolExecutor(max_workers=8) as pool:  # registry reads only; the edits below run one at a time
+        found = dict(zip(deployed, pool.map(newest, deployed), strict=True))
+    failed = 0
+    for app in deployed:
+        try:
+            if isinstance(found[app], EditError):
+                raise found[app]
+            deploy_staging(root, app, token=token, opener=opener, found=found[app])
         except EditError as error:  # the others still deploy; this one keeps its image
             failed += 1
             print(f'[ERROR] {app}/staging: {error}', file=sys.stderr)

@@ -20,6 +20,7 @@ from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     SECRET_FILE,
     TEAM,
+    app_secret,
     declared_secrets,
     stored_secrets,
 )
@@ -246,7 +247,9 @@ def shown_variables(release: dict | None) -> tuple[dict[str, str], str]:
             ref = (value.get('valueFrom') or {}).get('fieldRef') or {}
             value = f"from the pod ({ref['fieldPath']})" if ref.get('fieldPath') else 'from a reference'
         shown[str(name)] = str(value)
-    return shown, next(iter(helmrelease.secret_references(release)), '')
+    references = helmrelease.secret_references(release)
+    own = app_secret(str(((release or {}).get('metadata') or {}).get('name', '')))
+    return shown, own if own in references else next(iter(references), '')
 
 
 def team_of(runner: Runner, instance: Instance) -> str:

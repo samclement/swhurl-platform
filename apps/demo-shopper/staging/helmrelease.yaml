@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shopper
-              tag: 26-a26b499
-              digest: sha256:cc1676d203f5223337aa7bf8a60791131696d0ab7645e97717400adccefacb69
+              tag: 29-be59fee
+              digest: sha256:9646f51f56736e0c74c328ce06b2022bd6249dedc63c7df8e3fbcc2ee176b0c3
             resources:
               requests:
                 cpu: 10m

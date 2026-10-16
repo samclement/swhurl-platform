@@ -68,7 +68,7 @@ FIELDS = (
     Field('database', NEED, SEED, INSTANCE),
     Field('databaseSize', NEED, SEED, INSTANCE),
     Field('secrets', NEED, SEED, INSTANCE),
-    Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Offers workflow)"),
+    Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Deploy workflow)"),
     Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
     Field('events.publish', OFFER, SEED, 'make app-events; once the app has provides.eventsFile, that file instead'),
     Field('team', GRANT, REFUSED, 'make app-team'),

@@ -11,7 +11,7 @@ The cluster is live. [Current state](docs/current-state.md) records what has bee
 | Console | A signed-in web page at `console.homelab.swhurl.com`. It lists every app, team and Flux unit, starts new apps, connects apps and promotes them to production. | [Console](#console) |
 | Apps | One GitHub repository per app, made from a TypeScript or Kotlin template, with a staging and a production instance. The app's `swhurl.yaml` says what the image needs (port, database, telemetry, secret names) and what it offers (its API, events and feature flags); its team, access, calls and subscriptions are granted on the platform. | [Apps](#apps) |
 | Shared services | Google sign-in, logs, metrics and traces in ClickStack, events and feature flags on NATS, notifications to phones through ntfy, and restarts when a Secret changes. | [Shared services](#shared-services) |
-| Delivery | Git is the only way in. Flux applies `main`, image automation deploys each new staging build, and the console and Renovate open pull requests. | [Delivery](#delivery) |
+| Delivery | Git is the only way in. Flux applies `main`, each new staging build deploys itself (Flux starts the Deploy workflow), and the console and Renovate open pull requests. | [Delivery](#delivery) |
 | Cluster and host | k3s with cert-manager, Let's Encrypt, Traefik and retained local storage, plus host timers for dynamic DNS, backups and a heartbeat. | [Cluster and host](#cluster-and-host) |
 
 ```mermaid

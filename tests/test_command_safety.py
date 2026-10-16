@@ -72,8 +72,6 @@ elif Path(sys.argv[0]).name == 'aws':
 elif Path(sys.argv[0]).name == 'gh':
     emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
            'last_response': {'code': 200}}])
-elif any(a.startswith('imageupdateautomations') for a in argv):
-    emit({'items': []})
 elif any(a.startswith('imagepolicies') for a in argv):
     emit({'items': []})
 elif argv[:3] == ['-n', 'messaging', 'get']:

@@ -61,8 +61,6 @@ CHECKS = {'kubectl -n console get cronjob console-dashboards': json.dumps({
               'spec': {}, 'status': {'lastSuccessfulTime': dt.datetime.now(dt.UTC).isoformat()}}),
           'kubectl get --raw=/version': '{}',
           'kubectl -n kube-system get deploy traefik': json.dumps(TRAEFIK_REDIRECTS),
-          'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':
-              json.dumps({'items': []}),
           'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
           'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': [
               {'metadata': {'name': n}, 'spec': {'providerRef': {'name': 'p'}}} for n in ('failures',)]}),
@@ -946,8 +944,6 @@ class PlatformTests(unittest.TestCase):
                          **{key: CHECKS[key] for key in ('kubectl -n console get helmrelease console',
                                                          'kubectl -n notify get deployment notify')},
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
-                         'kubectl -n flux-system get imageupdateautomations.image.toolkit.fluxcd.io -l platform.swhurl.com/app -o json':
-                             json.dumps({'items': []}),
                          'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})
@@ -970,16 +966,15 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(cluster.problems(cluster.Checks(True, [], []), failing),
                          [cluster.Problem('failing', 'web/prod is not Ready: boom', '/apps/web/prod')])
 
-    def test_two_passing_checks_about_one_app_read_as_one_line_and_times_as_how_long_ago(self):
+    def test_an_apps_image_check_names_the_instance_and_times_read_as_how_long_ago(self):
         from swhurl.report import Entry
-        group = [Entry('Image Automation', 'ok', 'ImageUpdateAutomation web-staging is Ready; last pushed 2026-10-09T14:37:39Z'),
-                 Entry('Image Automation', 'ok', 'web-staging: newest image 36-6ec5f63'),
-                 Entry('Image Automation', 'bad', 'ImageUpdateAutomation api-staging is not Ready: boom'),
-                 Entry('Image Automation', 'ok', 'api-staging: newest image 2-abc')]
+        group = [Entry('Image Automation', 'ok', 'web-staging: newest image 36-6ec5f63, deployed'),
+                 Entry('Image Automation', 'bad', 'ImagePolicy api-staging is not Ready: boom'),
+                 Entry('Image Automation', 'warn', 'api-staging: newest image 2-abc, staging has 1-abc in Git (...)')]
+        self.assertEqual([(e.level, e.message) for e in cluster.condensed(group)],
+                         [('ok', 'web/staging: newest image 36-6ec5f63, deployed'), ('bad', 'ImagePolicy api-staging is not Ready: boom'),
+                          ('warn', 'api/staging: newest image 2-abc, staging has 1-abc in Git (...)')])
         now = dt.datetime(2026, 10, 11, 14, 37, 39, tzinfo=dt.UTC)
-        self.assertEqual([e.message for e in cluster.condensed(group, lambda stamp: server.ago(stamp, now))],
-                         ['web/staging: newest image 36-6ec5f63, updates automatic, last pushed 2 days ago',
-                          'ImageUpdateAutomation api-staging is not Ready: boom', 'api-staging: newest image 2-abc'])
         for seconds, text in ((30, 'just now'), (600, '10 min ago'), (3 * 3600, '3 h ago'), (5 * 86400, '5 days ago')):
             self.assertEqual(server.ago(now - dt.timedelta(seconds=seconds), now), text)
         self.assertEqual(server.ago('not a time'), 'not a time')

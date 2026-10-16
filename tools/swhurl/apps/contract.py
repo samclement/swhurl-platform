@@ -183,35 +183,18 @@ def default_host(name: str, env: str) -> str:
     return f'{name}.{COOKIE_DOMAIN}' if env == 'prod' else f'{env}-{name}.{COOKIE_DOMAIN}'
 
 
-# Automatic staging deploys (Flux image automation, platform/image-automation): for an app with
-# --auto-deploy, app-new writes an ImageRepository and ImagePolicy (in flux-system, where the one
-# ImageUpdateAutomation finds them) into the staging instance, and marks the staging image's tag
-# and digest lines so Flux rewrites them when a newer image is published. Tags must be
-# <run number>-<commit sha>, as the template's workflow publishes them; the highest run wins.
+# Automatic staging deploys (docs/apps.md#deploy-a-new-image): for an app with --auto-deploy,
+# app-new writes an ImageRepository and ImagePolicy (in flux-system) into the staging instance. The
+# policy's report starts the Deploy workflow, which reads the registry with the same filter
+# (apps/images.py) and writes the tag and digest. Tags must be <run number>-<commit sha>, as the
+# template's workflow publishes them; the highest run wins.
 IMAGE_AUTOMATION_FILE = 'image-automation.yaml'
 AUTO_DEPLOY_TAG_PATTERN = r'^(?P<run>[0-9]+)-[0-9a-f]{7,40}$'
 AUTO_DEPLOY_ENV = 'staging'
-_MARKER = re.compile(r' # \{"\$imagepolicy": "flux-system:([a-z0-9-]+):(tag|digest)"\}$', re.M)
 
 
 def image_policy_name(app: str) -> str:
     return f'{app}-{AUTO_DEPLOY_ENV}'
-
-
-def add_image_markers(text: str, policy: str) -> str:
-    """Mark the single image tag and digest lines of a HelmRelease for Flux's setters."""
-    for field in ('tag', 'digest'):
-        text, count = re.subn(rf'^(\s+{field}: \S+)$', rf'\g<1> # {{"$imagepolicy": "flux-system:{policy}:{field}"}}',
-                              text, count=1, flags=re.M)
-        if count != 1:
-            raise ValueError(f'no image {field}: line to mark for automatic deploys')
-    return text
-
-
-def strip_image_markers(text: str) -> tuple[str, str | None]:
-    """The HelmRelease text without Flux's setter markers, and the policy they named (or None)."""
-    policies = set(m[0] for m in _MARKER.findall(text))
-    return _MARKER.sub('', text), (policies.pop() if len(policies) == 1 else None)
 
 
 """Where instances live: the real ones and the generated test fixtures."""

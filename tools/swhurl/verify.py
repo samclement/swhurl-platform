@@ -67,7 +67,7 @@ CHECKS = (
     Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
     Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
     Check.of('image-automation', 'cluster', apps.check_image_automation,
-             "Every app's ImagePolicy and ImageUpdateAutomation is Ready, so staging deploys itself"),
+             "Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise)"),
     Check.of('isolation', 'cluster host', apps.check_isolation,  # reads apps/teams.yaml
              'Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods'),
     Check.of('signing-keys', 'cluster host', apps.check_signing_keys,  # reads apps/signing-keys.json

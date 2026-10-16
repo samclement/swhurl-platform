@@ -25,7 +25,7 @@ rules:
     resources: [alerts, providers]
     verbs: [get, list, watch]
   - apiGroups: [image.toolkit.fluxcd.io]
-    resources: [imagerepositories, imagepolicies, imageupdateautomations]
+    resources: [imagerepositories, imagepolicies]
     verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [pods]

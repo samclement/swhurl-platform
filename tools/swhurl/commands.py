@@ -169,6 +169,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
               APP, ENV, args('"--publish created --subscribe orders.created"')),
         _edit('app-offers', 'edit:main_offers', 'Read what an app offers, its API and event documents, from its repository (APP and ENV, or ARGS)',
               Var('APP', '<app>', required=False), Var('ENV', '<env>', required=False), args('"--all staging"', required=False)),
+        _edit('app-deploy', 'edit:main_deploy', "Bring staging to each app's newest image, with what it offers (the Deploy workflow runs it)",
+              Var('APP', '<app>', required=False)),
         _edit('app-sync', 'edit:main_sync', 'Rewrite what the platform derives in every instance: identity, signing keys, allowed callers'),
         _edit('app-promote', 'edit:main_promote', 'Create production from staging or update its image',
               APP, args('"--expect-image=... | --host=..."', required=False)),

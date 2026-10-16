@@ -148,20 +148,6 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, 'already has'):
             edit.scale(self.root, 'hello', 'prod', replicas=2)
 
-    def test_edits_keep_automatic_deploy_markers(self):
-        self.staging.write_text(contract.add_image_markers(self.staging.read_text(), 'hello-staging'))
-        self.quiet(edit.scale, self.root, 'hello', 'staging', replicas=2)
-        text = self.staging.read_text()
-        self.assertIn('replicas: 2', text)
-        self.assertEqual(contract.strip_image_markers(text)[1], 'hello-staging')
-        before = self.prod.read_text()
-        self.staging.write_text(text.replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
-            derive.container(derive.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
-        self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
-        self.assertIn('tag: 1.28-alpine\n', self.prod.read_text(), 'production gets the tag, never the markers')
-        self.assertNotIn('imagepolicy', self.prod.read_text())
-        self.assertNotEqual(before, self.prod.read_text())
-
     def expose(self, env, exposure, host=None):
         return self.quiet(edit.expose, self.root, 'hello', env, exposure, host)
 
@@ -661,6 +647,83 @@ components:
             code = edit.main_offers(['orders', 'staging', '--root', str(self.root)], opener=lambda request: manifest)
         self.assertEqual((code, err.getvalue()), (0, ''))
         checked.assert_called_once_with(self.root.resolve() / 'apps/orders/staging')
+
+    def registry(self, app, tags, files):
+        """An opener serving GHCR (a pull token, the tags in pages, a manifest per tag) and the app repository."""
+        import json
+        from urllib.parse import parse_qs, urlparse
+        repository, _ = self.repository(files)
+
+        def opener(request):
+            url = urlparse(request.full_url)
+            if url.netloc == 'api.github.com':
+                return repository(request)
+            if url.path == '/token':
+                self.assertEqual(parse_qs(url.query)['scope'], [f'repository:samclement/{app}:pull'])
+                return b'{"token": "t"}'
+            self.assertEqual(request.get_header('Authorization'), 'Bearer t')
+            if url.path.endswith('/tags/list'):
+                query = parse_qs(url.query)
+                start = tags.index(query['last'][0]) + 1 if 'last' in query else 0
+                return json.dumps({'tags': tags[start:start + int(query['n'][0])]}).encode()
+            self.assertIn('application/vnd.oci.image.index.v1+json', request.get_header('Accept'))
+            return f'manifest of {url.path.rsplit("/", 1)[1]}'.encode()
+        return opener
+
+    def automatic(self, app='orders'):
+        (self.root / 'apps' / app / 'staging/image-automation.yaml').write_text(
+            f'apiVersion: image.toolkit.fluxcd.io/v1\nkind: ImageRepository\nmetadata: {{name: {app}, namespace: flux-system}}\n'
+            f'spec: {{image: ghcr.io/samclement/{app}, interval: 1h}}\n---\n'
+            f'apiVersion: image.toolkit.fluxcd.io/v1\nkind: ImagePolicy\nmetadata: {{name: {app}-staging, namespace: flux-system}}\n'
+            f'spec:\n  imageRepositoryRef: {{name: {app}}}\n'
+            f'  filterTags: {{pattern: "^(?P<run>[0-9]+)-[0-9a-f]{{7,40}}$", extract: $run}}\n  policy: {{numerical: {{order: asc}}}}\n')
+
+    def test_staging_gets_the_newest_image_and_what_it_offers_in_one_change(self):
+        import hashlib
+
+        from swhurl.apps import images, offers
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nflags: {shout: {type: boolean, default: false}}\n'
+        tags = ['7-abc1234', 'latest', '10-def5678', '9-0000000', 'sha256-x']  # 10 beats 9 by number, not by text
+        release = self.root / 'apps/orders/staging/helmrelease.yaml'
+        with mock.patch.object(images, 'PAGE', 2):  # three pages
+            changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', tags, {'swhurl.yaml': manifest}))
+        self.assertTrue(changed)
+        self.assertIn('[OK] orders/staging: image 7-abc1234 -> 10-def5678', out)
+        image = yaml.safe_load(release.read_text())['spec']['values']['controllers']['main']['containers']['main']['image']
+        self.assertEqual((image['tag'], image['digest']), ('10-def5678', 'sha256:' + hashlib.sha256(b'manifest of 10-def5678').hexdigest()),
+                         'the digest is the hash of the manifest the registry stores')
+        self.assertEqual(offers.read(release.parent).commit, 'def5678', 'offers read at the new image\'s commit')
+        self.assertFalse(self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', tags, {'swhurl.yaml': manifest}))[0],
+                         'nothing newer: nothing changes')
+
+        # A newer image whose offers are refused is held: staging keeps the image and offers it had.
+        before = {p: p.read_bytes() for p in release.parent.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(edit.EditError, 'healthPath is required'):
+            edit.deploy_staging(self.root, 'orders', opener=self.registry('orders', [*tags, '11-1111111'], {'swhurl.yaml': 'version: 1\nkind: web\n'}))
+        self.assertEqual({p: p.read_bytes() for p in release.parent.rglob('*') if p.is_file()}, before)
+        with self.assertRaisesRegex(edit.EditError, 'samclement/orders has no tag matching'):
+            edit.deploy_staging(self.root, 'orders', opener=self.registry('orders', ['latest'], {}))
+
+        # Every staging instance with an ImagePolicy; one failure does not stop the rest.
+        self.second_app('billing', port=9100)
+        self.built_from_a_repository('billing')
+        self.automatic('billing')
+        files = {'swhurl.yaml': manifest}
+
+        def opener(request):
+            if 'samclement/billing' in request.full_url:
+                raise urllib.error.HTTPError(request.full_url, 503, 'Unavailable', {}, None)
+            return self.registry('orders', [*tags, '12-2222222'], files)(request)
+        import urllib.error
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+            code = edit.main_deploy(['--root', str(self.root)], opener=opener)
+        self.assertEqual(code, 1)
+        self.assertIn('[OK] orders/staging: image 10-def5678 -> 12-2222222', out.getvalue())
+        self.assertIn('[ERROR] billing/staging: could not read a pull token for samclement/billing: 503', err.getvalue())
+        self.assertNotIn('hello', out.getvalue() + err.getvalue(), 'an instance without an ImagePolicy is skipped')
 
     def test_promotion_carries_what_the_promoted_image_offers(self):
         from swhurl.apps import offers

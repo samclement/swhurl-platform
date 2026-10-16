@@ -244,33 +244,25 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(values['ingress']['main']['hosts'][0]['host'], 'staging-w.homelab.swhurl.com')
         self.assertIn('middlewares', str(values['ingress']['main']['annotations']))
 
-    def test_auto_deploy_watches_the_image_and_marks_staging_only(self):
+    def test_auto_deploy_watches_the_image_in_staging_only(self):
         self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
         with mock.patch.object(app_policy, 'evaluate', return_value=[]):
             source, _ = promotion.read(self.tmp, 'w')
             promotion.create(self.tmp, 'w', source)
         staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
-        repository, image_policy, automation = yaml.safe_load_all(
-            (staging / contract.IMAGE_AUTOMATION_FILE).read_text())
+        repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
         self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),
                          ('ImageRepository', 'flux-system', 'ghcr.io/samclement/w'))
         self.assertEqual(image_policy['metadata']['name'], 'w-staging')
         self.assertEqual(image_policy['spec']['digestReflectionPolicy'], 'Always')
         self.assertIn('interval', image_policy['spec'], 'Flux rejects Always without an interval')
         self.assertEqual(image_policy['spec']['filterTags']['extract'], '$run')
-        self.assertEqual((automation['kind'], automation['metadata']['name']),
-                         ('ImageUpdateAutomation', 'w-staging'))
-        self.assertEqual(automation['spec']['update']['path'], './apps/w/staging')
-        self.assertIn('w', automation['spec']['git']['commit']['messageTemplate'])
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-w-staging.yaml').read_text())
         self.assertIn({'name': 'platform-image-automation'}, unit['spec']['dependsOn'])
-        text = (staging / 'helmrelease.yaml').read_text()
-        self.assertIn('tag: 12-abcdef0 # {"$imagepolicy": "flux-system:w-staging:tag"}', text)
-        self.assertIn(' # {"$imagepolicy": "flux-system:w-staging:digest"}', text)
+        self.assertIn('tag: 12-abcdef0\n', (staging / 'helmrelease.yaml').read_text(), 'the Deploy workflow writes it: no markers')
         self.assertIn(contract.IMAGE_AUTOMATION_FILE, (staging / 'kustomization.yaml').read_text())
         self.assertFalse((prod / contract.IMAGE_AUTOMATION_FILE).exists())
-        self.assertNotIn('imagepolicy', (prod / 'helmrelease.yaml').read_text())
         self.assertEqual(app_policy.drift([staging, prod]), [], 'the staging-only automation is not drift')
 
     def test_auto_deploy_needs_a_template_tag_and_digest(self):
@@ -305,12 +297,6 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('--from-repo samclement/w is required', err.getvalue())
         self.assertFalse((self.tmp / 'apps').exists())
         self.assertEqual(self.gen('w', '--env', 'staging', '--image', 'r/w:1', '--kind', 'worker'), 0)
-
-    def test_markers_round_trip(self):
-        text = '    image:\n      tag: 12-abcdef0\n      digest: sha256:aa\n'
-        marked = contract.add_image_markers(text, 'w-staging')
-        self.assertEqual(contract.strip_image_markers(marked), (text, 'w-staging'))
-        self.assertEqual(contract.strip_image_markers(text), (text, None))
 
     def test_explicit_flags_beat_the_manifest(self):
         args = app_new.parse_args(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'prod', '--image', 'r/w:1@sha256:' + 'a' * 64,
@@ -639,9 +625,12 @@ class PlatformImageTests(unittest.TestCase):
         release.write_text(original.replace('ghcr.io/samclement/w', 'docker.io/nginxinc/nginx-unprivileged'))
         self.assertIn('platform-image: image docker.io/nginxinc/nginx-unprivileged is not ghcr.io/samclement/w',
                       app_policy.platform_image(self.staging)[0])
-        release.write_text(contract.strip_image_markers(original)[0])
-        self.assertIn('setter markers', app_policy.platform_image(self.staging)[0])
         release.write_text(original)
+        automation = self.staging / contract.IMAGE_AUTOMATION_FILE
+        kept = automation.read_text()
+        automation.write_text(kept.replace('name: w-staging', 'name: other'))
+        self.assertIn('image-automation.yaml has no ImagePolicy w-staging', app_policy.platform_image(self.staging)[0])
+        automation.write_text(kept)
         (self.staging / contract.IMAGE_AUTOMATION_FILE).unlink()
         self.assertIn('new images would not deploy', app_policy.platform_image(self.staging)[0])
 

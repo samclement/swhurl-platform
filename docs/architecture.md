@@ -98,7 +98,7 @@ flowchart LR
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
 | `platform-alerts` | The ntfy Provider and the infrastructure/source failure Alert, with their SOPS Secret (`platform/alerts`) | infra-base | SOPS |
 | `platform-notify` | The [notify service](services.md#notify-service) with its RBAC, outbox ConfigMap and NetworkPolicy, one SOPS Secret per [notification channel](services.md#notification-channels) and the generated team routes (`platform/notify`). Defined in its own file, `clusters/home/platform-notify.yaml`, because `make channel-add` and `make channel-remove` edit it | infra-base | SOPS while a channel exists |
-| `platform-image-automation` | The write `GitRepository` (SSH, deploy key) and its SOPS Secret (`platform/image-automation`); each app's `ImageRepository`, `ImagePolicy` and app-named `ImageUpdateAutomation` belong to its staging unit | infra-base | SOPS |
+| `platform-image-automation` | The `github-dispatch` Provider and `image-dispatch` Alert that start the [Deploy workflow](apps.md#deploy-a-new-image), the dispatch token Secret, and the unused write `GitRepository` (SSH, deploy key) with its SOPS Secret (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its staging unit | infra-base | SOPS |
 | `platform-flux-webhook` | GitHub push `Receiver` and the app image `Receiver`, their token Secrets, the Ingress and HTTP-01 NetworkPolicy, all in `flux-system` (`platform/flux-webhook`) | infra-base | settings, SOPS |
 | `platform-nats` | NATS JetStream and its stream controller, the generated user list and a NetworkPolicy, in `messaging` (`platform/nats`; [services](services.md#nats)) | infra-base | SOPS |
 | `platform-flags` | The two NATS key-value buckets of [feature flag](apps.md#feature-flags) overrides, `flags-staging` and `flags-prod`, in `messaging` (`platform/flags`) | platform-nats | — |
@@ -125,9 +125,9 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 | New app, promote, scale, access, connections, events, uninstall, teams and channels from the browser | The console (its GitHub token) | Pull request from a `console/*` branch | Validate; review follows the [console policy](console.md#auto-merge) | [console](console.md#use-it) |
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | The "Publish console image" run (`github-actions[bot]`) | Direct push, after Validate passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
-| A staging app's image pin | Flux image automation (`fluxcdbot`, with a deploy key that can write only this repository) | Direct push when the app publishes a newer `<run>-<sha>` image | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
+| A staging app's image pin and what the image offers | The Deploy workflow (`github-actions[bot]`), started by Flux when an app's ImagePolicy picks a newer `<run>-<sha>` image, and hourly | Direct push, after `make check-apps` in the run | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
 
-`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because two bots also push to `main`, run `git pull --rebase` before pushing.
+`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because bots also push to `main`, run `git pull --rebase` before pushing.
 
 **From commit to running pods.** The same chain runs for every change on `main`; this is an app's image update:
 
@@ -163,7 +163,7 @@ About 2 seconds from push to fetch ([push webhook](services.md#push-webhook)); w
 | Command | Why it is not a commit |
 | --- | --- |
 | `make flux-bootstrap` | Applies the root units and sources that tell Flux what to reconcile; Flux does not reconcile itself |
-| `make flux-install` | Installs Flux's controllers, including the two image automation controllers (the version, components and patches are in Git; the upstream manifests are rendered at install time) |
+| `make flux-install` | Installs Flux's controllers, including the image reflector (which picks each staging image) and the image automation controller, which nothing uses now (the version, components and patches are in Git; the upstream manifests are rendered at install time) |
 | `make suspend`, `make resume`, the console's **Suspend**/**Resume** | Stop or restart Flux applying Git for one unit or release ([lifecycle](operations.md#lifecycle)) |
 | `make destroy-data` | Deletes a volume and its data, which Flux never does ([lifecycle](operations.md#lifecycle)) |
 | `make clickstack-bootstrap` | Writes the admin account and team key into ClickStack's database, which has no setting for them ([services](services.md#clickstack-and-otel)) |

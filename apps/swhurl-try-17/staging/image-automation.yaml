@@ -29,37 +29,3 @@ spec:
       order: asc
   digestReflectionPolicy: Always
   interval: 1h
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageUpdateAutomation
-metadata:
-  name: swhurl-try-17-staging
-  namespace: flux-system
-  labels:
-    platform.swhurl.com/managed: 'true'
-    platform.swhurl.com/app: swhurl-try-17
-spec:
-  interval: 1h
-  sourceRef:
-    kind: GitRepository
-    name: swhurl-platform-write
-  git:
-    checkout:
-      ref:
-        branch: main
-    commit:
-      author:
-        name: fluxcdbot
-        email: fluxcdbot@users.noreply.github.com
-      messageTemplate: 'deploy: staging image for swhurl-try-17
-
-        {{ range .Changed.Changes }}
-
-        - {{ .OldValue }} -> {{ .NewValue }}
-
-        {{- end }}'
-    push:
-      branch: main
-  update:
-    path: ./apps/swhurl-try-17/staging
-    strategy: Setters

@@ -5,7 +5,6 @@ import functools
 import io
 import re
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from swhurl.apps import calling, contract, events, helmrelease, offers, ops
@@ -329,25 +328,14 @@ class Checks:
         return sum(len(group) for _, group in self.sections)
 
 
-AUTOMATION = re.compile(r'ImageUpdateAutomation (\S+) is Ready(?:; last pushed (\S+))?')
-NEWEST = re.compile(r'(\S+): newest image (\S+)')
+NEWEST = re.compile(r'(\S+)-staging: (newest image .*)')
 
 
-def condensed(group: list[Entry], ago: Callable[[str], str] = str) -> list[Entry]:
-    """A check group in fewer lines: an app's passing image automation and its newest image are two
-    checks about one thing, so they read as one line. Anything not passing keeps its own words."""
-    newest = {m[1]: m[2] for e in group if e.level == 'ok' and (m := NEWEST.fullmatch(e.message))}
-    merged = {m[1]: m[2] for e in group if e.level == 'ok' and (m := AUTOMATION.fullmatch(e.message)) and m[1] in newest}
-    out = []
-    for entry in group:
-        found = entry.level == 'ok' and (AUTOMATION.fullmatch(entry.message) or NEWEST.fullmatch(entry.message))
-        if not found or found[1] not in merged:
-            out.append(entry)
-        elif found.re is AUTOMATION:
-            name, pushed = found[1], merged[found[1]]
-            out.append(Entry(entry.section, 'ok', f'{target(f"app-{name}")[0]}: newest image {newest[name]}, updates automatic'
-                                                  + (f', last pushed {ago(pushed)}' if pushed else '')))
-    return out
+def condensed(group: list[Entry]) -> list[Entry]:
+    """A check group as the console words it: an app's image check names the instance as every page
+    does (``<app>/staging``) rather than its ImagePolicy."""
+    return [Entry(e.section, e.level, f'{target(f"{m[1]}/staging")[0]}: {m[2]}') if (m := NEWEST.fullmatch(e.message)) else e
+            for e in group]
 
 
 FLUX_SECTION = 'Flux Kustomizations'  # the units list shows these; the check's failures still count as problems

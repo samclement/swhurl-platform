@@ -9,12 +9,13 @@ and a test compares them; GLOSSARY.md defines the words):
 - **grant**: what the platform allows the app (team, exposure, alerts, calls, ``events.subscribe``). It
   belongs to this repository and is refused in the file, naming the command that sets it.
 
-Separately, each field the file may hold is read at one of two times today:
+Separately, each field the file may hold is read at one of two times:
 
 - **seed**: read once, when ``app-new`` creates the staging instance. From then on the instance in
   this repository is the truth; a later edit of the field in the app's repository changes nothing,
   and the command named beside it is how the instance changes.
-- **live**: read again from the app's repository, so an edit there reaches the platform.
+- **live**: read again from the app's repository, so an edit there reaches the platform. The needs
+  that shape the release (``Needs``) are written with every new staging image (edit.deploy_staging).
 
 ``autoDeploy`` is accepted and ignored: staging always follows new images.
 
@@ -45,6 +46,7 @@ MAX_BYTES = 512 * 1024
 SEED, LIVE, IGNORED, REFUSED = 'seed', 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 INSTANCE = "the instance's files"
+WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
 Opener = Callable[[urllib.request.Request], bytes]
 
 
@@ -59,12 +61,12 @@ class Field:
 FIELDS = (
     Field('version', IDENTITY, LIVE, 'every time the file is read: another version is refused'),
     Field('stack', IDENTITY, LIVE, "by the console, from the repository's default branch, for the language it shows"),
-    Field('kind', IDENTITY, SEED, 'nothing: web or worker is fixed at creation'),
-    Field('port', NEED, SEED, INSTANCE),
-    Field('healthPath', NEED, SEED, INSTANCE),
-    Field('uid', NEED, SEED, INSTANCE),
-    Field('telemetry', NEED, SEED, INSTANCE),
-    Field('resources', NEED, SEED, 'make app-scale'),
+    Field('kind', IDENTITY, SEED, 'nothing: web or worker is fixed at creation, and an image that changes it is held'),
+    Field('port', NEED, LIVE, WITH_IMAGE),
+    Field('healthPath', NEED, LIVE, WITH_IMAGE),
+    Field('uid', NEED, LIVE, WITH_IMAGE),
+    Field('telemetry', NEED, LIVE, WITH_IMAGE),
+    Field('resources', NEED, LIVE, WITH_IMAGE + ', as the minimum: make app-scale may set more, never less'),
     Field('database', NEED, SEED, INSTANCE),
     Field('databaseSize', NEED, SEED, INSTANCE),
     Field('secrets', NEED, SEED, INSTANCE),
@@ -94,6 +96,17 @@ class Unreachable(DeclarationError):
 
 
 @dataclass(frozen=True)
+class Needs:
+    """What the image needs to run that shapes its release, read with every new staging image."""
+    kind: str
+    port: int | None  # None for a worker
+    health_path: str
+    uid: int
+    otlp: bool
+    minimum: dict  # resources the image needs at least, by app-scale option: cpu, memory, memory_limit
+
+
+@dataclass(frozen=True)
 class Declaration:
     """A valid swhurl.yaml."""
     seed: dict
@@ -104,16 +117,26 @@ class Declaration:
     events_file: str = ''  # provides.eventsFile: where it keeps its AsyncAPI document
     flags: dict = dataclasses.field(default_factory=dict)  # flags: name -> its declaration, as written
 
+    @property
+    def needs(self) -> Needs:
+        seed = self.seed
+        return Needs(seed['kind'], seed.get('port'), seed.get('health_path') or '', seed['uid'], seed['otlp'],
+                     {key: seed[key] for key in RESOURCES if key in seed})
+
+
+RESOURCES = {'cpu': 'cpu', 'memory': 'memory', 'memory_limit': 'memoryLimit'}
+"""The image's minimum resources: app-scale option -> swhurl.yaml key."""
+QUANTITY = {'cpu': re.compile(r'\d+(\.\d+)?m?'), 'memory': re.compile(r'\d+(Ki|Mi|Gi)'), 'memory_limit': re.compile(r'\d+(Ki|Mi|Gi)')}
+
 
 def _resource_defaults(resources: dict, fail: Callable[[str], DeclarationError]) -> dict:
     defaults: dict = {}
-    names = {'cpu': 'cpu', 'memory': 'memory', 'memoryLimit': 'memory_limit'}
-    if set(resources) - set(names):
-        raise fail(f'resources may set {", ".join(names)} only')
-    for key, dest in names.items():
+    if set(resources) - set(RESOURCES.values()):
+        raise fail(f'resources may set {", ".join(RESOURCES.values())} only')
+    for dest, key in RESOURCES.items():
         if resources.get(key) is not None:
-            if not isinstance(resources[key], str):
-                raise fail(f'resources.{key} must be a quantity string, for example "64Mi"')
+            if not isinstance(resources[key], str) or not QUANTITY[dest].fullmatch(resources[key]):
+                raise fail(f'resources.{key} must be a quantity string, for example ' + ('"100m"' if dest == 'cpu' else '"64Mi"'))
             defaults[dest] = resources[key]
     return defaults
 

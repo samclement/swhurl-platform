@@ -685,7 +685,9 @@ components:
         self.with_units()
         self.built_from_a_repository()
         self.automatic()
-        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nflags: {shout: {type: boolean, default: false}}\n'
+        # What the instance already runs with (port, health path, user): orders has production, which
+        # a promotion does not yet bring a changed need to.
+        manifest = 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\nflags: {shout: {type: boolean, default: false}}\n'
         tags = ['7-abc1234', 'latest', '10-def5678', '9-0000000', 'sha256-x']  # 10 beats 9 by number, not by text
         release = self.root / 'apps/orders/staging/helmrelease.yaml'
         with mock.patch.object(images, 'PAGE', 2):  # three pages
@@ -698,7 +700,7 @@ components:
         self.assertEqual(offers.read(release.parent).commit, 'def5678', 'offers read at the new image\'s commit')
         changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', tags, {}))
         self.assertFalse(changed, 'nothing newer: nothing changes')
-        self.assertIn('its offers were read at def5678', out, 'and the repository is not read again (it would 404 here)')
+        self.assertIn('its needs and offers were read at def5678', out, 'and the repository is not read again (it would 404 here)')
 
         # A newer image whose offers are refused is held: staging keeps the image and offers it had.
         before = {p: p.read_bytes() for p in release.parent.rglob('*') if p.is_file()}
@@ -725,6 +727,99 @@ components:
         self.assertIn('[OK] orders/staging: image 10-def5678 -> 12-2222222', out.getvalue())
         self.assertIn('[ERROR] billing/staging: could not read a pull token for samclement/billing: 503', err.getvalue())
         self.assertNotIn('hello', out.getvalue() + err.getvalue(), 'an instance without an ImagePolicy is skipped')
+
+    def without_production(self, app='orders'):
+        shutil.rmtree(self.root / 'apps' / app / 'prod')
+        (self.root / f'clusters/home/app-{app}-prod.yaml').unlink()
+        registry = self.root / 'clusters/home/kustomization.yaml'
+        registry.write_text(registry.read_text().replace(f'  - app-{app}-prod.yaml\n', ''))
+
+    def test_staging_gets_what_each_new_image_needs(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        self.without_production()
+        self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
+        release = self.root / 'apps/orders/staging/helmrelease.yaml'
+        manifest = ('version: 1\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\ntelemetry: otlp\n'
+                    'resources: {cpu: 50m, memory: 16Mi}\nflags: {shout: {type: boolean, default: false}}\n')
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders',
+                                  opener=self.registry('orders', ['8-def5678'], {'swhurl.yaml': manifest}))
+        self.assertTrue(changed)
+        self.assertIn('[OK] orders/staging needs: port 9000 -> 9090, health path / -> /ready, uid 101 -> 1000, telemetry otlp, '
+                      "requests.cpu 10m -> 50m (the image's minimum)", out)
+        app_values = yaml.safe_load(release.read_text())['spec']['values']
+        main = app_values['controllers']['main']['containers']['main']
+        self.assertEqual(app_values['service']['main']['ports']['http']['port'], 9090)
+        self.assertEqual({name: probe['spec']['httpGet'] for name, probe in main['probes'].items()},
+                         {name: {'path': '/ready', 'port': 9090} for name in ('readiness', 'liveness', 'startup')})
+        self.assertEqual({app_values['defaultPodOptions']['securityContext'][k] for k in ('runAsUser', 'runAsGroup', 'fsGroup')}, {1000})
+        self.assertEqual(main['env']['OTEL_SERVICE_NAME'], 'orders')
+        self.assertEqual(main['resources'], {'requests': {'cpu': '50m', 'memory': '32Mi'}, 'limits': {'memory': '128Mi'}},
+                         'raised to the minimum, never lowered to it')
+        self.assertTrue(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'].endswith(':9090'), "the caller follows the port")
+        network = yaml.safe_load((release.parent / contract.NETWORK_POLICY_FILE).read_text())
+        self.assertEqual({p['port'] for rule in network['spec']['ingress'] for p in rule['ports']}, {9090})
+        self.assertEqual(policy.check_calls([self.root / 'apps/hello/staging', release.parent]), {})
+
+        # The same image again changes nothing and reads nothing; --refresh reads it again.
+        changed, _ = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', ['8-def5678'], {}))
+        self.assertFalse(changed)
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', refresh=True, opener=self.registry(
+            'orders', ['8-def5678'], {'swhurl.yaml': manifest.replace('telemetry: otlp\n', '')}))
+        self.assertTrue(changed)
+        self.assertIn('needs: telemetry none', out)
+        self.assertNotIn('OTEL_SERVICE_NAME', self.env('orders'))
+
+        # A need the instance cannot take holds the image: nothing changes.
+        before = {p: p.read_bytes() for p in self.root.rglob('*.yaml')}
+        for declared, message in (
+                ('version: 1\nkind: worker\n', 'kind: worker, but the instance is a web app'),
+                ('version: 1\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\nresources: {cpu: "1"}\n',
+                 r"exceeds the namespace quota for requests.cpu"),
+                ('version: 1\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\nresources: {memory: 256Mi}\n',
+                 'a memory request of 256Mi is above the memory limit 128Mi')):
+            with self.subTest(message=message), self.assertRaisesRegex(edit.EditError, message):
+                edit.deploy_staging(self.root, 'orders', opener=self.registry('orders', ['9-0000000'], {'swhurl.yaml': declared}))
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
+        self.assertIn('tag: 8-def5678', release.read_text())
+
+        # app-scale may set more than the minimum, never less.
+        with self.assertRaisesRegex(edit.EditError, r"below the image's minimum.*--cpu 20m \(at least 50m\)"):
+            edit.scale(self.root, 'orders', 'staging', cpu='20m', minimum={'cpu': '50m'})
+        self.quiet(edit.scale, self.root, 'orders', 'staging', cpu='0.1', minimum={'cpu': '50m'})
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, mock.patch.object(edit, 'check_generated', return_value=0):
+            code = edit.main_scale(['orders', 'staging', '--memory', '8Mi', '--root', str(self.root)],
+                                   opener=self.repository({'swhurl.yaml': manifest})[0])
+        self.assertEqual(code, 2)
+        self.assertIn('--memory 8Mi (at least 16Mi)', err.getvalue())
+
+    def test_a_need_that_would_make_staging_differ_from_production_holds_the_image(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        before = {p: p.read_bytes() for p in self.root.rglob('*.yaml')}
+        with self.assertRaisesRegex(edit.EditError, r'env-drift: staging differs from prod at .*httpGet.port.*'
+                                                    'a promotion does not carry what an image needs yet'):
+            edit.deploy_staging(self.root, 'orders', opener=self.registry(
+                'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9090\nhealthPath: /\nuid: 101\n'}))
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
+        # A raised minimum is not drift: environments may differ in resources (make app-scale).
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\nresources: {memory: 64Mi}\n'}))
+        self.assertIn('requests.memory 32Mi -> 64Mi', out)
+
+    def test_a_push_does_not_change_who_owns_a_volume(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        self.without_production()
+        release = self.root / 'apps/orders/staging/helmrelease.yaml'
+        release.write_text(release.read_text().replace('    persistence:\n', '    persistence:\n      data:\n'
+                                                       '        type: persistentVolumeClaim\n        size: 1Gi\n', 1))
+        with self.assertRaisesRegex(edit.EditError, 'keeps a volume whose files belong to uid 101'):
+            edit.deploy_staging(self.root, 'orders', opener=self.registry(
+                'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\n'}))
 
     def test_promotion_carries_what_the_promoted_image_offers(self):
         from swhurl.apps import offers

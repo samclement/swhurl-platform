@@ -88,6 +88,19 @@ def quantity(value: object) -> float:
     return float(text)
 
 
+def over_quota(workloads: list[tuple[int, list[dict]]]) -> list[str]:
+    """The QUOTA keys that ``workloads`` exceed, leaving QUOTA_HEADROOM free. Each workload is the pods
+    it may run at once (a rolling update adds one) and the resources of each container in a pod."""
+    needed = {key: quantity(value) for key, value in QUOTA_HEADROOM.items()}
+    for pods, containers in workloads:
+        needed['pods'] += pods
+        for resources in containers:
+            for key, section, name in (('requests.cpu', 'requests', 'cpu'), ('requests.memory', 'requests', 'memory'),
+                                       ('limits.memory', 'limits', 'memory')):
+                needed[key] += pods * quantity(((resources or {}).get(section) or {}).get(name, 0))
+    return [key for key, value in needed.items() if value > quantity(QUOTA[key])]
+
+
 def resource_quota(app: str, namespace: str) -> dict:
     return {'apiVersion': 'v1', 'kind': 'ResourceQuota', 'metadata': {'name': app, 'namespace': namespace},
             'spec': {'hard': dict(QUOTA)}}

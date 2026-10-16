@@ -13,7 +13,7 @@ INSTALL_STEPS = flux-reconcile $(if $(SKIP_VERIFY),,verify-platform)
 COMMANDS := help reconcile verify-platform notifications-check notifications-heartbeat verify-logs flux-install \
 	clickstack-bootstrap clickstack-dashboards clickstack-notify-webhook clickstack-ntfy-webhook \
 	app-repo app-hooks app-new app-expose team-add team-edit team-remove team-channel channel-add channel-remove \
-	app-team app-alerts platform-signing-keys app-calls app-events app-offers app-sync app-promote \
+	app-team app-alerts platform-signing-keys app-calls app-events app-offers app-deploy app-sync app-promote \
 	app-status app-logs app-reconcile app-check app-scale app-remove console-image console-dev \
 	platform-certs-staging platform-certs-prod suspend resume destroy-data backup-mongodb backup-sqlite restore-sqlite \
 	check-repo check-apps check-templates check-otel check-secrets \

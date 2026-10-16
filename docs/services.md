@@ -265,12 +265,12 @@ The repository of each app with automatic deploys calls `https://flux-webhook.<B
 
 ```text
 image published → GitHub webhook (package events) → Receiver app-images
-  → ImageRepository scan → ImagePolicy picks the tag → ImageUpdateAutomation commits the pin
+  → ImageRepository scan → ImagePolicy picks the tag → image-dispatch Alert → Deploy workflow commits the pin
   → push webhook → Flux applies
 ```
 
 - **Scope:** the receiver can only start a scan of `ImageRepository` objects labelled `platform.swhurl.com/managed` (`make check` enforces it). One delivery scans all of them, one registry call each: the receiver sees only an object's metadata, so it cannot match a package to the image an object scans.
-- **Fallback:** each `ImageRepository` and `ImageUpdateAutomation` still runs hourly (`interval: 1h`, written by `make app-new`), so a missed delivery delays a deploy by up to an hour instead of losing it.
+- **Fallback:** each `ImageRepository` still scans hourly (`interval: 1h`, written by `make app-new`), and the Deploy workflow runs hourly reading the registry itself, so a missed delivery or dispatch delays a deploy by up to an hour instead of losing it.
 - **Token:** a second random shared secret, in [`platform/flux-webhook/image-secret.sops.yaml`](../platform/flux-webhook/image-secret.sops.yaml), in every app repository's webhook, and as `IMAGE_WEBHOOK_TOKEN` in the console's Secret so [the console](console.md#github-tokens) can create the webhook on a new repository. `make check-secrets` fails unless the two SOPS copies match. It is separate from the push webhook's token: whoever holds it can start image scans and nothing else. The receiver's path is a hash of the token, so rotating it changes the URL too ([operations](operations.md#secrets)).
 - **Route:** the same Ingress as the push webhook.
 - **GitHub side:** one webhook per app repository, content type `application/json`, events: packages and registry packages. `make app-repo` and the console's **Start a new app** create it; `make app-hooks` creates or repoints it for every app (idempotent), which is how an app whose webhook could not be created at the time gets one. `make verify-platform` lists each app's webhook and its latest delivery.

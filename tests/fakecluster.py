@@ -8,6 +8,8 @@ import base64
 import datetime as dt
 import json
 
+import yaml
+
 from swhurl import ROOT, clickstack, flux, platform
 from swhurl.apps import calling, channels, contract
 from swhurl.run import FakeRunner, Result
@@ -101,12 +103,22 @@ def ingress_rules(runner, answer):
     runner.on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
 
 
+def staging_tag(app):
+    return yaml.safe_load((ROOT / 'apps' / app / 'staging/helmrelease.yaml').read_text())[
+        'spec']['values']['controllers']['main']['containers']['main']['image']['tag']
+
+
+def policy(app, tag, ready=READY):
+    """An app's ImagePolicy as Flux reports it: ``tag`` is the newest image it picked."""
+    return {'metadata': {'name': f'{app}-staging', 'labels': {'platform.swhurl.com/app': app}},
+            'status': ready | {'latestRef': {'tag': tag}}}
+
+
 def apps_answers():
     """The isolation check walks the instances in this checkout: answer for each of them."""
     return {
-        'automations': {'items': [{'metadata': {'name': 'w-staging'},
-                                   'status': READY | {'lastPushTime': '2026-09-30T10:00:00Z'}}]},
-        'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': READY | {'latestRef': {'tag': '12-abcdef0'}}}]},
+        'policies': {'items': [policy(app, staging_tag(app)) for app, env in INSTANCES
+                               if env == 'staging' and (ROOT / 'apps' / app / env / contract.IMAGE_AUTOMATION_FILE).is_file()]},
         'app-namespaces': {'items': [{'metadata': {'name': f'{app}-{env}', 'labels': {
             'platform.swhurl.com/app': app, contract.TEAM: 'demo'}}} for app, env in INSTANCES]},
         'quotas': {'items': [{'metadata': {'namespace': f'{app}-{env}'}, 'spec': {'hard': contract.QUOTA}}
@@ -124,9 +136,7 @@ def apps_answers():
 
 def apps_rules(runner, answer):
     get = ('kubectl', '-n', 'flux-system', 'get')
-    (runner.on(*get, 'imageupdateautomations.image.toolkit.fluxcd.io', '-l', 'platform.swhurl.com/app', '-o', 'json',
-               handler=answer('automations'))
-     .on(*get, 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
+    (runner.on(*get, 'imagepolicies.image.toolkit.fluxcd.io', handler=answer('policies'))
      .on('kubectl', 'get', 'namespaces', '-l', 'platform.swhurl.com/app', handler=answer('app-namespaces'))
      .on('kubectl', 'get', 'resourcequotas', handler=answer('quotas'))
      .on('kubectl', 'get', 'networkpolicies.networking.k8s.io', handler=answer('network-policies'))

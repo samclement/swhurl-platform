@@ -539,7 +539,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             revisions = Counter(u.revision for u in found if u.revision).most_common(1)
             return {'checks': checks, 'units': found, 'problems': cluster.problems(checks, found), 'updating': cluster.updating(found),
                     'layers': [layer for layer in layers if layer[2]],
-                    'groups': [(section, cluster.condensed(group, ago)) for section, group in checks.sections
+                    'groups': [(section, cluster.condensed(group)) for section, group in checks.sections
                                if section != cluster.FLUX_SECTION],
                     # What nearly every unit has applied: said once, so a row shows a revision only when it differs.
                     'revision': revisions[0][0] if revisions else ''}

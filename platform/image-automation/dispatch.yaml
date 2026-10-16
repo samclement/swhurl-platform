@@ -1,0 +1,34 @@
+# When an app's staging ImagePolicy reports its newest image, start the Deploy workflow
+# (.github/workflows/deploy.yml), which writes the tag, digest and offers in one commit
+# (docs/apps.md#deploy-a-new-image). The token is a fine-grained one for this repository alone,
+# Contents: read and write, which repository_dispatch requires (dispatch-secret.sops.yaml;
+# rotate it before it expires: docs/operations.md#secrets).
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: github-dispatch
+  namespace: flux-system
+spec:
+  type: githubdispatch
+  address: https://github.com/samclement/swhurl-platform
+  secretRef:
+    name: github-dispatch
+---
+# A policy reports its image at every reconcile, not only on a change; the workflow's first job
+# ends a run for an image staging already runs.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: image-dispatch
+  namespace: flux-system
+spec:
+  providerRef:
+    name: github-dispatch
+  eventSeverity: info
+  inclusionList:
+    - '^Latest image tag for .* resolved to '
+  eventSources:
+    - kind: ImagePolicy
+      name: '*'
+      matchLabels:
+        platform.swhurl.com/managed: 'true'

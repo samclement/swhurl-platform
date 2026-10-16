@@ -21,7 +21,7 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 | `ingestion-key` | The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed | Cluster (read), Secrets (read), commands in pods |
 | `registration` | A HyperDX team exists, so registration is closed | Cluster (read), commands in pods |
 | `ingress` | Traefik redirects HTTP to HTTPS | Cluster (read) |
-| `image-automation` | Every app's ImagePolicy and ImageUpdateAutomation is Ready, so staging deploys itself | Cluster (read) |
+| `image-automation` | Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise) | Cluster (read) |
 | `isolation` | Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods | Cluster (read), this host |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this host |
 | `events` | NATS and its controller run, and every declared stream and consumer exists | Cluster (read), this host |
@@ -74,8 +74,8 @@ Replace one of the console's two GitHub tokens ([what each is for](console.md#gi
 1. On GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate, resource owner `samclement`, the longest expiry offered:
    - `GITHUB_TOKEN` (name `swhurl-console`): repository access only `samclement/swhurl-platform`; Contents and Pull requests, read and write.
    - `APP_REPOS_TOKEN` (name `swhurl-console-app-repos`): **All repositories** (GitHub requires it to create repositories); Administration, Contents, Workflows and Webhooks read and write, Actions read-only.
-2. In your own terminal, from the repository root, set the value without echoing it (replace `KEY` with `GITHUB_TOKEN` or `APP_REPOS_TOKEN`, then paste the token): `read -rs T && SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["KEY"]' "\"$T\""; unset T`. Never paste the token anywhere else.
-3. `make check-secrets`, commit, push, `make reconcile UNIT=platform-console`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
+2. In your own terminal, from the repository root, set the value without echoing it (replace `KEY` with `GITHUB_TOKEN` or `APP_REPOS_TOKEN`, then paste the token): `read -rs T && SOPS_AGE_KEY_FILE=./age.agekey sops set platform/console/secret.sops.yaml '["stringData"]["KEY"]' "\"$T\""; unset T`. Never paste the token anywhere else. `GITHUB_TOKEN` also starts the [Deploy workflow](apps.md#deploy-a-new-image): in the same `read`, add `&& SOPS_AGE_KEY_FILE=./age.agekey sops set platform/image-automation/dispatch-secret.sops.yaml '["stringData"]["token"]' "\"$T\""` before `; unset T`.
+3. `make check-secrets` (the two copies of `GITHUB_TOKEN` must match), commit, push, `make flux-reconcile`. Reloader restarts the console; `make verify-platform` shows the new expiry. Revoke the old token on GitHub.
 
 Rotate the push webhook token ([what it is](services.md#push-webhook)); GitHub rejects nothing in between, but Flux ignores pushes until both sides match, so do it in one go:
 
@@ -96,12 +96,7 @@ Rotate the image webhook token ([what it is](services.md#image-webhook)); until 
 2. `make check-secrets` (the two copies must match), commit, push, `make flux-reconcile` (Reloader restarts the console).
 3. `make app-hooks` repoints every app repository's webhook; `make verify-platform` shows them under Image Webhooks after each repository's next publish.
 
-Rotate the image automation deploy key ([what it does](apps.md#deploy-a-new-image)), adding the new key before removing the old so automatic deploys keep working:
-
-1. In your own terminal: `ssh-keygen -t ed25519 -N '' -C flux-image-automation -f /tmp/flux-deploy`.
-2. On GitHub: Settings → Deploy keys → add `/tmp/flux-deploy.pub` as `flux-image-automation` with **Allow write access** (keep the old key for now).
-3. `sops platform/image-automation/secret.sops.yaml`: replace `identity` and `identity.pub` with the two files' contents, then delete `/tmp/flux-deploy*`. `make check-secrets`, commit, push, `make reconcile UNIT=platform-image-automation`.
-4. `make verify-platform` shows Image Automation Ready; then delete the old deploy key on GitHub.
+The image automation deploy key (`platform/image-automation/secret.sops.yaml`, used by the `swhurl-platform-write` GitRepository) wrote staging image pins until the [Deploy workflow](apps.md#deploy-a-new-image) took over; nothing uses it now. It still has write access on GitHub (Settings → Deploy keys → `flux-image-automation`) until it is removed.
 
 Replace a [notification channel](services.md#notification-channels)'s address when it may have leaked or was lost: in your own terminal, `make team-channel NAME=<team>` (it prompts without showing the address), then `make check-apps`, commit, push and `make flux-reconcile`; subscribe to the new topic and unsubscribe from the old.
 

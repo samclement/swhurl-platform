@@ -37,7 +37,7 @@ for an instance of this platform (under apps/; the test fixtures are exempt), fr
 
   platform-image      the app was made from a stack template: it runs ghcr.io/<owner>/<app>, the
                       image its repository publishes, and staging deploys new images
-                      automatically (image-automation.yaml and the setter markers). No exceptions
+                      automatically (its ImagePolicy in image-automation.yaml). No exceptions
 
 across the instances of one environment (source manifests, not rendered):
 
@@ -104,7 +104,6 @@ from swhurl.apps.contract import (
     in_cookie_domain,
     network_policy,
     quantity,
-    strip_image_markers,
     teams,
 )
 from swhurl.apps.instance import INSTANCE_ROOTS
@@ -483,7 +482,7 @@ def drift(environments: list[Path]) -> list[str]:
 
 def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
     """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
-    releases = {instance: yaml.safe_load(strip_image_markers((instance / 'helmrelease.yaml').read_text())[0])
+    releases = {instance: yaml.safe_load((instance / 'helmrelease.yaml').read_text())
                 for instance in instances}
     problems: dict[Path, list[str]] = {}
     for instance, release in releases.items():
@@ -541,8 +540,10 @@ def platform_image(instance: Path) -> list[str]:
         listed = IMAGE_AUTOMATION_FILE in (yaml.safe_load((instance / 'kustomization.yaml').read_text()).get('resources') or [])
         if not (instance / IMAGE_AUTOMATION_FILE).is_file() or not listed:
             problems.append(f'{env} has no {IMAGE_AUTOMATION_FILE} in its kustomization.yaml: new images would not deploy')
-        elif strip_image_markers(text)[1] != image_policy_name(app):
-            problems.append(f'the image tag and digest lines lack their {image_policy_name(app)} setter markers')
+        elif image_policy_name(app) not in {(d or {}).get('metadata', {}).get('name') for d in
+                                             yaml.safe_load_all((instance / IMAGE_AUTOMATION_FILE).read_text())
+                                             if (d or {}).get('kind') == 'ImagePolicy'}:
+            problems.append(f'{IMAGE_AUTOMATION_FILE} has no ImagePolicy {image_policy_name(app)}: new images would not deploy')
     return [f'platform-image: {problem}' for problem in problems]
 
 
@@ -552,7 +553,7 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
         problems += platform_image(instance)
     root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
-    release = yaml.safe_load(strip_image_markers((instance / 'helmrelease.yaml').read_text())[0])
+    release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
     problems += offers.problems(instance, events.published(helmrelease.variables(release)),
                                 str(((release.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
     return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))

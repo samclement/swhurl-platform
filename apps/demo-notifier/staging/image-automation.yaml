@@ -29,37 +29,3 @@ spec:
       order: asc
   digestReflectionPolicy: Always
   interval: 1h
----
-apiVersion: image.toolkit.fluxcd.io/v1
-kind: ImageUpdateAutomation
-metadata:
-  name: demo-notifier-staging
-  namespace: flux-system
-  labels:
-    platform.swhurl.com/managed: 'true'
-    platform.swhurl.com/app: demo-notifier
-spec:
-  interval: 1h
-  sourceRef:
-    kind: GitRepository
-    name: swhurl-platform-write
-  git:
-    checkout:
-      ref:
-        branch: main
-    commit:
-      author:
-        name: fluxcdbot
-        email: fluxcdbot@users.noreply.github.com
-      messageTemplate: 'deploy: staging image for demo-notifier
-
-        {{ range .Changed.Changes }}
-
-        - {{ .OldValue }} -> {{ .NewValue }}
-
-        {{- end }}'
-    push:
-      branch: main
-  update:
-    path: ./apps/demo-notifier/staging
-    strategy: Setters

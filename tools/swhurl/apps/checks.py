@@ -7,44 +7,41 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from swhurl import ROOT
-from swhurl.apps import calling, contract, events, hooks
+from swhurl.apps import calling, contract, events, helmrelease, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.kube import ready_condition
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 
-def check_image_automation(runner: Runner, report: Report) -> None:
-    """Automatic staging deploys: every app ImagePolicy and its named writer are Ready."""
+def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """Automatic staging deploys: every app ImagePolicy is Ready, and staging runs the image it picked
+    (the Deploy workflow writes it: docs/apps.md#deploy-a-new-image)."""
     report.section('Image Automation')
-    base = ['kubectl', '-n', 'flux-system', 'get']
     try:
-        policies = runner.json([*base, 'imagepolicies.image.toolkit.fluxcd.io', '-l', contract.APP, '-o', 'json'])['items']
-        automations = runner.json([*base, 'imageupdateautomations.image.toolkit.fluxcd.io', '-l', contract.APP,
-                                   '-o', 'json'])['items']
+        policies = runner.json(['kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io',
+                                '-l', contract.APP, '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read the apps\' ImagePolicies or ImageUpdateAutomations')
+        report.bad("could not read the apps' ImagePolicies")
         return
-    by_name = {a['metadata']['name']: a for a in automations}
     for policy in sorted(policies, key=lambda p: p['metadata']['name']):
         name = policy['metadata']['name']
-        automation = by_name.get(name)
-        if automation is None:
-            report.bad(f'ImageUpdateAutomation {name} is missing: staging image updates are not automatic')
-        else:
-            status, message = ready_condition(automation)
-            if status == 'True':
-                pushed = (automation.get('status') or {}).get('lastPushTime')
-                report.ok(f'ImageUpdateAutomation {name} is Ready' + (f'; last pushed {pushed}' if pushed else ''))
-            else:
-                report.bad(f'ImageUpdateAutomation {name} is not Ready: {message}')
         status, message = ready_condition(policy)
-        latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
-        if status == 'True':
-            report.ok(f'{name}: newest image {latest}')
-        else:
+        if status != 'True':
             report.bad(f'ImagePolicy {name} is not Ready: {message}')
+            continue
+        latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
+        app = (policy['metadata'].get('labels') or {}).get(contract.APP, '')
+        release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'helmrelease.yaml'
+        running = str(helmrelease.image(yaml.safe_load(release.read_text())).get('tag', '')) if release.is_file() else ''
+        if running == latest:
+            report.ok(f'{name}: newest image {latest}, deployed')
+        else:
+            report.warn(f'{name}: newest image {latest}, staging has {running or "no instance"} in Git '
+                        '(the Deploy workflow runs within the hour, or held it: see its last run)')
 
 
 def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:

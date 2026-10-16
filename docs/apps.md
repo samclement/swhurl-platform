@@ -105,7 +105,7 @@ After the merge, Flux creates the app's dedicated `app-<name>-staging` unit from
 
 **The dashboard is also asynchronous.** The `console-dashboards` CronJob runs once a minute. It lists Kubernetes HelmRelease records, keeps the ones registered by an `app-<name>-<env>` Flux unit whose app name and namespace match the release, then groups staging and production records by app. As soon as Flux has created the staging HelmRelease, the job creates or updates `App: <name>` in HyperDX. It does not wait for the release or pods to become Ready. It uses ClickStack's API; no dashboard manifest or app-specific dashboard provisioning enters Git. A dashboard failure retries on the next scheduled run and does not block the app. Details and dashboard contents are in [Dashboards](#dashboards).
 
-Once staging is deployed, later pushes to the app repository's `main` publish images. The app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux image automation finds the new tag and commits its digest to this platform repository's `main`; the same webhook-to-reconcile path rolls out that image to staging. Production is not created by this flow.
+Once staging is deployed, later pushes to the app repository's `main` publish images. The app repository's [image webhook](services.md#image-webhook) tells Flux the moment the image is published; Flux picks the new tag and starts the Deploy workflow, which commits the tag, its digest and what the image offers to this platform repository's `main` in one commit; the push webhook then rolls out that image to staging ([deploy a new image](#deploy-a-new-image)). Production is not created by this flow.
 
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
@@ -235,7 +235,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `database` | need | read once | Edit the instance's files |
 | `databaseSize` | need | read once | Edit the instance's files |
 | `secrets` | need | read once | Edit the instance's files ([secrets](#secrets)) |
-| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Offers workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
+| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
 | `events.publish` | offer | read once | `make app-events`; once the app has `provides.eventsFile`, that file says what it publishes |
 | `team` | grant | refused | `make app-team`, or `--team` and the New app form at creation |
@@ -369,8 +369,8 @@ The platform reads them for the image an instance runs, so staging and productio
 ```mermaid
 flowchart LR
   push["push to the app's main"] --> image["image 8-b2c3d4e"]
-  image -->|"Flux commits the new tag"| staging["apps/demo-orders/staging<br/>helmrelease.yaml"]
-  staging -->|"Offers workflow:<br/>make app-offers --all staging"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
+  image -->|"Deploy workflow:<br/>make app-deploy"| read["reads swhurl.yaml and both documents<br/>from the repository at b2c3d4e"]
+  read -->|"one commit with the new tag"| staging["apps/demo-orders/staging<br/>helmrelease.yaml"]
   read --> kept["apps/demo-orders/staging/offers/<br/>source.yaml, openapi.json, asyncapi.yaml"]
   read --> publishes["SWHURL_EVENTS_PUBLISH<br/>from asyncapi.yaml"]
   kept -->|"make app-promote"| prod["apps/demo-orders/prod/offers/"]
@@ -383,11 +383,11 @@ flowchart LR
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 
-**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). After every new staging image: the [Offers workflow](../.github/workflows/offers.yml) runs on Flux's tag commit, reads every staging instance, checks the app policy and commits what changed to `main`. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents, the commit and where the API description is served still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=demo-orders ENV=staging`.
+**When it happens.** At creation (`make app-new --from-repo` reads them when `swhurl.yaml` names either file). With every new staging image: the [Deploy workflow](../.github/workflows/deploy.yml) reads them at the new image's commit, checks the app policy and commits them to `main` with the tag ([deploy a new image](#deploy-a-new-image)); a push that changes a staging release by hand reads them again. At promotion: `make app-promote` copies staging's documents to production and sets what production publishes, creating production's NATS key the first time; a promotion that changes only the documents, the commit and where the API description is served still merges itself, one that changes what the app publishes waits for review. By hand: `make app-offers APP=demo-orders ENV=staging`.
 
-**A new event works at once.** The new image starts a minute or two before the workflow has read its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
+**A new event works at once.** The new image starts in the same commit that keeps its document. NATS already lets the app publish anything under its own name and its stream keeps everything under that name, so the event is stored from the first publish; the helper in the app refuses anything its own `asyncapi.yaml` does not describe. Other apps can subscribe once the workflow's commit is applied. The exception is an app's first event ever (it has no key or stream yet): the templates' `events` feature ships an example event, so an app created with the feature has both from the start.
 
-**What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps what it had (the others are still read), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
+**What is refused.** A document that is not OpenAPI 3 or AsyncAPI 3, a file `swhurl.yaml` names but the commit lacks, an event name that is not a lowercase name, and a document that no longer sends an event another app of that environment still receives: the workflow fails for that app, which keeps its image and what it had (the others still deploy), and a promotion is refused. Remove the subscription first, or keep the event. `make check-apps` fails when what an instance publishes is not what its kept document describes (rule `offers`). Production is refused offers that were read for another image than staging runs.
 
 **Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page and in New app says what each choice is.
 
@@ -531,17 +531,17 @@ In HyperDX, filter on `ServiceName`, `k8s.namespace.name` (which tells staging f
 
 An instance runs the image named by `repository`, `tag` and `digest` in its HelmRelease values. Staging changes first; production gets the same digest only when you [promote](#promote-to-production) it.
 
-**Staging is automatic.** Every staging instance is watched by Flux image automation. Push to the app repository's `main` and it reaches staging on its own, in about two minutes:
+**Staging is automatic.** Push to the app repository's `main` and the new image reaches staging on its own, with what it [offers](#what-an-app-offers), in one commit:
 
 ```text
 app push → its workflow checks, builds and publishes ghcr.io/<owner>/<app>:<run>-<sha>
-  → image webhook → image-reflector-controller scans the registry at once (hourly without the webhook)
-  → ImagePolicy <app>-staging picks the highest <run> and its digest
-  → the app-named image-automation-controller commits the new tag and digest to apps/<app>/staging as fluxcdbot
-  → push webhook → Flux applies → helm-controller rolls the Deployment
+  → image webhook → image-reflector-controller scans the registry at once
+  → ImagePolicy <app>-staging picks the highest <run>; the image-dispatch Alert starts the Deploy workflow here
+  → make app-deploy: the newest tag and digest from GHCR (the policy's filter), and the offers at <sha>
+  → one commit to apps/<app>/staging as github-actions[bot] → push webhook → Flux applies → the Deployment rolls
 ```
 
-The staging HelmRelease's `tag:` and `digest:` lines carry `# {"$imagepolicy": "flux-system:<app>-staging:tag"}` (and `:digest`) markers; they tell Flux which lines to rewrite. Keep them when editing by hand (`make app-scale` and `app-expose` keep them). `make verify-platform` shows each app's newest image under Image Automation and its webhook under Image Webhooks (`make app-hooks` adds a missing webhook; until then Flux finds new images within the hour).
+The [Deploy workflow](../.github/workflows/deploy.yml) also runs hourly and by hand (`gh workflow run deploy.yml`), which catches a lost webhook or dispatch, and `make app-deploy [APP=<app>]` does the same locally. An image whose offers are refused is held: the run fails naming the problem, that app keeps its image and the others still deploy. A policy reports its newest image at every reconcile, so most dispatches end in the workflow's first job ("Staging already runs it"). The Alert's token is in `platform/image-automation/dispatch-secret.sops.yaml` ([rotate it](operations.md#secrets)). `make verify-platform` shows, under Image Automation, each app's newest image and whether staging runs it, and its webhook under Image Webhooks (`make app-hooks` adds a missing one; until then new images wait for the hourly run).
 
 **Check it:** `make app-status APP=<app> ENV=staging` compares the main controller/container's running image with Git by digest (sidecars and other controllers keep their own images): each pod's spec names the digest it was given, and a pull by digest guarantees that content (the node's own image ID can name another digest for the same image, when two builds published identical content). It reports `running: matches desired` once the new pod is Ready, or `different image` during a rollout or when it fails ([operate an instance](#operate-an-instance)).
 
@@ -597,9 +597,12 @@ flowchart LR
     Copy --> Registry[GHCR]
     Build --> Registry
     subgraph Cluster[k3s]
-        Flux[Flux image automation] --> App[Staging app]
+        Flux[Flux ImagePolicy]
+        App[Staging app]
     end
     Registry --> Flux
+    Flux --> Deploy[Deploy workflow commits the pin]
+    Deploy --> App
 ```
 
 Candidates come only from successful PR runs whose head repository is the app's own, with matching unexpired artifact names and matching proof and archive hashes. Forks, direct pushes without a matching PR, missing permissions or artifacts, and unsupported Dockerfiles take the ordinary build path. New callers opt in with `reuse-pr-image: true` and grant their existing `GITHUB_TOKEN` `actions: read` to retrieve artifacts; existing workflow-only upgrades keep this feature off.
@@ -776,7 +779,7 @@ or at creation with `app-new --alerts` (`--alerts error-logs=20,errors=none`, or
 
 ## The app policy
 
-`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), and its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events); across an environment, every declared call has a callee that allows it and every subscription a publisher. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` and the setter markers. It also compares the source manifests of an app's environments (rule `env-drift`): they may differ only in the settings and files listed in [`per_environment.py`](../tools/swhurl/apps/per_environment.py), which are the namespace, hosts, image tag and digest, replicas, resources, issuer, exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own), calls, events and what the image offers; encrypted Secrets are never compared. The same table says what a promotion does with each: whether production is created with staging's value, without it or with its own, and what a later promotion may move with the image. The drift rule, promotion and the console's [auto-merge](console.md#auto-merge) gate all read it. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
+`make check-apps` renders every instance with Helm and checks the Kubernetes objects: pinned images (digest in production), non-root, no privilege escalation, CPU/memory requests and a memory limit, no service-account token, no host access, exposure (private has no Ingress; hosts under `homelab.swhurl.com` need sign-in; public hosts stay outside it), TLS on every host, a named storage class, a single writer per volume (an instance that mounts a ReadWriteOnce claim runs one replica and stops the old pod before starting the new one), `HOST_IP` defined before an OTLP endpoint uses it, a registered team, the platform quota with room for the app's replicas, the platform NetworkPolicy on the app's pods only ([teams and isolation](#teams-and-isolation)), and its identity, declared calls and their tokens ([calling another app](#calling-another-app)), and the stream, consumers and NATS user that follow from its declared [events](#events); across an environment, every declared call has a callee that allows it and every subscription a publisher. Every instance under `apps/` must also be an app made from a stack template (rule `platform-image`, no exceptions): its image is `ghcr.io/samclement/<app>` and its staging has `image-automation.yaml` with its ImagePolicy. It also compares the source manifests of an app's environments (rule `env-drift`): they may differ only in the settings and files listed in [`per_environment.py`](../tools/swhurl/apps/per_environment.py), which are the namespace, hosts, image tag and digest, replicas, resources, issuer, exposure (when the environments' exposure differs, their routes are not compared; each is still checked on its own), calls, events and what the image offers; encrypted Secrets are never compared. The same table says what a promotion does with each: whether production is created with staging's value, without it or with its own, and what a later promotion may move with the image. The drift rule, promotion and the console's [auto-merge](console.md#auto-merge) gate all read it. CI runs it on every push; the rules are listed in [`policy.py`](../tools/swhurl/apps/policy.py).
 
 A reviewed exception goes on the HelmRelease, with a reason:
 

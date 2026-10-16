@@ -67,7 +67,6 @@ from swhurl.apps.contract import (
     STARTUP_PERIOD,
     STARTUP_SECONDS,
     TEAM,
-    add_image_markers,
     default_host,
     image_policy_name,
     in_cookie_domain,
@@ -153,7 +152,7 @@ def auto_deploys(args) -> bool:
 
 
 def image_automation(args) -> list[dict]:
-    """App-scoped Flux image resources, including its own Git writer for named deploy events."""
+    """App-scoped Flux image resources: the policy whose report starts the Deploy workflow."""
     repository = parse_image(args.image)['repository']
     labels = {MANAGED: 'true', APP: args.name}
     return [
@@ -170,19 +169,6 @@ def image_automation(args) -> list[dict]:
                   # Tags are immutable, so re-reading the current tag's digest hourly is plenty; a new
                   # tag's digest is read when the repository scan finds it. Always requires an interval.
                   'digestReflectionPolicy': 'Always', 'interval': '1h'}},
-        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageUpdateAutomation',
-         'metadata': {'name': f'{args.name}-staging', 'namespace': 'flux-system', 'labels': labels},
-         # Runs when its ImagePolicy picks a new image; the interval only retries a missed one.
-         'spec': {'interval': '1h', 'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform-write'},
-                  'git': {'checkout': {'ref': {'branch': 'main'}},
-                          'commit': {'author': {'name': 'fluxcdbot',
-                                                'email': 'fluxcdbot@users.noreply.github.com'},
-                                     'messageTemplate': f'deploy: staging image for {args.name}\n'
-                                                        '{{ range .Changed.Changes }}\n'
-                                                        '- {{ .OldValue }} -> {{ .NewValue }}\n'
-                                                        '{{- end }}'},
-                          'push': {'branch': 'main'}},
-                  'update': {'path': f'./apps/{args.name}/staging', 'strategy': 'Setters'}}},
     ]
 
 
@@ -340,7 +326,6 @@ def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
     release_text = dump([release])
     if auto_deploys(args):
         resources.append(IMAGE_AUTOMATION_FILE)
-        release_text = add_image_markers(release_text, image_policy_name(args.name))
     files = {
         instance / 'namespace.yaml': dump([ns]),
         instance / 'helmrelease.yaml': release_text,

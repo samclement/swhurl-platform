@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import declaration, events, helmrelease, nkeys, offers, ops, promotion
+from swhurl.apps import declaration, events, helmrelease, images, nkeys, offers, ops, promotion
 from swhurl.apps.calling import (
     API_VARIABLE,
     callee_address,
@@ -36,6 +36,7 @@ from swhurl.apps.contract import (
     AUTH_MIDDLEWARE,
     EXPOSURE,
     EXPOSURES,
+    IMAGE_AUTOMATION_FILE,
     TEAM,
     default_host,
     in_cookie_domain,
@@ -291,6 +292,35 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
     return changed
 
 
+def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
+                   runner: Runner | None = None) -> bool:
+    """Staging runs the newest image its ImagePolicy accepts, with what that image offers: the tag and
+    digest from the registry (images.py), then the offers read at its commit. A refused offer holds the
+    image: the instance keeps what it had. Returns whether anything changed."""
+    instance = instance_dir(root, app, 'staging')
+    release = instance / 'helmrelease.yaml'
+    try:
+        found = images.newest(images.policy(instance / IMAGE_AUTOMATION_FILE), opener=opener)
+    except (images.ImageError, OSError) as error:
+        raise EditError(str(error)) from None
+    before = release.read_bytes()
+    document = YamlFile(release)
+    image = promotion.image_of(document.data)
+    moved = (image.get('tag'), image.get('digest')) != (found.tag, found.digest)
+    previous = image.get('tag')
+    if moved:
+        image['tag'], image['digest'] = found.tag, found.digest
+        document.save()
+    try:
+        changed = set_offers(root, app, 'staging', token=token, opener=opener, runner=runner)
+    except EditError:
+        release.write_bytes(before)
+        raise
+    if moved:
+        print(f'[OK] {app}/staging: image {previous} -> {found.tag}')
+    return changed or moved
+
+
 def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
     """Production offers what the image it now runs offers: staging's documents, read for that image."""
     try:
@@ -301,7 +331,7 @@ def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
         tag = str(helmrelease.image(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get('tag', ''))
         if offers.IMAGE_COMMIT.match(tag) and offers.commit_of(tag) != found.commit:
             raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
-                            f'(make app-offers APP={app} ENV=staging; the Offers workflow does it after each new image)')
+                            f'(make app-offers APP={app} ENV=staging; the Deploy workflow does it with each new image)')
     folder = instance_folder(root, app, 'staging') / offers.OFFERS_DIR
     files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events, found.flags))} if found else {}
     served = str(helmrelease.variables(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
@@ -780,6 +810,27 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
         except EditError as error:  # the others are still read; this one keeps what it had
             failed += 1
             print(f'[ERROR] {app}/{args.all}: {error}', file=sys.stderr)
+    return 1 if failed else 0
+
+
+def main_deploy(argv: list[str] | None = None, opener: offers.Opener = offers._open) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-deploy',
+                                description="Bring staging to each app's newest image, with what that image offers")
+    p.add_argument('app', nargs='?', help='one app (default: every staging instance with an ImagePolicy)')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    root, token = args.root.resolve(), os.environ.get('GITHUB_TOKEN', '')
+    if args.app:
+        return run(lambda: deploy_staging(root, args.app, token=token, opener=opener) and instance_dir(root, args.app, 'staging'), True)
+    failed = 0
+    for app in instances_in(root, 'staging'):
+        if not (instance_folder(root, app, 'staging') / IMAGE_AUTOMATION_FILE).is_file():
+            continue  # not built from an app repository (a fixture, a pinned third-party image)
+        try:
+            deploy_staging(root, app, token=token, opener=opener)
+        except EditError as error:  # the others still deploy; this one keeps its image
+            failed += 1
+            print(f'[ERROR] {app}/staging: {error}', file=sys.stderr)
     return 1 if failed else 0
 
 

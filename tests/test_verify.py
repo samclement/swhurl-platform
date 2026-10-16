@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import yaml
-from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
+from fakecluster import CONSOLE_TAG, KEY, TOKEN, apps_answers, b64, fresh_backup, healthy
 
 from swhurl import ROOT, clickstack, dashboards, images, platform, recovery, validate, verify
 from swhurl.apps import calling, channels, contract
@@ -201,21 +201,21 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertIn('[BAD] could not read flux-system/kustomize-controller', report.lines)
 
     def test_image_automation_problems(self):
+        from fakecluster import policy, staging_tag
+        tag = staging_tag('demo-shop')
         cases = {
-            'missing': ({'automations': {'items': []}}, '[BAD] ImageUpdateAutomation w-staging is missing'),
-            'failing': ({'automations': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
-                'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'push denied'}]}}]}},
-                        '[BAD] ImageUpdateAutomation w-staging is not Ready: push denied'),
-            'policy': ({'policies': {'items': [{'metadata': {'name': 'w-staging'}, 'status': {
-                'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]}}]}},
-                       '[BAD] ImagePolicy w-staging is not Ready: no tags match'),
+            'policy': ({'policies': {'items': [policy('demo-shop', tag, {'conditions': [
+                {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})]}},
+                       '[BAD] ImagePolicy demo-shop-staging is not Ready: no tags match'),
+            'behind': ({'policies': {'items': [policy('demo-shop', '999-abcdef0')]}},
+                       f'[WARN] demo-shop-staging: newest image 999-abcdef0, staging has {tag} in Git'),
         }
         for name, (overrides, expected) in cases.items():
             with self.subTest(name=name):
                 _, report, text = run(healthy(**overrides))
                 self.assertTrue(any(line.startswith(expected) for line in report.lines), text)
         _, report, _ = run(healthy())
-        self.assertIn('[OK] w-staging: newest image 12-abcdef0', report.lines)
+        self.assertIn(f'[OK] demo-shop-staging: newest image {tag}, deployed', report.lines)
 
     def test_isolation_problems(self):
         root = Path(tempfile.mkdtemp())
@@ -384,7 +384,8 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * 2 + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * len(apps_answers()['policies']['items'])
+                         + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
         self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, events, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)

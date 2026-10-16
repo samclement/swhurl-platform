@@ -21,11 +21,13 @@ data:
             forwarded_for delete
             shutdown_lifetime 3 seconds
             logformat egress instance=%{instance}note client=%>a method=%rm host=%>rd:%>rP status=%>Hs/%Ss bytes=%<st ms=%tr
-            access_log stdio:/dev/stdout logformat=egress
-            cache_log stdio:/dev/stderr
             http_port 3128 name=health
             acl health myportname health
             http_access deny health
+            # Requests only: the kubelet's probes connect every few seconds and send none.
+            acl request has request
+            access_log stdio:/dev/stdout logformat=egress request
+            cache_log stdio:/dev/stderr
             http_port 30101 name=demo-notifier-staging
             acl demo-notifier-staging myportname demo-notifier-staging
             note instance demo-notifier-staging demo-notifier-staging

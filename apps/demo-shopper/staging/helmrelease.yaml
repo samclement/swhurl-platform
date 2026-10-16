@@ -65,6 +65,11 @@ spec:
               SWHURL_SERVICE_DEMO_SHOP_URL: http://demo-shop.demo-shop-$(SWHURL_ENV).svc.cluster.local:8080
               SWHURL_EVENTS_NKEY: UBTEFDHXMWLBQALKXYVDS3WWMVTEAEATHTX36DHE5ENJAFUTGYBCX62N
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30104
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30104
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30104 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30104 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             envFrom:
             - secretRef:
                 name: demo-shopper-events

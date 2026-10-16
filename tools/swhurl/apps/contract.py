@@ -146,7 +146,9 @@ def otlp_variables(service: str) -> dict:
 # Environment names the platform sets or may set. An app's secret keys arrive through envFrom, and a
 # container's own env silently wins over envFrom, so a secret with one of these names would never be seen.
 # New platform variables use the SWHURL_ prefix. KUBERNETES_* are the API server's address for in-cluster clients.
-RESERVED_VARIABLE_NAMES = (OTLP_HOST_IP, DATABASE_PATH_VARIABLE)  # and every SWHURL_ name above
+RESERVED_VARIABLE_NAMES = (OTLP_HOST_IP, DATABASE_PATH_VARIABLE,  # and every SWHURL_ name above
+                           # the egress proxy's (egress.py, which cannot be imported here)
+                           'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY', 'JAVA_TOOL_OPTIONS')
 RESERVED_VARIABLE_PREFIXES = ('OTEL_', 'SWHURL_', 'KUBERNETES_')
 
 

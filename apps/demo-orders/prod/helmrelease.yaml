@@ -72,6 +72,11 @@ spec:
               SWHURL_EVENTS_NKEY: UDFZTKCTUPLTYYXTE66IHVRDCRYTS5MVGF7JTMDSBHQ3GH6ETX4WMIAV
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
               SWHURL_ALLOWED_CALLERS: demo-shop
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30111
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30111
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30111 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30111 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             probes:
               readiness:
                 enabled: true

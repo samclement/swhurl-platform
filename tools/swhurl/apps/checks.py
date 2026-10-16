@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, events, helmrelease, hooks
+from swhurl.apps import calling, contract, egress, events, helmrelease, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.kube import ready_condition
 from swhurl.report import Report
@@ -135,6 +135,29 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
     wanted = events.users_file(root)
     if wanted and (not wanted[0].is_file() or wanted[0].read_text() != wanted[1]):
         report.bad(f'{events.USERS_FILE} is not what the instances declare: make app-sync, commit and push')
+
+
+def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
+    """The egress proxy runs every replica, with a port for each instance (its file is what they generate)."""
+    report.section('Egress proxy')
+    try:
+        deployment = runner.json(['kubectl', '-n', egress.NAMESPACE, 'get', 'deployment', egress.NAME, '-o', 'json'])
+        wanted, ready = deployment['spec'].get('replicas', 1), (deployment.get('status') or {}).get('readyReplicas', 0)
+    except (CommandError, KeyError, TypeError):
+        report.bad(f'cannot read the egress proxy ({egress.NAMESPACE}/{egress.NAME}): apps cannot reach outside the cluster '
+                   '(make reconcile UNIT=platform-egress)')
+        return
+    if not ready:
+        report.bad('the egress proxy is not running: apps cannot reach outside the cluster '
+                   f'(kubectl -n {egress.NAMESPACE} get pods; make reconcile UNIT=platform-egress)')
+    elif ready < wanted:
+        report.warn(f'the egress proxy runs {ready} of {wanted} replicas: a restart would stop outbound traffic meanwhile')
+    else:
+        report.ok(f'the egress proxy runs {ready} replicas')
+    for problem in egress.problems(root):
+        report.bad(problem.removeprefix('egress-ports: ') + ', commit and push')
+    if not egress.problems(root):
+        report.ok(f'{len(egress.ports(root))} instance(s) each have a port of their own')
 
 
 def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:

@@ -71,6 +71,11 @@ spec:
               SWHURL_API_PATH: /openapi.json
               SWHURL_EVENTS_NKEY: UAC7DWRMXAYFNAFO3HJ32BHIGGPNWPF2JKXSJ7RR4YDCWNFY5FRMGEZX
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30106
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30106
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30106 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30106 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             probes:
               readiness:
                 enabled: true

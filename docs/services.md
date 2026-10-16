@@ -126,6 +126,29 @@ The event broker: apps publish events and subscribe to each other's ([events](ap
 - **Network.** A NetworkPolicy admits app namespaces, the controller and the `console` namespace to port 4222, nothing else.
 - **Logs** from both pods reach ClickStack like any container's (namespace `messaging`).
 
+## Egress proxy
+
+Every app instance reaches outside the cluster through one Squid proxy in `egress` (unit `platform-egress`), each instance on a **port of its own**, so the proxy knows which instance is asking without trusting anything the app sends. For now it allows every host and logs each request; grants per app and environment, and refusing the rest, are planned ([plan](plan.md#stage-5-egress-grants)).
+
+```mermaid
+flowchart LR
+  subgraph demo-shop-staging
+    shop["demo-shop<br/>HTTPS_PROXY=…egress…:30103"]
+  end
+  subgraph egress
+    proxy["Squid, two replicas<br/>port 30103 = demo-shop-staging"]
+  end
+  shop -- "CONNECT api.example.com:443" --> proxy --> internet((internet))
+  shop -- "in the cluster and the node: direct (NO_PROXY)" --> cluster[other apps, notify, NATS, OTLP]
+```
+
+- **What an instance is given** (`make app-sync`, also run by `make app-new` and a first promotion): `HTTPS_PROXY` and `HTTP_PROXY` with its port, `NO_PROXY` (`localhost`, `127.0.0.1`, `.svc`, `.cluster.local` and the node's address, where the OTLP collector listens), `NODE_USE_ENV_PROXY=1` so Node's `fetch` and `http` use them, and `JAVA_TOOL_OPTIONS` with the same as JVM system properties (`java.net.http.HttpClient` and the OpenTelemetry agent use them). Curl, Go and Python's `requests` read the variables themselves. A client that ignores all of these still connects directly until grants are enforced. These names are reserved: an app Secret cannot use them.
+- **The port is kept in the instance's `HTTPS_PROXY`**, so a regeneration never moves it; a new instance gets the lowest free port from 30101. Production gets its own port at its first promotion, never staging's.
+- **Generated:** [`proxy.yaml`](../platform/egress/proxy.yaml) holds Squid's configuration, the Service's ports and a NetworkPolicy that admits each port only from its instance's namespace (port 3128 is for probes and refuses every request). `make app-sync` writes it from the instances; `make check-apps` (rule `egress-ports`) and `make verify-platform` (check `egress`) fail when it is stale. Do not edit it by hand.
+- **A change restarts the proxy**, one replica at a time (two replicas, the chart's checksum of its configuration), so apps keep a way out meanwhile. Reloader is not involved.
+- **Logs:** one line per request on stdout, which reaches ClickStack like any container's (namespace `egress`): `instance=demo-shop-staging client=10.42.0.31 method=CONNECT host=api.example.com:443 status=200/TCP_TUNNEL bytes=5223 ms=66`. For HTTPS only the host and port are seen, never the path or content. Nothing is stored: no cache, no other files.
+- **No credentials** and no admin interface. The image is Canonical's `ubuntu/squid` (Ubuntu 24.04 LTS), pinned by digest, run as its `proxy` user with a read-only root.
+
 ## Alerts
 
 ### Notification expectations

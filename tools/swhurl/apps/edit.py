@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import declaration, events, helmrelease, images, nkeys, offers, ops, policy, promotion
+from swhurl.apps import declaration, egress, events, helmrelease, images, nkeys, offers, ops, policy, promotion
 from swhurl.apps.calling import (
     API_VARIABLE,
     callee_address,
@@ -42,6 +42,7 @@ from swhurl.apps.contract import (
     EXPOSURE,
     EXPOSURES,
     IMAGE_AUTOMATION_FILE,
+    OTLP_HOST_IP,
     RELOAD,
     RETAINED_STORAGE_CLASS,
     SECRET_FILE,
@@ -395,6 +396,8 @@ def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
             security[key] = needs.uid
     variables = mapping(main, 'env', create=True)
     telemetry = otlp_variables(app)
+    if egress.NO_PROXY_VARIABLE in variables:  # the proxy's settings use HOST_IP too (make app-sync)
+        telemetry.pop(OTLP_HOST_IP)
     if needs.otlp and any(key not in variables for key in telemetry):
         for key, value in telemetry.items():
             variables.setdefault(key, value)

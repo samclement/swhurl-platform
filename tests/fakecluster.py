@@ -127,6 +127,7 @@ def apps_answers():
             'podSelector': {'matchLabels': {'app.kubernetes.io/instance': app}}}} for app, env in INSTANCES]},
         'nats': {'status': {'readyReplicas': 1}},
         'nats-controller': {'status': {'readyReplicas': 1}},
+        'egress': {'spec': {'replicas': 2}, 'status': {'readyReplicas': 2}},
         'streams': {'items': [{'kind': 'Stream', 'metadata': {'namespace': 'w-staging', 'name': 'staging-w'}, 'status': READY}]},
         'jwks': json.loads((ROOT / calling.SIGNING_KEYS_FILE).read_text()),
         'openid': {'issuer': calling.ISSUER},
@@ -143,6 +144,7 @@ def apps_rules(runner, answer):
      .on('kubectl', '-n', 'messaging', 'get', 'statefulset', 'nats', handler=answer('nats'))
      .on('kubectl', '-n', 'messaging', 'get', 'deployment', 'nats-controller', handler=answer('nats-controller'))
      .on('kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io', handler=answer('streams'))
+     .on('kubectl', '-n', 'egress', 'get', 'deployment', 'egress', handler=answer('egress'))
      .on('kubectl', 'get', '--raw', '/openid/v1/jwks', handler=answer('jwks'))
      .on('kubectl', 'get', '--raw', '/.well-known/openid-configuration', handler=answer('openid'))
      .on('kubectl', 'get', 'deployments', '--all-namespaces', handler=answer('deployments')))

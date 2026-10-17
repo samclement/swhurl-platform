@@ -144,14 +144,21 @@ class LaterPromotionTests(unittest.TestCase):
         return {path[-1] for path in was.keys() | now.keys() if was.get(path) != now.get(path)}
 
     def test_the_image_alone(self):
-        after = per_environment.after_promotion(self.production, self.image)
+        staging = {calling.DESCRIPTION_VARIABLE: 'Orders, kept'}
+        after = per_environment.after_promotion(self.production, self.image, staging_variables=staging)
         self.assertEqual(self.changed(after), {s.key for s in SETTINGS if s.later == WITH_IMAGE})
+        self.assertEqual(after['spec']['values']['controllers']['main']['containers']['main']['env'][calling.DESCRIPTION_VARIABLE],
+                         'Orders, kept', "staging's description moves with the image")
+        without = per_environment.after_promotion(after, self.image)
+        self.assertNotIn(calling.DESCRIPTION_VARIABLE, without['spec']['values']['controllers']['main']['containers']['main']['env'],
+                         'an image without one takes it away')
         self.assertEqual(after['spec']['values']['controllers']['main']['containers']['main']['image'], self.image)
         untagged = per_environment.after_promotion(self.production, {k: v for k, v in self.image.items() if k != 'tag'})
         self.assertNotIn('tag', untagged['spec']['values']['controllers']['main']['containers']['main']['image'])
 
     def test_with_what_the_image_offers(self):
-        after = per_environment.after_promotion(self.production, self.image, commit='def5678', served='/v2/openapi.json')
+        after = per_environment.after_promotion(self.production, self.image, commit='def5678', served='/v2/openapi.json',
+                                                staging_variables={calling.DESCRIPTION_VARIABLE: 'Orders'})
         self.assertEqual(self.changed(after), {s.key for s in SETTINGS if s.later in (WITH_IMAGE, WITH_OFFERS)})
         self.assertEqual(after['metadata']['annotations'][offers.ANNOTATION], 'def5678')
         self.assertNotIn(HELD, {s.later for s in SETTINGS if s.key in self.changed(after)}, 'what it publishes is not moved')

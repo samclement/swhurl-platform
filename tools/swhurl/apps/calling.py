@@ -21,6 +21,9 @@ ISSUER_VARIABLE = 'SWHURL_AUTH_ISSUER'
 KEYS_VARIABLE = 'SWHURL_AUTH_KEYS'
 CALLERS_VARIABLE = 'SWHURL_ALLOWED_CALLERS'
 API_VARIABLE = 'SWHURL_API_PATH'
+DESCRIPTION_VARIABLE = 'SWHURL_DESCRIPTION'
+"""What the app says it does (its swhurl.yaml's description): the templates put it in the API description
+they serve, so an image built for one app serves another's name and description correctly."""
 """Where a web app serves its API description, if it says so (provides.api): shown on the console's Services page."""
 NOTIFY = 'notify'
 """The notify service (docs/services.md#notify-service): every instance gets its address and a token

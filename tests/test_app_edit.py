@@ -809,6 +809,28 @@ components:
             'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\nresources: {memory: 64Mi}\n'}))
         self.assertIn('requests.memory 32Mi -> 64Mi', out)
 
+    def test_the_description_follows_each_image_and_moves_with_it_to_production(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        declared = 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\n'
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['8-def5678'], {'swhurl.yaml': declared + 'description: Orders, kept for a year\n'}))
+        self.assertTrue(changed)
+        self.assertIn('needs: description', out)
+        self.assertEqual(self.env('orders')['SWHURL_DESCRIPTION'], 'Orders, kept for a year',
+                         'production differs until the promotion: not drift, so the image is not held')
+        self.assertNotIn('SWHURL_DESCRIPTION', yaml.safe_load((self.root / 'apps/orders/prod/helmrelease.yaml').read_text())
+                         ['spec']['values']['controllers']['main']['containers']['main']['env'])
+        self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
+        self.assertEqual(yaml.safe_load((self.root / 'apps/orders/prod/helmrelease.yaml').read_text())
+                         ['spec']['values']['controllers']['main']['containers']['main']['env']['SWHURL_DESCRIPTION'],
+                         'Orders, kept for a year')
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['9-0000000'], {'swhurl.yaml': declared}))
+        self.assertIn('needs: description', out)
+        self.assertNotIn('SWHURL_DESCRIPTION', self.env('orders'), 'an image without one takes it away')
+
     def test_a_push_does_not_change_who_owns_a_volume(self):
         self.with_units()
         self.built_from_a_repository()

@@ -137,7 +137,8 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
                 raise Hold("promotion carries offers that differ from staging's")
         # Where the image serves its API description goes with its documents (staging's value).
         expected = per_environment.after_promotion(target, reviewed, commit=commit,
-                                                   served=helmrelease.variables(source).get(calling.API_VARIABLE, ''))
+                                                   served=helmrelease.variables(source).get(calling.API_VARIABLE, ''),
+                                                   staging_variables=helmrelease.variables(source))
         if actual != expected or sorted(files) != sorted([release, *carried]):
             raise Hold('later promotion changes more than the image pin and what the image offers')
         return

@@ -149,7 +149,7 @@ class LifetimeTests(unittest.TestCase):
                          'FIELDS is ordered by kind, as the page and the templates are')
         self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
-                         ['version', 'stack', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'database', 'databaseSize', 'secrets', 'provides', 'flags'])
+                         ['version', 'stack', 'description', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'database', 'databaseSize', 'secrets', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
         rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored|refused) \|', section, re.M)
@@ -174,6 +174,17 @@ class LifetimeTests(unittest.TestCase):
         self.assertEqual(declaration.of({'version': 1, 'kind': 'worker'}).stack, '')
         with self.assertRaisesRegex(DeclarationError, 'x/y@abc1234:swhurl.yaml: kind is required'):
             declaration.read('x/y', 'abc1234', opener=lambda request: b'version: 1\n')
+
+    def test_the_description_is_one_line(self):
+        found = declaration.of({**WEB, 'description': 'Orders, kept for a year'})
+        self.assertEqual((found.description, found.seed['description']), ('Orders, kept for a year', 'Orders, kept for a year'))
+        self.assertEqual(declaration.of(WEB).description, '')
+        self.assertNotIn('description', declaration.of(WEB).seed)
+        for bad in ('two\nlines', ' padded', 'double  space', 'x' * 201):
+            with self.subTest(bad=bad), self.assertRaisesRegex(DeclarationError, 'description is one line'):
+                declaration.of({**WEB, 'description': bad})
+        with self.assertRaisesRegex(DeclarationError, 'description must be str'):
+            declaration.of({**WEB, 'description': 3})
 
     def test_one_fetcher_tells_missing_from_unreachable(self):
         seen = []

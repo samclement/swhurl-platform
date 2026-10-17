@@ -48,7 +48,7 @@ check:
 
 .PHONY: test
 test:
-	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py
+	PYTHONPATH=$(CURDIR)/tools uv run --frozen python tests/run.py $(if $(K),-k '$(K)')
 
 .PHONY: check-lint
 check-lint:

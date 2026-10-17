@@ -1791,3 +1791,20 @@ Stage 2 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-202
 `make verify-platform` passed; `make app-status`: running, matches desired. `make check` passed before each commit (791 tests).
 
 **Not exercised live:** an image built for one app serving under another name (a seed for the types' answers comes with stage 6; the override is unit-tested in both stacks), the Kotlin `/openapi.yaml` rewrite on the cluster, and a promotion carrying the description (unit-tested). **Removed** (operator approved): the `swhurl-try-23` staging instance; its repository and package are left for the operator.
+
+## A seed image for every app type (17 October 2026)
+
+Stage 6 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-2026), run before stages 4 and 5. Templates `v0.2.15` (TypeScript #57 `8f41dda`, Kotlin #44 `b64da73`; 9 Template combinations each on PR and `main`), pinned in `be6b8aa8`: each Template matrix entry's smoke-tested image is published on `main` as `seed-<commit>-<kind>-<database>-<api>-<events>-<flags>` (9 per stack, read back anonymously from GHCR), the matrix gained the Worker type's answers, and `prune-seeds` lists the package and deletes versions older than 30 days whose every tag is a seed (it listed and deleted none: none was that old). A first merge attempt failed silently on a Renovate conflict and the release tag briefly pointed at Renovate's commit; both `v0.2.15` tags were deleted within two minutes and re-made on the merge commits.
+
+**Live,** both submitted at 21:47:32 UTC through the deployed console's New app form (port-forward, hand-set identity, console image `src-bb5aba36c0b90263`), team `demo`:
+
+| App | Type | Answers in `.copier-answers.yml` | Platform PR | Available | First image |
+| --- | --- | --- | --- | --- | --- |
+| `swhurl-try-24` | API, Kotlin | web, sqlite, openapi, asyncapi, example | #73 merged itself at 149 s | 213 s | seed `0-a612065`; own build `1-a612065` followed |
+| `swhurl-try-25` | Worker, TypeScript | worker, none, none, asyncapi, example | #72 opened at 62 s; refused by the merge gate (below), merged by hand at 1211 s | 1240 s | seed `0-d953445`; `make app-deploy` moved it to `1-d953445` |
+
+The API is private (a Service, no Ingress) with `DATABASE_PATH`; the worker has neither. Both carry `SWHURL_DESCRIPTION` from the form and publish their template's example event. `make backup-sqlite` made the API's first backup, which `make verify-platform` asks for.
+
+**Found: two New app jobs at once conflict.** Both PRs were opened from the same `main` and edit the shared derived files (`clusters/home/kustomization.yaml`, the NATS users, the egress proxy, Reloader's namespaces), so once #73 merged, #72 conflicted and the auto-merge gate refused it. Both instances had also been given the same egress proxy port (30116), which `make check-apps` refuses. Resolved by hand: merged `main` into #72, took `main`'s derived files, added the unit, dropped `swhurl-try-25`'s proxy variables and ran `make app-sync` (port 30117), then `make check` and Validate passed. Tracked in the [plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026).
+
+**Not exercised:** the seed of a Kotlin API serving the new app's own name (its own build replaced the seed before it was read), and `prune-seeds` deleting a version (none is 30 days old yet).

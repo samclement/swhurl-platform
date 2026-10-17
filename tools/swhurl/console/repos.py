@@ -213,10 +213,15 @@ def finish_app_repo(repos: AppRepos, job: Job, req: repo.Request, *, sleep: Call
 
 def published_image(repos: AppRepos, job: Job, req: repo.Request, commit: str, *, sleep: Callable[[float], None],
                     clock: Callable[[], float], opener: repo.Opener) -> str:
-    """Wait for ``commit``'s app workflow run and return the image it published, ``REPO:<run>-<sha>@sha256:…``."""
+    """Wait for ``commit``'s app workflow run and return the image it published, ``REPO:<run>-<sha>@sha256:…``,
+    or the seed ``REPO:0-<sha>@sha256:…`` the run copies from the template first (repo.seed_image)."""
     job.stage('build')
     deadline, state = clock() + FIRST_RUN_TIMEOUT, ''
     while True:
+        if seed := repo.seed_image(req.image, commit, opener):
+            job.lines.append(f'Seeded {seed}: the template\'s tested image for these answers; '
+                             'staging deploys the image this run builds as soon as it is published')
+            return seed
         run = repos.run_for(req.name, commit)
         now = f'run {run["run_number"]} {run["status"]}' if run else 'waiting for the run to start'
         if now != state:

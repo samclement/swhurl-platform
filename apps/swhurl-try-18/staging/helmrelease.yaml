@@ -5,6 +5,7 @@ metadata:
   namespace: swhurl-try-18-staging
   annotations:
     platform.swhurl.com/secrets: API_TOKEN,WEBHOOK_KEY
+    platform.swhurl.com/egress: example.com:443
 spec:
   interval: 30m
   timeout: 3m

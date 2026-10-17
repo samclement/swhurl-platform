@@ -1790,4 +1790,4 @@ Stage 2 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-202
 
 `make verify-platform` passed; `make app-status`: running, matches desired. `make check` passed before each commit (791 tests).
 
-**Not exercised live:** an image built for one app serving under another name (a seed for the types' answers comes with stage 6; the override is unit-tested in both stacks), the Kotlin `/openapi.yaml` rewrite on the cluster, and a promotion carrying the description (unit-tested).
+**Not exercised live:** an image built for one app serving under another name (a seed for the types' answers comes with stage 6; the override is unit-tested in both stacks), the Kotlin `/openapi.yaml` rewrite on the cluster, and a promotion carrying the description (unit-tested). **Removed** (operator approved): the `swhurl-try-23` staging instance; its repository and package are left for the operator.

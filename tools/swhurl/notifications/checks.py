@@ -87,12 +87,16 @@ def check_notifications(runner: Runner, report: Report, now: dt.datetime | None 
     try:
         state = kube.cronjob_run(runner, CRONJOB_NAMESPACE, CRONJOB_NAME, now)
     except (CommandError, KeyError, ValueError, TypeError):
-        report.bad(f'cannot read notification checker status ({CRONJOB_NAMESPACE}/{CRONJOB_NAME})')
+        report.bad(f'cannot read notification checker status ({CRONJOB_NAMESPACE}/{CRONJOB_NAME}; '
+                   'make reconcile UNIT=platform-console)')
         return
     if state == 'suspended':
-        report.bad('notification checker is suspended')
+        report.bad('notification checker is suspended, so no notifications are sent: kubectl -n '
+                   f'{CRONJOB_NAMESPACE} patch cronjob {CRONJOB_NAME} -p \'{{"spec":{{"suspend":false}}}}\'')
     elif state == 'stale':
-        report.bad(f'notification checker has no success in the last 5 minutes; check {CRONJOB_NAME} job logs')
+        report.bad(f'notification checker has not succeeded in 5 minutes, so notifications may be late or lost '
+                   f'(kubectl -n {CRONJOB_NAMESPACE} get jobs; kubectl -n {CRONJOB_NAMESPACE} logs job/<newest '
+                   f'{CRONJOB_NAME}-...>); no new jobs at all: docs/operations.md#troubleshooting')
     else:
         report.ok('notification checker succeeded in the last 5 minutes')
 
@@ -109,13 +113,15 @@ def check_notification_heartbeat(runner: Runner, report: Report,
         details = runner.output(['systemctl', 'show', service, '--property=Result', '--property=ExecMainStatus',
                                  '--property=ExecMainExitTimestamp'])
     except CommandError:
-        report.bad('cannot read host notification heartbeat timer/service status')
+        report.bad(f'cannot read the host notification heartbeat (systemctl status {timer})')
         return
     if active != 'active':
-        report.bad(f'{timer} is not active')
+        report.bad(f'{timer} is not active, so nothing on this host watches the notification checker: '
+                   'make host-heartbeat in your own terminal')
     props = dict(line.split('=', 1) for line in details.splitlines() if '=' in line)
     if props.get('Result') != 'success' or props.get('ExecMainStatus') != '0':
-        report.bad(f'{service} has not completed successfully')
+        report.bad(f'{service} last failed (journalctl -u {service}; '
+                   'tail /var/log/swhurl-platform/swhurl-notification-heartbeat.log)')
         return
     raw_timestamp = props.get('ExecMainExitTimestamp', '')
     try:
@@ -123,10 +129,11 @@ def check_notification_heartbeat(runner: Runner, report: Report,
         parsed = time.strptime(raw_timestamp, '%a %Y-%m-%d %H:%M:%S %Z')
         taken = time.mktime(parsed)
     except (TypeError, ValueError, OverflowError):
-        report.bad(f'{service} has an invalid successful run timestamp')
+        report.bad(f'{service} has no readable time of its last success (systemctl show {service})')
         return
     age = now.timestamp() - taken
     if age < -60 or age > 15 * 60:
-        report.bad(f'{service} last succeeded {age / 60:.1f} minutes ago; check the host timer and log')
+        report.bad(f'{service} last succeeded {age / 60:.1f} minutes ago (systemctl status {timer}; '
+                   'tail /var/log/swhurl-platform/swhurl-notification-heartbeat.log)')
     elif active == 'active':
         report.ok('host notification heartbeat timer is active and its service succeeded within 15 minutes')

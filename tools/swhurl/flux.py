@@ -209,10 +209,10 @@ def check_units(runner: Runner, report: Report) -> None:
         units = runner.json(['kubectl', '-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io',
                              '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read Flux kustomizations')
+        report.bad('cannot read Flux kustomizations (kubectl -n flux-system get kustomizations)')
         return
     if not units:
-        report.bad('no Flux kustomizations found in flux-system')
+        report.bad('no Flux kustomizations in flux-system, so nothing applies Git: make flux-bootstrap')
         return
     for unit in sorted(units, key=lambda u: u['metadata']['name']):
         name = unit['metadata']['name']
@@ -239,7 +239,7 @@ def check_controllers(runner: Runner, report: Report, root: Path = ROOT) -> None
             live = deployment['metadata'].get('labels', {}).get('app.kubernetes.io/version', '')
             running = [a for c in deployment['spec']['template']['spec']['containers'] for a in c.get('args') or []]
         except (KeyError, TypeError):
-            report.bad(f'could not read flux-system/{name}')
+            report.bad(f'cannot read flux-system/{name} (kubectl -n flux-system get deploy {name})')
             continue
         missing = [a for a in args if a not in running]
         if missing or live != f'v{version}':
@@ -297,7 +297,7 @@ def check_alerts(runner: Runner, report: Report) -> None:
         providers = {p['metadata']['name'] for p in runner.json([*base, 'providers.notification.toolkit.fluxcd.io',
                                                                  '-o', 'json'])['items']}
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read Flux alerts and providers')
+        report.bad('cannot read Flux alerts and providers (make reconcile UNIT=platform-alerts)')
         return
     for name in ALERTS:
         alert = alerts.get(name)
@@ -305,6 +305,7 @@ def check_alerts(runner: Runner, report: Report) -> None:
         if alert is None:
             report.warn(f'alert {name} is missing: no push notifications for it (make reconcile UNIT=platform-alerts)')
         elif provider not in providers:
-            report.bad(f'alert {name} points at provider {provider}, which does not exist')
+            report.bad(f'alert {name} points at provider {provider}, which does not exist, so its notifications are '
+                       'lost (make reconcile UNIT=platform-alerts)')
         else:
             report.ok(f'alert {name} sends to {provider}')

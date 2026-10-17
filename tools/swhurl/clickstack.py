@@ -255,7 +255,7 @@ def check_registration(runner: Runner, report: Report) -> None:
     try:
         closed = api(runner, 'GET', '/installation')['body'].get('isTeamExisting')
     except (CommandError, ValueError, KeyError, AttributeError):
-        report.bad('could not ask the HyperDX API whether a team exists')
+        report.bad(f'cannot ask the HyperDX API whether a team exists (kubectl -n {NS} logs {APP})')
         return
     if closed:
         report.ok('a team exists, so HyperDX registration is closed')
@@ -270,12 +270,12 @@ def check_retention(runner: Runner, report: Report) -> None:
             "SELECT countIf(position(engine_full, 'toIntervalDay(30)') > 0), count() FROM system.tables "
             "WHERE database = 'default' AND engine LIKE '%MergeTree' FORMAT TSV")).split())
     except (CommandError, ValueError):
-        report.bad('could not read ClickHouse telemetry table TTLs')
+        report.bad(f'cannot read ClickHouse telemetry table TTLs (kubectl -n {NS} get pods)')
     else:
         if total > 0 and with_ttl == total:
             report.ok(f'all {total} telemetry tables expire after 30 days')
         else:
-            report.bad(f'telemetry tables without a 30-day TTL ({with_ttl} of {total} have it); '
+            report.bad(f'{total - with_ttl} of {total} telemetry tables have no 30-day TTL, so they grow without limit; '
                        'the collector image default may have changed')
 
     names = "', '".join(SYSTEM_LOGS)
@@ -284,7 +284,7 @@ def check_retention(runner: Runner, report: Report) -> None:
             f"SELECT count() FROM system.tables WHERE database = 'system' AND name IN ('{names}') "
             "AND position(engine_full, 'TTL ') = 0 FORMAT TSV")))
     except (CommandError, ValueError):
-        report.bad('could not read ClickHouse system log TTLs')
+        report.bad(f'cannot read ClickHouse system log TTLs (kubectl -n {NS} get pods)')
     else:
         if untimed == 0:
             report.ok('ClickHouse system logs expire after 7 days')
@@ -299,7 +299,7 @@ def check_retention(runner: Runner, report: Report) -> None:
             "AND error != 0 AND event_time > now() - INTERVAL 1 HOUR FORMAT TSV")).split('\t') + [''])[:2]
         failed = int(failed)
     except (CommandError, ValueError):
-        report.bad('could not read ClickHouse merge results (system.part_log)')
+        report.bad(f'cannot read ClickHouse merge results (system.part_log; kubectl -n {NS} get pods)')
     else:
         if failed == 0:
             report.ok('no ClickHouse merge failed in the last hour')

@@ -959,14 +959,13 @@ class PlatformTests(unittest.TestCase):
                          **{key: CHECKS[key] for key in ('kubectl -n console get helmrelease console',
                                                          'kubectl -n notify get deployment notify')},
                          'kubectl -n kube-system get deploy traefik': json.dumps(traefik),
-                         'kubectl -n flux-system get imagepolicies.image.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get alerts.notification.toolkit.fluxcd.io': json.dumps({'items': []}),
                          'kubectl -n flux-system get providers.notification.toolkit.fluxcd.io': json.dumps({'items': []})})
         response = client(runner).get('/platform', headers=WHO)
         self.assertEqual(response.status_code, 200)
         self.assertIn('<span class="mark failing" aria-hidden="true"></span> <strong>Ingress</strong> <span class="muted">·</span> '
                       'Traefik does not redirect HTTP to HTTPS', response.text, 'a group of one check is that check, on one line')
-        self.assertIn('17 more checks read Secrets, run commands in pods or need your machine', response.text)
+        self.assertIn('18 more checks read Secrets, run commands in pods or need your machine', response.text)
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c], runner.calls)
 
     def test_a_unit_is_what_one_read_says_it_is(self):

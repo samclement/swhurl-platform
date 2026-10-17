@@ -66,7 +66,7 @@ CHECKS = (
              "The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed"),
     Check.of('registration', 'cluster exec', clickstack.check_registration, 'A HyperDX team exists, so registration is closed'),
     Check.of('ingress', 'cluster', check_ingress, 'Traefik redirects HTTP to HTTPS'),
-    Check.of('image-automation', 'cluster', apps.check_image_automation,
+    Check.of('image-automation', 'cluster host', apps.check_image_automation,  # reads apps/<app>/staging
              "Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise)"),
     Check.of('isolation', 'cluster host', apps.check_isolation,  # reads apps/teams.yaml
              'Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods'),

@@ -274,6 +274,25 @@ class LifecycleTests(unittest.TestCase):
         state = acknowledged(state, NOW+60)
         self.assertEqual(own(n.evaluate(state, removed, NOW+120, BASE)), [])
 
+    def test_a_unit_failing_while_its_instance_is_removed_is_not_a_failed_deployment(self):
+        data = healthy()
+        state = n.evaluate(None, data, NOW, BASE)
+        unit = data['units'][0]['metadata']['name']
+        failed = {'metadata': {'uid': 'k1', 'creationTimestamp': dt.datetime.fromtimestamp(NOW + 1, dt.UTC).isoformat()},
+                  'lastTimestamp': dt.datetime.fromtimestamp(NOW + 1, dt.UTC).isoformat(), 'count': 1,
+                  'involvedObject': {'kind': 'Kustomization', 'namespace': 'flux-system', 'name': unit, 'uid': 'unit1'},
+                  'reportingComponent': 'kustomize-controller', 'reason': 'ArtifactFailed',
+                  'message': 'kustomization path not found: stat /tmp/kustomization-1/apps/example/staging: no such file or directory'}
+        data['events'] = [failed]
+        early = n.evaluate(state, data, NOW + 10, BASE)
+        self.assertEqual(own(early), [], 'too early to tell a removal from a failure')
+        removed = {**{k: [] for k in data}, 'events': [failed]}
+        self.assertNotIn('example/staging deployment failed', [x['title'] for x in own(n.evaluate(early, removed, NOW + 70, BASE))],
+                         'the unit is gone: a removal, announced as uninstalled instead')
+        still = n.evaluate(early, data, NOW + 70, BASE)
+        self.assertEqual([x['title'] for x in own(still)], ['example/staging deployment failed'],
+                         'the unit is still there a minute later: a real failure')
+
     def test_removal_does_not_announce_while_release_finalizer_is_pending(self):
         data = healthy()
         state = n.evaluate(None, data, NOW, BASE)

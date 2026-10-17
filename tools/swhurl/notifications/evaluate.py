@@ -18,6 +18,10 @@ GRACE = 300
 CONSOLE_GRACE = 600
 RECOVERY = 120
 REMINDER = 3600
+SETTLE = 60
+"""A unit's failure is reported only once it is this old and the unit still exists: removing an instance
+deletes its folder and its unit in one commit, so the unit fails on the missing path (and reports what it
+prunes under the same reason) for a few seconds before Flux deletes it."""
 HISTORY = 7200
 MAX_STATE_BYTES = 700_000
 SUCCESS = {'InstallSucceeded': 'deployed', 'UpgradeSucceeded': 'deployed',
@@ -231,6 +235,8 @@ def eligible_event(event: dict, state: dict, current: dict, releases: dict, data
                      or event['metadata'].get('creationTimestamp'))
     if when <= state['started'] or now - when > HISTORY:
         return None
+    if kind == 'Kustomization' and (key not in current or now - when < SETTLE):
+        return None  # a removal in progress, or too early to tell (SETTLE); a later pass decides
     action = SUCCESS.get(reason) if kind == 'HelmRelease' else None
     if action is None and reason not in FAILURES:
         return None

@@ -15,7 +15,11 @@ class EditError(Exception):
 
 
 class YamlFile:
-    """One mapping document, retaining comments, quotes and collection styles."""
+    """One mapping document, retaining comments, quotes and collection styles.
+
+    Parsed afresh on every read: a deep copy of a parsed file is not faithful (after an edit, a comment
+    above a list's first item is lost and the list's layout breaks), so a parse cannot be cached and copied.
+    """
 
     def __init__(self, path: Path):
         self.path = path

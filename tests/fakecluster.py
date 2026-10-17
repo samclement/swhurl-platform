@@ -6,11 +6,10 @@ changes one answer with ``healthy(<key>=...)``.
 """
 import base64
 import datetime as dt
+import functools
 import json
 
-import yaml
-
-from swhurl import ROOT, clickstack, flux, platform
+from swhurl import ROOT, clickstack, flux, platform, yamlio
 from swhurl.apps import calling, channels, contract
 from swhurl.run import FakeRunner, Result
 
@@ -103,8 +102,9 @@ def ingress_rules(runner, answer):
     runner.on('kubectl', '-n', 'kube-system', 'get', 'deploy', 'traefik', handler=answer('traefik'))
 
 
+@functools.cache  # the checkout does not change during a run; every verifier test asks again
 def staging_tag(app):
-    return yaml.safe_load((ROOT / 'apps' / app / 'staging/helmrelease.yaml').read_text())[
+    return yamlio.load((ROOT / 'apps' / app / 'staging/helmrelease.yaml').read_text())[
         'spec']['values']['controllers']['main']['containers']['main']['image']['tag']
 
 

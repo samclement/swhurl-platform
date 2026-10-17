@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, logs
+from swhurl import ROOT, logs, yamlio
 from swhurl.apps import policy
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -71,19 +71,19 @@ def render(runner: Runner, release: dict) -> tuple[dict, dict[str, str], str]:
         values.flush()
         out = runner.output(['helm', 'template', release['metadata']['name'], str(chart),
                              '-n', release['metadata']['namespace'], '-f', values.name])
-    docs = [d for d in yaml.safe_load_all(out) if d]
+    docs = [d for d in yamlio.load_all(out) if d]
     config_map = next((d for d in docs if d['kind'] == 'ConfigMap' and 'relay' in (d.get('data') or {})), None)
     workload = next((d for d in docs if d['kind'] in ('DaemonSet', 'Deployment', 'StatefulSet')), None)
     if config_map is None or workload is None:
         raise OtelError('the chart rendered no collector ConfigMap (relay) or workload')
     container = workload['spec']['template']['spec']['containers'][0]
     env = {e['name']: str(e['value']) if 'value' in e else PLACEHOLDER for e in container.get('env') or []}
-    return (yaml.safe_load(config_map['data']['relay']), env,
+    return (yamlio.load(config_map['data']['relay']), env,
             container['image'].rpartition(':')[2])
 
 
 def canonical_names(runner: Runner, binary: Path) -> dict[str, set[str]]:
-    listed = yaml.safe_load(runner.output([str(binary), 'components']))
+    listed = yamlio.load(runner.output([str(binary), 'components']))
     return {kind: {c['name'] for c in listed.get(kind) or []} for kind in KINDS}
 
 
@@ -120,7 +120,7 @@ def validate(runner: Runner, binary: Path, config: dict, env: dict[str, str],
 
 def check(runner: Runner, report: Report, root: Path = ROOT) -> int:
     for path in sorted((root / OTEL).glob('helmrelease-*.yaml')):
-        release = yaml.safe_load(path.read_text())
+        release = yamlio.load(path.read_text())
         name = release['metadata']['name']
         report.section(f'OTel collector {name}')
         try:

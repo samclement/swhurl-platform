@@ -25,6 +25,8 @@ from pathlib import Path
 
 import yaml
 
+from swhurl import yamlio
+
 OFFERS_DIR = 'offers'
 SOURCE_FILE = 'source.yaml'
 EVENTS_NAME = 'asyncapi.yaml'
@@ -80,7 +82,7 @@ def fetch(repository: str, commit: str, path: str, *, token: str = '', opener: O
 
 def _document(text: str, name: str) -> dict:
     try:
-        doc = yaml.safe_load(text)
+        doc = yamlio.load(text)
     except yaml.YAMLError as error:
         raise OfferError(f'{name} is not valid YAML or JSON: {str(error).splitlines()[0]}') from None
     if not isinstance(doc, dict):

@@ -23,9 +23,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-import yaml
-
-from swhurl import ROOT, platform
+from swhurl import ROOT, platform, yamlio
 from swhurl.apps import hooks
 from swhurl.run import CommandError, Runner
 
@@ -108,7 +106,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         rel = path.relative_to(ROOT)
         fixture = rel.parts[:2] == ('tests', 'fixtures')
         try:
-            doc = yaml.safe_load(runner.output(['sops', 'decrypt', str(path)], secret_output=True))
+            doc = yamlio.load(runner.output(['sops', 'decrypt', str(path)], secret_output=True))
         except CommandError:
             print(f'[ERROR] {rel}: cannot decrypt')
             errors += 1

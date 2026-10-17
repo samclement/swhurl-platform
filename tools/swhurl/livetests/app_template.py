@@ -13,9 +13,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.apps.contract import (
     APP,
     COOKIE_DOMAIN,
@@ -30,7 +28,7 @@ APP_LABEL = APP
 
 def fixture_unit(instance: str) -> dict:
     """The generator's Flux unit for a fixture, pointed at the fixture path in Git."""
-    unit = yaml.safe_load((ROOT / FIXTURES / 'clusters/home' / f'app-{instance}.yaml').read_text())
+    unit = yamlio.load((ROOT / FIXTURES / 'clusters/home' / f'app-{instance}.yaml').read_text())
     unit['spec']['path'] = './' + FIXTURES.as_posix() + unit['spec']['path'][1:]
     return unit
 

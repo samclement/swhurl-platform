@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, platform
+from swhurl import ROOT, platform, yamlio
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
@@ -33,7 +33,7 @@ def fail(message: str) -> None:
 
 def documents(path: Path, root: Path = ROOT) -> list[dict]:
     try:
-        parsed = list(yaml.safe_load_all(path.read_text()))
+        parsed = list(yamlio.load_all(path.read_text()))
     except yaml.YAMLError as exc:
         fail(f'{path.relative_to(root)}: invalid YAML: {exc}')
     if not parsed or any(not isinstance(item, dict) for item in parsed):
@@ -139,7 +139,7 @@ def validate_render(runner: Runner, report: Report, path: Path, spec: dict, sett
 
     # Flux substitutes only in units with postBuild.substituteFrom; elsewhere ${...} reaches the cluster as written.
     substituted = TOKEN.sub(replace_token, rendered) if values else rendered
-    for item in yaml.safe_load_all(substituted):
+    for item in yamlio.load_all(substituted):
         if not isinstance(item, dict) or not all(key in item for key in ('apiVersion', 'kind', 'metadata')):
             fail(f'{label}: rendered document lacks apiVersion, kind or metadata')
     output(runner, ['flux-schema', 'validate', '--schema-location', 'default', '--schema-location', 'ecosystem',

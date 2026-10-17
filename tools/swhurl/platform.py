@@ -10,9 +10,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 
 # Repository paths (relative to the repository root).
 CLUSTER = Path('clusters/home')
@@ -53,13 +51,13 @@ def label(name: str) -> str:
 
 def base_domain(root: Path = ROOT) -> str:
     """``BASE_DOMAIN`` from platform-settings: parent of platform hosts and the sign-in cookie."""
-    data = yaml.safe_load((root / SETTINGS).read_text()).get('data') or {}
+    data = yamlio.load((root / SETTINGS).read_text()).get('data') or {}
     return data['BASE_DOMAIN']
 
 
 def github_repository(root: Path = ROOT) -> str:
     """``owner/name`` of the GitHub repository Flux applies (the swhurl-platform GitRepository)."""
-    url = yaml.safe_load((root / GIT_REPOSITORIES).read_text())['spec']['url']
+    url = yamlio.load((root / GIT_REPOSITORIES).read_text())['spec']['url']
     return url.removeprefix('https://github.com/').removesuffix('.git')
 
 
@@ -67,7 +65,7 @@ def flux_unit_documents(root: Path = ROOT) -> Iterator[tuple[Path, dict]]:
     """Every Flux Kustomization defined in Git, with the file that defines it."""
     files = [root / ROOT_UNITS, *sorted(p for p in (root / CLUSTER).iterdir() if p.suffix in ('.yaml', '.yml'))]
     for path in files:
-        for doc in yaml.safe_load_all(path.read_text()):
+        for doc in yamlio.load_all(path.read_text()):
             if (isinstance(doc, dict) and doc.get('apiVersion') == 'kustomize.toolkit.fluxcd.io/v1'
                     and doc.get('kind') == 'Kustomization'):
                 yield path, doc
@@ -106,7 +104,7 @@ def namespaces(root: Path = ROOT) -> set[str]:
     """The namespaces the shared units' manifests declare (an app instance's is its own: ``<app>-<env>``)."""
     return {doc['metadata']['name'] for unit in units(root) if not unit.is_app
             for file in sorted((root / unit.path).rglob('*.yaml'))
-            for doc in yaml.safe_load_all(file.read_text()) if isinstance(doc, dict) and doc.get('kind') == 'Namespace'}
+            for doc in yamlio.load_all(file.read_text()) if isinstance(doc, dict) and doc.get('kind') == 'Namespace'}
 
 
 def decrypted_secret_files(root: Path = ROOT) -> dict[str, list[Path]]:

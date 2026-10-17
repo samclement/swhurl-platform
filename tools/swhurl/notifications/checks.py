@@ -9,9 +9,7 @@ import json
 import time
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT, kube
+from swhurl import ROOT, kube, yamlio
 from swhurl.apps import channels, contract, helmrelease
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.report import Report
@@ -51,7 +49,7 @@ def check_channels(runner: Runner, report: Report, root: Path = ROOT) -> None:
     owned: dict[str, set[str]] = {}  # each team's apps, from the instances in Git
     for instance in instances(root / INSTANCE_ROOTS[0]):
         path = instance.folder(root) / 'namespace.yaml'
-        labels = ((yaml.safe_load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {} if path.is_file() else {}
+        labels = ((yamlio.load(path.read_text()) or {}).get('metadata') or {}).get('labels') or {} if path.is_file() else {}
         owned.setdefault(str(labels.get(contract.TEAM, '')), set()).add(instance.app)
     for team, apps in sorted(owned.items()):
         if team and not routes.get(team):

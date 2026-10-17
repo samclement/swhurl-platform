@@ -14,8 +14,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import yaml
-
+from swhurl import yamlio
 from swhurl.apps.contract import TEAMS_FILE, label
 
 NOTIFY_DIR = Path('platform/notify')
@@ -51,7 +50,7 @@ def channels(root: Path) -> dict[str, str]:
     """Each channel in Git with its transport, read from the Secrets' plain metadata (nothing is decrypted)."""
     found = {}
     for path in sorted((root / NOTIFY_DIR).glob(f'{SECRET_PREFIX}*.sops.yaml')):
-        metadata = (yaml.safe_load(path.read_text()) or {}).get('metadata') or {}
+        metadata = (yamlio.load(path.read_text()) or {}).get('metadata') or {}
         name = str(metadata.get('name', '')).removeprefix(SECRET_PREFIX)
         found[name] = (metadata.get('labels') or {}).get(TRANSPORT, '')
     return found
@@ -60,7 +59,7 @@ def channels(root: Path) -> dict[str, str]:
 def team_channels(root: Path) -> dict[str, list[str]]:
     """The channels each team's apps notify, for the teams that name any."""
     path = root / TEAMS_FILE
-    registered = (yaml.safe_load(path.read_text()) or {}).get('teams') or {} if path.is_file() else {}
+    registered = (yamlio.load(path.read_text()) or {}).get('teams') or {} if path.is_file() else {}
     return {team: list(entry['notify']) for team, entry in registered.items() if (entry or {}).get('notify')}
 
 
@@ -92,7 +91,7 @@ def problems(root: Path) -> list[str]:
         return []
     found = []
     known = channels(root)
-    listed = (yaml.safe_load((root / NOTIFY_DIR / 'kustomization.yaml').read_text()) or {}).get('resources') or []
+    listed = (yamlio.load((root / NOTIFY_DIR / 'kustomization.yaml').read_text()) or {}).get('resources') or []
     for name, transport in known.items():
         if not NAME_RE.match(name) or transport not in TRANSPORTS:
             found.append(f'{channel_file(name)} is not a channel Secret named {SECRET_PREFIX}<name> with a supported '
@@ -107,7 +106,7 @@ def problems(root: Path) -> list[str]:
             found.append(f'team {team} notifies {", ".join(missing)}, which is not a channel (make channel-add)')
     unit = root / UNIT_FILE
     encrypted = any((root / NOTIFY_DIR).glob('*.sops.yaml'))
-    if unit.is_file() and ('decryption' in (yaml.safe_load(unit.read_text()).get('spec') or {})) != encrypted:
+    if unit.is_file() and ('decryption' in (yamlio.load(unit.read_text()).get('spec') or {})) != encrypted:
         found.append(f'{UNIT_FILE} must decrypt exactly while {NOTIFY_DIR} holds an encrypted file (the channel commands set it)')
     path, text = routes_file(root)
     if not path.is_file() or path.read_text() != text:

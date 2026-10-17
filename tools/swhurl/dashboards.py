@@ -31,9 +31,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
-from swhurl import app_alerts, clickstack, kube, statestore
+from swhurl import app_alerts, clickstack, kube, statestore, yamlio
 from swhurl.apps.instance import INSTANCE_ROOTS, NAME_RE, Instance, instances
 from swhurl.platform import ROOT
 from swhurl.report import Report
@@ -66,13 +64,13 @@ def apps(paths: list[Path] | None = None) -> list[App]:
     found: dict[str, dict] = {}
     paths = paths if paths is not None else [each.folder(ROOT) for each in instances(ROOT / INSTANCE_ROOTS[0])]
     for instance in paths:
-        release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
+        release = yamlio.load((instance / 'helmrelease.yaml').read_text())
         kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
         entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(instance.name)
         namespace = instance / 'namespace.yaml'
         if namespace.is_file():
-            annotations = (yaml.safe_load(namespace.read_text()).get('metadata') or {}).get('annotations') or {}
+            annotations = (yamlio.load(namespace.read_text()).get('metadata') or {}).get('annotations') or {}
             entry['alerts'] = entry['alerts'] or str(annotations.get(app_alerts.ANNOTATION, ''))
     return [App(name, entry['kind'], tuple(sorted(entry['envs'], key=lambda e: e != 'staging')), entry['alerts'])
             for name, entry in sorted(found.items())]

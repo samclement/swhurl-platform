@@ -32,7 +32,7 @@ from typing import Any
 import httpx
 import yaml
 
-from swhurl import platform
+from swhurl import platform, yamlio
 from swhurl.apps import channels, egress, events, repo
 from swhurl.apps.contract import (
     APP_OWNER,
@@ -67,7 +67,7 @@ def platform_teams(runner: Runner, github: GitHub) -> dict[str, str]:
     api = GitHubAPI(runner, github)
     try:
         listing = api.json('GET', f'/contents/{TEAMS_FILE.as_posix()}?ref={BASE}')
-        registered = (yaml.safe_load(base64.b64decode(listing.get('content', ''))) or {}).get('teams') or {}
+        registered = (yamlio.load(base64.b64decode(listing.get('content', ''))) or {}).get('teams') or {}
     except (ValueError, AttributeError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read {TEAMS_FILE}: {error}') from None
     finally:
@@ -389,7 +389,7 @@ def platform_channels(runner: Runner, github: GitHub) -> tuple[dict[str, str], d
     api = GitHubAPI(runner, github)
     try:
         listing = api.json('GET', f'/contents/{channels.ROUTES_FILE.as_posix()}?ref={BASE}')
-        configmap = yaml.safe_load(base64.b64decode(listing.get('content', ''))) or {}
+        configmap = yamlio.load(base64.b64decode(listing.get('content', ''))) or {}
         routes = json.loads(configmap['data'][channels.ROUTES_KEY])
         return ({str(name): str(transport) for name, transport in routes.get('channels', {}).items()},
                 {str(team): [str(name) for name in names] for team, names in routes.get('teams', {}).items()})

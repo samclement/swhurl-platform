@@ -13,9 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT, platform
+from swhurl import ROOT, platform, yamlio
 
 SETTINGS = platform.SETTINGS
 ISSUERS = platform.ISSUERS
@@ -29,14 +27,14 @@ def platform_issuers(root: Path = ROOT) -> set[str]:
     """ClusterIssuers defined in Git that platform hosts may use (publicly trusted ones)."""
     names = set()
     for path in (root / ISSUERS).rglob('*.yaml'):
-        for doc in yaml.safe_load_all(path.read_text()):
+        for doc in yamlio.load_all(path.read_text()):
             if doc and doc.get('kind') == 'ClusterIssuer' and doc['metadata']['name'].startswith('letsencrypt-'):
                 names.add(doc['metadata']['name'])
     return names
 
 
 def load_settings(text: str) -> dict:
-    doc = yaml.safe_load(text)
+    doc = yamlio.load(text)
     if not isinstance(doc, dict) or doc.get('kind') != 'ConfigMap' or not isinstance(doc.get('data'), dict):
         raise SettingsError('expected a ConfigMap with a data section')
     return doc['data']

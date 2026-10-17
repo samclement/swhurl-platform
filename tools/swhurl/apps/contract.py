@@ -7,9 +7,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.platform import base_domain, label
 
 CHART = 'app-template'
@@ -57,7 +55,7 @@ def teams(root: Path = ROOT) -> dict[str, str]:
     for base in (root, ROOT):
         path = base / TEAMS_FILE
         if path.is_file():
-            registered = (yaml.safe_load(path.read_text()) or {}).get('teams') or {}
+            registered = (yamlio.load(path.read_text()) or {}).get('teams') or {}
             return {name: (entry or {}).get('description', '') for name, entry in registered.items()}
     return {}
 
@@ -188,7 +186,7 @@ def declared_secrets(release: dict | None) -> list[str]:
 
 def stored_secrets(text: str | None) -> list[str]:
     """The keys an app's SECRET_FILE holds a value for, from its text (SOPS leaves key names readable)."""
-    docs = [d for d in yaml.safe_load_all(text or '') if isinstance(d, dict)]
+    docs = [d for d in yamlio.load_all(text or '') if isinstance(d, dict)]
     return [str(key) for doc in docs for key in (doc.get('stringData') or doc.get('data') or {})]
 
 

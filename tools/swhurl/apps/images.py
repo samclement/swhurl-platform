@@ -19,8 +19,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
+from swhurl import yamlio
 from swhurl.apps.offers import Opener, _open
 
 REGISTRY = 'ghcr.io'
@@ -49,7 +48,7 @@ class Image:
 
 def policy(path: Path) -> Policy:
     """The ImagePolicy and its ImageRepository in an instance's image-automation.yaml."""
-    documents = [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
+    documents = [d for d in yamlio.load_all(path.read_text()) if isinstance(d, dict)]
     found = {d.get('kind'): d for d in documents}
     chosen, source = found.get('ImagePolicy'), found.get('ImageRepository')
     if not chosen or not source:

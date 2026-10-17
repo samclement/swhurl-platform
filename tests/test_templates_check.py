@@ -56,7 +56,7 @@ class CheckTemplatesTests(unittest.TestCase):
             self.assertIn(f'[OK] typescript {combo}: staging and prod pass the app policy', out)
         renders = [c for c in runner.calls if c[:2] == ('copier', 'copy')]
         self.assertEqual(len(renders), 4)
-        self.assertTrue(all(c[c.index('--vcs-ref') + 1] == STACK_REVISIONS['typescript'] for c in renders))
+        self.assertTrue(all('--vcs-ref' not in c for c in renders), 'renders the pinned checkout as a plain folder')
         self.assertIn(('git', 'fetch', '--quiet', '--depth', '1', 'origin', STACK_REVISIONS['typescript']), runner.calls)
         self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'clone')][0][-2],
                          'https://github.com/samclement/t.git', 'one clone, rendered locally four times')

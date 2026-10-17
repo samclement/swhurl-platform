@@ -92,6 +92,15 @@ def logs_url(app: str) -> str:
 TEMPLATES.env.globals['logs_url'] = logs_url
 
 
+def ungranted_url(instance: Instance) -> str:
+    """HyperDX, filtered to the egress proxy's lines for one instance's requests that no grant covers."""
+    return f'https://clickstack.{contract.COOKIE_DOMAIN}/search?' + urlencode(
+        {'where': f'ServiceName:"egress" AND "instance={instance.namespace} granted=-"', 'whereLanguage': 'lucene'})
+
+
+TEMPLATES.env.globals['ungranted_url'] = ungranted_url
+
+
 def dashboard_urls(runner: Runner) -> dict[str, str]:
     """Each app's HyperDX dashboard, from the record the dashboard job keeps (``console/app-dashboards``).
     Empty when it cannot be read: the pages then leave the link out."""
@@ -556,6 +565,16 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     'revision': revisions[0][0] if revisions else ''}
         return reading(request, 'platform.html', read)
 
+    def egress_page(request: Request) -> Response:
+        """Every instance's port on the egress proxy and the hosts outside the cluster it is granted, by environment."""
+        def read():
+            rows = cluster.apps(runner, states=False)
+            by_env = [(env, [row for row in rows if row.instance.env == env]) for env in ENVIRONMENTS]
+            granted = [row for row in rows if row.connections.egress]
+            return {'by_env': [(env, found) for env, found in by_env if found], 'instances': len(rows),
+                    'granted': len(granted), 'hosts': len({host for row in granted for host in row.connections.egress})}
+        return reading(request, 'egress.html', read)
+
     def unit(request: Request) -> Response:
         def read():
             found = {u.name: u for u in cluster.units(runner)}
@@ -1012,7 +1031,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         routes=[Route('/', overview), Route('/apps', apps), Route('/apps/{app}/{env}', app), Route('/services', moved('/apps?view=map')), Route('/catalogue', catalogue_page), Route('/catalogue/{env}/use', use_offer, methods=['POST']),
                 Route('/teams', teams_page), Route('/teams/{action}', change_team, methods=['POST']),
                 Route('/team-channel/{action}', change_channel, methods=['POST']),
-                Route('/platform', platform), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
+                Route('/platform', platform), Route('/egress', egress_page), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
                 Route('/apps/{app}/staging/promotion', review_promotion),
                 Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),

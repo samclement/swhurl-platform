@@ -31,6 +31,8 @@
 </div>
 <p class="muted">Flux unit checks are in the list below.{% if checks.skipped %} {{ checks.skipped | length }} more checks read Secrets, run commands in pods or need your machine ({{ checks.skipped | join(', ') }}): run <code>make verify-platform</code>.{% endif %}</p>
 
+<p class="muted"><a href="/egress">Egress</a>: every app's port on the egress proxy and the hosts outside the cluster it is granted.</p>
+
 <h2 id="units">Flux units</h2>
 {% set elsewhere = units | rejectattr('revision', 'equalto', revision) | list %}
 <details class="section" id="units-list"{{ ' open' if unhealthy }}>
@@ -45,7 +47,7 @@
     <details class="openrow" id="unit-{{ u.name }}"{{ ' open' if not u.healthy and u.state.key != 'updating' }}>
       <summary class="cols" title="Show or hide the details and actions of {{ u.name }}">
         <span class="chev" aria-hidden="true"></span>
-        <span class="cell"><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Apps/Services' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</span>
+        <span class="cell"><a class="mono" href="/units/{{ u.name }}">{{ u.name }}</a>{% if u.layer == 'Deployments' %}{% set label, link = target(u.name) %} <a class="muted" href="{{ link }}">{{ label }}</a>{% endif %}</span>
         <span class="cell" data-label="State">{{ st.state(u.state, detail=false, quiet=true) }}{% if u.revision != revision %} <span class="muted">at <code>{{ u.revision or 'no revision' }}</code></span>{% endif %}{% if job %} {{ st.running(job, refresh_url) }}{% endif %}</span>
         <span class="cell wrap muted" data-label="Waits for">{{ u.depends_on | join(', ') or '—' }}</span>
       </summary>

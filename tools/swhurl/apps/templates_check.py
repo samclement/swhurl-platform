@@ -25,9 +25,12 @@ from pathlib import Path
 
 from swhurl.apps import declaration, new, policy, promotion, repo
 from swhurl.apps.contract import (
+    APP_TYPES,
     STACK_REVISIONS,
     STACKS,
+    AppType,
     teams,
+    type_answers,
 )
 from swhurl.apps.instance import ENVIRONMENTS, instance_folder
 from swhurl.apps.yaml_file import EditError
@@ -105,8 +108,10 @@ def combination_job(runner: Runner, template: Path, stack: str, answers: dict[st
     return ok, [(entry.level, entry.message) for entry in part.entries]
 
 
-def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs: int = 1) -> int:
-    """``jobs`` above 1 runs the combinations in that many processes (a FakeRunner needs 1: it records in-process)."""
+def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs: int = 1,
+          types: dict[str, AppType] = APP_TYPES) -> int:
+    """``jobs`` above 1 runs the combinations in that many processes (a FakeRunner needs 1: it records in-process).
+    Each app type built with a stack must answer that template's questions with choices it offers."""
     work = Path(tempfile.mkdtemp(prefix='check-templates-'))
     failed = 0
     try:
@@ -119,6 +124,15 @@ def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs:
             # the checkout above pins the revision, and only the answers file's _commit differs.
             shutil.rmtree(template / '.git', ignore_errors=True)
             questions = [] if runner.dry_run else repo.parse_questions((template / 'copier.yml').read_text())
+            for key, app_type in types.items():
+                if stack not in app_type.stacks or runner.dry_run:
+                    continue
+                try:
+                    repo.check_answers(type_answers(key, stack), questions)
+                    report.ok(f'{stack}: the template offers every answer of the {app_type.title} type')
+                except repo.RepoError as error:
+                    report.bad(f'{stack}: the {app_type.title} type ({key}) no longer fits the template: {error}')
+                    failed += 1
             todo = [(runner, template, stack, answers, work / f'{stack}-{i}')
                     for i, answers in enumerate(combinations(questions))]
             if jobs > 1 and not runner.dry_run:

@@ -70,6 +70,12 @@ TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.g
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
 HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
 STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
+INCLUDED = {'database': 'SQLite', 'api': 'API description', 'events': 'Events', 'flags': 'Feature flags'}
+"""The template answers an app type turns on, as the New app form names them."""
+INCLUDED_TEXT = {'database': 'a database file the platform keeps on a volume and backs up nightly',
+                 'api': 'an OpenAPI document of its routes, so other apps can find and call it',
+                 'events': 'an AsyncAPI document of the events it publishes, with an example event',
+                 'flags': 'an example feature flag, set per environment from the console'}
 STREAM_POLL = 0.25
 KEEPALIVE = 15.0
 
@@ -813,14 +819,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         form = form or {}
         teams, teams_error = platform_teams()
         callable_apps, offered_events, connections_error = connectable()
-        features, features_error = {}, ''
-        for stack in contract.STACKS:
-            try:
-                features[stack] = stack_questions(stack)
-            except repo.RepoError as problem:
-                features[stack], features_error = [], str(problem)
         return page(request, 'new_repo.html', status_code=status_code,
-                    features=features, features_error=features_error,
+                    app_types=contract.APP_TYPES, included=INCLUDED, included_text=INCLUDED_TEXT,
+                    stack_types={stack: ' '.join(key for key, found in contract.APP_TYPES.items() if stack in found.stacks)
+                                 for stack in contract.STACKS},
                     stacks=contract.STACKS, stack_names=STACK_NAMES, stack_text=contract.STACK_DESCRIPTIONS,
                     owner=contract.APP_OWNER, teams=teams, teams_error=teams_error,
                     team_channels=platform_channels()[1],

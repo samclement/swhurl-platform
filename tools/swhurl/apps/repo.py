@@ -1,10 +1,12 @@
 """Create an app's GitHub repository from a stack's template and wait for its first image.
 
-    make app-repo NAME=<app> [STACK=typescript] [ANSWERS="kind=worker database=sqlite"] [DESCRIPTION="..."]
+    make app-repo NAME=<app> TYPE=web-app|api|worker [STACK=typescript|kotlin] [DESCRIPTION="..."]
 
-ANSWERS are the stack template's own questions (its copier.yml, read from GitHub): for the
-typescript stack, kind (web or worker) and database (none or sqlite). Unknown questions and
-choices are refused before anything is created.
+TYPE sets every answer of the stack template (contract.APP_TYPES) and the exposure staging starts
+with; STACK defaults to the type's first. ANSWERS="kind=worker database=sqlite" sets the template's
+own questions (its copier.yml, read from GitHub) instead of, or over, a type's: a combination no
+type has is one the template's CI may not build, so it is the operator's, with a warning. Unknown
+questions and choices are refused before anything is created.
 
 1. refuses if OWNER/NAME already exists;
 2. renders the stack's Copier template (uvx copier) into a scratch directory, commits it;
@@ -29,7 +31,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,10 +39,12 @@ from swhurl import yamlio
 from swhurl.apps import hooks
 from swhurl.apps.contract import (
     APP_OWNER,
+    APP_TYPES,
     APP_WORKFLOW,
     COPIER,
     STACK_REVISIONS,
     STACKS,
+    type_answers,
 )
 from swhurl.apps.instance import NAME_RE
 from swhurl.run import CommandError, Runner
@@ -125,6 +129,7 @@ class Request:
     owner: str = APP_OWNER
     description: str = ''
     answers: dict[str, str] = field(default_factory=dict)
+    exposure: str = ''  # what staging starts with, from the type ('' for app-new's default)
 
     @property
     def repo(self) -> str:
@@ -260,8 +265,34 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
         image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
         out(f'[OK] First image: {image}')
     out('Next, add it to staging (a Git edit; commit and push it). <team> is the team that owns it, a name in apps/teams.yaml:')
-    out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --team <team> --image {image}"')
+    exposure = f' --exposure {req.exposure}' if req.exposure and req.answers.get('kind') != 'worker' else ''
+    out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --team <team>{exposure} --image {image}"')
     return image
+
+
+def from_environment(name: str, environ: Mapping[str, str], warn: Callable[[str], None] | None = None) -> Request:
+    """The request make's variables describe: TYPE (and STACK), or ANSWERS for a combination no type has."""
+    warn = warn or (lambda line: print(line, file=sys.stderr))
+    app_type, stack = environ.get('TYPE', '').strip(), environ.get('STACK', '').strip()
+    overrides = parse_answers(environ.get('ANSWERS', ''))
+    if app_type:
+        if app_type not in APP_TYPES:
+            raise RepoError(f'TYPE must be one of {", ".join(APP_TYPES)}')
+        stack = stack or APP_TYPES[app_type].stacks[0]
+        try:
+            answers = type_answers(app_type, stack)
+        except ValueError as error:
+            raise RepoError(str(error)) from None
+        exposure = APP_TYPES[app_type].exposure
+    elif overrides:
+        answers, exposure = {}, ''
+    else:
+        raise RepoError(f'TYPE is required: one of {", ".join(APP_TYPES)} (or ANSWERS="..." for a combination no type has)')
+    if overrides:
+        warn(f'[WARN] ANSWERS {" ".join(f"{k}={v}" for k, v in sorted(overrides.items()))}: a combination the template\'s CI '
+             'may not build or test; prefer TYPE alone')
+    return Request(name, stack or 'typescript', environ.get('OWNER') or APP_OWNER, environ.get('DESCRIPTION', ''),
+                   {**answers, **overrides}, exposure)
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
@@ -270,8 +301,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         print(__doc__.split('\n\n')[1], file=sys.stderr)
         return 2
     try:
-        req = Request(argv[0], os.environ.get('STACK') or 'typescript', os.environ.get('OWNER') or APP_OWNER,
-                      os.environ.get('DESCRIPTION', ''), parse_answers(os.environ.get('ANSWERS', '')))
+        req = from_environment(argv[0], os.environ)
         create(runner or Runner.from_environment(), req)
     except (RepoError, CommandError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)

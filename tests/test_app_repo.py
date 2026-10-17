@@ -28,6 +28,18 @@ database:
   help: none or sqlite
   choices: [none, sqlite]
   default: none
+api:
+  type: str
+  choices: [none, openapi]
+  default: none
+events:
+  type: str
+  choices: [none, asyncapi]
+  default: none
+flags:
+  type: str
+  choices: [none, example]
+  default: none
 """
 
 
@@ -146,7 +158,9 @@ class AppRepoTests(unittest.TestCase):
     def test_answers_are_the_templates_own_questions(self):
         questions = repo.parse_questions(COPIER_YML)
         self.assertEqual([(q.name, q.choices, q.default) for q in questions],
-                         [('kind', ('web', 'worker'), 'web'), ('database', ('none', 'sqlite'), 'none')])
+                         [('kind', ('web', 'worker'), 'web'), ('database', ('none', 'sqlite'), 'none'),
+                      ('api', ('none', 'openapi'), 'none'), ('events', ('none', 'asyncapi'), 'none'),
+                      ('flags', ('none', 'example'), 'none')])
         self.assertEqual(repo.parse_answers('kind=worker database=sqlite'), {'kind': 'worker', 'database': 'sqlite'})
         cluster = Cluster()
         self.create(cluster, repo.Request('notes', answers={'kind': 'worker', 'database': 'sqlite'}))
@@ -161,6 +175,25 @@ class AppRepoTests(unittest.TestCase):
             self.assertEqual(cluster.runner.calls, [], 'refused before anything ran')
         with self.assertRaisesRegex(repo.RepoError, 'question=choice'):
             repo.parse_answers('kind')
+
+    def test_a_type_sets_the_answers_the_stack_and_where_staging_starts(self):
+        warnings = []
+        api = repo.from_environment('weather', {'TYPE': 'api', 'STACK': 'kotlin', 'DESCRIPTION': 'Weather'}, warnings.append)
+        self.assertEqual((api.stack, api.exposure, api.description), ('kotlin', 'private', 'Weather'))
+        self.assertEqual(api.answers, {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example'})
+        self.assertEqual(repo.from_environment('site', {'TYPE': 'web-app'}, warnings.append).stack, 'typescript',
+                         "the type's first stack")
+        self.assertEqual(warnings, [])
+        tweaked = repo.from_environment('weather', {'TYPE': 'api', 'ANSWERS': 'database=none'}, warnings.append)
+        self.assertEqual(tweaked.answers['database'], 'none')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("database=none: a combination the template's CI may not build", warnings[0])
+        self.assertEqual(repo.from_environment('w', {'ANSWERS': 'kind=worker'}, warnings.append).answers, {'kind': 'worker'})
+        for environ, message in (({}, 'TYPE is required: one of web-app, api, worker'),
+                                 ({'TYPE': 'cron'}, 'TYPE must be one of'),
+                                 ({'TYPE': 'web-app', 'STACK': 'kotlin'}, 'a Web app is built with typescript, not kotlin')):
+            with self.subTest(environ=environ), self.assertRaisesRegex(repo.RepoError, message):
+                repo.from_environment('w', environ, warnings.append)
 
     def test_dry_run_creates_nothing(self):
         cluster = Cluster()

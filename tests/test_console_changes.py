@@ -27,7 +27,7 @@ from swhurl.run import CommandError, FakeRunner, Result, Runner
 TOKEN = 'github_pat_fixture_0123456789abcdef'
 HEAD = 'abc1234' + '0' * 33
 WHO = {'X-Auth-Request-Email': 'sam@swhurl.com', 'Origin': 'http://testserver'}
-NEW = {'name': 'weather-api', 'stack': 'typescript', 'team': 'platform', 'exposure': 'authenticated-web', 'host': ''}
+NEW = {'name': 'weather-api', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'exposure': 'authenticated-web', 'host': ''}
 IMAGE = 'ghcr.io/me/hello:2.0@sha256:' + 'a' * 64
 REVISION = 'main@sha1:' + HEAD
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
@@ -594,7 +594,7 @@ class NewAppRouteTests(unittest.TestCase):
         web = [repo.Question('kind', '', ('web', 'worker'), 'web')]
         self.assertEqual(changes.NewApp.from_form({**NEW, 'team': 'payments'}, web, teams).flags,
                          ('--team=payments', '--exposure=authenticated-web'))
-        self.assertEqual(changes.NewApp.from_form({**NEW, 'team': 'payments', 'feature-kind': 'worker'}, web, teams).flags,
+        self.assertEqual(changes.NewApp.from_form({**NEW, 'team': 'payments', 'type': 'worker'}, web, teams).flags,
                          ('--team=payments',), 'a worker has a team too')
         for form, registered, message in (({**NEW, 'team': ''}, teams, 'choose the team that owns the app: one of platform, payments'),
                                           ({**NEW, 'team': 'nobody'}, teams, 'choose the team that owns the app'),
@@ -1208,6 +1208,18 @@ database:
   help: none or sqlite
   choices: [none, sqlite]
   default: none
+api:
+  type: str
+  choices: [none, openapi]
+  default: none
+events:
+  type: str
+  choices: [none, asyncapi]
+  default: none
+flags:
+  type: str
+  choices: [none, example]
+  default: none
 """
 
 
@@ -1531,10 +1543,12 @@ class NewRepoRouteTests(unittest.TestCase):
         self.assertNotIn('Deploy an existing image', page)
         self.assertIn('action="/new/repo"', page)
         self.assertIn('name="stack" value="typescript" checked', page)
-        self.assertIn('name="feature-kind" value="web" checked', page)
-        self.assertIn('name="feature-database" value="sqlite" >', page)
-        self.assertIn('none or sqlite', page, "the template's own help text")
-        response = c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'team': 'platform', 'description': 'Take notes',
+        self.assertIn('name="type" value="web-app" data-exposure="authenticated-web" data-kind="web" checked', page)
+        self.assertIn('name="type" value="api" data-exposure="private" data-kind="web" >', page)
+        self.assertIn('<span class="pill ok">SQLite</span>', page, 'what each type includes')
+        self.assertIn('data-types="web-app api worker"><input type="radio" name="stack" value="typescript"', page)
+        self.assertIn('data-types="api worker"><input type="radio" name="stack" value="kotlin"', page, 'no Kotlin web app')
+        response = c.post('/new/repo', data={'name': 'notes', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'description': 'Take notes',
                                              'exposure': 'authenticated-web', 'host': ''}, headers=WHO,
                           follow_redirects=False)
         self.assertEqual((response.status_code, response.headers['location']), (303, '/jobs/1'))
@@ -1546,8 +1560,8 @@ class NewRepoRouteTests(unittest.TestCase):
                                        f'--image=ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}',
                                        '--team=platform', '--exposure=authenticated-web'))
         copy = next(c for c in runner.calls if 'copy' in c)
-        self.assertIn('kind=web', copy)
-        self.assertIn('database=none', copy)
+        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'events=asyncapi', 'flags=example'):
+            self.assertIn(answer, copy, 'the type sets every answer')
         self.assertEqual(platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
         body = platform_api.sent('POST /pulls')[0]['body']
@@ -1559,7 +1573,7 @@ class NewRepoRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
         c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
-        form = 'name=notes&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created&publish=sent'
+        form = 'name=notes&type=worker&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created&publish=sent'
         response = c.post('/new/repo', content=form, headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'},
                           follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
@@ -1569,29 +1583,31 @@ class NewRepoRouteTests(unittest.TestCase):
                                        '--calls=orders,billing', '--subscribe=orders.created', '--publish=sent'))
         self.assertEqual(platform_api.sent('POST /issues/7/labels'), [],
                          'it changes other apps, so it is not labelled to merge itself')
-        refused = c.post('/new/repo', content='name=notes2&stack=typescript&team=platform&calls=stranger',
+        refused = c.post('/new/repo', content='name=notes2&type=worker&stack=typescript&team=platform&calls=stranger',
                          headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'})
         self.assertEqual(refused.status_code, 400)
         self.assertIn('stranger: not a web app, or an event, that staging has now', refused.text)
         self.assertEqual(len(app_api.writes()), len([w for w in app_api.writes() if 'notes2' not in w[1]]),
                          'no repository is created for a refused form')
 
-    def test_a_worker_with_sqlite_gets_no_route_and_its_answers(self):
+    def test_a_worker_gets_no_route_and_its_types_answers(self):
         runner = repo_runner(tree_fake())
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github, app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
-        c.post('/new/repo', data={'name': 'notes', 'stack': 'typescript', 'team': 'platform', 'feature-kind': 'worker',
-                                  'feature-database': 'sqlite', 'exposure': 'authenticated-web', 'host': ''}, headers=WHO)
+        c.post('/new/repo', data={'name': 'notes', 'type': 'worker', 'stack': 'typescript', 'team': 'platform',
+                                  'exposure': 'authenticated-web', 'host': ''}, headers=WHO)
         self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
         app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
         self.assertFalse([a for a in app_new if a.startswith(('--exposure', '--host'))], 'swhurl.yaml makes a worker private')
         copy = next(c for c in runner.calls if 'copy' in c)
         self.assertIn('kind=worker', copy)
-        self.assertIn('database=sqlite', copy)
-        self.assertIn('Rendering samclement/swhurl-app-template-typescript (typescript) for notes with database=sqlite, kind=worker',
-                      jobs.get(1).lines)
-        for form, message in (({'feature-kind': 'cron'}, 'kind must be one of web, worker'),
-                              ({'feature-kind': 'worker', 'host': 'notes.homelab.swhurl.com'}, 'a worker has no web address')):
+        self.assertIn('database=none', copy)
+        self.assertIn('Rendering samclement/swhurl-app-template-typescript (typescript) for notes with api=none, database=none, '
+                      'events=asyncapi, flags=example, kind=worker', jobs.get(1).lines)
+        for form, message in (({'type': 'cron'}, 'type must be one of web-app, api, worker'),
+                              ({}, 'type must be one of web-app, api, worker'),
+                              ({'type': 'web-app', 'stack': 'kotlin'}, 'a Web app is built with typescript, not kotlin'),
+                              ({'type': 'worker', 'host': 'notes.homelab.swhurl.com'}, 'a worker has no web address')):
             with self.subTest(message=message):
                 response = c.post('/new/repo', data={'name': 'notes2', 'stack': 'typescript', 'team': 'platform', **form}, headers=WHO)
                 self.assertEqual(response.status_code, 400)
@@ -1605,19 +1621,23 @@ class NewRepoRouteTests(unittest.TestCase):
         page = c.get('/new', headers=WHO).text
         self.assertIn('name="stack" value="kotlin"', page)
         self.assertIn('Kotlin on Micronaut', page)
-        self.assertEqual(page.count('<section class="card features"'), 2, 'one Features set per stack')
-        c.post('/new/repo', data={'name': 'notes', 'stack': 'kotlin', 'team': 'platform', 'feature-kind': 'web', 'feature-database': 'sqlite'},
-               headers=WHO)
+        c.post('/new/repo', data={'name': 'notes', 'type': 'api', 'stack': 'kotlin', 'team': 'platform'}, headers=WHO)
         self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
         copy = next(c for c in runner.calls if 'copy' in c)
         self.assertIn('https://github.com/samclement/swhurl-app-template-kotlin.git', copy)
+        app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
+        self.assertIn('--exposure=private', app_new, 'an API starts private')
 
     def test_template_questions_are_read_on_first_use_whatever_the_clock(self):
         from unittest import mock
+        runner = repo_runner(tree_fake())
+        jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         with mock.patch('swhurl.console.server.time.monotonic', return_value=5.0):  # a host booted 5 s ago
-            page = TestClient(app_under_test(repo_runner(tree_fake()), github=FakeGitHub().github,
-                                             app_repos=FakeAppGitHub().config)).get('/new', headers=WHO).text
-        self.assertIn('name="feature-kind" value="web" checked', page)
+            c = TestClient(app_under_test(runner, jobs=jobs, github=FakeGitHub().github,
+                                          app_repos=FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}]).config))
+            response = c.post('/new/repo', data={'name': 'notes', 'type': 'api', 'stack': 'typescript', 'team': 'platform'},
+                              headers=WHO, follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
 
     def test_bad_input_or_a_missing_token_creates_nothing(self):
         runner = repo_runner(tree_fake())
@@ -1626,7 +1646,7 @@ class NewRepoRouteTests(unittest.TestCase):
                                          app_repos=app_api.config))
         for form, message in (({'name': 'Notes', 'stack': 'typescript', 'team': 'platform'}, 'DNS label'),
                               ({'name': 'notes', 'stack': 'cobol'}, 'stack must be one of'),
-                              ({'name': 'notes', 'stack': 'typescript', 'team': 'platform', 'host': 'bad host'}, 'not a DNS name')):
+                              ({'name': 'notes', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'host': 'bad host'}, 'not a DNS name')):
             with self.subTest(message=message):
                 response = c.post('/new/repo', data=form, headers=WHO)
                 self.assertEqual(response.status_code, 400)

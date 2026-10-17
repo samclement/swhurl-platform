@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from test_app_repo import COPIER_YML
+from test_app_repo import COPIER_YML as ALL_QUESTIONS
 
 from swhurl.apps import repo, templates_check
 from swhurl.apps.contract import (
@@ -12,6 +12,8 @@ from swhurl.apps.contract import (
 )
 from swhurl.report import Report
 from swhurl.run import FakeRunner, Result
+
+COPIER_YML = ALL_QUESTIONS.split("api:\n")[0]  # kind and database: four combinations are enough here
 
 WEB = 'version: 1\nkind: web\nport: 8080\nhealthPath: /healthz\nautoDeploy: true\n'
 WORKER = 'version: 1\nkind: worker\nautoDeploy: true\n'
@@ -42,7 +44,7 @@ def run(runner, problems=lambda path: []):
     out = io.StringIO()
     with mock.patch.object(repo, 'copier_command', return_value=['copier']), \
             mock.patch.object(templates_check.policy, 'evaluate', side_effect=lambda path, _runner: problems(path)):
-        code = templates_check.check(runner, Report(out), {'typescript': 'samclement/t'})
+        code = templates_check.check(runner, Report(out), {'typescript': 'samclement/t'}, types={})
     return code, out.getvalue()
 
 

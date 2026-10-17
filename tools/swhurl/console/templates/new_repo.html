@@ -14,9 +14,31 @@
 {# One card per step, as on an app's page: what the step decides at the top, then one choice per row
    with its label on the left. The last card says what the button will do, and holds the button. #}
 <form class="wizard cards" method="post" action="/new/repo">
+  {% set chosen_type = form.type if form.type in app_types else 'web-app' %}
   <section class="card">
     <div class="card-head">
-      <h2><span class="step">1</span> The app</h2>
+      <h2><span class="step">1</span> What you are building</h2>
+      <p class="muted">The type sets everything the template includes, and who can reach the app at first. Each can change later.</p>
+    </div>
+    <div class="card-body rows">
+      <div class="field">
+        <span class="label">Type</span>
+        <div class="choices">
+          {% for key, t in app_types.items() %}
+          <label class="choice"><input type="radio" name="type" value="{{ key }}" data-exposure="{{ t.exposure }}" data-kind="{{ t.answers.kind }}" {{ 'checked' if chosen_type == key }}>
+            <span><strong>{{ t.title }}</strong><br><span class="muted">{{ t.text }}</span><br>
+              {% for stack in t.stacks %}<span class="pill">{{ stack_names.get(stack, stack) }}</span> {% endfor %}
+              {% for answer, label in included.items() if t.answers.get(answer, 'none') != 'none' %}<span class="pill ok">{{ label }}</span> {% endfor %}</span></label>
+          {% endfor %}
+        </div>
+        <span class="muted hint">What each includes: {% for answer, label in included.items() %}<strong>{{ label }}</strong> {{ included_text[answer] }}{{ '; ' if not loop.last else '.' }}{% endfor %}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2><span class="step">2</span> The app</h2>
       <p class="muted">Its name, the stack it is built from and the team that owns it.</p>
     </div>
     <div class="card-body rows">
@@ -29,13 +51,13 @@
         <span class="label">Stack</span>
         <div class="choices">
           {% for key, template in stacks.items() %}
-          <label class="choice"><input type="radio" name="stack" value="{{ key }}" {{ 'checked' if (form.stack or 'typescript') == key }}>
+          <label class="choice" data-types="{{ stack_types[key] }}"><input type="radio" name="stack" value="{{ key }}" {{ 'checked' if (form.stack or 'typescript') == key }}>
             <span><strong>{{ stack_names.get(key, key) }}</strong><br><span class="muted">{{ stack_text.get(key, '') }}</span></span></label>
           {% endfor %}
         </div>
         <span class="muted hint">Templates: {% for key, template in stacks.items() %}<a href="https://github.com/{{ template }}">{{ template }}</a>{{ ', ' if not loop.last }}{% endfor %}.</span>
       </div>
-      {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository and its README.') }}
+      {{ ui.text_field('description', 'Description', form.description or '', 'What the app does', 'Optional. One line, for the repository, its README and its API description.') }}
       <div class="field">
         <span class="label">Owning team</span>
         <div class="choices">
@@ -50,36 +72,15 @@
     </div>
   </section>
 
-  {% for stack, questions in features.items() %}
-  <section class="card features" data-stack="{{ stack }}">
-    <div class="card-head">
-      <h2><span class="step">2</span> What it is</h2>
-      <p class="muted">The features the {{ stack_names.get(stack, stack) }} template offers.</p>
-    </div>
-    <div class="card-body rows">
-      {% for q in questions %}
-      <div class="field" data-feature="{{ q.name }}">
-        <span class="label">{{ 'API' if q.name == 'api' else q.name | capitalize }}</span>
-        <div><div class="segmented">{% for c in q.choices %}<label><input type="radio" name="feature-{{ q.name }}" value="{{ c }}" {{ 'checked' if (form['feature-' ~ q.name] or q.default) == c }}> {{ c }}</label>{% endfor %}</div></div>
-        <span class="muted hint">{{ q.help }}</span>
-      </div>
-      {% else %}
-      <p class="muted">This stack offers no features to choose.</p>
-      {% endfor %}
-    </div>
-  </section>
-  {% endfor %}
-  {% if features_error %}<p class="warn">{{ features_error }} The template's defaults will be used.</p>{% endif %}
-
   <section class="card" id="reach">
     <div class="card-head">
       <h2><span class="step">3</span> Who can reach it</h2>
-      <p class="muted">Its web address in staging, and who may open it.</p>
+      <p class="muted">Its web address in staging, and who may open it. An API is private: browsers reach it through a web app that calls it.</p>
     </div>
     <div class="card-body rows">
       <div class="field">
         <span class="label">Access</span>
-        <div class="choices">{{ ui.exposure_choices(form.exposure or 'authenticated-web', 'authenticated-web', 'default') }}</div>
+        <div class="choices">{{ ui.exposure_choices(form.exposure or app_types[chosen_type].exposure) }}</div>
       </div>
       {{ ui.text_field('host', 'Host', form.host or '', 'derived from the name', 'Leave empty for a signed-in app to get staging-<name>.' ~ domain ~ '. A public app needs its own host outside ' ~ domain ~ '.') }}
     </div>
@@ -124,22 +125,34 @@
 </form>
 
 <script>
-// Optional: shows the chosen stack's features, swaps "Who can reach it" for a note on a worker (and hides its API row), and keeps
-// "What happens" in step with the name. Without it every field shows and the server applies the same rules.
+// Optional: shows only the stacks the chosen type is built with, starts "Who can reach it" at the type's
+// default until it is changed by hand, swaps it for a note on a worker, and keeps "What happens" in step
+// with the name. Without it every field shows and the server applies the same rules.
 (() => {
   const form = document.querySelector('form.wizard');
-  const showFeatures = () => {
-    const stack = (form.elements.stack && form.elements.stack.value) || '';
-    document.querySelectorAll('.card.features').forEach((f) => { f.hidden = f.dataset.stack !== stack; });
-    const kind = form.elements['feature-kind'];
-    const worker = !!kind && kind.value === 'worker';
+  let exposureTouched = {{ 'true' if form.exposure else 'false' }};
+  form.querySelectorAll('input[name="exposure"]').forEach((input) => input.addEventListener('change', () => { exposureTouched = true; }));
+  const showType = () => {
+    const chosen = form.querySelector('input[name="type"]:checked');
+    if (!chosen) return;
+    form.querySelectorAll('label[data-types]').forEach((label) => {
+      const fits = label.dataset.types.split(' ').includes(chosen.value);
+      label.hidden = !fits;
+      if (!fits && label.querySelector('input').checked) {
+        const first = form.querySelector(`label[data-types~="${chosen.value}"] input`);
+        if (first) first.checked = true;
+      }
+    });
+    const worker = chosen.dataset.kind === 'worker';
     document.getElementById('reach').hidden = worker;
     document.getElementById('worker-note').hidden = !worker;
-    // A worker serves no API: the template ignores that answer, so the row is not offered.
-    document.querySelectorAll('.card.features:not([hidden]) [data-feature="api"]').forEach((row) => { row.hidden = worker; });
+    if (!exposureTouched) {
+      const fallback = form.querySelector(`input[name="exposure"][value="${chosen.dataset.exposure}"]`);
+      if (fallback) fallback.checked = true;
+    }
   };
-  form.addEventListener('change', showFeatures);
-  showFeatures();
+  form.querySelectorAll('input[name="type"]').forEach((input) => input.addEventListener('change', showType));
+  showType();
   const name = document.getElementById('name');
   const owner = {{ owner | tojson }};
   const update = () => {

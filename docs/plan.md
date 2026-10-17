@@ -41,6 +41,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Also needed:** seed retention (one image per template `main` commit; the template's own workflow can delete old versions of its package with `GITHUB_TOKEN`).
     - **Gain:** about 2 minutes per new Kotlin app, about 25 s per TypeScript app (its build is fast); once per app.
     - **Recommendation:** publish seeds for the tested combinations without `api` or `events` (defaults, worker, SQLite, flags) when apps start using them; leave the rest until the runtime-name change is wanted for other reasons.
+20. **App types for new apps: proposed 17 October 2026, not started** ([section 23](#23-app-types-for-new-apps--proposed-17-october-2026-not-started)). New apps are created by type (web app, API, worker, scheduled job) instead of by feature; each type sets its stack choices and template answers. Decided by the operator: calls carry the signed-in person; Web app has SQLite; each type has its own seed. Proposed, to confirm before stage 3: types defined in the platform, scheduled job as a fourth type, APIs private by default, `ANSWERS=` kept for the operator. Next: stage 1 (on-behalf-of in both templates).
 
 ### Delivered
 
@@ -1420,3 +1421,66 @@ A schema construct the comparator does not understand (for example `oneOf`) coun
 **Cost.** CI time is negligible: two documents under 25 KB compared in process, about nine staging images a day, Deploy runs of 33 to 45 s and Validate of about 116 s (17 October). The cost is the module, its tests, two call sites, the console message and docs.
 
 **Not covered.** API compatibility (option C), payload meaning (a field that keeps its type but changes units), and subscribers in other environments: staging and production are checked separately, each against its own subscribers.
+
+## 23. App types for new apps — proposed 17 October 2026, not started
+
+**Why.** A new app today is a stack plus five template questions (`kind`, `database`, `api`, `events`, `flags`): 32 combinations per stack, of which template CI builds 7 and seeds 1. Teams think in what they are building, not in features. A type picks the answers.
+
+**Types and their defaults.** A type sets every template answer and the platform's creation settings; nobody picks features. Exposure, replicas and connections can still be changed afterwards with the existing commands.
+
+| Default | Web app | API | Worker | Scheduled job |
+| --- | --- | --- | --- | --- |
+| For | A site people use in a browser | Data and operations other apps call | Reacting to events, or work in a steady loop | Work at a time of day, then exit |
+| Stacks | TypeScript, with a Vite+ frontend | TypeScript or Kotlin | TypeScript or Kotlin | TypeScript or Kotlin |
+| `kind` | `web` | `web` | `worker` | `job` (new) |
+| `database` | `sqlite` | `sqlite` | `none` | `none` |
+| `api` | `openapi` (its own `/api/*`) | `openapi` | `none` | `none` |
+| `events` | `asyncapi` | `asyncapi` | `asyncapi` | `asyncapi` |
+| `flags` | `example` | `example` | `example` | `example` |
+| Exposure | signed-in | private | private (no Service) | private (no Service) |
+| Replicas | 1 (SQLite) | 1 (SQLite) | 1 | one run at a time (`Forbid`) |
+| Runs as | Deployment, Service and route: the built frontend and its `/api/*` from one image, one host | Deployment and Service | Deployment, looping every `WORK_INTERVAL_MS` or waiting for events | CronJob, `schedule: "17 3 * * *"` (daily 03:17) until changed |
+| In the Catalogue | events only (its API serves its own frontend) | API and events | events | events |
+| Seed image | its own | its own, per stack | its own, per stack | its own, per stack |
+
+A worker is not a scheduled job: a loop loses its time of day on restart, holds its memory between runs, runs twice with two replicas and has no last success to check. Data shared between apps belongs in an API; a web app's own SQLite holds what only it uses (sessions, preferences, drafts).
+
+**Decisions.**
+
+| Decision | Outcome |
+| --- | --- |
+| On-behalf-of for calls | **Chosen (operator, 17 October 2026):** a call made while serving a signed-in person carries that person to the callee (below) |
+| Where the types live | Proposed: in the platform (`APP_TYPES` beside `STACKS` in `apps/contract.py`), expanded into today's Copier answers, so `.copier-answers.yml` records every answer and a later change to a type does not alter existing apps on their Renovate update. Rejected: a `type` question in each `copier.yml` deriving the others (a changed default would reach existing apps), one template repository per type (four to seven repositories) |
+| Scheduled job as a fourth type | Proposed: yes. bjw-s `app-template` 5.2.1 renders `type: cronjob`; `kube.py` already reads a CronJob's last success |
+| API exposure default | Proposed: private; a browser reaches it through a web app (below) |
+| Web app database | **Chosen (operator, 17 October 2026):** SQLite on, like an API |
+| Seed images | **Chosen (operator, 17 October 2026):** every type has its own seed image, per stack (seven), so every type gets the seed's start-up time |
+| `ANSWERS=` on `make app-repo` | Proposed: kept for the operator, marked untested; the console offers types only |
+| Web app's API in the Catalogue | Proposed: not listed (no `provides.api`): it serves its own frontend; openapi stays for typed `fetch` calls |
+| Scheduled job's default schedule | Proposed: daily at 03:17, changed with a command like `app-scale` (a grant), not in `swhurl.yaml`'s read-again fields |
+
+**A web app calling a signed-in API.** The browser calls only its own host; the web app's server calls the API as an app. Same origin, so no CORS, and the API stays private. Rejected: the browser calling the API's own signed-in host (ForwardAuth answers the credential-less CORS preflight with a 302, and an expired session turns `fetch` into an unreadable redirect), and Traefik routing a path of the web app's host to the API (two instances on one host, and the call is no longer declared).
+
+```mermaid
+flowchart LR
+  browser["browser<br/>fetch('/api/orders')"] -- "sign-in cookie" --> traefik["Traefik + oauth2-proxy"]
+  traefik -- "x-auth-request-email" --> shop["shop (web app)<br/>frontend + /api/*"]
+  shop -- "Bearer token for orders<br/>x-swhurl-user: the person" --> orders["orders (API, private)<br/>caller.type=app, caller.id=shop, user"]
+```
+
+**On-behalf-of.** `service(name)` sends the signed-in person's email as `x-swhurl-user` beside the token when the current request has one. The callee reads it only on a request with a valid app token from an allowed caller, and gives it to the route as the person (logs and spans: `caller.type=app`, `caller.id=<caller>`, `user.email`). Without a token the header is ignored. This states the trust [apps](apps.md#limits) already places in a declared caller; it adds none. Work: both templates' platform helpers and tests, and the [calling another app](apps.md#calling-another-app) section.
+
+**Seeds.** Every type has its own seed image, per stack: `swhurl-app-template-<stack>:seed-<commit>-<type>`, built and smoke-tested by the template's CI from that type's answers, so the template matrix is the type list. Today seeds exist only for each stack's default answers, and with `api` or `events` on, the app's name and description are compiled into the image (section 0, item 19). Every type turns `events` on, so stage 2 makes the image read its name and description at runtime first; stage 6 then publishes the seven seeds and the console picks the one for the chosen type.
+
+### Stages
+
+| # | Stage | Ends in |
+| --- | --- | --- |
+| 1 | On-behalf-of in both templates (`x-swhurl-user` sent by `service()`, read only with a valid app token), template tests, new releases pinned in `STACK_REVISIONS`; apps docs | A throwaway caller and callee show `user.email` on the callee's span |
+| 2 | Name and description read at runtime in both templates (a new platform variable for the description, set by `make app-new`), so one image serves any app name | A seed with `api` and `events` on serves the new app's own name |
+| 3 | `APP_TYPES` in the platform; console New app form: Type, then Stack (filtered), then name, team, description, with Connections near the top for a web app; `make app-repo TYPE=<type> [STACK=]`; template CI matrices reduced to the types; `docs/apps.md` stacks section and `GLOSSARY.md` (type versus `kind`). Web app maps to the TypeScript web kind until stage 4 | An API and a worker created from the console in staging (throwaway `swhurl-try-<n>`) |
+| 4 | Web app frontend in the TypeScript template: `web/` built with Vite+ (checked for a stable release first; plain Vite otherwise) in a Docker stage, served by the Node server beside `/api/*` and `/healthz`; flags reach the browser through `/api/flags` | A web app calling an API from the browser, signed in and out, over HTTP and HTTPS |
+| 5 | Scheduled job: `kind=job` in both templates (one run, flush telemetry, exit status); a `schedule` set by a platform command and the app page; a CronJob controller in the HelmRelease generator (`Forbid`, `backoffLimit: 0`, one success and one failure kept); app policy; instance state from the last success (`state.py`, `make app-status`); console page without scaling; failed runs on the Errors tile and in the notification checker. Run the `new-component-checklist` first | A throwaway job runs on schedule, and a forced failure notifies the team |
+| 6 | One seed image per type and stack (seven), from the template matrix, with retention; the console and `make app-repo` copy the chosen type's seed | A new app of each type and stack opens its staging PR from its seed |
+
+**Not covered.** A Kotlin web app; databases other than SQLite; **Run now** for a scheduled job; moving existing apps between types (their answers stay as they are).

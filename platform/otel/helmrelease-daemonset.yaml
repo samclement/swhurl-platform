@@ -242,13 +242,17 @@ spec:
               String(v1), v1)))) where (IsMap(cache["fields"]))
             - flatten(cache["fields"], resolveConflicts=true) where (IsMap(cache["fields"]))
             - merge_maps(attributes, cache["fields"], "insert") where (IsMap(cache["fields"]))
-            # Who called an app (docs/apps.md#calling-another-app): logback writes it inside mdc, pino at the
-            # top level. One name for both, so a filter on caller.id finds every stack's lines.
+            # Who called an app, and the person an app called for (docs/apps.md#calling-another-app): logback
+            # writes them inside mdc, pino at the top level. One name for both, so a filter on caller.id or
+            # user.email finds every stack's lines.
             - set(attributes["caller.type"], attributes["mdc.caller.type"]) where attributes["caller.type"] == nil and IsString(attributes["mdc.caller.type"])
             - set(attributes["caller.id"], attributes["mdc.caller.id"]) where attributes["caller.id"] == nil and IsString(attributes["mdc.caller.id"])
               and attributes["mdc.caller.id"] != ""
             - delete_key(attributes, "mdc.caller.type") where attributes["mdc.caller.type"] != nil
             - delete_key(attributes, "mdc.caller.id") where attributes["mdc.caller.id"] != nil
+            - set(attributes["user.email"], attributes["mdc.user.email"]) where attributes["user.email"] == nil and IsString(attributes["mdc.user.email"])
+              and attributes["mdc.user.email"] != ""
+            - delete_key(attributes, "mdc.user.email") where attributes["mdc.user.email"] != nil
             - set(attributes["log.parser"], cache["parser"]) where attributes["log.parser"] == nil and IsString(cache["parser"])
             - set(attributes["log.parser"], "native-otlp") where attributes["log.parser"] == nil and not IsString(body)
         # ClickStack's own pods wrote 77% of all log lines, nearly all of it probe and connection chatter that is

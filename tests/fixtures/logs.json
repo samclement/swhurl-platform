@@ -124,12 +124,13 @@
     "resource": {
       "k8s.pod.name": "kotlin-test"
     },
-    "input": "{\"level\":\"INFO\",\"message\":\"request handled: GET / 200\",\"mdc\":{\"caller.type\":\"app\",\"caller.id\":\"reports\"},\"logger_name\":\"app.HttpController\"}",
+    "input": "{\"level\":\"INFO\",\"message\":\"request handled: GET / 200\",\"mdc\":{\"caller.type\":\"app\",\"caller.id\":\"reports\",\"user.email\":\"sam@example.com\"},\"logger_name\":\"app.HttpController\"}",
     "expected": {
       "attributes": {
         "log.parser": "json",
         "caller.type": "app",
-        "caller.id": "reports"
+        "caller.id": "reports",
+        "user.email": "sam@example.com"
       },
       "body": "request handled: GET / 200",
       "severityNumber": 9

@@ -1758,3 +1758,21 @@ The app's own first build failed at Gradle: Maven Central answered "could not fi
 **Template CI export proof restored** (TypeScript #53 `4e06690`, Kotlin #41 `cc87570`): `CHECK_EXPORT` compared the answers with the string from before the `flags` question, so the default combination had skipped the OCI export, provenance and retained-image proof. It now matches the first matrix entry exactly; on both PRs and `main` runs those steps ran and passed, and the seed (now pushed from the loaded export) was published (`seed-4e06690`, `seed-cc87570`, anonymous pulls 200). Apps are unaffected: only the templates' own CI changed.
 
 **Not exercised:** a seed whose template revision has none (the run's own image then comes first; unit-tested only), and the gate refusing a real PR (`FakeRunner` only).
+
+## Calls carrying the signed-in person (17 October 2026)
+
+Stage 1 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-2026). Templates `v0.2.13` (TypeScript #54 `8b13435`, Kotlin #42 `586d545`; both PRs passed all 8 Template combinations) send `x-swhurl-user` when a call passes `onBehalfOf`, and read it only beside a valid app token. Platform commits: `2578acea` (pin, [apps](apps.md#calling-another-app)), `be68481a` (throwaway instances), `ba825842` (collector promotes logback's `mdc.user.email`).
+
+**Live proof** with two throwaway staging apps on their own first builds, calling each other: `swhurl-try-21` (TypeScript, `1-dcba456`) and `swhurl-try-22` (Kotlin, `1-c017e3d`), both created from the `v0.2.13` seeds. Each app's `/call/<other>` was requested from inside its own pod (`kubectl debug`, curl) with `x-auth-request-email: obo-proof@example.com`, as oauth2-proxy sets it:
+
+| Request | Callee's answer |
+| --- | --- |
+| TypeScript calls Kotlin for the person | `caller: {type: app, id: swhurl-try-21, user: obo-proof@example.com}` |
+| Kotlin calls TypeScript for the person | `caller: {type: app, id: swhurl-try-22, user: obo-proof@example.com}` |
+| TypeScript, anonymous, with a forged `x-swhurl-user` on its own request | `caller: {type: app, id: swhurl-try-21}`: no person |
+
+ClickStack: both callees' server spans carry `user.email = obo-proof@example.com` beside `caller.type = app` and `caller.id`. The Kotlin request log first carried it as `mdc.user.email`; after `ba825842` both stacks' request logs carry `user.email` at the top level and no `mdc.user.email`. `make verify-platform` passed; `make app-status` for both instances: running, matches desired. `make check` passed before each commit (789 tests); one `check-otel` fixture run failed while a Kotlin build loaded the host and passed alone and in a full rerun.
+
+**Not exercised:** a real signed-in browser request through oauth2-proxy (the header was set inside the pod, past Traefik); a callee on an older template (it ignores the header by construction).
+
+**Left in place:** `swhurl-try-21` and `swhurl-try-22` staging instances, repositories and packages.

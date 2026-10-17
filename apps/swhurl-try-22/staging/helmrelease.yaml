@@ -1,0 +1,146 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: swhurl-try-22
+  namespace: swhurl-try-22-staging
+spec:
+  interval: 30m
+  timeout: 3m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 1
+  upgrade:
+    remediation:
+      retries: 1
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/swhurl-try-22
+              tag: 0-c017e3d
+              digest: sha256:b54f164c3c1bb2dc793bd753dd8c024b330acce58bb97209e436fbefad6e6fab
+            resources:
+              requests:
+                cpu: 100m
+                memory: 192Mi
+              limits:
+                memory: 384Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            env:
+              SWHURL_APP: swhurl-try-22
+              SWHURL_ENV: staging
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
+              SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: swhurl-try-22
+              SWHURL_EVENTS_NKEY: UDZFGLJQKD3C5YMNVJ2V3JBYISSBPPTKXDMXHJEGKIAZYL2NKW4P7JRU
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30116
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30116
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30116 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30116 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              SWHURL_ALLOWED_CALLERS: swhurl-try-21
+              SWHURL_SERVICE_SWHURL_TRY_21_URL: http://swhurl-try-21.swhurl-try-21-$(SWHURL_ENV).svc.cluster.local:8080
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+                  periodSeconds: 5
+                  failureThreshold: 24
+            envFrom:
+            - secretRef:
+                name: swhurl-try-22-events
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-22-events
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: swhurl-try-21
+            expirationSeconds: 600
+            path: swhurl-try-21/token
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080
+    ingress:
+      main:
+        className: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: ingress-oauth-auth-shared@kubernetescrd
+        hosts:
+        - host: staging-swhurl-try-22.homelab.swhurl.com
+          paths:
+          - path: /
+            service:
+              identifier: main
+              port: http
+        tls:
+        - hosts:
+          - staging-swhurl-try-22.homelab.swhurl.com
+          secretName: swhurl-try-22-tls

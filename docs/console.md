@@ -118,19 +118,21 @@ A merge made by the workflow's token starts no workflow on `main`; Flux's webhoo
 
 ## Deploy a new console
 
-The image is built from this repo ([`images/console/Dockerfile`](../images/console/Dockerfile)) and published to `ghcr.io/samclement/swhurl-console` (public) after CI passes on `main`, tagged `src-<hash of its inputs>`. The same "Publish console image" run then deploys it: on the latest `main` it runs `swhurl console-image --expect src-<hash> --commit`, which pins the tag and digest in `platform/console/helmrelease.yaml` and, on the lines marked `# image: console`, in the [notify service](services.md#notify-service)'s `platform/notify/helmrelease.yaml`, and pushes a `deploy: console image src-<hash> (publish workflow)` commit as `github-actions[bot]`; the [push webhook](services.md#push-webhook) has Flux apply it at once ([the full chain](architecture.md#how-changes-reach-the-cluster)). So a push that changes `tools/`, `images/console/`, `pyproject.toml` or `uv.lock` is running in the console about 2 minutes later (measured 17 October 2026: 1 min 41 s from push to the pin commit, 22 s more to the new pod), with nothing to do:
+The image is built from this repo ([`images/console/Dockerfile`](../images/console/Dockerfile)) and published to `ghcr.io/samclement/swhurl-console` (public) by the Validate run of each push to `main`, alongside its checks, tagged `src-<hash of its inputs>`. Once every check in that run has passed, its **Deploy the console** job deploys it: on the latest `main` it runs `swhurl console-image --expect src-<hash> --commit`, which pins the tag and digest in `platform/console/helmrelease.yaml` and, on the lines marked `# image: console`, in the [notify service](services.md#notify-service)'s `platform/notify/helmrelease.yaml`, and pushes a `deploy: console image src-<hash> (Validate)` commit as `github-actions[bot]`; the [push webhook](services.md#push-webhook) has Flux apply it at once ([the full chain](architecture.md#how-changes-reach-the-cluster)). So a push that changes `tools/`, `images/console/`, `pyproject.toml` or `uv.lock` is running in the console about 2 minutes later (measured 17 October 2026: 1 min 41 s from push to the pin commit, 22 s more to the new pod), with nothing to do:
 
 ```text
-push → Validate (≈1 min; the tests and the template check are most of it) → build and push the image (≈50 s, 13 of them starting Buildx) → bot commits the pin → webhook → console rolls out (≈20 s)
+push → Validate: checks (≈1 min) and, alongside them, build and push the image
+     → every check passed → bot commits the pin → webhook → console rolls out (≈20 s)
 ```
 
 - **Pull before your next push** (`git pull --rebase`): the bot's commit is on `main`.
 - **Skipped on purpose** when `main` has moved on to other image inputs by the time the run pins (that commit's own run pins its image), and when the pin is already current (docs-only commits). Each run's summary says which.
 - **The console restarts** when its pin changes; a job running at that moment [is finished first](#jobs-and-restarts).
-- **Pushes made with the workflow's token start no workflows**, so the pin commit runs neither Validate nor another publish.
+- **Pushes made with the workflow's token start no workflows**, so the pin commit starts no Validate run.
+- **Built before it is checked:** a commit whose checks fail still publishes its `src-<hash>` image (nothing pins it); the deploy job needs every check to pass.
 - **By hand** (the run failed, or to pin an older image): `make console-image`, commit, push. `make verify-platform` warns while the running image is older than your checkout's tooling.
 
-**Check that it deployed:** `make verify-platform` checks the console's desired image against this checkout and its running workload; Platform shows `platform-console` health. A green Publish run proves the image was published/pinned, not that the new pod is Ready. The current [notification coverage and gaps](services.md#alerts) explain which console failures produce a push; the console uses the same deployment, rollback and prolonged-health notifications as apps.
+**Check that it deployed:** `make verify-platform` checks the console's desired image against this checkout and its running workload; Platform shows `platform-console` health. A green Validate run proves the image was published and pinned, not that the new pod is Ready. The current [notification coverage and gaps](services.md#alerts) explain which console failures produce a push; the console uses the same deployment, rollback and prolonged-health notifications as apps.
 
 A commit that changes none of the image's inputs has the same hash: nothing to deploy. How the image and workflow are built: [contributing](contributing.md#operator-tooling).
 

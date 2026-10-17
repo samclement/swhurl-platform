@@ -159,7 +159,7 @@ class ConsoleCheckTests(unittest.TestCase):
                       '(make reconcile UNIT=platform-console)', report.lines)
 
     def test_publish_workflow_hashes_the_same_inputs_in_the_same_order(self):
-        workflow = (ROOT / '.github/workflows/publish-console.yml').read_text()
+        workflow = (ROOT / '.github/workflows/validate.yml').read_text()
         listed = workflow.split('paths=(', 1)[1].split(')', 1)[0].split()
         self.assertEqual(tuple(listed), platform.CONSOLE_IMAGE_INPUTS, 'the order changes the hash')
 

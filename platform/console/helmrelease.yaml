@@ -1,4 +1,4 @@
-# The console image is published by .github/workflows/publish-console.yml. To
+# The console image is published and pinned by .github/workflows/validate.yml. To
 # deploy the image for the current commit: make console-image (pins the
 # src-<hash of the image's inputs> tag and its digest), commit, push.
 # make verify-platform warns when the inputs have changed since the pinned image.

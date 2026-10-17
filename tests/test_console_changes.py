@@ -316,18 +316,28 @@ class FormTests(unittest.TestCase):
                    'subscribes': ({'role': 'subscribes', 'app': 'orders', 'event': 'created'},
                                   changes.Command('app-events', ('hello', 'staging', '--remove-subscribe=orders.created'))),
                    'publishes': ({'role': 'publishes', 'event': 'seen'},
-                                 changes.Command('app-events', ('hello', 'staging', '--remove-publish=seen')))}
+                                 changes.Command('app-events', ('hello', 'staging', '--remove-publish=seen'))),
+                   'reaches': ({'role': 'reaches', 'event': 'api.stripe.com:443'},
+                               changes.Command('app-egress', ('hello', 'staging', '--remove=api.stripe.com:443')))}
         for role, (form, command) in removed.items():
             with self.subTest(role=role):
                 self.assertEqual(changes.Change.to_instance('disconnect', hello, form).commands, (command,))
         for form in ({}, {'role': 'called-by', 'app': 'orders'}, {'role': 'calls', 'app': '--root=/'},
-                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'}, {'role': 'publishes', 'event': 'Seen'}):
+                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'}, {'role': 'publishes', 'event': 'Seen'},
+                     {'role': 'reaches', 'event': '--root=/'}):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'no such connection to remove'):
                 changes.Change.to_instance('disconnect', hello, form)
         both = changes.Change.to_instance('connect', hello, {'calls': 'orders', 'publish': 'seen'})
         self.assertEqual(both.make, 'make app-calls APP=hello ENV=staging ARGS="--add=orders" && '
                          'make app-events APP=hello ENV=staging ARGS="--add-publish=seen"')
         self.assertEqual((both.title, both.slug), ('apps: change the connections of hello/staging', 'connect-hello-staging'))
+        granting = changes.Change.to_instance('egress', hello, {'hosts': 'API.stripe.com, *.example.com:8443'})
+        self.assertEqual((granting.commands, granting.touches_others), ((changes.Command(
+            'app-egress', ('hello', 'staging', '--add=api.stripe.com:443,*.example.com:8443')),), False))
+        for form, message in (({'hosts': ' '}, 'name a host'), ({'hosts': '10.0.0.1'}, 'a grant is a host name'),
+                              ({'hosts': '--root=/'}, 'a grant is a host name')):
+            with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
+                changes.Change.to_instance('egress', hello, form)
 
     def test_team_and_channel_changes_are_values_and_an_address_is_only_standard_input(self):
         add = changes.Change.to_team('add', {'name': 'payments', 'description': ' Takes  money '})

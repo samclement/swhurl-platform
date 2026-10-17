@@ -70,10 +70,19 @@
   </div>
 </section>
 
-<section class="card" id="connect" style="--acts: {{ 1 if c.offers else 2 }}; --pitch: 11.5rem">
+<section class="card" id="connect" style="--acts: {{ 2 if c.offers else 3 }}; --pitch: 11.5rem">
   <div class="card-head">
     <h2>Connect</h2>
-    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls and subscriptions are granted here, not in the app's repository.</p>
+    <p class="muted">How other apps reach it, and what it reaches, in {{ i.env }}. Calls, subscriptions and hosts outside the cluster are granted here, not in the app's repository.</p>
+    <details class="act" name="app-form" style="--slot: {{ 1 if c.offers else 2 }}; --wide: 11rem">
+      <summary class="button">{{ st.icon('plus') }} Reach a host outside</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/egress">
+        <fieldset>
+          {{ ui.text_field('egress_hosts', 'Host', name='hosts', placeholder='api.stripe.com', hint='A host name, with :port when not 443; *.example.com is any name under example.com; several comma-separated. Granted in ' ~ i.env ~ ' only' ~ (': a promotion never grants it in production.' if i.env == 'staging' else '.')) }}
+        </fieldset>
+        {{ ui.submit('Open egress PR', 'It changes this instance and the egress proxy; you review and merge it on GitHub.') }}
+      </form>
+    </details>
     <details class="act" name="app-form" style="--slot: {{ 0 if c.offers else 1 }}; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
@@ -104,7 +113,7 @@
       {% if c.api %}<dt>API description</dt><dd>{% if c.api.startswith('https://') %}<a href="{{ c.api }}">{{ c.api }}</a>{% else %}<code>{{ c.api }}</code>{% endif %}</dd>{% endif %}
     </dl>
     {% if c.rows %}{{ links.table(c, i.app, i.env, remove=true) }}
-    {% else %}<p class="muted">No connections: it calls nothing, nothing calls it, and it publishes and receives no events.</p>{% endif %}
+    {% else %}<p class="muted">No connections: it calls nothing, nothing calls it, it publishes and receives no events, and it is granted no host outside the cluster.</p>{% endif %}
     {% if c.address %}
     <details class="disclose help" id="how-to-call">
       <summary>{{ st.icon('info') }} <strong>Call this from my app</strong> <span class="muted">— what another app adds to reach {{ i.app }}</span></summary>

@@ -5,6 +5,7 @@
     app-expose APP ENV --exposure E [--host H]     change who can reach an instance
     app-team APP --team T                          move an app (every environment) to a registered team
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
+    app-egress APP ENV [--add H[:P],...] [--remove H[:P]]   change which hosts outside the cluster an instance may reach
     app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
     app-offers APP ENV | --all ENV                 read what an app offers (its API and event documents) from its repository
     app-deploy [APP] [--refresh]                   bring staging to the newest image, with what it needs and offers
@@ -121,6 +122,42 @@ def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, r
         raise
     now = declared_calls(mapping(container(YamlFile(instance / 'helmrelease.yaml').data), 'env'))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
+    return instance
+
+
+def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
+    """Change which hosts outside the cluster ``app/env`` may reach (its release's annotation), and the
+    proxy's configuration that follows from every instance's grants."""
+    add, remove = [egress.grant(name) for name in add or []], [egress.grant(name) for name in remove or []]
+    if not add and not remove:
+        raise EditError('give --add and/or --remove with host names')
+    problems = [problem for name in add if (problem := egress.grant_problem(name))]
+    if problems:
+        raise EditError('; '.join(problems))
+    instance = instance_dir(root, app, env)
+    if egress.proxy_file(root) is None:
+        raise EditError(f'{egress.PROXY_FILE} is missing: this tree has no egress proxy')
+    document = YamlFile(instance / 'helmrelease.yaml')
+    current = egress.granted(document.data)
+    now = changed_list('hosts', current, None, add, remove)
+    within = egress.covered(now)
+    if within:
+        raise EditError(f'a wildcard grant already covers {", ".join(within)}')
+    annotations = mapping(mapping(document.data, 'metadata'), 'annotations', create=True)
+    if now:
+        annotations[egress.ANNOTATION] = ','.join(now)
+    else:
+        del annotations[egress.ANNOTATION]
+        if not annotations:
+            del document.data['metadata']['annotations']
+    before = document.path.read_text()
+    document.save()
+    try:
+        sync_env(root, env)
+    except EditError:
+        document.path.write_text(before)
+        raise
+    print(f'[OK] {app}/{env} may reach: {", ".join(now) or "nothing outside the cluster"}')
     return instance
 
 
@@ -676,6 +713,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         if (instance_folder(root, app, target) / 'secret.sops.yaml').is_file():  # not the events key, which is made here
             print(f'[INFO] Set production secrets before merging, in your own terminal: make app-secret APP={app} ENV=prod NAME=<name> '
                   '(make check-secrets lists the placeholders left)')
+        egress_difference(app, src, YamlFile(instance_folder(root, app, target) / 'helmrelease.yaml').data)
         return result
     if host:
         raise EditError('--host applies only to first production; change existing routes with app-expose')
@@ -693,7 +731,16 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         document.path.write_text(before)
         raise
     print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
+    egress_difference(app, src, document.data)
     return instance_folder(root, app, 'prod')
+
+
+def egress_difference(app: str, staging: dict, production: dict) -> None:
+    """Say which hosts staging may reach and production may not: a promotion never grants them."""
+    missing = [name for name in egress.granted(staging) if name not in egress.granted(production)]
+    if missing:
+        print(f'[INFO] staging may reach {", ".join(missing)}; production may not. A promotion never widens that: '
+              f'make app-egress APP={app} ENV=prod ARGS="--add {",".join(missing)}"')
 
 
 def image_minimum(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open) -> dict:
@@ -1032,6 +1079,20 @@ def main_calls(argv: list[str] | None = None) -> int:
     p.add_argument('--root', type=Path, default=ROOT)
     args = p.parse_args(argv)
     return run(lambda: set_calls(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
+
+
+def main_egress(argv: list[str] | None = None) -> int:
+    def names(text: str) -> list[str]:
+        return [name.strip() for name in text.split(',') if name.strip()]
+    p = argparse.ArgumentParser(prog='swhurl app-egress', description='Change which hosts outside the cluster an instance may reach')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--add', type=names, default=[], help=f'comma-separated host[:port] (port {egress.DEFAULT_PORT} '
+                                                         'by default; *.example.com is any name under example.com)')
+    p.add_argument('--remove', type=names, default=[], help='comma-separated host[:port] to stop granting')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: set_egress(args.root.resolve(), args.app, args.env, add=args.add, remove=args.remove), True)
 
 
 def main_events(argv: list[str] | None = None) -> int:

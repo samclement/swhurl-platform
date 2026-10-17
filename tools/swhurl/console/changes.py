@@ -33,7 +33,7 @@ import httpx
 import yaml
 
 from swhurl import platform
-from swhurl.apps import channels, events, repo
+from swhurl.apps import channels, egress, events, repo
 from swhurl.apps.contract import (
     APP_OWNER,
     EXPOSURES,
@@ -505,7 +505,20 @@ def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]
         return (Command('app-events', (app, env, f'--remove-subscribe={other}.{event}')),)
     if role == 'publishes' and events.EVENT_RE.match(event):
         return (Command('app-events', (app, env, f'--remove-publish={event}')),)
+    if role == 'reaches' and not egress.grant_problem(event):
+        return (Command('app-egress', (app, env, f'--remove={event}')),)
     raise ActionError('no such connection to remove: only the app that declared one can remove it')
+
+
+def egress_hosts(form: Mapping[str, str]) -> list[str]:
+    """The hosts a form grants (``hosts``, comma-separated), each as app-egress keeps it."""
+    hosts = [egress.grant(name) for name in form.get('hosts', '').split(',') if name.strip()]
+    if not hosts:
+        raise ActionError('name a host, such as api.stripe.com')
+    problems = [problem for name in hosts if (problem := egress.grant_problem(name))]
+    if problems:
+        raise ActionError('; '.join(problems))
+    return hosts
 
 
 @dataclass(frozen=True)
@@ -523,7 +536,8 @@ class Command:
 
 
 INSTANCE_CHANGES = {'scale': 'scale', 'expose': 'change access to', 'connect': 'change the connections of',
-                    'disconnect': 'change the connections of', 'remove': 'remove'}
+                    'disconnect': 'change the connections of', 'egress': 'change the hosts outside the cluster of',
+                    'remove': 'remove'}
 """Each change the app page can propose for an instance, and its pull request's verb. A promotion
 is not among them: its pull request is built from a review (console/promotion.py)."""
 
@@ -562,6 +576,8 @@ class Change:
             commands, touches_others = chosen.adding(app, env), chosen.touches_others
         elif kind == 'disconnect':
             commands = removing(app, env, form)
+        elif kind == 'egress':
+            commands = (Command('app-egress', (app, env, f'--add={",".join(egress_hosts(form))}')),)
         elif kind == 'remove':
             commands = (Command('app-remove', (app, env)),)
         else:

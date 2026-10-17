@@ -799,7 +799,7 @@ class AppDetailTests(unittest.TestCase):
                          ['https://api.github.com/repos/samclement/web/contents/swhurl.yaml?ref=abc1234'], 'a commit is read once')
         text = client(answers('1.0'), repo_opener=opener).get('/apps/web/prod', headers=WHO).text
         self.assertNotIn("image's minimum", text, 'a tag that names no commit says nothing')
-        self.assertIn('Calls and subscriptions are granted here', text)
+        self.assertIn('Calls, subscriptions and hosts outside the cluster are granted here', text)
 
     def test_a_later_read_failure_does_not_show_partial_health(self):
         runner = (FakeRunner().on('kubectl', '-n', 'flux-system', 'get', 'kustomization',
@@ -827,7 +827,8 @@ class AppDetailTests(unittest.TestCase):
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 4, 'the app page uses the New app form layout')
+        self.assertEqual(text.count('<form class="wizard"'), 5, 'the app page uses the New app form layout')
+        self.assertIn('action="/apps/web/prod/egress"', text)
         self.assertEqual(text.count('action="/apps/web/prod/connect"'), 2, 'connect to an app, and publish an event')
         self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
         self.assertIn('No connections: it calls nothing', text)
@@ -837,7 +838,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('<h1>web <span class="pill"', text)
         for part in ('use', 'connect', 'operate'):
             self.assertIn(f'<section class="card" id="{part}"', text, 'each part is a card of its own')
-        self.assertEqual(text.count('<details class="act" name="app-form"'), 4, 'each change opens in its card, one at a time')
+        self.assertEqual(text.count('<details class="act" name="app-form"'), 5, 'each change opens in its card, one at a time')
         self.assertIn('<div><span>State</span>', text, 'the summary: one fact per column')
         self.assertIn('hx-post="/units/app-web-prod/reconcile" hx-target="this" hx-select="unset"', text, 'Reconcile answers in place')
         self.assertIn('href="https://github.com/samclement/web"', text)

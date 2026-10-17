@@ -34,6 +34,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Not verified:** that `derive.sync_env` leaves the Reloader file changed when a later instance fails.
 16. **Feature flags: delivered 15 October 2026** ([section 20](#20-feature-flags--proposed-14-october-2026-not-started), [evidence](current-state.md#feature-flags-stage-4-15-october-2026)): typed flags in `swhurl.yaml`; every instance has its own NATS key; apps on templates `v0.2.7` watch their overrides; the app page's **Feature flags** card sets and clears them, shows when each was set, and marks overrides older than 14 days or for a flag the image no longer declares, proven live on the throwaway `swhurl-try-18`. Left: a signed-in browser check of the card (operator). Follow-ups: the Kotlin template's smoke test stops a worker 4 s after start, before a slow JVM has migrated SQLite (one failed `main` run of `v0.2.7`, passed on re-run): wait for migrations instead; reinstall the host backup unit (`make host-backup`, operator) so it runs `make backup-sqlite` again. Operator: delete the GitHub repository and package `swhurl-try-18` once its instance is removed (`make app-remove`).
 17. **Needs and grants in `swhurl.yaml`, then egress: decided 15 October 2026, not started** ([section 21](#21-needs-and-grants-in-swhurlyaml-then-egress--decided-15-october-2026-not-started)). `swhurl.yaml` keeps the app's identity, what the image needs and what it offers, read again with each image; grants (access, calls, subscriptions, team, alerts, and new egress rules) live only in this repository. This replaces candidate 10's two lifetimes. **Stage 1 done 15 October 2026** ([evidence](current-state.md#needs-and-grants-stage-1-15-october-2026)): the four kinds in `declaration.py`, the glossary, `apps.md` and the console's captions; `autoDeploy` accepted and ignored; templates `v0.2.8` (`swhurl.yaml` by kind, no `autoDeploy`) pinned. Existing apps keep `autoDeploy: true` until their Renovate template update. **Stage 2 done 15 October 2026** ([evidence](current-state.md#needs-and-grants-stage-2-15-october-2026)): grant fields are refused in `swhurl.yaml`, and no app repository holds one. **Stage 3a done 16 October 2026** ([evidence](current-state.md#needs-and-grants-stage-3a-16-october-2026)): Flux dispatches the Deploy workflow, which writes each staging image and its offers in one commit; the workflow adds about 10 s between the image and its commit (18 s from dispatch to commit; 2 s before). **Stage 3b done 16 October 2026** ([evidence](current-state.md#needs-and-grants-stage-3b-16-october-2026)): `make app-deploy` writes port, health path, uid, telemetry and the resources floor with each staging image; a refused need holds the image; `app-scale` refuses less than the minimum. **Stage 3c done 16 October 2026** ([evidence](current-state.md#needs-and-grants-stage-3c-16-october-2026)): databases and secret names follow the image; `make app-secret` sets values; templates `v0.2.10` have `secret()`. **Stage 4 deferred 16 October 2026** ([why, and what to build when needed](#stage-4-deferred-operator-16-october-2026)): a need of an app with production stays held. **Stage 5 E1 deployed 16 October 2026** ([evidence](current-state.md#egress-stage-e1-16-october-2026)): every instance sends through the egress proxy, which allows everything and logs each request with the instance. **E2 deployed 17 October 2026** ([evidence](current-state.md#egress-stage-e2-17-october-2026)): `make app-egress`, **Reach a host outside** on the app page, rule `egress-grants`, and the proxy logs `granted=yes` or `-`; E1's day of logs held no app request, so nothing was seeded. Next, not before 20 October 2026: E3a (direct connections refused, every host still allowed through the proxy), after a few days of the node's connection table shows which clients ignore the proxy; then E3b (ungranted hosts refused), after the `granted=-` lines (ClickStack, service `egress`) are each granted or explained. The image-automation-controller and its write deploy key are removed. The repository blueprint needs a rebuild.
+18. **Event compatibility check: decided 17 October 2026, not started** ([section 22](#22-event-compatibility-check--decided-17-october-2026-not-started)). A new image, or a promotion, whose `asyncapi.yaml` changes an event's payload in a way an app that receives it could not read is held, as a dropped event is today. Events only, in Python, no new tool. APIs are not checked until callers record the routes they use.
 
 ### Delivered
 
@@ -1369,3 +1370,47 @@ flowchart LR
 - **A grant is the release's annotation** `platform.swhurl.com/egress` (`host:port`, comma-separated), not `egress.yaml`: the console reads it from the cluster as it reads calls, and changing it does not restart the app. A `SETTINGS` row strips it from a first production; later promotions leave production's alone and `app-promote` names what staging has more.
 - **Granted before enforced:** the proxy marks each request `granted=yes` or `-` and still allows all, so E3's refusals can be read from the log before they happen.
 - **Nothing seeded:** from E1's deploy (16 October, 16:00) to 17 October no app sent a request through the proxy, only the E1 tests. Clients that ignore the proxy settings would not show there; E3's direct-connection refusal is what finds them.
+
+## 22. Event compatibility check — decided 17 October 2026, not started
+
+**Why.** The platform checks event names, not payloads. Renaming `placedBy` in `demo-orders.created` passes the Deploy run today; `demo-notifier`'s handler then fails, the event is retried five times and dropped, and only the logs show it. The promotion that follows changes only documents, so it merges itself ([auto-merge](console.md#auto-merge)), and production breaks the same way.
+
+**Decision (operator, 17 October 2026),** from a decision brief that compared four options:
+
+| Option | Outcome |
+| --- | --- |
+| A. Names only (today) | Rejected: a breaking payload change can reach production with nobody involved |
+| **B. Event payloads, in Python** | **Chosen:** the platform knows exactly who receives each event (a subscription names it), the documents are already in Git, and the check adds milliseconds and no tool |
+| C. B plus an API diff with `oasdiff` | Later, if callers record which routes they use: today a call names only the app, so every API change with callers would be held. It would also add a pinned binary to CI, the console image and `make check` |
+| D. Pact contract tests | Rejected for now: consumer tests in every app repository, a broker to run and back up, minutes on every build. Revisit if other teams own apps |
+
+A schema registry was rejected as a second store that can disagree with Git.
+
+**The rule.** For each event that an app of the same environment receives, every payload valid under the new schema must be valid under the old one, ignoring `additionalProperties` (the templates close every payload schema; the subscriber helper does not validate, so a new field reaches a subscriber harmlessly).
+
+| Change to a received event's payload | Verdict |
+| --- | --- |
+| Add a property, required or optional | Compatible |
+| Remove or rename a property | Breaking |
+| Change a property's type or `format` | Breaking |
+| Make a required property optional | Breaking: a subscriber may rely on it |
+| Loosen a constraint: lower `minimum`, raise `maximum`, add an `enum` value, drop a `pattern` | Breaking: an old subscriber may not handle the new values |
+| Tighten a constraint | Compatible |
+| Anything in an event nobody receives | Not checked |
+
+A schema construct the comparator does not understand (for example `oneOf`) counts as breaking, naming the construct, so the check never passes what it cannot read.
+
+**What a breaking change costs.** Expand and contract: add the new property beside the old one, move each subscriber to it, then drop the old one: three deploys instead of one. This is today's rule for a dropped event ("remove the subscription first, or keep the event") applied to properties.
+
+### Stages
+
+| # | Stage | Ends in |
+| --- | --- | --- |
+| 1 | `offers.compatible(old, new, received)`: a pure function over two payload schemas, returning each breaking difference with its path (`created.placedBy: removed`); tests for every row of the rule above, including `$ref` and nested objects | `make test` passes; nothing calls it yet |
+| 2 | Deploy: `read_offers` (`apps/edit.py`) compares the instance's kept `offers/asyncapi.yaml` with the new image's, against the staging subscribers; a breaking change holds that app's image as a refused offer does now (the run fails naming the property and the subscribers; the others deploy). Production: `carry_offers` refuses a promotion whose documents break a production subscriber. The console's review page shows the reason | `make check`; a throwaway live test on `swhurl-try-*`: rename a received property and see the image held, then add one and see it deploy |
+| 3 | Docs: the rule in [what an app offers](apps.md#what-an-app-offers), the hold in [deploy a new image](apps.md#deploy-a-new-image) and [promote](apps.md#promote-to-production), expand and contract in the template READMEs; dated evidence in `current-state.md` | Docs match behaviour |
+| Later (operator decides) | Let the auto-merge gate merge a promotion that adds an event or a property, holding only breaking ones; today any change to what an app publishes waits for review | A decision, not part of B |
+
+**Cost.** CI time is negligible: two documents under 25 KB compared in process, about nine staging images a day, Deploy runs of 33 to 45 s and Validate of about 116 s (17 October). The cost is the module, its tests, two call sites, the console message and docs.
+
+**Not covered.** API compatibility (option C), payload meaning (a field that keeps its type but changes units), and subscribers in other environments: staging and production are checked separately, each against its own subscribers.

@@ -78,7 +78,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, app_alerts, platform
+from swhurl import ROOT, app_alerts, platform, yamlio
 from swhurl.apps import channels, egress, events, helmrelease, offers, per_environment
 from swhurl.apps.calling import (
     ENVIRONMENT_VARIABLE,
@@ -130,7 +130,7 @@ def instances() -> list[Path]:
 
 def helm_repositories() -> dict[str, str]:
     path = ROOT / platform.HELM_REPOSITORIES
-    return {d['metadata']['name']: d['spec']['url'] for d in yaml.safe_load_all(path.read_text())
+    return {d['metadata']['name']: d['spec']['url'] for d in yamlio.load_all(path.read_text())
             if d and d.get('kind') == 'HelmRepository'}
 
 
@@ -152,7 +152,7 @@ def chart_dir(name: str, version: str, repo: str, runner: Runner) -> Path:
 def render(instance: Path, runner: Runner | None = None) -> list[dict]:
     """Kustomize the instance, then render any app-template HelmRelease with Helm."""
     runner = runner or Runner()
-    docs = [d for d in yaml.safe_load_all(runner.output(['kubectl', 'kustomize', str(instance)])) if d]
+    docs = [d for d in yamlio.load_all(runner.output(['kubectl', 'kustomize', str(instance)])) if d]
     repos = helm_repositories()
     rendered = []
     for doc in docs:
@@ -165,7 +165,7 @@ def render(instance: Path, runner: Runner | None = None) -> list[dict]:
             values.flush()
             out = runner.output(['helm', 'template', doc['spec'].get('releaseName', doc['metadata']['name']),
                                  str(chart), '-n', doc['metadata']['namespace'], '-f', values.name])
-        for item in yaml.safe_load_all(out):
+        for item in yamlio.load_all(out):
             if item:
                 item['metadata'].setdefault('namespace', doc['metadata']['namespace'])
                 rendered.append(item)
@@ -440,7 +440,7 @@ def flatten(node, path: str = '', exposure_differs: bool = False) -> dict[str, o
 
 def exposure_of(instance: Path) -> str | None:
     path = instance / 'namespace.yaml'
-    docs = [d for d in yaml.safe_load_all(path.read_text()) if d] if path.exists() else []
+    docs = [d for d in yamlio.load_all(path.read_text()) if d] if path.exists() else []
     return ((docs[0].get('metadata') or {}).get('labels') or {}).get(EXPOSURE) if docs else None
 
 
@@ -450,7 +450,7 @@ def source(instance: Path, exposure_differs: bool = False) -> dict[str, object]:
     for path in sorted(instance.glob('*.yaml')):
         if not per_environment.compared(path.name):
             continue
-        for index, doc in enumerate(d for d in yaml.safe_load_all(path.read_text()) if d):
+        for index, doc in enumerate(d for d in yamlio.load_all(path.read_text()) if d):
             if doc.get('kind') == 'Namespace':
                 doc['metadata'].pop('name', None)
             if doc.get('kind') == 'Kustomization':
@@ -468,7 +468,7 @@ def drift(environments: list[Path]) -> list[str]:
     base, *others = environments
     problems = []
     for other in others:
-        allowed, _ = exceptions([d for d in yaml.safe_load_all((other / 'helmrelease.yaml').read_text()) if d])
+        allowed, _ = exceptions([d for d in yamlio.load_all((other / 'helmrelease.yaml').read_text()) if d])
         if 'env-drift' in allowed:
             continue
         exposure_differs = exposure_of(base) != exposure_of(other)
@@ -482,7 +482,7 @@ def drift(environments: list[Path]) -> list[str]:
 
 def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
     """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
-    releases = {instance: yaml.safe_load((instance / 'helmrelease.yaml').read_text())
+    releases = {instance: yamlio.load((instance / 'helmrelease.yaml').read_text())
                 for instance in instances}
     problems: dict[Path, list[str]] = {}
     for instance, release in releases.items():
@@ -520,7 +520,7 @@ def check_event_users(root: Path = ROOT) -> list[str]:
         return []
     problems = [f'event-users: {each.app}/{each.env} has no NATS key; make app-sync creates it'
                 for each in instances_under(root / INSTANCE_ROOTS[0])
-                if not helmrelease.variables(yaml.safe_load((each.folder(root) / 'helmrelease.yaml').read_text())).get(events.NKEY_VARIABLE)]
+                if not helmrelease.variables(yamlio.load((each.folder(root) / 'helmrelease.yaml').read_text())).get(events.NKEY_VARIABLE)]
     path, text = wanted
     if not (path.is_file() and path.read_text() == text):
         problems.append(f'event-users: {events.USERS_FILE} is not what the instances declare; make app-sync rewrites it')
@@ -531,17 +531,17 @@ def platform_image(instance: Path) -> list[str]:
     """Why ``<app>/<env>`` is not an app made from a stack template (rule platform-image)."""
     app, env = instance.parent.name, instance.name
     text = (instance / 'helmrelease.yaml').read_text()
-    image = helmrelease.image(yaml.safe_load(text))
+    image = helmrelease.image(yamlio.load(text))
     expected = f'ghcr.io/{APP_OWNER}/{app}'
     problems = []
     if image.get('repository') != expected:
         problems.append(f'image {image.get("repository")} is not {expected}; apps are made with make app-repo or the console')
     if env == AUTO_DEPLOY_ENV:
-        listed = IMAGE_AUTOMATION_FILE in (yaml.safe_load((instance / 'kustomization.yaml').read_text()).get('resources') or [])
+        listed = IMAGE_AUTOMATION_FILE in (yamlio.load((instance / 'kustomization.yaml').read_text()).get('resources') or [])
         if not (instance / IMAGE_AUTOMATION_FILE).is_file() or not listed:
             problems.append(f'{env} has no {IMAGE_AUTOMATION_FILE} in its kustomization.yaml: new images would not deploy')
         elif image_policy_name(app) not in {(d or {}).get('metadata', {}).get('name') for d in
-                                             yaml.safe_load_all((instance / IMAGE_AUTOMATION_FILE).read_text())
+                                             yamlio.load_all((instance / IMAGE_AUTOMATION_FILE).read_text())
                                              if (d or {}).get('kind') == 'ImagePolicy'}:
             problems.append(f'{IMAGE_AUTOMATION_FILE} has no ImagePolicy {image_policy_name(app)}: new images would not deploy')
     return [f'platform-image: {problem}' for problem in problems]
@@ -553,7 +553,7 @@ def evaluate(instance: Path, runner: Runner | None = None) -> list[str]:
     if instance.resolve().parent.parent == (ROOT / INSTANCE_ROOTS[0]).resolve():
         problems += platform_image(instance)
     root = instance.resolve().parents[2]  # <root>/apps/<app>/<env>
-    release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
+    release = yamlio.load((instance / 'helmrelease.yaml').read_text())
     problems += offers.problems(instance, events.published(helmrelease.variables(release)),
                                 str(((release.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
     return problems + [f'{rule}: {message}' for rule, message in check(docs, teams(root), signing_keys(root))

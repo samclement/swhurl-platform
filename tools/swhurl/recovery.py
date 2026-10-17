@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from swhurl import ROOT, backupset, clickstack, platform
+from swhurl import ROOT, backupset, clickstack, platform, yamlio
 from swhurl.backupset import BackupError, BackupSet
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -49,7 +49,7 @@ def backups(backup_dir: Path) -> BackupSet:
 
 def sops_recipient(root: Path = ROOT) -> str:
     """The age recipient every SOPS rule encrypts to."""
-    rules = (yaml.safe_load((root / '.sops.yaml').read_text()) or {}).get('creation_rules') or []
+    rules = (yamlio.load((root / '.sops.yaml').read_text()) or {}).get('creation_rules') or []
     recipients = {rule['age'].strip() for rule in rules if rule.get('age')}
     if len(recipients) != 1:
         raise BackupError('expected exactly one age recipient in .sops.yaml (set AGE_RECIPIENT)')
@@ -226,7 +226,7 @@ def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
                      '--gzip', '--drop'], mutating=True)
         report.ok(f'Restored {archive.name}')
 
-        secret = yaml.safe_load(runner.output(['sops', 'decrypt', ROOT / INGESTION_SECRET], secret_output=True,
+        secret = yamlio.load(runner.output(['sops', 'decrypt', ROOT / INGESTION_SECRET], secret_output=True,
                                               env={'SOPS_AGE_KEY_FILE': str(settings.age_key)}))
         for value in (secret.get('stringData') or {}).values():
             runner.add_secret(str(value))

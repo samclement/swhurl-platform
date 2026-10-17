@@ -7,9 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.apps import calling, contract, egress, events, helmrelease, hooks
 from swhurl.apps.instance import INSTANCE_ROOTS, instances
 from swhurl.kube import ready_condition
@@ -42,7 +40,7 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
         app = app_of(policy)
         release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'helmrelease.yaml'
-        running = str(helmrelease.image(yaml.safe_load(release.read_text())).get('tag', '')) if release.is_file() else ''
+        running = str(helmrelease.image(yamlio.load(release.read_text())).get('tag', '')) if release.is_file() else ''
         if running == latest:
             report.ok(f'{name}: newest image {latest}, deployed')
         elif not running:
@@ -173,9 +171,10 @@ def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
                     f'(kubectl -n {egress.NAMESPACE} get pods)')
     else:
         report.ok(f'the egress proxy runs {ready} replicas')
-    for problem in egress.problems(root):
+    found = egress.problems(root)
+    for problem in found:
         report.bad(problem.removeprefix('egress-ports: ') + ', commit and push')
-    if not egress.problems(root):
+    if not found:
         report.ok(f'{len(egress.ports(root))} instance(s) each have a port of their own')
 
 
@@ -187,7 +186,7 @@ def check_secrets(runner: Runner, report: Report, root: Path = ROOT) -> None:
     found = False
     for instance in instances(root / INSTANCE_ROOTS[0]):
         folder = root / INSTANCE_ROOTS[0] / instance.app / instance.env
-        declared = contract.declared_secrets(yaml.safe_load((folder / 'helmrelease.yaml').read_text()))
+        declared = contract.declared_secrets(yamlio.load((folder / 'helmrelease.yaml').read_text()))
         path = folder / contract.SECRET_FILE
         states = secret_states(declared, contract.stored_secrets(path.read_text()) if path.is_file() else [])
         if not states:

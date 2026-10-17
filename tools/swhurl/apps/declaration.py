@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from swhurl import yamlio
 from swhurl.apps.contract import DATABASES, DEFAULT_DATABASE_SIZE, TEMPLATE_PORT, TEMPLATE_UID, secret_key_problem
 from swhurl.apps.instance import ENVIRONMENTS
 
@@ -300,7 +301,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
 
 def parse(text: str, source: str = FILE) -> Declaration:
     try:
-        return of(yaml.safe_load(text), source)
+        return of(yamlio.load(text), source)
     except yaml.YAMLError as error:
         raise DeclarationError(f'{source}: not valid YAML: {error}') from None
 

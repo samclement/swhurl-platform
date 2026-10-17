@@ -24,9 +24,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT, platform
+from swhurl import ROOT, platform, yamlio
 from swhurl.kube import ready_condition
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -147,11 +145,11 @@ def pinned_version(root: Path = ROOT) -> str:
 
 def required_args(root: Path = ROOT) -> dict[str, list[str]]:
     """Controller arguments the install patches add, by Deployment name."""
-    kustomization = yaml.safe_load((root / INSTALL / 'kustomization.yaml').read_text())
+    kustomization = yamlio.load((root / INSTALL / 'kustomization.yaml').read_text())
     required: dict[str, list[str]] = {}
     for patch in kustomization.get('patches') or []:
         name = patch['target']['name']
-        for op in yaml.safe_load(patch['patch']) or []:
+        for op in yamlio.load(patch['patch']) or []:
             if op.get('op') == 'add' and op.get('path', '').endswith('/args/-'):
                 required.setdefault(name, []).append(op['value'])
     return required

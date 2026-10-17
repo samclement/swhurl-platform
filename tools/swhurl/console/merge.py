@@ -10,9 +10,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.apps import calling, helmrelease, new, offers, per_environment, promotion
 from swhurl.apps.instance import instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError
@@ -50,8 +48,8 @@ def scope(base: Path, candidate: Path, files: list[str], app: str, env: str) -> 
         if not (candidate / path).is_file():
             raise Hold('automatic merge does not delete app resources')
     if registry in files:
-        old = yaml.safe_load((base / registry).read_text())
-        updated = yaml.safe_load((candidate / registry).read_text())
+        old = yamlio.load((base / registry).read_text())
+        updated = yamlio.load((candidate / registry).read_text())
         expected = json.loads(json.dumps(old))
         expected['resources'].append(instance_unit_file(Path(), app, env).name)
         if updated != expected:
@@ -119,7 +117,7 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
         if sorted(files) != expected_files:
             raise Hold('first promotion has unexpected files')
         for rel in expected_files:
-            if yaml.safe_load((candidate / rel).read_text()) != yaml.safe_load((work / rel).read_text()):
+            if yamlio.load((candidate / rel).read_text()) != yamlio.load((work / rel).read_text()):
                 raise Hold(f'first production differs from reviewed staging conversion: {rel}')
 
 

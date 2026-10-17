@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from swhurl import yamlio
 from swhurl.apps import helmrelease
 from swhurl.apps.instance import ENVIRONMENTS, INSTANCE_ROOTS, Instance, instances
 
@@ -180,7 +181,7 @@ def users_file(root: Path) -> tuple[Path, str] | None:
         users.append(console_user((root / CONSOLE_KEY_FILE).read_text().strip()))
     found = instances(root / INSTANCE_ROOTS[0])
     for each in (each for env in ENVIRONMENTS for each in found if each.env == env):  # one environment after the other
-        variables = helmrelease.variables(yaml.safe_load((each.folder(root) / 'helmrelease.yaml').read_text()))
+        variables = helmrelease.variables(yamlio.load((each.folder(root) / 'helmrelease.yaml').read_text()))
         if variables.get(NKEY_VARIABLE):
             users.append(user(str(variables[NKEY_VARIABLE]), each.env, each.app, published(variables), subscribed(variables)))
     return root / USERS_FILE, users_configmap(users)

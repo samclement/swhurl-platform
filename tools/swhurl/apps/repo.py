@@ -31,8 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
+from swhurl import yamlio
 from swhurl.apps import hooks
 from swhurl.apps.contract import (
     APP_OWNER,
@@ -74,7 +73,7 @@ FIXED_QUESTIONS = ('app_name', 'description')
 
 def parse_questions(text: str) -> list[Question]:
     """The choice questions in a copier.yml, in file order."""
-    doc = yaml.safe_load(text) or {}
+    doc = yamlio.load(text) or {}
     questions = []
     for name, spec in doc.items():
         if name.startswith('_') or name in FIXED_QUESTIONS or not isinstance(spec, dict) or 'choices' not in spec:

@@ -18,9 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-import yaml
-
-from swhurl import platform
+from swhurl import platform, yamlio
 from swhurl.apps.contract import (
     IMAGE_AUTOMATION_FILE,
 )
@@ -69,7 +67,7 @@ def correct(hook: dict, token: str, host: str) -> bool:
 def read_token(runner: Runner, root: Path = ROOT) -> str:
     key_file = os.environ.get('SOPS_AGE_KEY_FILE') or str(root / platform.AGE_KEY)
     try:
-        doc = yaml.safe_load(runner.output(['sops', 'decrypt', root / TOKEN_FILE], secret_output=True,
+        doc = yamlio.load(runner.output(['sops', 'decrypt', root / TOKEN_FILE], secret_output=True,
                                            env={'SOPS_AGE_KEY_FILE': key_file}))
         token = str(doc['stringData']['token'])
     except (CommandError, KeyError, TypeError):
@@ -103,7 +101,7 @@ def auto_deploy_repositories(root: Path = ROOT) -> dict[str, str]:
     """
     found = {}
     for path in sorted((root / 'apps').glob(f'*/*/{IMAGE_AUTOMATION_FILE}')):
-        for doc in yaml.safe_load_all(path.read_text()):
+        for doc in yamlio.load_all(path.read_text()):
             image = ((doc or {}).get('spec') or {}).get('image', '')
             if (doc or {}).get('kind') == 'ImageRepository' and image.startswith(REGISTRY):
                 found[path.parts[-3]] = image.removeprefix(REGISTRY)

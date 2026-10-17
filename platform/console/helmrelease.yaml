@@ -83,6 +83,9 @@ spec:
                 enabled: true
                 custom: true
                 spec:
+                  # The console starts in about a second and the old pod is gone by then: every 2 s
+                  # rather than the default 10 s keeps the gap in a deploy short.
+                  periodSeconds: 2
                   httpGet:
                     path: /healthz
                     port: 8080

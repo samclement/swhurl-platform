@@ -38,6 +38,8 @@ class MergeTests(unittest.TestCase):
                    'labels': [{'name': 'auto-merge'}],
                    'body': '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'}
         self.files = ['apps/example/prod/helmrelease.yaml']
+        self.candidate_files: dict[str, str] = {}  # written into the merge result only (what the PR adds)
+        self.sync_changes = ''  # what `git status --porcelain` shows after make app-sync on the merge result
 
     def runner(self, *, validation=0, latest=None, current=BASE, passed=True, validate=None):
         """``validate``: what each successive read of the PR's Validate run returns (the last one repeats)."""
@@ -63,6 +65,9 @@ class MergeTests(unittest.TestCase):
                     fresh = new.parse_args(['fresh', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                             '--no-auto-deploy', '--image', IMAGE])
                     new.generate(fresh, dst)
+                    for rel, text in self.candidate_files.items():
+                        (dst / rel).parent.mkdir(parents=True, exist_ok=True)
+                        (dst / rel).write_text(text)
                     return Result(args)
                 source, target = promotion.read(dst, 'example')
                 if target is None:
@@ -82,6 +87,7 @@ class MergeTests(unittest.TestCase):
          .on('git', 'rev-parse', 'FETCH_HEAD', stdout=HEAD)
          .on('git', 'worktree', 'add', handler=worktree)
          .on('git', 'ls-remote', stdout=current + '\trefs/heads/main\n')
+         .on('git', 'status', '--porcelain', stdout=self.sync_changes)
          .on('git', stdout='')
          .on('make', returncode=validation, stderr='validation failed' if validation else ''))
         return runner
@@ -238,16 +244,66 @@ class MergeTests(unittest.TestCase):
                 self.check(runner)
             self.assertEqual(self.pushes(runner), [])
 
-    def test_new_app_scope_still_refuses_shared_and_encrypted_files(self):
+    def test_new_app_scope_still_refuses_other_apps_and_secrets(self):
         self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
-        for filename in ('platform/nats/users.yaml', 'apps/example/staging/helmrelease.yaml',
-                         'apps/fresh/staging/secret.sops.yaml'):
+        for filename in ('apps/example/staging/helmrelease.yaml', 'apps/fresh/staging/secret.sops.yaml',
+                         'platform/oauth2-proxy/secret.sops.yaml', 'platform/console/helmrelease.yaml'):
             self.files = ['apps/fresh/staging/helmrelease.yaml', filename]
             runner = self.runner()
             with self.subTest(filename=filename), self.assertRaises(merge.Hold):
                 self.check(runner)
             self.assertEqual([call for call in runner.calls if call[0] == 'make'], [])
             self.assertEqual(self.pushes(runner), [])
+
+    KEY = 'apps/fresh/staging/events.sops.yaml'
+    RECIPIENT = 'age1' + 'q' * 58
+
+    def events_key(self, values=None, recipient=None, name='fresh-events'):
+        doc = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': name, 'namespace': 'fresh-staging'},
+               'type': 'Opaque', 'stringData': values or {'SWHURL_EVENTS_SEED': 'ENC[AES256_GCM,data:x,type:str]'},
+               'sops': {'age': [{'recipient': recipient or self.RECIPIENT, 'enc': 'x'}], 'mac': 'ENC[x]'}}
+        return json.dumps(doc)
+
+    def new_app_with_generated_files(self):
+        self.pr['head']['ref'] = 'console/new-fresh-staging-aaaaaaa'
+        (self.root / '.sops.yaml').write_text(f"creation_rules:\n  - path_regex: apps/.*\\.sops\\.ya?ml$\n    age: {self.RECIPIENT}\n")
+        for rel in merge.DERIVED:
+            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / rel).write_text('before: true\n')
+        self.candidate_files = {self.KEY: self.events_key(), **{rel: 'after: true\n' for rel in merge.DERIVED}}
+        self.files = ['apps/fresh/staging/helmrelease.yaml', self.KEY, 'clusters/home/app-fresh-staging.yaml',
+                      'clusters/home/kustomization.yaml', *merge.DERIVED]
+
+    def test_new_app_merges_its_generated_key_and_the_shared_files_app_sync_derives(self):
+        self.new_app_with_generated_files()
+        runner = self.runner()
+        self.check(runner)
+        sync = ('make', 'app-sync')
+        self.assertIn(sync, runner.calls)
+        self.assertTrue(self.pushes(runner))
+        self.assertLess(runner.calls.index(sync), runner.calls.index(self.pushes(runner)[0]))
+
+    def test_new_app_holds_shared_files_not_derived_or_a_key_that_is_more_than_its_seed(self):
+        seed_only = "the events key is not the app's generated, encrypted NATS seed alone"
+        cases = {
+            'hand-edited shared file': {'sync': ' M platform/nats/users.yaml\n',
+                                        'reason': r'make app-sync\): platform/nats/users\.yaml$'},
+            'another value': {'reason': seed_only, 'key': self.events_key(values={'SWHURL_EVENTS_SEED': 'ENC[x]', 'OTHER': 'ENC[y]'})},
+            'plaintext seed': {'reason': seed_only, 'key': self.events_key(values={'SWHURL_EVENTS_SEED': 'SUAPLAINTEXT'})},
+            'another recipient': {'reason': seed_only, 'key': self.events_key(recipient='age1' + 'z' * 58)},
+            "another app's name": {'reason': seed_only, 'key': self.events_key(name='example-events')},
+        }
+        for name, case in cases.items():
+            with self.subTest(name):
+                self.new_app_with_generated_files()
+                if 'key' in case:
+                    self.candidate_files[self.KEY] = case['key']
+                self.sync_changes = case.get('sync', '')
+                runner = self.runner()
+                with self.assertRaisesRegex(merge.Hold, case['reason']):
+                    self.check(runner)
+                self.assertEqual(self.pushes(runner), [])
+                self.sync_changes = ''
 
     def test_waits_for_a_running_validate_then_merges(self):
         running = '[{"databaseId": 1, "status": "in_progress", "conclusion": ""}]'

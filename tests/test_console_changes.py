@@ -438,6 +438,15 @@ class OpenPrTests(unittest.TestCase):
                       api.sent('POST /pulls')[0]['body'])
         self.assertFalse(any('set the Secret values' in line for line in job.lines))
 
+        def with_new_apps_events_key(tree):  # a new app's own key, generated whole: the merge gate checks it
+            (tree / 'apps/x/staging').mkdir(parents=True)
+            (tree / 'apps/x/staging/events.sops.yaml').write_text('sops: {}\n')
+        api, job, runner = FakeGitHub(), actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake(edit=with_new_apps_events_key)
+        changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,
+                        change=lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x']))
+        self.assertTrue(api.sent('POST /issues/7/labels'), "a new app's generated key does not hold the merge")
+        self.assertNotIn('Manual merge required', api.sent('POST /pulls')[0]['body'])
+
         api = FakeGitHub(fail={'POST /issues/7/labels': (403, 'Resource not accessible')})
         job, runner = actions.Job(1, 'new app', 'x/staging', 'sam@swhurl.com', None), tree_fake()
         url = changes.open_pr(runner, api.github, job, slug='new-x-staging', title='t', body='b', auto_merge=True,

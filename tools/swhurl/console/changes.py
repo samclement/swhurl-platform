@@ -279,7 +279,8 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
     """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL.
 
     With ``auto_merge`` the PR is labelled to merge itself once Validate passes, unless it adds or changes an
-    encrypted file: a new Secret's values are ``REPLACE_ME`` until someone sets them on the branch."""
+    encrypted file: a new Secret's values are ``REPLACE_ME`` until someone sets them on the branch. A new
+    app's generated events key is the exception: it is complete when written."""
     runner.add_secret(github.token)  # whoever built ``github``, the token is redacted from every message
     api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
@@ -307,9 +308,14 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
                 status = 'M'
             job.lines.append(f'{status} {path}')
         encrypted = [p for p in changed if p.endswith('.sops.yaml')]
-        if encrypted:
+        generated_key = bool(encrypted) and all(Path(p).name == events.SECRET_FILE for p in encrypted)
+        if generated_key and slug.startswith('new-') and all(p not in before for p in encrypted):
+            # A new app's events key is generated whole (nothing is left to fill in, and no one can read it
+            # in review): it does not hold the merge. The gate checks it is that key alone (merge.check_new_app).
+            encrypted_reason = ''
+        elif encrypted:
             auto_merge = False
-            if all(Path(p).name == events.SECRET_FILE for p in encrypted):  # generated whole: nothing is left to fill in
+            if generated_key:
                 encrypted_reason = "adds the app's generated encrypted events key"
             else:
                 encrypted_reason = 'needs Secret values to be set on the pull request branch'

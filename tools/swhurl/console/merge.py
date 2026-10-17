@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import calling, helmrelease, new, offers, per_environment, promotion
+from swhurl.apps import calling, events, helmrelease, new, offers, per_environment, promotion
 from swhurl.apps.instance import instance_folder, instance_unit_file
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
@@ -23,6 +23,9 @@ MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
+# A new app's files outside its folder, generated from every instance's declaration (make app-sync): its
+# NATS user, its egress port, Reloader watching its namespace. The gate regenerates them on the merge result.
+DERIVED = ('platform/nats/users.yaml', 'platform/egress/proxy.yaml', 'platform/reloader/helmrelease.yaml')
 
 
 class Hold(Exception):
@@ -39,11 +42,14 @@ def review_metadata(body: str) -> dict:
         raise Hold('invalid promotion review metadata') from None
 
 
-def scope(base: Path, candidate: Path, files: list[str], app: str, env: str) -> None:
+def scope(base: Path, candidate: Path, files: list[str], app: str, env: str, new_app: bool = False) -> None:
     unit = instance_unit_file(Path(), app, env).as_posix()
     registry = 'clusters/home/kustomization.yaml'
+    events_key = f'apps/{app}/{env}/{events.SECRET_FILE}'
     for path in files:
-        if path.endswith('.sops.yaml') or not (path.startswith(f'apps/{app}/{env}/') or path in (unit, registry)):
+        generated = new_app and (path == events_key or path in DERIVED)  # checked by check_new_app
+        if not generated and (path.endswith('.sops.yaml')
+                              or not (path.startswith(f'apps/{app}/{env}/') or path in (unit, registry))):
             raise Hold('diff includes encrypted files, infrastructure or unrelated edits')
         if not (candidate / path).is_file():
             raise Hold('automatic merge does not delete app resources')
@@ -54,6 +60,42 @@ def scope(base: Path, candidate: Path, files: list[str], app: str, env: str) -> 
         expected['resources'].append(instance_unit_file(Path(), app, env).name)
         if updated != expected:
             raise Hold('unit registration changes more than this app')
+
+
+def recipients(root: Path, path: str) -> set[str]:
+    """The age recipients .sops.yaml's first rule matching ``path`` encrypts to."""
+    config = root / '.sops.yaml'
+    for rule in (yamlio.load(config.read_text()) if config.is_file() else {}).get('creation_rules') or []:
+        if re.search(rule.get('path_regex', ''), path):
+            return {r.strip() for r in str(rule.get('age', '')).split(',') if r.strip()}
+    return set()
+
+
+def check_new_app(base: Path, candidate: Path, files: list[str], app: str, runner: Runner) -> None:
+    """What a new app adds beyond its own files is only what the platform generates for it.
+
+    Its events key: a new Secret holding its NATS seed and nothing else, encrypted to this repository's
+    recipients alone (the value cannot be read here, nor by a reviewer). The shared files: exactly what
+    make app-sync derives from every instance's declaration, so no permission is granted by hand."""
+    key = f'apps/{app}/staging/{events.SECRET_FILE}'
+    if key in files:
+        if (base / key).exists():
+            raise Hold('new-app PR replaces an existing events key')
+        doc = yamlio.load((candidate / key).read_text()) or {}
+        sops = doc.get('sops') or {}
+        values = doc.get('stringData') or {}
+        if (doc.get('kind') != 'Secret' or 'data' in doc
+                or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
+                or set(values) != {events.SEED_VARIABLE} or not str(values[events.SEED_VARIABLE]).startswith('ENC[')
+                or {r.get('recipient') for r in sops.get('age') or []} != recipients(base, key)
+                or any(sops.get(other) for other in ('kms', 'gcp_kms', 'azure_kv', 'hc_vault', 'pgp'))):
+            raise Hold("the events key is not the app's generated, encrypted NATS seed alone")
+    if any(path in DERIVED for path in files):
+        runner.run(['make', 'app-sync'], cwd=candidate)
+        changed = [line[3:] for line in runner.output(['git', 'status', '--porcelain'], cwd=candidate).splitlines()
+                   if line.strip()]  # 'XY path': the status columns may start with a space
+        if changed:
+            raise Hold('shared files differ from what the instances declare (make app-sync): ' + ', '.join(changed))
 
 
 def check_promotion(base: Path, candidate: Path, app: str, body: str, files: list[str], runner: Runner) -> None:
@@ -171,13 +213,16 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
             runner.run(['git', 'worktree', 'add', '--detach', str(candidate), base_sha], cwd=root)
             runner.run(['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com',
                         'merge', '--no-ff', '--no-edit', sha], cwd=candidate)
-            scope(base, candidate, files, app, 'prod' if action == 'promote' else 'staging')
+            scope(base, candidate, files, app, 'prod' if action == 'promote' else 'staging', new_app=action == 'new')
             if action == 'promote':
                 check_promotion(base, candidate, app, pr.get('body') or '', files, runner)
             elif instance_folder(base, app, 'staging').exists():
                 raise Hold('new-app PR overwrites an existing staging instance')
-            # scope holds both actions to app files, their unit and its registration. check-repo renders
-            # the registered unit; tooling tests read frozen fixtures, and templates/OTel are unchanged.
+            else:
+                check_new_app(base, candidate, files, app, runner)
+            # scope holds both actions to app files, their unit and its registration (and a new app's
+            # generated key and derived shared files, checked above). check-repo renders the registered
+            # unit; tooling tests read frozen fixtures, and templates/OTel are unchanged.
             runner.run(['make', *MERGE_CHECKS], cwd=candidate)
             # Recheck the human's hold and the exact PR head after the potentially long validation.
             eligible(runner.json(['gh', 'api', pr_path]), sha, repo)

@@ -365,6 +365,8 @@ make app-egress APP=demo-shop ENV=staging ARGS="--remove api.stripe.com"
 
 Or, on the app page's **Connect** part, **Reach a host outside**; each grant is then a row of its connections with its own **Remove**. Both open the same change: the release's annotation `platform.swhurl.com/egress: api.stripe.com:443` and the proxy's generated configuration. A grant does not restart the app.
 
+**Which clients follow the proxy** by themselves, and how to point Micronaut's client or an SDK with its own at it: the generated app's README, section *Reaching outside the cluster*.
+
 **What a grant does today.** Nothing is refused yet: the proxy logs every request with the instance and whether a grant covers it, `granted=yes` or `granted=-`. A `-` line names a host the app will need a grant for once ungranted hosts are refused ([plan](plan.md#stage-5-egress-grants), step E3). In ClickStack, search service `egress` for `granted=-`.
 
 **Rules.** A grant is a host name with a port (443 when none is given); `*.stripe.com` is any name under `stripe.com` and `stripe.com` itself. IP addresses are refused: only HTTP(S) through the proxy is planned, and only host names are checked, never the path inside HTTPS. A name already inside a wildcard grant of the same port is refused, as is granting a host twice. Grants are per environment: a promotion never widens production (staging may use a sandbox host); after it, `make app-promote` names the hosts staging has and production lacks, with the command that grants them. `make check-apps` fails on a malformed grant (rule `egress-grants`) or a stale proxy configuration (rule `egress-ports`).

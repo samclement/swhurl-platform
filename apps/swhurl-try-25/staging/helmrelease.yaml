@@ -66,13 +66,13 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-25
               SWHURL_EVENTS_NKEY: UA755LZPSFLKM3FKXKBKJPPKX7EXXSMEY2A4CHPXCO5HKDFW74Y2PPID
-              HTTP_PROXY: http://egress.egress.svc.cluster.local:30116
-              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30116
-              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30116 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30116 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
-              NODE_USE_ENV_PROXY: '1'
-              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
               SWHURL_EVENTS_PUBLISH: worked
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30117
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30117
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30117 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30117 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
             envFrom:
             - secretRef:
                 name: swhurl-try-25-events

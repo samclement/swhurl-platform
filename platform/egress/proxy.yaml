@@ -74,7 +74,10 @@ data:
             http_port 30115 name=swhurl-try-12-prod
             acl swhurl-try-12-prod myportname swhurl-try-12-prod
             note instance swhurl-try-12-prod swhurl-try-12-prod
-            http_port 30116 name=swhurl-try-25-staging
+            http_port 30116 name=swhurl-try-24-staging
+            acl swhurl-try-24-staging myportname swhurl-try-24-staging
+            note instance swhurl-try-24-staging swhurl-try-24-staging
+            http_port 30117 name=swhurl-try-25-staging
             acl swhurl-try-25-staging myportname swhurl-try-25-staging
             note instance swhurl-try-25-staging swhurl-try-25-staging
             # Every host for now: refusing what no grant covers comes later.
@@ -114,6 +117,8 @@ data:
             port: 30115
           p30116:
             port: 30116
+          p30117:
+            port: 30117
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -220,6 +225,12 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: swhurl-try-25-staging
+          kubernetes.io/metadata.name: swhurl-try-24-staging
     ports:
     - port: 30116
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: swhurl-try-25-staging
+    ports:
+    - port: 30117

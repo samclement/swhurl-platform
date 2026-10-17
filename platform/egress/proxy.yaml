@@ -29,7 +29,6 @@ data:
             acl request has request
             access_log stdio:/dev/stdout logformat=egress request
             cache_log stdio:/dev/stderr
-            acl port-443 port 443
             http_port 30101 name=demo-notifier-staging
             acl demo-notifier-staging myportname demo-notifier-staging
             note instance demo-notifier-staging demo-notifier-staging
@@ -60,8 +59,6 @@ data:
             http_port 30110 name=swhurl-try-18-staging
             acl swhurl-try-18-staging myportname swhurl-try-18-staging
             note instance swhurl-try-18-staging swhurl-try-18-staging
-            acl swhurl-try-18-staging-443 dstdomain -n example.com
-            note granted yes swhurl-try-18-staging swhurl-try-18-staging-443 port-443
             http_port 30111 name=demo-orders-prod
             acl demo-orders-prod myportname demo-orders-prod
             note instance demo-orders-prod demo-orders-prod

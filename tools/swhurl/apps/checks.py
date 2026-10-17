@@ -17,6 +17,10 @@ from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 
+def app_of(policy: dict) -> str:
+    return (policy['metadata'].get('labels') or {}).get(contract.APP, '')
+
+
 def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) -> None:
     """Automatic staging deploys: every app ImagePolicy is Ready, and staging runs the image it picked
     (the Deploy workflow writes it: docs/apps.md#deploy-a-new-image)."""
@@ -25,23 +29,29 @@ def check_image_automation(runner: Runner, report: Report, root: Path = ROOT) ->
         policies = runner.json(['kubectl', '-n', 'flux-system', 'get', 'imagepolicies.image.toolkit.fluxcd.io',
                                 '-l', contract.APP, '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad("could not read the apps' ImagePolicies")
+        report.bad("cannot read the apps' ImagePolicies, so no staging deploy can be checked "
+                   '(kubectl -n flux-system get imagepolicies; is image-reflector-controller running? make flux-install)')
         return
     for policy in sorted(policies, key=lambda p: p['metadata']['name']):
         name = policy['metadata']['name']
         status, message = ready_condition(policy)
         if status != 'True':
-            report.bad(f'ImagePolicy {name} is not Ready: {message}')
+            report.bad(f'ImagePolicy {name} is not Ready, so staging gets no new images: {message} '
+                       f'(kubectl -n flux-system describe imagerepository {app_of(policy)}; make reconcile UNIT=app-{name})')
             continue
         latest = ((policy.get('status') or {}).get('latestRef') or {}).get('tag', '')
-        app = (policy['metadata'].get('labels') or {}).get(contract.APP, '')
+        app = app_of(policy)
         release = root / INSTANCE_ROOTS[0] / app / contract.AUTO_DEPLOY_ENV / 'helmrelease.yaml'
         running = str(helmrelease.image(yaml.safe_load(release.read_text())).get('tag', '')) if release.is_file() else ''
         if running == latest:
             report.ok(f'{name}: newest image {latest}, deployed')
+        elif not running:
+            report.warn(f'{name}: newest image {latest}, but this checkout has no {release.relative_to(root)} '
+                        '(git pull if it is behind main)')
         else:
-            report.warn(f'{name}: newest image {latest}, staging has {running or "no instance"} in Git '
-                        '(the Deploy workflow runs within the hour, or held it: see its last run)')
+            report.warn(f'{name}: newest image {latest} is not deployed; staging in Git runs {running}. The Deploy '
+                        'workflow deploys it within the hour (git pull: it may already have); to deploy it now, or see '
+                        f'why it is held: make app-deploy APP={app}, commit and push')
 
 
 def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -56,7 +66,8 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
         policies = runner.json(['kubectl', 'get', 'networkpolicies.networking.k8s.io', '--all-namespaces',
                                 '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read app namespaces, ResourceQuotas or NetworkPolicies')
+        report.bad('cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked '
+                   f'(kubectl get namespaces -l {contract.APP})')
         return
     known = contract.teams(root)
     live = {n['metadata']['name']: n['metadata'].get('labels') or {} for n in namespaces}
@@ -64,12 +75,15 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
     for instance in instances(root / INSTANCE_ROOTS[0]):
         app, name = instance.app, instance.namespace
         if name not in live:
-            report.bad(f'{name}: the namespace does not exist')
+            report.bad(f'{name}: the namespace does not exist, so the instance is not running '
+                       f'(make app-reconcile APP={app} ENV={instance.env}; make flux-reconcile shows why it fails)')
             continue
         labels = live[name]
         problems = []
-        if labels.get(contract.TEAM) not in known:
-            problems.append(f'team {labels.get(contract.TEAM)!r} is not in {contract.TEAMS_FILE}')
+        team = labels.get(contract.TEAM)
+        if team not in known:
+            problems.append(f'team {team!r} is not in {contract.TEAMS_FILE} (make app-team APP={app} ARGS="--team <team>"'
+                            + (f', or make team-add NAME={team})' if team else ')'))
         if not any(q['metadata']['namespace'] == name and (q.get('spec') or {}).get('hard') == contract.QUOTA
                    for q in quotas):
             problems.append('no platform ResourceQuota')
@@ -78,7 +92,7 @@ def check_isolation(runner: Runner, report: Report, root: Path = ROOT) -> None:
                    for p in policies):
             problems.append("no NetworkPolicy on the app's pods")
         if problems:
-            report.bad(f'{name}: ' + '; '.join(problems))
+            report.bad(f'{name}: ' + '; '.join(problems) + f' (make check-apps, then make app-reconcile APP={app} ENV={instance.env})')
         else:
             complete += 1
     if complete:
@@ -92,11 +106,12 @@ def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> Non
         live = runner.json(['kubectl', 'get', '--raw', '/openid/v1/jwks'])
         issuer = runner.json(['kubectl', 'get', '--raw', '/.well-known/openid-configuration']).get('issuer')
     except (CommandError, AttributeError):
-        report.bad('could not read the cluster\'s token issuer or signing keys')
+        report.bad('cannot read the cluster\'s token issuer or signing keys (kubectl get --raw /openid/v1/jwks)')
         return
     path = root / calling.SIGNING_KEYS_FILE
     if not path.is_file():
-        report.bad(f'{calling.SIGNING_KEYS_FILE} is missing: make platform-signing-keys')
+        report.bad(f'{calling.SIGNING_KEYS_FILE} is missing, so apps refuse every call between them: '
+                   'make platform-signing-keys, commit and push')
     elif json.loads(path.read_text()) != live:
         report.bad(f'{calling.SIGNING_KEYS_FILE} is not the cluster\'s signing key set: apps refuse every call between '
                    'them until you run make platform-signing-keys, commit and push')
@@ -105,7 +120,8 @@ def check_signing_keys(runner: Runner, report: Report, root: Path = ROOT) -> Non
     if issuer == calling.ISSUER:
         report.ok(f'token issuer is {issuer}')
     else:
-        report.bad(f'token issuer is {issuer}, but apps are told {calling.ISSUER} (apps/calling.py ISSUER)')
+        report.bad(f'token issuer is {issuer}, but apps are told {calling.ISSUER}, so they refuse every call between '
+                   'them: set ISSUER in tools/swhurl/apps/calling.py, make app-sync, commit and push')
 
 
 def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
@@ -117,7 +133,7 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
         declared = runner.json(['kubectl', 'get', 'streams.jetstream.nats.io,consumers.jetstream.nats.io',
                                 '--all-namespaces', '-o', 'json'])['items']
     except (CommandError, KeyError, TypeError):
-        report.bad('could not read NATS, its controller, or the streams and consumers')
+        report.bad('cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)')
         return
     for name, workload in (('NATS', server), ('the stream controller', controller)):
         ready = ((workload or {}).get('status') or {}).get('readyReplicas', 0)
@@ -127,7 +143,9 @@ def check_events(runner: Runner, report: Report, root: Path = ROOT) -> None:
     for item in declared:
         status, message = ready_condition(item)
         if status != 'True':
-            waiting.append(f"{item['kind']} {item['metadata']['namespace']}/{item['metadata']['name']}: {message or 'not Ready'}")
+            waiting.append(f"{item['kind']} {item['metadata']['namespace']}/{item['metadata']['name']} is not Ready, so its "
+                           f"events are not kept or delivered: {message or 'no message'} (kubectl -n {item['metadata']['namespace']} "
+                           f"describe {item['kind'].lower()} {item['metadata']['name']})")
     for line in waiting:
         report.bad(line)
     if declared and not waiting:
@@ -151,7 +169,8 @@ def check_egress(runner: Runner, report: Report, root: Path = ROOT) -> None:
         report.bad('the egress proxy is not running: apps cannot reach outside the cluster '
                    f'(kubectl -n {egress.NAMESPACE} get pods; make reconcile UNIT=platform-egress)')
     elif ready < wanted:
-        report.warn(f'the egress proxy runs {ready} of {wanted} replicas: a restart would stop outbound traffic meanwhile')
+        report.warn(f'the egress proxy runs {ready} of {wanted} replicas: a restart would stop outbound traffic meanwhile '
+                    f'(kubectl -n {egress.NAMESPACE} get pods)')
     else:
         report.ok(f'the egress proxy runs {ready} replicas')
     for problem in egress.problems(root):

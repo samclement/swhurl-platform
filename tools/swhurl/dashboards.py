@@ -286,12 +286,14 @@ def check_dashboards(runner: Runner, report: Report, now: dt.datetime | None = N
     try:
         state = kube.cronjob_run(runner, 'console', 'console-dashboards', now)
     except (CommandError, KeyError, ValueError, TypeError):
-        report.bad('cannot read dashboard sync status (console/console-dashboards)')
+        report.bad('cannot read dashboard sync status (console/console-dashboards; make reconcile UNIT=platform-console)')
         return
     if state == 'suspended':
-        report.bad('dashboard and alert sync is suspended')
+        report.bad('dashboard and alert sync is suspended, so app dashboards and alerts do not follow Git: '
+                   'kubectl -n console patch cronjob console-dashboards -p \'{"spec":{"suspend":false}}\'')
     elif state == 'stale':
-        report.bad('dashboard and alert sync has no success in the last 5 minutes: check the console-dashboards job logs '
-                   '(no "swhurl notify" webhook? make clickstack-notify-webhook)')
+        report.bad('dashboard and alert sync has not succeeded in 5 minutes (kubectl -n console get jobs; kubectl -n '
+                   'console logs job/<newest console-dashboards-...>). No "swhurl notify" webhook: make '
+                   'clickstack-notify-webhook; no new jobs at all: docs/operations.md#troubleshooting')
     else:
         report.ok('dashboard and alert sync succeeded in the last 5 minutes')

@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import yaml
-from fakecluster import CONSOLE_TAG, KEY, TOKEN, apps_answers, b64, fresh_backup, healthy
+from fakecluster import CONSOLE_TAG, KEY, TOKEN, b64, fresh_backup, healthy
 
 from swhurl import ROOT, clickstack, dashboards, images, platform, recovery, validate, verify
 from swhurl.apps import calling, channels, contract
@@ -63,8 +63,8 @@ class VerifyPlatformTests(unittest.TestCase):
             'unit not ready': ({'units': {'items': [{'metadata': {'name': 'homelab-x'}, 'status': {'conditions': [
                 {'type': 'Ready', 'status': 'False', 'message': 'dependency not ready'}]}}]}},
                 'homelab-x is not Ready: dependency not ready'),
-            'no units': ({'units': {'items': []}}, 'no Flux kustomizations found'),
-            'units unreadable': ({'units': Result((), 1, '', 'forbidden')}, 'could not read Flux kustomizations'),
+            'no units': ({'units': {'items': []}}, 'no Flux kustomizations in flux-system'),
+            'units unreadable': ({'units': Result((), 1, '', 'forbidden')}, 'cannot read Flux kustomizations'),
             'secret missing': ({'secret': {'data': {}}}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'secret unreadable': ({'secret': Result((), 1, '', 'NotFound')}, 'CLICKSTACK_INGESTION_KEY is empty'),
             'team key unreadable': ({'team': Result((), 2, '', 'quit(2)')}, 'cannot read a unique ClickStack team'),
@@ -72,20 +72,20 @@ class VerifyPlatformTests(unittest.TestCase):
                               'cannot read a unique ClickStack team'),
             'registration open': ({'installation': Result((), 0, 'RESULT ' + json.dumps(
                 {'status': 200, 'body': {'isTeamExisting': False}}))}, 'registration is open'),
-            'api unreachable': ({'installation': Result((), 1, '', 'no pod')}, 'could not ask the HyperDX API'),
+            'api unreachable': ({'installation': Result((), 1, '', 'no pod')}, 'cannot ask the HyperDX API'),
             'invalid base64': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY) + '!'}}}, 'invalid base64'),
             'different key': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(OTHER)}}}, 'does not match'),
             'double encoded': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(b64(KEY))}}}, 'does not match'),
             'trailing newline': ({'secret': {'data': {'CLICKSTACK_INGESTION_KEY': b64(KEY + '\n')}}}, 'does not match'),
             'no redirect': ({'traefik': {'spec': {'template': {'spec': {'containers': [{'args': []}]}}}}},
                             'does not redirect HTTP to HTTPS'),
-            'telemetry ttl drift': ({'ttl30': Result((), 0, '8\t9\n')}, '8 of 9 have it'),
-            'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'without a 30-day TTL'),
-            'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'could not read ClickHouse telemetry'),
+            'telemetry ttl drift': ({'ttl30': Result((), 0, '8\t9\n')}, '1 of 9 telemetry tables have no 30-day TTL'),
+            'no telemetry tables': ({'ttl30': Result((), 0, '0\t0\n')}, 'have no 30-day TTL'),
+            'clickhouse down': ({'ttl30': Result((), 1, '', 'connection refused')}, 'cannot read ClickHouse telemetry'),
             'system logs untimed': ({'untimed': Result((), 0, '3\n')}, '3 ClickHouse system log table(s) have no TTL'),
             'merges failing': ({'merges': Result((), 0, '3765\tsystem.metric_log\n')},
                                '3765 ClickHouse merge(s) failed in the last hour (for example system.metric_log)'),
-            'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'could not read ClickHouse merge results'),
+            'part_log unreadable': ({'merges': Result((), 1, '', 'UNKNOWN_TABLE')}, 'cannot read ClickHouse merge results'),
             'pv delete': ({'pv': {'spec': {'persistentVolumeReclaimPolicy': 'Delete'}}}, 'data volume is not Retain'),
             'pvc missing': ({'pvc': Result((), 1, '', 'NotFound')}, 'data volume is not Retain'),
             'console missing': ({'console': Result((), 1, '', 'NotFound')}, 'cannot read the console HelmRelease'),
@@ -146,7 +146,7 @@ class ConsoleCheckTests(unittest.TestCase):
         self.assertEqual(diff[diff.index('--') + 1:], platform.CONSOLE_IMAGE_INPUTS)
 
     def test_changed_or_unknown_tooling_warns_without_failing(self):
-        for code, expected in ((1, 'tooling changed since console image b63d2af'), (128, 'cannot compare')):
+        for code, expected in ((1, 'the console runs image b63d2af, older than the tooling'), (128, 'cannot compare')):
             with self.subTest(code=code):
                 exit_code, report, text = run(healthy(**{'git-diff': Result((), code)}))
                 self.assertEqual(exit_code, 0, text)
@@ -165,7 +165,7 @@ class ConsoleCheckTests(unittest.TestCase):
 
     def test_content_tag_is_compared_exactly(self):
         for current, expected in (('src-abc', '[OK] console image src-abc is built from the current tooling'),
-                                  ('src-new', '[WARN] tooling changed since console image src-abc')):
+                                  ('src-new', '[WARN] the console runs image src-abc, older than the tooling')):
             with self.subTest(current=current):
                 runner = healthy(console={'spec': {'values': {'controllers': {'main': {'containers': {'main': {
                     'image': {'tag': 'src-abc'}}}}}}}})
@@ -198,7 +198,7 @@ class ConsoleTokenTests(unittest.TestCase):
     def test_unreadable_flux_controller_fails(self):
         code, report, text = run(healthy(**{'kustomize-controller': Result((), 0, '')}))
         self.assertEqual(code, 1, text)
-        self.assertIn('[BAD] could not read flux-system/kustomize-controller', report.lines)
+        self.assertIn('[BAD] cannot read flux-system/kustomize-controller (kubectl -n flux-system get deploy kustomize-controller)', report.lines)
 
     def test_image_automation_problems(self):
         from fakecluster import policy, staging_tag
@@ -206,9 +206,9 @@ class ConsoleTokenTests(unittest.TestCase):
         cases = {
             'policy': ({'policies': {'items': [policy('demo-shop', tag, {'conditions': [
                 {'type': 'Ready', 'status': 'False', 'message': 'no tags match'}]})]}},
-                       '[BAD] ImagePolicy demo-shop-staging is not Ready: no tags match'),
+                       '[BAD] ImagePolicy demo-shop-staging is not Ready, so staging gets no new images: no tags match'),
             'behind': ({'policies': {'items': [policy('demo-shop', '999-abcdef0')]}},
-                       f'[WARN] demo-shop-staging: newest image 999-abcdef0, staging has {tag} in Git'),
+                       f'[WARN] demo-shop-staging: newest image 999-abcdef0 is not deployed; staging in Git runs {tag}'),
         }
         for name, (overrides, expected) in cases.items():
             with self.subTest(name=name):
@@ -240,10 +240,13 @@ class ConsoleTokenTests(unittest.TestCase):
                                {'metadata': {'name': 'gone-prod', 'labels': {'platform.swhurl.com/app': 'gone'}}}]}
         every_pod = {'items': [{'metadata': {'namespace': 'w-staging'}, 'spec': {'podSelector': {}}}]}
         lines = isolation(**{'app-namespaces': namespace, 'quotas': {'items': []}, 'network-policies': every_pod})
-        self.assertEqual(lines[1:], ["[BAD] w-staging: team None is not in apps/teams.yaml; no platform ResourceQuota; "
-                                     "no NetworkPolicy on the app's pods"])
-        self.assertIn('[BAD] w-staging: the namespace does not exist', isolation(**{'app-namespaces': {'items': []}}))
-        self.assertIn('[BAD] could not read app namespaces, ResourceQuotas or NetworkPolicies',
+        self.assertEqual(lines[1:], ["[BAD] w-staging: team None is not in apps/teams.yaml (make app-team APP=w ARGS=\"--team <team>\"); "
+                                     "no platform ResourceQuota; no NetworkPolicy on the app's pods "
+                                     "(make check-apps, then make app-reconcile APP=w ENV=staging)"])
+        self.assertTrue(any(line.startswith('[BAD] w-staging: the namespace does not exist, so the instance is not running')
+                            for line in isolation(**{'app-namespaces': {'items': []}})))
+        self.assertIn('[BAD] cannot read app namespaces, ResourceQuotas or NetworkPolicies, so app isolation is unchecked '
+                      '(kubectl get namespaces -l platform.swhurl.com/app)',
                       isolation(**{**good, 'quotas': Result((), 1, '', 'forbidden')}))
 
     def test_signing_key_problems(self):
@@ -258,7 +261,7 @@ class ConsoleTokenTests(unittest.TestCase):
         self.assertEqual(code, 1, text)
         self.assertTrue(any(line.startswith('[BAD] token issuer is https://elsewhere') for line in report.lines), text)
         _, report, text = run(healthy(jwks=Result((), 1, '', 'forbidden')))
-        self.assertIn("[BAD] could not read the cluster's token issuer or signing keys", report.lines, text)
+        self.assertIn("[BAD] cannot read the cluster's token issuer or signing keys (kubectl get --raw /openid/v1/jwks)", report.lines, text)
 
     def test_event_problems(self):
         _, report, text = run(healthy())
@@ -271,16 +274,18 @@ class ConsoleTokenTests(unittest.TestCase):
                               'status': {'conditions': [{'type': 'Ready', 'status': 'False', 'message': 'stream not found'}]}}]}
         code, report, text = run(healthy(streams=pending))
         self.assertEqual(code, 1, text)
-        self.assertIn('[BAD] Consumer w-staging/orders-created: stream not found', report.lines, text)
+        self.assertIn('[BAD] Consumer w-staging/orders-created is not Ready, so its events are not kept or delivered: stream not found '
+                      '(kubectl -n w-staging describe consumer orders-created)', report.lines, text)
         _, report, text = run(healthy(streams=Result((), 1, '', 'no such resource')))
-        self.assertIn('[BAD] could not read NATS, its controller, or the streams and consumers', report.lines, text)
+        self.assertIn('[BAD] cannot read NATS, its controller, or the streams and consumers (make reconcile UNIT=platform-nats)', report.lines, text)
 
     def test_alert_problems(self):
         _, report, text = run(healthy(alerts={'items': []}))
         self.assertIn('[WARN] alert failures is missing: no push notifications for it (make reconcile UNIT=platform-alerts)',
                       report.lines, text)
         _, report, text = run(healthy(providers={'items': []}))
-        self.assertIn('[BAD] alert failures points at provider ntfy-platform, which does not exist', report.lines, text)
+        self.assertIn('[BAD] alert failures points at provider ntfy-platform, which does not exist, so its notifications are lost '
+                      '(make reconcile UNIT=platform-alerts)', report.lines, text)
 
     def test_channel_problems(self):
         _, report, text = run(healthy())
@@ -384,10 +389,9 @@ class AllowedChecksTests(unittest.TestCase):
         code, report, text = run(runner, allowed=frozenset({'cluster'}))
         self.assertEqual(code, 0, text)
         self.assertEqual([e.section for e in report.entries if e.level != 'info'],
-                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Image Automation'] * len(apps_answers()['policies']['items'])
-                         + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
+                         ['Flux Kustomizations'] * 2 + ['Ingress'] + ['Alerts', 'Notify service'] + ['App dashboards and alerts', 'Notifications'])
         self.assertFalse([c for c in runner.calls if 'secret' in c or 'exec' in c or c[0] != 'kubectl'], runner.calls)
-        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, isolation, signing-keys, secrets, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
+        self.assertIn('[INFO] skipped (need more than cluster): flux-controllers, ingestion-key, registration, image-automation, isolation, signing-keys, secrets, events, egress, channels, retention, backups, sqlite-backups, push-webhook, image-webhooks, notification-heartbeat, console, console-token',
                       report.lines)
 
     def test_every_check_names_only_known_needs(self):

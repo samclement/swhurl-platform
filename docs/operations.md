@@ -21,7 +21,7 @@ A unit showing `DependencyNotReady` is waiting for another unit; fix that one fi
 | `ingestion-key` | The collectors' ingestion key is the ClickStack team's, compared by bytes and never printed | Cluster (read), Secrets (read), commands in pods |
 | `registration` | A HyperDX team exists, so registration is closed | Cluster (read), commands in pods |
 | `ingress` | Traefik redirects HTTP to HTTPS | Cluster (read) |
-| `image-automation` | Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise) | Cluster (read) |
+| `image-automation` | Every app's ImagePolicy is Ready and staging runs the image it picked (warns otherwise) | Cluster (read), this host |
 | `isolation` | Every app instance in Git has a registered team, the platform quota and a NetworkPolicy on its pods | Cluster (read), this host |
 | `signing-keys` | The signing keys and token issuer apps were given are the cluster's | Cluster (read), this host |
 | `secrets` | Every secret name an app's image needs has a value in Git (a missing one warns) | this host |

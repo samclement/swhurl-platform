@@ -27,7 +27,8 @@ def check_console(runner: Runner, report: Report) -> None:
         release = runner.json(['kubectl', '-n', 'console', 'get', 'helmrelease', 'console', '-o', 'json'])
         tag = helmrelease.image(release)['tag']
     except (CommandError, KeyError, TypeError):
-        report.bad('cannot read the console HelmRelease image tag (console/console)')
+        report.bad('cannot read the console HelmRelease image tag (console/console), so its image is unchecked '
+                   '(make reconcile UNIT=platform-console)')
         return
     try:  # where the console keeps its jobs across a restart (console/jobstore.py)
         runner.json(['kubectl', '-n', 'console', 'get', 'configmap', 'console-jobs', '-o', 'json'])
@@ -45,10 +46,11 @@ def check_console(runner: Runner, report: Report) -> None:
     if changed == 0:
         report.ok(f'console image {label} is built from the current tooling')
     elif changed == 1:
-        report.warn(f'tooling changed since console image {label}; after the publish run: make console-image, '
-                    'commit and push')
+        report.warn(f'the console runs image {label}, older than the tooling in this checkout. The publish workflow '
+                    'deploys a new one a few minutes after a push (gh run list --workflow publish-console.yml); if it '
+                    'failed, or this checkout is ahead of main: make console-image, commit and push')
     else:
-        report.warn(f'cannot compare console image {label} with this checkout (git fetch?)')
+        report.warn(f'cannot compare console image {label} with this checkout: it lacks that commit (git fetch)')
 
 
 def check_console_token(runner: Runner, report: Report, now: dt.datetime | None = None) -> None:
@@ -89,7 +91,8 @@ def check_github_token(runner: Runner, report: Report, token: str, label: str, n
     headers = dict(line.split(':', 1) for line in lines[1:] if ':' in line)
     expires = {k.strip().lower(): v.strip() for k, v in headers.items()}.get('github-authentication-token-expiration')
     if status != '200':
-        report.bad(f'GitHub did not accept the {label} (HTTP {status}); create a new one and set it with sops')
+        report.bad(f'GitHub did not accept the {label} (HTTP {status}), so the console cannot open pull requests: '
+                   'create a new one and set it as docs/operations.md#secrets says')
         return
     if not expires:
         report.ok(f'GitHub accepts the {label} (no expiry date)')
@@ -102,6 +105,6 @@ def check_github_token(runner: Runner, report: Report, token: str, label: str, n
     days = ((when - (now or dt.datetime.now(dt.UTC))).total_seconds()) / 86400
     message = f'GitHub accepts the {label}; it expires {when:%Y-%m-%d} ({days:.0f} days)'
     if days < TOKEN_WARN_DAYS:
-        report.warn(message + '; create a new one and set it with sops platform/console/secret.sops.yaml')
+        report.warn(message + '; create a new one and set it as docs/operations.md#secrets says')
     else:
         report.ok(message)

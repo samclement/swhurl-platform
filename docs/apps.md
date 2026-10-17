@@ -227,7 +227,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `version` | identity | read again | Checked every time the file is read |
 | `stack` | identity | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
 | `kind` | identity | read once | Fixed: web or worker cannot change; an image that changes it is held |
-| `description` | identity | read again | With every new staging image, as `SWHURL_DESCRIPTION`; a promotion carries it with the image. The templates serve it, with `SWHURL_APP`, in their API description, so an image built for another app (a [seed](#first-builds-of-new-apps)) describes this one |
+| `description` | identity | read again | With every new staging image, as `SWHURL_DESCRIPTION`; a promotion carries it with the image. Templates from `v0.2.14` declare it and serve it, with `SWHURL_APP`, in their API description, so an image built for another app (a [seed](#first-builds-of-new-apps)) describes this one |
 | `port` | need | read again | With every new staging image: the Service, the probes, its callers' addresses and its NetworkPolicy follow |
 | `healthPath` | need | read again | With every new staging image: the readiness, liveness and startup probes |
 | `uid` | need | read again | With every new staging image: the pod's user, group and `fsGroup`; held while the instance keeps a volume, whose files belong to the old user |

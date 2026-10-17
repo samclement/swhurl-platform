@@ -37,8 +37,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-21
-              tag: 0-dcba456
-              digest: sha256:5b2d7d55d999bc054a38612346ec9f90af8d14db92c19564162dff5f3a33568f
+              tag: 1-dcba456
+              digest: sha256:4b79058645d1e313bed9d6f5f37d2b34c631a98c0c3ce89a3e73beb7b381a9a3
             resources:
               requests:
                 cpu: 10m

@@ -4,7 +4,7 @@ metadata:
   name: demo-orders
   namespace: demo-orders-staging
   annotations:
-    platform.swhurl.com/offers: e8dbb1d
+    platform.swhurl.com/offers: '9375750'
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-orders
-              tag: 26-e8dbb1d
-              digest: sha256:21c38890afb47ac7233d92bac399e5f94b01211cb5e629b86534f41e6db368fb
+              tag: 28-9375750
+              digest: sha256:4dd3d2fa91fc2589328f2b3697856644436249732e80a16d8c60f16d1926bd70
             resources:
               requests:
                 cpu: 10m

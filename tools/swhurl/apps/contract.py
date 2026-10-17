@@ -196,8 +196,8 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': 'c268ac5bc03decfa849c1d5aa3164cc95f6dd9e1',
-    'kotlin': '05486838d832874bdb95ed8e4552138224d238de',
+    'typescript': '8b13435b7e8a42e26236b22556e4d37db4ca3aad',
+    'kotlin': '586d5453deea65f77729a7a4a5d2447ff2e01f45',
 }
 STACK_DESCRIPTIONS = {
     'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',

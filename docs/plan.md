@@ -41,7 +41,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Also needed:** seed retention (one image per template `main` commit; the template's own workflow can delete old versions of its package with `GITHUB_TOKEN`).
     - **Gain:** about 2 minutes per new Kotlin app, about 25 s per TypeScript app (its build is fast); once per app.
     - **Recommendation:** publish seeds for the tested combinations without `api` or `events` (defaults, worker, SQLite, flags) when apps start using them; leave the rest until the runtime-name change is wanted for other reasons.
-20. **App types for new apps: proposed 17 October 2026, not started** ([section 23](#23-app-types-for-new-apps--proposed-17-october-2026-not-started)). New apps are created by type (web app, API, worker, scheduled job) instead of by feature; each type sets its stack choices and template answers. Decided by the operator: calls carry the signed-in person; Web app has SQLite; each type has its own seed. Proposed, to confirm before stage 3: types defined in the platform, scheduled job as a fourth type, APIs private by default, `ANSWERS=` kept for the operator. Next: stage 1 (on-behalf-of in both templates).
+20. **App types for new apps: decided 17 October 2026, stage 1 in progress** ([section 23](#23-app-types-for-new-apps--decided-17-october-2026)). New apps are created by type (web app, API, worker, scheduled job) instead of by feature; each type sets its stack choices and template answers. Decided by the operator: calls carry the signed-in person; Web app has SQLite; each type has its own seed. The proposed decisions were accepted the same day: types defined in the platform, scheduled job as a fourth type, APIs private by default, `ANSWERS=` kept for the operator. Next: stage 1 (on-behalf-of in both templates).
 
 ### Delivered
 
@@ -1422,7 +1422,7 @@ A schema construct the comparator does not understand (for example `oneOf`) coun
 
 **Not covered.** API compatibility (option C), payload meaning (a field that keeps its type but changes units), and subscribers in other environments: staging and production are checked separately, each against its own subscribers.
 
-## 23. App types for new apps — proposed 17 October 2026, not started
+## 23. App types for new apps — decided 17 October 2026
 
 **Why.** A new app today is a stack plus five template questions (`kind`, `database`, `api`, `events`, `flags`): 32 combinations per stack, of which template CI builds 7 and seeds 1. Teams think in what they are building, not in features. A type picks the answers.
 
@@ -1450,14 +1450,14 @@ A worker is not a scheduled job: a loop loses its time of day on restart, holds 
 | Decision | Outcome |
 | --- | --- |
 | On-behalf-of for calls | **Chosen (operator, 17 October 2026):** a call made while serving a signed-in person carries that person to the callee (below) |
-| Where the types live | Proposed: in the platform (`APP_TYPES` beside `STACKS` in `apps/contract.py`), expanded into today's Copier answers, so `.copier-answers.yml` records every answer and a later change to a type does not alter existing apps on their Renovate update. Rejected: a `type` question in each `copier.yml` deriving the others (a changed default would reach existing apps), one template repository per type (four to seven repositories) |
-| Scheduled job as a fourth type | Proposed: yes. bjw-s `app-template` 5.2.1 renders `type: cronjob`; `kube.py` already reads a CronJob's last success |
-| API exposure default | Proposed: private; a browser reaches it through a web app (below) |
+| Where the types live | **Chosen (operator, 17 October 2026):** in the platform (`APP_TYPES` beside `STACKS` in `apps/contract.py`), expanded into today's Copier answers, so `.copier-answers.yml` records every answer and a later change to a type does not alter existing apps on their Renovate update. Rejected: a `type` question in each `copier.yml` deriving the others (a changed default would reach existing apps), one template repository per type (four to seven repositories) |
+| Scheduled job as a fourth type | **Chosen (operator, 17 October 2026):** yes. bjw-s `app-template` 5.2.1 renders `type: cronjob`; `kube.py` already reads a CronJob's last success |
+| API exposure default | **Chosen (operator, 17 October 2026):** private; a browser reaches it through a web app (below) |
 | Web app database | **Chosen (operator, 17 October 2026):** SQLite on, like an API |
 | Seed images | **Chosen (operator, 17 October 2026):** every type has its own seed image, per stack (seven), so every type gets the seed's start-up time |
-| `ANSWERS=` on `make app-repo` | Proposed: kept for the operator, marked untested; the console offers types only |
-| Web app's API in the Catalogue | Proposed: not listed (no `provides.api`): it serves its own frontend; openapi stays for typed `fetch` calls |
-| Scheduled job's default schedule | Proposed: daily at 03:17, changed with a command like `app-scale` (a grant), not in `swhurl.yaml`'s read-again fields |
+| `ANSWERS=` on `make app-repo` | **Chosen (operator, 17 October 2026):** kept for the operator, marked untested; the console offers types only |
+| Web app's API in the Catalogue | **Chosen (operator, 17 October 2026):** not listed (no `provides.api`): it serves its own frontend; openapi stays for typed `fetch` calls |
+| Scheduled job's default schedule | **Chosen (operator, 17 October 2026):** daily at 03:17, changed with a command like `app-scale` (a grant), not in `swhurl.yaml`'s read-again fields |
 
 **A web app calling a signed-in API.** The browser calls only its own host; the web app's server calls the API as an app. Same origin, so no CORS, and the API stays private. Rejected: the browser calling the API's own signed-in host (ForwardAuth answers the credential-less CORS preflight with a 302, and an expired session turns `fetch` into an unreadable redirect), and Traefik routing a path of the web app's host to the API (two instances on one host, and the call is no longer declared).
 
@@ -1468,7 +1468,7 @@ flowchart LR
   shop -- "Bearer token for orders<br/>x-swhurl-user: the person" --> orders["orders (API, private)<br/>caller.type=app, caller.id=shop, user"]
 ```
 
-**On-behalf-of.** `service(name)` sends the signed-in person's email as `x-swhurl-user` beside the token when the current request has one. The callee reads it only on a request with a valid app token from an allowed caller, and gives it to the route as the person (logs and spans: `caller.type=app`, `caller.id=<caller>`, `user.email`). Without a token the header is ignored. This states the trust [apps](apps.md#limits) already places in a declared caller; it adds none. Work: both templates' platform helpers and tests, and the [calling another app](apps.md#calling-another-app) section.
+**On-behalf-of.** A call names the caller it is made for (`service("orders").fetch(path, { onBehalfOf: caller })`, `platform.call("orders", path, onBehalfOf = caller)`): explicit in both stacks, because a Kotlin worker has no HTTP runtime to find the current request in, and a call without it carries no person. The helper sends that person's email as `x-swhurl-user` beside the token: a signed-in caller's own, or the person an app caller carried. The callee reads it only on a request with a valid app token from an allowed caller, and gives it to the route as the person (logs and spans: `caller.type=app`, `caller.id=<caller>`, `user.email`). Without a token the header is ignored. This states the trust [apps](apps.md#limits) already places in a declared caller; it adds none. Work: both templates' platform helpers and tests, and the [calling another app](apps.md#calling-another-app) section.
 
 **Seeds.** Every type has its own seed image, per stack: `swhurl-app-template-<stack>:seed-<commit>-<type>`, built and smoke-tested by the template's CI from that type's answers, so the template matrix is the type list. Today seeds exist only for each stack's default answers, and with `api` or `events` on, the app's name and description are compiled into the image (section 0, item 19). Every type turns `events` on, so stage 2 makes the image read its name and description at runtime first; stage 6 then publishes the seven seeds and the console picks the one for the chosen type.
 

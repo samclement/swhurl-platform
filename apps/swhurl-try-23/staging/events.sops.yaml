@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: swhurl-try-23-events
+    namespace: swhurl-try-23-staging
+type: Opaque
+stringData:
+    SWHURL_EVENTS_SEED: ENC[AES256_GCM,data:rKaeov47tB+IYRm4eCYNzR7oiLqPxV5pLX86QqXjjwVrKt4mGvMGKzeZlinrvJbm1/D/Y9u51zqF+Q==,iv:HDgt5xOKWyF6SQX4u+lg5S/Z40aWmUL1DYdFv8n5pbk=,tag:MhZzCF2IrmSYSReHM1i5fQ==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRNHE1QitzQlR4dDk4bDVS
+            cUpKblBqT3Axc0lURlg0MElYWDNMR2FhQ2hBCmRFTnZhdE9mdHhGb0s2VURhYlBt
+            STV3S3lmSGV4QXBlQlArZSs0aWtBa0EKLS0tIEhKcE9JcWhzbEZjN3VRdFRQL3FS
+            OThsVGRtem9UVzhpSWExWW1mbyt3MEEKzZAaa9ca62JvhLfu6r/AqjSEES1kMRsZ
+            wLHU90KDrHo5AfrkhdFa9domuqW7S0q88E+QDhKVapZVIgq8L17akA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-17T20:46:05Z"
+    mac: ENC[AES256_GCM,data:iTO69OpZEJGEAnqk5oXt3TGjH0zDKTOlP8GbRPKFpA7llMjmuzhvtnsC2lAOZB23U5mshc2o8hclMYqtF2/a9IGF1A+Xom97uWficbkgDoXknecG4JrwnqGtLzwrdg1pf+ogkGtlxhbRVnKJmgCQxitzRG1DDAIedkPwjJPTsNI=,iv:4GVQqtPloYgimB+4nuEN2O2iC5v+TcEy4coZ6CpOsVs=,tag:1mwiz95ruMmYT64LTwQQjA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

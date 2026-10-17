@@ -51,6 +51,8 @@ and, for the whole tree:
                       instances generate
   egress-ports        every instance has its own port on the egress proxy, and platform/egress/proxy.yaml
                       is what the instances generate (make app-sync rewrites it)
+  egress-grants       each host an instance may reach (make app-egress) is a host name or *.domain with
+                      a port, granted once and not inside a wildcard grant of the same instance
   notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
                       routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
 

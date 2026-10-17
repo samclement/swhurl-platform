@@ -7,7 +7,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 
-from swhurl.apps import calling, contract, events, helmrelease, offers, ops
+from swhurl.apps import calling, contract, egress, events, helmrelease, offers, ops
 from swhurl.apps import connections as links
 from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
@@ -44,12 +44,13 @@ class Connections:
     subscribers: tuple[tuple[str, str], ...] = ()  # (its event, the app receiving it)
     rows: tuple[links.Connection, ...] = ()  # the same, one row per connection: what every list shows
     offers: str = ''  # the commit its API and event documents were read at (make app-offers); '' if it has none
+    egress: tuple[str, ...] = ()  # host:port outside the cluster it may reach (make app-egress)
 
     @property
     def summary(self) -> str:
         """One line for a list: only what there is."""
         parts = [(len(self.calls), 'calls {}'), (len(self.callers), 'called by {}'), (len(self.publishes), 'publishes {}'),
-                 (len(self.subscribes), 'subscribes to {}')]
+                 (len(self.subscribes), 'subscribes to {}'), (len(self.egress), 'reaches {} outside')]
         return ' · '.join(text.format(count) for count, text in parts if count)
 
 
@@ -218,8 +219,10 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
             address, (f'https://{hosts[0]}{path}' if hosts else address + path) if path else '',
             tuple(calls), tuple(callers), tuple(publishes), tuple('.'.join(pair) for pair in subscribes), tuple(subscribers),
             links.rows(calls, callers, publishes, subscribes, subscribers,
-                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env}),
-            str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')))
+                       {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env},
+                       egress.granted(release)),
+            str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')),
+            tuple(egress.granted(release)))
         mine = (instance.namespace, instance.app)
         status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},
                                {'items': owned['workloads'][mine]})

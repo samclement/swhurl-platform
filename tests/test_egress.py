@@ -10,7 +10,8 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import checks, derive, egress, helmrelease, per_environment
+from swhurl.apps import checks, derive, edit, egress, helmrelease, per_environment
+from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import FakeRunner
 
@@ -64,6 +65,64 @@ class EgressTests(unittest.TestCase):
         before = {path: path.read_text() for path in self.root.rglob('*.yaml')}
         self.sync()
         self.assertEqual(before, {path: path.read_text() for path in self.root.rglob('*.yaml')})
+
+    def grant(self, env='staging', **change):
+        with redirect_stdout(io.StringIO()) as out:
+            edit.set_egress(self.root, 'hello', env, **change)
+        return out.getvalue()
+
+    def release(self, env):
+        return yaml.safe_load((self.root / f'apps/hello/{env}/helmrelease.yaml').read_text())
+
+    def test_a_grant_lists_the_host_on_the_instances_port_and_logs_whether_it_covers_a_request(self):
+        self.sync()
+        self.assertIn('[OK] hello/staging may reach: api.stripe.com:443, *.example.com:8443',
+                      self.grant(add=['API.Stripe.com', '*.example.com:8443']))
+        self.assertEqual(self.release('staging')['metadata']['annotations'][egress.ANNOTATION],
+                         'api.stripe.com:443,*.example.com:8443')
+        conf = self.proxy()[0]['configMaps']['config']['data']['squid.conf']
+        self.assertIn('granted=%{granted}note', conf)
+        self.assertIn('acl port-443 port 443\nacl port-8443 port 8443\n', conf)
+        self.assertIn('acl hello-staging-443 dstdomain -n api.stripe.com\n'
+                      'note granted yes hello-staging hello-staging-443 port-443\n'
+                      'acl hello-staging-8443 dstdomain -n .example.com\n'
+                      'note granted yes hello-staging hello-staging-8443 port-8443\n', conf)
+        self.assertNotIn('hello-prod-', conf, 'production is granted nothing by staging')
+        self.assertTrue(conf.endswith('http_access allow all\n'), 'E2 still allows every host')
+        self.assertEqual(egress.problems(self.root), [])
+
+        for change, message in (({'add': ['api.stripe.com']}, 'already there: api.stripe.com:443'),
+                                ({'remove': ['example.org']}, 'not there to remove: example.org:443'),
+                                ({'add': ['a.example.com:8443']}, 'a wildcard grant already covers a.example.com:8443'),
+                                ({'add': ['10.0.0.1']}, 'a grant is a host name'), ({}, 'give --add')):
+            with self.subTest(change=change), self.assertRaisesRegex(EditError, message):
+                self.grant(**change)
+
+        self.grant(remove=['api.stripe.com', '*.example.com:8443'])
+        self.assertNotIn('annotations', self.release('staging')['metadata'])
+        self.assertNotIn('granted yes', self.proxy()[0]['configMaps']['config']['data']['squid.conf'])
+
+    def test_malformed_or_overlapping_grants_are_named(self):
+        self.sync()
+        release = self.root / 'apps/hello/staging/helmrelease.yaml'
+        text = release.read_text().replace('metadata:\n', 'metadata:\n  annotations:\n    platform.swhurl.com/egress: '
+                                           '"example.com:443,*.example.com:443,x:1,example.com:443"\n', 1)
+        release.write_text(text)
+        found = egress.problems(self.root)
+        for problem in ('egress-grants: hello/staging: x:1: a grant is a host name',
+                        'egress-grants: hello/staging grants example.com:443 twice',
+                        'egress-grants: hello/staging grants example.com:443, which a wildcard grant already covers'):
+            self.assertEqual(sum(line.startswith(problem) for line in found), 1, found)
+
+    def test_a_promotion_never_widens_production(self):
+        self.sync()
+        self.grant(add=['api.stripe.com'])
+        self.assertTrue(per_environment.may_differ(egress.ANNOTATION))
+        staging = self.release('staging')
+        self.assertEqual(egress.granted(per_environment.for_production(staging, 'hello', None)), [])
+        with redirect_stdout(io.StringIO()) as out:
+            edit.egress_difference('hello', staging, self.release('prod'))
+        self.assertIn('make app-egress APP=hello ENV=prod ARGS="--add api.stripe.com:443"', out.getvalue())
 
     def test_duplicate_or_missing_ports_are_named(self):
         self.sync()

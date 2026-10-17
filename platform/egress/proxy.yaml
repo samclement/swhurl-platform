@@ -13,14 +13,15 @@ data:
       config:
         data:
           squid.conf: |
-            # Squid, one port per app instance; every request is logged with the instance that sent it.
+            # Squid, one port per app instance; every request is logged with the instance that sent it,
+            # and whether a grant (make app-egress) covers it.
             pid_filename none
             pinger_enable off
             cache deny all
             via off
             forwarded_for delete
             shutdown_lifetime 3 seconds
-            logformat egress instance=%{instance}note client=%>a method=%rm host=%>rd:%>rP status=%>Hs/%Ss bytes=%<st ms=%tr
+            logformat egress instance=%{instance}note granted=%{granted}note client=%>a method=%rm host=%>rd:%>rP status=%>Hs/%Ss bytes=%<st ms=%tr
             http_port 3128 name=health
             acl health myportname health
             http_access deny health
@@ -73,7 +74,7 @@ data:
             http_port 30115 name=swhurl-try-12-prod
             acl swhurl-try-12-prod myportname swhurl-try-12-prod
             note instance swhurl-try-12-prod swhurl-try-12-prod
-            # Every host for now: grants come with make app-egress.
+            # Every host for now: refusing what no grant covers comes later.
             http_access allow all
     service:
       main:

@@ -165,6 +165,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         _edit('platform-signing-keys', 'keys:main', 'Refresh apps/signing-keys.json from the cluster and rewrite the instances that carry it'),
         _edit('app-calls', 'edit:main_calls', 'Change which apps an instance may call; updates the callees',
               APP, ENV, args('"--add orders | --remove orders"')),
+        _edit('app-egress', 'edit:main_egress', 'Change which hosts outside the cluster an instance may reach; rewrites the egress proxy',
+              APP, ENV, args('"--add api.stripe.com | --remove api.stripe.com"')),
         _edit('app-events', 'edit:main_events', 'Set the events an instance publishes and receives',
               APP, ENV, args('"--publish created --subscribe orders.created"')),
         _edit('app-offers', 'edit:main_offers', 'Read what an app offers, its API and event documents, from its repository (APP and ENV, or ARGS)',

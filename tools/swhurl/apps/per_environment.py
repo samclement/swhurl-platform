@@ -86,6 +86,8 @@ SETTINGS = (
             where=VARIABLE),
     Setting(egress.HTTP_VARIABLE, GENERATED, STRIP, 'as HTTPS_PROXY', where=VARIABLE),
     Setting(egress.JAVA_VARIABLE, GENERATED, STRIP, 'the same port for the JVM', where=VARIABLE),
+    Setting(egress.ANNOTATION, DECLARED, STRIP, 'the hosts outside the cluster it may reach: granted in production '
+            'separately (make app-egress ENV=prod), so a promotion never widens it', where=ANNOTATION),
     Setting(contract.RELOAD, DERIVED, CARRY, "restart on a Secret change; staging's events Secret is taken out of it"),
     Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them",
             later=WITH_OFFERS, where=ANNOTATION),

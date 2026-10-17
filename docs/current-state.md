@@ -1716,3 +1716,9 @@ Not exercised: the Micronaut listener; OkHttp, axios, undici's own agents.
 
 - **Change:** `8b79c1b` (console image deployed by `0d2b94d`); `make check` passed (780 tests).
 - **Live**, through a port-forward with the identity header: `/egress` answered 200 with "0 of 15 instances are granted a host outside the cluster", a `staging` and a `prod` table, and the 15 proxy ports 30101 to 30115; the Platform page links to it. The navigation label and the list's heading say **Deployments**; no page under `/apps` says Apps/Services.
+
+## Verify: image-automation off the console; actionable messages (17 October 2026)
+
+- **Symptom:** the console's Needs attention listed all 10 staging instances as "staging has no instance in Git", while `make verify-platform` here showed each on its newest image. The console runs only `cluster` checks, and `image-automation` read `apps/<app>/staging/helmrelease.yaml`, which its image does not contain.
+- **Change:** `f6704ed` tags it `cluster host`, and about 40 verify messages now say what the problem stops and what to run; console image `src-b7c6fa4947fe3734` deployed by `8742d62`; `make check` passed.
+- **Live:** after `make flux-reconcile`, `make verify-platform` had no BAD or WARN lines (Image Automation: every app `deployed`; console image built from the current tooling). `platform_checks` (the console's check set) against the cluster passed with no warnings; its sections no longer include Image Automation. `console-dashboards` and `console-notifications` both succeeded at 10:45Z on the new image.

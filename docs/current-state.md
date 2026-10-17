@@ -1688,3 +1688,15 @@ Not exercised live: a database added by a push (unit-tested, including its names
 
 Not exercised live: a new app or first promotion getting its port (unit-tested); an app whose HTTP client ignores the variables (it still connects directly until E3).
 
+
+## Egress stage E2 (17 October 2026)
+
+[Plan section 21](plan.md#stage-5-egress-grants), stage 5 step E2: grants per instance ([reaching outside the cluster](apps.md#reaching-outside-the-cluster)); the proxy logs whether one covers each request and still allows all.
+
+- **Change:** `de4ee27` (`make app-egress`, the release annotation `platform.swhurl.com/egress`, rule `egress-grants`, a `SETTINGS` row, **Reach a host outside** and a `host` row in the console's connections). `make check` passed (779 tests). Before deploying, a generated configuration with grants on ports 443 and 8443 and a wildcard ran in `ubuntu/squid` locally: no new warnings; a granted host logged `granted=yes`, a host granted only on another port `granted=-`.
+- **Seed:** from E1's deploy to 17 October, ClickHouse held no `egress` request from any app, only E1's test requests: no grant was seeded.
+- **Live, on `swhurl-try-18/staging`** (`cdfe1c9`, removed again after the test): granting `example.com` rolled the proxy (both replicas) and left the app's pod and restart count unchanged. From a debug container on its port: `example.com` logged `granted=yes`, `www.example.com` and `example.org` `granted=-`, all three answered 200.
+- **Console** (image deployed by `1bdb158`), its page read through a port-forward with the identity header: the grant was a connections row (`host`, "through the egress proxy", `example.com:443`) with its **Remove**, and **Reach a host outside** was offered.
+- `make verify-platform`: `[OK] the egress proxy runs 2 replicas`, `[OK] 15 instance(s) each have a port of their own`.
+
+Not exercised live: the console's egress forms opening a real pull request (unit-tested), a promotion of an app with grants (unit-tested: stripped, and `app-promote` names them).

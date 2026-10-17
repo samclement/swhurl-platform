@@ -36,9 +36,11 @@ from swhurl import platform, yamlio
 from swhurl.apps import channels, egress, events, repo
 from swhurl.apps.contract import (
     APP_OWNER,
+    APP_TYPES,
     EXPOSURES,
     STACKS,
     TEAMS_FILE,
+    type_answers,
 )
 from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.console.actions import ActionError, Job
@@ -57,7 +59,7 @@ UNSET = ('', 'REPLACE_ME')
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
     'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
-    'private': ('Private', 'No web address, and no other app can connect to it. For workers.'),
+    'private': ('Private', 'No web address: only the apps granted a call to it can reach it. For APIs and workers.'),
 }
 """The form's plain-language names for each exposure: (title, description)."""
 
@@ -672,29 +674,34 @@ class NewApp:
     @classmethod
     def from_form(cls, form: Mapping[str, str], questions: list[repo.Question], teams: Mapping[str, str] | None,
                   callable_apps: set[str] | None = None, offered_events: set[str] | None = None) -> NewApp:
-        """``questions`` are the stack template's own (its copier.yml): each is a ``feature-<name>`` field.
-        ``teams`` are the registered ones; the form's team must be among them. A worker gets no exposure
-        or host: its swhurl.yaml makes it private. When the lists the form offered are given, a call or
-        subscription outside them is refused."""
+        """The form's ``type`` sets every template answer (contract.APP_TYPES) and the exposure staging
+        starts with, unless the form chose one; ``questions`` are the stack template's own (its
+        copier.yml), and a type answer the template no longer offers is refused. ``teams`` are the
+        registered ones; the form's team must be among them. A worker gets no exposure or host: its
+        swhurl.yaml makes it private. When the lists the form offered are given, a call or subscription
+        outside them is refused."""
         name, stack = form.get('name', '').strip(), form.get('stack', '').strip()
         description = ' '.join(form.get('description', '').split())[:200]
         if not NAME_RE.match(name):
             raise ActionError('name must be a DNS label: lowercase letters, digits and hyphens, at most 40 characters')
         if stack not in STACKS:
             raise ActionError(f'stack must be one of {", ".join(sorted(STACKS))}')
-        answers = {}
+        app_type = form.get('type', '').strip()
+        try:
+            answers = type_answers(app_type, stack)
+        except ValueError as error:
+            raise ActionError(str(error)) from None
         for question in questions:
-            value = form.get(f'feature-{question.name}', '').strip() or question.default
-            if value not in question.choices:
-                raise ActionError(f'{question.name} must be one of {", ".join(question.choices)}')
-            answers[question.name] = value
+            if question.name in answers and answers[question.name] not in question.choices:
+                raise ActionError(f'the {stack} template no longer offers {question.name}={answers[question.name]} '
+                                  f'(it offers {", ".join(question.choices)}): the {APP_TYPES[app_type].title} type needs updating')
         team = form.get('team', '').strip()
         if not teams:
             raise ActionError(f'no team is registered ({TEAMS_FILE}): add one on the Teams page first; every app belongs to a team')
         if team not in teams:
             raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
         flags = [f'--team={team}']
-        exposure, host = form.get('exposure', '').strip(), form.get('host', '').strip()
+        exposure, host = form.get('exposure', '').strip() or APP_TYPES[app_type].exposure, form.get('host', '').strip()
         if answers.get('kind') == 'worker':
             if host:
                 raise ActionError('a worker has no web address; leave Host empty')

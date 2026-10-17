@@ -5,6 +5,7 @@ Both sides import these, so generated output and the check cannot drift apart.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
@@ -204,7 +205,44 @@ STACK_DESCRIPTIONS = {
     'kotlin': 'Kotlin on Micronaut, Java 25 (a trimmed runtime, about 150 MB image): about 10 s to start, '
               'about 200 MB of memory.',
 }
-"""One line per stack for the New app form; both offer web or worker and SQLite."""
+"""One line per stack for the New app form."""
+
+
+@dataclass(frozen=True)
+class AppType:
+    """What a team is building. A new app is created by type: the type sets every template answer and the
+    exposure staging starts with (docs/apps.md#app-types). Changing a type here changes new apps only:
+    each app's .copier-answers.yml keeps the answers it was made with."""
+    title: str
+    text: str
+    stacks: tuple[str, ...]
+    answers: dict[str, str]
+    exposure: str  # what staging starts with; changed later with make app-expose
+
+
+APP_TYPES = {
+    'web-app': AppType('Web app', 'A site people use in a browser. Its data belongs in an API it calls; its own '
+                       'SQLite keeps what only it uses.', ('typescript',),
+                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example'},
+                       'authenticated-web'),
+    'api': AppType('API', 'Data and operations other apps call; private: browsers reach it through a web app.',
+                   ('typescript', 'kotlin'),
+                   {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example'},
+                   'private'),
+    'worker': AppType('Worker', 'Reacts to events, or works in a steady loop; no web address.', ('typescript', 'kotlin'),
+                      {'kind': 'worker', 'database': 'none', 'api': 'none', 'events': 'asyncapi', 'flags': 'example'},
+                      'private'),
+}
+
+
+def type_answers(app_type: str, stack: str) -> dict[str, str]:
+    """The template answers for a type built with a stack; ValueError naming the choices otherwise."""
+    if app_type not in APP_TYPES:
+        raise ValueError(f'type must be one of {", ".join(APP_TYPES)}')
+    found = APP_TYPES[app_type]
+    if stack not in found.stacks:
+        raise ValueError(f'a {found.title} is built with {" or ".join(found.stacks)}, not {stack}')
+    return dict(found.answers)
 COPIER = 'copier@9.18.2'
 APP_OWNER = 'samclement'
 APP_WORKFLOW = 'Container'

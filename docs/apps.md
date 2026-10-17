@@ -58,7 +58,7 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** → **Start a new app** (the default). Give a name, pick a stack and its features, choose its team, who can reach it and what it connects to (apps to call, events to receive and publish), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+**In the console:** **New app** → **Start a new app** (the default). Pick what you are building ([app types](#app-types)), give a name, pick a stack, choose its team, who can reach it and what it connects to (apps to call, events to receive and publish), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 
 ### What happens, and when
 
@@ -110,11 +110,11 @@ Once staging is deployed, later pushes to the app repository's `main` publish im
 **From a terminal**, the same in two steps (the first needs your `gh` login and SSH access to GitHub):
 
 ```bash
-make app-repo NAME=weather-api STACK=kotlin ANSWERS="kind=web database=sqlite"   # DRY_RUN=true shows the plan
+make app-repo NAME=weather-api TYPE=api STACK=kotlin   # DRY_RUN=true shows the plan
 # [OK] Created https://github.com/samclement/weather-api from samclement/swhurl-app-template-kotlin
 # [OK] First image: ghcr.io/samclement/weather-api:1-a1b2c3d@sha256:…
-#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team <team> --image ghcr.io/…"
-make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team payments --image ghcr.io/…"   # the printed line, with the team that owns it
+#   make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team <team> --exposure private --image ghcr.io/…"
+make app-new NAME=weather-api ARGS="--from-repo samclement/weather-api --env staging --team payments --exposure private --image ghcr.io/…"   # the printed line, with the team that owns it
 git add apps/weather-api clusters/home && git commit -m "apps: add weather-api/staging" && git push
 make app-status APP=weather-api ENV=staging    # expect "running: matches desired"
 ```
@@ -122,6 +122,18 @@ make app-status APP=weather-api ENV=staging    # expect "running: matches desire
 `make app-repo` refuses a name that already exists on GitHub. Console setup stops before creating a repository in that case; choose another name and retry from **New app**. For a free name, `make app-repo` creates the repository **public** (the cluster pulls images without credentials), adds the [image webhook](services.md#image-webhook), waits for its first build (checks, image, smoke test, publish) and reads the image digest from GHCR as the cluster will. If that build fails it stops with the run's link: the repository stays; fix the app, push, and run the same `make app-new` line with the image that run publishes (the console's job prints the line too).
 
 **Only apps made this way are supported.** In this repository `make app-new` refuses anything else: `--from-repo` must be `samclement/<name>`, and the image must be `ghcr.io/samclement/<name>` (what that repository's workflow publishes); staging always follows its new images. There is no route for an image built elsewhere or a public image such as nginx: `make check-apps` (and so CI and the console's merge gate) fails an instance committed by hand that is not such an app ([the app policy](#the-app-policy)). Tests are the one exception: the throwaway live tests (`make live-test-*`) deploy nginx and BusyBox images from fixture manifests into labelled test namespaces and remove them afterwards.
+
+### App types
+
+A new app is created by **type**: what a team is building. The type sets every answer of the stack's template (below) and the access staging starts with; nobody picks features one by one. [`APP_TYPES`](../tools/swhurl/apps/contract.py) is the one list, read by the console's New app form and `make app-repo TYPE=`; `make check-templates` fails when a type's answers no longer fit a template.
+
+| Type | For | Stacks | `kind` | `database` | `api` | `events` | `flags` | Access at first |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `web-app` | A site people use in a browser | TypeScript | `web` | `sqlite` | `openapi` | `asyncapi` | `example` | signed-in |
+| `api` | Data and operations other apps call | TypeScript, Kotlin | `web` | `sqlite` | `openapi` | `asyncapi` | `example` | private |
+| `worker` | Reacting to events, or work in a steady loop | TypeScript, Kotlin | `worker` | `none` | `none` | `asyncapi` | `example` | private (no route) |
+
+Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** or `make app-expose`, and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with, so changing a type changes new apps only. `make app-repo ANSWERS="kind=worker database=sqlite"` still sets the template's questions directly, over a type's or instead of one, for the operator: a combination no type has may be one the template's CI does not build, and it warns. A scheduled job and the web app's frontend are planned ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
 
 ### Stacks and features
 
@@ -132,7 +144,7 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 | `typescript` (default) | [`swhurl-app-template-typescript`](https://github.com/samclement/swhurl-app-template-typescript) | Node 24; starts in about a second, about 60 MB of memory; the platform's default resources |
 | `kotlin` | [`swhurl-app-template-kotlin`](https://github.com/samclement/swhurl-app-template-kotlin) | Kotlin on Micronaut, Java 25, about 150 MB image; about 10 s to start, about 200 MB of memory. Its `swhurl.yaml` asks for 100m CPU, 192Mi (limit 384Mi) and two minutes to start |
 
-**Features** are the template's own questions (its `copier.yml`, read at the catalogue's pinned GitHub revision, so a stack's features need no platform code); both stacks ask:
+**Features** are the template's own questions (its `copier.yml`, read at the catalogue's pinned GitHub revision, so a stack's features need no platform code); an [app type](#app-types) answers them all. Both stacks ask:
 
 | Feature | Choices | The app gets | The platform adds |
 | --- | --- | --- | --- |

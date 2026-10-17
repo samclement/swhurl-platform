@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT
-from swhurl.apps import new, policy, promotion
+from swhurl.apps import egress, new, policy, promotion
 from swhurl.console import merge
 from swhurl.console import promotion as console
 from swhurl.run import CommandError, FakeRunner, Result
@@ -40,6 +40,9 @@ class MergeTests(unittest.TestCase):
         self.files = ['apps/example/prod/helmrelease.yaml']
         self.candidate_files: dict[str, str] = {}  # written into the merge result only (what the PR adds)
         self.sync_changes = ''  # what `git status --porcelain` shows after make app-sync on the merge result
+        self.unmerged = ''  # what `git diff --diff-filter=U` lists after a new app's merge onto main
+        self.after_candidate = None  # edits the merge result after the PR's files are in it
+        self.candidate_dir: Path | None = None
 
     def runner(self, *, validation=0, latest=None, current=BASE, passed=True, validate=None):
         """``validate``: what each successive read of the PR's Validate run returns (the last one repeats)."""
@@ -68,6 +71,9 @@ class MergeTests(unittest.TestCase):
                     for rel, text in self.candidate_files.items():
                         (dst / rel).parent.mkdir(parents=True, exist_ok=True)
                         (dst / rel).write_text(text)
+                    if self.after_candidate:
+                        self.after_candidate(dst)
+                    self.candidate_dir = dst
                     return Result(args)
                 source, target = promotion.read(dst, 'example')
                 if target is None:
@@ -88,6 +94,7 @@ class MergeTests(unittest.TestCase):
          .on('git', 'worktree', 'add', handler=worktree)
          .on('git', 'ls-remote', stdout=current + '\trefs/heads/main\n')
          .on('git', 'status', '--porcelain', stdout=self.sync_changes)
+         .on('git', 'diff', '--name-only', '--diff-filter=U', stdout=self.unmerged)
          .on('git', stdout='')
          .on('make', returncode=validation, stderr='validation failed' if validation else ''))
         return runner
@@ -231,7 +238,8 @@ class MergeTests(unittest.TestCase):
         runner = self.runner()
         self.check(runner)
         checks = ('make', '-j2', '--output-sync=target', 'check-repo', 'check-apps')
-        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [checks])
+        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [('make', 'app-sync'), checks],
+                         'the shared files are made on the newest main, then the result is checked')
         self.assertTrue(self.pushes(runner))
         self.assertLess(runner.calls.index(checks), runner.calls.index(self.pushes(runner)[0]))
 
@@ -282,6 +290,46 @@ class MergeTests(unittest.TestCase):
         self.assertIn(sync, runner.calls)
         self.assertTrue(self.pushes(runner))
         self.assertLess(runner.calls.index(sync), runner.calls.index(self.pushes(runner)[0]))
+
+    def proxy_port(self, root, app, port):
+        document = promotion.YamlFile(root / f'apps/{app}/staging/helmrelease.yaml')
+        document.data['spec']['values']['controllers']['main']['containers']['main']['env'].update(egress.variables(port))
+        document.save()
+
+    def test_two_new_apps_from_the_same_main_both_merge(self):
+        """The second app's PR conflicts with the first in the unit registry and the shared files, and was given
+        the egress port the first now holds: the gate makes those again on main and merges it."""
+        self.new_app_with_generated_files()
+        self.unmerged = 'clusters/home/kustomization.yaml\nplatform/nats/users.yaml\n'
+        self.proxy_port(self.root, 'example', egress.FIRST_PORT)  # the first app, merged
+        self.after_candidate = lambda root: self.proxy_port(root, 'fresh', egress.FIRST_PORT)
+        seen = {}
+
+        def app_sync(args, _):
+            env = promotion.YamlFile(self.candidate_dir / 'apps/fresh/staging/helmrelease.yaml').data[
+                'spec']['values']['controllers']['main']['containers']['main']['env']
+            seen['proxy'] = env.get('HTTPS_PROXY')
+            return Result(args)
+        runner = self.runner().on('make', 'app-sync', handler=app_sync)
+        runner._rules.insert(0, runner._rules.pop())  # before the catch-all make rule
+        self.check(runner)
+        self.assertIsNone(seen['proxy'], "the taken port is given up before make app-sync gives it a free one")
+        calls = runner.calls
+        restore = ('git', 'checkout', 'HEAD', '--', 'clusters/home/kustomization.yaml', *merge.DERIVED)
+        self.assertIn(restore, calls, "the shared files are main's before they are made again")
+        self.assertLess(calls.index(restore), calls.index(('make', 'app-sync')))
+        self.assertIn(('git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com',
+                       'commit', '--no-edit'), calls)
+        self.assertTrue(self.pushes(runner))
+
+    def test_a_new_app_conflicting_outside_the_shared_files_is_held(self):
+        self.new_app_with_generated_files()
+        self.unmerged = 'clusters/home/kustomization.yaml\napps/fresh/staging/helmrelease.yaml\n'
+        runner = self.runner()
+        with self.assertRaisesRegex(merge.Hold, 'conflicts with main outside the files every new app changes: '
+                                                'apps/fresh/staging/helmrelease.yaml$'):
+            self.check(runner)
+        self.assertEqual(self.pushes(runner), [])
 
     def test_new_app_holds_shared_files_not_derived_or_a_key_that_is_more_than_its_seed(self):
         seed_only = "the events key is not the app's generated, encrypted NATS seed alone"

@@ -1,0 +1,101 @@
+openapi: 3.0.1
+info:
+  title: swhurl-try-24
+  description: "Throwaway: Kotlin API from its type"
+  version: 0.1.0
+paths:
+  /:
+    get:
+      summary: Say hello and name the caller
+      operationId: hello
+      responses:
+        "200":
+          description: hello 200 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hello"
+  /call/{name}:
+    get:
+      summary: Ask another app for its greeting (an example of calling)
+      operationId: call
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: call 200 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Called"
+  /notify:
+    post:
+      summary: Send a message to the team's notification channel (an example)
+      operationId: notifyTeam
+      responses:
+        "200":
+          description: notifyTeam 200 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notified"
+components:
+  schemas:
+    Called:
+      required:
+      - called
+      - reply
+      - status
+      type: object
+      properties:
+        called:
+          type: string
+        status:
+          type: integer
+          format: int32
+        reply:
+          type: string
+    Caller:
+      required:
+      - type
+      type: object
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          nullable: true
+        user:
+          type: string
+          nullable: true
+      description: "Who sent a request: type \"app\" (id: the app's name; user: the\
+        \ signed-in person it is calling for, when it named one), \"user\" (id: their\
+        \ email) or \"anonymous\"."
+    Hello:
+      required:
+      - caller
+      - message
+      - service
+      type: object
+      properties:
+        message:
+          type: string
+        service:
+          type: string
+        caller:
+          $ref: "#/components/schemas/Caller"
+        visits:
+          type: integer
+          format: int64
+          nullable: true
+    Notified:
+      required:
+      - sent
+      type: object
+      properties:
+        sent:
+          type: boolean

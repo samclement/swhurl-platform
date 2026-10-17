@@ -11,9 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import calling, events, helmrelease, new, offers, per_environment, promotion
-from swhurl.apps.instance import instance_folder, instance_unit_file
-from swhurl.apps.yaml_file import EditError
+from swhurl.apps import calling, egress, events, helmrelease, new, offers, per_environment, promotion
+from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
+from swhurl.apps.yaml_file import EditError, YamlFile
 from swhurl.run import CommandError, Runner
 
 MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
@@ -26,6 +26,10 @@ BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7
 # A new app's files outside its folder, generated from every instance's declaration (make app-sync): its
 # NATS user, its egress port, Reloader watching its namespace. The gate regenerates them on the merge result.
 DERIVED = ('platform/nats/users.yaml', 'platform/egress/proxy.yaml', 'platform/reloader/helmrelease.yaml')
+REGISTRY = 'clusters/home/kustomization.yaml'
+PROXY_VARIABLES = (egress.HTTP_VARIABLE, egress.HTTPS_VARIABLE, egress.JAVA_VARIABLE, egress.NODE_VARIABLE,
+                   egress.NO_PROXY_VARIABLE)
+GIT = ['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com']
 
 
 class Hold(Exception):
@@ -69,6 +73,44 @@ def recipients(root: Path, path: str) -> set[str]:
         if re.search(rule.get('path_regex', ''), path):
             return {r.strip() for r in str(rule.get('age', '')).split(',') if r.strip()}
     return set()
+
+
+def release_taken_port(root: Path, app: str) -> None:
+    """Drop the new app's egress port when another instance already has it, so make app-sync gives it a
+    free one: two new apps opened from the same main are each given the first free port."""
+    ports = egress.ports(root)
+    own = ports.pop(Instance(app, 'staging'), None)
+    if own is None or own not in ports.values():
+        return
+    document = YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml')
+    variables = helmrelease.container(document.data).get('env') or {}
+    for key in PROXY_VARIABLES:
+        variables.pop(key, None)
+    document.save()
+
+
+def merge_new_app(runner: Runner, base: Path, candidate: Path, sha: str, app: str, files: list[str]) -> None:
+    """A new app's merge result on the newest main, whatever main gained since its PR was opened. Every
+    new app adds a line to the unit registry and changes the shared files make app-sync derives, so two
+    opened from the same main conflict there and may hold the same egress port: those files are taken
+    from main and made again here (check_new_app then holds anything else). A conflict anywhere else holds
+    the PR."""
+    runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=candidate, check=False)
+    shared = [REGISTRY, *DERIVED]
+    conflicts = [path for path in runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=candidate).splitlines()
+                 if path and path not in shared]
+    if conflicts:
+        raise Hold('new-app PR conflicts with main outside the files every new app changes: ' + ', '.join(conflicts))
+    present = [path for path in shared if (base / path).is_file()]
+    if present:
+        runner.run(['git', 'checkout', 'HEAD', '--', *present], cwd=candidate)
+    new.register(candidate, instance_unit_file(Path(), app, 'staging').name)
+    scope(base, candidate, files, app, 'staging', new_app=True)  # before anything runs on the result
+    release_taken_port(candidate, app)
+    runner.run(['make', 'app-sync'], cwd=candidate)
+    runner.run(['git', 'add', '--', *[path for path in shared if (candidate / path).is_file()],
+                f'apps/{app}/staging'], cwd=candidate)
+    runner.run([*GIT, 'commit', '--no-edit'], cwd=candidate)
 
 
 def check_new_app(base: Path, candidate: Path, files: list[str], app: str, runner: Runner) -> None:
@@ -212,8 +254,10 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
         try:
             runner.run(['git', 'worktree', 'add', '--detach', str(base), base_sha], cwd=root)
             runner.run(['git', 'worktree', 'add', '--detach', str(candidate), base_sha], cwd=root)
-            runner.run(['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@users.noreply.github.com',
-                        'merge', '--no-ff', '--no-edit', sha], cwd=candidate)
+            if action == 'new':
+                merge_new_app(runner, base, candidate, sha, app, files)
+            else:
+                runner.run([*GIT, 'merge', '--no-ff', '--no-edit', sha], cwd=candidate)
             scope(base, candidate, files, app, 'prod' if action == 'promote' else 'staging', new_app=action == 'new')
             if action == 'promote':
                 check_promotion(base, candidate, app, pr.get('body') or '', files, runner)

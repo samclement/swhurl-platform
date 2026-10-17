@@ -1700,3 +1700,14 @@ Not exercised live: a new app or first promotion getting its port (unit-tested);
 - `make verify-platform`: `[OK] the egress proxy runs 2 replicas`, `[OK] 15 instance(s) each have a port of their own`.
 
 Not exercised live: the console's egress forms opening a real pull request (unit-tested), a promotion of an app with grants (unit-tested: stripped, and `app-promote` names them).
+
+## Egress clients and template READMEs (17 October 2026)
+
+Which HTTP clients follow the proxy settings the platform gives every app, checked from debug containers sharing an app pod's network, each request in the proxy's log with that instance's name:
+
+- **Node 24.14** (every TypeScript instance runs it): `fetch` (E1), `node:http` and `node:https` with `NODE_USE_ENV_PROXY=1`. The HTTPS tunnel was logged when it closed, 400 s after the request (Node's keep-alive).
+- **JVM:** `java.net.http.HttpClient` with the default selector (what the Kotlin template's `platform.call` builds) and `demo-notifier`'s own `JAVA_TOOL_OPTIONS`: HTTPS and HTTP both through its port.
+- **Micronaut's HTTP client** (not in the Kotlin template's main code): from its source (`HttpClientConfiguration.resolveProxy`, core v5.2.16), no proxy unless one is configured; it ignores the variables and the JVM properties. Not run.
+- **Templates `v0.2.11`:** the generated README's *Reaching outside the cluster* (Kotlin `d610ec5`, #36; TypeScript `54b8e50`, #49): grants on the platform, `granted=-`, which clients follow the proxy, and for Kotlin a `BeanCreatedEventListener` giving Micronaut's client `ProxySelector.getDefault()` (not run). 8 checks each passed; pinned in `STACK_REVISIONS`.
+
+Not exercised: the Micronaut listener; OkHttp, axios, undici's own agents.

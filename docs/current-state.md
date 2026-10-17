@@ -1755,4 +1755,6 @@ The app's own first build failed at Gradle: Maven Central answered "could not fi
 
 **Removed.** Both staging instances (`make app-remove`, then `make app-sync`). Their repositories and packages are left for the operator ([plan item 8](plan.md#open-work)).
 
+**Template CI export proof restored** (TypeScript #53 `4e06690`, Kotlin #41 `cc87570`): `CHECK_EXPORT` compared the answers with the string from before the `flags` question, so the default combination had skipped the OCI export, provenance and retained-image proof. It now matches the first matrix entry exactly; on both PRs and `main` runs those steps ran and passed, and the seed (now pushed from the loaded export) was published (`seed-4e06690`, `seed-cc87570`, anonymous pulls 200). Apps are unaffected: only the templates' own CI changed.
+
 **Not exercised:** a seed whose template revision has none (the run's own image then comes first; unit-tested only), and the gate refusing a real PR (`FakeRunner` only).

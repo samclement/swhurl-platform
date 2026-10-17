@@ -34,6 +34,7 @@ from swhurl import ROOT, app_alerts
 from swhurl.apps import declaration, events, policy
 from swhurl.apps.calling import (
     API_VARIABLE,
+    DESCRIPTION_VARIABLE,
     NOTIFY,
     TOKENS_VOLUME,
     identity_variables,
@@ -197,6 +198,8 @@ def build_values(args) -> dict:
                                     getattr(args, 'signing_keys', None) or signing_keys())
     if args.kind == 'web' and args.api_path:
         container['env'][API_VARIABLE] = args.api_path
+    if args.description:
+        container['env'][DESCRIPTION_VARIABLE] = args.description
     if args.otlp:
         container['env'] |= otlp_variables(args.name)
     if args.database == 'sqlite':
@@ -487,6 +490,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--subscribe', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated <app>.<event> it receives: each must be published in this environment')
     p.add_argument('--api-path', metavar='PATH', help='web only: where the app serves its API description, for the Services page')
+    p.add_argument('--description', metavar='TEXT', help="one line saying what the app does (swhurl.yaml's description): "
+                   'SWHURL_DESCRIPTION, which the templates serve in their API description')
     p.add_argument('--calls', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated apps this one calls: each must already have this environment (make app-calls later)')
     p.add_argument('--secret-keys', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],

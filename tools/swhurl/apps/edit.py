@@ -29,9 +29,22 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
-from swhurl.apps import declaration, egress, events, helmrelease, images, nkeys, offers, ops, policy, promotion
+from swhurl.apps import (
+    declaration,
+    egress,
+    events,
+    helmrelease,
+    images,
+    nkeys,
+    offers,
+    ops,
+    per_environment,
+    policy,
+    promotion,
+)
 from swhurl.apps.calling import (
     API_VARIABLE,
+    DESCRIPTION_VARIABLE,
     callee_address,
     callee_variable,
     declared_calls,
@@ -494,6 +507,18 @@ def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
     return changes
 
 
+def apply_description(release: dict, description: str) -> list[str]:
+    """Write what the image's swhurl.yaml says the app does into its release (in place), or remove it."""
+    variables = mapping(container(release), 'env', create=True)
+    if variables.get(DESCRIPTION_VARIABLE, '') == description:
+        return []
+    if description:
+        variables[DESCRIPTION_VARIABLE] = description
+    else:
+        del variables[DESCRIPTION_VARIABLE]
+    return ['description']
+
+
 def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
                    runner: Runner | None = None, found: images.Image | None = None, refresh: bool = False) -> bool:
     """Staging runs the newest image its ImagePolicy accepts (``found``, or read now), with what that
@@ -517,7 +542,7 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
     image['tag'], image['digest'] = found.tag, found.digest
     try:
         declared = image_declaration(document.data, app, 'staging', token=token, opener=opener)
-        needed = apply_needs(document.data, app, declared.needs)
+        needed = apply_needs(document.data, app, declared.needs) + apply_description(document.data, declared.description)
         document.save()
         if 'data' in (values(document.data).get('persistence') or {}):
             namespace = YamlFile(instance / 'namespace.yaml')
@@ -723,6 +748,7 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     current.update({k: str(image[k]) for k in ('tag', 'digest') if k in image})
     if 'tag' not in image:
         current.pop('tag', None)
+    per_environment.carry_image_variables(helmrelease.variables(src), document.data)
     before = document.path.read_text()
     document.save()
     try:

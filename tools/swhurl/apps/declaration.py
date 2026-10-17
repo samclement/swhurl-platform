@@ -3,7 +3,7 @@
 Each field is one of four kinds, and ``FIELDS`` says which (docs/apps.md#swhurlyaml shows the same table,
 and a test compares them; GLOSSARY.md defines the words):
 
-- **identity**: what the app is (``version``, ``stack``, ``kind``).
+- **identity**: what the app is (``version``, ``stack``, ``kind``, ``description``).
 - **need**: what the image needs to run (port, probes, user, telemetry, resources, database, secret names).
 - **offer**: what other apps can use (``provides``, ``flags``, ``events.publish``).
 - **grant**: what the platform allows the app (team, exposure, alerts, calls, ``events.subscribe``). It
@@ -44,6 +44,8 @@ VERSION = 1
 KINDS = ('web', 'worker')
 TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
+MAX_DESCRIPTION = 200
+"""One line, as the New app form and make app-repo take it."""
 SEED, LIVE, IGNORED, REFUSED = 'seed', 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
@@ -62,6 +64,7 @@ FIELDS = (
     Field('version', IDENTITY, LIVE, 'every time the file is read: another version is refused'),
     Field('stack', IDENTITY, LIVE, "by the console, from the repository's default branch, for the language it shows"),
     Field('kind', IDENTITY, SEED, 'nothing: web or worker is fixed at creation, and an image that changes it is held'),
+    Field('description', IDENTITY, LIVE, WITH_IMAGE + ', as SWHURL_DESCRIPTION; a promotion carries it with the image'),
     Field('port', NEED, LIVE, WITH_IMAGE),
     Field('healthPath', NEED, LIVE, WITH_IMAGE),
     Field('uid', NEED, LIVE, WITH_IMAGE),
@@ -115,6 +118,7 @@ class Declaration:
     seed: dict
     """app-new's defaults, by option name: every seed field, and what the live ones mean for a new instance."""
     stack: str = ''
+    description: str = ''  # one line saying what the app does
     api_path: str = ''  # provides.api: where a web app serves its API description
     api_file: str = ''  # provides.apiFile: where the repository keeps its OpenAPI document
     events_file: str = ''  # provides.eventsFile: where it keeps its AsyncAPI document
@@ -254,6 +258,9 @@ def of(doc: object, source: str = FILE) -> Declaration:
     kind = field('kind', str, KINDS)
     if not kind:
         raise fail(f'kind is required ({", ".join(KINDS)})')
+    description = field('description', str) or ''
+    if len(description) > MAX_DESCRIPTION or description != ' '.join(description.split()):
+        raise fail(f'description is one line of at most {MAX_DESCRIPTION} characters, without leading, trailing or repeated spaces')
     present = {item.name for item in FIELDS if item.read == REFUSED and doc.get(item.name) is not None}
     if isinstance(doc.get('events'), dict) and doc['events'].get('subscribe') is not None:
         present.add('events.subscribe')
@@ -295,7 +302,9 @@ def of(doc: object, source: str = FILE) -> Declaration:
             raise fail(problem)
     if flags:
         defaults['offers'] = True  # app-new keeps them beside the instance from the start (make app-offers)
-    return Declaration(defaults, field('stack', str) or '', provides.get('api') or '',
+    if description:
+        defaults['description'] = description
+    return Declaration(defaults, field('stack', str) or '', description, provides.get('api') or '',
                        provides.get('apiFile') or '', provides.get('eventsFile') or '', flags)
 
 

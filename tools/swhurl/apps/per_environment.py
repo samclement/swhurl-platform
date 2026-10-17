@@ -27,7 +27,13 @@ import json
 from dataclasses import dataclass
 
 from swhurl.apps import contract, egress, events, helmrelease, offers
-from swhurl.apps.calling import API_VARIABLE, CALLERS_VARIABLE, ENVIRONMENT_VARIABLE, TOKENS_VOLUME
+from swhurl.apps.calling import (
+    API_VARIABLE,
+    CALLERS_VARIABLE,
+    DESCRIPTION_VARIABLE,
+    ENVIRONMENT_VARIABLE,
+    TOKENS_VOLUME,
+)
 from swhurl.apps.instance import Instance
 
 DECLARED, DERIVED, GENERATED = 'declared', 'derived', 'generated'
@@ -69,6 +75,8 @@ SETTINGS = (
     Setting('cert-manager.io/cluster-issuer', DECLARED, CARRY, 'which certificate authority issues the route'),
     Setting('tag', DECLARED, CARRY, 'staging follows new images; production gets the promoted one', later=WITH_IMAGE),
     Setting('digest', DECLARED, CARRY, 'as the tag', later=WITH_IMAGE),
+    Setting(DESCRIPTION_VARIABLE, GENERATED, CARRY, "what the app says it does: read from the image's swhurl.yaml",
+            later=WITH_IMAGE, where=VARIABLE),
     Setting('replicas', DECLARED, CARRY, 'make app-scale'),
     Setting('resources', DECLARED, CARRY, 'make app-scale'),
     Setting('SWHURL_SERVICE_', DECLARED, CARRY, 'the apps it calls (make app-calls); each needs a production instance first',
@@ -174,17 +182,30 @@ def for_production(staging: dict, app: str, host: str | None) -> dict:
     return release
 
 
-def after_promotion(production: dict, image: dict, *, commit: str = '', served: str = '') -> dict:
+def carry_image_variables(staging_variables: dict, release: dict) -> None:
+    """Give ``release`` (in place) staging's value of each variable that moves with the image, or none."""
+    variables = helmrelease.container(release).setdefault('env', {})
+    for setting in SETTINGS:
+        if setting.later == WITH_IMAGE and setting.where == VARIABLE:
+            if setting.key in staging_variables:
+                variables[setting.key] = staging_variables[setting.key]
+            else:
+                variables.pop(setting.key, None)
+
+
+def after_promotion(production: dict, image: dict, *, commit: str = '', served: str = '',
+                    staging_variables: dict | None = None) -> dict:
     """Production's release after a later promotion to ``image``: nothing but the settings that move
-    with the image and, when the promotion carries what the image offers (read at ``commit``; its API
+    with the image (``staging_variables`` holds staging's values of those that are variables) and, when the promotion carries what the image offers (read at ``commit``; its API
     description served at ``served``), the settings that move with those."""
     release = json.loads(json.dumps(production))
     current = helmrelease.image(release)
-    for key in (setting.key for setting in SETTINGS if setting.later == WITH_IMAGE):
+    for key in (setting.key for setting in SETTINGS if setting.later == WITH_IMAGE and not setting.where):
         if key in image:
             current[key] = image[key]
         else:
             current.pop(key, None)
+    carry_image_variables(staging_variables or {}, release)
     if commit:
         release.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
         if served and helmrelease.port(release) is not None:

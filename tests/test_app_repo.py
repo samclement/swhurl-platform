@@ -31,13 +31,16 @@ database:
 """
 
 
-def ghcr(status=None):
+def ghcr(status=None, seed=False):
+    """A GHCR that serves every tag except a seed (0-<sha>), unless ``seed``."""
     seen = []
 
     def open_(request):
         seen.append(request)
         if '/contents/copier.yml?ref=' in request.full_url:
             return {}, COPIER_YML.encode()
+        if '/manifests/0-' in request.full_url and not seed:
+            raise urllib.error.HTTPError(request.full_url, 404, 'not found', {}, None)
         if status:
             raise urllib.error.HTTPError(request.full_url, status, 'denied', {}, None)
         if 'token' in request.full_url:
@@ -57,7 +60,7 @@ class Cluster:
         r.on('gh', 'repo', 'view', returncode=0 if exists else 1)
         r.on('uvx', stdout='')
         r.on('copier', stdout='')
-        r.on('git', stdout='')
+        r.on('git', handler=lambda args, _: Result(args, 0, SHA + '\n' if 'rev-parse' in args else ''))
         r.on('gh', 'repo', 'create', stdout='')
         r.on('sops', 'decrypt', stdout='stringData: {token: fixture-webhook-token}\n', returncode=0 if token else 1)
         r.on('gh', 'api', 'repos/samclement/notes/hooks', stdout='[]')
@@ -86,7 +89,7 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual(image, f'ghcr.io/samclement/notes:1-abcdef0@{DIGEST}')
         verbs = [c[1] if c[0] == 'git' and c[1] != '-C' else (c[3] if c[0] == 'git' else ' '.join(c[:3]))
                  for c in cluster.runner.calls if c[:3] != ('gh', 'run', 'list')]
-        self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'gh repo create', 'push', 'sops decrypt ' + verbs[-3].split()[-1],
+        self.assertEqual(verbs[2:], ['init', 'add', 'commit', 'rev-parse', 'gh repo create', 'push', 'sops decrypt ' + verbs[-3].split()[-1],
                                      'gh api repos/samclement/notes/hooks', 'gh api --method'])
         self.assertEqual([h['events'] for h in cluster.hooks], [['package', 'registry_package']])
         self.assertIn('[OK] Added the image webhook: Flux scans as soon as an image is published', lines)
@@ -106,6 +109,16 @@ class AppRepoTests(unittest.TestCase):
         self.assertIn('application/vnd.oci.image.index.v1+json', manifest.get_header('Accept'))
         self.assertIn(f'make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --team <team> --image {image}"',
                       lines[-1])
+
+    def test_a_seed_published_first_is_the_first_image(self):
+        cluster = Cluster(runs=[[{'number': 1, 'headSha': SHA, 'status': 'in_progress', 'conclusion': '', 'url': 'u'}]])
+        opener, seen = ghcr(seed=True)
+        image, lines = self.create(cluster, opener=opener)
+        self.assertEqual(image, f'ghcr.io/samclement/notes:0-abcdef0@{DIGEST}')
+        self.assertEqual(seen[-1].full_url, 'https://ghcr.io/v2/samclement/notes/manifests/0-abcdef0')
+        self.assertIn('seed', lines[-3])
+        self.assertIn(f'--image {image}"', lines[-1])
+        self.assertNotIn(('gh', 'run', 'list'), [c[:3] for c in cluster.runner.calls], 'no need to wait for the build')
 
     def test_an_unreadable_webhook_token_is_a_warning_not_a_failure(self):
         cluster = Cluster(token=False)

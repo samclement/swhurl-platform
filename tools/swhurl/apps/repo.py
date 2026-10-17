@@ -11,7 +11,9 @@ choices are refused before anything is created.
 3. creates the public repository with your ``gh`` login and pushes over SSH (your usual Git access;
    ``gh``'s token needs no ``workflow`` scope), and adds the image webhook (apps/hooks.py; a failure
    there is a warning: ``make app-hooks`` adds it later);
-4. waits for the repository's first Container run (checks, build, smoke test, publish);
+4. waits for the repository's first image: the seed ``0-<sha>`` its first Container run copies from
+   the template when the answers have one (seconds), or else the image that run builds, smoke-tests
+   and publishes;
 5. reads the image's digest from GHCR (anonymously, as the cluster pulls) and prints the
    ``make app-new … --from-repo`` line that adds the app to staging.
 
@@ -43,6 +45,7 @@ from swhurl.apps.contract import (
 from swhurl.apps.instance import NAME_RE
 from swhurl.run import CommandError, Runner
 
+SEED_RUN = 0  # a seed's tag is 0-<sha>: below any run number, so the app's own first image replaces it
 MANIFEST_TYPES = ', '.join((
     'application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json',
     'application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json'))
@@ -159,6 +162,18 @@ def image_digest(image: str, tag: str, opener: Opener = _open) -> str:
     return digest
 
 
+def seed_image(image: str, commit: str, opener: Opener = _open) -> str | None:
+    """The seed ``image:0-<sha>@sha256:…`` a new app's first run copies from its template, once published.
+
+    The template's own CI built and smoke-tested it for the same answers and revision; the run's build
+    publishes ``1-<sha>`` next, and staging's image automation deploys that (1 sorts above 0).
+    """
+    try:
+        return f'{image}:{SEED_RUN}-{commit[:7]}@{image_digest(image, f"{SEED_RUN}-{commit[:7]}", opener)}'
+    except RepoError:
+        return None  # not (yet) published: other answers, no seed for this revision, or the run has not got there
+
+
 def copier_command() -> list[str]:
     """Copier from the environment when installed (the console image), else through uvx (an operator's machine)."""
     return ['copier'] if shutil.which('copier') else ['uvx', COPIER]
@@ -174,12 +189,16 @@ def render(runner: Runner, req: Request, dest: Path) -> None:
 
 
 def wait_for_first_run(runner: Runner, req: Request, *, out: Callable[[str], None],
-                       sleep: Callable[[float], None], attempts: int = 120) -> dict:
-    """The first completed Container run on main (about 10 minutes at most)."""
+                       sleep: Callable[[float], None], attempts: int = 120, commit: str = '',
+                       opener: Opener = _open) -> dict | str:
+    """The first completed Container run on main (about 10 minutes at most), or the seed image of
+    ``commit`` if that is published first."""
     query = ['gh', 'run', 'list', '-R', req.repo, '--workflow', APP_WORKFLOW, '--branch', 'main', '--limit', '1',
              '--json', 'databaseId,number,headSha,status,conclusion,url']
     waiting = ''
     for _ in range(attempts):
+        if commit and (seed := seed_image(req.image, commit, opener)):
+            return seed
         runs = runner.json(query, check=False) or []
         if runs and runs[0]['status'] == 'completed':
             run = runs[0]
@@ -219,6 +238,7 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
         runner.run([*git, 'init', '--quiet', '--initial-branch=main'])
         runner.run([*git, 'add', '--all'])
         runner.run([*git, 'commit', '--quiet', '-m', f'Start {req.name} from {template}'])
+        commit = runner.output([*git, 'rev-parse', 'HEAD']).strip()
         runner.run(['gh', 'repo', 'create', req.repo, '--public',
                     '--description', req.description or f'A swhurl app ({req.stack})'], mutating=True)
         runner.run([*git, 'push', '--quiet', f'ssh://git@github.com/{req.repo}.git', 'main'], mutating=True)
@@ -231,10 +251,14 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
-    run = wait_for_first_run(runner, req, out=out, sleep=sleep)
-    tag = f'{run["number"]}-{run["headSha"][:7]}'
-    image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
-    out(f'[OK] First image: {image}')
+    run = wait_for_first_run(runner, req, out=out, sleep=sleep, commit=commit, opener=opener)
+    if isinstance(run, str):
+        image = run
+        out(f'[OK] First image: {image} (the template\'s tested seed; this run\'s build replaces it in staging)')
+    else:
+        tag = f'{run["number"]}-{run["headSha"][:7]}'
+        image = f'{req.image}:{tag}@{image_digest(req.image, tag, opener)}'
+        out(f'[OK] First image: {image}')
     out('Next, add it to staging (a Git edit; commit and push it). <team> is the team that owns it, a name in apps/teams.yaml:')
     out(f'  make app-new NAME={req.name} ARGS="--from-repo {req.repo} --env staging --team <team> --image {image}"')
     return image

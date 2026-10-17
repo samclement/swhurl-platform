@@ -196,7 +196,7 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': '54b8e50759185eab2483dddba6de6e435c9ebb05',
+    'typescript': 'c268ac5bc03decfa849c1d5aa3164cc95f6dd9e1',
     'kotlin': 'd610ec5aceda8e4d35d4630949837ca367c50e61',
 }
 STACK_DESCRIPTIONS = {

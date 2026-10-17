@@ -7,6 +7,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -1201,9 +1202,12 @@ database:
 """
 
 
-def ghcr_opener(request):
+def ghcr_opener(request, seed=False):
+    """GHCR serving every tag except a seed (0-<sha>), unless ``seed``."""
     if '/contents/copier.yml?ref=' in request.full_url:
         return {}, COPIER_YML.encode()
+    if '/manifests/0-' in request.full_url and not seed:
+        raise urllib.error.HTTPError(request.full_url, 404, 'not found', {}, None)
     if 'token' in request.full_url:
         return {}, json.dumps({'token': 'anon'}).encode()
     return {'Docker-Content-Digest': DIGEST}, b''
@@ -1255,6 +1259,23 @@ class AppReposTests(unittest.TestCase):
         self.assertIn('A swhurl.yaml', job.lines)
         self.assertIn('run 1 in_progress', job.lines)
         self.assertNotIn('github_pat_app_repos_fixture_0123', '\n'.join(job.lines))
+
+    def test_a_seed_published_before_the_build_finishes_is_the_first_image(self):
+        from swhurl.apps import repo
+        from swhurl.console import repos
+        api = FakeAppGitHub(runs=[{'status': 'in_progress'}])
+        client, job = repos.AppRepos(repo_runner(), api.config), self.job()
+        seen = []
+
+        def opener(request):
+            seen.append(request.full_url)
+            return ghcr_opener(request, seed=True)
+        image = repos.create_app_repo(client.runner, client, job, repo.Request('notes'), sleep=lambda _: None,
+                                      opener=opener)
+        self.assertEqual(image, f'ghcr.io/samclement/notes:0-9f8e7d6@{DIGEST}')
+        self.assertIn('https://ghcr.io/v2/samclement/notes/manifests/0-9f8e7d6', seen)
+        self.assertTrue(job.lines[-1].startswith(f'Seeded {image}'), job.lines[-1])
+        self.assertFalse([r for r in api.requests if r.url.path.endswith('/actions/runs')], 'no wait for the build')
 
     def test_a_missing_or_refused_image_webhook_is_a_warning_not_a_failure(self):
         from swhurl.apps import repo
@@ -1310,14 +1331,15 @@ class AppReposTests(unittest.TestCase):
         client = repos.AppRepos(repo_runner(), api.config)
         add = 'run make app-new NAME=notes ARGS="--from-repo samclement/notes --env staging --image <image the run prints>"'
         with self.assertRaises(actions.ActionError) as failed:
-            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None)
+            repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
+                                  opener=ghcr_opener)
         self.assertIn('ended failure: https://run/1', str(failed.exception))
         self.assertIn(add, str(failed.exception))
         ticks = iter(range(0, 10_000, 100))
         client = repos.AppRepos(repo_runner(), FakeAppGitHub(runs=[None]).config)
         with self.assertRaises(actions.ActionError) as late:
             repos.create_app_repo(client.runner, client, self.job(), repo.Request('notes'), sleep=lambda _: None,
-                                  clock=lambda: next(ticks))
+                                  clock=lambda: next(ticks), opener=ghcr_opener)
         self.assertIn('no finished Container run after 10 minutes', str(late.exception))
         self.assertIn(add, str(late.exception))
 

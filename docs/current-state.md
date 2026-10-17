@@ -1775,4 +1775,4 @@ ClickStack: both callees' server spans carry `user.email = obo-proof@example.com
 
 **Not exercised:** a real signed-in browser request through oauth2-proxy (the header was set inside the pod, past Traefik); a callee on an older template (it ignores the header by construction).
 
-**Left in place:** `swhurl-try-21` and `swhurl-try-22` staging instances, repositories and packages.
+**Removed** (operator approved, 17 October 2026): both staging instances (`make app-calls --remove`, `make app-remove`, `make app-sync`). Their repositories and packages are left for the operator to delete.

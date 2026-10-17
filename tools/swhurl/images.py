@@ -1,12 +1,12 @@
 """``console-image``: pin the console HelmRelease to the image published for this checkout (Git edit only).
 
-The publish workflow tags every console image ``src-<hash>``, where the hash
+Validate's console-image job tags every console image ``src-<hash>``, where the hash
 covers everything the image is built from (``platform.CONSOLE_IMAGE_INPUTS``,
 as committed at ``HEAD``). This computes the same hash, asks GHCR (anonymously;
 the package is public) for that tag's digest, and writes the tag and digest
 into ``platform/console/helmrelease.yaml``. Commit and push to deploy.
 
-The publish workflow runs it after each build as ``console-image --expect
+Validate's deploy-console job runs it, once every check has passed, as ``console-image --expect
 src-<built> --commit`` on the latest ``main``: it pins, commits and pushes, so
 the console deploys itself. ``--expect`` makes it do nothing when ``main`` has
 since moved to other image inputs (that commit's own run pins its image);
@@ -44,7 +44,7 @@ class Image:
 
 
 NOTIFY_RELEASE = Path('platform/notify/helmrelease.yaml')
-CONSOLE = Image('console', REPOSITORY, platform.CONSOLE_IMAGE_INPUTS, 'Publish console image',
+CONSOLE = Image('console', REPOSITORY, platform.CONSOLE_IMAGE_INPUTS, 'Validate',
                 ((RELEASE, None), (NOTIFY_RELEASE, 'console')))  # the notify service runs the same image
 
 
@@ -53,7 +53,7 @@ class ImageError(Exception):
 
 
 def content_tag(runner: Runner, root: Path = ROOT, revision: str = 'HEAD', image: Image = CONSOLE) -> str:
-    """``src-<hash>`` exactly as the publish workflow computes it (object IDs, one per line, sha256, 16 hex)."""
+    """``src-<hash>`` exactly as Validate's console-image job computes it (object IDs, one per line, sha256, 16 hex)."""
     ids = [runner.output(['git', '-C', str(root), 'rev-parse', f'{revision}:{path}']).strip()
            for path in image.inputs]
     return 'src-' + hashlib.sha256(''.join(f'{i}\n' for i in ids).encode()).hexdigest()[:16]
@@ -103,12 +103,12 @@ def pin(text: str, tag: str, digest: str, marker: str | None = None, path: Path 
 def pin_release(runner: Runner, root: Path, image: Image = CONSOLE) -> tuple[str, str, list[Path]]:
     """Pin every manifest that runs ``image`` to this checkout's build: (tag, digest, files changed)."""
     if runner.output(['git', '-C', str(root), 'status', '--porcelain', '--', *image.inputs]).strip():
-        raise ImageError('the image inputs have uncommitted changes; commit and push them, wait for the publish run')
+        raise ImageError('the image inputs have uncommitted changes; commit and push them, wait for the Validate run')
     tag = content_tag(runner, root, image=image)
     digest = published_digest(runner, tag, image.repository)
     if not digest:
         raise ImageError(f'{REGISTRY}/{image.repository}:{tag} is not published yet; push, then wait for the '
-                         f'"{image.workflow}" run after Validate passes')
+                         f'"{image.workflow}" run of that push to build it')
     changed = []
     for relative, marker in image.pins:
         path = root / relative
@@ -127,7 +127,7 @@ def commit_and_push(runner: Runner, root: Path, tag: str, expect: str | None, im
                     files: list[Path] | None = None) -> str:
     """Commit the pin and push it to main; one rebase-and-retry if main moved. Returns what happened."""
     git = ['git', '-C', str(root)]
-    runner.run([*git, 'commit', '--quiet', '-m', f'deploy: {image.name} image {tag} (publish workflow)', '--',
+    runner.run([*git, 'commit', '--quiet', '-m', f'deploy: {image.name} image {tag} (Validate)', '--',
                 *[str(path) for path in (files or [RELEASE])]], mutating=True)
     if runner.run([*git, 'push', 'origin', 'HEAD:main'], mutating=True, check=False).returncode == 0:
         return 'pushed'
@@ -141,13 +141,13 @@ def commit_and_push(runner: Runner, root: Path, tag: str, expect: str | None, im
 def main(argv: list[str] | None = None, runner: Runner | None = None, root: Path = ROOT,
          image: Image = CONSOLE) -> int:
     parser = argparse.ArgumentParser(prog='swhurl console-image', description=__doc__.split('\n\n')[0])
-    parser.add_argument('--expect', help='only pin if HEAD builds this src-<hash> tag (the publish workflow)')
-    parser.add_argument('--commit', action='store_true', help='commit the pin and push it to main (the publish workflow)')
+    parser.add_argument('--expect', help="only pin if HEAD builds this src-<hash> tag (Validate's deploy job)")
+    parser.add_argument('--commit', action='store_true', help="commit the pin and push it to main (Validate's deploy job)")
     args = parser.parse_args(argv or [])
     runner = runner or Runner.from_environment()
     try:
         if args.expect and (current := content_tag(runner, root, image=image)) != args.expect:
-            print(f'[OK] nothing to do: main now builds {current}, not {args.expect}; its own publish run pins it')
+            print(f'[OK] nothing to do: main now builds {current}, not {args.expect}; its own Validate run pins it')
             return 0
         tag, digest, changed = pin_release(runner, root, image)
         if not changed:

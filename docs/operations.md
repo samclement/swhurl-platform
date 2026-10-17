@@ -163,7 +163,7 @@ The host timer checks the in-cluster `console-notifications` CronJob every five 
 
 The job it watches is the notification checker (10 minutes), listed in `WATCHED` in `tools/swhurl/notifications/heartbeat.py`. Add another row only after its CronJob is deployed and unsuspended, because a missing or suspended job is reported as stale. The timer runs the code in this checkout, so a change takes effect on the next run without reinstalling.
 
-The heartbeat runs outside the console image, publish workflow and Kubernetes scheduler. It still needs this host, the Kubernetes API, the Secret and ntfy to work. It cannot notify while the host or API is down. It alerts after 10 minutes without a successful checker Job plus up to one five-minute timer interval and one second. On this host, `make verify-platform` checks that the timer is active and the service's last run succeeded within 15 minutes.
+The heartbeat runs outside the console image, its deploy job and the Kubernetes scheduler. It still needs this host, the Kubernetes API, the Secret and ntfy to work. It cannot notify while the host or API is down. It alerts after 10 minutes without a successful checker Job plus up to one five-minute timer interval and one second. On this host, `make verify-platform` checks that the timer is active and the service's last run succeeded within 15 minutes.
 
 Run installation and removal in your own terminal; both commands need `sudo`:
 

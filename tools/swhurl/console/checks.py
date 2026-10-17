@@ -46,8 +46,8 @@ def check_console(runner: Runner, report: Report) -> None:
     if changed == 0:
         report.ok(f'console image {label} is built from the current tooling')
     elif changed == 1:
-        report.warn(f'the console runs image {label}, older than the tooling in this checkout. The publish workflow '
-                    'deploys a new one a few minutes after a push (gh run list --workflow publish-console.yml); if it '
+        report.warn(f'the console runs image {label}, older than the tooling in this checkout. Validate '
+                    'deploys a new one about 2 minutes after a push (gh run list --workflow validate.yml); if it '
                     'failed, or this checkout is ahead of main: make console-image, commit and push')
     else:
         report.warn(f'cannot compare console image {label} with this checkout: it lacks that commit (git fetch)')

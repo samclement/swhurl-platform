@@ -99,20 +99,36 @@ class ConsoleImageCommandTests(unittest.TestCase):
 
 
 class PublishWorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.jobs = yaml.safe_load((ROOT / '.github/workflows/validate.yml').read_text())['jobs']
+
+    def test_builds_on_pushes_only_alongside_the_checks(self):
+        build = self.jobs['console-image']
+        self.assertNotIn('needs', build, 'built alongside the checks, not after them')
+        self.assertEqual(build['if'], "github.event_name == 'push'", 'pull requests publish nothing')
+        self.assertEqual(build['permissions'], {'contents': 'read', 'packages': 'write'})
+
+    def test_deploys_only_after_every_check_passed(self):
+        deploy = self.jobs['deploy-console']
+        self.assertEqual(set(deploy['needs']), set(self.jobs) - {'deploy-console'},
+                         'a new check job must hold the deploy too')
+        for condition in ("!contains(needs.*.result, 'failure')", "needs.console-image.result == 'success'",
+                          "github.event_name == 'push'", '!cancelled()'):
+            self.assertIn(condition, deploy['if'])
+        self.assertEqual(deploy['permissions'], {'contents': 'write'})
+
     def test_pins_the_built_content_on_the_latest_main(self):
-        workflow = yaml.safe_load((ROOT / '.github/workflows/publish-console.yml').read_text())
-        self.assertEqual(workflow['permissions']['contents'], 'write')
-        steps = workflow['jobs']['publish']['steps']
+        steps = self.jobs['deploy-console']['steps']
         self.assertEqual(steps[0]['with']['fetch-depth'], 0)
         pin = steps[-1]
         self.assertNotIn('if', pin, 'pin also when the image was already published (docs-only commits no-op)')
         self.assertIn('git checkout --quiet --detach origin/main', pin['run'])
         self.assertIn('swhurl console-image', pin['run'])
-        self.assertIn('--expect "src-${{ steps.source.outputs.content }}" --commit', pin['run'])
+        self.assertIn('--expect "src-${{ needs.console-image.outputs.content }}" --commit', pin['run'])
 
 
 class WorkflowPinTests(unittest.TestCase):
-    """console-image --expect/--commit as the publish workflow runs it, with FakeRunner."""
+    """console-image --expect/--commit as Validate's deploy job runs it, with FakeRunner."""
     HEAD = 'HTTP/2 200\r\ndocker-content-digest: sha256:' + 'b' * 64 + '\r\n'
 
     def setUp(self):

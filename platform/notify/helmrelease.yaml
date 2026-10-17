@@ -1,5 +1,5 @@
 # The notify service: accepts messages about apps and delivers them to the channels of the app's
-# team (docs/services.md#notify-service). It runs the console image; the publish workflow and
+# team (docs/services.md#notify-service). It runs the console image; Validate's deploy job and
 # make console-image pin the lines marked "# image: console" together with the console's.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

@@ -38,7 +38,7 @@ CONSOLE_TOKEN_SECRET = 'console-github'
 CONSOLE_TOKEN_KEY = 'GITHUB_TOKEN'
 # The second token in the same Secret: creates new app repositories (all repositories; console/repos.py).
 APP_REPOS_TOKEN_KEY = 'APP_REPOS_TOKEN'
-# What the console image is built from (images/console/Dockerfile); publish-console.yml hashes the same paths.
+# What the console image is built from (images/console/Dockerfile); validate.yml's console-image job hashes the same paths.
 CONSOLE_IMAGE_INPUTS = ('images/console', '.dockerignore', 'pyproject.toml', 'uv.lock', 'tools', str(SETTINGS))
 # Labels and annotations under the platform's domain.
 LABEL_DOMAIN = 'platform.swhurl.com'

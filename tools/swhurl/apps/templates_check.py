@@ -5,6 +5,9 @@ copier.yml, render every combination with Copier (as ``make app-repo`` does) and
 ``swhurl.yaml`` into a staging and a prod instance with ``app-new --manifest`` in a scratch root. Each
 instance must pass the app policy, and the two must not drift apart (``make check-apps`` rules).
 
+Combinations run in parallel, one process each (``--jobs``, default every CPU): each is Copier, kustomize
+and Helm processes in its own scratch folder.
+
 This is the platform half of a template's contract: the template's own CI builds and runs the app, this
 check proves the platform accepts what the template declares, in seconds and without building anything.
 """
@@ -12,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import os
 import shutil
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -64,7 +69,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     (root / 'clusters/home').mkdir(parents=True)
     (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
     data = ['--data', f'app_name={NAME}'] + [arg for k, v in sorted(answers.items()) for arg in ('--data', f'{k}={v}')]
-    runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', '--vcs-ref', STACK_REVISIONS[stack], *data, str(template), str(rendered)])
+    runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', *data, str(template), str(rendered)])
     manifest = rendered / declaration.FILE
     if runner.dry_run:
         return True
@@ -78,7 +83,8 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
             report.bad(f'{label}: app-new refused its {declaration.FILE} for {env}: {output.strip()}')
             return False
         instances.append(instance_folder(root, NAME, env))
-    problems = [f'{path.name}: {p}' for path in instances for p in policy.evaluate(path, runner)]
+    # promotion.create has run the policy on prod, exactly as it wrote it; only staging is left.
+    problems = [f'{instances[0].name}: {p}' for p in policy.evaluate(instances[0], runner)]
     problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
     if problems:
         report.bad(f'{label}: ' + '; '.join(problems))
@@ -87,7 +93,20 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     return True
 
 
-def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS) -> int:
+def combination_job(runner: Runner, template: Path, stack: str, answers: dict[str, str],
+                    work: Path) -> tuple[bool, list[tuple[str, str]]]:
+    """One combination in its own scratch folder; returns whether it passed and its (level, message) results."""
+    part = Report(StringIO())
+    try:
+        ok = check_combination(runner, part, template, stack, answers, work)
+    except (CommandError, EditError) as error:
+        part.bad(f'{stack} {answers}: {error}')
+        ok = False
+    return ok, [(entry.level, entry.message) for entry in part.entries]
+
+
+def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs: int = 1) -> int:
+    """``jobs`` above 1 runs the combinations in that many processes (a FakeRunner needs 1: it records in-process)."""
     work = Path(tempfile.mkdtemp(prefix='check-templates-'))
     failed = 0
     try:
@@ -96,13 +115,20 @@ def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS) -> in
             runner.run(['git', 'clone', '--quiet', '--depth', '1', f'https://github.com/{source}.git', str(template)])
             runner.run(['git', 'fetch', '--quiet', '--depth', '1', 'origin', STACK_REVISIONS[stack]], cwd=template)
             runner.run(['git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], cwd=template)
+            # Copier renders a plain folder as it stands (0.7 s) but clones a Git one for every render (1.9 s);
+            # the checkout above pins the revision, and only the answers file's _commit differs.
+            shutil.rmtree(template / '.git', ignore_errors=True)
             questions = [] if runner.dry_run else repo.parse_questions((template / 'copier.yml').read_text())
-            for answers in combinations(questions):
-                try:
-                    ok = check_combination(runner, report, template, stack, answers, work)
-                except (CommandError, EditError) as error:
-                    report.bad(f'{stack} {answers}: {error}')
-                    ok = False
+            todo = [(runner, template, stack, answers, work / f'{stack}-{i}')
+                    for i, answers in enumerate(combinations(questions))]
+            if jobs > 1 and not runner.dry_run:
+                with ProcessPoolExecutor(max_workers=jobs) as pool:
+                    results = list(pool.map(combination_job, *zip(*todo, strict=True)))
+            else:
+                results = [combination_job(*args) for args in todo]
+            for ok, entries in results:  # in combination order, whichever finished first
+                for level, message in entries:
+                    getattr(report, level)(message)
                 failed += not ok
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -113,6 +139,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None, report: Re
     parser = argparse.ArgumentParser(prog='swhurl check-templates', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--stack', choices=sorted(STACKS), help='only this stack')
+    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1, help='combinations at once (default: every CPU)')
     args = parser.parse_args(argv)
     stacks = {args.stack: STACKS[args.stack]} if args.stack else STACKS
-    return check(runner or Runner(), report or Report(), stacks)
+    return check(runner or Runner(), report or Report(), stacks, args.jobs if runner is None else 1)

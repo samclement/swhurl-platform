@@ -18,7 +18,7 @@ GitOps source for a live single-node k3s homelab. Flux applies `main`; changes r
 - **Verify like a user.** Check every entry point (http and https, signed in and out), prove scripts stop on failure, and read release notes and propose an upgrade path before merging a major version.
 - **Act without asking** on warnings and doc gaps within the current change, offline-only fixes, and the next step of an approved outline. Stop for the confirm-first list above, a real choice between options, or scope growth.
 - **Hand off commands precisely.** Label each block "run with `!`" or "run in your own terminal" (`sudo`, interactive logins; `!` has no terminal). Say what you will check afterwards, and watch long waits in the background instead of asking to be prompted.
-- **Skills:** `decision-brief` before recommending a costly or undecided approach, `new-component-checklist` when adding anything that runs, stores data or holds a credential, `phase-handoff` for multi-step work.
+- **Skills:** `decision-brief` before recommending a costly or undecided approach, `new-component-checklist` when adding anything that runs, stores data or holds a credential, `phase-handoff` for multi-step work, `notify-done` at the end of every task or when waiting for the operator.
 
 ## Where things are documented
 

@@ -1776,3 +1776,18 @@ ClickStack: both callees' server spans carry `user.email = obo-proof@example.com
 **Not exercised:** a real signed-in browser request through oauth2-proxy (the header was set inside the pod, past Traefik); a callee on an older template (it ignores the header by construction).
 
 **Removed** (operator approved, 17 October 2026): both staging instances (`make app-calls --remove`, `make app-remove`, `make app-sync`). Their repositories and packages are left for the operator to delete.
+
+## An image serves the name and description the platform gives it (17 October 2026)
+
+Stage 2 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-2026). Platform `5485ffc1`: `swhurl.yaml`'s `description` (identity, read again) becomes `SWHURL_DESCRIPTION`, written by `make app-new` and with every staging image (`make app-deploy`), and carried by a promotion with the image (`per_environment.py`; the auto-merge gate expects it). Templates `v0.2.14` (TypeScript #56 `a46945a`, Kotlin #43 `80d0a72`; all 8 Template combinations passed on each PR), pinned in `f21de3e8`: `swhurl.yaml` declares the description, and the served API description takes its title and description from `SWHURL_APP` and `SWHURL_DESCRIPTION`, falling back to the creation answers off the platform.
+
+**Live,** with the throwaway `swhurl-try-23` (TypeScript, `api=openapi`, `0ad006df`), read from inside its pod:
+
+| Step | `SWHURL_DESCRIPTION` in Git | `/openapi.json` `info` |
+| --- | --- | --- |
+| Created (`make app-new`, image `1-cfbcd56`) | `Throwaway: runtime identity proof`, from its `swhurl.yaml` | title `swhurl-try-23`, that description |
+| Only `swhurl.yaml`'s description changed and pushed (`4042801`); the Deploy workflow committed `969a35cf` with image `3-4042801` | `…, described again` | the new description; `openapi.json` in the repository unchanged |
+
+`make verify-platform` passed; `make app-status`: running, matches desired. `make check` passed before each commit (791 tests).
+
+**Not exercised live:** an image built for one app serving under another name (a seed for the types' answers comes with stage 6; the override is unit-tested in both stacks), the Kotlin `/openapi.yaml` rewrite on the cluster, and a promotion carrying the description (unit-tested).

@@ -533,6 +533,20 @@ class AppsTests(unittest.TestCase):
         self.assertIn('no HelmRelease', text)
         self.assertNotIn('infra-base</a>', text)
 
+    def test_the_egress_page_lists_each_instances_port_and_grants(self):
+        granted = release('web-prod', 'web')
+        granted['metadata']['annotations'] = {'platform.swhurl.com/egress': 'api.stripe.com:443,*.example.com:8443'}
+        granted['spec']['values']['controllers']['main']['containers']['main']['env'] = {'HTTPS_PROXY':
+            'http://egress.egress.svc.cluster.local:30111'}
+        units = [unit('app-web-prod'), unit('app-api-staging')]
+        text = client(fake(units=units, releases=[granted, release('api-staging', 'api')])).get('/egress', headers=WHO).text
+        self.assertIn('1 of 2 instances is granted a host outside the cluster', text)
+        self.assertIn('<code>30111</code></td>\n    <td><code>api.stripe.com:443</code> <code>*.example.com:8443</code></td>', text)
+        self.assertIn('<a href="/apps/api/staging#connect">api/staging</a>', text)
+        self.assertIn('instance%3Dweb-prod+granted%3D-', text, "the link opens that instance's requests without a grant")
+        self.assertIn('<a href="/platform" class="here">Platform</a>', text)
+        self.assertIn('<a href="/egress">Egress</a>', client(fake(**CHECKS)).get('/platform', headers=WHO).text)
+
     def test_cluster_values_are_escaped(self):
         units = [unit('app-x-prod', ready='False', message='<script>x</script>')]
         text = client(fake(units=units)).get('/apps', headers=WHO).text
@@ -880,7 +894,7 @@ class UnitsTests(unittest.TestCase):
 
     def test_platform_groups_units_by_layer_and_a_unit_opens_to_its_details_and_actions(self):
         text = client(fake(**CHECKS)).get('/platform', headers=WHO).text
-        for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Apps/Services'):
+        for layer in ('Cluster', 'Infrastructure', 'Platform services', 'Deployments'):
             self.assertIn(f'<div class="group">{layer} ', text)
         self.assertIn('href="/units/infra-base"', text)
         self.assertIn('abc1234', text)

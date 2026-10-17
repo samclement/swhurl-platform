@@ -45,6 +45,7 @@ class Connections:
     rows: tuple[links.Connection, ...] = ()  # the same, one row per connection: what every list shows
     offers: str = ''  # the commit its API and event documents were read at (make app-offers); '' if it has none
     egress: tuple[str, ...] = ()  # host:port outside the cluster it may reach (make app-egress)
+    proxy_port: int | None = None  # its own port on the egress proxy; None when it has none
 
     @property
     def summary(self) -> str:
@@ -131,7 +132,7 @@ class Unit:
 LAYERS = (('cluster-', 'Cluster', "Flux's own Git source and unit list, applied by make flux-bootstrap"),
           ('infra-', 'Infrastructure', 'Namespaces, certificates and the ingress controller'),
           ('platform-', 'Platform services', 'Sign-in, observability, this console and automation'),
-          ('app-', 'Apps/Services', 'One unit per app instance'))
+          ('app-', 'Deployments', 'One unit per app instance'))
 OTHER_LAYER = 'Other'
 
 
@@ -222,7 +223,7 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
                        {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env},
                        egress.granted(release)),
             str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')),
-            tuple(egress.granted(release)))
+            tuple(egress.granted(release)), egress.port_of(variables))
         mine = (instance.namespace, instance.app)
         status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},
                                {'items': owned['workloads'][mine]})

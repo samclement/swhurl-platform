@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_status.html" as st %}
+{% block title %}Egress{% endblock %}
+{% block main %}
+<p class="crumbs"><a href="/platform">Platform</a> › Egress</p>
+<h1>Egress</h1>
+{% call st.about() %}Every request an app sends outside the cluster goes through the egress proxy, on a port of the app's own, so the proxy knows which app is asking. A grant is a host the app may reach, set on its own page (<strong>Connect</strong> › <strong>Reach a host outside</strong>) or with <code>make app-egress</code>, per environment. Nothing is refused yet: the proxy logs each request with whether a grant covers it, and the last column opens that app's requests without one, the hosts it will need granted before ungranted hosts are refused.{% endcall %}
+<p class="verdict">{{ granted }} of {{ instances }} instance{{ 's' if instances != 1 }} {{ 'is' if granted == 1 else 'are' }} granted a host outside the cluster{% if hosts %} <span class="muted">· {{ hosts }} host{{ 's' if hosts != 1 }} in all</span>{% endif %}</p>
+{% for env, found in by_env %}
+<h2>{{ env }}</h2>
+<table class="compact egress">
+  <tr><th>Instance</th><th>Team</th><th>Proxy port</th><th>Hosts granted</th><th>Without a grant</th></tr>
+  {% for row in found %}{% set i = row.instance %}
+  <tr>
+    <td><a href="/apps/{{ i.app }}/{{ i.env }}#connect">{{ i.app }}/{{ i.env }}</a></td>
+    <td>{% if row.team %}<a href="/apps?team={{ row.team }}">{{ row.team }}</a>{% else %}<span class="muted">unknown</span>{% endif %}</td>
+    <td>{% if row.connections.proxy_port %}<code>{{ row.connections.proxy_port }}</code>{% else %}<span class="warn">none</span>{% endif %}</td>
+    <td>{% for host in row.connections.egress %}<code>{{ host }}</code>{{ ' ' if not loop.last }}{% else %}<span class="muted">none</span>{% endfor %}</td>
+    <td><a href="{{ ungranted_url(i) }}">Requests {{ st.icon('external') }}</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">No app instances.</p>
+{% endfor %}
+<p class="muted">The proxy's generated configuration is <code>platform/egress/proxy.yaml</code>; how it works: <a href="https://github.com/samclement/swhurl-platform/blob/main/docs/services.md#egress-proxy">egress proxy</a>.</p>
+{% endblock %}

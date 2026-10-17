@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_status.html" as st %}
-{% block title %}Apps/Services{% endblock %}
+{% block title %}Deployments{% endblock %}
 {% macro link(view_, team_, env_, show_='') %}/apps?{{ ({'view': view_, 'team': team_, 'env': env_} | urlencode) ~ ('&show=' ~ show_ if show_) }}{% endmacro %}
 {# One environment in an app's row: its state, the running tag (the link to its page) and an arrow to its web address. #}
 {% macro env_cell(a, env) %}{% set row = a.envs.get(env) %}
@@ -29,7 +29,7 @@
     </section>
 {% endmacro %}
 {% block main %}
-<h1>Apps/Services</h1>
+<h1>Deployments</h1>
 {% call st.about() %}Every app a team has deployed: what runs in staging and production, who owns it, and how apps reach each other. Open a row for each environment in full; a tag opens that environment's page, to use it, connect to it or operate it.{% endcall %}
 <div class="filters" hx-boost="true" hx-target="main" hx-select="main" hx-swap="outerHTML">
   <span class="muted">Team</span>
@@ -50,7 +50,7 @@
 </div>
 {% if map.nodes %}
 <div class="scroll">
-<svg class="map" role="img" aria-label="Apps/Services in {{ env }} and how they reach each other" width="{{ map.width }}" height="{{ map.height }}" viewBox="0 0 {{ map.width }} {{ map.height }}">
+<svg class="map" role="img" aria-label="Deployments in {{ env }} and how they reach each other" width="{{ map.width }}" height="{{ map.height }}" viewBox="0 0 {{ map.width }} {{ map.height }}">
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" style="fill: var(--muted); stroke: none"/></marker></defs>
   {% for kind, path, source, target in map.edges %}<path class="{{ kind }}" d="{{ path }}" marker-end="url(#arrow)"><title>{{ source }} {{ 'calls' if kind == 'call' else 'publishes an event to' }} {{ target }}</title></path>
   {% endfor %}

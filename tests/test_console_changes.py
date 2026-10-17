@@ -1342,8 +1342,8 @@ class TeamsPageTests(unittest.TestCase):
         self.assertNotIn('>default</span>', page, 'no team is special')
         self.assertIn('The platform itself', page)
         self.assertIn('<a href="/apps/billing/staging" title="billing/staging:', page, 'each app, with what runs where')
-        self.assertIn('<a href="/apps?team=payments">2 apps on the Apps/Services list</a>', page)
-        self.assertIn('Apps/Services without a registered team', page)
+        self.assertIn('<a href="/apps?team=payments">2 apps on the Deployments list</a>', page)
+        self.assertIn('Apps without a registered team', page)
         self.assertIn('<td>retired</td>', page)
         self.assertIn('<a href="/apps/ghost/staging">ghost</a>', page)
         self.assertIn('Move its 2 app(s) to', page, 'a team with apps is deleted only by moving them')
@@ -1484,7 +1484,7 @@ class TeamsPageTests(unittest.TestCase):
         unreadable = FakeGitHub(fail={'GET /contents/apps/teams.yaml': (404, 'Not Found')})
         page = TestClient(app_under_test(self.runner, jobs=self.jobs, github=unreadable.github)).get('/teams', headers=WHO).text
         self.assertIn('no app can be called unregistered', page)
-        self.assertNotIn('Apps/Services without a registered team', page)
+        self.assertNotIn('Apps without a registered team', page)
         self.assertIn('<section class="card" id="payments">', page, 'the teams apps name are still shown')
         self.assertIn('<section class="card" id="retired">', page)
 

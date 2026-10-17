@@ -31,7 +31,7 @@ The console is where you see the platform and change it without a terminal. Sign
 | Page | Use it to |
 | --- | --- |
 | Overview | See one verdict for the whole platform, what needs attention and what is changing now |
-| Apps/Services | See every app with its team, language and what runs in staging and production. **Map** draws who calls whom and who receives which event. |
+| Deployments | See every app with its team, language and what runs in staging and production. **Map** draws who calls whom and who receives which event. |
 | An app's page | See its address, connections, feature flags, image and environment. Override a flag, change who can reach it, connect it to another app, scale it, promote it or uninstall it. |
 | Catalogue | Read the APIs and events each app offers, with routes, payload fields and a code sample, and add an app as a user of one |
 | Teams | Create, rename and delete teams and give each a notification channel |

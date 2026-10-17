@@ -312,8 +312,18 @@ Every instance is also told who it is (`SWHURL_APP`, `SWHURL_ENV`), and every we
 
 **What the app does.** The stack templates ship both halves; an app's own code only names the callee:
 
-- **Calling:** `service("demo-orders")` reads the address and the token file (again on every call, since it is replaced) and sends `Authorization: Bearer <token>`.
-- **Being called:** a request that carries a token must carry a good one, or it gets 401: signed by a key in `SWHURL_AUTH_KEYS`, issued by `SWHURL_AUTH_ISSUER` for the audience `SWHURL_APP`, unexpired, and belonging to `system:serviceaccount:<caller>-<SWHURL_ENV>:<caller>` for a caller in `SWHURL_ALLOWED_CALLERS`. A request without a token is a person: signed in when it carries oauth2-proxy's `x-auth-request-email`, anonymous otherwise (a public app). A route meant only for apps asks for an app caller and answers 401 to anyone else. Logs and spans carry `caller.type` (`app`, `user` or `anonymous`) and `caller.id`.
+- **Calling:** `service("demo-orders")` reads the address and the token file (again on every call, since it is replaced) and sends `Authorization: Bearer <token>`. A call made for a signed-in person names that person: `service("demo-orders").fetch(path, { onBehalfOf: caller })` (Kotlin: `platform.call("demo-orders", path, onBehalfOf = caller)`) adds `x-swhurl-user: <email>`, the caller's own email or the person an app caller named; without `onBehalfOf` the call carries no person. Apps from templates `v0.2.13` on have it; an older callee ignores the header.
+- **Being called:** a request that carries a token must carry a good one, or it gets 401: signed by a key in `SWHURL_AUTH_KEYS`, issued by `SWHURL_AUTH_ISSUER` for the audience `SWHURL_APP`, unexpired, and belonging to `system:serviceaccount:<caller>-<SWHURL_ENV>:<caller>` for a caller in `SWHURL_ALLOWED_CALLERS`. With a good token, `x-swhurl-user` names the person the app is calling for (the caller becomes `app`, with `user` set; a value that is not an email address gets 401). A request without a token is a person: signed in when it carries oauth2-proxy's `x-auth-request-email`, anonymous otherwise (a public app); it cannot name a person with `x-swhurl-user`. A route meant only for apps asks for an app caller and answers 401 to anyone else. Logs and spans carry `caller.type` (`app`, `user` or `anonymous`), `caller.id`, and `user.email` when an app named a person.
+
+**A browser calling an API.** A web app's browser code calls only its own host; the web app's server calls the API as itself, for the signed-in person. The API stays private, and the browser needs no CORS and no token:
+
+```
+browser ─fetch('/api/orders')─▶ Traefik + oauth2-proxy ─x-auth-request-email─▶ demo-shop
+                                                                                 │ Bearer token for demo-orders
+                                                                                 │ x-swhurl-user: the person
+                                                                                 ▼
+                                                     demo-orders: caller app demo-shop, user the person
+```
 
 **Finding what exists.** The console's **Catalogue** lists every API and event of an environment with what its app says about it (its routes, or its payload's fields and an example), who uses it and what each app uses in turn, and a choice of app to use it from. The **Deployments** list shows every app with its team and connections, its **Map** view draws who calls whom, and each app page has a **Connect** part: its address, its connections one per row (the same columns for a call, an event and a [host outside the cluster](#reaching-outside-the-cluster), whichever app declared it), **Connect to an app** to pick from the web apps and events its environment has, what another app adds to call it, and a link to its API description if it declares one (`provides: {api: /openapi.json}`; shown, not checked). A refused change reads the same in the console as from `make`, because the console runs the same commands.
 
@@ -828,7 +838,7 @@ Deploy the new instance on a temporary host and check it. Then, in one commit, r
 
 ## Limits
 
-- A declared caller is trusted not to forge a person: a web app cannot tell oauth2-proxy's `x-auth-request-email` header from one an allowed caller sent itself.
+- A declared caller is trusted not to forge a person: a web app cannot tell oauth2-proxy's `x-auth-request-email` header from one an allowed caller sent itself, and a callee takes the person in `x-swhurl-user` on the caller's word.
 - Calls and events stay inside the cluster: there is no token for a caller outside it, and NATS has no route.
 - A team cannot set its own secret values or merge its own changes: there is one encryption key and one repository, and the pull request is the other team's consent to a new caller.
 - The only database is SQLite, so an app with one runs a single replica.

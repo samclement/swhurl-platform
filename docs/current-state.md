@@ -1711,3 +1711,8 @@ Which HTTP clients follow the proxy settings the platform gives every app, check
 - **Templates `v0.2.11`:** the generated README's *Reaching outside the cluster* (Kotlin `d610ec5`, #36; TypeScript `54b8e50`, #49): grants on the platform, `granted=-`, which clients follow the proxy, and for Kotlin a `BeanCreatedEventListener` giving Micronaut's client `ProxySelector.getDefault()` (not run). 8 checks each passed; pinned in `STACK_REVISIONS`.
 
 Not exercised: the Micronaut listener; OkHttp, axios, undici's own agents.
+
+## Console: Egress page and Deployments (17 October 2026)
+
+- **Change:** `8b79c1b` (console image deployed by `0d2b94d`); `make check` passed (780 tests).
+- **Live**, through a port-forward with the identity header: `/egress` answered 200 with "0 of 15 instances are granted a host outside the cluster", a `staging` and a `prod` table, and the 15 proxy ports 30101 to 30115; the Platform page links to it. The navigation label and the list's heading say **Deployments**; no page under `/apps` says Apps/Services.

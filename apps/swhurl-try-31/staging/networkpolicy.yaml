@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: swhurl-try-31
+  namespace: swhurl-try-31-staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: swhurl-try-31
+  policyTypes:
+  - Ingress
+  ingress: []

@@ -1855,3 +1855,9 @@ This is documentation only: the host timer and current MongoDB/SQLite execution 
 ## Throwaway pruning (18 October 2026)
 
 `swhurl-try-17/staging` and `swhurl-try-18/staging` were removed with `make app-remove` (`44e87647`; neither had a volume), as section 24's stage 0. After `make flux-reconcile` their namespaces and units were gone and `make verify-platform` passed. Their GitHub repositories and container packages were deleted with the `secrets/` tokens and confirmed absent. `swhurl-try-10` to `-13` stay to show several teams' deployments. Plan section 25 (per-database backups) is deferred until after section 24's cutover.
+
+## App model shadow (18 October 2026)
+
+Section 24's stage 1 (`c875b16c`): `make check-apps` reads each instance's App, Release and Settings back from its manifests (`tools/swhurl/apps/model`), renders them, and fails on any difference. At that commit it reported none for the 13 instances (94 files), the 3 generated fixtures and the shared files (NATS users, egress proxy, Reloader namespaces, unit registry); `make check-templates` found none in the staging and production instances of all 127 template combinations. `make check` passed 818 tests, and Validate passed on GitHub. Validate deployed console image `src-9a81404e132249e7` (`b4814730`); `make verify-platform` passed after `make flux-reconcile`, and a notification checker job succeeded on the new image. Nothing on the cluster changed format: no record file is written yet.
+
+**Not exercised yet (stage 1's exit):** the zero holding through a staging deploy, a promotion and a new app. A subscription in production is covered only by the code staging's subscriptions use.

@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, publish), the use cases as compositions of them, capabilities as the unit of co-location, and the sequence: prune and inventory, remove the console timeline and make promotions manual, a shadow model checked against every instance, operations moved onto it one at a time, then a single cutover commit. **Keep seed images and automatic merge for eligible new staging apps** (operator, 18 October). Operator decisions owed: which throwaway instances to remove, and a ruleset on `main` before promotions become manual. Section 21's deferred needs and section 22's event check build on the model rather than add a transformation. Backups are [section 25](#25-per-database-backups--designed-18-october-2026-not-started); an interim split of the host timer is proposed.
+**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, operation, publish, gate), the use cases as compositions of them, and capabilities as the unit of co-location. Automatic merge and the console's progress view are reimplemented on them: one gate replays any console PR's request on the newest `main` and merges it under that operation's rule (new staging apps and later promotions of a release that ran Healthy in staging merge themselves), and progress is derived from the job, the PR, `main`, a render hash on the HelmRelease and the instance's state. Order: prune and inventory, a shadow model checked against every instance, operations and the gate moved onto it one at a time, a single cutover commit, then Activity. Seed images stay. Operator decision owed: which throwaway instances to remove. Section 21's deferred needs and section 22's event check build on the model. Backups are [section 25](#25-per-database-backups--designed-18-october-2026-not-started); an interim split of the host timer is proposed.
 
 **New app creation speed — delivered 14 October 2026:** Kotlin `v0.2.5` (`03872aa`, template PR #27) and catalogue `89a666e` are deployed. New-app merge verification uses the same schema and app-policy checks as promotions (`4a87c7c`); the Kotlin runtime stage, dependency caches and smoke-test polling are described in [the canonical guide](apps.md#first-builds-of-new-apps). All seven template CI combinations passed on PR and main, and `make check` passed 749 tests and 32 policy combinations. Equivalent fresh console creations became Available in 312 s before and 247 s after; merge verification fell from 71 to 21 s, while the complete image workflow did not improve in this pair. [Dated evidence](current-state.md#new-app-creation-speed-14-october-2026) records each stage and measurement limits. Platform health and HTTP/HTTPS/handler checks passed. The operator keeps `swhurl-try-17/staging` and its repository/package as a current-template example and timing reference. Only the older baseline `swhurl-try-16` is removed from Git and the cluster; owner cleanup remains for its public repository and package because the current `gh` token lacks repository deletion and package access. The signed-in browser path remains unexercised. [Cleanup evidence](current-state.md#timing-app-cleanup-14-october-2026) records the live removal. The next proposed optimisation is separating Kotlin app identity from compiled build inputs, so fresh apps with matching code can reuse compiled layers; current default renders differ in build inputs only at `src/main/resources/application.properties`, and the compile/test/package step took 44–52 s. Preserve local and deployed identity, prove cache hits and invalidation, and retain normal builds for personalised API/events or changed code. This is a proposal, not authorised implementation.
 
@@ -1501,15 +1501,15 @@ Checklist: data retention (Kubernetes keeps one successful and one failed Job; l
 
 ## 24. Code simplification — design contracts, 18 October 2026
 
-**Status:** design, revised after review on 18 October 2026; nothing is implemented. The operator keeps **seed images and automatic merge for eligible new staging apps**; promotions and other configuration PRs become manual. The operating pages describe what runs today until each stage ships. Backups moved to [section 25](#25-per-database-backups--designed-18-october-2026-not-started).
+**Status:** design, revised twice on 18 October 2026 after review; nothing is implemented. The operator's direction: strong primitives and contracts first, and existing features (automatic merge, the console's progress view) reimplemented on them rather than removed or kept in their current form. Seed images stay. The operating pages describe what runs today until each stage ships. Backups are [section 25](#25-per-database-backups--designed-18-october-2026-not-started).
 
 ### Goal and boundaries
 
-Every app operation is a composition of a few primitives with one owner each, so a new app, a deploy and a promotion give predictable results and the code for one capability lives, and is tested, in one place. Measure success by what disappears: manifests read back as inputs, the second promotion implementation, command-line reconstruction, and the console's reconstructed timeline.
+Every app operation is a composition of a few primitives with one owner each, so a new app, a deploy and a promotion give predictable results, merge under one rule and report progress the same way, and the code for one capability lives, and is tested, in one place. Measure success by what disappears: manifests read back as inputs, the second promotion implementation, command-line reconstruction, the per-operation merge checks and the persisted progress guesses.
 
 Unchanged: GitOps through Flux, Flux paths and resource names, the access model, the supported app types (section 23), seed images and creation speed. No framework, plugin engine, generic Helm pass-through or new cluster service.
 
-Checked in source on 18 October: grants are read back from generated manifests (`derive.py`, `edit.py`); later promotion is in both `apps/edit.py` (1,279 lines) and `apps/per_environment.py`; first promotion rebuilds arguments for `new.parse_args`; `new` and `edit` import each other; `console/stages.py` reconstructs one timeline from jobs, PRs and rollouts. There are 15 instances, several of them throwaways.
+Checked in source on 18 October: grants are read back from generated manifests (`derive.py`, `edit.py`); later promotion is in both `apps/edit.py` (1,279 lines) and `apps/per_environment.py`; first promotion rebuilds arguments for `new.parse_args`; `new` and `edit` import each other; the auto-merge gate has a bespoke check per operation (`console/merge.py`: `check_new_app`, and `check_promotion`, which rebuilds the expected result from fingerprints, `per_environment.after_promotion` and a replay of `promotion.create`); `console/stages.py` asks GitHub whether Flux has applied a merge and persists the answer on the job. There are 15 instances, several of them throwaways.
 
 ### Primitives
 
@@ -1517,24 +1517,26 @@ Checked in source on 18 October: grants are read back from generated manifests (
 | --- | --- | --- |
 | **Instance** (`apps/instance.py`) | app name, environment, path | — |
 | **Release** (`release.yaml`) | image digest, source commit, needs, offers' hashes, seed provenance. Immutable; written only by trusted intake (creation, the Deploy workflow) and copied whole by promotion | grants anything |
-| **Settings** (`instance.yaml`) | team, exposure, calls, subscriptions, egress, alerts, capacity and allocations, per environment; written by platform commands or a reviewed edit | describes the image |
-| **render**(release, settings, platform) → files | every app manifest, and the instance's contribution to shared files | reads the network, chooses an allocation, reads generated files back |
+| **Settings** (`instance.yaml`) | team, exposure, calls, subscriptions, egress, alerts, capacity and allocations, per environment | describes the image |
+| **render**(release, settings, platform) → files | every app manifest, the instance's contribution to shared files, and the render hash (below) | reads the network, chooses an allocation, reads generated files back |
 | **check**(tree) → problems | app policy on Helm-rendered objects, and committed output equals `render` | repairs anything |
-| **publish**(changes) | one Git commit (console, compare-and-swap on `main`) or writing the checkout (CLI) | computes anything |
+| **operation**(snapshot, request) → change | reads inputs, applies one request (choosing any new allocation), renders, checks; returns the changed files and its merge rule | writes anything, parses flags |
+| **publish**(change) | a direct commit, a PR, or writing the checkout | computes anything |
+| **gate**(PR) | replays the PR's request on the newest `main` and merges the result when its merge rule allows | trusts the PR's files |
 
 Encrypted `*.sops.yaml` files keep their existing owners; render reads only their names.
 
 ### Use cases as compositions
 
-| Use case | Composition | Merge |
+| Use case | Composition | Merge rule |
 | --- | --- | --- |
-| New app | create repo → Release(seed) + default Settings → render → check → PR | creation gate, automatic |
-| Staging deploy | new Release → render → check → commit | Deploy workflow, as today |
-| First promotion | staging's Release + new prod Settings (team, capacity copied; host derived; egress and subscriptions empty; calls listed for review) → render → check → PR | manual |
-| Later promotion | staging's Release + existing prod Settings → render → check → PR | manual |
-| Rollback | an earlier Release from Git history → render → check | manual; refused if it does not fit retained storage |
-| Scale, expose, calls, events, egress, alerts, team | edit Settings → render → check → PR or commit | manual |
-| Remove | delete Settings and Release → render shared files → check → PR | manual |
+| New app | create repo → Release(seed) + default Settings → render → check → PR | automatic; review if it must change another app's grants |
+| Staging deploy | new Release → render → check | Deploy workflow commits directly, as today |
+| Later promotion | staging's Release + existing prod Settings → render → check → PR | automatic when the release has run Healthy in staging and publishes no new events; otherwise review |
+| First promotion | staging's Release + new prod Settings (team and capacity copied; host derived; egress and subscriptions empty; staging's calls listed) → render → check → PR | review |
+| Rollback | an earlier Release from Git history → render → check → PR | review; refused if it does not fit retained storage |
+| Scale | edit Settings → render → check → PR | automatic in staging, review in production |
+| Exposure, calls, events, egress, alerts, team, remove | edit Settings (or delete both inputs) → render shared files → check → PR | review |
 
 **Example:** release B listens on 9090, A on 8080. Staging selects B and renders its Service, probes and callers' addresses for 9090; production keeps rendering A. Promotion copies B's `release.yaml` into production and renders from production's own Settings. Nothing is inferred and nothing differs by code path.
 
@@ -1542,7 +1544,7 @@ Encrypted `*.sops.yaml` files keep their existing owners; render reads only thei
 
 Code is grouped by capability, not by layer. Each capability module owns its part of the Release and Settings schemas, its rendered manifests, its contribution to shared files, its policy rules and its tests:
 
-| Capability | Today | Shared output |
+| Capability | Code today | Shared output |
 | --- | --- | --- |
 | workload (by app type: web, API, worker, scheduled job) | `contract.py`, `helmrelease.py`, `new.py` | units, Reloader namespaces |
 | exposure | `new.py`, `ops.py`, `edit.py` | — |
@@ -1552,19 +1554,20 @@ Code is grouped by capability, not by layer. Each capability module owns its par
 | sqlite | `contract.py`, `new.py`, `edit.py` | the backup job ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) |
 | secrets, telemetry, flags, alerts, offers | spread across `new.py`, `edit.py`, `derive.py`, `offers.py` | — |
 
-`render` is the workload plus each capability's contribution; shared files are each capability's contribution over every instance; `check` is every capability's rules. Adding or changing a capability touches one module and its test. `policy.py` (613 lines) splits along the same lines. Offline policy imports stay free of `ruamel.yaml` and I/O.
+`render` is the workload plus each capability's contribution; shared files are each capability's contribution over every instance; `check` is every capability's rules. Adding or changing a capability touches one module and its test. `policy.py` (613 lines) splits along the same lines. Operations live with the command registry: each is one plan function and one merge rule, used by the CLI, the console and the gate alike. Offline policy imports stay free of `ruamel.yaml` and I/O.
 
 ### Rules
 
 1. **One writer per field.** Release fields come from the image; Settings fields from the platform. A release requests capabilities; it never grants exposure, callers, subscriptions or destinations.
 2. **Release is trusted.** Only intake writes it, after resolving the digest and source commit and reading the image's `swhurl.yaml` at that commit; CI refuses a `release.yaml` that intake did not write. Production's `release.yaml` must equal one staging has had. Render never calls GitHub or GHCR.
 3. **Generated means generated.** `make check-apps` fails when committed output differs from `render`; `make app-sync` regenerates. Nothing reads grants back from output.
-4. **Unavailable is not absent.** A failed read fails the operation; it is never an empty grant set, a missing database or no minimum.
-5. **Allocations persist.** Storage size and class and the egress proxy port are recorded once and survive every render; a new app never renumbers another's port.
-6. **Capacity is a floor-respecting choice.** Effective resources are the larger of the Settings value and the release's minimum.
-7. **Environments share nothing but the release.** No credential, claim or grant crosses from staging to production; first promotion lists staging's calls for review.
-8. **No pass-through.** Unknown fields and versions are errors. A real instance with a setting the schema cannot express stops the migration and is reported, never approximated.
-9. **Deterministic.** Same inputs, same bytes: no timestamps, random values or environment-dependent defaults.
+4. **A change is its request.** A PR is exactly what its operation produces from `main`; the gate proves it by replaying, never by inspecting the diff.
+5. **Unavailable is not absent.** A failed read fails the operation; it is never an empty grant set, a missing database or no minimum.
+6. **Allocations persist.** Storage size and class and the egress proxy port are chosen once by an operation and survive every render; a new app never renumbers another's port.
+7. **Capacity is a floor-respecting choice.** Effective resources are the larger of the Settings value and the release's minimum.
+8. **Environments share nothing but the release.** No credential, claim or grant crosses from staging to production; first promotion lists staging's calls for review.
+9. **No pass-through.** Unknown fields and versions are errors. A real instance with a setting the schema cannot express stops the migration and is reported, never approximated.
+10. **Deterministic.** Same inputs, same bytes: no timestamps, random values or environment-dependent defaults.
 
 ### Inputs
 
@@ -1601,56 +1604,79 @@ allocations:
   egressPort: 30101
 ~~~
 
-Field names are settled by the stage 2 prototype. Neither file is listed in the instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
+Field names are settled by the stage 1 prototype. Neither file is listed in the instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
 
 ### Operations and publishing
 
-An operation is a function `(snapshot, request) -> changes`: read the inputs, apply the request, render, check. It writes nothing. Requests are small validated records built by the CLI from flags, by the console from a form and by workflows from an image; no domain function sees `argparse`, environment variables or exit codes. `publish` then either commits the changed tree to `main` through the GitHub adapter with a compare-and-swap ref update (console, workflows) or writes the files (CLI). Local writes happen only after the check passes; a failed write stops and lists what was written, for `git restore`. No per-command save and restore. `DRY_RUN=true` prints the changes and runs nothing that mutates, including repository creation and key minting.
+An operation is a pure function of a snapshot and a request. Requests are small validated records (`{operation: promote, app: orders, release: <digest>}`) built by the CLI from flags, by the console from a form and by workflows from an image; no domain function sees `argparse`, environment variables or exit codes. External effects happen before planning and become inputs: a created repository's identity, a new NATS key encrypted through `Runner`. They are recorded and reused on retry, never undone.
 
-External effects stay outside the change: a created repository is recorded and never deleted as rollback; a new NATS key is encrypted through `Runner` and reused on retry.
+`publish` writes the files (CLI, only after the check passes; a failed write stops and lists what was written, for `git restore`), commits directly (trusted workflows), or opens a PR whose body carries the request and whose files carry its prepared inputs (console). `DRY_RUN=true` prints the change and runs nothing that mutates, including repository creation and key minting.
 
-### Merging and Activity
+### The gate: one merge path for every console PR
 
-- **Creation gate (kept):** automatic merge only for a PR from the trusted creation operation that adds one absent staging instance and its shared-file changes. It runs `main`'s tooling, re-renders the shared files on the newest `main` (giving up a taken proxy port if needed), checks the combined tree, confirms the PR head is unchanged and merges with a compare-and-swap. Anything else waits for review.
-- **Everything else is manual.** Promotion-specific auto-merge labels, hold and resume controls are removed. **Prerequisite (operator decision):** a ruleset on `main` with required checks and a documented bypass for the operator and the Deploy and console-image bots, because `main` accepts direct pushes today.
-- **Three surfaces, one meaning each:** a job reports the console action (running, succeeded, failed, interrupted; log and actor); the PR link reports review, CI and merge on GitHub; the app page and `make app-status` report desired versus running through `apps/state.py`. A PR job succeeds when the PR is open ("Promotion PR opened; review and merge on GitHub"). `console/stages.py` and its persisted marks are removed. "Finish creating this app" stays, reusing the recorded repository. Notification checker behaviour is unchanged.
+The gate is one function for every operation, replacing the per-operation checks:
+
+1. Read the request from the PR body and the prepared inputs from its files; check their shape (Secret shape without values).
+2. Run `main`'s tooling: replay the request against the newest `main`. A new app's port taken in the meantime is re-chosen here, because allocation belongs to the operation.
+3. Run `check` on the result.
+4. Apply the operation's merge rule to the result. A production release must have run Healthy in staging (`apps/state.py`). A review rule waits for the operator's approval of the PR on GitHub.
+5. Commit the replayed tree to `main` as a merge of the PR head, with a compare-and-swap ref update; GitHub shows the PR merged. A lost race replays again.
+
+Because the gate replays rather than inspects, two concurrent creations, a promotion behind a newer `main` and an approved review PR are all the same case. Promotion fingerprints, `after_promotion`, the first-promotion replay and the hold and resume labels go. A PR merged with GitHub's button bypasses the replay; `make check-apps` on `main` still catches output that differs from `render`, and a ruleset requiring the gate is optional hardening.
+
+### Activity: progress derived from the primitives
+
+Every change knows its target from its request: the instance and the render hash its operation produced. `render` writes that hash, of the instance's rendered files, as the annotation `platform.swhurl.com/render` on the HelmRelease's metadata (not the pod template, so it never restarts a pod).
+
+A change's progress is a pure function of five facts, read fresh and never persisted:
+
+| Stage | Fact |
+| --- | --- |
+| Prepared | the console job: running, failed, interrupted, succeeded |
+| Reviewed | the PR: open, approved, closed (GitHub) |
+| Merged | the PR's merge commit on `main` |
+| Applied | the live HelmRelease carries the target render hash and is Ready at its current generation |
+| Running | `apps/state.py`: Healthy with the release's digest, or absent after a remove |
+
+A later change to the same instance makes an unfinished one **superseded**: its hash is no longer the one being rendered. The job store keeps only the job, its actor, its log, the PR number and the target hash; the per-job marks and `ending` go, and `console/stages.py` becomes the table above. A PR job's own result is "PR opened"; the change's row shows the rest. "Finish creating this app" stays, reusing the recorded repository. The notification checker keeps its own rules and may later read the same render hash.
 
 ### Sequencing
 
 | Stage | Work | Exit |
 | --- | --- | --- |
 | 0 | Operator removes throwaway instances no longer wanted (deletes data: confirm first). Inventory every field of every remaining instance against the primitives | Every field has an owner or is listed as unsupported |
-| 1 | Independent of the model: remove the console timeline (F); after the ruleset decision, make promotions manual (E) | Promotion opens a manually merged PR; failing checks cannot merge; no "deployed" message from a PR job |
-| 2 | **Shadow model:** schemas, capability modules, `render`, and a reader that builds Release and Settings from today's manifests. CI asserts read-then-render reproduces every committed instance | Zero difference for every instance, held through ordinary work (at least one deploy, one promotion and one new app) |
-| 3 | Move operations onto the model one at a time, still writing today's files: calls, events, egress, scale and expose, deploy, promotion, new app. Each move deletes the old mutation code for it and adds golden tests for its use cases | `edit.py`'s inference, `per_environment.py`'s drift rows, `parse_args` reconstruction and the `new`↔`edit` cycle are gone |
-| 4 | **Cutover, one commit:** add `release.yaml` and `instance.yaml` for every instance, switch the reader from manifests to them, delete the manifest reader. Pause console app actions and Deploy dispatches for the window; check a job runs on the new console image | `render` is a no-op on every instance (no rollout); `make verify-platform` and `make app-status` pass |
+| 1 | **Shadow model:** schemas, capability modules, `render`, and a reader that builds Release and Settings from today's manifests. CI asserts read-then-render reproduces every committed instance | Zero difference for every instance, held through ordinary work (at least one deploy, one promotion and one new app) |
+| 2 | **Operations and gate:** move operations onto the model one at a time, still writing today's files: calls, events, egress, scale and expose, deploy, then promotion and new app. The replay gate arrives with the first PR-producing operation and takes over each operation's merges as it moves; `check_promotion` and `check_new_app` go when theirs do. Each move deletes the old mutation code and adds golden tests | `edit.py`'s inference, `per_environment.py`'s drift rows, `parse_args` reconstruction, the `new`↔`edit` cycle and the bespoke gate checks are gone |
+| 3 | **Cutover, one commit:** add `release.yaml` and `instance.yaml` for every instance, switch the reader from manifests to them, delete the manifest reader. Pause console app actions and Deploy dispatches for the window; check a job runs on the new console image | `render` is a no-op on every instance (no rollout); `make verify-platform` and `make app-status` pass |
+| 4 | **Activity:** add the render hash to HelmRelease metadata (a metadata-only change, no Helm upgrade or restart), then rebuild the progress view on the five facts and drop the persisted marks | A deploy, a promotion, a superseded change and a remove each show the right stage, signed in, from the deployed console |
 | 5 | Build on the model: section 21's deferred needs for apps with production (promotion carries a release; checks decide), section 22's event check as a comparison of two releases, section 25's SQLite backup job as the sqlite capability | Each is one capability change with its tests |
 
-Section 23's stage 5 and section 21's egress stages E3a and E3b continue meanwhile; their changes move with stage 3.
+Section 23's stage 5 and section 21's egress stages E3a and E3b continue meanwhile; their changes move with stage 2. Stage 4 needs only stage 1's `render` and can run in parallel with stages 2 and 3 if wanted; it is placed after the cutover so the annotation is not added twice.
 
 ### Cutover: single, behind a shadow period
 
 | | Single cutover after shadow (chosen) | Per-group migration |
 | --- | --- | --- |
 | Code | One reader at a time; no format dispatch | Both formats readable and writable until the last group, plus a list saying which is which |
-| Speed | Stage 4 is one commit and one reconcile | One commit, reconcile and verification per group |
+| Speed | Stage 3 is one commit and one reconcile | One commit, reconcile and verification per group |
 | Blast radius | All instances at once, but the shadow check has already proven the render is a no-op for each of them, continuously, on real changes | One group at a time |
-| Writers | Paused once, for minutes | Console, Deploy workflow and tests must handle mixed formats for days |
+| Writers | Paused once, for minutes | Console, Deploy workflow, gate and tests must handle mixed formats for days |
 | Rollback | Revert one commit, while no new-format edits have been accepted | Per group, but a mixed tree is harder to reason about |
 
-The risk per-group migration guards against, an unexpected rendering difference, is caught offline by stage 2's shadow check before anything changes on the cluster. What remains is a writer racing the cutover, which the pause covers. At 15 instances or fewer, per-group's cost (dual-format code across stages 3 and 4) is larger than its benefit. Moving operations in stage 3 while the format stays the same gives the incremental, reversible steps that per-group would otherwise provide.
+The risk per-group migration guards against, an unexpected rendering difference, is caught offline by stage 1's shadow check before anything changes on the cluster. What remains is a writer racing the cutover, which the pause covers. At 15 instances or fewer, per-group's cost is larger than its benefit. Moving operations in stage 2 while the format stays the same gives the incremental, reversible steps that per-group would otherwise provide.
 
 ### Stop conditions
 
 - **A no-op render is not a no-op:** any pod template, route, persistence or permission difference stops the stage until each difference is explained.
 - **A grant, credential, claim or data crosses environments:** stop and fix the model.
 - **An unsupported field on a real instance:** report it by instance and path, and stop; map it into the schema or defer the instance, never pass it through.
+- **The gate merges something its rule should hold:** stop automatic merging (every rule to review) until a test covers the case.
 - **Scope growth:** if finishing needs a framework, storage service or open-ended extension schema, stop for a separate decision.
 
 ### Done when
 
-- Golden fixture tests cover new app (seed and normal build), staging deploy, first and later promotion, a port change from 8080 to 9090, a resource floor above and below the Settings value, rollback with retained data, and remove.
-- Promotion is one function; adding a capability touches one module and its test; no code path reads a grant from a manifest.
+- Golden fixture tests cover new app (seed and normal build), staging deploy, first and later promotion, a port change from 8080 to 9090, a resource floor above and below the Settings value, rollback with retained data, and remove; gate tests cover two concurrent creations, a promotion behind a newer `main` and a PR whose files differ from its request.
+- Promotion is one function; the gate is one function; adding a capability touches one module and its test; no code path reads a grant from a manifest; nothing persists a guess about progress.
 - Net production lines and removed entry points are measured after each stage and recorded in `docs/current-state.md`.
 
 ## 25. Per-database backups — designed 18 October 2026, not started

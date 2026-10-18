@@ -204,7 +204,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(self.gen('s', *WEB, '--secret-keys', 'A,B'), 0)
         self.assertFalse((self.tmp / 'apps/s/staging/secret.sops.yaml').exists(), 'values are set later, with make app-secret')
         release = yaml.safe_load((self.tmp / 'apps/s/staging/helmrelease.yaml').read_text())
-        self.assertEqual(release['metadata']['annotations'], {'platform.swhurl.com/secrets': 'A,B'})
+        self.assertEqual(release['metadata']['annotations']['platform.swhurl.com/secrets'], 'A,B')
+        self.assertRegex(release['metadata']['annotations']['platform.swhurl.com/render'], r'^[0-9a-f]{64}$')
         self.assertEqual(release['spec']['values']['controllers']['main']['containers']['main']['envFrom'],
                          [{'secretRef': {'name': 's-secret', 'optional': True}}], 'the app starts before its first value')
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-s-staging.yaml').read_text())

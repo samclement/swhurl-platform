@@ -99,15 +99,15 @@ class EgressTests(unittest.TestCase):
                 self.grant(**change)
 
         self.grant(remove=['api.stripe.com', '*.example.com:8443'])
-        self.assertNotIn('annotations', self.release('staging')['metadata'])
+        self.assertNotIn(egress.ANNOTATION, self.release('staging')['metadata'].get('annotations', {}))
         self.assertNotIn('granted yes', self.proxy()[0]['configMaps']['config']['data']['squid.conf'])
 
     def test_malformed_or_overlapping_grants_are_named(self):
         self.sync()
         release = self.root / 'apps/hello/staging/helmrelease.yaml'
-        text = release.read_text().replace('metadata:\n', 'metadata:\n  annotations:\n    platform.swhurl.com/egress: '
-                                           '"example.com:443,*.example.com:443,x:1,example.com:443"\n', 1)
-        release.write_text(text)
+        document = yaml.safe_load(release.read_text())
+        document['metadata'].setdefault('annotations', {})[egress.ANNOTATION] = 'example.com:443,*.example.com:443,x:1,example.com:443'
+        release.write_text(yaml.safe_dump(document))
         found = egress.problems(self.root)
         for problem in ('egress-grants: hello/staging: x:1: a grant is a host name',
                         'egress-grants: hello/staging grants example.com:443 twice',

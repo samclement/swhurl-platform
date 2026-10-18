@@ -33,7 +33,7 @@ import httpx
 import yaml
 
 from swhurl import platform, yamlio
-from swhurl.apps import channels, egress, events, repo
+from swhurl.apps import channels, egress, events, helmrelease, repo
 from swhurl.apps.contract import (
     APP_OWNER,
     APP_TYPES,
@@ -44,8 +44,10 @@ from swhurl.apps.contract import (
     type_answers,
 )
 from swhurl.apps.instance import NAME_RE, Instance
+from swhurl.apps.model.render import ANNOTATION
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT, request_marker
+from swhurl.console.stages import ABSENT, Target
 from swhurl.run import Runner
 
 DEFAULT_REPO = platform.GITHUB_REPO
@@ -212,6 +214,38 @@ def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str, s
     return ('closed', pull.get('closed_at') or '', '') if pull.get('state') == 'closed' else ('open', '', '')
 
 
+def main_commit(runner: Runner, github: GitHub) -> str:
+    api = GitHubAPI(runner, github)
+    try:
+        return api.json('GET', '/git/ref/heads/main')['object']['sha']
+    finally:
+        api.client.close()
+
+
+def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
+    """Immutable Git facts from a complete tree. Missing paths mean absent only after a successful read.
+    Read only HelmReleases; encrypted files and credentials never enter the result."""
+    api = GitHubAPI(runner, github)
+    try:
+        content = api.call('GET', f'/tarball/{revision}').content
+        with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
+            found = {}
+            for member in archive.getmembers():
+                parts = Path(member.name).parts
+                if len(parts) != 5 or parts[1] != 'apps' or parts[4] != 'helmrelease.yaml' or not member.isfile():
+                    continue
+                stream = archive.extractfile(member)
+                release = yaml.safe_load(stream.read())
+                found[f'{parts[2]}/{parts[3]}'] = Target(
+                    (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
+                    helmrelease.image(release).get('digest', ''))
+            return found
+    except (tarfile.TarError, ValueError, AttributeError, yaml.YAMLError) as error:
+        raise ActionError(f'cannot read render targets: {error}') from None
+    finally:
+        api.client.close()
+
+
 COMPARED_FILES = 300
 """GitHub lists this many changed files in one answer; a comparison that fills it may have more."""
 
@@ -288,13 +322,18 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
     api = GitHubAPI(runner, github)
     workdir = Path(tempfile.mkdtemp(prefix='console-'))
     try:
-        job.stage('prepare')
+
         head = api.json('GET', f'/git/ref/heads/{BASE}')['object']['sha']
         branch = branch_name(slug, head[:7])
         job.lines.append(f'Downloading {github.repo} {BASE} ({head[:7]})')
         tree = download(api, head, workdir)
         before = snapshot(tree)
         change(tree)
+        parts = job.unit.split('/')
+        if len(parts) == 2 and all(NAME_RE.fullmatch(part) for part in parts):
+            path = tree / 'apps' / parts[0] / parts[1] / 'helmrelease.yaml'
+            job.target_hash = ((yaml.safe_load(path.read_text()).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '')
+                               if path.is_file() else ABSENT)
         body = body(tree) if callable(body) else body
         auto_merge = auto_merge() if callable(auto_merge) else auto_merge
         manual_merge_reason = manual_merge_reason() if callable(manual_merge_reason) else manual_merge_reason
@@ -340,7 +379,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         if runner.dry_run:
             job.lines.append(f'Dry run: would commit {len(changed)} file(s) to {branch}; no PR opened')
             return ''
-        job.stage('open')
+
         entries = []
         for path in changed:
             if path not in after:

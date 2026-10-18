@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: hello
   namespace: hello-staging
+  annotations:
+    platform.swhurl.com/render: 01da71127d5ed093c9e4eaff12d14ab2fdac91ead6445275bc27e9d80368663a
 spec:
   interval: 30m
   timeout: 3m

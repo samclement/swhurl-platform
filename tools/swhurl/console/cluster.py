@@ -5,7 +5,7 @@ import functools
 import io
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from swhurl.apps import calling, contract, egress, events, helmrelease, offers, ops
 from swhurl.apps import connections as links
@@ -13,6 +13,7 @@ from swhurl.apps.contract import (
     AUTO_DEPLOY_TAG_PATTERN,
 )
 from swhurl.apps.instance import Instance
+from swhurl.apps.model.render import ANNOTATION
 from swhurl.apps.state import State, ready_reason, unit_state, verdict
 from swhurl.kube import ready_condition
 from swhurl.report import Entry, Report
@@ -68,6 +69,10 @@ class AppRow:
     team: str = ''  # from the namespace label; '' when unknown
     connections: Connections = Connections()
     applied: str = ''  # the Git revision its Flux unit last applied
+    render_hash: str = ''
+    render_ready: bool = False
+    render_state: State = State('unknown')
+    image_matches: bool = False
 
 
 @dataclass(frozen=True)
@@ -173,7 +178,7 @@ def fetched(runner: Runner) -> str:
     return ((source.get('status') or {}).get('artifact') or {}).get('revision', '')
 
 
-def apps(runner: Runner, states: bool = True) -> list[AppRow]:
+def apps(runner: Runner, states: bool = True, *, include_removing: bool = False) -> list[AppRow]:
     """Every app instance, from what runs: its Flux unit, its HelmRelease (image, hosts and the
     platform's SWHURL_* variables, which say who it calls and what events it handles), its
     namespace's team label, and its state from the same facts as its own page (the Git source,
@@ -197,6 +202,11 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
     teams = {n['metadata']['name']: (n['metadata'].get('labels') or {}).get(contract.TEAM, '') for n in read[1]}
     found = [(instance, unit, releases.get((instance.namespace, instance.app)))
              for unit in read[2] if (instance := Instance.of_unit(unit['metadata']['name']))]
+    # A unit may disappear before Helm finishes uninstalling its release. Keep it visible until both are gone.
+    known = {instance for instance, _, _ in found}
+    if include_removing:
+        found += [(instance, {}, release) for (namespace, name), release in releases.items()
+                  if (instance := Instance.of_namespace(namespace)) and instance.app == name and instance not in known]
     source = read[3] if states else {}
     owned: dict[str, dict[tuple[str, str], list[dict]]] = {}
     for kind, listed in (('pods', read[4:5]), ('workloads', read[5:6])):
@@ -231,8 +241,23 @@ def apps(runner: Runner, states: bool = True) -> list[AppRow]:
                            ops.desired_image(release) if release else 'no HelmRelease',
                            image.get('tag', ''), image.get('digest', ''), hosts,
                            str(variables.get('DATABASE_PATH', '')) if release else None,
-                           teams.get(instance.namespace, ''), connections, status.applied_revision))
+                           teams.get(instance.namespace, ''), connections, status.applied_revision,
+                           ((release or {}).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
+                           release_ready(release),
+                           verdict(replace(status, desired_revision='render', applied_revision='render',
+                                           unit=('True', '') if unit_state(status.unit, reason=status.unit_reason).key == 'updating'
+                                           else status.unit)) if states else NOT_READ,
+                           status.image_state == 'matches'))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
+
+
+def release_ready(release: dict | None) -> bool:
+    if not release:
+        return False
+    generation = release.get('metadata', {}).get('generation')
+    condition = next((c for c in (release.get('status') or {}).get('conditions') or [] if c.get('type') == 'Ready'), {})
+    return (generation is not None and condition.get('status') == 'True'
+            and condition.get('observedGeneration') == generation)
 
 
 @dataclass(frozen=True)

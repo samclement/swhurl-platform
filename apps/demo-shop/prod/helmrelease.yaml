@@ -4,6 +4,7 @@ metadata:
   name: demo-shop
   namespace: demo-shop-prod
   annotations:
+    platform.swhurl.com/render: 5cd6848dad06c8f1321ac89fe8e2b3d378d58f8113a8efc6cdc8cea52c5aaf4c
     platform.swhurl.com/offers: c9a263b
 spec:
   interval: 30m

@@ -55,7 +55,10 @@ class EditTests(unittest.TestCase):
         before = yaml.safe_load(self.prod.read_text())
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         before['spec']['values']['controllers']['main']['containers']['main']['image'].update(tag='1.28-alpine', digest=NEW_DIGEST)
-        self.assertEqual(yaml.safe_load(self.prod.read_text()), before)
+        after = yaml.safe_load(self.prod.read_text())
+        self.assertNotEqual(after['metadata']['annotations'].pop('platform.swhurl.com/render'),
+                            before['metadata']['annotations'].pop('platform.swhurl.com/render'))
+        self.assertEqual(after, before)
 
     def test_promote_refusals(self):
         with self.assertRaisesRegex(edit.EditError, 'already runs'):
@@ -122,7 +125,10 @@ class EditTests(unittest.TestCase):
         main = before['spec']['values']['controllers']['main']
         main['replicas'] = 2
         main['containers']['main']['resources']['limits']['memory'] = '256Mi'
-        self.assertEqual(yaml.safe_load(self.prod.read_text()), before)
+        after = yaml.safe_load(self.prod.read_text())
+        self.assertNotEqual(after['metadata']['annotations'].pop('platform.swhurl.com/render'),
+                            before['metadata']['annotations'].pop('platform.swhurl.com/render'))
+        self.assertEqual(after, before)
         with self.assertRaisesRegex(edit.EditError, 'already has'):
             edit.scale(self.root, 'hello', 'prod', replicas=2)
         with self.assertRaisesRegex(edit.EditError, r"below the platform's default resources: --cpu 5m \(at least 10m\)"):
@@ -540,7 +546,7 @@ components:
         opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\nhealthPath: /healthz\n'})
         self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
-        self.assertNotIn('annotations', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'])
+        self.assertNotIn('platform.swhurl.com/offers', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}))
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
 
     def test_declared_flags_are_kept_with_the_images_commit_and_carried_by_promotion(self):

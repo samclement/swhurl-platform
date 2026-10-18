@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: hello
   namespace: hello-prod
+  annotations:
+    platform.swhurl.com/render: 472b7846772fb3f70efedb48c161be9b2ae451899f5942f59665523a3897b8fd
 spec:
   interval: 30m
   timeout: 3m

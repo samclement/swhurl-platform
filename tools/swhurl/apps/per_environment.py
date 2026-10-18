@@ -74,6 +74,8 @@ SETTINGS = (
     Setting('cert-manager.io/cluster-issuer', DECLARED, CARRY, 'which certificate authority issues the route'),
     Setting('tag', DECLARED, CARRY, 'staging follows new images; production gets the promoted one', later=WITH_IMAGE),
     Setting('digest', DECLARED, CARRY, 'as the tag', later=WITH_IMAGE),
+    Setting('platform.swhurl.com/render', GENERATED, REGENERATE,
+            'hash of this instance and environment: recomputed by render, never copied', where=ANNOTATION),
     Setting(DESCRIPTION_VARIABLE, GENERATED, CARRY, "what the app says it does: read from the image's swhurl.yaml",
             later=WITH_IMAGE, where=VARIABLE),
     Setting('replicas', DECLARED, CARRY, 'make app-scale'),

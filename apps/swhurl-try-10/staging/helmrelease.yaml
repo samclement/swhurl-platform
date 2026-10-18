@@ -4,6 +4,7 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
+    platform.swhurl.com/render: bb40aefa81d34763609fc1ebbec8c811f7eafd1ae24b8674d0571df0d493a152
     platform.swhurl.com/offers: '8e55e45'
 spec:
   interval: 30m

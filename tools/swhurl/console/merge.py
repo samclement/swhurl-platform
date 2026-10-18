@@ -195,6 +195,8 @@ def same_file(a: Path, b: Path, *, reallocated: bool = False) -> bool:
     def documents(path: Path) -> list:
         found = list(yamlio.load_all(path.read_text()))
         for doc in found if reallocated else ():
+            if isinstance(doc, dict) and doc.get('kind') == 'HelmRelease':
+                (doc.get('metadata', {}).get('annotations') or {}).pop('platform.swhurl.com/render', None)
             if isinstance(doc, dict) and isinstance(doc.get('allocations'), dict):  # instance.yaml
                 doc['allocations'].pop('egressPort', None)
             elif isinstance(doc, dict):

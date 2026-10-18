@@ -71,6 +71,26 @@ class RenderTests(unittest.TestCase):
     def render(self, world, each):
         return render.instance(each, world, self.platform)
 
+    def test_the_hash_is_deterministic_covers_other_rendered_files_and_lives_only_in_metadata(self):
+        from copy import deepcopy
+
+        each = Instance('orders', 'staging')
+        entry = Entry(App('payments'), web(), Settings())
+        path = Path('apps/orders/staging/helmrelease.yaml')
+        files = self.render({each: entry}, each)
+        digest = files[path][0]['metadata']['annotations'][render.ANNOTATION]
+        before_hash = deepcopy(files)
+        del before_hash[path][0]['metadata']['annotations'][render.ANNOTATION]
+        if not before_hash[path][0]['metadata']['annotations']:
+            del before_hash[path][0]['metadata']['annotations']
+        self.assertEqual(render.fingerprint(before_hash), digest, 'the hash does not include itself')
+        self.assertEqual(render.fingerprint(dict(reversed(list(before_hash.items())))), digest)
+        changed_team = self.render({each: dataclasses.replace(entry, app=App('another'))}, each)
+        self.assertNotEqual(changed_team[path][0]['metadata']['annotations'][render.ANNOTATION], digest,
+                            'a namespace change is part of the instance render')
+        self.assertEqual(files[path][0]['spec'], changed_team[path][0]['spec'], 'the hash never enters the Helm spec')
+        self.assertEqual(self.render({each: entry}, each), files, 'rendering is repeatable and does not mutate its inputs')
+
     def test_the_larger_of_the_minimum_and_the_choice_wins(self):
         each = Instance('orders', 'staging')
         def resources(release, settings):

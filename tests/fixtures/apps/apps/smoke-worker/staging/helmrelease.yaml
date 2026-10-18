@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: smoke-worker
   namespace: smoke-worker-staging
+  annotations:
+    platform.swhurl.com/render: 8c3d19c443832f3be4c673a06bdbf40a0dc47262f007800e08205c505523c4e5
 spec:
   interval: 30m
   timeout: 3m

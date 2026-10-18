@@ -164,7 +164,7 @@ class GeneratorTests(unittest.TestCase):
         err = io.StringIO()
         with redirect_stderr(err), redirect_stdout(io.StringIO()):
             self.assertEqual(self.gen('lost', '--image', 'r/lost:1', '--kind', 'worker', '--calls', 'nowhere'), 2)
-        self.assertIn('no instance nowhere/staging', err.getvalue())
+        self.assertIn('lost/staging calls nowhere, which has no staging instance', err.getvalue())
         self.assertFalse((self.tmp / 'apps/lost').exists())
         self.assertFalse((self.tmp / 'clusters/home/app-lost-staging.yaml').exists())
 

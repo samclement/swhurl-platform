@@ -14,6 +14,7 @@ import yaml
 
 from swhurl import ROOT
 from swhurl.apps import calling, contract, derive, edit, new, ops, policy, promotion
+from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
 from swhurl.run import CommandError, FakeRunner
 
@@ -403,10 +404,9 @@ class EditTests(unittest.TestCase):
         self.with_units()
         (self.root / events.CONSOLE_KEY_FILE).write_text('UCONSOLE\n')
         runner = self.sops()
-        for app in ('hello', 'orders'):
-            for env in ('staging', 'prod'):
-                self.assertTrue(edit.nats_key(self.root, app, env, runner=runner))
-                self.assertFalse(edit.nats_key(self.root, app, env, runner=runner), 'an instance keeps its key')
+        self.assertEqual(sorted(map(str, edit.nats_keys(self.root, runner=runner))),
+                         ['hello/prod', 'hello/staging', 'orders/prod', 'orders/staging'])
+        self.assertEqual(edit.nats_keys(self.root, runner=runner), [], 'an instance keeps its key')
         self.quiet(derive.sync, self.root)
         self.assertEqual(policy.check_event_users(self.root), [])
         self.assertEqual(policy.check_events([], yaml.safe_load((self.root / 'apps/hello/prod/helmrelease.yaml').read_text()),
@@ -498,7 +498,7 @@ components:
         manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {api: /openapi.json, apiFile: openapi.json, eventsFile: asyncapi.yaml}\n'
         api = '{"openapi": "3.1.0", "info": {"title": "orders", "version": "0.1.0"}, "paths": {"/": {}}}\n'
         opener, seen = self.repository({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': self.ASYNCAPI})
-        changed, _ = self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        changed, _ = self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertTrue(changed)
         self.assertTrue(all('/repos/samclement/orders/contents/' in url and url.endswith('?ref=abc1234') for url in seen), seen)
         instance = self.root / 'apps/orders/staging'
@@ -518,7 +518,7 @@ components:
         self.assertEqual(offers.problems(instance, ['created', 'paid'], 'abc1234'), [])
         self.assertIn('describes created, paid', offers.problems(instance, ['created'], 'abc1234')[0])
         self.assertIn('the release says its offers are from 0000000', offers.problems(instance, ['created', 'paid'], '0000000')[0])
-        self.assertEqual(self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0], False,
+        self.assertEqual(self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0], False,
                          'reading the same commit again changes nothing')
 
         # Another app subscribes; a later image that drops the event is refused and nothing changes.
@@ -527,12 +527,12 @@ components:
         opener, _ = self.repository({'swhurl.yaml': manifest, 'openapi.json': api, 'asyncapi.yaml': dropped})
         before = {p: p.read_text() for p in instance.rglob('*') if p.is_file()}
         with self.assertRaisesRegex(edit.EditError, 'hello/staging subscribes to orders.paid, which orders/staging does not publish'):
-            edit.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
+            intake.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
 
         # An app that stops describing itself keeps what it publishes; only the documents go.
         opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\nhealthPath: /healthz\n'})
-        self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
         self.assertNotIn('annotations', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'])
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
@@ -547,7 +547,7 @@ components:
         manifest = ('version: 1\nkind: web\nhealthPath: /healthz\n'
                     'flags: {shout: {type: boolean, description: Say hello in capitals, default: false, staging: true}}\n')
         opener, _ = self.repository({'swhurl.yaml': manifest})
-        self.quiet(edit.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         instance = self.root / 'apps/orders/staging'
         self.assertEqual({p.name for p in (instance / 'offers').iterdir()}, {'source.yaml', 'flags.json'})
         found = offers.read(instance)
@@ -579,13 +579,13 @@ components:
                  ({'swhurl.yaml': 'version: 1\nkind: web\n'}, 'samclement/orders@abc1234:swhurl.yaml: healthPath is required'))
         for files, message in cases:
             with self.subTest(message=message), self.assertRaisesRegex(edit.EditError, message):
-                edit.set_offers(self.root, 'orders', 'staging', opener=self.repository(files)[0], runner=self.sops())
+                intake.set_offers(self.root, 'orders', 'staging', opener=self.repository(files)[0], runner=self.sops())
         self.assertEqual((instance / 'helmrelease.yaml').read_text(), before)
         self.assertFalse((instance / 'offers').exists())
         (self.root / 'apps/hello/staging/helmrelease.yaml').write_text(
             (self.root / 'apps/hello/staging/helmrelease.yaml').read_text().replace('tag: 1.27-alpine', 'tag: latest'))
         with self.assertRaisesRegex(edit.EditError, 'only an app published from its own GitHub repository has offers'):
-            edit.set_offers(self.root, 'hello', 'staging', opener=self.repository({})[0])
+            intake.set_offers(self.root, 'hello', 'staging', opener=self.repository({})[0])
 
     def test_every_instance_of_an_environment_is_read_and_one_failure_does_not_stop_the_rest(self):
         self.with_units()
@@ -880,7 +880,7 @@ components:
         self.built_from_a_repository()
         runner = self.sops()
         manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
-        self.quiet(edit.set_offers, self.root, 'orders', 'staging',
+        self.quiet(intake.set_offers, self.root, 'orders', 'staging',
                    opener=self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': self.ASYNCAPI})[0], runner=runner)
         staging = self.root / 'apps/orders/staging/helmrelease.yaml'
         staging.write_text(staging.read_text().replace(staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))

@@ -150,10 +150,10 @@ class MergeTests(unittest.TestCase):
 
     def test_a_promotion_may_carry_what_the_image_offers_and_nothing_else(self):
         """The documents read at the reviewed image's commit merge with it; a change to what it publishes waits."""
-        from swhurl.apps import edit
+        from swhurl.apps import release as intake
         api = 'openapi: 3.0.1\npaths: {}\n'
         with contextlib.redirect_stdout(io.StringIO()):
-            edit.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None,
+            intake.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None,
                               api_path='/openapi.yaml')  # production gets where the image serves it, too
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'

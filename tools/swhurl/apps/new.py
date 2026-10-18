@@ -25,68 +25,45 @@ import argparse
 import os
 import re
 import shlex
+import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import yaml
 
 from swhurl import ROOT, app_alerts
-from swhurl.apps import declaration, events, policy
+from swhurl.apps import declaration, events, offers, policy
 from swhurl.apps.calling import (
-    API_VARIABLE,
-    DESCRIPTION_VARIABLE,
     NOTIFY,
-    TOKENS_VOLUME,
-    identity_variables,
-    signing_keys,
-    tokens_volume,
 )
 from swhurl.apps.contract import (
-    APP,
     APP_OWNER,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
-    CHART,
-    CHART_REPOSITORY,
-    CHART_VERSION,
     COOKIE_DOMAIN,
-    DATA_MOUNT,
     DATABASE_PATH_VARIABLE,
     DATABASES,
     DEFAULT_DATABASE_SIZE,
-    ENVIRONMENT,
-    EXPOSURE,
     EXPOSURES,
-    FAIL_AFTER,
-    IMAGE_AUTOMATION_FILE,
-    JOB_DEADLINE_SECONDS,
     JOB_SCHEDULE,
-    JOB_START_DEADLINE_SECONDS,
     JOB_TIME_ZONE,
-    MANAGED,
-    NETWORK_POLICY_FILE,
-    QUOTA_FILE,
-    RELOAD,
     RETAINED_STORAGE_CLASS,
     SECRET_FILE,
-    SECRET_NAMES,
     SQLITE_PATH,
-    STARTUP_PERIOD,
-    STARTUP_SECONDS,
-    TEAM,
     app_secret,
     default_host,
     in_cookie_domain,
-    network_policy,
-    otlp_variables,
-    resource_quota,
     schedule_problem,
     secret_key_problem,
     teams,
 )
 from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import workload
-from swhurl.apps.model.exposure import ingress_values
+from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
+from swhurl.apps.model.exposure import DEFAULT_ISSUER
+from swhurl.apps.model.records import Allocations, App, Image, Release, Resources, Settings, Storage
+from swhurl.apps.yaml_file import EditError
 from swhurl.run import CommandError, Runner
 
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
@@ -113,9 +90,6 @@ def resolve(args) -> None:
     """Fill values derived from others: a signed-in app's host; a database's volume."""
     if args.exposure == 'authenticated-web' and not args.host and NAME_RE.match(args.name):
         args.host = default_host(args.name, args.env)
-    if args.database == 'sqlite':
-        args.persistence = args.persistence or args.database_size
-        args.mount_path = DATA_MOUNT
 
 
 def validate(args, root: Path = ROOT) -> None:
@@ -137,7 +111,7 @@ def validate(args, root: Path = ROOT) -> None:
     if args.kind != 'web' and args.exposure != 'private':
         raise GenerationError(f'a {args.kind} has no Service or route; use --exposure private')
     if args.kind == 'job':
-        if args.persistence or args.database:
+        if args.database:
             raise GenerationError('a job keeps no volume or database: a run has no pod to keep it in between runs')
         if problem := schedule_problem(args.schedule):
             raise GenerationError(f'--schedule: {problem}')
@@ -168,213 +142,90 @@ def auto_deploys(args) -> bool:
     return bool(args.auto_deploy) and args.env == AUTO_DEPLOY_ENV
 
 
-def image_automation(args) -> list[dict]:
-    """App-scoped Flux image resources: the policy whose report starts the Deploy workflow."""
-    return workload.image_automation(args.name, parse_image(args.image)['repository'])
-
-
-def build_values(args) -> dict:
+def records(args) -> Entry:
+    """The new instance's records, from the request (its swhurl.yaml's fields and the flags)."""
     image = parse_image(args.image)
-    container: dict = {
-        'image': image,
-        'resources': {
-            'requests': {'cpu': args.cpu, 'memory': args.memory},
-            'limits': {'memory': args.memory_limit},
-        },
-        'securityContext': {
-            'allowPrivilegeEscalation': False,
-            'readOnlyRootFilesystem': True,
-            'capabilities': {'drop': ['ALL']},
-        },
-    }
-    if args.command:
-        container['command'] = shlex.split(args.command)
-    # Identity first: Kubernetes expands $(SWHURL_ENV) in later values only if it is defined before them.
-    container['env'] = identity_variables(args.name, args.env, args.kind == 'web',
-                                    getattr(args, 'signing_keys', None) or signing_keys())
-    if args.kind == 'web' and args.api_path:
-        container['env'][API_VARIABLE] = args.api_path
-    if args.description:
-        container['env'][DESCRIPTION_VARIABLE] = args.description
-    if args.otlp:
-        container['env'] |= otlp_variables(args.name)
-    if args.database == 'sqlite':
-        container['env'][DATABASE_PATH_VARIABLE] = SQLITE_PATH
-    if args.secret_keys:
-        # Optional: the app starts before the Secret has its first value (make app-secret).
-        container['envFrom'] = [{'secretRef': {'name': app_secret(args.name), 'optional': True}}]
-    if args.kind == 'web':
-        def probe():
-            return {'enabled': True, 'custom': True,
-                    'spec': {'httpGet': {'path': args.health_path, 'port': args.port}}}
-        # Liveness waits until the app first answers, for up to STARTUP_SECONDS (a JVM can take a while
-        # when the node is busy); without this, three failed liveness checks would restart it mid-start.
-        startup = probe()
-        startup['spec'] |= {'periodSeconds': STARTUP_PERIOD, 'failureThreshold': STARTUP_SECONDS // STARTUP_PERIOD}
-        container['probes'] = {'readiness': probe(), 'liveness': probe(), 'startup': startup}
-
-    controller: dict = {'containers': {'main': container}}
-    if args.kind == 'job':
-        # One pod per run, never two at once; a failed run is not retried (the next scheduled one runs).
-        controller['type'] = 'cronjob'
-        controller['cronjob'] = {'schedule': args.schedule, 'timeZone': JOB_TIME_ZONE, 'concurrencyPolicy': 'Forbid',
-                                 'startingDeadlineSeconds': JOB_START_DEADLINE_SECONDS,
-                                 'activeDeadlineSeconds': JOB_DEADLINE_SECONDS, 'backoffLimit': 0,
-                                 'successfulJobsHistory': 1, 'failedJobsHistory': 1}
-    if args.persistence:
-        # One writer: the volume is ReadWriteOnce on one node, and a database file must not have two
-        # processes writing it. Stop the old pod before starting the new one; never run two (rule single-writer).
-        controller['replicas'] = 1
-        controller['strategy'] = 'Recreate'
-    if args.secret_keys:
-        controller['annotations'] = {RELOAD: app_secret(args.name)}
-
-    values: dict = {
-        'defaultPodOptions': {
-            'automountServiceAccountToken': False,
-            'securityContext': {
-                'runAsNonRoot': True,
-                'runAsUser': args.uid,
-                'runAsGroup': args.uid,
-                'fsGroup': args.uid,
-                'seccompProfile': {'type': 'RuntimeDefault'},
-            },
-        },
-        'controllers': {'main': controller},
-        'persistence': {'tmp': {'type': 'emptyDir', 'globalMounts': [{'path': '/tmp'}]}},
-    }
-    if args.persistence:
-        values['persistence']['data'] = {
-            'type': 'persistentVolumeClaim',
-            'storageClass': RETAINED_STORAGE_CLASS,
-            'accessMode': 'ReadWriteOnce',
-            'size': args.persistence,
-            'retain': True,
-            'globalMounts': [{'path': args.mount_path}],
-        }
-    values['persistence'][TOKENS_VOLUME] = tokens_volume([])  # for the notify service; declared calls add theirs
-    if args.kind == 'web':
-        values['service'] = {'main': {'controller': 'main', 'ports': {'http': {'port': args.port}}}}
-    if args.exposure in ('authenticated-web', 'public'):
-        values['ingress'] = {'main': ingress_values(args.name, args.host, args.exposure, args.issuer)}
-    return values
+    web = args.kind == 'web'
+    resources = Resources(args.cpu, args.memory, args.memory_limit)
+    release = Release(
+        Image(image['repository'], image.get('tag', ''), image.get('digest', '')), args.kind, args.uid,
+        command=tuple(shlex.split(args.command)) if args.command else (), port=args.port if web else None,
+        health_path=args.health_path if web else '', telemetry=bool(args.otlp),
+        resources=Resources() if resources == workload.DEFAULT_RESOURCES else resources, database=args.database or '',
+        secrets=tuple(args.secret_keys or ()), description=args.description or '',
+        api_path=(args.api_path or '') if web else '', publishes=tuple(args.publish or ()))
+    settings = Settings(
+        exposure=args.exposure, host=args.host if args.host and args.host != default_host(args.name, args.env) else '',
+        issuer='' if args.issuer == DEFAULT_ISSUER else args.issuer, calls=tuple(args.calls or ()),
+        subscriptions=tuple(args.subscribe or ()), schedule='' if args.schedule == JOB_SCHEDULE else args.schedule,
+        allocations=Allocations(database=Storage(args.database_size, RETAINED_STORAGE_CLASS) if args.database else None))
+    return Entry(App(args.team, args.alerts or ''), release, settings)
 
 
-def depends_on(exposure: str) -> list[str]:
-    """The units an instance waits for: signed-in routes need the sign-in middleware."""
-    return ['infra-base'] + (['platform-oauth2-proxy'] if exposure == 'authenticated-web' else [])
+def discard(instance: Path) -> None:
+    """Remove an instance being created, and its app's folder if nothing else is in it."""
+    shutil.rmtree(instance, ignore_errors=True)
+    if instance.parent.is_dir() and not any(instance.parent.iterdir()):
+        instance.parent.rmdir()
+
+
+def generate(args, root: Path, runner: Runner | None = None, *, opener: declaration.Opener | None = None) -> list[Path]:
+    """Create the instance: its records rendered with every other instance's (apps/model), after its own
+    credentials are made (a NATS key where there is NATS; a first production's Secret placeholders) and,
+    for an app that describes itself, what it offers read from its repository at the image's commit.
+    Nothing is left behind when a step fails."""
+    from swhurl.apps import release as intake
+    from swhurl.apps.model import sync as model_sync
+
+    resolve(args)
+    validate(args, root)
+    created = Instance(args.name, args.env)  # validate() has refused any other name
+    instance = instance_folder(root, args.name, args.env)
+    for path in (instance, instance_unit_file(root, args.name, args.env)):
+        if path.exists():
+            raise GenerationError(f'{path} already exists; refusing to overwrite')
+    entry, planned = records(args), {}
+    try:
+        if getattr(args, 'offers', False) and args.from_repo:
+            # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the documents
+            # beside the instance from the start, and publish what the events document says.
+            token = os.environ.get('GITHUB_TOKEN', '')
+            image = entry.release.image
+            repository, commit = intake.image_source(image, args.name, args.env)
+            found = intake.image_declaration(image, args.name, args.env, token=token, **({'opener': opener} if opener else {}))
+            files, described, served = intake.read_offers(repository, commit, found, token=token, **({'opener': opener} if opener else {}))
+            entry = replace(entry, release=intake.offered(entry.release, commit, files, described, served))
+            planned = intake.offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
+    except EditError as error:
+        raise GenerationError(f'what the app offers could not be read: {error}') from None
+    instance.mkdir(parents=True)
+    try:
+        encrypted = set()
+        if args.secret_keys and args.env == 'prod':
+            # A first production never runs without a value: make check-secrets refuses the placeholders.
+            write_encrypted_secret(instance, app_secret(args.name), created.namespace, args.secret_keys, runner=runner)
+            encrypted.add(APP_SECRET)
+        allocations = entry.settings.allocations
+        if events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions:
+            # Every instance signs in to NATS as itself: its feature flag overrides, and events if it declares them.
+            allocations = replace(allocations, events_key=intake.new_nats_key(instance, args.name, args.env, runner=runner))
+            encrypted.add(EVENTS_SECRET)
+        entry = replace(entry, settings=replace(entry.settings, allocations=allocations), encrypted=frozenset(encrypted))
+        prepared = model_sync.prepare(root, created, lambda _: entry, adding=True)
+        written = model_sync.apply(root, prepared, register=args.register)
+        intake.write_files(planned)
+    except (EditError, CommandError) as error:
+        discard(instance)
+        raise GenerationError(str(error)) from None
+    except Exception:
+        discard(instance)
+        raise
+    return sorted({*written, *(instance / name for name in ('events.sops.yaml', SECRET_FILE) if (instance / name).is_file()),
+                   *planned})
 
 
 def dump(docs) -> str:
     return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
-
-
-def isolation_files(app: str, namespace: str, exposure: str, port: int | None,
-                    callers: list[str] | tuple[str, ...] = ()) -> dict[str, str]:
-    """The instance's quota and NetworkPolicy by file name: Traefik is admitted only when there is a
-    route, and the apps allowed to call it (``callers``) from their own namespaces."""
-    routed = port if exposure in ('authenticated-web', 'public') else None
-    return {QUOTA_FILE: dump([resource_quota(app, namespace)]),
-            NETWORK_POLICY_FILE: dump([network_policy(app, namespace, routed, port, callers)])}
-
-
-def generate(args, root: Path, runner: Runner | None = None) -> list[Path]:
-    resolve(args)
-    validate(args, root)
-    args.signing_keys = signing_keys(root)
-    created = Instance(args.name, args.env)  # validate() has refused any other name
-    namespace, unit = created.namespace, created.unit
-    instance = instance_folder(root, args.name, args.env)
-    unit_file = instance_unit_file(root, args.name, args.env)
-    for path in (instance, unit_file):
-        if path.exists():
-            raise GenerationError(f'{path} already exists; refusing to overwrite')
-
-    labels = {
-        MANAGED: 'true',
-        APP: args.name,
-        ENVIRONMENT: args.env,
-        EXPOSURE: args.exposure,
-        TEAM: args.team,
-    }
-    ns = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': namespace, 'labels': labels}}
-    if args.persistence:
-        # Keeps the namespace (and so the claim) when the app unit is removed; see destroy-data.
-        ns['metadata']['annotations'] = {'kustomize.toolkit.fluxcd.io/prune': 'disabled'}
-    if getattr(args, 'alerts', ''):
-        ns['metadata'].setdefault('annotations', {})[app_alerts.ANNOTATION] = args.alerts
-    release = {
-        'apiVersion': 'helm.toolkit.fluxcd.io/v2',
-        'kind': 'HelmRelease',
-        'metadata': {'name': args.name, 'namespace': namespace,
-                     **({'annotations': {SECRET_NAMES: ','.join(args.secret_keys)}} if args.secret_keys else {})},
-        'spec': {
-            'interval': '30m',
-            'timeout': FAIL_AFTER,
-            'chart': {'spec': {'chart': CHART, 'version': CHART_VERSION,
-                               'sourceRef': {'kind': 'HelmRepository', 'name': CHART_REPOSITORY, 'namespace': 'flux-system'},
-                               'interval': '30m'}},
-            'install': {'remediation': {'retries': 1}},
-            'upgrade': {'remediation': {'retries': 1}},
-            'values': build_values(args),
-        },
-    }
-    resources = ['namespace.yaml', 'helmrelease.yaml', QUOTA_FILE, NETWORK_POLICY_FILE]
-    # Staging starts with the names and no values (make app-secret sets them). A first production gets
-    # placeholders, so make check-secrets refuses it until every value is set: it never runs without one.
-    placeholders = bool(args.secret_keys) and args.env == 'prod'
-    if placeholders:
-        resources.insert(1, SECRET_FILE)
-    release_text = dump([release])
-    if auto_deploys(args):
-        resources.append(IMAGE_AUTOMATION_FILE)
-    files = {
-        instance / 'namespace.yaml': dump([ns]),
-        instance / 'helmrelease.yaml': release_text,
-        instance / 'kustomization.yaml': dump([{'apiVersion': 'kustomize.config.k8s.io/v1beta1',
-                                               'kind': 'Kustomization', 'resources': resources}]),
-    }
-    for name, text in isolation_files(args.name, namespace, args.exposure,
-                                      args.port if args.kind == 'web' else None).items():
-        files[instance / name] = text
-
-    if auto_deploys(args):
-        files[instance / IMAGE_AUTOMATION_FILE] = dump(image_automation(args))
-
-    depends = depends_on(args.exposure)
-    if auto_deploys(args):
-        depends.append('platform-image-automation')
-    spec = {
-        'dependsOn': [{'name': d} for d in depends],
-        'interval': '10m',
-        'sourceRef': {'kind': 'GitRepository', 'name': 'swhurl-platform'},
-        'path': './' + instance.relative_to(root).as_posix(),
-    }
-    if placeholders:
-        spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
-    # App unit: default MirrorPrune, so removing it from Git uninstalls the instance.
-    spec |= {'prune': True, 'wait': True, 'timeout': FAIL_AFTER}
-    files[unit_file] = dump([{'apiVersion': 'kustomize.toolkit.fluxcd.io/v1', 'kind': 'Kustomization',
-                              'metadata': {'name': unit, 'namespace': 'flux-system'}, 'spec': spec}])
-
-    written = []
-    try:
-        for path, text in files.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
-            written.append(path)
-        if placeholders:
-            written.append(write_encrypted_secret(instance, app_secret(args.name), namespace, args.secret_keys, runner=runner))
-    except Exception:
-        for path in written:
-            path.unlink(missing_ok=True)
-        raise
-
-    if args.register:
-        register(root, unit_file.name)
-    if args.secret_keys:
-        watch_namespace(root, namespace)
-    return written
 
 
 def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str], *, runner: Runner | None = None) -> Path:
@@ -475,8 +326,6 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
                    help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_VARIABLE}; '
                         'one replica, stop-first updates')
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
-    p.add_argument('--persistence', metavar='SIZE', help='add a retained volume, e.g. 1Gi (one replica, stop-first updates)')
-    p.add_argument('--mount-path', default='/data')
     p.add_argument('--publish', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated events this app publishes (make app-events later)')
     p.add_argument('--subscribe', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
@@ -549,32 +398,7 @@ def main(argv=None, opener: declaration.Opener = declaration._open) -> int:
         problem = platform_origin_problem(args) if args.root.resolve() == ROOT else None
         if problem:
             raise GenerationError(problem)
-        written = generate(args, args.root.resolve())
-        if events.has_nats(args.root.resolve()) or args.calls or args.publish or args.subscribe:
-            from swhurl.apps import edit  # edit imports this module
-            try:
-                if events.has_nats(args.root.resolve()):
-                    # Every instance signs in to NATS as itself: its feature flag overrides, and events if it declares them.
-                    edit.nats_key(args.root.resolve(), args.name, args.env)
-                    edit.sync_env(args.root.resolve(), args.env)
-                if args.calls:
-                    edit.set_calls(args.root.resolve(), args.name, args.env, add=args.calls)
-                if args.publish or args.subscribe:
-                    edit.set_events(args.root.resolve(), args.name, args.env, publish=args.publish or None,
-                                subscribe=args.subscribe or None)
-            except edit.EditError as error:
-                # Nothing half-made: the instance without its calls or events would start and fail.
-                edit.remove(args.root.resolve(), args.name, args.env)
-                raise GenerationError(f'NATS key, --calls, --publish or --subscribe: {error}') from None
-        if getattr(args, 'offers', False) and args.from_repo:
-            # The app describes its API or events (provides.apiFile, provides.eventsFile): keep the
-            # documents beside the instance from the start, and publish what the events document says.
-            from swhurl.apps import edit
-            try:
-                edit.set_offers(args.root.resolve(), args.name, args.env, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
-            except edit.EditError as error:
-                edit.remove(args.root.resolve(), args.name, args.env)
-                raise GenerationError(f'what the app offers could not be read: {error}') from None
+        written = generate(args, args.root.resolve(), opener=opener)
     except GenerationError as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 2

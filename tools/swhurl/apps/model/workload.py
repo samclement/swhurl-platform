@@ -5,6 +5,7 @@ from __future__ import annotations
 from swhurl.apps.calling import identity_variables
 from swhurl.apps.contract import (
     APP,
+    APP_OWNER,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     CHART,
@@ -127,9 +128,15 @@ def start(instance: Instance, entry: Entry, platform: Platform) -> Draft:
     return Draft(instance, namespace, helm_release, unit, ['namespace.yaml', 'helmrelease.yaml', QUOTA_FILE, NETWORK_POLICY_FILE])
 
 
-def automation(draft: Draft, entry: Entry, platform: Platform) -> None:
-    """Staging follows the newest image the app publishes (the Deploy workflow writes it)."""
-    if platform.auto_deploy and draft.instance.env == AUTO_DEPLOY_ENV:
+def platform_image(app: str) -> str:
+    """The image a platform app runs: the one its own repository publishes (rule platform-image)."""
+    return f'ghcr.io/{APP_OWNER}/{app}'
+
+
+def automation(draft: Draft, entry: Entry) -> None:
+    """A platform app's staging follows the newest image its repository publishes (the Deploy workflow
+    writes it); an instance running any other image (the test fixtures) does not."""
+    if draft.instance.env == AUTO_DEPLOY_ENV and entry.release.image.repository == platform_image(draft.instance.app):
         draft.add_file(IMAGE_AUTOMATION_FILE, image_automation(draft.instance.app, entry.release.image.repository))
         draft.depend(IMAGE_AUTOMATION_UNIT)
 

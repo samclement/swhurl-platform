@@ -15,13 +15,13 @@ from swhurl.apps.model import legacy, render
 from swhurl.apps.model.draft import RenderError
 
 FIXTURES = Path('tests/fixtures/apps')
-"""The generated fixtures (tests/fixtures/apps.sh) are a root of their own; their staging does not follow images."""
+"""The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
 RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
 REGISTRY_FILE = UNITS / 'kustomization.yaml'
 SHOWN = 120
 
 
-def _normal(document: object) -> object:
+def normal(document: object) -> object:
     """Kustomize lists resources in no meaningful order: compare them as a set."""
     if isinstance(document, dict) and document.get('apiVersion', '').startswith('kustomize.config.k8s.io'):
         return {**document, 'resources': sorted(document.get('resources') or [])}
@@ -53,7 +53,7 @@ def differences(committed: object, rendered: object, where: str = '') -> list[st
 
 
 def _documents(path: Path) -> list:
-    return [_normal(doc) for doc in yamlio.load_all(path.read_text()) if doc is not None]
+    return [normal(doc) for doc in yamlio.load_all(path.read_text()) if doc is not None]
 
 
 def _committed(root: Path, folder: Path, unit: Path) -> dict[Path, Path]:
@@ -72,9 +72,9 @@ def _reloader(root: Path) -> set[str] | None:
     return {name.strip() for name in (match[1] if match else '').split(',') if name.strip()}
 
 
-def problems(root: Path, base: Path = Path('apps'), *, auto_deploy: bool = True) -> list[str]:
+def problems(root: Path, base: Path = Path('apps')) -> list[str]:
     world, found = legacy.world(root, base)
-    platform = legacy.platform(root, auto_deploy=auto_deploy, base=base)
+    platform = legacy.platform(root, base)
     for each in world:
         try:
             rendered = render.instance(each, world, platform)
@@ -89,7 +89,7 @@ def problems(root: Path, base: Path = Path('apps'), *, auto_deploy: bool = True)
                 found.append(f'{path}: committed, not rendered')
             else:
                 found += [f'{path}: {line}' for line in
-                          differences(_documents(committed[path]), [_normal(doc) for doc in rendered[path]])]
+                          differences(_documents(committed[path]), [normal(doc) for doc in rendered[path]])]
     try:
         shared = render.shared(world, platform)
     except RenderError as error:
@@ -118,5 +118,5 @@ def check(root: Path) -> list[str]:
     """The platform's instances, and the generated fixtures where this root has them."""
     found = problems(root)
     if (root / FIXTURES / 'apps').is_dir():
-        found += [f'{FIXTURES}: {line}' for line in problems(root / FIXTURES, auto_deploy=False)]
+        found += [f'{FIXTURES}: {line}' for line in problems(root / FIXTURES)]
     return found

@@ -129,7 +129,7 @@ class ShadowTests(unittest.TestCase):
         reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
 
     def problems(self):
-        return shadow.problems(self.root, auto_deploy=False)
+        return shadow.problems(self.root)
 
     def test_the_sample_and_the_repository_render_as_committed(self):
         self.assertEqual(self.problems(), [])

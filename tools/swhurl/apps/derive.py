@@ -1,41 +1,21 @@
-"""What follows from an app instance's declarations, written back into Git.
+"""Edit accessors for an instance's files, and make app-sync.
 
-An instance declares little by hand: its exposure, the apps it calls (SWHURL_SERVICE_<APP>_URL)
-and the events it publishes and receives. Everything else is derived here, from the instance
-itself or from the other instances of its environment, and rewritten whenever a command changes a
-declaration (edit.py) or on make app-sync:
-
-    identity            SWHURL_APP, SWHURL_ENV; for a web app the token issuer and signing keys
-    calls               the caller's token files and the callee's address; the callee's allowed
-                        callers and NetworkPolicy
-    events              the NATS address and Secret reference, the stream and consumers, the unit's
-                        dependency, and the NATS user list (platform/nats/users.yaml)
-    egress              the instance's own port on the egress proxy (kept once given) and what points
-                        its HTTP clients there; the proxy's ports and configuration (platform/egress/proxy.yaml)
-    isolation           the quota and NetworkPolicy files and their kustomization entries
+What follows from an instance's declarations (identity, calls, events, egress, isolation) is rendered
+by the app model (apps/model, docs/plan.md section 24): ``sync_env`` reads every instance's records,
+renders them and writes each file whose content changed, before any is written if a render fails.
 
 The strict accessors at the top read a HelmRelease for editing in place (comments kept) and refuse
-shapes they do not understand; reading only is helmrelease.py.
+shapes they do not understand; reading only is helmrelease.py. ``isolation_edits`` stays here until
+the team and exposure commands move onto the model.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from swhurl.apps import channels, egress, events, helmrelease
+from swhurl.apps import channels, events, helmrelease
 from swhurl.apps.calling import (
-    CALLERS_VARIABLE,
-    TOKENS_VOLUME,
     allowed_callers,
-    callee_address,
-    callee_variable,
     declared_calls,
-    identity_variables,
-    signing_keys,
-    tokens_volume,
-)
-from swhurl.apps.contract import (
-    EXPOSURE,
-    RELOAD,
 )
 from swhurl.apps.instance import (
     ENVIRONMENTS,
@@ -43,13 +23,10 @@ from swhurl.apps.instance import (
     NAME_RE,
     Instance,
     instance_folder,
-    instance_unit_file,
     instances,
 )
 from swhurl.apps.new import (
-    dump,
     isolation_files,
-    watch_namespace,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -96,87 +73,6 @@ def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: 
     return edits
 
 
-def event_edits(root: Path, instance: Path, app: str, env: str, release: dict, publishers: dict[str, list[str]],
-                ) -> tuple[list[tuple[Path, str]], tuple[str, ...], tuple[str, ...], dict | None]:
-    """What follows from an instance's NATS key and the events it declares (SWHURL_EVENTS_PUBLISH /
-    _SUBSCRIBE): ``(file edits, files to list, files to delete and unlist, its NATS user or None)``.
-
-    An instance with a key (every instance where the platform has NATS) gets, in the release (edited
-    in place): the NATS address, the reference to the Secret holding the app's seed, and Reloader
-    restarting the app when that Secret changes; beside it, the unit waiting for platform-nats and
-    decrypting. One that declares events also gets its stream and consumers (events.yaml).
-    ``publishers`` maps each app of this environment to the events it publishes.
-    """
-    main, workload = container(release), controller(release)
-    variables = mapping(main, 'env', create=True)
-    publishes, subscribes = events.published(variables), events.subscribed(variables)
-    for publisher, event in subscribes:
-        if event not in publishers.get(publisher, []):
-            raise EditError(f'{app}/{env} subscribes to {publisher}.{event}, which {publisher}/{env} does not publish')
-    secret = events.secret_name(app)
-    reference = {'secretRef': {'name': secret}}
-    refs = main.get('envFrom')
-    annotations = workload.get('annotations') or {}
-    reloads = [name for name in str(annotations.get(RELOAD, '')).split(',') if name]
-    keyed = bool(variables.get(events.NKEY_VARIABLE)) and (instance / events.SECRET_FILE).is_file()
-    unit_path = instance_unit_file(root, app, env)
-    if not keyed and not unit_path.is_file():
-        unit_path = None  # an instance without its unit (a test tree) has nothing to undo there
-    unit = YamlFile(unit_path) if unit_path else None
-    unit_spec = mapping(unit.data, 'spec') if unit else {}
-    dependencies = unit_spec.get('dependsOn') or []
-    edits: list[tuple[Path, str]] = []
-    if (publishes or subscribes) and not keyed:
-        raise EditError(f'{app}/{env} declares events but has no NATS key: set them with make app-events, which creates it')
-    if keyed:
-        if variables.get(events.URL_VARIABLE) != events.URL:
-            variables[events.URL_VARIABLE] = events.URL
-        if refs is None:
-            main['envFrom'] = [reference]
-        elif reference not in refs:
-            refs.append(reference)
-        if secret not in reloads:
-            mapping(workload, 'annotations', create=True)[RELOAD] = ','.join([*reloads, secret])
-        if not any(d.get('name') == events.UNIT for d in dependencies):
-            unit_spec.setdefault('dependsOn', dependencies).append({'name': events.UNIT})
-        if 'decryption' not in unit_spec:
-            unit_spec['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
-        user = events.user(str(variables[events.NKEY_VARIABLE]), env, app, publishes, subscribes)
-        if publishes or subscribes:
-            edits.append((instance / events.EVENTS_FILE, dump(events.manifests(app, env, publishes, subscribes))))
-            listed, unlisted = (events.SECRET_FILE, events.EVENTS_FILE), ()
-        else:
-            listed, unlisted = (events.SECRET_FILE,), (events.EVENTS_FILE,)
-    else:
-        for key in (events.URL_VARIABLE, events.NKEY_VARIABLE):
-            variables.pop(key, None)
-        if refs is not None and reference in refs:
-            refs.remove(reference)
-            if not refs:
-                del main['envFrom']
-        if secret in reloads:
-            reloads.remove(secret)
-            if reloads:
-                annotations[RELOAD] = ','.join(reloads)
-            else:
-                del annotations[RELOAD]
-                if not annotations:
-                    del workload['annotations']
-        for index in reversed(range(len(dependencies))):
-            if dependencies[index].get('name') == events.UNIT:
-                del dependencies[index]
-        if 'decryption' in unit_spec and not (instance / 'secret.sops.yaml').is_file():
-            del unit_spec['decryption']
-        user, listed, unlisted = None, (), (events.SECRET_FILE, events.EVENTS_FILE)
-    if unit:
-        edits.append((unit.path, unit.render()))
-    return edits, listed, unlisted, user
-
-def users_edit(root: Path) -> list[tuple[Path, str]]:
-    """The NATS user list as a file edit, from the instances as they are on disk."""
-    found = events.users_file(root)
-    return [found] if found else []
-
 def service_port(app_values: dict) -> int | None:
     """The app's HTTP port, or None for a worker."""
     if 'service' not in app_values:
@@ -189,81 +85,15 @@ def service_port(app_values: dict) -> int | None:
 def instances_in(root: Path, env: str) -> list[str]:
     return sorted(each.app for each in instances(root / INSTANCE_ROOTS[0]) if each.env == env)
 
-def sync_env(root: Path, env: str) -> list[Path]:
-    """Rewrite what the platform derives in every instance of one environment; return the files changed.
+def sync_env(root: Path, env: str | None = None) -> list[Path]:
+    """Rewrite what the platform derives, for every instance (``env`` is no longer needed: rendering
+    reads every environment); return the files changed. The app model renders it (apps/model/sync.py)."""
+    from swhurl.apps.model import sync as model_sync
 
-    Derived from each instance itself: who it is (SWHURL_APP, SWHURL_ENV), and for a web app the token
-    issuer and signing keys. Derived from what callers declare (their SWHURL_SERVICE_<APP>_URL
-    variables): the caller's token files and the address's port; the callee's allowed callers and
-    its NetworkPolicy. A declared call to an app with no instance in this environment is an error.
-    """
-    releases = {app: YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml') for app in instances_in(root, env)}
-    ports = {app: service_port(values(doc.data)) for app, doc in releases.items()}
-    calls = {app: declared_calls(helmrelease.variables(doc.data)) for app, doc in releases.items()}
-    for app, callees in calls.items():
-        for callee in callees:
-            if callee not in releases:
-                raise EditError(f'{app}/{env} calls {callee}, which has no {env} instance')
-            if ports[callee] is None:
-                raise EditError(f'{app}/{env} calls {callee}, a worker: it has no address to call')
-    keys = signing_keys(root)
-    publishers = {app: events.published(helmrelease.variables(doc.data)) for app, doc in releases.items()}
-    proxied = egress.proxy_file(root) is not None  # not in the scratch roots of tests and template checks
-    proxy_ports = egress.ports(root) if proxied else {}
-    used = set(proxy_ports.values())
-    edits: list[tuple[Path, str]] = []
-    deletions: list[Path] = []
-    for app, doc in releases.items():
-        instance = doc.path.parent
-        app_values, main = values(doc.data), container(doc.data)
-        variables = mapping(main, 'env', create=True)
-        for index, (key, value) in enumerate(identity_variables(app, env, ports[app] is not None, keys).items()):
-            if key not in variables:
-                variables.insert(index, key, value)
-            elif variables[key] != value:
-                variables[key] = value
-        if proxied:
-            port = proxy_ports.get(Instance(app, env))
-            if port is None:
-                port = egress.free_port(used)
-                used.add(port)
-            for key, value in egress.variables(port).items():
-                if variables.get(key) != value:
-                    variables[key] = value
-        for callee in calls[app]:
-            if variables[callee_variable(callee)] != callee_address(callee, ports[callee]):
-                variables[callee_variable(callee)] = callee_address(callee, ports[callee])
-        callers = sorted(caller for caller, callees in calls.items() if app in callees)
-        if callers and variables.get(CALLERS_VARIABLE) != ','.join(callers):
-            variables[CALLERS_VARIABLE] = ','.join(callers)
-        elif not callers:
-            variables.pop(CALLERS_VARIABLE, None)
-        persistence = mapping(app_values, 'persistence', create=True)
-        if persistence.get(TOKENS_VOLUME) != tokens_volume(calls[app]):
-            persistence[TOKENS_VOLUME] = tokens_volume(calls[app])
-        exposure = mapping(mapping(YamlFile(instance / 'namespace.yaml').data, 'metadata'), 'labels').get(EXPOSURE)
-        event_files, listed, unlisted, user = event_edits(root, instance, app, env, doc.data, publishers)
-        if user:
-            watch_namespace(root, Instance(app, env).namespace)
-        edits.append((doc.path, doc.render()))
-        edits += event_files
-        edits += isolation_edits(instance, app, env, exposure, doc.data, listed=listed, unlisted=unlisted)
-        deletions += [instance / name for name in unlisted if (instance / name).exists()]
-    changed = [(path, text) for path, text in edits if not path.exists() or path.read_text() != text]
-    for path, text in changed:
-        path.write_text(text)
-    for path in deletions:
-        path.unlink()
-    users = [(path, text) for path, text in users_edit(root) if not path.exists() or path.read_text() != text]
-    for path, text in users:  # after the instances are written: it reads every environment from disk
-        path.write_text(text)
-    proxy = [found for found in [egress.proxy_file(root)] if found and (not found[0].exists() or found[0].read_text() != found[1])]
-    for path, text in proxy:  # as the user list
-        path.write_text(text)
-    return [path for path, _ in changed] + deletions + [path for path, _ in users] + [path for path, _ in proxy]
+    return model_sync.sync(root)
 
 def sync(root: Path) -> Path | None:
-    changed = [path for env in ENVIRONMENTS for path in sync_env(root, env)]
+    changed = sync_env(root)
     routes = channels.routes_file(root)
     if routes and (not routes[0].is_file() or routes[0].read_text() != routes[1]):
         routes[0].write_text(routes[1])

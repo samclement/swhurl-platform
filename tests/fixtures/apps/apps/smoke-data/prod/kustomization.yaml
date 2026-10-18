@@ -6,3 +6,4 @@ resources:
 - resourcequota.yaml
 - networkpolicy.yaml
 - secret.sops.yaml
+- backup.yaml

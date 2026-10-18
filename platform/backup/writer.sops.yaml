@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: backup-writer
+    namespace: flux-system
+type: Opaque
+stringData:
+    BACKUP_AWS_ACCESS_KEY_ID: ENC[AES256_GCM,data:Gd3eutjOItxhlfCpp6cTeNQbAeU=,iv:wQkImilFlaWLencrslGlbXuPedSNBBV41YqDJUvHQO0=,tag:DqC4BER41bgHc95PLPnG5w==,type:str]
+    BACKUP_AWS_SECRET_ACCESS_KEY: ENC[AES256_GCM,data:2ErryqYjQfcN/JAJ7Z5cS94DH2Xjkdz+sAfMxEpzax2DT+Cn/Y+RGA==,iv:JyqftV6IrgpHmYzwQjm+SkKQPh9Qz4fy/SFz2AvklT4=,tag:3gcJ3RDIztGQ0RSTAYOpyw==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZTmlZNkxndU00RWcraXI0
+            dTYrUllLWnNLWlUrM3dhc1NTMDRZS0x5VXlBCk1iZGRkSzRiYjkrcjF5WTMwcFNI
+            Q2xmeE9iNEMyZzhISm5hRnhOTC8xRDQKLS0tIEo4S2RVMExvbmJLWndLUUZRR0NK
+            bzJsdFpQV1Nnc2I3S2IrY0gwSXhkV2cKeGnQNeIhckqphDoxjaV8gzMjAyE1lyMj
+            XeMCl1iH8WLvyiXrZ/0B95YGWZxKWMPwYmUXJyH8uK1FzBc+EdGRsw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-18T20:49:25Z"
+    mac: ENC[AES256_GCM,data:j4CZhmH4nNHPxG2ovpwDVNs4prViYdAb1td3ykPByrTAiex+L9EDkJXTXwSdE3ILXcAP/X7oN6SmNhNJdVjmkiS2gYYkojwLfsVd8ZrX0GIos55nqzUcdx0NdwyflfJi22ZQC6PnlcvssU3GIk0+0PCRowXr7LCkcyIiEp4gZuk=,iv:6fqebGQMtUi1ScNnsf6UrhCwPqF0t91EaiuA3105hjc=,tag:XvHlsMx9VQeb5bqbAIv4eg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1
+---
+apiVersion: v1
+kind: Secret
+metadata:
+    name: backup-writer
+    namespace: observability
+type: Opaque
+stringData:
+    AWS_ACCESS_KEY_ID: ENC[AES256_GCM,data:+kxGIBexhY5tjv/e540fHfBZ3cA=,iv:DTn1LpYIplL1s+2HXWMVGZ8y4/yyQExmvUn7R9xYIwQ=,tag:EgHE6VoBYCy0EmHkYF8Jkg==,type:str]
+    AWS_SECRET_ACCESS_KEY: ENC[AES256_GCM,data:s7SOOyHgTcbcg81avw/g8JmL5+W31XDlzA/SXBuN0rjJKibuQRQfZw==,iv:N5tH9DVQ+bJNav/tdaliwVp/SAr/dJDQeN2SY64RoHQ=,tag:aD5DG6q9GmIHEDKt/LK4gQ==,type:str]
+sops:
+    age:
+        - recipient: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZTmlZNkxndU00RWcraXI0
+            dTYrUllLWnNLWlUrM3dhc1NTMDRZS0x5VXlBCk1iZGRkSzRiYjkrcjF5WTMwcFNI
+            Q2xmeE9iNEMyZzhISm5hRnhOTC8xRDQKLS0tIEo4S2RVMExvbmJLWndLUUZRR0NK
+            bzJsdFpQV1Nnc2I3S2IrY0gwSXhkV2cKeGnQNeIhckqphDoxjaV8gzMjAyE1lyMj
+            XeMCl1iH8WLvyiXrZ/0B95YGWZxKWMPwYmUXJyH8uK1FzBc+EdGRsw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-18T20:49:25Z"
+    mac: ENC[AES256_GCM,data:j4CZhmH4nNHPxG2ovpwDVNs4prViYdAb1td3ykPByrTAiex+L9EDkJXTXwSdE3ILXcAP/X7oN6SmNhNJdVjmkiS2gYYkojwLfsVd8ZrX0GIos55nqzUcdx0NdwyflfJi22ZQC6PnlcvssU3GIk0+0PCRowXr7LCkcyIiEp4gZuk=,iv:6fqebGQMtUi1ScNnsf6UrhCwPqF0t91EaiuA3105hjc=,tag:XvHlsMx9VQeb5bqbAIv4eg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

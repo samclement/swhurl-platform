@@ -7,3 +7,4 @@ resources:
 - networkpolicy.yaml
 - events.sops.yaml
 - events.yaml
+- backup.yaml

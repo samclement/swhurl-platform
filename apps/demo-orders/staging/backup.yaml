@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-orders-backup
+  namespace: demo-orders-staging
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: ${BACKUP_AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${BACKUP_AWS_SECRET_ACCESS_KEY}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: demo-orders-backup
+  namespace: demo-orders-staging
+  labels:
+    platform.swhurl.com/backup: 'true'
+spec:
+  schedule: 13 4 * * *
+  timeZone: Etc/UTC
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            platform.swhurl.com/backup: 'true'
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+          - name: backup
+            image: ghcr.io/samclement/swhurl-backup:src-069ed3000e256548@sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5
+            args:
+            - backup-job-sqlite
+            env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: HTTP_PROXY
+              value: http://egress.egress.svc.cluster.local:30102
+            - name: HTTPS_PROXY
+              value: http://egress.egress.svc.cluster.local:30102
+            - name: NO_PROXY
+              value: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
+            - name: AGE_RECIPIENT
+              value: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+            - name: BACKUP_S3_URI
+              value: s3://swhurl-platform-backups-110927251694/app-sqlite/demo-orders-staging/
+            - name: BACKUP_SOURCE
+              value: demo-orders-staging/demo-orders
+            - name: DATABASE_PATH
+              value: /data/app.db
+            envFrom:
+            - secretRef:
+                name: demo-orders-backup
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: scratch
+              mountPath: /scratch
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: demo-orders
+          - name: scratch
+            emptyDir:
+              sizeLimit: 1Gi
+          - name: tmp
+            emptyDir: {}

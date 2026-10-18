@@ -12,7 +12,19 @@ from pathlib import Path
 import yaml
 
 from swhurl.apps.instance import UNITS, Instance
-from swhurl.apps.model import alerts, calls, egress, events, exposure, offers, secrets, sqlite, telemetry, workload
+from swhurl.apps.model import (
+    alerts,
+    backup,
+    calls,
+    egress,
+    events,
+    exposure,
+    offers,
+    secrets,
+    sqlite,
+    telemetry,
+    workload,
+)
 from swhurl.apps.model.draft import APP_SECRET, Platform, World
 
 ANNOTATION = 'platform.swhurl.com/render'
@@ -44,6 +56,7 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
     calls.admit(draft)
     egress.apply(draft, entry, platform)
     alerts.apply(draft, entry)
+    backup.apply(draft, entry, platform)
     folder = platform.base / each.app / each.env
     found = {folder / name: documents for name, documents in workload.finish(draft, entry).items()}
     found[UNITS / f'{each.unit}.yaml'] = [draft.unit]

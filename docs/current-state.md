@@ -1819,7 +1819,7 @@ The API is private (a Service, no Ingress) with `DATABASE_PATH`; the worker has 
 
 ## Code simplification design contracts (18 October 2026)
 
-[Plan section 24](plan.md#24-code-simplification--design-contracts-18-october-2026) records the proposed operation, input, rendering, promotion, console and migration contracts. The operator explicitly keeps seed images and automatic merge for eligible new staging apps; promotions and other configuration PRs become manual under the target design.
+[Plan section 24](plan.md#24-code-simplification--design-contracts-18-october-2026) records the proposed operation, input, rendering, promotion, console and migration contracts. Revised the same day after review: primitives and use cases first, capabilities as the unit of co-location, a single cutover after a shadow period instead of per-group migration, and backups moved to section 25. The operator explicitly keeps seed images and automatic merge for eligible new staging apps; promotions and other configuration PRs become manual under the target design.
 
 This change is documentation only. The input formats, merge workflow, Activity implementation and deployed app manifests have not been refactored. `make check` passed, including 795 existing tests and both templates' policy combinations; documentation links and whitespace were checked. These checks validate the design's integration into the repository, not the future renderer or its migration. The fixture prototype, live no-op migration proof and creation timing/concurrency proof remain implementation acceptance gates.
 
@@ -1846,7 +1846,7 @@ Stage 4 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-202
 
 ## Backup simplification design (18 October 2026)
 
-[Plan section 24, contract H](plan.md#contract-h-each-database-owns-an-independent-backup-job) defines the proposed per-database CronJobs, shared backup image and producer code, namespace ownership, scoped credentials, verified archive/metadata publication, independent freshness checks, restore proof, staged cutover and rollback. It explicitly gates cutover on the credential delivery and host-local cache decisions; existing archives, S3 destinations and restore compatibility are preserved. Section 0 points to the implementation stages and replaces the earlier tentative central-CronJob follow-up.
+[Plan section 25](plan.md#25-per-database-backups--designed-18-october-2026-not-started) defines the proposed per-database CronJobs, shared backup image and producer code, namespace ownership, scoped credentials, verified archive/metadata publication, independent freshness checks, restore proof, staged cutover and rollback. It explicitly gates cutover on the credential delivery and host-local cache decisions; existing archives, S3 destinations and restore compatibility are preserved. Section 0 points to the implementation stages and replaces the earlier tentative central-CronJob follow-up.
 
 This is documentation only: the host timer and current MongoDB/SQLite execution paths remain in use. No backup image, CronJob, credential, storage or scheduler migration was implemented or exercised. H0 inventory/decisions and H1–H5 implementation/proof remain open. Validation of this documentation does not prove the proposed backup design; its job, failure, concurrency, network, retention and restore acceptance gates remain to be run.
 

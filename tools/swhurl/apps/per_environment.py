@@ -122,6 +122,7 @@ FILES = (
     File(events.EVENTS_FILE, DERIVED, STRIP, 'the stream and consumers that follow from declaring events'),
     File(events.SECRET_FILE, GENERATED, STRIP, "the environment's own NATS key; the release's reference to it goes too"),
     File('secret.sops.yaml', GENERATED, REGENERATE, 'the same keys with placeholder values: credentials are never copied'),
+    File(contract.BACKUP_FILE, DERIVED, REGENERATE, "the SQLite backup job: this environment's namespace, prefix and schedule"),
 )
 ENCRYPTED = '.sops.yaml'  # no encrypted file is compared, whatever its name
 NOT_CARRIED = frozenset(file.name for file in FILES if file.first == STRIP)

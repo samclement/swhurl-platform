@@ -13,12 +13,15 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, platform, yamlio
+from swhurl.apps import contract
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 from swhurl.settings import SettingsError, load_settings
 
 MANIFEST_ROOTS = ('clusters', 'infra', 'platform', 'apps')
 TOKEN = re.compile(r'(?<!\$)\$\{([^}]+)\}')
+# What an app unit with a SQLite database substitutes from platform-backup's flux-system Secret.
+BACKUP_VARIABLES = ('BACKUP_AWS_ACCESS_KEY_ID', 'BACKUP_AWS_SECRET_ACCESS_KEY')
 YAML_SUFFIXES = {'.yaml', '.yml'}
 LINK = re.compile(r'\[[^\]]*\]\(([^)\s]+)\)')
 
@@ -83,9 +86,18 @@ def substitutions(spec: dict, settings: dict[str, str]) -> dict[str, str]:
     sources = (spec.get('postBuild') or {}).get('substituteFrom') or []
     if not sources:
         return {}
-    if sources != [{'kind': 'ConfigMap', 'name': 'platform-settings', 'optional': False}]:
-        fail('validation needs an explicit mapping for new Flux substitution sources')
-    return settings
+    if sources == [{'kind': 'ConfigMap', 'name': 'platform-settings', 'optional': False}]:
+        return settings
+    if sources == [{'kind': 'Secret', 'name': contract.BACKUP_WRITER, 'optional': False}]:
+        return {name: '<substituted>' for name in BACKUP_VARIABLES}
+    fail('validation needs an explicit mapping for new Flux substitution sources')
+
+
+def substituted(secret: dict) -> bool:
+    """A Secret whose every value is a reference to the backup jobs' upload-only key, nothing else."""
+    data = secret.get('stringData')
+    return not secret.get('data') and isinstance(data, dict) and bool(data) and \
+        all(value in {f'${{{name}}}' for name in BACKUP_VARIABLES} for value in data.values())
 
 
 def check_secrets(report: Report, root: Path = ROOT) -> None:
@@ -98,6 +110,8 @@ def check_secrets(report: Report, root: Path = ROOT) -> None:
                 if item.get('kind') != 'Secret':
                     continue
                 count += 1
+                if path.name == contract.BACKUP_FILE and substituted(item):
+                    continue  # its values are Flux substitutions from platform-backup's encrypted Secret
                 if not path.name.endswith(('.sops.yaml', '.sops.yml')):
                     fail(f'{label}: Git-managed Secret must be a .sops.yaml or .sops.yml file')
                 sops = item.get('sops')

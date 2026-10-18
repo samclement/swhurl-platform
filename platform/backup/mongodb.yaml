@@ -1,0 +1,77 @@
+# ClickStack's MongoDB, dumped, encrypted and published to S3 each night by the backup image
+# (tools/swhurl/backup_job.py). Suspended until the pilot (docs/plan.md section 25, H3).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-mongodb
+  namespace: observability
+  labels:
+    platform.swhurl.com/backup: "true"
+spec:
+  schedule: "30 3 * * *"
+  timeZone: Etc/UTC
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            platform.swhurl.com/backup: "true"
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: ghcr.io/samclement/swhurl-backup:src-069ed3000e256548@sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5
+              args: [backup-job-mongodb]
+              env:
+                - name: MONGODB_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickstack-mongodb-hyperdx-hyperdx
+                      key: connectionString.standard
+                - name: MONGO_DATABASE
+                  value: hyperdx
+                - name: AGE_RECIPIENT
+                  value: age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h
+                - name: BACKUP_S3_URI
+                  value: s3://swhurl-platform-backups-110927251694/clickstack-mongodb/
+                - name: BACKUP_SOURCE
+                  value: observability/clickstack-mongodb
+              envFrom:
+                - secretRef:
+                    name: backup-writer
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 96Mi
+                limits:
+                  memory: 384Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: scratch
+                  mountPath: /scratch
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scratch
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: tmp
+              emptyDir: {}

@@ -97,6 +97,7 @@ flowchart LR
 | `platform-clickstack` | ClickStack release and its Secret | infra-base, clickstack-operators, oauth2-proxy (sign-in middleware) | settings, SOPS |
 | `platform-otel` | Both collectors, the ingestion Secret | infra-base | SOPS |
 | `platform-reloader` | Reloader (`platform/reloader`) | infra-base | |
+| `platform-backup` | The backup jobs' upload-only key (`backup-writer`, in `flux-system` for app units to substitute and in `observability`) and the ClickStack MongoDB backup CronJob (`platform/backup`) | infra-base | SOPS |
 | `platform-alerts` | The ntfy Provider and the infrastructure/source failure Alert, with their SOPS Secret (`platform/alerts`) | infra-base | SOPS |
 | `platform-notify` | The [notify service](services.md#notify-service) with its RBAC, outbox ConfigMap and NetworkPolicy, one SOPS Secret per [notification channel](services.md#notification-channels) and the generated team routes (`platform/notify`). Defined in its own file, `clusters/home/platform-notify.yaml`, because `make channel-add` and `make channel-remove` edit it | infra-base | SOPS while a channel exists |
 | `platform-image-automation` | The `github-dispatch` Provider and `image-dispatch` Alert that start the [Deploy workflow](apps.md#deploy-a-new-image), and the dispatch token Secret (`platform/image-automation`); each app's `ImageRepository` and `ImagePolicy` belong to its staging unit | infra-base | SOPS |
@@ -105,7 +106,7 @@ flowchart LR
 | `platform-egress` | The [egress proxy](services.md#egress-proxy) app instances reach outside the cluster through, its generated ports, configuration and NetworkPolicy, in `egress` (`platform/egress`) | infra-base | — |
 | `platform-flags` | The two NATS key-value buckets of [feature flag](apps.md#feature-flags) overrides, `flags-staging` and `flags-prod`, in `messaging` (`platform/flags`) | platform-nats | — |
 | `platform-console` | The web console, dashboard sync and [notification checker](services.md#alerts), dedicated RBAC, state and Secrets, and the console NetworkPolicy (`platform/console`) | infra-base, oauth2-proxy (sign-in middleware) | settings, SOPS |
-| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats (its NATS key) | SOPS (its NATS key) |
+| `app-<app>-<env>` | One app instance (`apps/<app>/<env>`) | infra-base; oauth2-proxy if signed-in; platform-image-automation if staging; platform-nats (its NATS key); platform-backup if it has a SQLite database | SOPS (its NATS key); the upload key substituted from `backup-writer` if it has a SQLite database |
 
 Unit definitions: [`clusters/home/flux-system/kustomizations.yaml`](../clusters/home/flux-system/kustomizations.yaml) (roots), [`infra.yaml`](../clusters/home/infra.yaml), [`platform.yaml`](../clusters/home/platform.yaml), `clusters/home/app-*.yaml`. `make test` enforces the rules below: issuers wait for cert-manager, apps never wait for ClickStack or OTel, and decryption is set exactly where a path holds encrypted Secrets.
 

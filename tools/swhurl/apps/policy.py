@@ -95,6 +95,7 @@ from swhurl.apps.contract import (
     APP_OWNER,
     AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
+    BACKUP_LABEL,
     COOKIE_DOMAIN,
     ENVIRONMENT,
     EXCEPTIONS,
@@ -263,14 +264,18 @@ def check_identity(docs: list[dict], labels: dict, keys: str) -> list[tuple[str,
         if spec is None:
             continue
         where = f"{doc['kind']}/{doc['metadata']['name']}"
+        tokens = [source['serviceAccountToken'] for volume in spec.get('volumes') or []
+                  for source in (volume.get('projected') or {}).get('sources') or [] if 'serviceAccountToken' in source]
+        if ((doc.get('metadata') or {}).get('labels') or {}).get(BACKUP_LABEL) == 'true':
+            if tokens:  # the platform's backup job (apps/model/backup.py) calls no app
+                violations.append(('call-tokens', f'{where} is a backup job and carries no service-account token'))
+            continue
         for container in spec['containers']:
             names = [var['name'] for var in container.get('env') or []]
             uses = [var['name'] for var in container.get('env') or [] if f'$({ENVIRONMENT_VARIABLE})' in str(var.get('value', ''))]
             late = [name for name in uses if ENVIRONMENT_VARIABLE not in names or names.index(ENVIRONMENT_VARIABLE) > names.index(name)]
             if late:
                 violations.append(('identity', f'{where}: {", ".join(late)} uses $({ENVIRONMENT_VARIABLE}) before it is defined'))
-        tokens = [source['serviceAccountToken'] for volume in spec.get('volumes') or []
-                  for source in (volume.get('projected') or {}).get('sources') or [] if 'serviceAccountToken' in source]
         expected = [{'audience': audience, 'expirationSeconds': TOKEN_SECONDS, 'path': f'{audience}/token'}
                     for audience in token_audiences(calls)]
         if tokens != expected:

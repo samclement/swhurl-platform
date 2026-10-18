@@ -21,6 +21,16 @@ DATA_MOUNT = '/data'
 SQLITE_PATH = f'{DATA_MOUNT}/app.db'
 DATABASE_PATH_VARIABLE = 'DATABASE_PATH'
 DEFAULT_DATABASE_SIZE = '1Gi'
+# Each SQLite database's backup job (apps/model/backup.py; platform/backup holds MongoDB's, with the same
+# image): published by Validate's backup-image job, encrypting to the age recipient in .sops.yaml.
+BACKUP_FILE = 'backup.yaml'
+BACKUP_LABEL = label('backup')  # on the backup job and its pods: the platform's, not the app's
+BACKUP_IMAGE = ('ghcr.io/samclement/swhurl-backup:src-069ed3000e256548'
+                '@sha256:f1637924110353f687277141adde4114a461622f7de19fe41098f1a1a5eea7b5')
+BACKUP_RECIPIENT = 'age1u79dp6zjkal33l7rguzqxy66rwykhq90msrw47tf0vy4mu2jh3hsrkmn7h'
+BACKUP_UNIT = 'platform-backup'
+BACKUP_WRITER = 'backup-writer'  # the Secret an instance's unit substitutes the upload-only key from
+SQLITE_BACKUP_URI = 's3://swhurl-platform-backups-110927251694/app-sqlite/'
 # How long an instance may take to become Ready before its unit and HelmRelease report failure
 # (Helm waits this long, then retries once). Short, so a broken image or probe shows red quickly.
 FAIL_AFTER = '3m'

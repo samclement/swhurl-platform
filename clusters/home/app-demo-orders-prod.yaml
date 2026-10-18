@@ -8,6 +8,7 @@ spec:
   - name: infra-base
   - name: platform-oauth2-proxy
   - name: platform-nats
+  - name: platform-backup
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -20,3 +21,8 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  postBuild:
+    substituteFrom:
+    - kind: Secret
+      name: backup-writer
+      optional: false

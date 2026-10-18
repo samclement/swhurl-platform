@@ -9,7 +9,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from swhurl import backup_job, recovery, sqlite_backup
+from swhurl import ROOT, backup_job, platform, recovery, sqlite_backup, validate
+from swhurl.apps import contract, policy
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import backup
 from swhurl.backupset import BackupError
 from swhurl.run import FakeRunner, Result
 
@@ -160,6 +163,67 @@ class MongoJobTests(unittest.TestCase):
             self.assertEqual(backup_job.mongodb_main([], runner=job.runner), 1)
         self.assertEqual(job.published, [])
         self.assertNotIn('s3cret', ''.join(call.args[0] for call in err.write.call_args_list))
+
+
+class RenderedJobTests(unittest.TestCase):
+    """The CronJob and Secret the sqlite capability renders, and the checks that read them."""
+
+    @classmethod
+    def setUpClass(cls):
+        from swhurl.apps.model import render, sync
+        cls.world, cls.platform = sync.read(ROOT)
+        cls.render = staticmethod(lambda app, env: render.instance(Instance(app, env), cls.world, cls.platform))
+
+    def test_a_sqlite_instance_gets_a_suspended_job_as_its_app_with_the_key_substituted(self):
+        files = self.render('demo-orders', 'prod')
+        secret, job = files[Path('apps/demo-orders/prod') / contract.BACKUP_FILE]
+        self.assertEqual(set(secret['stringData'].values()),
+                         {'${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}'})
+        self.assertTrue(validate.substituted(secret))
+        self.assertFalse(validate.substituted({**secret, 'stringData': {'AWS_ACCESS_KEY_ID': 'AKIA...'}}))
+        spec = job['spec']
+        self.assertEqual((spec['suspend'], spec['concurrencyPolicy'], spec['timeZone']), (True, 'Forbid', 'Etc/UTC'))
+        pod = spec['jobTemplate']['spec']['template']['spec']
+        uid = self.world[Instance('demo-orders', 'prod')].release.uid
+        self.assertEqual((pod['securityContext']['runAsUser'], pod['automountServiceAccountToken']), (uid, False))
+        self.assertEqual(pod['volumes'][0], {'name': 'data', 'persistentVolumeClaim': {'claimName': 'demo-orders'}})
+        env = {var['name']: var.get('value') for var in pod['containers'][0]['env']}
+        self.assertEqual(env['BACKUP_S3_URI'], contract.SQLITE_BACKUP_URI + 'demo-orders-prod/')
+        self.assertTrue(env['HTTPS_PROXY'].startswith('http://egress.'), 'S3 is reached through the egress proxy')
+        unit = files[Path('clusters/home/app-demo-orders-prod.yaml')][0]['spec']
+        self.assertIn({'name': contract.BACKUP_UNIT}, unit['dependsOn'])
+        self.assertEqual(unit['postBuild']['substituteFrom'], [{'kind': 'Secret', 'name': contract.BACKUP_WRITER, 'optional': False}])
+        shop = self.render('demo-shop', 'prod')
+        self.assertNotIn(Path('apps/demo-shop/prod') / contract.BACKUP_FILE, shop, 'no database, no job')
+        self.assertNotIn('postBuild', shop[Path('clusters/home/app-demo-shop-prod.yaml')][0]['spec'])
+
+    def test_schedules_are_stable_and_after_mongodb(self):
+        times = {namespace: backup.schedule(namespace) for namespace in ('a-prod', 'b-staging', 'demo-orders-prod')}
+        self.assertEqual(times, {namespace: backup.schedule(namespace) for namespace in times})
+        for line in times.values():
+            minute, hour = map(int, line.split()[:2])
+            self.assertTrue((3, 35) <= (hour, minute) <= (4, 24), line)
+
+    def test_a_backup_job_must_carry_no_token(self):
+        files = self.render('demo-orders', 'prod')
+        docs = [doc for documents in files.values() for doc in documents if doc.get('kind') in ('HelmRelease', 'CronJob')]
+        job = next(doc for doc in docs if doc['kind'] == 'CronJob')
+        self.assertEqual([v for v in policy.check_identity(docs, {contract.ENVIRONMENT: 'prod'}, '') if v[0] == 'call-tokens'], [])
+        job['spec']['jobTemplate']['spec']['template']['spec']['volumes'].append(
+            {'name': 'tokens', 'projected': {'sources': [{'serviceAccountToken': {'audience': 'x', 'path': 'x/token'}}]}})
+        self.assertIn(('call-tokens', 'CronJob/demo-orders-backup is a backup job and carries no service-account token'),
+                      policy.check_identity(docs, {contract.ENVIRONMENT: 'prod'}, ''))
+
+    def test_the_mongodb_job_and_the_constants_agree_with_the_repository(self):
+        import yaml
+        (job,) = [doc for doc in yaml.safe_load_all((ROOT / 'platform/backup/mongodb.yaml').read_text()) if doc]
+        container = job['spec']['jobTemplate']['spec']['template']['spec']['containers'][0]
+        env = {var['name']: var.get('value') for var in container['env']}
+        self.assertEqual((container['image'], env['AGE_RECIPIENT']), (contract.BACKUP_IMAGE, contract.BACKUP_RECIPIENT))
+        self.assertTrue(job['spec']['suspend'])
+        self.assertEqual(recovery.sops_recipient(), contract.BACKUP_RECIPIENT)
+        self.assertEqual(contract.SQLITE_BACKUP_URI, platform.SQLITE_S3_URI)
+        self.assertEqual(env['BACKUP_S3_URI'], platform.BACKUP_S3_URI)
 
 
 if __name__ == '__main__':

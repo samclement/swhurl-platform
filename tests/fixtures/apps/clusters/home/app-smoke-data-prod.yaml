@@ -6,6 +6,7 @@ metadata:
 spec:
   dependsOn:
   - name: infra-base
+  - name: platform-backup
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -18,3 +19,8 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+  postBuild:
+    substituteFrom:
+    - kind: Secret
+      name: backup-writer
+      optional: false

@@ -1,0 +1,8 @@
+# The backup jobs (docs/operations.md#backups-and-recovery): the upload-only key, as the Secret app
+# units substitute from (flux-system) and as the MongoDB job's (observability), and the MongoDB job.
+# Each app SQLite database's job is rendered into its instance (apps/model/backup.py).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - writer.sops.yaml
+  - mongodb.yaml

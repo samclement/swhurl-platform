@@ -75,8 +75,7 @@ Then `make clickstack-notify-webhook`, once: it creates the HyperDX webhook that
 ## 6. Verify and back up
 
 ```bash
-make backup-mongodb     # first backup, locally and to S3
-make host-backup         # daily timer (asks for sudo)
+make backup-mongodb     # first backup to S3 (the job also runs nightly)
 make verify-platform
 ```
 

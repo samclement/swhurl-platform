@@ -83,7 +83,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `check` | `check-repo`, `test`, `check-apps`, `check-templates`, `check-otel`, `check-lint` in parallel: everything CI runs. Run before every push | Local |
+| `check` | `check-repo`, `test`, `check-apps`, `check-otel`, `check-lint` in parallel: everything CI runs except `check-templates`, which CI runs on every push. Run before every push; run `check-templates` too when a change touches a template pin, the app types or what `app-new` writes | Local |
 | `check-repo` | Render every active Flux path, validate schemas, SOPS structure, shell syntax and doc links, check that every unit that decrypts has a Secret file and that `BASE_DOMAIN` and `CERT_ISSUER` are set, and compare the [Flux units table](architecture.md#flux-units) with the units in Git | Local |
 | `test [K=<pattern>]` | Unit tests: lifecycle guards, verifier, policies, generator, console, fixtures, Flux unit rules, and every dry run that plans without touching anything (runs in `uv`'s locked environment, tests in parallel; a class with `setUpClass` stays together), then the slowest classes. `K` runs only the classes whose dotted name contains it (`K=test_console` while working on the console); `check` always runs them all | Local |
 | `check-apps` | Render every app instance with Helm and check the app policy, and that the [app model](plan.md#24-code-simplification--design-contracts-18-october-2026) reproduces every instance | Local |

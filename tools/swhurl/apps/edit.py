@@ -25,6 +25,8 @@ import os
 import re
 import shutil
 import sys
+import tempfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -45,27 +47,18 @@ from swhurl.apps import (
 )
 from swhurl.apps.calling import (
     API_VARIABLE,
-    DESCRIPTION_VARIABLE,
     declared_calls,
 )
 from swhurl.apps.contract import (
-    DATA_MOUNT,
-    DATABASE_PATH_VARIABLE,
     EXPOSURES,
     IMAGE_AUTOMATION_FILE,
     JOB_SCHEDULE,
     JOB_TIME_ZONE,
-    OTLP_HOST_IP,
-    RELOAD,
     RETAINED_STORAGE_CLASS,
     SECRET_FILE,
-    SECRET_NAMES,
-    SQLITE_PATH,
     app_secret,
-    declared_secrets,
     default_host,
     in_cookie_domain,
-    otlp_variables,
     over_quota,
     quantity,
     schedule_problem,
@@ -76,27 +69,23 @@ from swhurl.apps.contract import (
 from swhurl.apps.derive import (
     callers_of,
     container,
-    controller,
     instance_dir,
     instances_in,
-    service_port,
     subscribers_of,
     sync,
     sync_env,
-    values,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model import workload
-from swhurl.apps.model.draft import EVENTS_SECRET, Entry
+from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import Resources
+from swhurl.apps.model.records import Image, Release, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     check_generated,
     dump,
-    watch_namespace,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -250,76 +239,97 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
     return instance
 
 
+def offer_files(folder: Path, repository: str, commit: str, files: dict[str, str]) -> dict[Path, str | None]:
+    """What the offers directory should hold: path -> text, or None for a file to delete."""
+    if not files:
+        return {path: None for path in sorted(folder.iterdir())} if folder.is_dir() else {}
+    source = offers.Source(repository, commit, next((n for n in files if n not in (offers.EVENTS_NAME, offers.FLAGS_NAME)), ''),
+                           offers.EVENTS_NAME if offers.EVENTS_NAME in files else '',
+                           offers.FLAGS_NAME if offers.FLAGS_NAME in files else '').document()
+    wanted = {offers.SOURCE_FILE: '# Read from the app\'s repository by make app-offers: do not edit.\n' + dump([source]), **files}
+    planned: dict[Path, str | None] = {path: None for path in sorted(folder.iterdir()) if path.name not in wanted} if folder.is_dir() else {}
+    planned.update({folder / name: text for name, text in wanted.items()
+                    if not (folder / name).is_file() or (folder / name).read_text() != text})
+    return planned
+
+
+def write_files(planned: dict[Path, str | None]) -> bool:
+    for path, text in planned.items():
+        if text is None:
+            path.unlink()
+        else:
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(text)
+    for folder in {path.parent for path in planned}:
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    return bool(planned)
+
+
+def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path, str | None], *,
+                   runner: Runner | None = None, hold: Callable[[model_sync.Prepared], None] | None = None) -> bool:
+    """Make ``entry`` (a new Release, and what the operation chose with it) the instance's records: give it
+    a NATS key if it now has events and none, render, let ``hold`` refuse the result, then write the
+    rendered files and the offers documents (``planned``). A refusal writes nothing. Whether anything changed."""
+    instance = each.folder(root)
+    created = ''
+    if (entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
+        created = new_nats_key(instance, each.app, each.env, runner=runner)
+        entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
+                        encrypted=entry.encrypted | {EVENTS_SECRET})
+    try:
+        prepared = model_sync.prepare(root, each, lambda _: entry)
+        if hold:
+            hold(prepared)
+    except EditError:
+        if created:
+            (instance / events.SECRET_FILE).unlink(missing_ok=True)
+        raise
+    return bool(model_sync.apply(root, prepared)) | write_files(planned)
+
+
+def offered(release: Release, commit: str, files: dict[str, str], described: list[offers.Event] | None,
+            api_path: str) -> Release:
+    """A release with what it offers: the commit its documents were read at, where a web app serves its
+    API description, and, with an events document, the events it publishes."""
+    release = replace(release, offers=commit if files else '')
+    if api_path and release.kind == 'web':
+        release = replace(release, api_path=api_path)
+    if described is not None:
+        release = replace(release, publishes=tuple(event.name for event in described))
+    return release
+
+
 def write_offers(root: Path, app: str, env: str, repository: str, commit: str, files: dict[str, str],
                  described: list[offers.Event] | None, *, api_path: str = '', runner: Runner | None = None) -> bool:
     """Keep an instance's offers (``files``: name in the offers directory -> text) and what follows from
-    them: the release's annotation, and with an events document the events it publishes. Returns whether
-    anything changed. Without files the directory and annotation go; what it publishes is left as it is.
-    ``api_path`` is where a web app says it serves its description (provides.api): kept as SWHURL_API_PATH.
-    A refusal (an event another app still receives is gone) leaves everything as it was."""
-    instance = instance_dir(root, app, env)
-    folder = instance / offers.OFFERS_DIR
-    release = instance / 'helmrelease.yaml'
-    before = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
-    if files:
-        source = offers.Source(repository, commit, next((n for n in files if n not in (offers.EVENTS_NAME, offers.FLAGS_NAME)), ''),
-                               offers.EVENTS_NAME if offers.EVENTS_NAME in files else '',
-                               offers.FLAGS_NAME if offers.FLAGS_NAME in files else '').document()
-        wanted = {offers.SOURCE_FILE: '# Read from the app\'s repository by make app-offers: do not edit.\n' + dump([source]), **files}
-        folder.mkdir(exist_ok=True)
-        for path in folder.iterdir():
-            if path.name not in wanted:
-                path.unlink()
-        for name, text in wanted.items():
-            if not (folder / name).is_file() or (folder / name).read_text() != text:
-                (folder / name).write_text(text)
-    elif folder.is_dir():
-        shutil.rmtree(folder)
-    document = YamlFile(release)
-    metadata = mapping(document.data, 'metadata')
-    annotations = metadata.get('annotations') or {}
-    if files and annotations.get(offers.ANNOTATION) != commit:
-        mapping(metadata, 'annotations', create=True)[offers.ANNOTATION] = commit
-        document.save()
-    elif not files and offers.ANNOTATION in annotations:
-        del annotations[offers.ANNOTATION]
-        if not annotations:
-            del metadata['annotations']
-        document.save()
-    variables = mapping(container(document.data), 'env', create=True)
-    if api_path and service_port(values(document.data)) is not None and variables.get(API_VARIABLE) != api_path:
-        variables[API_VARIABLE] = api_path
-        document.save()
-    names = [event.name for event in described] if described is not None else None
-    if names is not None and names != events.published(helmrelease.variables(document.data)):
-        try:
-            set_events(root, app, env, publish=names, runner=runner)
-        except EditError:
-            if folder.is_dir():
-                shutil.rmtree(folder)
-            for path, content in before.items():
-                path.parent.mkdir(exist_ok=True)
-                path.write_bytes(content)
-            raise
-    after = {path: path.read_bytes() for path in [release, *(sorted(folder.iterdir()) if folder.is_dir() else [])]}
-    return after != before
+    them on its release (``offered``). Returns whether anything changed. Without files the directory
+    and the note of their commit go; what it publishes is left as it is. A refusal (an event another
+    app still receives is gone) writes nothing."""
+    each = Instance(app, env)
+    world, _ = model_sync.read(root)
+    if each not in world:
+        instance_dir(root, app, env)  # says which instance is missing
+    entry = world[each]
+    planned = offer_files(each.folder(root) / offers.OFFERS_DIR, repository, commit, files)
+    release = offered(entry.release, commit, files, described, api_path)
+    return change_release(root, each, replace(entry, release=release), planned, runner=runner)
 
 
-def image_source(release: dict, app: str, env: str) -> tuple[str, str]:
-    """``(OWNER/REPO, commit)`` the image a release runs was built from."""
-    repository = str(helmrelease.image(release).get('repository', ''))
-    if not repository.startswith('ghcr.io/'):
-        raise EditError(f'{app}/{env} runs {repository or "no image"}: only an app published from its own GitHub repository has offers')
+def image_source(image: Image, app: str, env: str) -> tuple[str, str]:
+    """``(OWNER/REPO, commit)`` an image was built from."""
+    if not image.repository.startswith('ghcr.io/'):
+        raise EditError(f'{app}/{env} runs {image.repository or "no image"}: only an app published from its own GitHub repository has offers')
     try:
-        return repository.removeprefix('ghcr.io/'), offers.commit_of(str(helmrelease.image(release).get('tag', '')))
+        return image.repository.removeprefix('ghcr.io/'), offers.commit_of(image.tag)
     except offers.OfferError as error:
         raise EditError(str(error)) from None
 
 
-def image_declaration(release: dict, app: str, env: str, *, token: str = '',
+def image_declaration(image: Image, app: str, env: str, *, token: str = '',
                       opener: offers.Opener = offers._open) -> declaration.Declaration:
-    """The swhurl.yaml of the image a release runs, read at the commit it was built from."""
-    repository, commit = image_source(release, app, env)
+    """The swhurl.yaml of an image, read at the commit it was built from."""
+    repository, commit = image_source(image, app, env)
     try:
         declared = declaration.read(repository, commit, token=token, opener=opener)
     except declaration.DeclarationError as error:
@@ -329,14 +339,10 @@ def image_declaration(release: dict, app: str, env: str, *, token: str = '',
     return declared
 
 
-def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
-               runner: Runner | None = None, declared: declaration.Declaration | None = None) -> bool:
-    """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
-    documents its swhurl.yaml names (provides, the file's live field: declaration.py); ``declared`` is
-    that file when the caller has read it already. Returns whether anything changed."""
-    release = YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data
-    repository, commit = image_source(release, app, env)
-    declared = declared or image_declaration(release, app, env, token=token, opener=opener)
+def read_offers(repository: str, commit: str, declared: declaration.Declaration, *, token: str = '',
+                opener: offers.Opener = offers._open) -> tuple[dict[str, str], list[offers.Event] | None, str]:
+    """``(files, described events, API path)``: the documents an image's swhurl.yaml names (provides),
+    read at its commit, and where it says it serves its API description."""
     try:
         files, described = {}, None
         for key, kind, path in (('apiFile', 'api', declared.api_file), ('eventsFile', 'events', declared.events_file)):
@@ -356,11 +362,31 @@ def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offer
     except (offers.OfferError, declaration.DeclarationError) as error:
         raise EditError(str(error)) from None
     served = declared.api_path if re.fullmatch(r'/[A-Za-z0-9_./-]*', declared.api_path) else ''
-    changed = write_offers(root, app, env, repository, commit, files, described, api_path=served, runner=runner)
+    return files, described, served
+
+
+def describe_offers(app: str, env: str, commit: str, files: dict[str, str], described: list[offers.Event] | None,
+                    declared: declaration.Declaration, changed: bool) -> None:
     what = ', '.join(filter(None, [next((f'its API ({n})' for n in files if n not in (offers.EVENTS_NAME, offers.FLAGS_NAME)), ''),
                                    described is not None and f'events: {", ".join(e.name for e in described) or "none"}',
                                    declared.flags and f'flags: {", ".join(declared.flags)}']))
     print(f'[OK] {app}/{env} at {commit} offers {what or "nothing"}' + ('' if changed else ' (unchanged)'))
+
+
+def set_offers(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open,
+               runner: Runner | None = None) -> bool:
+    """Read what ``app/env`` offers from its repository, at the commit its image was built from: the
+    documents its swhurl.yaml names (provides, the file's live field: declaration.py). Returns whether
+    anything changed."""
+    world, _ = model_sync.read(root)
+    if Instance(app, env) not in world:
+        instance_dir(root, app, env)  # says which instance is missing
+    image = world[Instance(app, env)].release.image
+    repository, commit = image_source(image, app, env)
+    declared = image_declaration(image, app, env, token=token, opener=opener)
+    files, described, served = read_offers(repository, commit, declared, token=token, opener=opener)
+    changed = write_offers(root, app, env, repository, commit, files, described, api_path=served, runner=runner)
+    describe_offers(app, env, commit, files, described, declared, changed)
     return changed
 
 
@@ -372,186 +398,120 @@ def newest_image(root: Path, app: str, *, opener: offers.Opener = offers._open) 
         raise EditError(str(error)) from None
 
 
-PROBES = ('readiness', 'liveness', 'startup')
-SCALED = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'), ('memory_limit', 'limits', 'memory'))
-"""Each resource app-scale sets (its option, by declaration.RESOURCES) and where it is in the container."""
+RESOURCE_FIELDS = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'), ('memory_limit', 'limits', 'memory'))
+"""Each resource the image may need at least (declaration.RESOURCES) and where it is in the container."""
 
 
-def secret_reference(main: dict, workload: dict, app: str) -> None:
-    """The app's own Secret as variables (envFrom), optional so the app starts before its first value, and
-    Reloader restarting it when a value changes."""
-    name = app_secret(app)
-    refs = main.get('envFrom')
-    found = next((ref for ref in refs or [] if (ref.get('secretRef') or {}).get('name') == name), None)
-    if found is None:
-        if refs is None:
-            main['envFrom'] = []
-        main['envFrom'].append({'secretRef': {'name': name, 'optional': True}})
-    elif found['secretRef'].get('optional') is not True:
-        found['secretRef']['optional'] = True
-    annotations = workload.get('annotations') or {}
-    reloads = [n for n in str(annotations.get(RELOAD, '')).split(',') if n]
-    if name not in reloads:
-        mapping(workload, 'annotations', create=True)[RELOAD] = ','.join([*reloads, name])
-
-
-def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
-    """Write what the image needs into its release (in place): the port and health path of a web app
-    (Service and probes), the user it runs as, its telemetry variables, a new database's volume, the
-    secret names it reads (a new one arrives without a value), and resources raised to the image's
-    minimum. Returns what changed. A need the instance cannot take is refused (EditError) and
-    the release is left part-changed: the caller restores it."""
-    app_values, main, workload = values(release), container(release), controller(release)
-    changes: list[str] = []
-    port = service_port(app_values)
-    running = helmrelease.kind(release)
-    if running != needs.kind:
-        raise EditError(f'kind: {needs.kind}, but the instance is a {"web app" if running == "web" else running}: '
+def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, app: str) -> tuple[Entry, list[str]]:
+    """The records with a new image and what it needs: its port and health path (web), the user it runs as,
+    telemetry, a new database's volume, the secret names it reads (a new one arrives without a value),
+    resources raised to its minimum (never lowered) and its description. Returns them and what changed.
+    A need the instance cannot take is refused (EditError)."""
+    needs, old, settings = declared.needs, entry.release, entry.settings
+    if old.kind != needs.kind:
+        raise EditError(f'kind: {needs.kind}, but the instance is a {"web app" if old.kind == "web" else old.kind}: '
                         'web, worker or job is fixed at creation (create a new app for the other kind)')
-    if needs.port is not None and port != needs.port:
-        app_values['service']['main']['ports']['http']['port'] = needs.port
-        changes.append(f'port {port} -> {needs.port}')
-    paths = set()
-    for name in PROBES if needs.port is not None else ():
-        check = (((main.get('probes') or {}).get(name) or {}).get('spec') or {}).get('httpGet')
-        if check is None:
-            continue
-        paths.add(check.get('path'))
-        for key, value in (('path', needs.health_path), ('port', needs.port)):
-            if check.get(key) != value:
-                check[key] = value
-    if paths - {needs.health_path}:
-        changes.append(f'health path {", ".join(sorted(map(str, paths - {needs.health_path})))} -> {needs.health_path}')
-    security = mapping(mapping(app_values, 'defaultPodOptions'), 'securityContext')
-    if security.get('runAsUser') != needs.uid:
-        if 'data' in (app_values.get('persistence') or {}):
-            raise EditError(f'uid {needs.uid}: {app} keeps a volume whose files belong to uid {security.get("runAsUser")}, '
+    web = needs.kind == 'web'
+    changes: list[str] = []
+    port, health = (needs.port, needs.health_path) if web else (None, '')
+    if port != old.port:
+        changes.append(f'port {old.port} -> {port}')
+    if health != old.health_path:
+        changes.append(f'health path {old.health_path} -> {health}')
+    if needs.uid != old.uid:
+        if old.database:
+            raise EditError(f'uid {needs.uid}: {app} keeps a volume whose files belong to uid {old.uid}, '
                             'and a new image does not change who owns them (keep the uid, or move the data by hand)')
-        changes.append(f'uid {security.get("runAsUser")} -> {needs.uid}')
-        for key in ('runAsUser', 'runAsGroup', 'fsGroup'):
-            security[key] = needs.uid
-    variables = mapping(main, 'env', create=True)
-    telemetry = otlp_variables(app)
-    if egress.NO_PROXY_VARIABLE in variables:  # the proxy's settings use HOST_IP too (make app-sync)
-        telemetry.pop(OTLP_HOST_IP)
-    if needs.otlp and any(key not in variables for key in telemetry):
-        for key, value in telemetry.items():
-            variables.setdefault(key, value)
-        changes.append('telemetry otlp')
-    elif not needs.otlp and any(key in variables for key in telemetry):
-        for key in telemetry:
-            variables.pop(key, None)
-        changes.append('telemetry none')
-    persistence = mapping(app_values, 'persistence', create=True)
-    if needs.database and DATABASE_PATH_VARIABLE not in variables:
-        if 'data' in persistence:
-            raise EditError(f'database: {needs.database}, but {app} already has a volume of its own: add the database by hand')
+        changes.append(f'uid {old.uid} -> {needs.uid}')
+    if needs.otlp != old.telemetry:
+        changes.append(f'telemetry {"otlp" if needs.otlp else "none"}')
+    allocations, replicas = settings.allocations, settings.replicas
+    if needs.database and not old.database:
         # As app-new makes it: a retained volume, one writer, stop-first updates (rule single-writer).
-        persistence['data'] = {'type': 'persistentVolumeClaim', 'storageClass': RETAINED_STORAGE_CLASS,
-                               'accessMode': 'ReadWriteOnce', 'size': needs.database_size, 'retain': True,
-                               'globalMounts': [{'path': DATA_MOUNT}]}
-        variables[DATABASE_PATH_VARIABLE] = SQLITE_PATH
-        if 'replicas' in workload:
-            workload['replicas'] = 1
-        else:
-            workload.insert(0, 'replicas', 1)
-        workload['strategy'] = 'Recreate'
+        allocations = replace(allocations, database=Storage(needs.database_size, RETAINED_STORAGE_CLASS))
+        replicas = None
         changes.append(f'database {needs.database} on a new {needs.database_size} volume')
-    elif not needs.database and DATABASE_PATH_VARIABLE in variables:
+    elif old.database and not needs.database:
         raise EditError(f'database: none, but {app} keeps its database volume, and a push never deletes data: keep '
                         'database in swhurl.yaml, or remove the data on purpose (make destroy-data, docs/operations.md#lifecycle)')
-    elif needs.database and str(persistence['data'].get('size')) != needs.database_size:
-        raise EditError(f'databaseSize {needs.database_size}, but the volume was created with {persistence["data"].get("size")}, '
+    elif needs.database and allocations.database and allocations.database.size != needs.database_size:
+        raise EditError(f'databaseSize {needs.database_size}, but the volume was created with {allocations.database.size}, '
                         'and a volume keeps its size: declare that size again')
-    named = declared_secrets(release)
-    if list(needs.secrets) != named:
-        annotations = mapping(mapping(release, 'metadata'), 'annotations', create=True)
-        if needs.secrets:
-            annotations[SECRET_NAMES] = ','.join(needs.secrets)
-        else:
-            del annotations[SECRET_NAMES]
-            if not annotations:
-                del release['metadata']['annotations']
-        changes.append('secret names ' + ', '.join([f'+{n}' for n in needs.secrets if n not in named]
-                                                   + [f'-{n}' for n in named if n not in needs.secrets]))
-    if needs.secrets:
-        secret_reference(main, workload, app)
-    resources = mapping(main, 'resources', create=True)
-    for field, section, key in SCALED:
-        minimum, current = needs.minimum.get(field), (resources.get(section) or {}).get(key)
-        if minimum is not None and (current is None or quantity(current) < quantity(minimum)):
-            mapping(resources, section, create=True)[key] = minimum
-            changes.append(f'{section}.{key} {current} -> {minimum} (the image\'s minimum)')
-    requests, limits = resources.get('requests') or {}, resources.get('limits') or {}
-    if 'memory' in requests and 'memory' in limits and quantity(requests['memory']) > quantity(limits['memory']):
-        raise EditError(f'resources: a memory request of {requests["memory"]} is above the memory limit {limits["memory"]}; '
-                        'declare memoryLimit too')
-    rolling = (workload.get('strategy') or 'RollingUpdate') != 'Recreate'
-    if over := over_quota([(workload.get('replicas', 1) + rolling, [resources])]):
-        raise EditError(f"resources: the image's minimum {needs.minimum} at {workload.get('replicas', 1)} replica(s) "
+    if tuple(needs.secrets) != old.secrets:
+        changes.append('secret names ' + ', '.join([f'+{n}' for n in needs.secrets if n not in old.secrets]
+                                                   + [f'-{n}' for n in old.secrets if n not in needs.secrets]))
+    if declared.description != old.description:
+        changes.append('description')
+    running = workload.resources(entry)
+    release = replace(old, image=image, port=port, health_path=health, uid=needs.uid, telemetry=needs.otlp,
+                      database=needs.database or '', secrets=tuple(needs.secrets), description=declared.description,
+                      resources=Resources(*(needs.minimum.get(field, '') for field, _, _ in RESOURCE_FIELDS)))
+    # The capacity it runs with now, so a new minimum only ever raises it.
+    capacity = Resources(*(running[section][key] for _, section, key in RESOURCE_FIELDS))
+    found = replace(entry, release=release, settings=replace(settings, replicas=replicas, capacity=capacity, allocations=allocations))
+    resources = workload.resources(found)
+    for (_, section, key) in RESOURCE_FIELDS:
+        if resources[section][key] != running[section][key]:
+            changes.append(f'{section}.{key} {running[section][key]} -> {resources[section][key]} (the image\'s minimum)')
+    request, limit = resources['requests']['memory'], resources['limits']['memory']
+    if quantity(request) > quantity(limit):
+        raise EditError(f'resources: a memory request of {request} is above the memory limit {limit}; declare memoryLimit too')
+    count = 1 if found.settings.replicas is None else found.settings.replicas
+    if over := over_quota([(count + (not release.database), [resources])]):
+        raise EditError(f"resources: the image's minimum {needs.minimum} at {count} replica(s) "
                         f'exceeds the namespace quota for {", ".join(over)}')
-    return changes
+    return found, changes
 
 
-def apply_description(release: dict, description: str) -> list[str]:
-    """Write what the image's swhurl.yaml says the app does into its release (in place), or remove it."""
-    variables = mapping(container(release), 'env', create=True)
-    if variables.get(DESCRIPTION_VARIABLE, '') == description:
-        return []
-    if description:
-        variables[DESCRIPTION_VARIABLE] = description
-    else:
-        del variables[DESCRIPTION_VARIABLE]
-    return ['description']
+def drift_hold(root: Path, app: str) -> Callable[[model_sync.Prepared], None]:
+    """Refuse a staging change that production would differ from beyond what may differ (rule env-drift):
+    a promotion does not carry what an image needs yet."""
+    def hold(prepared: model_sync.Prepared) -> None:
+        production, staging = instance_folder(root, app, 'prod'), instance_folder(root, app, 'staging')
+        if not (production / 'helmrelease.yaml').is_file():
+            return
+        with tempfile.TemporaryDirectory() as scratch:
+            rendered = Path(scratch) / 'staging'
+            shutil.copytree(staging, rendered)
+            for path, text in prepared.writes.items():
+                if path.parent == staging:
+                    (rendered / path.name).write_text(text)
+            for path in prepared.deletions:
+                if path.parent == staging:
+                    (rendered / path.name).unlink()
+            if drift := policy.drift([production, rendered]):
+                raise EditError(f"{'; '.join(drift)}: a promotion does not carry what an image needs yet, so a need "
+                                'may change only for an app without production')
+    return hold
 
 
 def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
                    runner: Runner | None = None, found: images.Image | None = None, refresh: bool = False) -> bool:
     """Staging runs the newest image its ImagePolicy accepts (``found``, or read now), with what that
     image needs and offers: the tag and digest from the registry (images.py), then its swhurl.yaml read
-    at its commit, whose needs are written into the release (apply_needs) and whose offers beside it.
+    at its commit, whose needs become its Release (with_needs) and whose offers are kept beside it.
     An image already deployed is not read again unless ``refresh``. A refused need or offer holds the
-    image: the instance keeps what it had. Returns whether anything changed."""
+    image: nothing is written. Returns whether anything changed."""
     found = found or newest_image(root, app, opener=opener)
-    instance = instance_dir(root, app, 'staging')
-    release = instance / 'helmrelease.yaml'
-    touched = [release, instance / 'namespace.yaml', root / 'platform/reloader/helmrelease.yaml']
-    before = {path: path.read_bytes() for path in touched if path.is_file()}
-    document = YamlFile(release)
-    image = promotion.image_of(document.data)
-    moved = (image.get('tag'), image.get('digest')) != (found.tag, found.digest)
-    read_at = ((document.data.get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION)
-    if not refresh and not moved and offers.IMAGE_COMMIT.match(found.tag) and read_at == offers.commit_of(found.tag):
-        print(f'[OK] {app}/staging runs its newest image {found.tag}; its needs and offers were read at {read_at}')
+    instance, each = instance_dir(root, app, 'staging'), Instance(app, 'staging')
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    previous = entry.release.image
+    moved = (previous.tag, previous.digest) != (found.tag, found.digest)
+    if not refresh and not moved and offers.IMAGE_COMMIT.match(found.tag) and entry.release.offers == offers.commit_of(found.tag):
+        print(f'[OK] {app}/staging runs its newest image {found.tag}; its needs and offers were read at {entry.release.offers}')
         return False
-    previous, port = image.get('tag'), service_port(values(document.data))
-    image['tag'], image['digest'] = found.tag, found.digest
-    try:
-        declared = image_declaration(document.data, app, 'staging', token=token, opener=opener)
-        needed = apply_needs(document.data, app, declared.needs) + apply_description(document.data, declared.description)
-        document.save()
-        if 'data' in (values(document.data).get('persistence') or {}):
-            namespace = YamlFile(instance / 'namespace.yaml')
-            metadata = mapping(namespace.data, 'metadata')
-            if (metadata.get('annotations') or {}).get(PRUNE_DISABLED) != 'disabled':
-                # The namespace, and with it the claim, stays when the unit goes (destroy-data deletes it).
-                mapping(metadata, 'annotations', create=True)[PRUNE_DISABLED] = 'disabled'
-                namespace.save()
-        if declared.needs.secrets:
-            watch_namespace(root, Instance(app, 'staging').namespace)
-        production = instance_folder(root, app, 'prod')
-        if (production / 'helmrelease.yaml').is_file() and (drift := policy.drift([production, instance])):
-            raise EditError(f"{'; '.join(drift)}: a promotion does not carry what an image needs yet, so a need "
-                            'may change only for an app without production')
-        changed = set_offers(root, app, 'staging', token=token, opener=opener, runner=runner, declared=declared)
-        if service_port(values(YamlFile(release).data)) != port:
-            sync_env(root, 'staging')  # its callers' address and its NetworkPolicy
-    except EditError:
-        for path, content in before.items():
-            path.write_bytes(content)
-        raise
+    image = replace(previous, tag=found.tag, digest=found.digest)
+    repository, commit = image_source(image, app, 'staging')
+    declared = image_declaration(image, app, 'staging', token=token, opener=opener)
+    files, described, served = read_offers(repository, commit, declared, token=token, opener=opener)
+    updated, needed = with_needs(entry, image, declared, app)
+    updated = replace(updated, release=offered(updated.release, commit, files, described, served))
+    planned = offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
+    changed = change_release(root, each, updated, planned, runner=runner, hold=drift_hold(root, app))
+    describe_offers(app, 'staging', commit, files, described, declared, changed)
     if moved:
-        print(f'[OK] {app}/staging: image {previous} -> {found.tag}')
+        print(f'[OK] {app}/staging: image {previous.tag} -> {found.tag}')
     if needed:
         print(f'[OK] {app}/staging needs: {", ".join(needed)}')
     missing = [name for name in declared.needs.secrets if name not in stored_secrets(
@@ -570,7 +530,11 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
         raise EditError(problem)
     if not value:
         raise EditError(f'no value for {name}: give it on standard input')
-    instance = instance_dir(root, app, env)
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    declared = world[each].release.secrets
+    # Rendered before the value is written: the instance's files must be what its records render now.
+    prepared = model_sync.prepare(root, each, lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET}))
     path, runner = instance / SECRET_FILE, runner or Runner()
     relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
     try:
@@ -590,20 +554,9 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     except CommandError as error:
         raise EditError(f'sops could not set {name} in {relative} (it needs the age key: age.agekey or SOPS_AGE_KEY_FILE): '
                         f'{error}') from None
-    document = YamlFile(instance / 'helmrelease.yaml')
-    secret_reference(container(document.data), controller(document.data), app)
-    document.save()
-    kustomization = YamlFile(instance / 'kustomization.yaml')
-    if SECRET_FILE not in kustomization.data['resources']:
-        kustomization.data['resources'].insert(1, SECRET_FILE)
-        kustomization.save()
-    unit = YamlFile(instance_unit_file(root, app, env))
-    if 'decryption' not in mapping(unit.data, 'spec'):
-        unit.data['spec']['decryption'] = {'provider': 'sops', 'secretRef': {'name': 'sops-age'}}
-        unit.save()
-    watch_namespace(root, Instance(app, env).namespace)
+    model_sync.apply(root, prepared)
     print(f'[OK] {app}/{env}: {name} set (value not shown)')
-    if name not in declared_secrets(document.data):
+    if name not in declared:
         print(f'[INFO] {name} is not among the secrets its image declares yet: the app receives it all the same')
     return instance
 
@@ -736,12 +689,13 @@ def image_minimum(root: Path, app: str, env: str, *, token: str = '', opener: of
     """The resources the image ``app/env`` runs needs at least (``resources`` in its swhurl.yaml), by
     app-scale option; empty for an image no app repository built. Unreachable GitHub is a warning:
     the next image raises anything below its minimum."""
-    release = YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data
-    image = helmrelease.image(release)
-    if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
+    instance_dir(root, app, env)
+    world, _ = model_sync.read(root)
+    image = world[Instance(app, env)].release.image
+    if not image.repository.startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(image.tag):
         return {}
     try:
-        return image_declaration(release, app, env, token=token, opener=opener).needs.minimum
+        return image_declaration(image, app, env, token=token, opener=opener).needs.minimum
     except EditError as error:
         print(f"[WARN] could not read the image's minimum resources, so they are not checked: {error}", file=sys.stderr)
         return {}

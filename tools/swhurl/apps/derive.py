@@ -4,9 +4,8 @@ What follows from an instance's declarations (identity, calls, events, egress, i
 by the app model (apps/model, docs/plan.md section 24): ``sync_env`` reads every instance's records,
 renders them and writes each file whose content changed, before any is written if a render fails.
 
-The strict accessors at the top read a HelmRelease for editing in place (comments kept) and refuse
-shapes they do not understand; reading only is helmrelease.py. ``isolation_edits`` stays here until
-the team and exposure commands move onto the model.
+The strict accessors at the top read a HelmRelease for editing in place (comments kept, for
+app-promote) and refuse shapes they do not understand; reading only is helmrelease.py.
 """
 from __future__ import annotations
 
@@ -14,19 +13,14 @@ from pathlib import Path
 
 from swhurl.apps import channels, events, helmrelease
 from swhurl.apps.calling import (
-    allowed_callers,
     declared_calls,
 )
 from swhurl.apps.instance import (
     ENVIRONMENTS,
     INSTANCE_ROOTS,
     NAME_RE,
-    Instance,
     instance_folder,
     instances,
-)
-from swhurl.apps.new import (
-    isolation_files,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 
@@ -50,37 +44,6 @@ def controller(release: dict) -> dict:
 
 def container(release: dict) -> dict:
     return mapping(mapping(controller(release), 'containers'), 'main')
-
-def isolation_edits(instance: Path, app: str, env: str, exposure: str, release: dict, *,
-                    listed: tuple[str, ...] = (), unlisted: tuple[str, ...] = ()) -> list[tuple[Path, str]]:
-    """The instance's quota and NetworkPolicy for ``exposure``, and its kustomization listing them
-    (and ``listed``, and no longer ``unlisted``: the event files, which sync_env writes or deletes)."""
-    port = service_port(values(release))
-    callers = allowed_callers(helmrelease.variables(release))
-    files = isolation_files(app, Instance(app, env).namespace, exposure, port, callers)
-    edits = [(instance / name, text) for name, text in files.items()]
-    kustomization = YamlFile(instance / 'kustomization.yaml')
-    resources = kustomization.data.get('resources')
-    if not isinstance(resources, list):
-        raise EditError('kustomization.yaml: expected a resources list')
-    missing = [name for name in (*files, *listed) if name not in resources]
-    stale = [name for name in unlisted if name in resources]
-    resources.extend(missing)
-    for name in stale:
-        resources.remove(name)
-    if missing or stale:
-        edits.append((kustomization.path, kustomization.render()))
-    return edits
-
-
-def service_port(app_values: dict) -> int | None:
-    """The app's HTTP port, or None for a worker."""
-    if 'service' not in app_values:
-        return None
-    port = mapping(mapping(mapping(mapping(app_values, 'service'), 'main'), 'ports'), 'http').get('port')
-    if not isinstance(port, int):
-        raise EditError('service.main.ports.http.port: expected a port number; edit custom services by hand')
-    return port
 
 def instances_in(root: Path, env: str) -> list[str]:
     return sorted(each.app for each in instances(root / INSTANCE_ROOTS[0]) if each.env == env)

@@ -4,8 +4,8 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
-    platform.swhurl.com/render: bb40aefa81d34763609fc1ebbec8c811f7eafd1ae24b8674d0571df0d493a152
-    platform.swhurl.com/offers: '8e55e45'
+    platform.swhurl.com/offers: fab7b45
+    platform.swhurl.com/render: 1cd525c49f75a4a3db9bcee211057e49187d252554e8515415a2e25756fafaed
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-10
-              tag: 37-8e55e45
-              digest: sha256:37f284d32c21757f17752187bada1e347404ae2bfee841a5d59f39b5637a590b
+              tag: 43-fab7b45
+              digest: sha256:d58ea50f3f9926faff4f9a363ad8c1eb0a4617bf404bc2c56a285d720a4e66db
             resources:
               requests:
                 cpu: 10m
@@ -60,6 +60,7 @@ spec:
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
+              SWHURL_API_PATH: /openapi.json
               HOST_IP:
                 valueFrom:
                   fieldRef:
@@ -68,11 +69,10 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-10
               DATABASE_PATH: /data/app.db
-              SWHURL_ALLOWED_CALLERS: swhurl-try-11,swhurl-try-12
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UDI2RINKCVTQFX5S4IXXG4P3EFI4CXM235HJ3FPCNWJHDIMHTINQVZWX
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
-              SWHURL_API_PATH: /openapi.json
+              SWHURL_ALLOWED_CALLERS: swhurl-try-11,swhurl-try-12
               HTTP_PROXY: http://egress.egress.svc.cluster.local:30105
               HTTPS_PROXY: http://egress.egress.svc.cluster.local:30105
               JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30105 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30105 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)

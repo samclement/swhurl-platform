@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-10
-  tag: 37-8e55e45
-  digest: sha256:37f284d32c21757f17752187bada1e347404ae2bfee841a5d59f39b5637a590b
+  tag: 43-fab7b45
+  digest: sha256:d58ea50f3f9926faff4f9a363ad8c1eb0a4617bf404bc2c56a285d720a4e66db
 kind: web
 uid: 65532
 stack: typescript
@@ -14,4 +14,4 @@ database: sqlite
 apiPath: /openapi.json
 publishes:
 - visited
-offers: 8e55e45
+offers: fab7b45

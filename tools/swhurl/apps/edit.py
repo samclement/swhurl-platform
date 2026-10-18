@@ -265,29 +265,35 @@ def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, ap
                                                    + [f'-{n}' for n in old.secrets if n not in needs.secrets]))
     if declared.description != old.description:
         changes.append('description')
-    running = workload.resources(entry)
     release = replace(old, image=image, port=port, health_path=health, uid=needs.uid, telemetry=needs.otlp,
                       database=needs.database or '', secrets=tuple(needs.secrets), description=declared.description,
                       resources=Resources(*(needs.minimum.get(field, '') for field, _, _ in RESOURCE_FIELDS)))
     # The instance's own capacity stays: resources render as the larger of it and the image's minimum.
     found = replace(entry, release=release, settings=replace(settings, replicas=replicas, allocations=allocations))
-    resources = workload.resources(found)
-    for (_, section, key) in RESOURCE_FIELDS:
-        if resources[section][key] != running[section][key]:
-            changes.append(f'{section}.{key} {running[section][key]} -> {resources[section][key]} (the image\'s minimum)')
+    changes += at_minimum(entry, found)
+    return found, changes
+
+
+def at_minimum(before: Entry, after: Entry) -> list[str]:
+    """What the image's minimum (``after``'s release) changes in the instance's resources, which render as
+    the larger of it and the instance's capacity. Refused when the instance cannot run it."""
+    running, resources = workload.resources(before), workload.resources(after)
+    changes = [f'{section}.{key} {running[section][key]} -> {resources[section][key]} (the image\'s minimum)'
+               for _, section, key in RESOURCE_FIELDS if resources[section][key] != running[section][key]]
     request, limit = resources['requests']['memory'], resources['limits']['memory']
     if quantity(request) > quantity(limit):
         raise EditError(f'resources: a memory request of {request} is above the memory limit {limit}; declare memoryLimit too')
-    count = 1 if found.settings.replicas is None else found.settings.replicas
-    if over := over_quota([(count + (not release.database), [resources])]):
-        raise EditError(f"resources: the image's minimum {needs.minimum} at {count} replica(s) "
+    count = 1 if after.settings.replicas is None else after.settings.replicas
+    if over := over_quota([(count + (not after.release.database), [resources])]):
+        minimum = {field: value for field, _, _ in RESOURCE_FIELDS if (value := getattr(after.release.resources, field))}
+        raise EditError(f"resources: the image's minimum {minimum} at {count} replica(s) "
                         f'exceeds the namespace quota for {", ".join(over)}')
-    return found, changes
+    return changes
 
 
 def drift_hold(root: Path, app: str) -> Callable[[model_sync.Prepared], None]:
     """Refuse a staging change that production would differ from beyond what may differ (rule env-drift):
-    a promotion does not carry what an image needs yet."""
+    a new port, secret name or database, which production needs prepared for (docs/plan.md section 21, stage 4)."""
     def hold(prepared: model_sync.Prepared) -> None:
         production, staging = instance_folder(root, app, 'prod'), instance_folder(root, app, 'staging')
         if not (production / 'helmrelease.yaml').is_file():
@@ -302,8 +308,8 @@ def drift_hold(root: Path, app: str) -> Callable[[model_sync.Prepared], None]:
                 if path.parent == staging:
                     (rendered / path.name).unlink()
             if drift := policy.drift([production, rendered]):
-                raise EditError(f"{'; '.join(drift)}: a promotion does not carry what an image needs yet, so a need "
-                                'may change only for an app without production')
+                raise EditError(f"{'; '.join(drift)}: a new port, secret name or database waits while the app has "
+                                'production (docs/apps.md#deploy-a-new-image)')
     return hold
 
 
@@ -449,8 +455,9 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
             expect_image: str | None = None, expect_config: str | None = None,
             host: str | None = None, runner=None) -> Path:
     """Production runs staging's release (docs/apps.md#promote-to-production). A later promotion copies
-    staging's Release whole, keeping production's own resources, and renders it with production's own
-    Settings; a first one creates production's records from staging's (promotion.first_production)."""
+    staging's Release whole, the image's minimum resources too (refused when production's quota cannot
+    hold them), and renders it with production's own Settings; a first one creates production's records
+    from staging's (promotion.first_production)."""
     if (source, target) != ('staging', 'prod'):
         raise EditError('promotion must differ between environments and always goes staging → prod')
     src, dst = promotion.read(root, app)
@@ -467,10 +474,12 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     if decision.outcome == 'update':
         if host:
             raise EditError('--host applies only to first production; change existing routes with app-expose')
-        release = replace(staging.release, resources=production.release.resources)
-        change_release(root, each, replace(production, release=release), staging_offers(root, app, staging, folder),
-                       runner=runner)
+        promoted = replace(production, release=staging.release)
+        raised = at_minimum(production, promoted)
+        change_release(root, each, promoted, staging_offers(root, app, staging, folder), runner=runner)
         print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
+        if raised:
+            print(f'[OK] {app}/prod: {", ".join(raised)}')
         egress_difference(app, staging, production)
         return folder
     first = promotion.first_production(root, world, app, host=host)

@@ -67,6 +67,10 @@ class TableTests(unittest.TestCase):
         self.assertTrue(per_environment.may_differ('replicas', 2))
         self.assertTrue(per_environment.may_differ('SWHURL_SERVICE_ORDERS_URL', 'http://x'), 'a prefix row')
         self.assertFalse(per_environment.may_differ('SWHURL_APP', 'orders'))
+        for key in ('probes', 'runAsUser', 'fsGroup', 'OTEL_SERVICE_NAME', contract.OTLP_HOST_IP):
+            self.assertTrue(per_environment.may_differ(key, 'x'), f'{key} moves with the image')
+        for key in ('port', 'envFrom', 'persistence'):
+            self.assertFalse(per_environment.may_differ(key, 'x'), f'{key} waits while the app has production')
         self.assertTrue(per_environment.may_differ('hosts', ['a.example.com']), 'a list of names (TLS)')
         self.assertFalse(per_environment.may_differ('hosts', [{'host': 'a.example.com'}]), 'a list of rules is compared')
         for key in ('ingress', contract.EXPOSURE):

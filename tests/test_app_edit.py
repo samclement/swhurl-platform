@@ -798,20 +798,53 @@ components:
         self.assertEqual(code, 2)
         self.assertIn('--memory 8Mi (at least 16Mi)', err.getvalue())
 
-    def test_a_need_that_would_make_staging_differ_from_production_holds_the_image(self):
+    def test_a_new_port_holds_the_image_while_the_app_has_production(self):
         self.with_units()
         self.built_from_a_repository()
         self.automatic()
         before = {p: p.read_bytes() for p in self.root.rglob('*.yaml')}
-        with self.assertRaisesRegex(edit.EditError, r'env-drift: staging differs from prod at .*httpGet.port.*'
-                                                    'a promotion does not carry what an image needs yet'):
+        with self.assertRaisesRegex(edit.EditError, r'env-drift: staging differs from prod at .*ports.http.port.*'
+                                                    'a new port, secret name or database waits while the app has production'):
             edit.deploy_staging(self.root, 'orders', opener=self.registry(
                 'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9090\nhealthPath: /\nuid: 101\n'}))
         self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
-        # A raised minimum is not drift: environments may differ in resources (make app-scale).
+
+    def test_health_path_user_telemetry_and_minimum_move_with_the_image_to_production(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        declared = 'version: 1\nkind: web\nport: 9000\nhealthPath: /ready\nuid: 1000\ntelemetry: otlp\nresources: {memory: 64Mi}\n'
         changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
-            'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\nresources: {memory: 64Mi}\n'}))
-        self.assertIn('requests.memory 32Mi -> 64Mi', out)
+            'orders', ['8-def5678'], {'swhurl.yaml': declared}))
+        self.assertIn('needs: health path / -> /ready, uid 101 -> 1000, telemetry otlp, requests.memory 32Mi -> 64Mi', out)
+        prod = self.root / 'apps/orders/prod'
+
+        def runs(env):
+            values = yaml.safe_load((self.root / 'apps/orders' / env / 'helmrelease.yaml').read_text())['spec']['values']
+            main = values['controllers']['main']['containers']['main']
+            return ({probe['spec']['httpGet']['path'] for probe in main['probes'].values()},
+                    values['defaultPodOptions']['securityContext']['runAsUser'],
+                    main['env'].get('OTEL_SERVICE_NAME'), main['resources']['requests']['memory'])
+        self.assertEqual(runs('staging'), ({'/ready'}, 1000, 'orders', '64Mi'))
+        self.assertEqual(runs('prod'), ({'/'}, 101, None, '32Mi'), 'production keeps the old release until the promotion')
+        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [], 'not drift: they move with the image')
+
+        _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
+        self.assertIn('[OK] orders/prod: requests.memory 32Mi -> 64Mi (the image\'s minimum)', out)
+        self.assertEqual(runs('prod'), runs('staging'))
+
+        # Production's own capacity still wins where it is higher; a minimum its quota cannot hold is refused.
+        self.quiet(edit.scale, self.root, 'orders', 'prod', replicas=4, memory='128Mi')
+        self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['9-0000000'], {'swhurl.yaml': declared.replace('{memory: 64Mi}', '{cpu: 500m, memory: 96Mi}')}))
+        before = {p: p.read_bytes() for p in prod.rglob('*.yaml')}
+        with self.assertRaisesRegex(edit.EditError, r"the image's minimum \{'cpu': '500m', 'memory': '96Mi'\} at 4 replica\(s\) "
+                                                    'exceeds the namespace quota for requests.cpu'):
+            edit.promote(self.root, 'orders', 'staging', 'prod')
+        self.assertEqual({p: p.read_bytes() for p in prod.rglob('*.yaml')}, before)
+        self.quiet(edit.scale, self.root, 'orders', 'prod', replicas=2)
+        self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
+        self.assertEqual(runs('prod')[3], '128Mi', "production's capacity, above the image's minimum")
 
     def test_the_description_follows_each_image_and_moves_with_it_to_production(self):
         self.with_units()

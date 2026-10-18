@@ -90,8 +90,8 @@ def render_all(root: Path, world: World, platform: Platform, added: frozenset[In
     return Prepared(world, platform, *plan(root, world, platform, added), added)
 
 
-def apply(root: Path, prepared: Prepared) -> list[Path]:
-    """Write a prepared change; return the files changed."""
+def apply(root: Path, prepared: Prepared, *, register: bool = True) -> list[Path]:
+    """Write a prepared change, registering any new instance's unit unless not ``register``; return the files changed."""
     from swhurl.apps.new import watch_namespace
 
     for path, text in prepared.writes.items():
@@ -100,12 +100,13 @@ def apply(root: Path, prepared: Prepared) -> list[Path]:
     for path in prepared.deletions:
         path.unlink()
     changed = [*prepared.writes, *prepared.deletions]
-    if (root / REGISTRY_FILE).is_file():
-        from swhurl.apps.new import GenerationError, register
+    if register and (root / REGISTRY_FILE).is_file():
+        from swhurl.apps.new import GenerationError
+        from swhurl.apps.new import register as add_unit
         for each in sorted(prepared.added, key=str):
             before = (root / REGISTRY_FILE).read_text()
             try:
-                register(root, f'{each.unit}.yaml')
+                add_unit(root, f'{each.unit}.yaml')
             except GenerationError as error:
                 raise EditError(str(error)) from None
             if (root / REGISTRY_FILE).read_text() != before:

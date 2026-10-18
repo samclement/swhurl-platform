@@ -190,7 +190,6 @@ class FirstProductionTests(unittest.TestCase):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
-        edit.set_calls(self.root, 'reports', 'staging', add=['orders'])
         edit.set_events(self.root, 'orders', 'staging', publish=['created'], runner=self.encrypting())
         edit.set_events(self.root, 'reports', 'staging', subscribe=['orders.created'], runner=self.encrypting())
 

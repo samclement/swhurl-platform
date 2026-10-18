@@ -67,7 +67,7 @@ class JobInstanceTests(unittest.TestCase):
     def test_what_a_job_refuses_at_creation(self):
         for extra, message in ((['--schedule', 'every day'], 'is not five cron fields'),
                                (['--exposure', 'authenticated-web', '--host', 'n.homelab.swhurl.com'], 'a job has no Service or route'),
-                               (['--persistence', '1Gi'], 'a job keeps no volume or database')):
+                               (['--database', 'sqlite'], 'a job keeps no volume or database')):
             with self.subTest(extra=extra), self.assertRaisesRegex(new.GenerationError, message):
                 self.generate(*extra)
         with self.assertRaisesRegex(new.GenerationError, '--schedule applies to kind job only'):

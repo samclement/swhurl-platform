@@ -42,14 +42,14 @@ class JobStageTests(unittest.TestCase):
 
     def test_only_job_facts_and_target_survive_restart_and_old_progress_is_ignored(self):
         prepared = job(lines=['x' * 900] * 40 + ['opened'])
-        prepared.target_hash = 'hash-a'
+        prepared.target_hash, prepared.reached = 'hash-a', NOW.isoformat()
         raw = jobstore.record(prepared, str)
         doc = json.loads(raw)
         self.assertNotIn('marks', doc)
         self.assertNotIn('ending', doc)
         doc.update(marks=[['build', 9]], ending={'state': 'live'})
         kept = jobstore.parse(json.dumps(doc))
-        self.assertEqual(kept.target_hash, 'hash-a')
+        self.assertEqual((kept.target_hash, kept.reached), ('hash-a', NOW.isoformat()))
         self.assertEqual(kept.lines[-1], 'opened')
         self.assertLess(len(kept.lines), 41)
         self.assertFalse(hasattr(kept, 'ending'))
@@ -71,8 +71,27 @@ class JobStageTests(unittest.TestCase):
 
 class RenderProgressTests(unittest.TestCase):
     def judge(self, live=HEALTHY, target=TARGET, current=TARGET, applied='render-a', ready=True,
-              image=True, action='promote'):
-        return stages.judge(action, live, target, current, applied, ready, image)
+              image=True, action='promote', reached=''):
+        return stages.judge(action, live, target, current, applied, ready, image, reached)
+
+    def test_a_newer_release_with_the_same_settings_carries_the_change_and_a_replaced_one_still_ran(self):
+        mine = stages.Target('render-a', 'sha256:a', 'settings-1')
+        deployed = stages.Target('render-b', 'sha256:b', 'settings-1')
+        rescaled = stages.Target('render-c', 'sha256:a', 'settings-2')
+        followed = self.judge(action='new', target=mine, current=deployed, applied='render-b')
+        self.assertEqual((followed.state, followed.newer), ('live', 'sha256:b'), "a seed's own build 1 finishes its creation")
+        self.assertEqual(self.judge(action='scale', target=mine, current=deployed, applied='render-a').state, 'applying',
+                         'the newer release must itself be applied')
+        self.assertEqual(self.judge(target=mine, current=deployed, applied='render-b').state, 'superseded',
+                         'a promotion chooses its release: a newer one replaces it')
+        self.assertEqual(self.judge(action='scale', target=mine, current=rescaled).state, 'superseded', 'new settings replace it')
+        seen = NOW.isoformat()
+        replaced = self.judge(action='scale', target=mine, current=rescaled, reached=seen)
+        self.assertEqual((replaced.state, replaced.detail), ('replaced', seen), 'seen at its end, it ran')
+        self.assertEqual(self.judge(action='scale', target=mine, current=deployed, applied='render-a', reached=seen).state,
+                         'replaced', 'once it ran, a newer image rolling out is not this change in progress')
+        self.assertEqual(self.judge(action='scale', target=stages.Target('render-a', 'sha256:a'), current=stages.Target('render-b')).state,
+                         'superseded', 'a tree without settings is never followed')
 
     def test_a_healthy_old_release_cannot_complete_a_new_change(self):
         self.assertEqual(self.judge(applied='old').state, 'applying')
@@ -126,10 +145,16 @@ class PullStageTests(unittest.TestCase):
         for state, status, label in (('live', 'done', 'Live in prod'), ('zero', 'done', 'Live in prod'),
                                      ('applying', 'running', 'In progress'), ('creating', 'running', 'In progress'),
                                      ('failing', 'blocked', 'Failed'), ('held', 'waiting', 'Waiting for you'),
-                                     ('unread', 'unknown', 'Unknown'), ('historical', 'done', 'Merged (historical)'), ('superseded', 'done', 'Superseded')):
+                                     ('unread', 'unknown', 'Unknown'), ('historical', 'done', 'Merged (historical)'), ('superseded', 'done', 'Superseded'),
+                                     ('replaced', 'done', 'Live in prod')):
             with self.subTest(state=state):
                 track = self.track(stages.Rollout(state), state='merged')
                 self.assertEqual((track.status, track.label), (status, label))
+        replaced = self.track(stages.Rollout('replaced', NOW.isoformat()), state='merged')
+        self.assertEqual(replaced.outcome, 'Live in prod from 18 Oct 12:00 UTC; a newer configuration has since replaced it.')
+        self.assertEqual((replaced.stages[-1].state, replaced.stages[-1].note), ('reached', 'then replaced'))
+        self.assertIn('replaced it before it was seen live in prod', self.track(stages.Rollout('superseded'), state='merged').outcome)
+        self.assertIn('runs it, with a newer image', self.track(stages.Rollout('live', newer='sha256:b'), state='merged').outcome)
         removed = self.track(stages.Rollout('removed'), action='remove', unit='web/staging', state='merged')
         self.assertEqual(removed.label, 'Removed from staging')
         team = self.track(action='team-add', unit='team:payments', state='merged')

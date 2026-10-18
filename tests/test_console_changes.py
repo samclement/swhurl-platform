@@ -125,6 +125,7 @@ class RenderTargetTests(unittest.TestCase):
         self.assertIn('hello/staging', targets)
         self.assertEqual(targets['hello/staging'].digest, 'sha256:' + 'a' * 64)
         self.assertTrue(targets['hello/staging'].hash)
+        self.assertEqual(len(targets['hello/staging'].settings), 16, 'its instance.yaml and app.yaml, hashed')
         self.assertNotIn('missing/staging', targets)
         api.fail[f'GET /tarball/{HEAD}'] = (403, 'rate limited')
         with self.assertRaises(actions.ActionError):
@@ -832,6 +833,28 @@ class ChangeAppRouteTests(unittest.TestCase):
             self.assertEqual(targets.call_count, 3, 'immutable render facts may be cached')
             self.assertEqual(sorted(call.args[2] for call in read.call_args_list), [1, 2], 'a merged pull request is read once')
             self.assertFalse(hasattr(jobs.get(2), 'ending'))
+
+    def test_a_change_seen_live_is_remembered_and_a_new_image_carries_it(self):
+        c, jobs = self.client(tree_fake())
+        trees = {'merge1': {'hello/staging': stages.Target('render-a', 'sha256:a', 'settings-1')},
+                 'main': {'hello/staging': stages.Target('render-a', 'sha256:a', 'settings-1')}}
+        rows = [self.row(applied='render-a')]
+        with mock.patch.object(changes, 'console_prs', return_value=[]), \
+                mock.patch.object(changes, 'pull_state', self.merged(jobs, 1)), \
+                mock.patch.object(changes, 'main_commit', side_effect=lambda _r, _g: head[0]), \
+                mock.patch.object(changes, 'render_targets', side_effect=lambda _r, _g, sha: trees[sha]), \
+                mock.patch.object(cluster, 'apps', side_effect=lambda _r, **kw: rows):
+            head = ['main']
+            self.assertIn('hello/staging runs it.', c.get('/jobs/1', headers=WHO).text)
+            self.assertTrue(jobs.get(1).reached, 'the first read at its end is recorded')
+            trees['deploy'] = {'hello/staging': stages.Target('render-b', 'sha256:b', 'settings-1')}
+            head[0], rows[:] = 'deploy', [replace(self.row(applied='render-b'), digest='sha256:b')]
+            self.assertIn('hello/staging runs it, with a newer image.', c.get('/jobs/1', headers=WHO).text)
+            trees['rescale'] = {'hello/staging': stages.Target('render-c', 'sha256:b', 'settings-2')}
+            head[0] = 'rescale'
+            page = c.get('/jobs/1', headers=WHO).text
+            self.assertIn('a newer configuration has since replaced it', page)
+            self.assertNotIn('Superseded', page)
 
     def test_current_main_and_cluster_failures_never_complete_a_change(self):
         c, jobs = self.client(tree_fake())

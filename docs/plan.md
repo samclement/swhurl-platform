@@ -1649,7 +1649,7 @@ A change's progress is a pure function of five facts, read fresh and never persi
 | Applied | the live HelmRelease carries the target render hash and is Ready at its current generation |
 | Running | `apps/state.py`: Healthy with the release's digest, or absent after a remove |
 
-A later change to the same instance makes an unfinished one **superseded**: its hash is no longer the one being rendered. The job store keeps only the job, its actor, its log, the PR number and the target hash; the per-job marks and `ending` go, and `console/stages.py` becomes the table above. A PR job's own result is "PR opened"; the change's row shows the rest. "Finish creating this app" stays, reusing the recorded repository. The notification checker keeps its own rules and may later read the same render hash.
+A later change to the same instance makes an earlier one **superseded** when it was never seen at its end, or **replaced** (it stays at its end, "then replaced") when it was: the job store records the first time Activity saw the change Live, scaled to zero or removed (decided by the operator, 18 October 2026). A newer release with the instance's settings unchanged (a staging deploy) does not replace a change other than a promotion: Activity follows it to that release. The job store keeps only the job, its actor, its log, the PR number, the target hash and that first-seen time; the per-job marks and `ending` go, and `console/stages.py` becomes the table above. A PR job's own result is "PR opened"; the change's row shows the rest. "Finish creating this app" stays, reusing the recorded repository. The notification checker keeps its own rules and may later read the same render hash.
 
 ### Sequencing
 

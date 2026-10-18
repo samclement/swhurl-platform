@@ -6,10 +6,13 @@ one always the terminal stop (``Live in prod``, ``Applied``, ``Removed from stag
 the start so the outcome is known before it is reached.
 
 Progress is derived from the job, pull request, main's render, the live render hash and instance
-state. No stage or rollout verdict is persisted. Output stays with the job as one chronological log.
+state. No stage or rollout verdict is persisted; the one fact kept is when the change was first seen
+at its end (``Job.reached``), so a later change can replace it without unsaying that it ran.
+Output stays with the job as one chronological log.
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 from dataclasses import dataclass
 
@@ -91,20 +94,33 @@ class Target:
     """An instance's render in a Git tree; 'absent' is a proven missing HelmRelease."""
     hash: str
     digest: str = ''
+    settings: str = ''  # a hash of its instance.yaml and app.yaml: what the platform, not the image, decides
 
 
 @dataclass(frozen=True)
 class Rollout:
-    state: str  # live, zero, removed, superseded, applying, creating, removing, failing, held, unread
+    state: str  # live, zero, removed, replaced, superseded, applying, creating, removing, failing, held, unread
     detail: str = ''
     word: str = ''
     applied: bool = False
+    newer: str = ''  # followed to main's newer release: its image tag or digest, when that differs
+
+
+REACHED = ('live', 'zero', 'removed')  # where a change ends; Job.reached records the first time it was seen there
+
+
+def follows(action: str, target: Target, current: Target) -> bool:
+    """Main renders something else for the instance only because a newer release arrived (the Deploy
+    workflow): its settings are the ones this change made, so the change is still in force. A promotion
+    chooses the release itself, so a newer one replaces it."""
+    return action != 'promote' and bool(target.settings) and target.settings == current.settings
 
 
 def judge(action: str, live: State | str | None, target: Target | None, current: Target | None,
-          applied_hash: str = '', ready: bool = False, image_matches: bool = False) -> Rollout:
+          applied_hash: str = '', ready: bool = False, image_matches: bool = False, reached: str = '') -> Rollout:
     """Five fresh facts, never a saved verdict. Hash equality proves application independently of
-    unrelated Git commits. Absence must be proved in Git and on the cluster; a failed read is unknown."""
+    unrelated Git commits. Absence must be proved in Git and on the cluster; a failed read is unknown.
+    ``reached`` is when the change was first seen at its end: a replaced change still ran."""
     if target is None:
         return Rollout('unread', 'the target or current render could not be read')
     if not target.hash:
@@ -113,8 +129,23 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
         return Rollout('unread', 'the target or current render could not be read')
     if not current.hash:
         return Rollout('unread', 'the current render has no hash')
+    newer = ''
     if target.hash != current.hash:
-        return Rollout('superseded')
+        if not follows(action, target, current):
+            return Rollout('replaced', reached) if reached else Rollout('superseded')
+        newer = current.digest if current.digest != target.digest else '-'
+        target = current
+    found = landing(action, live, target, applied_hash, ready, image_matches)
+    if not newer:
+        return found
+    if reached and found.state not in REACHED:  # it ran; what happens to the newer release is not this change's
+        return Rollout('replaced', reached)
+    return Rollout(found.state, found.detail, found.word, found.applied, newer)
+
+
+def landing(action: str, live: State | str | None, target: Target, applied_hash: str, ready: bool,
+            image_matches: bool) -> Rollout:
+    """How far the instance has got to ``target``, main's render for it."""
     if live is None:
         return Rollout('unread', 'the cluster could not be read')
     if action == 'remove':
@@ -174,6 +205,14 @@ def end_label(action: str, target: str) -> str:
     return f'Removed from {env}' if action == 'remove' else f'Live in {env}'
 
 
+def seen(when: str) -> str:
+    """When a change was first seen at its end, as words."""
+    try:
+        return dt.datetime.fromisoformat(when).strftime('%-d %b %H:%M UTC')
+    except ValueError:
+        return 'an earlier read'
+
+
 def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> tuple[list[Stage], str, str]:
     """Validate, Merge, Flux applying it and the terminal stop: ``(stages, status, outcome)``.
     ``landed`` is how far a merged change to an instance has got; None when it was not judged."""
@@ -223,16 +262,20 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
                          done, [Stage('end', 'Merged (historical)', 'reached')])
 
         def applied(status: str, outcome: str, state: str, note: str = '', end: Stage = planned):
-            reached = found.applied or found.state in ('live', 'zero', 'removed')
+            reached = found.applied or found.state in (*REACHED, 'replaced')
             running = [] if action == 'remove' else [Stage('running', 'Running', state if reached else 'todo', note)]
             return track(merged, status, outcome, done,
                          [Stage('rollout', flux, 'done' if reached else state, '' if reached else note), *running, end])
 
-        if found.state == 'superseded':  # the instance now is a later change's doing
-            return track(merged, 'done', f'Merged {pull.when}; a later render of {target} supersedes this change.'.replace(' ;', ';'),
-                         done, [Stage('end', 'Superseded', 'reached')])
+        if found.state == 'replaced':  # it ran; the instance is now a later change's doing
+            return applied('done', f'{end} from {seen(found.detail)}; a newer configuration has since replaced it.', 'done',
+                           end=Stage('end', end, 'reached', 'then replaced'))
+        if found.state == 'superseded':
+            return track(merged, 'done', f'Merged {pull.when}; a newer configuration of {target} replaced it before it was seen '
+                         f'{end[0].lower()}{end[1:]}.'.replace(' ;', ';'), done, [Stage('end', 'Superseded', 'reached')])
         if found.state == 'live':
-            return applied('done', f'{target} runs it.', 'done', end=reached)
+            with_newer = '' if not found.newer else ', with a newer image' if found.newer != '-' else ', with later changes from main'
+            return applied('done', f'{target} runs it{with_newer}.', 'done', end=reached)
         if found.state == 'zero':
             return applied('done', f'{target} is applied and scaled to zero.', 'done', end=Stage('end', end, 'reached', 'scaled to zero'))
         if found.state == 'removed':

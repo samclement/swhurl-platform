@@ -4,7 +4,7 @@ One key per job in the ConfigMap ``console/console-jobs``, written by the pod th
 it starts, as its output grows and as it ends. A pod that starts later reads them: it shows what
 ran before it, and a job whose pod is gone without finishing it is ``interrupted``. Each pod
 writes only its own jobs' keys while they run, so the pod finishing its jobs and the one replacing
-it never undo each other. Progress after the job is read fresh, never stored. Bounded: the newest ``KEEP`` jobs, each record at most ``RECORD_BYTES``.
+it never undo each other. Progress after the job is read fresh, never stored, except when its change was first seen at its end. Bounded: the newest ``KEEP`` jobs, each record at most ``RECORD_BYTES``.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def record(job: Job, redact) -> str:
         raw = json.dumps({'id': job.id, 'action': job.action, 'unit': job.unit, 'identity': job.identity,
                           'started': job.started.isoformat(), 'finished': job.finished.isoformat() if job.finished else None,
                           'state': job.state, 'link': job.link, 'owner': job.owner, 'resume': job.resume,
-                          'target_hash': job.target_hash, 'lines': lines},
+                          'target_hash': job.target_hash, 'reached': job.reached, 'lines': lines},
                          ensure_ascii=False)
         if len(raw.encode()) <= RECORD_BYTES or len(lines) <= 1:
             return raw
@@ -52,7 +52,7 @@ def parse(raw: str) -> Job | None:
                     str(doc['state']), dt.datetime.fromisoformat(doc['finished']) if doc.get('finished') else None,
                     str(doc.get('link') or ''), str(doc.get('owner') or ''),
                     doc['resume'] if isinstance(doc.get('resume'), dict) else None,
-                    target_hash=str(doc.get('target_hash') or ''))
+                    target_hash=str(doc.get('target_hash') or ''), reached=str(doc.get('reached') or ''))
     except (ValueError, KeyError, TypeError):
         return None
     return found if found.state in ('running', 'succeeded', 'failed', 'interrupted') else None

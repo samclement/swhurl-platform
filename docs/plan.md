@@ -43,6 +43,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
     - **Gain:** about 2 minutes per new Kotlin app, about 25 s per TypeScript app (its build is fast); once per app.
     - **Recommendation:** publish seeds for the tested combinations without `api` or `events` (defaults, worker, SQLite, flags) when apps start using them; leave the rest until the runtime-name change is wanted for other reasons.
 20. **App types for new apps: decided 17 October 2026; stage 1 done 17 October 2026** ([evidence](current-state.md#calls-carrying-the-signed-in-person-17-october-2026)): templates `v0.2.13` carry the signed-in person on calls (`onBehalfOf`), proven both ways between a TypeScript and a Kotlin app; **stage 2 done 17 October 2026** ([evidence](current-state.md#an-image-serves-the-name-and-description-the-platform-gives-it-17-october-2026)): `swhurl.yaml`'s `description` becomes `SWHURL_DESCRIPTION`, and templates `v0.2.14` serve it and `SWHURL_APP` in their API description ([section 23](#23-app-types-for-new-apps--decided-17-october-2026)). New apps are created by type (web app, API, worker, scheduled job) instead of by feature; each type sets its stack choices and template answers. Decided by the operator: calls carry the signed-in person; Web app has SQLite; each type has its own seed. The proposed decisions were accepted the same day: types defined in the platform, scheduled job as a fourth type, APIs private by default, `ANSWERS=` kept for the operator. **Stage 3 deployed 17 October 2026** (`cb2256c7`, console image `src-6266cd19c909db7a`): `APP_TYPES`, the type-first New app form, `make app-repo TYPE=`, and `make check-templates` checking each type against the pinned templates; left for it: creating an API and a worker from the deployed console. Until stage 6 a new app of a type gets no seed image (only the templates' default answers have one), so its first image is its own build: about 2 minutes more for Kotlin, 25 s for TypeScript. **Stage 6 done 17 October 2026** ([evidence](current-state.md#a-seed-image-for-every-app-type-17-october-2026)): templates `v0.2.15` publish a seed per tested set of answers, every type among them; a Kotlin API created from the console was Available on its seed in 213 s. That also closes stage 3's live check (an API and a worker from the deployed console). Two New app jobs at once now both merge: the gate makes the shared files on the newest `main` ([evidence](current-state.md#two-new-apps-at-once-removal-notices-17-october-2026)). **Stage 4 done 18 October 2026** ([evidence](current-state.md#a-web-app-with-a-browser-frontend-18-october-2026)): templates `v0.2.16` give the Web app type a Vite+ page at `/` and its API under `/api/*`, not listed in the Catalogue. Next: stage 5 (scheduled job). Operator: delete the GitHub repositories and packages `swhurl-try-21` to `swhurl-try-27` (instances removed).
+21. **Fixed features per app type: decided 18 October 2026, not started** ([section 26](#26-fixed-features-per-app-type--decided-18-october-2026-not-started)). Each type's template answers become the only ones a template accepts: 7 renders and 7 template builds instead of 144 and 18; `ANSWERS=` goes; workers never have a database; demo-shop becomes a web app with its own SQLite, which first needs section 21 stage 4's narrow version (it has production). Next: F1 (templates). Operator: decide `swhurl-try-11` and `-12` (become APIs or keep their old answers).
 
 ### Delivered
 
@@ -1777,3 +1778,84 @@ flowchart LR
 | H5 | Remove host scheduling, Deployment discovery and exec pipelines | No callers left; fresh-machine restore passes |
 
 **Rollback:** suspend the CronJobs through Git and re-enable the host timer; keep the old credential and local archives until H5.
+
+## 26. Fixed features per app type — decided 18 October 2026, not started
+
+**Why.** New apps are created by type (section 23), but the templates still accept any combination of their questions, and the platform still handles every combination: `make check-templates` renders 144, the template CI builds 9 per stack, `make app-repo ANSWERS=` can create a combination no CI has built, and an app's `swhurl.yaml` can add a database to a worker. Fixing the answers per type cuts what is maintained and tested to 7 sets of answers.
+
+**The types (operator, 18 October 2026).** Unchanged from `APP_TYPES`; web apps keep SQLite, workers and scheduled jobs never have one. AsyncAPI and the example flag stop being questions: every app has them.
+
+| Type | Stacks | `kind` | SQLite | OpenAPI | Browser page | Access at first |
+| --- | --- | --- | --- | --- | --- | --- |
+| `web-app` | TypeScript | `web` | yes | its own `/api/*`, not offered | Vite+ | signed-in |
+| `api` | TypeScript, Kotlin | `web` | yes | offered | — | private |
+| `worker` | TypeScript, Kotlin | `worker` | — | — | — | private, no route |
+| `scheduled-job` | TypeScript, Kotlin | `job` | — | — | — | private, no route |
+
+**What it changes in testing.**
+
+| | Today | After |
+| --- | --- | --- |
+| Template questions | TypeScript 6, Kotlin 5 | TypeScript 4 (`kind`, `database`, `api`, `frontend`), Kotlin 3 |
+| Answers a template accepts | 120 of 144 (only a job with a database is refused) | 7: the types; anything else is refused by the template's validator |
+| `make check-templates` | 144 renders, 64 distinct `swhurl.yaml`, cached between runs | 7 renders plus one refused combination per stack; no cache |
+| Template CI builds per push | 9 per stack (18) | TypeScript 4, Kotlin 3 (7), each a seed |
+| Adding a feature to a type | a question, plus matrix lines for defaults, each choice alone and all together | that type's answers in `APP_TYPES` and in the template's accepted list |
+
+**Decisions.**
+
+| Decision | Outcome |
+| --- | --- |
+| Database by type | **Chosen (operator, 18 October 2026):** `web-app` and `api` have SQLite; `worker` and `scheduled-job` never do. Cost accepted: every web app runs one replica with stop-first updates (rule `single-writer`), so `make app-scale` cannot add replicas to it and each deploy has a short gap. A worker that needs state keeps it through an API |
+| How the template fixes the answers | **Proposed:** keep section 23's choice (the platform expands a type into recorded answers; `.copier-answers.yml` keeps every answer), and give each template's last question a validator that accepts only the types' answer sets. Rejected again: a `type` question deriving the others (a changed type would alter existing apps on their Renovate update). Changing a type later adds its new answer set and keeps the old one accepted until no app records it |
+| `events` and `flags` questions | **Proposed:** removed; every app renders `asyncapi.yaml` and the example flag. Old answers files keep the two keys; Copier ignores answers to questions that no longer exist |
+| `ANSWERS=` on `make app-repo` | **Proposed:** removed, superseding section 23's decision to keep it; `TYPE` is required |
+| Recording the type on the app | **Proposed:** not recorded. `kind` is already recorded and fixed for life, and the only rule needed is on `kind`: a database only for `kind: web`. `declaration.py` and `app-new` already refuse one for a job; extend both to a worker |
+| A web app without a database | **Proposed:** still accepted by the platform (removing a database is already refused while its volume exists, and adding one with a new image works), so legacy apps keep running; the templates no longer produce one |
+
+**Existing apps** (answers read from each repository on 18 October 2026; none records `flags`, older than the question):
+
+| App | Template | Answers today | Type | Change |
+| --- | --- | --- | --- | --- |
+| `demo-orders` | TypeScript `v0.2.5` | web, sqlite, openapi, asyncapi | `api` | Template update only |
+| `demo-shop` | TypeScript `v0.2.5` | web, no database, openapi, no events | `web-app` | Migration below |
+| `demo-shopper` | TypeScript `v0.2.5` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
+| `demo-notifier` | Kotlin `v0.2.4` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
+| `swhurl-try-10` | TypeScript `v0.2.5` | web, sqlite, openapi, asyncapi | `api` | Template update only |
+| `swhurl-try-11` | TypeScript `v0.2.5` | web, no database, openapi, no events | none | Operator: make it an `api` (gains a volume) or leave it on its old answers (section 18 keeps it to show several teams) |
+| `swhurl-try-12` | TypeScript `v0.2.4` | web, no database, openapi, asyncapi | none | As `swhurl-try-11` |
+| `swhurl-try-13` | TypeScript `v0.2.5` | worker, no events | `worker` | Template update; gains `asyncapi.yaml` |
+
+A worker that publishes nothing deletes the example `worked` event from its `asyncapi.yaml`; check in F1 that the helpers accept a document with no events.
+
+**demo-shop to a web app.** Today its JSON routes are at the root (`GET /`, `POST /buy`), it offers its API to other apps and calls `demo-orders`; it runs in staging and production, and `demo-shopper` (staging only) calls it as an app. After: a page at `/` with the items, the latest orders and a Buy button; the JSON routes under `/api/*`; its own SQLite keeps the purchases made through the shop (who bought what), shown on the page as recent purchases. Orders stay in `demo-orders`.
+
+```mermaid
+flowchart LR
+  person(["you, signed in"]) -- "page /, then POST /api/buy" --> shop["demo-shop<br/>web-app, SQLite"]
+  shopper["demo-shopper"] -- "POST /api/buy, as the app" --> shop
+  shop -- "call with token" --> orders["demo-orders<br/>api, SQLite"]
+```
+
+| Before | After |
+| --- | --- |
+| `GET /` returns the shop as JSON | `GET /` is the page; `GET /api/shop` returns the JSON |
+| `POST /buy?item=tea&quantity=12` | `POST /api/buy?item=tea&quantity=12` |
+| `provides: {api: /openapi.json}`, listed in the Catalogue | not offered; `openapi.json` still types the page's calls |
+| no database | `database: sqlite`: a retained volume, nightly backup, one replica |
+
+**demo-shop has production, so its new database is held** (section 21, [stage 4 deferred](#stage-4-deferred-operator-16-october-2026)): this is the trigger that section names. F4 builds its narrow version first. The other way, removing demo-shop's production instance and promoting again (a first promotion creates the empty database), deletes a production instance and needs the operator's confirmation; demo-shop keeps no data, so nothing would be lost.
+
+### Stages
+
+| # | Stage | Ends in |
+| --- | --- | --- |
+| F1 | Templates, both repositories: drop the `events` and `flags` questions (always on); a validator accepting only the types' answer sets; the Template workflow's matrix becomes the types (seeds keyed by the new answer sets); release tags. Check that a worker's `asyncapi.yaml` may declare no events | Template PRs green; a seed per type published |
+| F2 | Platform: pin the releases in `STACK_REVISIONS`; `APP_TYPES` without `events` and `flags`; `ANSWERS=` removed from `repo.py`, `commands.py` and the docs; `templates_check.py` renders `APP_TYPES` × stacks and checks one refused combination per stack, without the cache; `declaration.py` and `app-new` refuse a database for a worker. Docs: `apps.md` (app types and features as one table, how templates are tested), `commands.md` (`app-repo`), `AGENTS.md` (the Stack templates lesson on matrix lines) | `make check`, `make check-templates`; console deployed; a throwaway `web-app` and `worker` from the console start on their seeds, then removed |
+| F3 | Existing apps onto their types: one reviewed Copier update per app to the pinned tag with its type's answers (table above); `swhurl-try-11` and `-12` as the operator decides | Each app's Container checks green and staging healthy |
+| F4 | Section 21 stage 4, narrow: a promotion copies staging's Release whole (database included), with `with_needs`'s refusals and no rollback across a database change; the gate does not auto-merge a promotion whose needs differ | Tests; `make check` |
+| F5 | demo-shop: Copier update to a web app (`--data database=sqlite --data frontend=vite` with F1's answers), routes under `/api/*` with `/buy` and `/` kept as aliases for one release, the page and the purchases table; then `demo-shopper` to `/api/*`; then the aliases removed; then demo-shop promoted (merged by hand: it changes what the app offers and its needs). Docs: the demo apps section of `apps.md` | Staging and production pages work signed in; signed out redirects to sign-in over HTTP and HTTPS; `demo-shopper`'s traffic still reaches `demo-orders`; demo-shop's first backup in S3; evidence in `current-state.md` |
+
+Checklist (F5 adds storage): retention is the backup bucket's (section 25); no new credential; logs as before; `make verify-platform` judges the new database's backup freshness from the instances; the volume is restorable with `make restore-sqlite`.
+
+**Not covered.** A worker type with state; a Kotlin web app; recording the type on an app; moving other apps between types.

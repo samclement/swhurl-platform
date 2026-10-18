@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, operation, publish, gate), the use cases as compositions of them, and capabilities as the unit of co-location. Automatic merge and the console's progress view are reimplemented on them: one gate replays any console PR's request on the newest `main` and merges it under that operation's rule (new staging apps and later promotions of a release that ran Healthy in staging merge themselves), and progress is derived from the job, the PR, `main`, a render hash on the HelmRelease and the instance's state. Order: prune and inventory, a shadow model checked against every instance, operations and the gate moved onto it one at a time, a single cutover commit, then Activity. Seed images stay. Section 21's deferred needs and section 22's event check build on the model. Backups ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) are deferred until after the cutover. Next: the stage 0 inventory.
+**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, operation, publish, gate), the use cases as compositions of them, and capabilities as the unit of co-location. Automatic merge and the console's progress view are reimplemented on them: one gate replays any console PR's request on the newest `main` and merges it under that operation's rule (new staging apps and later promotions of a release that ran Healthy in staging merge themselves), and progress is derived from the job, the PR, `main`, a render hash on the HelmRelease and the instance's state. Order: prune and inventory, a shadow model checked against every instance, operations and the gate moved onto it one at a time, a single cutover commit, then Activity. Seed images stay. Section 21's deferred needs and section 22's event check build on the model. Backups ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) are deferred until after the cutover. Stage 0 is done (no unsupported fields); next is stage 1, the shadow model. Decision owed: whether team and alerts move to an app-level file.
 
 **New app creation speed — delivered 14 October 2026:** Kotlin `v0.2.5` (`03872aa`, template PR #27) and catalogue `89a666e` are deployed. New-app merge verification uses the same schema and app-policy checks as promotions (`4a87c7c`); the Kotlin runtime stage, dependency caches and smoke-test polling are described in [the canonical guide](apps.md#first-builds-of-new-apps). All seven template CI combinations passed on PR and main, and `make check` passed 749 tests and 32 policy combinations. Equivalent fresh console creations became Available in 312 s before and 247 s after; merge verification fell from 71 to 21 s, while the complete image workflow did not improve in this pair. [Dated evidence](current-state.md#new-app-creation-speed-14-october-2026) records each stage and measurement limits. Platform health and HTTP/HTTPS/handler checks passed. Both timing apps, `swhurl-try-16` and `swhurl-try-17`, are removed (`swhurl-try-17` on 18 October 2026). The signed-in browser path remains unexercised. [Cleanup evidence](current-state.md#timing-app-cleanup-14-october-2026) records the live removal. The next proposed optimisation is separating Kotlin app identity from compiled build inputs, so fresh apps with matching code can reuse compiled layers; current default renders differ in build inputs only at `src/main/resources/application.properties`, and the compile/test/package step took 44–52 s. Preserve local and deployed identity, prove cache hits and invalidation, and retain normal builds for personalised API/events or changed code. This is a proposal, not authorised implementation.
 
@@ -1576,8 +1576,9 @@ Code is grouped by capability, not by layer. Each capability module owns its par
 version: 1
 image: ghcr.io/samclement/orders:12-abcdef0@sha256:<digest>
 source: {repository: samclement/orders, commit: <full-sha>}
-type: web
-description: Records orders
+stack: typescript
+kind: web
+description: Records orders   # optional; no deployed image declares one yet
 needs:
   port: 8080
   healthPath: /healthz
@@ -1602,6 +1603,7 @@ alerts: {errors: 5, error-logs: 5}
 allocations:
   database: {storageClass: local-path-retain, size: 1Gi}
   egressPort: 30101
+  eventsKey: UDFZ...   # the NATS public key; its seed stays in events.sops.yaml
 ~~~
 
 Field names are settled by the stage 1 prototype. Neither file is listed in the instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
@@ -1644,7 +1646,7 @@ A later change to the same instance makes an unfinished one **superseded**: its 
 
 | Stage | Work | Exit |
 | --- | --- | --- |
-| 0 | Throwaways pruned on 18 October 2026: `swhurl-try-17` and `-18` removed; `swhurl-try-10` to `-13` stay to show several teams' deployments. Inventory every field of every remaining instance against the primitives | Every field has an owner or is listed as unsupported |
+| 0 | **Done 18 October 2026.** Throwaways pruned (`swhurl-try-17` and `-18` removed; `swhurl-try-10` to `-13` stay to show several teams' deployments); every field inventoried ([below](#stage-0-inventory-18-october-2026)) | Every field has an owner; none is unsupported |
 | 1 | **Shadow model:** schemas, capability modules, `render`, and a reader that builds Release and Settings from today's manifests. CI asserts read-then-render reproduces every committed instance | Zero difference for every instance, held through ordinary work (at least one deploy, one promotion and one new app) |
 | 2 | **Operations and gate:** move operations onto the model one at a time, still writing today's files: calls, events, egress, scale and expose, deploy, then promotion and new app. The replay gate arrives with the first PR-producing operation and takes over each operation's merges as it moves; `check_promotion` and `check_new_app` go when theirs do. Each move deletes the old mutation code and adds golden tests | `edit.py`'s inference, `per_environment.py`'s drift rows, `parse_args` reconstruction, the `new`↔`edit` cycle and the bespoke gate checks are gone |
 | 3 | **Cutover, one commit:** add `release.yaml` and `instance.yaml` for every instance, switch the reader from manifests to them, delete the manifest reader. Pause console app actions and Deploy dispatches for the window; check a job runs on the new console image | `render` is a no-op on every instance (no rollout); `make verify-platform` and `make app-status` pass |
@@ -1652,6 +1654,32 @@ A later change to the same instance makes an unfinished one **superseded**: its 
 | 5 | Build on the model: section 21's deferred needs for apps with production (promotion carries a release; checks decide), section 22's event check as a comparison of two releases, section 25's SQLite backup job as the sqlite capability | Each is one capability change with its tests |
 
 Section 23's stage 5 and section 21's egress stages E3a and E3b continue meanwhile; their changes move with stage 2. Stage 4 needs only stage 1's `render` and can run in parallel with stages 2 and 3 if wanted; it is placed after the cutover so the annotation is not added twice.
+
+### Stage 0 inventory (18 October 2026)
+
+Every file of the 13 instances was flattened into its field paths (305 distinct paths, app and environment names normalised), and each deployed image's `swhurl.yaml` was read at its own commit. **No field is unsupported:** there are no policy exceptions, handwritten Helm values, extra containers or mounts. Every field has one of these owners:
+
+| Owner | Fields today, and where they land |
+| --- | --- |
+| **Release** | image tag and digest; the `platform.swhurl.com/offers` annotation, `offers/` documents and `offers/source.yaml`; `SWHURL_API_PATH`; port (Service, probes, NetworkPolicy port, callers' URLs); health path (three probes); uid (pod security context); resource minimum; `database: sqlite` (claim, `DATABASE_PATH`, one replica, `Recreate`, namespace not pruned); kind (web gets Service, probes and the signing keys; worker none); published events (`SWHURL_EVENTS_PUBLISH`, the Stream) |
+| **Settings** | team (namespace label); exposure (namespace label, Ingress, hosts, the Traefik NetworkPolicy rule); calls (`SWHURL_SERVICE_*`, token audiences); subscriptions (`SWHURL_EVENTS_SUBSCRIBE`, Consumers); egress grants, alerts, capacity and schedule (none set today) |
+| **Allocations** | egress proxy port (`HTTP_PROXY`, `HTTPS_PROXY`, `JAVA_TOOL_OPTIONS`, `platform/egress/proxy.yaml`; 13 ports, 30101 to 30113); storage class and size (4 claims, all `local-path-retain`, 1Gi); NATS public key (`SWHURL_EVENTS_NKEY`, `platform/nats/users.yaml`; 13 keys) |
+| **Encrypted, existing owners** | `events.sops.yaml` (the NATS seed, all 13); `secret.sops.yaml` (none live) |
+| **Derived across instances** | `SWHURL_ALLOWED_CALLERS` and the callee's NetworkPolicy rules (from callers' calls), NATS permissions, Reloader namespaces, unit registration |
+| **Platform** | chart and version, intervals, timeout, remediation; container and pod security; quota; OTel, notify, NATS and auth-issuer variables and the signing keys; `NO_PROXY`, `NODE_USE_ENV_PROXY`; the issuer (`letsencrypt-prod` everywhere); `/tmp` and token volumes; stream limits and consumer settings; staging's ImageRepository and ImagePolicy; the Kustomization resource list |
+
+**Findings that change the design:**
+
+- **The NATS public key is an allocation.** Render needs it and cannot decrypt the seed, so key preparation records it in `instance.yaml` (`allocations.eventsKey`, above).
+- **A release records `stack` and `kind`, not `type`.** All 13 images declare `version: 1`, `stack`, `kind` and `uid`. Web images also declare `port` and `healthPath`, and some declare `database`, `provides` and (Kotlin only) a resource minimum. App types are a creation choice (section 23) that no image declares. None declares a description, so `SWHURL_DESCRIPTION` is set nowhere, and all still carry the ignored `autoDeploy: true`.
+- **Capacity starts empty everywhere.** Resources equal the image's minimum (3 Kotlin instances) or the platform default (10 TypeScript), and `replicas` is written only for SQLite instances, as 1. No instance has been scaled.
+- **Production runs older images:** for example, `demo-orders` runs run 3 in production and run 34 in staging. The importer reads each instance's `swhurl.yaml` at that instance's own commit; all 13 were readable.
+- **Team and alerts are per app, not per environment.** Each app's team label is the same in both environments, and `make app-alerts` changes every environment at once (stored as a namespace annotation; none set). **Decision owed:** an app-level `apps/<app>/app.yaml` holding team and alerts (recommended: one fact, one place), or a copy in each `instance.yaml` plus a rule that they agree.
+- **Compare objects, not bytes.** Formatting differs between instances, for example `platform.swhurl.com/offers: 'bb7a44b'` in one and unquoted in another. Stage 1's shadow check compares parsed objects; the cutover commit may reformat bytes, which changes nothing on the cluster.
+
+**Supported but not live:** each needs a fixture in the golden set, because no real instance exercises it: a scheduled job, a Web app with a frontend, a private web app, public exposure, egress grants, alert overrides, app secrets, capacity above the minimum, a declared description, and an app subscribing in production.
+
+**In use today:** three teams (`demo` 6 instances, `insights` 4, `payments` 3); 10 web instances behind sign-in and 3 private workers; calls from 5 instances; staging-only subscriptions on 2; events published by 6; 4 SQLite databases; 13 egress ports and NATS keys.
 
 ### Cutover: single, behind a shadow period
 

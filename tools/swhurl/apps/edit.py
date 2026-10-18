@@ -49,19 +49,18 @@ from swhurl.apps.calling import (
     declared_calls,
 )
 from swhurl.apps.contract import (
-    AUTH_MIDDLEWARE,
     DATA_MOUNT,
     DATABASE_PATH_VARIABLE,
-    EXPOSURE,
     EXPOSURES,
     IMAGE_AUTOMATION_FILE,
+    JOB_SCHEDULE,
+    JOB_TIME_ZONE,
     OTLP_HOST_IP,
     RELOAD,
     RETAINED_STORAGE_CLASS,
     SECRET_FILE,
     SECRET_NAMES,
     SQLITE_PATH,
-    TEAM,
     app_secret,
     declared_secrets,
     default_host,
@@ -80,7 +79,6 @@ from swhurl.apps.derive import (
     controller,
     instance_dir,
     instances_in,
-    isolation_edits,
     service_port,
     subscribers_of,
     sync,
@@ -89,12 +87,14 @@ from swhurl.apps.derive import (
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model import workload
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
-from swhurl.apps.model.exposure import ingress_values
+from swhurl.apps.model.exposure import ROUTED
+from swhurl.apps.model.records import Resources
+from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     check_generated,
-    depends_on,
     dump,
     watch_namespace,
 )
@@ -627,45 +627,36 @@ def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
                         api_path=served if found else '', runner=runner)
 
 
-def set_team(root: Path, app: str, name: str) -> Path:
-    """Move every environment of an app to a team, and give each its quota and NetworkPolicy if it lacks them."""
-    if name not in teams(root):
-        raise EditError(f'unknown team {name!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
-    found = [env for env in ENVIRONMENTS if (instance_folder(root, app, env) / 'helmrelease.yaml').is_file()]
+def app_instances(root: Path, app: str) -> list[Instance]:
+    """The app's instances, staging first; refused when it has none."""
+    world, _ = model_sync.read(root)
+    found = [each for env in ENVIRONMENTS if (each := Instance(app, env)) in world]
     if not found:
         instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
-    edits: list[tuple[Path, str]] = []
-    for env in found:
-        instance = instance_dir(root, app, env)
-        namespace = YamlFile(instance / 'namespace.yaml')
-        labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
-        if labels.get(TEAM) != name:
-            labels[TEAM] = name
-            edits.append((namespace.path, namespace.render()))
-        wanted = isolation_edits(instance, app, env, labels.get(EXPOSURE), YamlFile(instance / 'helmrelease.yaml').data)
-        edits += [(path, text) for path, text in wanted if not path.exists() or path.read_text() != text]
-    if not edits:
+    return found
+
+
+def set_team(root: Path, app: str, name: str) -> Path:
+    """Move every environment of an app to a team (its App record, rendered into each namespace)."""
+    if name not in teams(root):
+        raise EditError(f'unknown team {name!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
+    found = app_instances(root, app)
+    if not model_sync.change(root, found, lambda entry: replace(entry, app=replace(entry.app, team=name))):
         raise EditError(f'{app} already belongs to {name}')
-    for path, text in edits:
-        path.write_text(text)
-    print(f'[OK] {app}: team {name} ({", ".join(found)})')
-    return instance_folder(root, app, found[0])
+    print(f'[OK] {app}: team {name} ({", ".join(each.env for each in found)})')
+    return found[0].folder(root)
 
 
 def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, none: bool = False,
                default: bool = False) -> Path:
     """Change an app's default alerts in every environment: a threshold or ``none`` per alert (``changes``),
     no alert at all, or back to the defaults. The dashboard job replaces the alerts within a minute."""
-    found = [env for env in ENVIRONMENTS if (instance_folder(root, app, env) / 'namespace.yaml').is_file()]
-    if not found:
-        instance_dir(root, app, ENVIRONMENTS[0])  # raises, naming what is missing
+    found = app_instances(root, app)
     if sum((bool(changes), none, default)) != 1:
         raise EditError('give thresholds (--error-logs, --errors), or --none, or --default')
-    namespaces = [YamlFile(instance_folder(root, app, env) / 'namespace.yaml') for env in found]
-    current = next((str(annotations[app_alerts.ANNOTATION]) for n in namespaces
-                    if app_alerts.ANNOTATION in (annotations := mapping(n.data, 'metadata').get('annotations') or {})), '')
+    world, _ = model_sync.read(root)
     try:
-        settings = app_alerts.thresholds(current)
+        settings = app_alerts.thresholds(world[found[0]].app.alerts)
         for key, value in (changes or {}).items():
             settings |= {key: app_alerts.thresholds(f'{key}={value}')[key]}
     except ValueError as error:
@@ -676,25 +667,11 @@ def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, n
         spec = ''
     else:
         spec = app_alerts.spec_of(settings)
-    edits = 0
-    for namespace in namespaces:
-        metadata = mapping(namespace.data, 'metadata')
-        annotations = metadata.get('annotations') or {}
-        if str(annotations.get(app_alerts.ANNOTATION, '')) == spec:
-            continue
-        if spec:
-            mapping(metadata, 'annotations', create=True)[app_alerts.ANNOTATION] = spec
-        else:
-            del annotations[app_alerts.ANNOTATION]
-            if not annotations:
-                del metadata['annotations']
-        namespace.save()
-        edits += 1
-    if not edits:
+    if not model_sync.change(root, found, lambda entry: replace(entry, app=replace(entry.app, alerts=spec))):
         raise EditError(f'{app} already has those alert settings')
     described = ', '.join(f'{key} {"none" if value is None else f">= {value}"}' for key, value in app_alerts.thresholds(spec).items())
-    print(f'[OK] {app}: alerts {described} ({", ".join(found)})')
-    return instance_folder(root, app, found[0])
+    print(f'[OK] {app}: alerts {described} ({", ".join(each.env for each in found)})')
+    return found[0].folder(root)
 
 
 def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
@@ -772,41 +749,53 @@ def image_minimum(root: Path, app: str, env: str, *, token: str = '', opener: of
 
 def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: str | None = None,
           memory: str | None = None, memory_limit: str | None = None, minimum: dict | None = None) -> Path:
-    """Change replicas or resources; never resources below ``minimum``, what the image needs (image_minimum)."""
+    """Change replicas or the capacity in the instance's Settings; never resources below ``minimum``, what
+    the image needs (image_minimum), or below the platform's default where the image states none."""
     if replicas is None and not (cpu or memory or memory_limit):
         raise EditError('give at least one of --replicas, --cpu, --memory, --memory-limit')
     if replicas is not None and not 0 <= replicas <= MAX_REPLICAS:
         raise EditError(f'--replicas must be 0 to {MAX_REPLICAS}')
-    for value, pattern, flag in ((cpu, CPU_RE, '--cpu'), (memory, MEMORY_RE, '--memory'),
-                                 (memory_limit, MEMORY_RE, '--memory-limit')):
-        if value and not pattern.match(value):
-            raise EditError(f'{flag} {value!r} is not a quantity like ' + ('100m or 0.5' if flag == '--cpu' else '64Mi'))
-    below = [f'--{field.replace("_", "-")} {value} (at least {(minimum or {})[field]})'
-             for field, value in (('cpu', cpu), ('memory', memory), ('memory_limit', memory_limit))
-             if value and field in (minimum or {}) and quantity(value) < quantity(minimum[field])]
+    requested = {'cpu': cpu, 'memory': memory, 'memory_limit': memory_limit}
+    for field, value in requested.items():
+        flag = f'--{field.replace("_", "-")}'
+        if value and not (CPU_RE if field == 'cpu' else MEMORY_RE).match(value):
+            raise EditError(f'{flag} {value!r} is not a quantity like ' + ('100m or 0.5' if field == 'cpu' else '64Mi'))
+    minimum = minimum or {}
+    below = [f'--{field.replace("_", "-")} {value} (at least {minimum[field]})'
+             for field, value in requested.items()
+             if value and field in minimum and quantity(value) < quantity(minimum[field])]
     if below:
         raise EditError(f"below the image's minimum, from resources in its {declaration.FILE}: {', '.join(below)}")
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    main = controller(document.data)
-    if replicas is not None and helmrelease.kind(document.data) == 'job':
+    below = [f'--{field.replace("_", "-")} {value} (at least {getattr(DEFAULT_RESOURCES, field)})'
+             for field, value in requested.items()
+             if value and field not in minimum and quantity(value) < quantity(getattr(DEFAULT_RESOURCES, field))]
+    if below:
+        raise EditError(f"below the platform's default resources: {', '.join(below)}")
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    if replicas is not None and entry.release.kind == 'job':
         raise EditError(f'{app}/{env} is a job: it runs one pod per run, on its schedule (make app-schedule); '
                         'only its resources can be changed')
-    resources = mapping(container(document.data), 'resources', create=True) if cpu or memory or memory_limit else None
+    running = workload.resources(entry)
+    effective = {'cpu': running['requests']['cpu'], 'memory': running['requests']['memory'],
+                 'memory_limit': running['limits']['memory']}
     changes = []
-    if replicas is not None and main.get('replicas', 1) != replicas:
-        if 'replicas' in main:
-            main['replicas'] = replicas
-        else:
-            main.insert(0, 'replicas', replicas)
+    current_replicas = 1 if entry.settings.replicas is None else entry.settings.replicas
+    if replicas is not None and replicas != current_replicas:
         changes.append(f'replicas {replicas}')
-    for section, key, value in (('requests', 'cpu', cpu), ('requests', 'memory', memory), ('limits', 'memory', memory_limit)):
-        if value and mapping(resources, section, create=True).get(key) != value:
-            resources[section][key] = value
-            changes.append(f'{section}.{key} {value}')
+    else:
+        replicas = entry.settings.replicas
+    labels = {'cpu': 'requests.cpu', 'memory': 'requests.memory', 'memory_limit': 'limits.memory'}
+    changes += [f'{labels[field]} {value}' for field, value in requested.items() if value and value != effective[field]]
     if not changes:
         raise EditError(f'{app}/{env} already has those settings')
-    document.save()
+    # The image's minimum (or the default) and the capacity chosen here, which renders as the larger.
+    floor = Resources(*(minimum.get(field, '') for field in requested))
+    capacity = Resources(*(requested[field] or effective[field] for field in requested))
+    model_sync.change(root, each, lambda entry: replace(
+        entry, release=replace(entry.release, resources=floor),
+        settings=replace(entry.settings, replicas=replicas, capacity=capacity)))
     print(f'[OK] {app}/{env}: {", ".join(changes)}')
     return instance
 
@@ -815,33 +804,18 @@ def schedule(root: Path, app: str, env: str, when: str) -> Path:
     """Change when a job runs: five cron fields in its time zone (Etc/UTC)."""
     if problem := schedule_problem(when):
         raise EditError(problem)
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    if helmrelease.kind(document.data) != 'job':
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    if entry.release.kind != 'job':
         raise EditError(f'{app}/{env} is not a job: only a job runs on a schedule')
-    settings = mapping(controller(document.data), 'cronjob')
-    if settings.get('schedule') == when:
+    previous = entry.settings.schedule or JOB_SCHEDULE
+    if previous == when:
         raise EditError(f'{app}/{env} already runs on {when!r}')
-    previous, settings['schedule'] = settings.get('schedule'), when
-    document.save()
-    print(f'[OK] {app}/{env}: schedule {previous!r} -> {when!r} ({settings.get("timeZone", "UTC")})')
+    model_sync.change(root, each, lambda entry: replace(
+        entry, settings=replace(entry.settings, schedule='' if when == JOB_SCHEDULE else when)))
+    print(f'[OK] {app}/{env}: schedule {previous!r} -> {when!r} ({JOB_TIME_ZONE})')
     return instance
-
-
-def validate_main_route(route: dict | None) -> str | None:
-    """Refuse ambiguous or shared route nodes and return the existing host."""
-    if route:
-        hosts, tls = route.get('hosts'), route.get('tls')
-        if (not isinstance(hosts, list) or len(hosts) != 1 or not isinstance(hosts[0], dict)
-                or not isinstance(hosts[0].get('host'), str)
-                or not isinstance(tls, list) or len(tls) != 1 or not isinstance(tls[0], dict)
-                or tls[0].get('hosts') != [hosts[0]['host']]):
-            raise EditError('main ingress: expected one host and matching TLS entry; edit custom routes by hand')
-        # These sequences are edited in place, so shared values are ambiguous too.
-        for value in (hosts, hosts[0], tls, tls[0], tls[0]['hosts']):
-            if value.yaml_anchor() or getattr(value, 'merge', None):
-                raise EditError('main ingress uses a YAML anchor or merge; edit shared settings by hand')
-    return route['hosts'][0]['host'] if route else None
 
 
 def resolve_host(app: str, env: str, exposure: str, host: str | None, current_host: str | None) -> str | None:
@@ -861,79 +835,22 @@ def resolve_host(app: str, env: str, exposure: str, host: str | None, current_ho
     return host
 
 
-def update_route(app_values: dict, route: dict | None, app: str, exposure: str, host: str | None) -> None:
-    """Edit the existing route in place, preserving custom settings and YAML nodes."""
-    issuer = ((route or {}).get('annotations') or {}).get('cert-manager.io/cluster-issuer', 'letsencrypt-prod')
-    ingress = mapping(app_values, 'ingress', create=True)
-    if exposure == 'private':
-        if any(key != 'main' for key in ingress):
-            raise EditError('private exposure would leave additional ingress routes; edit custom routes by hand')
-        ingress.pop('main', None)
-        if not ingress:
-            app_values.pop('ingress')
-    elif route:
-        route['hosts'][0]['host'] = host
-        route['tls'][0]['hosts'][0] = host
-        annotations = mapping(route, 'annotations', create=True)
-        key = 'traefik.ingress.kubernetes.io/router.middlewares'
-        middleware_value = annotations.get(key, '')
-        if not isinstance(middleware_value, str):
-            raise EditError(f'{key}: expected a comma-separated middleware string')
-        middlewares = [m.strip() for m in middleware_value.split(',') if m.strip()]
-        middlewares = [m for m in middlewares if m != AUTH_MIDDLEWARE]
-        if exposure == 'authenticated-web':
-            middlewares.insert(0, AUTH_MIDDLEWARE)
-        if middlewares:
-            annotations[key] = ','.join(middlewares)
-        else:
-            annotations.pop(key, None)
-    else:
-        ingress['main'] = ingress_values(app, host, exposure, issuer)
-
-
-def update_dependencies(unit_spec: dict, exposure: str) -> None:
-    """Keep custom Flux dependencies while updating the exposure dependencies."""
-    dependencies = unit_spec.setdefault('dependsOn', [])
-    if not isinstance(dependencies, list) or any(not isinstance(d, dict) or 'name' not in d for d in dependencies):
-        raise EditError('dependsOn: expected a list of named Flux dependencies')
-    if getattr(dependencies, 'yaml_anchor', lambda: None)():
-        raise EditError('dependsOn uses a YAML anchor; edit shared settings by hand')
-    if exposure != 'authenticated-web':
-        for index in reversed(range(len(dependencies))):
-            if dependencies[index]['name'] == 'platform-oauth2-proxy':
-                del dependencies[index]
-    for name in depends_on(exposure):
-        if not any(d['name'] == name for d in dependencies):
-            dependencies.append({'name': name})
-
-
 def expose(root: Path, app: str, env: str, exposure: str, host: str | None = None) -> Path:
-    """Change who can reach an instance: its route, sign-in, Namespace label and unit dependencies."""
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    app_values = values(document.data)
-    ingress = mapping(app_values, 'ingress') if 'ingress' in app_values else None
-    route = mapping(ingress, 'main') if ingress and 'main' in ingress else None
-    current_host = validate_main_route(route)
-    namespace_path, unit_path = instance / 'namespace.yaml', instance_unit_file(root, app, env)
-    namespace, unit = YamlFile(namespace_path), YamlFile(unit_path)
-    labels = mapping(mapping(namespace.data, 'metadata'), 'labels')
-    unit_spec = mapping(unit.data, 'spec')
-    current = labels.get(EXPOSURE)
-    if exposure != 'private' and 'service' not in app_values:
-        raise EditError(f'{app}/{env} is a worker (no Service): it can only be private')
+    """Change who can reach an instance (its Settings): the route, sign-in, Namespace label, NetworkPolicy
+    and unit dependencies are rendered from it."""
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    current = entry.settings.exposure
+    if exposure != 'private' and entry.release.kind != 'web':
+        raise EditError(f'{app}/{env} is a {entry.release.kind} (no Service): it can only be private')
+    current_host = (entry.settings.host or default_host(app, env)) if current in ROUTED else None
     host = resolve_host(app, env, exposure, host, current_host)
     if (exposure, host) == (current, current_host):
         raise EditError(f'{app}/{env} is already {exposure}' + (f' at {host}' if host else ''))
-    update_route(app_values, route, app, exposure, host)
-    labels[EXPOSURE] = exposure
-    update_dependencies(unit_spec, exposure)
-    # Render every file before writing any, so unsupported YAML cannot cause a
-    # partially saved exposure edit. Policy still validates the resulting files.
-    edits = [(file.path, file.render()) for file in (document, namespace, unit)]
-    edits += isolation_edits(instance, app, env, exposure, document.data)
-    for path, text in edits:
-        path.write_text(text)
+    stored = '' if host in (None, default_host(app, env)) else host
+    model_sync.change(root, each, lambda entry: replace(entry, settings=replace(
+        entry.settings, exposure=exposure, host=stored, issuer=entry.settings.issuer if host else '')))
     print(f'[OK] {app}/{env}: {current} -> {exposure}' + (f' at https://{host}' if host else ' (no route)'))
     return instance
 

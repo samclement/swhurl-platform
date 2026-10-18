@@ -438,6 +438,18 @@ class OpenPrTests(unittest.TestCase):
                               body='body', change=change or (lambda tree: changes.run_tool(runner, job, tree, 'app-new', ['x'])))
         return url, job, api
 
+    def test_removing_an_encrypted_file_needs_review_without_credential_setup(self):
+        api, runner = FakeGitHub(), FakeRunner()
+        job = actions.Job(1, 'remove', 'hello/staging', 'sam@swhurl.com', None)
+        path = 'apps/hello/staging/events.sops.yaml'
+        with mock.patch.dict(MAIN, {path: b'kind: Secret\n'}):
+            changes.open_pr(runner, api.github, job, slug='remove-hello-staging', title='remove', body='body',
+                            change=lambda tree: (tree / path).unlink())
+        body = api.sent('POST /pulls')[0]['body']
+        self.assertIn('needs manual review', body)
+        self.assertNotIn('adds the app', body)
+        self.assertNotIn('Secret values', body)
+
     def test_auto_merge_labels_the_pr_unless_it_adds_a_secret(self):
         api = FakeGitHub()
         job = actions.Job(1, 'new app', 'weather-api/staging', 'sam@swhurl.com', None)

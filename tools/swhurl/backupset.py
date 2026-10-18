@@ -14,6 +14,7 @@ ages out the last good copies.
 """
 from __future__ import annotations
 
+import base64
 import contextlib
 import datetime as dt
 import hashlib
@@ -194,6 +195,19 @@ class BackupSet:
             runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)
         out(f'[OK] Off-host: {len(missing)} file(s) uploaded to {uri}, {len(local) - len(missing)} already there')
         return missing
+
+
+def publish(runner: Runner, backups: BackupSet, archive: Path, uri: str, out: Callable[[str], None] = print) -> None:
+    """Upload one archive, then its metadata: a backup counts only once its metadata is there. S3 checks
+    each file's SHA-256 as it arrives (an upload-only key cannot read back, so this is the verification)
+    and refuses to replace an object that exists."""
+    bucket, prefix = s3_location(uri)
+    for path in (archive, backups.metadata_path(archive)):
+        checksum = base64.b64encode(bytes.fromhex(sha256(path))).decode()
+        runner.run(['aws', 's3api', 'put-object', '--bucket', bucket, '--key', prefix + path.name, '--body', path,
+                    '--checksum-algorithm', 'SHA256', '--checksum-sha256', checksum, '--if-none-match', '*',
+                    '--output', 'json'], mutating=True)
+    out(f'[OK] Published {archive.name} and its metadata to {uri}')
 
 
 def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],

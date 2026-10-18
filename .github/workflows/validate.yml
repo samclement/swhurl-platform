@@ -322,6 +322,83 @@ jobs:
             echo "- content: \`src-${{ steps.source.outputs.content }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The backup jobs' image (docs/plan.md section 25), built and tagged like the console's. Nothing
+  # deploys it: the backup CronJobs name a pinned digest in Git.
+  backup-image:
+    name: Build the backup image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/samclement/swhurl-backup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hash what the image is built from
+        id: source
+        run: |
+          set -Eeuo pipefail
+          paths=(images/backup .dockerignore pyproject.toml uv.lock tools
+                 clusters/home/flux-system/sources/configmap-platform-settings.yaml)
+          content=$(for p in "${paths[@]}"; do git rev-parse "HEAD:$p"; done | sha256sum | cut -c1-16)
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "content=$content" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if this content is already published
+        id: existing
+        run: |
+          set -Eeuo pipefail
+          if docker buildx imagetools inspect "$IMAGE:src-${{ steps.source.outputs.content }}" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Backup image for content ${{ steps.source.outputs.content }} already published; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        if: steps.existing.outputs.published == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        if: steps.existing.outputs.published == 'false'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/backup/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: SOURCE_REVISION=${{ steps.source.outputs.revision }}
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.source.outputs.revision }}
+            ${{ env.IMAGE }}:src-${{ steps.source.outputs.content }}
+
+      - name: Check the tools run and record the digest
+        if: steps.existing.outputs.published == 'false'
+        run: |
+          set -Eeuo pipefail
+          image="$IMAGE@${{ steps.build.outputs.digest }}"
+          docker run --rm --entrypoint sh "$image" -c 'age --version && mongodump --version | head -1 && aws --version && python -c "import pymongo, swhurl.backup_job"'
+          {
+            echo "### Published backup image"
+            echo
+            echo "- image: \`$IMAGE:${{ steps.source.outputs.revision }}\`"
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- content: \`src-${{ steps.source.outputs.content }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Deploys the image once every check above passed (a check skipped for an app-only commit counts
   # as passed): on the latest main it pins platform/console/helmrelease.yaml to that image and pushes
   # the commit (swhurl console-image --expect --commit), unless main has since moved to other image
@@ -329,7 +406,7 @@ jobs:
   # commit starts no Validate run.
   deploy-console:
     name: Deploy the console
-    needs: [changes, validate, repo, apps, templates, collector, console-image]
+    needs: [changes, validate, repo, apps, templates, collector, console-image, backup-image]
     if: ${{ !cancelled() && github.event_name == 'push' && needs.console-image.result == 'success' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     permissions:

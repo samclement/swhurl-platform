@@ -31,6 +31,10 @@ check = [
     "PyYAML==6.0.3",
     "ruamel-yaml==0.19.1",
 ]
+# `backup`: the backup jobs' image (images/backup), with `check`; not a default group.
+backup = [
+    "pymongo==4.18.2",
+]
 console = [
     "copier==9.18.2",
     "httpx==0.28.1",

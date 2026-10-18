@@ -1843,3 +1843,11 @@ Stage 4 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-202
 **Not exercised:** the page in a real signed-in browser (the operator's Google sign-in), and a web app's route calling an API on the person's behalf from the page.
 
 **Removed:** the instance, its volume (`make destroy-data`), its namespace, and its GitHub repository and package (the `secrets/` tokens).
+
+## Backup simplification design (18 October 2026)
+
+[Plan section 24, contract H](plan.md#contract-h-each-database-owns-an-independent-backup-job) defines the proposed per-database CronJobs, shared backup image and producer code, namespace ownership, scoped credentials, verified archive/metadata publication, independent freshness checks, restore proof, staged cutover and rollback. It explicitly gates cutover on the credential delivery and host-local cache decisions; existing archives, S3 destinations and restore compatibility are preserved. Section 0 points to the implementation stages and replaces the earlier tentative central-CronJob follow-up.
+
+This is documentation only: the host timer and current MongoDB/SQLite execution paths remain in use. No backup image, CronJob, credential, storage or scheduler migration was implemented or exercised. H0 inventory/decisions and H1–H5 implementation/proof remain open. Validation of this documentation does not prove the proposed backup design; its job, failure, concurrency, network, retention and restore acceptance gates remain to be run.
+
+`make check` passed, including 809 tests, both stack templates' combinations, app policy, schema validation, lint and collector validation. A final documentation check resolved 781 relative links; `git diff --check` passed. The existing `demo-orders/prod` instance was Healthy, with its desired image running, 1/1 replicas Ready and TLS ready at revision `ed3e946f`, before this documentation commit.

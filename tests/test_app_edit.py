@@ -60,6 +60,37 @@ class EditTests(unittest.TestCase):
                             before['metadata']['annotations'].pop('platform.swhurl.com/render'))
         self.assertEqual(after, before)
 
+    def test_a_promotion_carries_a_new_port_to_production_and_its_callers(self):
+        """Release B listens on 9090, A on 8080: staging renders B, production keeps A until the
+        promotion copies B's release.yaml. (A staging deploy still holds a changed need while the app
+        has production: test_staging_gets_what_each_new_image_needs.)"""
+        self.with_units()
+        for env in ('staging', 'prod'):
+            self.quiet(edit.set_calls, self.root, 'orders', env, add=['hello'])
+        self.new_staging_image()
+        record = self.staging.parent / 'release.yaml'
+        record.write_text(record.read_text().replace('port: 8080', 'port: 9090'))
+        self.quiet(derive.sync, self.root)
+
+        def listens(env):
+            release = yaml.safe_load((self.root / 'apps/hello' / env / 'helmrelease.yaml').read_text())['spec']['values']
+            probes = release['controllers']['main']['containers']['main']['probes']
+            network = yaml.safe_load((self.root / 'apps/hello' / env / contract.NETWORK_POLICY_FILE).read_text())
+            return {release['service']['main']['ports']['http']['port'],
+                    *(probe['spec']['httpGet']['port'] for probe in probes.values()),
+                    *(port['port'] for rule in network['spec']['ingress'] for port in rule['ports']),
+                    int(self.env('orders', env)['SWHURL_SERVICE_HELLO_URL'].rsplit(':', 1)[1])}
+        self.assertEqual((listens('staging'), listens('prod')), ({9090}, {8080}))
+        self.assertTrue(policy.drift([self.prod.parent, self.staging.parent]), 'staging ahead of production is drift')
+
+        self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
+        self.assertEqual(listens('prod'), {9090})
+        self.assertIn('tag: 1.28-alpine', self.prod.read_text(), 'in the same commit as the image')
+        self.assertEqual(yaml.safe_load((self.prod.parent / 'release.yaml').read_text()), yaml.safe_load(record.read_text()))
+        self.assertEqual(policy.drift([self.prod.parent, self.staging.parent]), [])
+        instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
+        self.assertEqual(policy.check_calls(instances), {})
+
     def test_promote_refusals(self):
         with self.assertRaisesRegex(edit.EditError, 'already runs'):
             edit.promote(self.root, 'hello', 'staging', 'prod')

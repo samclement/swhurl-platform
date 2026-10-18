@@ -14,7 +14,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import calling, contract, declaration, promotion
+from swhurl.apps import calling, contract, declaration, edit
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
 from swhurl.run import CommandError, FakeRunner, Result
@@ -241,9 +241,8 @@ class GeneratorTests(unittest.TestCase):
     def test_auto_deploy_watches_the_image_in_staging_only(self):
         self.assertEqual(app_new.main(['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', '--image', TEMPLATE_IMAGE,
                                        '--root', str(self.tmp), '--no-policy-check']), 0)
-        with mock.patch.object(app_policy, 'evaluate', return_value=[]):
-            source, _ = promotion.read(self.tmp, 'w')
-            promotion.create(self.tmp, 'w', source)
+        with redirect_stdout(io.StringIO()):
+            edit.promote(self.tmp, 'w')
         staging, prod = self.tmp / 'apps/w/staging', self.tmp / 'apps/w/prod'
         repository, image_policy = yaml.safe_load_all((staging / contract.IMAGE_AUTOMATION_FILE).read_text())
         self.assertEqual((repository['kind'], repository['metadata']['namespace'], repository['spec']['image']),

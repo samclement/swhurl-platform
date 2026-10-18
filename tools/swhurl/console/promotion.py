@@ -12,6 +12,7 @@ from pathlib import Path
 from swhurl import platform
 from swhurl.apps import calling, helmrelease, ops, promotion
 from swhurl.apps.instance import Instance, instance_folder
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
 from swhurl.console.actions import ActionError, Job
@@ -77,26 +78,27 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     exposure = namespace.get('metadata', {}).get('labels', {}).get(promotion.contract.EXPOSURE)
     if exposure not in promotion.contract.EXPOSURES:
         raise EditError('staging needs a supported exposure label')
-    args, admits = None, []
+    first, admits = None, []
     if decision.outcome == 'create':
-        args = promotion.first_args(root, app, source, preview=True)
+        first = promotion.first_production(root, model_sync.read(root)[0], app, preview=True)
         admits = admitting(root, app, source)
     needs_host = decision.outcome == 'create' and exposure == 'public'
     if target:
         addresses = helmrelease.hosts(target)
-    elif args and args.host:
-        addresses = (args.host,)
+    elif first and first.host:
+        addresses = (first.host,)
     else:
         addresses = ()
+    database = first.entry.settings.allocations.database if first else None
     return {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
             'rollback': decision.rollback,
             'configuration': promotion.fingerprint(root, app, 'staging'),
             'target': promotion.fingerprint(root, app, 'prod'), 'needs_host': needs_host,
-            'secrets': args.secret_keys if args else [], 'storage': args.persistence if args else None,
+            'secrets': first.secret_keys if first else [], 'storage': database.size if database else None,
             'admits': admits,
             'address': ', '.join('https://' + address for address in addresses) or
             ('private (no route)' if not needs_host else ''),
-            'setup': bool(needs_host or args and args.secret_keys or admits)}
+            'setup': decision.outcome == 'create'}  # a person merges every first promotion (merge.check_promotion)
 
 
 def metadata(root: Path, app: str, image: str, setup: bool) -> dict:
@@ -162,9 +164,9 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
             raise ActionError('production changed since review; refresh and review it again')
         if promotion.fingerprint(root, app, 'staging') != form['configuration']:
             raise ActionError('staging configuration changed since review; refresh and review it again')
-        args = promotion.first_args(root, app, source, host=form.get('host') or None) if target is None else None
+        first = promotion.first_production(root, model_sync.read(root)[0], app, host=form.get('host') or None) if target is None else None
         admits.extend(admitting(root, app, source) if target is None else [])
-        if args and (args.secret_keys or args.exposure == 'public'):
+        if first:  # a person merges every first promotion (merge.check_promotion)
             own_setup.append(True)
         setup = bool(own_setup or admits)
         captured.update(metadata(root, app, image, setup))

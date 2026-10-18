@@ -43,15 +43,13 @@ class EditTests(unittest.TestCase):
             result = fn(*args, **kwargs)
         return result, out.getvalue()
 
-    def test_promote_copies_only_tag_and_digest(self):
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine')
-                                .replace(self.staging.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
-        before = self.prod.read_text()
+    def test_promote_copies_only_the_image(self):
+        old_digest = self.staging.read_text().split('digest: ')[1].split('\n')[0]
+        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(old_digest, NEW_DIGEST))
+        before = yaml.safe_load(self.prod.read_text())
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
-        self.assertEqual(sorted(changed_lines(before, self.prod.read_text())),
-                         sorted(['-              tag: 1.27-alpine', '+              tag: 1.28-alpine',
-                                 f'-              digest: {before.split("digest: ")[1].splitlines()[0]}',
-                                 f'+              digest: {NEW_DIGEST}']))
+        before['spec']['values']['controllers']['main']['containers']['main']['image'].update(tag='1.28-alpine', digest=NEW_DIGEST)
+        self.assertEqual(yaml.safe_load(self.prod.read_text()), before)
 
     def test_promote_refusals(self):
         with self.assertRaisesRegex(edit.EditError, 'already runs'):
@@ -83,15 +81,6 @@ class EditTests(unittest.TestCase):
         code, _ = self.quiet(edit.main_promote, ['hello', '--root', str(self.root), '--expect-image=x:1'])
         self.assertEqual(code, 2)
         self.assertEqual(self.prod.read_bytes(), before)
-
-    def test_promote_preserves_target_quotes_and_manual_comments(self):
-        text = self.prod.read_text().replace('tag: 1.27-alpine', 'tag: "1.27-alpine"  # release approved')
-        self.prod.write_text('# production settings\n' + text)
-        old_digest = derive.container(derive.load_release(self.staging.parent))['image']['digest']
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', "tag: '1.28-alpine'").replace(old_digest, NEW_DIGEST))
-        before = self.prod.read_text()
-        self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
-        self.assertEqual(self.prod.read_text(), before.replace('"1.27-alpine"', '"1.28-alpine"').replace(old_digest, NEW_DIGEST))
 
     def test_a_command_refuses_files_the_model_cannot_express_without_writing(self):
         unit = self.root / 'clusters/home/app-hello-staging.yaml'

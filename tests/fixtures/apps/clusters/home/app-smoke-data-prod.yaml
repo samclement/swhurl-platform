@@ -11,10 +11,10 @@ spec:
     kind: GitRepository
     name: swhurl-platform
   path: ./apps/smoke-data/prod
+  prune: true
+  wait: true
+  timeout: 3m
   decryption:
     provider: sops
     secretRef:
       name: sops-age
-  prune: true
-  wait: true
-  timeout: 3m

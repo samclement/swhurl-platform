@@ -19,6 +19,7 @@ from swhurl.apps.model.draft import Entry, Platform, RenderError, World
 from swhurl.apps.yaml_file import EditError
 
 RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
+REGISTRY_FILE = UNITS / 'kustomization.yaml'
 
 
 def allocate(world: World, platform: Platform) -> World:
@@ -46,8 +47,8 @@ def _same(path: Path, text: str) -> bool:
         return False
 
 
-def plan(root: Path, world: World, platform: Platform) -> tuple[dict[Path, str], list[Path]]:
-    """``(files to write, files to delete)``, by absolute path."""
+def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset()) -> tuple[dict[Path, str], list[Path]]:
+    """``(files to write, files to delete)``, by absolute path. An ``added`` instance gets its unit file."""
     writes: dict[Path, str] = {}
     deletions: list[Path] = []
     try:
@@ -56,7 +57,7 @@ def plan(root: Path, world: World, platform: Platform) -> tuple[dict[Path, str],
             folder = root / platform.base / each.app / each.env
             for path, documents in rendered.items():
                 target = root / path
-                if path.parts[:len(UNITS.parts)] == UNITS.parts and not target.is_file():
+                if path.parts[:len(UNITS.parts)] == UNITS.parts and not target.is_file() and each not in added:
                     continue  # a tree without its units (tests) has none to keep
                 text = render.text(documents)
                 if not _same(target, text):
@@ -81,11 +82,12 @@ class Prepared:
     platform: Platform
     writes: dict[Path, str]
     deletions: list[Path]
+    added: frozenset[Instance] = frozenset()  # new instances: their units are registered
 
 
-def render_all(root: Path, world: World, platform: Platform) -> Prepared:
+def render_all(root: Path, world: World, platform: Platform, added: frozenset[Instance] = frozenset()) -> Prepared:
     world = allocate(world, platform)
-    return Prepared(world, platform, *plan(root, world, platform))
+    return Prepared(world, platform, *plan(root, world, platform, added), added)
 
 
 def apply(root: Path, prepared: Prepared) -> list[Path]:
@@ -98,6 +100,16 @@ def apply(root: Path, prepared: Prepared) -> list[Path]:
     for path in prepared.deletions:
         path.unlink()
     changed = [*prepared.writes, *prepared.deletions]
+    if (root / REGISTRY_FILE).is_file():
+        from swhurl.apps.new import GenerationError, register
+        for each in sorted(prepared.added, key=str):
+            before = (root / REGISTRY_FILE).read_text()
+            try:
+                register(root, f'{each.unit}.yaml')
+            except GenerationError as error:
+                raise EditError(str(error)) from None
+            if (root / REGISTRY_FILE).read_text() != before:
+                changed.append(root / REGISTRY_FILE)
     reloader = root / RELOADER_FILE
     if reloader.is_file():
         before = reloader.read_text()
@@ -125,24 +137,32 @@ def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
     return write(root, *read(root, base))
 
 
-def prepare(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
-            base: Path = Path('apps')) -> Prepared:
-    """One operation on some instances' records, rendered but not written: ``update`` applied to each.
-    Refused when a target's files are not what its records render (a hand edit the model cannot
-    express would be lost), or when any instance fails to render."""
-    world, platform = read(root, base)
-    targets = [targets] if isinstance(targets, Instance) else targets
-    for each in targets:
-        if each not in world:
-            raise EditError(f'no instance {each}')
+def guard(root: Path, world: World, platform: Platform, targets: list[Instance], base: Path = Path('apps')) -> None:
+    """Refuse instances whose files are not what their records render: a hand edit the model cannot
+    express would be lost by writing them."""
     held = [line for each in targets for line in shadow.instance_problems(root, each, world, platform, base)]
     if held:
         shown = '; '.join(held[:5]) + (f'; and {len(held) - 5} more' if len(held) > 5 else '')
         raise EditError(f'the files differ from what the platform renders, so a command cannot change them '
                         f'(make check-apps lists every difference): {shown}')
+
+
+def prepare(root: Path, targets: Instance | list[Instance], update: Callable[[Entry | None], Entry],
+            base: Path = Path('apps'), *, adding: bool = False) -> Prepared:
+    """One operation on some instances' records, rendered but not written: ``update`` applied to each
+    (given None for an instance being ``adding``). Refused when a target exists and its files are not
+    what its records render (guard), or when any instance fails to render."""
+    world, platform = read(root, base)
+    targets = [targets] if isinstance(targets, Instance) else targets
     for each in targets:
-        world[each] = update(world[each])
-    return render_all(root, world, platform)
+        if adding and each in world:
+            raise EditError(f'{each} already exists')
+        if not adding and each not in world:
+            raise EditError(f'no instance {each}')
+    guard(root, world, platform, [each for each in targets if each in world], base)
+    for each in targets:
+        world[each] = update(world.get(each))
+    return render_all(root, world, platform, frozenset(targets) if adding else frozenset())
 
 
 def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],

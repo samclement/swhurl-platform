@@ -41,13 +41,8 @@ from swhurl.apps import (
     nkeys,
     offers,
     ops,
-    per_environment,
     policy,
     promotion,
-)
-from swhurl.apps.calling import (
-    API_VARIABLE,
-    declared_calls,
 )
 from swhurl.apps.contract import (
     EXPOSURES,
@@ -84,8 +79,10 @@ from swhurl.apps.model.exposure import ROUTED
 from swhurl.apps.model.records import Image, Release, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
+    GenerationError,
     check_generated,
     dump,
+    write_encrypted_secret,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping
 from swhurl.run import CommandError, Runner
@@ -267,18 +264,20 @@ def write_files(planned: dict[Path, str | None]) -> bool:
 
 
 def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path, str | None], *,
-                   runner: Runner | None = None, hold: Callable[[model_sync.Prepared], None] | None = None) -> bool:
-    """Make ``entry`` (a new Release, and what the operation chose with it) the instance's records: give it
-    a NATS key if it now has events and none, render, let ``hold`` refuse the result, then write the
-    rendered files and the offers documents (``planned``). A refusal writes nothing. Whether anything changed."""
+                   runner: Runner | None = None, hold: Callable[[model_sync.Prepared], None] | None = None,
+                   adding: bool = False, keyed: bool = False) -> bool:
+    """Make ``entry`` (a new Release, and what the operation chose with it) the instance's records, or a
+    new instance's (``adding``): give it a NATS key if it now has events (or ``keyed``) and none, render,
+    let ``hold`` refuse the result, then write the rendered files and the offers documents (``planned``).
+    A refusal writes nothing. Whether anything changed."""
     instance = each.folder(root)
     created = ''
-    if (entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
+    if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
         created = new_nats_key(instance, each.app, each.env, runner=runner)
         entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
                         encrypted=entry.encrypted | {EVENTS_SECRET})
     try:
-        prepared = model_sync.prepare(root, each, lambda _: entry)
+        prepared = model_sync.prepare(root, each, lambda _: entry, adding=adding)
         if hold:
             hold(prepared)
     except EditError:
@@ -561,25 +560,6 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     return instance
 
 
-def carry_offers(root: Path, app: str, *, runner: Runner | None = None) -> bool:
-    """Production offers what the image it now runs offers: staging's documents, read for that image."""
-    try:
-        found = offers.read(instance_folder(root, app, 'staging'))
-    except offers.OfferError as error:
-        raise EditError(f'{app}/staging: {error}') from None
-    if found:
-        tag = str(helmrelease.image(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get('tag', ''))
-        if offers.IMAGE_COMMIT.match(tag) and offers.commit_of(tag) != found.commit:
-            raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
-                            f'(make app-offers APP={app} ENV=staging; the Deploy workflow does it with each new image)')
-    folder = instance_folder(root, app, 'staging') / offers.OFFERS_DIR
-    files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events, found.flags))} if found else {}
-    served = str(helmrelease.variables(YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml').data).get(API_VARIABLE, ''))
-    return write_offers(root, app, 'prod', found.repository if found else '', found.commit if found else '', files,
-                        list(found.described) if found and found.described is not None else None,
-                        api_path=served if found else '', runner=runner)
-
-
 def app_instances(root: Path, app: str) -> list[Instance]:
     """The app's instances, staging first; refused when it has none."""
     world, _ = model_sync.read(root)
@@ -627,9 +607,27 @@ def set_alerts(root: Path, app: str, changes: dict[str, str] | None = None, *, n
     return found[0].folder(root)
 
 
+def staging_offers(root: Path, app: str, staging: Entry, target: Path) -> dict[Path, str | None]:
+    """Production's offers documents for staging's image: staging's, read for that image."""
+    folder = instance_folder(root, app, 'staging') / offers.OFFERS_DIR
+    try:
+        found = offers.read(instance_folder(root, app, 'staging'))
+    except offers.OfferError as error:
+        raise EditError(f'{app}/staging: {error}') from None
+    tag = staging.release.image.tag
+    if found and offers.IMAGE_COMMIT.match(tag) and offers.commit_of(tag) != found.commit:
+        raise EditError(f"{app}/staging runs {tag} but its offers were read at {found.commit}: read them for this image first "
+                        f'(make app-offers APP={app} ENV=staging; the Deploy workflow does it with each new image)')
+    files = {name: (folder / name).read_text() for name in filter(None, (found.api, found.events, found.flags))} if found else {}
+    return offer_files(target / offers.OFFERS_DIR, found.repository if found else '', found.commit if found else '', files)
+
+
 def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
             expect_image: str | None = None, expect_config: str | None = None,
             host: str | None = None, runner=None) -> Path:
+    """Production runs staging's release (docs/apps.md#promote-to-production). A later promotion copies
+    staging's Release whole, keeping production's own resources, and renders it with production's own
+    Settings; a first one creates production's records from staging's (promotion.first_production)."""
     if (source, target) != ('staging', 'prod'):
         raise EditError('promotion must differ between environments and always goes staging → prod')
     src, dst = promotion.read(root, app)
@@ -640,46 +638,44 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
         raise EditError('staging configuration changed since it was reviewed; refresh and review it again')
     if decision.outcome == 'same':
         raise EditError(f'{app}/prod already runs this digest; same image in both')
-    if decision.outcome == 'create':
-        missing = [callee for callee in declared_calls(helmrelease.variables(src))
-                   if not (instance_folder(root, callee, target) / 'helmrelease.yaml').is_file()]
-        if missing:
-            raise EditError(f'{app} calls {", ".join(missing)}, which has no production instance: promote that first')
-        result = promotion.create(root, app, src, host=host, runner=runner)
-        if events.has_nats(root):
-            nats_key(root, app, target, runner=runner)  # production's own identity, never staging's
-        sync_env(root, target)  # production's own callers and callees
-        carry_offers(root, app, runner=runner)
-        print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
-        if (instance_folder(root, app, target) / 'secret.sops.yaml').is_file():  # not the events key, which is made here
-            print(f'[INFO] Set production secrets before merging, in your own terminal: make app-secret APP={app} ENV=prod NAME=<name> '
-                  '(make check-secrets lists the placeholders left)')
-        egress_difference(app, src, YamlFile(instance_folder(root, app, target) / 'helmrelease.yaml').data)
-        return result
-    if host:
-        raise EditError('--host applies only to first production; change existing routes with app-expose')
-    document = YamlFile(instance_folder(root, app, 'prod') / 'helmrelease.yaml')
-    current = mapping(container(document.data), 'image')
-    image = promotion.image_of(src)
-    current.update({k: str(image[k]) for k in ('tag', 'digest') if k in image})
-    if 'tag' not in image:
-        current.pop('tag', None)
-    per_environment.carry_image_variables(helmrelease.variables(src), document.data)
-    before = document.path.read_text()
-    document.save()
+    world, platform = model_sync.read(root)
+    staging, production = world[Instance(app, 'staging')], world.get(Instance(app, 'prod'))
+    each, folder = Instance(app, 'prod'), instance_folder(root, app, 'prod')
+    if decision.outcome == 'update':
+        if host:
+            raise EditError('--host applies only to first production; change existing routes with app-expose')
+        release = replace(staging.release, resources=production.release.resources)
+        change_release(root, each, replace(production, release=release), staging_offers(root, app, staging, folder),
+                       runner=runner)
+        print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
+        egress_difference(app, staging, production)
+        return folder
+    first = promotion.first_production(root, world, app, host=host)
+    model_sync.guard(root, world, platform, [Instance(app, 'staging')])
+    # Production's own credentials, made before rendering: placeholders for the Secret, and its NATS key.
+    folder.mkdir(parents=True)
     try:
-        carry_offers(root, app, runner=runner)  # what this image offers; refused if production still uses what it dropped
-    except EditError:
-        document.path.write_text(before)
+        if first.secret_keys:
+            try:
+                write_encrypted_secret(folder, app_secret(app), each.namespace, first.secret_keys, runner=runner)
+            except GenerationError as error:
+                raise EditError(str(error)) from None
+        change_release(root, each, first.entry, staging_offers(root, app, staging, folder), runner=runner,
+                       adding=True, keyed=events.has_nats(root))
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
         raise
-    print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
-    egress_difference(app, src, document.data)
-    return instance_folder(root, app, 'prod')
+    print(f'[OK] created {app}/prod from reviewed staging settings (independent storage and credentials)')
+    if first.secret_keys:
+        print(f'[INFO] Set production secrets before merging, in your own terminal: make app-secret APP={app} ENV=prod NAME=<name> '
+              '(make check-secrets lists the placeholders left)')
+    egress_difference(app, staging, first.entry)
+    return folder
 
 
-def egress_difference(app: str, staging: dict, production: dict) -> None:
+def egress_difference(app: str, staging: Entry, production: Entry) -> None:
     """Say which hosts staging may reach and production may not: a promotion never grants them."""
-    missing = [name for name in egress.granted(staging) if name not in egress.granted(production)]
+    missing = [name for name in staging.settings.egress if name not in production.settings.egress]
     if missing:
         print(f'[INFO] staging may reach {", ".join(missing)}; production may not. A promotion never widens that: '
               f'make app-egress APP={app} ENV=prod ARGS="--add {",".join(missing)}"')

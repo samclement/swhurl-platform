@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, operation, publish, gate), the use cases as compositions of them, and capabilities as the unit of co-location. Automatic merge and the console's progress view are reimplemented on them: one gate replays any console PR's request on the newest `main` and merges it under that operation's rule (new staging apps and later promotions of a release that ran Healthy in staging merge themselves), and progress is derived from the job, the PR, `main`, a render hash on the HelmRelease and the instance's state. Order: prune and inventory, a shadow model checked against every instance, operations and the gate moved onto it one at a time, a single cutover commit, then Activity. Seed images stay. Section 21's deferred needs and section 22's event check build on the model. Backups ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) are deferred until after the cutover. Stage 0 is done (no unsupported fields); next is stage 1, the shadow model. Decision owed: whether team and alerts move to an app-level file.
+**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, App, Release, Settings, render, check, operation, publish, gate), the use cases as compositions of them, and capabilities as the unit of co-location. Automatic merge and the console's progress view are reimplemented on them: one gate replays any console PR's request on the newest `main` and merges it under that operation's rule (new staging apps and later promotions of a release that ran Healthy in staging merge themselves), and progress is derived from the job, the PR, `main`, a render hash on the HelmRelease and the instance's state. Order: prune and inventory, a shadow model checked against every instance, operations and the gate moved onto it one at a time, a single cutover commit, then Activity. Seed images stay. Section 21's deferred needs and section 22's event check build on the model. Backups ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) are deferred until after the cutover. Stage 0 is done (no unsupported fields); team and alerts go in an app-level `app.yaml` (operator, 18 October). Next: stage 1, the shadow model.
 
 **New app creation speed — delivered 14 October 2026:** Kotlin `v0.2.5` (`03872aa`, template PR #27) and catalogue `89a666e` are deployed. New-app merge verification uses the same schema and app-policy checks as promotions (`4a87c7c`); the Kotlin runtime stage, dependency caches and smoke-test polling are described in [the canonical guide](apps.md#first-builds-of-new-apps). All seven template CI combinations passed on PR and main, and `make check` passed 749 tests and 32 policy combinations. Equivalent fresh console creations became Available in 312 s before and 247 s after; merge verification fell from 71 to 21 s, while the complete image workflow did not improve in this pair. [Dated evidence](current-state.md#new-app-creation-speed-14-october-2026) records each stage and measurement limits. Platform health and HTTP/HTTPS/handler checks passed. Both timing apps, `swhurl-try-16` and `swhurl-try-17`, are removed (`swhurl-try-17` on 18 October 2026). The signed-in browser path remains unexercised. [Cleanup evidence](current-state.md#timing-app-cleanup-14-october-2026) records the live removal. The next proposed optimisation is separating Kotlin app identity from compiled build inputs, so fresh apps with matching code can reuse compiled layers; current default renders differ in build inputs only at `src/main/resources/application.properties`, and the compile/test/package step took 44–52 s. Preserve local and deployed identity, prove cache hits and invalidation, and retain normal builds for personalised API/events or changed code. This is a proposal, not authorised implementation.
 
@@ -1516,8 +1516,9 @@ Checked in source on 18 October: grants are read back from generated manifests (
 | Primitive | Owns | Never |
 | --- | --- | --- |
 | **Instance** (`apps/instance.py`) | app name, environment, path | — |
+| **App** (`apps/<app>/app.yaml`) | team and alerts: facts about the app, the same in every environment | holds anything that differs by environment |
 | **Release** (`release.yaml`) | image digest, source commit, needs, offers' hashes, seed provenance. Immutable; written only by trusted intake (creation, the Deploy workflow) and copied whole by promotion | grants anything |
-| **Settings** (`instance.yaml`) | team, exposure, calls, subscriptions, egress, alerts, capacity and allocations, per environment | describes the image |
+| **Settings** (`instance.yaml`) | exposure, calls, subscriptions, egress, capacity and allocations, per environment | describes the image |
 | **render**(release, settings, platform) → files | every app manifest, the instance's contribution to shared files, and the render hash (below) | reads the network, chooses an allocation, reads generated files back |
 | **check**(tree) → problems | app policy on Helm-rendered objects, and committed output equals `render` | repairs anything |
 | **operation**(snapshot, request) → change | reads inputs, applies one request (choosing any new allocation), renders, checks; returns the changed files and its merge rule | writes anything, parses flags |
@@ -1536,7 +1537,8 @@ Encrypted `*.sops.yaml` files keep their existing owners; render reads only thei
 | First promotion | staging's Release + new prod Settings (team and capacity copied; host derived; egress and subscriptions empty; staging's calls listed) → render → check → PR | review |
 | Rollback | an earlier Release from Git history → render → check → PR | review; refused if it does not fit retained storage |
 | Scale | edit Settings → render → check → PR | automatic in staging, review in production |
-| Exposure, calls, events, egress, alerts, team, remove | edit Settings (or delete both inputs) → render shared files → check → PR | review |
+| Exposure, calls, events, egress, remove | edit Settings (or delete both inputs) → render shared files → check → PR | review |
+| Team, alerts | edit App → render every environment → check → PR | review |
 
 **Example:** release B listens on 9090, A on 8080. Staging selects B and renders its Service, probes and callers' addresses for 9090; production keeps rendering A. Promotion copies B's `release.yaml` into production and renders from production's own Settings. Nothing is inferred and nothing differs by code path.
 
@@ -1591,22 +1593,27 @@ offers:
 ~~~
 
 ~~~yaml
-# apps/orders/staging/instance.yaml
+# apps/orders/app.yaml
 version: 1
 team: payments
+alerts: {errors: 5, error-logs: 5}
+~~~
+
+~~~yaml
+# apps/orders/staging/instance.yaml
+version: 1
 exposure: private
 capacity: {replicas: 1, memory: 256Mi, memoryLimit: 512Mi}
 calls: [inventory]
 subscriptions: []
 egress: [api.example.com:443]
-alerts: {errors: 5, error-logs: 5}
 allocations:
   database: {storageClass: local-path-retain, size: 1Gi}
   egressPort: 30101
   eventsKey: UDFZ...   # the NATS public key; its seed stays in events.sops.yaml
 ~~~
 
-Field names are settled by the stage 1 prototype. Neither file is listed in the instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
+Field names are settled by the stage 1 prototype. None of the three files is listed in an instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
 
 ### Operations and publishing
 
@@ -1674,7 +1681,7 @@ Every file of the 13 instances was flattened into its field paths (305 distinct 
 - **A release records `stack` and `kind`, not `type`.** All 13 images declare `version: 1`, `stack`, `kind` and `uid`. Web images also declare `port` and `healthPath`, and some declare `database`, `provides` and (Kotlin only) a resource minimum. App types are a creation choice (section 23) that no image declares. None declares a description, so `SWHURL_DESCRIPTION` is set nowhere, and all still carry the ignored `autoDeploy: true`.
 - **Capacity starts empty everywhere.** Resources equal the image's minimum (3 Kotlin instances) or the platform default (10 TypeScript), and `replicas` is written only for SQLite instances, as 1. No instance has been scaled.
 - **Production runs older images:** for example, `demo-orders` runs run 3 in production and run 34 in staging. The importer reads each instance's `swhurl.yaml` at that instance's own commit; all 13 were readable.
-- **Team and alerts are per app, not per environment.** Each app's team label is the same in both environments, and `make app-alerts` changes every environment at once (stored as a namespace annotation; none set). **Decision owed:** an app-level `apps/<app>/app.yaml` holding team and alerts (recommended: one fact, one place), or a copy in each `instance.yaml` plus a rule that they agree.
+- **Team and alerts are per app, not per environment.** Each app's team label is the same in both environments, and `make app-alerts` changes every environment at once (stored as a namespace annotation; none set). **Decided (operator, 18 October 2026):** they live in an app-level `apps/<app>/app.yaml`, the App primitive above.
 - **Compare objects, not bytes.** Formatting differs between instances, for example `platform.swhurl.com/offers: 'bb7a44b'` in one and unquoted in another. Stage 1's shadow check compares parsed objects; the cutover commit may reformat bytes, which changes nothing on the cluster.
 
 **Supported but not live:** each needs a fixture in the golden set, because no real instance exercises it: a scheduled job, a Web app with a frontend, a private web app, public exposure, egress grants, alert overrides, app secrets, capacity above the minimum, a declared description, and an app subscribing in production.

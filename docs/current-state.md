@@ -1851,3 +1851,7 @@ Stage 4 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-202
 This is documentation only: the host timer and current MongoDB/SQLite execution paths remain in use. No backup image, CronJob, credential, storage or scheduler migration was implemented or exercised. H0 inventory/decisions and H1–H5 implementation/proof remain open. Validation of this documentation does not prove the proposed backup design; its job, failure, concurrency, network, retention and restore acceptance gates remain to be run.
 
 `make check` passed, including 809 tests, both stack templates' combinations, app policy, schema validation, lint and collector validation. A final documentation check resolved 781 relative links; `git diff --check` passed. The existing `demo-orders/prod` instance was Healthy, with its desired image running, 1/1 replicas Ready and TLS ready at revision `ed3e946f`, before this documentation commit.
+
+## Throwaway pruning (18 October 2026)
+
+`swhurl-try-17/staging` and `swhurl-try-18/staging` were removed with `make app-remove` (`44e87647`; neither had a volume), as section 24's stage 0. After `make flux-reconcile` their namespaces and units were gone and `make verify-platform` passed. Their GitHub repositories and container packages were deleted with the `secrets/` tokens and confirmed absent. `swhurl-try-10` to `-13` stay to show several teams' deployments. Plan section 25 (per-database backups) is deferred until after section 24's cutover.

@@ -197,8 +197,8 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': 'a976fade0edad21aedd0100e787390f899555dd3',
-    'kotlin': 'b64da734d1a0a79e16555b2ff867b731caec55ad',
+    'typescript': '57e0558ad0300d6e84e8b5dfdb2383eff6cb39bf',
+    'kotlin': '1a6a8c1941e5dd760bb073693f48714e31afef25',
 }
 STACK_DESCRIPTIONS = {
     'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
@@ -233,7 +233,29 @@ APP_TYPES = {
     'worker': AppType('Worker', 'Reacts to events, or works in a steady loop; no web address.', ('typescript', 'kotlin'),
                       {'kind': 'worker', 'database': 'none', 'api': 'none', 'events': 'asyncapi', 'flags': 'example'},
                       'private'),
+    'scheduled-job': AppType('Scheduled job', 'Work at a time of day: each run does its work and exits. Daily at 03:17 '
+                             'UTC until changed; no web address and no database.', ('typescript', 'kotlin'),
+                             {'kind': 'job', 'database': 'none', 'api': 'none', 'events': 'asyncapi', 'flags': 'example'},
+                             'private'),
 }
+
+# A job runs as a CronJob (docs/apps.md#scheduled-jobs): one pod per run, never two at once, a failed run
+# not retried, the last successful and the last failed run kept. Its schedule is set on the platform.
+JOB_SCHEDULE = '17 3 * * *'
+JOB_TIME_ZONE = 'Etc/UTC'
+JOB_DEADLINE_SECONDS = 3600  # a run still going after this is stopped, and counts as failed
+JOB_START_DEADLINE_SECONDS = 300  # a run that cannot start within this of its time is skipped
+CRON_FIELD = re.compile(r'(\*|[0-9]+(-[0-9]+)?)(/[0-9]+)?(,(\*|[0-9]+(-[0-9]+)?)(/[0-9]+)?)*')
+CRON_NAMES = ('@hourly', '@daily', '@weekly', '@monthly', '@yearly')
+
+
+def schedule_problem(schedule: str) -> str:
+    """Why ``schedule`` is not a cron schedule a job can run on, or ''."""
+    fields = schedule.split()
+    if schedule in CRON_NAMES or (len(fields) == 5 and all(CRON_FIELD.fullmatch(field) for field in fields)):
+        return ''
+    return (f'schedule {schedule!r} is not five cron fields (minute hour day-of-month month day-of-week, '
+            f'for example "17 3 * * *" or "*/10 * * * *") or one of {", ".join(CRON_NAMES)}')
 
 
 def type_answers(app_type: str, stack: str) -> dict[str, str]:

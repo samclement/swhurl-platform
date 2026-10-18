@@ -16,6 +16,18 @@ def workload(release: dict | None) -> dict:
     return (values(release).get('controllers') or {}).get('main') or {}
 
 
+def kind(release: dict | None) -> str:
+    """What the instance runs as: web (it has a Service), job (a CronJob controller) or worker."""
+    if 'service' in values(release):
+        return 'web'
+    return 'job' if workload(release).get('type') == 'cronjob' else 'worker'
+
+
+def schedule(release: dict | None) -> str:
+    """A job's schedule, or '' for anything else."""
+    return str((workload(release).get('cronjob') or {}).get('schedule') or '')
+
+
 def container(release: dict | None) -> dict:
     """The app's one container: image, resources, probes, variables."""
     return (workload(release).get('containers') or {}).get('main') or {}

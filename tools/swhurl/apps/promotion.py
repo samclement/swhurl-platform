@@ -161,9 +161,13 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     controllers = mapping(values, 'controllers')
     only(controllers, {'main'}, 'controllers')
     controller = mapping(controllers, 'main')
-    only(controller, {'containers', 'replicas', 'strategy', 'annotations', 'type'}, 'controller.main')
-    if controller.get('type', 'deployment') != 'deployment':
-        raise EditError('first promotion supports Deployment only')
+    only(controller, {'containers', 'replicas', 'strategy', 'annotations', 'type', 'cronjob'}, 'controller.main')
+    if controller.get('type', 'deployment') not in ('deployment', 'cronjob'):
+        raise EditError('controller.main.type must be deployment or cronjob (a job)')
+    if controller.get('type') == 'cronjob':
+        only(mapping(controller, 'cronjob'), {'schedule', 'timeZone', 'concurrencyPolicy', 'startingDeadlineSeconds',
+                                              'activeDeadlineSeconds', 'backoffLimit', 'successfulJobsHistory',
+                                              'failedJobsHistory'}, 'controller.main.cronjob')
     containers = mapping(controller, 'containers')
     only(containers, {'main'}, 'containers')
     container = mapping(containers, 'main')
@@ -182,9 +186,9 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     exposure = namespace.get('metadata', {}).get('labels', {}).get(contract.EXPOSURE)
     if exposure not in contract.EXPOSURES:
         raise EditError('staging namespace needs a supported exposure label')
-    kind = 'web' if 'service' in values else 'worker'
-    if kind == 'worker' and exposure != 'private':
-        raise EditError('a worker must be private')
+    kind = helmrelease.kind(source)
+    if kind != 'web' and exposure != 'private':
+        raise EditError('a worker or a job must be private: it has no Service')
     if 'service' in values:
         service = mapping(values, 'service')
         only(service, {'main'}, 'service')
@@ -249,7 +253,8 @@ def first_args(root: Path, app: str, source: dict, *, host: str | None = None, p
     if any(isinstance(v, dict) and 'valueFrom' in v and k != contract.OTLP_HOST_IP for k, v in variables.items()):
         raise EditError('custom environment references need a reviewed production deployment in Git')
     args = new.parser().parse_args([app, '--env', 'prod', '--image', ops.image_reference(image_of(source)),
-                                    '--kind', kind, '--exposure', exposure])
+                                    '--kind', kind, '--exposure', exposure,
+                                    *(['--schedule', helmrelease.schedule(source)] if kind == 'job' else [])])
     args.host = host
     args.team = namespace['metadata'].get('labels', {}).get(contract.TEAM)
     if not args.team:

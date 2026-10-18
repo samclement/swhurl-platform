@@ -1550,8 +1550,8 @@ class NewRepoRouteTests(unittest.TestCase):
         self.assertIn('name="type" value="web-app" data-exposure="authenticated-web" data-kind="web" checked', page)
         self.assertIn('name="type" value="api" data-exposure="private" data-kind="web" >', page)
         self.assertIn('<span class="pill ok">SQLite</span>', page, 'what each type includes')
-        self.assertIn('data-types="web-app api worker"><input type="radio" name="stack" value="typescript"', page)
-        self.assertIn('data-types="api worker"><input type="radio" name="stack" value="kotlin"', page, 'no Kotlin web app')
+        self.assertIn('data-types="web-app api worker scheduled-job"><input type="radio" name="stack" value="typescript"', page)
+        self.assertIn('data-types="api worker scheduled-job"><input type="radio" name="stack" value="kotlin"', page, 'no Kotlin web app')
         response = c.post('/new/repo', data={'name': 'notes', 'type': 'web-app', 'stack': 'typescript', 'team': 'platform', 'description': 'Take notes',
                                              'exposure': 'authenticated-web', 'host': ''}, headers=WHO,
                           follow_redirects=False)

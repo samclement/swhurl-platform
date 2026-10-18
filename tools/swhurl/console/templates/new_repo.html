@@ -88,7 +88,7 @@
   <section class="card" id="worker-note" hidden>
     <div class="card-head">
       <h2><span class="step">3</span> Who can reach it</h2>
-      <p class="muted">A worker has no web address: it is private, and no other app can connect to it.</p>
+      <p class="muted">A worker or a scheduled job has no web address: it is private, and no other app can connect to it.</p>
     </div>
   </section>
 
@@ -143,7 +143,7 @@
         if (first) first.checked = true;
       }
     });
-    const worker = chosen.dataset.kind === 'worker';
+    const worker = chosen.dataset.kind !== 'web';  // a worker or a job: no web address
     document.getElementById('reach').hidden = worker;
     document.getElementById('worker-note').hidden = !worker;
     if (!exposureTouched) {

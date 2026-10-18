@@ -60,6 +60,10 @@ from swhurl.apps.contract import (
     EXPOSURES,
     FAIL_AFTER,
     IMAGE_AUTOMATION_FILE,
+    JOB_DEADLINE_SECONDS,
+    JOB_SCHEDULE,
+    JOB_START_DEADLINE_SECONDS,
+    JOB_TIME_ZONE,
     MANAGED,
     NETWORK_POLICY_FILE,
     QUOTA_FILE,
@@ -78,6 +82,7 @@ from swhurl.apps.contract import (
     network_policy,
     otlp_variables,
     resource_quota,
+    schedule_problem,
     secret_key_problem,
     teams,
 )
@@ -129,8 +134,15 @@ def validate(args, root: Path = ROOT) -> None:
         raise GenerationError(f'unknown team {args.team!r}; registered in apps/teams.yaml: {", ".join(teams(root))}')
     if args.secret_keys and (problem := secret_key_problem(args.secret_keys)):
         raise GenerationError(problem)
-    if args.kind == 'worker' and args.exposure != 'private':
-        raise GenerationError('a worker has no Service or route; use --exposure private')
+    if args.kind != 'web' and args.exposure != 'private':
+        raise GenerationError(f'a {args.kind} has no Service or route; use --exposure private')
+    if args.kind == 'job':
+        if args.persistence or args.database:
+            raise GenerationError('a job keeps no volume or database: a run has no pod to keep it in between runs')
+        if problem := schedule_problem(args.schedule):
+            raise GenerationError(f'--schedule: {problem}')
+    elif args.schedule != JOB_SCHEDULE:
+        raise GenerationError('--schedule applies to kind job only')
     if args.exposure in ('authenticated-web', 'public'):
         if not args.host:
             raise GenerationError(f'--host is required for {args.exposure}')
@@ -218,6 +230,13 @@ def build_values(args) -> dict:
         container['probes'] = {'readiness': probe(), 'liveness': probe(), 'startup': startup}
 
     controller: dict = {'containers': {'main': container}}
+    if args.kind == 'job':
+        # One pod per run, never two at once; a failed run is not retried (the next scheduled one runs).
+        controller['type'] = 'cronjob'
+        controller['cronjob'] = {'schedule': args.schedule, 'timeZone': JOB_TIME_ZONE, 'concurrencyPolicy': 'Forbid',
+                                 'startingDeadlineSeconds': JOB_START_DEADLINE_SECONDS,
+                                 'activeDeadlineSeconds': JOB_DEADLINE_SECONDS, 'backoffLimit': 0,
+                                 'successfulJobsHistory': 1, 'failedJobsHistory': 1}
     if args.persistence:
         # One writer: the volume is ReadWriteOnce on one node, and a database file must not have two
         # processes writing it. Stop the old pod before starting the new one; never run two (rule single-writer).
@@ -463,7 +482,9 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
     p.add_argument('--image', required=True, help=f'ghcr.io/{APP_OWNER}/<name>:<run>-<sha>@sha256:... as the app repository publishes it '
                                                         '(any REPO:TAG or digest form under another --root)')
-    p.add_argument('--kind', choices=['web', 'worker'], default='web')
+    p.add_argument('--kind', choices=list(declaration.KINDS), default='web')
+    p.add_argument('--schedule', default=JOB_SCHEDULE,
+                   help=f'job only: when it runs, five cron fields in {JOB_TIME_ZONE} (default "{JOB_SCHEDULE}"; make app-schedule later)')
     p.add_argument('--alerts', default='', metavar='SPEC',
                    help='the app\'s own default-alert settings: none, or error-logs=20,errors=none (default: the platform\'s)')
     p.add_argument('--team', help='the owning team, a name in apps/teams.yaml (required, here or as team: in swhurl.yaml)')

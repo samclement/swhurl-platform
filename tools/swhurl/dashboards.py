@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import app_alerts, clickstack, kube, statestore, yamlio
+from swhurl.apps import helmrelease
 from swhurl.apps.instance import INSTANCE_ROOTS, NAME_RE, Instance, instances
 from swhurl.platform import ROOT
 from swhurl.report import Report
@@ -50,7 +51,7 @@ ADMIN_KEY = ('const u = db.users.findOne({email: EMAIL}, {accessKey: 1});'
 @dataclass(frozen=True)
 class App:
     name: str
-    kind: str  # web or worker
+    kind: str  # web, worker or job (helmrelease.kind)
     envs: tuple[str, ...]
     alerts: str = ''  # its own alert settings (app_alerts.ANNOTATION); '' for the defaults
 
@@ -65,7 +66,7 @@ def apps(paths: list[Path] | None = None) -> list[App]:
     paths = paths if paths is not None else [each.folder(ROOT) for each in instances(ROOT / INSTANCE_ROOTS[0])]
     for instance in paths:
         release = yamlio.load((instance / 'helmrelease.yaml').read_text())
-        kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
+        kind = helmrelease.kind(release)
         entry = found.setdefault(instance.parent.name, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(instance.name)
         namespace = instance / 'namespace.yaml'
@@ -100,7 +101,7 @@ def cluster_apps(runner: Runner) -> list[App]:
         app, env = found_instance.app, found_instance.env
         if metadata['name'] != app or metadata['namespace'] != found_instance.namespace:
             continue
-        kind = 'web' if 'service' in (release['spec'].get('values') or {}) else 'worker'
+        kind = helmrelease.kind(release)
         entry = found.setdefault(app, {'kind': kind, 'envs': [], 'alerts': ''})
         entry['envs'].append(env)
         entry['alerts'] = entry['alerts'] or settings.get(found_instance.namespace, '')

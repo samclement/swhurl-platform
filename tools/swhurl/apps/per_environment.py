@@ -78,6 +78,7 @@ SETTINGS = (
     Setting(DESCRIPTION_VARIABLE, GENERATED, CARRY, "what the app says it does: read from the image's swhurl.yaml",
             later=WITH_IMAGE, where=VARIABLE),
     Setting('replicas', DECLARED, CARRY, 'make app-scale'),
+    Setting('schedule', DECLARED, CARRY, "when a job runs (make app-schedule): production starts with staging's"),
     Setting('resources', DECLARED, CARRY, 'make app-scale'),
     Setting('SWHURL_SERVICE_', DECLARED, CARRY, 'the apps it calls (make app-calls); each needs a production instance first',
             where=VARIABLE, prefix=True),

@@ -218,10 +218,11 @@ def check_isolation(docs: list[dict], labels: dict, known_teams: dict[str, str])
     workloads = []
     for doc in docs:
         spec = pod_spec(doc)
-        if spec is None or doc['kind'] not in ('Deployment', 'StatefulSet'):
+        if spec is None or doc['kind'] not in ('Deployment', 'StatefulSet', 'CronJob'):
             continue
         rolling = doc['kind'] == 'Deployment' and (doc['spec'].get('strategy') or {}).get('type') != 'Recreate'
-        pods = doc['spec'].get('replicas', 1) + (1 if rolling else 0)
+        # A job runs one pod at a time (concurrencyPolicy Forbid).
+        pods = 1 if doc['kind'] == 'CronJob' else doc['spec'].get('replicas', 1) + (1 if rolling else 0)
         workloads.append((pods, [container.get('resources') or {} for container in spec['containers']]))
     over = over_quota(workloads)
     if over:

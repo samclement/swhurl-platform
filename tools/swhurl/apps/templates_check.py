@@ -38,6 +38,7 @@ from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
 NAME = 'contract-check'
+REFUSED = 'Validation error for question'  # how Copier says the template's validator refused an answer
 # A template app's staging image (auto-deploy needs <run>-<sha>) pinned with a digest, as prod requires.
 IMAGE = f'ghcr.io/samclement/{NAME}:1-abcdef0@sha256:' + '0' * 64
 
@@ -72,7 +73,17 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     (root / 'clusters/home').mkdir(parents=True)
     (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
     data = ['--data', f'app_name={NAME}'] + [arg for k, v in sorted(answers.items()) for arg in ('--data', f'{k}={v}')]
-    runner.run([*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', *data, str(template), str(rendered)])
+    command = [*repo.copier_command(), 'copy', '--defaults', '--quiet', '--trust', *data, str(template), str(rendered)]
+    rendered_by = runner.run(command, check=False)
+    said = f'{rendered_by.stderr or ""}{rendered_by.stdout or ""}'
+    if rendered_by.returncode and REFUSED in said:
+        # The template's own validator refuses the combination (a job with a database): no app can have it.
+        why = [line for line in said.splitlines() if REFUSED in line][-1].split(':', 2)[-1].strip()
+        report.info(f'{label}: the template refuses it ({why})')
+        return True
+    if rendered_by.returncode:
+        raise CommandError(tuple(command), f'copier copy exited {rendered_by.returncode}: {said.strip()[-400:]}',
+                           rendered_by.returncode)
     manifest = rendered / declaration.FILE
     if runner.dry_run:
         return True

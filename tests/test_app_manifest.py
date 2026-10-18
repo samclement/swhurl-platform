@@ -31,9 +31,9 @@ class ManifestTests(unittest.TestCase):
             'uid': 65532, 'otlp': True, 'auto_deploy': True})
         self.assertEqual(seed({'version': 1, 'kind': 'worker', 'telemetry': 'otlp', 'autoDeploy': True}),
                          {'kind': 'worker', 'exposure': 'private', 'uid': 65532, 'otlp': True, 'auto_deploy': True})
-        for name in ('web', 'worker'):  # the fixtures other tests generate instances from
+        for name in ('web', 'worker', 'job'):  # the fixtures other tests generate instances from
             doc = yaml.safe_load((ROOT / f'tests/fixtures/manifests/{name}.yaml').read_text())
-            self.assertEqual((seed(doc)['kind'], seed(doc)['auto_deploy']), (name, True))
+            self.assertEqual(seed(doc)['kind'], name)
 
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',

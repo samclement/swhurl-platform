@@ -44,7 +44,7 @@ flux-bootstrap:
 
 .PHONY: check
 check:
-	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-templates check-otel check-lint
+	@$(MAKE) --no-print-directory -j6 --output-sync=target check-repo test check-apps check-otel check-lint
 
 .PHONY: test
 test:

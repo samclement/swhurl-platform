@@ -212,7 +212,7 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
                 'swhurl.sqlite_restore:main', takes=(APP, ENV, Var('CONFIRM', '<app>/<env>', env=True)), dry_run=READS),
     )),
     ('Offline checks', (
-        Command('check', 'All offline checks, the same as CI, in parallel', LOCAL),
+        Command('check', 'The offline checks in parallel; CI also renders the templates (check-templates)', LOCAL),
         Command('check-repo', 'Render active Flux paths; schemas, SOPS structure, required Secrets and settings, shell syntax, doc links', LOCAL,
                 'swhurl.validate:main'),
         Command('test', 'Unit tests for the tooling, console, manifests and command safety; K= runs only matching classes (needs uv)', LOCAL,

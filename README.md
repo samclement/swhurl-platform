@@ -77,7 +77,7 @@ Every change is a commit on `main`, and Flux applies it within seconds of a push
 From a terminal:
 
 ```bash
-make check                       # offline checks, the same as CI
+make check                       # offline checks; CI also renders the templates
 git commit -am "..." && git push
 make flux-reconcile              # optional: waits until every unit is Ready at your commit (the push webhook already started it)
 make verify-platform             # expect "Validation passed."

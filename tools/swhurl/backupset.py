@@ -113,9 +113,12 @@ class BackupSet:
         return next(iter(self.archives()), None)
 
     def age(self, now: dt.datetime, names: Iterable[str] | None = None) -> dt.timedelta | None:
-        """How old the newest archive is, here or among ``names`` (a listing from elsewhere); None without one."""
-        names = [path.name for path in self.archives()] if names is None else names
-        times = [taken for taken in map(self.taken, names) if taken]
+        """How old the newest complete backup is (an archive with its metadata, which is published last), here or
+        among ``names`` (a listing from elsewhere); None without one."""
+        names = [path.name for path in self.directory.iterdir()] if names is None and self.directory.is_dir() else names or []
+        present = set(names)
+        times = [taken for name in present if (taken := self.taken(name))
+                 and self.metadata_path(self.directory / name).name in present]
         return now - max(times) if times else None
 
     @contextlib.contextmanager
@@ -212,12 +215,13 @@ def publish(runner: Runner, backups: BackupSet, archive: Path, uri: str, out: Ca
 
 def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: str, *, env: Mapping[str, str],
                      now: dt.datetime | None, what: str, hint: str, run: str, prefix: str = '') -> None:
-    """The set's newest backup, on this host and under ``uri``, must be younger than BACKUP_MAX_AGE_HOURS (26)."""
+    """The set's newest complete backup under ``uri`` (S3) must be younger than BACKUP_MAX_AGE_HOURS (26)."""
     now = now or dt.datetime.now(dt.UTC)
     limit = dt.timedelta(hours=float(env.get('BACKUP_MAX_AGE_HOURS') or 26))
-    places = [(str(backups.directory), lambda: backups.age(now))]
-    if uri:
-        places.append((uri, lambda: backups.age(now, remote_names(runner, uri))))
+    if not uri:
+        report.bad(f'{prefix}no S3 location to check {what} backups in (BACKUP_S3_URI, SQLITE_S3_URI)')
+        return
+    places = [(uri, lambda: backups.age(now, remote_names(runner, uri)))]
     for where, read in places:
         try:
             age = read()

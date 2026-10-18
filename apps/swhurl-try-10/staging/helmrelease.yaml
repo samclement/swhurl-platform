@@ -5,7 +5,7 @@ metadata:
   namespace: swhurl-try-10-staging
   annotations:
     platform.swhurl.com/offers: fab7b45
-    platform.swhurl.com/render: 222bb5428ced926de9b2d2ec20c25c74675c012dde8cb6675f8ecbd802cb40d8
+    platform.swhurl.com/render: ccbe59e1d34d74361e8cab27af150ac7624f5f90fc24d514e00c8069e4aa22d4
 spec:
   interval: 30m
   timeout: 3m

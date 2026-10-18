@@ -5,7 +5,7 @@ metadata:
   namespace: swhurl-try-10-prod
   annotations:
     platform.swhurl.com/offers: e43bf78
-    platform.swhurl.com/render: e1f60a540082cead21fcd59f1fe4af05b27dd4ab5a6d452a52c74425ee37d783
+    platform.swhurl.com/render: 1366a9f111e3b5e02dace7a4fc5b677ab29e11a0d4bbcd7aee40419db7172e33
 spec:
   interval: 30m
   timeout: 3m

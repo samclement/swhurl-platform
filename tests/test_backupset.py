@@ -72,8 +72,10 @@ class BackupSetTests(unittest.TestCase):
         for backups in self.each():
             self.write(backups, '20260930T120000Z', '20261002T110000Z')
             self.assertEqual(backups.age(NOW), dt.timedelta(hours=1))
-            remote = [backups.path('20261001T120000Z').name, backups.metadata_path(backups.path('20261002T115900Z')).name]
-            self.assertEqual(backups.age(NOW, remote), dt.timedelta(days=1), 'a metadata file alone is no backup')
+            done, half = backups.path('20261001T120000Z'), backups.path('20261002T115900Z')
+            remote = [done.name, backups.metadata_path(done).name, half.name]
+            self.assertEqual(backups.age(NOW, remote), dt.timedelta(days=1), 'an archive without its metadata is no backup')
+            self.assertIsNone(backups.age(NOW, [backups.metadata_path(half).name]), 'nor is a metadata file alone')
 
     def test_writing_keeps_the_archive_only_when_the_block_succeeds(self):
         for backups in self.each():

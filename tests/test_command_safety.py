@@ -68,7 +68,10 @@ elif Path(sys.argv[0]).name == 'systemctl':
         timestamp = datetime.datetime.now().astimezone().strftime('%a %Y-%m-%d %H:%M:%S %Z')
         print('Result=success\\nExecMainStatus=0\\nExecMainExitTimestamp=' + timestamp)
 elif Path(sys.argv[0]).name == 'aws':
-    emit(['clickstack-mongodb/clickstack-mongodb-' + os.environ['STAMP'] + '.archive.gz.age'])
+    prefix, stamp = argv[argv.index('--prefix') + 1], os.environ['STAMP']
+    names = ['clickstack-mongodb-' + stamp + s for s in ('.archive.gz.age', '.json')] if prefix.startswith('clickstack') \\
+        else ['sqlite-' + stamp + s for s in ('.db.age', '.json')]
+    emit([prefix + name for name in names])
 elif Path(sys.argv[0]).name == 'gh':
     emit([{'active': True, 'config': {'url': 'https://' + os.environ['WEBHOOK_HOST'] + '/hook/x'},
            'last_response': {'code': 200}}])

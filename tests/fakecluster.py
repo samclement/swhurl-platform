@@ -176,7 +176,13 @@ def backup_answers():
 
 
 def backup_rules(runner, answer):
-    runner.on('aws', 's3api', 'list-objects-v2', handler=answer('remote'))
+    def listing(args, _):
+        prefix = args[args.index('--prefix') + 1]
+        if prefix.startswith('clickstack-mongodb/'):
+            return answer('remote')(args, _)
+        stamp = fresh_backup()[len('clickstack-mongodb-'):-len('.archive.gz.age')]
+        return Result(args, 0, json.dumps([f'{prefix}sqlite-{stamp}.db.age', f'{prefix}sqlite-{stamp}.json']))
+    runner.on('aws', 's3api', 'list-objects-v2', handler=listing)
 
 
 def console_answers():

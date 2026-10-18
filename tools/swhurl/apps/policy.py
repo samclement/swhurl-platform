@@ -113,6 +113,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import INSTANCE_ROOTS
 from swhurl.apps.instance import instances as instances_under
+from swhurl.apps.model import shadow
 from swhurl.run import Runner
 
 EXCEPTIONS_KEY = EXCEPTIONS
@@ -606,6 +607,14 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             print(f'[BAD] {channels.NOTIFY_DIR}')
             for problem in problems:
                 print(f'       {problem}')
+        problems = shadow.check(ROOT)
+        if problems:
+            failed += 1
+            print('[BAD] app model: rendering the records read from the manifests differs (docs/plan.md section 24)')
+            for problem in problems:
+                print(f'       {problem}')
+        else:
+            print('[OK] app model: rendering every instance\'s records reproduces its manifests')
     if failed:
         print(f'\n{failed} instance(s) or app(s) violate the app contract.')
         return 1

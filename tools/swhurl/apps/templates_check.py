@@ -33,6 +33,7 @@ from swhurl.apps.contract import (
     type_answers,
 )
 from swhurl.apps.instance import ENVIRONMENTS, instance_folder
+from swhurl.apps.model import shadow
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -100,6 +101,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
     # promotion.create has run the policy on prod, exactly as it wrote it; only staging is left.
     problems = [f'{instances[0].name}: {p}' for p in policy.evaluate(instances[0], runner)]
     problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
+    problems += [f'app model: {p}' for p in shadow.problems(root)]
     if problems:
         report.bad(f'{label}: ' + '; '.join(problems))
         return False

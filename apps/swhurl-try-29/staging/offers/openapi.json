@@ -1,0 +1,108 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "swhurl-try-29",
+    "version": "0.1.0",
+    "description": "throwaway: section 24 stage 1 exit, delete me"
+  },
+  "components": {
+    "schemas": {
+      "Hello": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "hello from swhurl-try-29"
+          },
+          "service": {
+            "type": "string"
+          },
+          "caller": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "app",
+                  "user",
+                  "anonymous"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user": {
+                "type": "string",
+                "description": "For an app: the signed-in person it is calling for"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "visits": {
+            "type": "integer",
+            "description": "How many times it was asked, when the app keeps a database"
+          },
+          "event": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "description": "The event this request published, if any"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "service",
+          "caller",
+          "event",
+          "traceId"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Say hello and name the caller",
+        "responses": {
+          "200": {
+            "description": "A greeting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Hello"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

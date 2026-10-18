@@ -3,6 +3,7 @@ FakeRunner for the tree's tooling and a fake GitHub API."""
 import base64
 import io
 import json
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -889,7 +890,9 @@ class ChangeAppRouteTests(unittest.TestCase):
         helmrelease.container(release).setdefault('env', {})[calling.callee_variable('orders')] = calling.callee_address('orders', 8080)
         main = {rel: data for rel, data in MAIN.items() if 'hello/prod' not in rel and 'app-hello-prod' not in rel}
         main['apps/hello/staging/helmrelease.yaml'] = yaml.safe_dump(release, sort_keys=False).encode()
-        main['apps/orders/prod/helmrelease.yaml'] = MAIN['apps/hello/prod/helmrelease.yaml']
+        for rel, data in MAIN.items():  # orders runs in production: hello's production files, renamed
+            if 'hello/prod' in rel or 'app-hello-prod' in rel:
+                main[rel.replace('hello', 'orders')] = data.replace(b'hello', b'orders')
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(MAIN, main, clear=True):
             root = Path(tmp)
             for rel, data in main.items():
@@ -898,8 +901,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
             review = console_promotion.review(root, 'hello', good)
             self.assertEqual((review['admits'], review['setup']), (['orders'], True))
-            (root / 'apps/orders/prod/helmrelease.yaml').unlink()
-            (root / 'apps/orders/prod').rmdir()
+            shutil.rmtree(root / 'apps/orders/prod')
             self.assertEqual(console_promotion.admitting(root, 'hello', release), [], 'a callee with no production is not edited')
             c, jobs = self.client(tree_fake())
             page = c.get('/apps/hello/staging/promotion', headers=WHO).text

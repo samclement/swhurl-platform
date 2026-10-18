@@ -1,6 +1,8 @@
 """Validate the exact merge result and fast-forward main only while its checked base still matches."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -11,8 +13,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import calling, egress, events, helmrelease, new, offers, per_environment, promotion
+from swhurl.apps import egress, events, helmrelease, new, promotion
 from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.yaml_file import EditError, YamlFile
 from swhurl.run import CommandError, Runner
 
@@ -154,56 +157,49 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
     actual = promotion.YamlFile(instance_folder(candidate, app, 'prod') / 'helmrelease.yaml').data
     if promotion.ops.image_reference(promotion.image_of(actual)) != meta.get('image'):
         raise Hold('PR no longer pins the reviewed image')
-    if target is not None:
-        reviewed = new.parse_image(meta['image'])
-        if promotion.image_of(target).get('repository') != reviewed['repository']:
-            raise Hold('production image repository changed')
-        # With the image goes what it offers (its API and event documents, read at its commit): the
-        # documents and the release's note of that commit may change. What it publishes may not: that
-        # also changes NATS, which a person reviews.
-        release = f'apps/{app}/prod/helmrelease.yaml'
-        carried = sorted(path for path in files if path.startswith(f'apps/{app}/prod/{offers.OFFERS_DIR}/'))
-        commit = ''
-        if carried:
-            try:
-                found = offers.read(instance_folder(candidate, app, 'prod'))
-                commit = offers.commit_of(reviewed.get('tag', ''))
-            except offers.OfferError as error:
-                raise Hold(f'promotion carries offers that cannot be used: {error}') from None
-            if found is None or found.commit != commit:
-                raise Hold('promotion carries offers that are not from the reviewed image')
-            staging = offers.read(instance_folder(base, app, 'staging'))
-            if staging and staging.commit == commit and any(
-                    (candidate / path).read_bytes() != (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).read_bytes()
-                    for path in carried if (instance_folder(base, app, 'staging') / offers.OFFERS_DIR / Path(path).name).is_file()):
-                raise Hold("promotion carries offers that differ from staging's")
-        # Where the image serves its API description goes with its documents (staging's value).
-        expected = per_environment.after_promotion(target, reviewed, commit=commit,
-                                                   served=helmrelease.variables(source).get(calling.API_VARIABLE, ''),
-                                                   staging_variables=helmrelease.variables(source))
-        if actual != expected or sorted(files) != sorted([release, *carried]):
-            raise Hold('later promotion changes more than the image pin and what the image offers')
-        return
+    if target is None:
+        # Production's own credentials (a NATS key, Secret placeholders) cannot be replayed here.
+        raise Hold('a first promotion creates production: a person reviews and merges it')
     if promotion.fingerprint(base, app, 'staging', ignore_image=True) != meta.get('source'):
-        raise Hold('first-production staging configuration changed; regenerate and review')
+        raise Hold('staging configuration changed after review; review a fresh promotion')
     with tempfile.TemporaryDirectory(prefix='merge-promotion-') as tmp:
-        work = Path(tmp)
-        for rel in ('apps/' + app + '/staging', 'clusters/home/kustomization.yaml',
-                    'platform/reloader/helmrelease.yaml', '.sops.yaml'):
-            src, dst = base / rel, work / rel
-            if src.exists():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                (shutil.copytree if src.is_dir() else shutil.copyfile)(src, dst)
-        source = json.loads(json.dumps(source))
-        helmrelease.container(source)['image'] = new.parse_image(meta['image'])
-        promotion.create(work, app, source, runner=runner)
-        expected_files = sorted([p.relative_to(work).as_posix() for p in instance_folder(work, app, 'prod').iterdir()]
-                                + [instance_unit_file(Path(), app, 'prod').as_posix(), 'clusters/home/kustomization.yaml'])
-        if sorted(files) != expected_files:
-            raise Hold('first promotion has unexpected files')
-        for rel in expected_files:
-            if yamlio.load((candidate / rel).read_text()) != yamlio.load((work / rel).read_text()):
-                raise Hold(f'first production differs from reviewed staging conversion: {rel}')
+        work = Path(tmp) / 'tree'
+        shutil.copytree(base, work, ignore=shutil.ignore_patterns('.git'))
+        # The promotion replayed on main: the PR must be exactly what it produces. Staging may have a newer
+        # build by now; the reviewed image is the one promoted.
+        from swhurl.apps import edit
+        staging = YamlFile(instance_folder(work, app, 'staging') / 'helmrelease.yaml')
+        promotion.image_of(staging.data).update(new.parse_image(meta['image']))
+        staging.save()
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit.promote(work, app, expect_image=meta['image'], runner=runner)
+        shutil.copyfile(instance_folder(base, app, 'staging') / 'helmrelease.yaml', staging.path)
+        world, _ = model_sync.read(work)
+        if world[Instance(app, 'prod')].release.publishes != model_sync.read(base)[0][Instance(app, 'prod')].release.publishes:
+            raise Hold('the promotion changes what the app publishes, which changes NATS: a person reviews it')
+        produced = sorted(path for path in changed_files(base, work))
+        if sorted(files) != produced:
+            raise Hold('later promotion changes more than the image and what it brings: '
+                       + ', '.join(sorted(set(files) ^ set(produced))))
+        for rel in produced:
+            if not same_file(candidate / rel, work / rel):
+                raise Hold(f'the PR differs from the promotion replayed on main: {rel}')
+
+
+def same_file(a: Path, b: Path) -> bool:
+    """Both absent, or the same bytes or the same YAML documents."""
+    if not (a.is_file() and b.is_file()):
+        return a.is_file() == b.is_file()
+    return a.read_bytes() == b.read_bytes() or yamlio.load_all(a.read_text()) == yamlio.load_all(b.read_text())
+
+
+def changed_files(base: Path, work: Path) -> list[str]:
+    """Files that differ between two trees, by path from their root (no .git)."""
+    def files(root: Path) -> dict[str, bytes]:
+        return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*')
+                if path.is_file() and '.git' not in path.relative_to(root).parts}
+    before, after = files(base), files(work)
+    return [path for path in before.keys() | after.keys() if before.get(path) != after.get(path)]
 
 
 def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str]:

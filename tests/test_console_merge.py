@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from swhurl import ROOT
-from swhurl.apps import egress, new, policy, promotion
+from swhurl.apps import edit, egress, new, policy, promotion
 from swhurl.console import merge
 from swhurl.console import promotion as console
 from swhurl.run import CommandError, FakeRunner, Result
@@ -75,15 +75,14 @@ class MergeTests(unittest.TestCase):
                         self.after_candidate(dst)
                     self.candidate_dir = dst
                     return Result(args)
-                source, target = promotion.read(dst, 'example')
-                if target is None:
-                    with mock.patch.object(policy, 'evaluate', return_value=[]):
-                        source['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(IMAGE)
-                        promotion.create(dst, 'example', source, runner=runner)
-                else:
-                    document = promotion.YamlFile(dst / 'apps/example/prod/helmrelease.yaml')
-                    promotion.image_of(document.data).update(new.parse_image(IMAGE))
-                    document.save()
+                staging = promotion.YamlFile(dst / 'apps/example/staging/helmrelease.yaml')
+                promotion.image_of(staging.data).update(new.parse_image(IMAGE))  # the reviewed image, whatever staging runs now
+                staging.save()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    edit.promote(dst, 'example', runner=runner)
+                shutil.copyfile(self.root / 'apps/example/staging/helmrelease.yaml', dst / 'apps/example/staging/helmrelease.yaml')
+                if self.after_candidate:
+                    self.after_candidate(dst)
             return Result(args)
 
         (runner.on('gh', 'api', f'repos/{REPO}/pulls/7', handler=pr)
@@ -159,22 +158,7 @@ class MergeTests(unittest.TestCase):
         self.meta = console.metadata(self.root, 'example', IMAGE, False)
         self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'
         self.files = ['apps/example/prod/helmrelease.yaml', 'apps/example/prod/offers/openapi.yaml', 'apps/example/prod/offers/source.yaml']
-
-        def runner(change=lambda dst: None):
-            base = self.runner()
-            plain = next(handler for prefix, handler in base._rules if prefix == ('git', 'worktree', 'add'))
-
-            def worktree(args, _):
-                result = plain(args, _) if callable(plain) else plain
-                dst = Path(args[-2])
-                if dst.name == 'candidate':
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        edit.carry_offers(dst, 'example')
-                    change(dst)
-                return result
-            base._rules.insert(0, (('git', 'worktree', 'add'), worktree))
-            return base
-        carried = runner()
+        carried = self.runner()
         self.check(carried)
         self.assertTrue(self.pushes(carried))
 
@@ -188,14 +172,16 @@ class MergeTests(unittest.TestCase):
         def publishes_more(dst):
             path = dst / 'apps/example/prod/helmrelease.yaml'
             path.write_text(path.read_text().replace('SWHURL_APP: example', 'SWHURL_APP: example\n              SWHURL_EVENTS_PUBLISH: created'))
-        for change, message in ((another_commit, 'not from the reviewed image'), (another_document, "differ from staging's"),
-                                (publishes_more, 'changes more than the image pin and what the image offers')):
-            with self.subTest(change=change.__name__), self.assertRaisesRegex(merge.Hold, message):
-                held = runner(change)
+        for change, rel in ((another_commit, 'offers/source.yaml'), (another_document, 'offers/openapi.yaml'),
+                            (publishes_more, 'helmrelease.yaml')):
+            self.after_candidate = change
+            with self.subTest(change=change.__name__), self.assertRaisesRegex(
+                    merge.Hold, f'differs from the promotion replayed on main: apps/example/prod/{rel}'):
+                held = self.runner()
                 self.check(held)
             self.assertEqual(self.pushes(held), [])
 
-    def test_first_production_reproduces_conversion_and_rejects_source_config_change(self):
+    def test_a_first_production_is_merged_by_a_person(self):
         shutil.rmtree(self.root / 'apps/example/prod')
         (self.root / 'clusters/home/app-example-prod.yaml').unlink()
         (self.root / 'clusters/home/kustomization.yaml').write_text('resources:\n- app-example-staging.yaml\n')
@@ -206,12 +192,7 @@ class MergeTests(unittest.TestCase):
                                                                        'resourcequota.yaml')]
                             + ['clusters/home/app-example-prod.yaml', 'clusters/home/kustomization.yaml'])
         runner = self.runner()
-        self.check(runner)
-        self.assertTrue(self.pushes(runner))
-        source = self.root / 'apps/example/staging/helmrelease.yaml'
-        source.write_text(source.read_text().replace('cpu: 10m', 'cpu: 75m'))
-        runner = self.runner()
-        with self.assertRaisesRegex(merge.Hold, 'staging configuration changed'):
+        with self.assertRaisesRegex(merge.Hold, 'a person reviews and merges it'):
             self.check(runner)
         self.assertEqual(self.pushes(runner), [])
 

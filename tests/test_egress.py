@@ -10,7 +10,9 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import checks, derive, edit, egress, helmrelease, per_environment
+from swhurl.apps import checks, derive, edit, egress, helmrelease, per_environment, promotion
+from swhurl.apps.instance import Instance
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import FakeRunner
@@ -118,10 +120,11 @@ class EgressTests(unittest.TestCase):
         self.sync()
         self.grant(add=['api.stripe.com'])
         self.assertTrue(per_environment.may_differ(egress.ANNOTATION))
-        staging = self.release('staging')
-        self.assertEqual(egress.granted(per_environment.for_production(staging, 'hello', None)), [])
+        world, _ = model_sync.read(self.root)
+        first = promotion.first_production(self.root, world, 'hello')
+        self.assertEqual(first.entry.settings.egress, ())
         with redirect_stdout(io.StringIO()) as out:
-            edit.egress_difference('hello', staging, self.release('prod'))
+            edit.egress_difference('hello', world[Instance('hello', 'staging')], world[Instance('hello', 'prod')])
         self.assertIn('make app-egress APP=hello ENV=prod ARGS="--add api.stripe.com:443"', out.getvalue())
 
     def test_duplicate_or_missing_ports_are_named(self):
@@ -135,10 +138,10 @@ class EgressTests(unittest.TestCase):
 
     def test_a_first_production_gets_its_own_port_not_stagings(self):
         self.sync()
-        staging = yaml.safe_load((self.root / 'apps/hello/staging/helmrelease.yaml').read_text())
-        variables = helmrelease.variables(per_environment.for_production(staging, 'hello', None))
-        self.assertFalse({'HTTPS_PROXY', 'HTTP_PROXY', 'JAVA_TOOL_OPTIONS'} & set(variables))
-        self.assertEqual(variables['NO_PROXY'], self.env('staging')['NO_PROXY'])
+        world, _ = model_sync.read(self.root)
+        self.assertIsNotNone(world[Instance('hello', 'staging')].settings.allocations.egress_port)
+        first = promotion.first_production(self.root, world, 'hello')
+        self.assertIsNone(first.entry.settings.allocations.egress_port, 'make app-sync gives production a free one')
 
     def test_a_root_without_the_proxy_gets_no_proxy_settings(self):
         shutil.rmtree(self.root / egress.PROXY_FILE.parent)

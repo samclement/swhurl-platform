@@ -118,36 +118,35 @@ class FirstProductionTests(unittest.TestCase):
         new.generate(args, self.root)
         return promotion.read(self.root, 'example')[0]
 
-    def test_web_worker_and_sqlite_conversion_preserves_settings(self):
-        from unittest import mock
+    def promote(self, runner=None, **kwargs):
+        import io
+        from contextlib import redirect_stdout
 
-        from swhurl.apps import policy
-        from swhurl.run import FakeRunner
+        from swhurl.apps import edit
+        with redirect_stdout(io.StringIO()):
+            return edit.promote(self.root, 'example', runner=runner, **kwargs)
+
+    def encrypting(self):
+        """sops as a FakeRunner: marks the file encrypted, and the placeholders never hold a staging value."""
+        from swhurl.run import FakeRunner, Result
+
+        def encrypt(args, _):
+            path = Path(args[-1])
+            self.assertNotIn('staging-value', path.read_text())
+            path.write_text(path.read_text().replace('REPLACE_ME', 'ENC[new-placeholder]') + 'sops: {}\n')
+            return Result(args)
+        return FakeRunner().on('sops', handler=encrypt)
+
+    def test_web_worker_and_sqlite_conversion_preserves_settings(self):
         for kind, extra in [('web', []), ('worker', []), ('worker', ['--database', 'sqlite']),
                             ('job', ['--schedule', '*/10 * * * *'])]:
             with self.subTest(kind=kind, extra=extra):
                 source = self.staging(kind, *extra)
                 values = source['spec']['values']
-                values['controllers']['main']['containers']['main']['resources']['requests']['cpu'] = '75m'
-                doc = promotion.YamlFile(self.root / 'apps/example/staging/helmrelease.yaml')
-                doc.data['spec']['values'] = values
-                doc.save()
-                from ruamel.yaml.scalarstring import DoubleQuotedScalarString
-                namespace = promotion.YamlFile(self.root / 'apps/example/staging/namespace.yaml')
-                namespace.data['metadata']['labels']['platform.swhurl.com/promotion-test'] = DoubleQuotedScalarString('true')
-                namespace.data['metadata'].setdefault('annotations', {})['custom'] = DoubleQuotedScalarString('3')
-                namespace.save()
-                runner = FakeRunner()
-                with mock.patch.object(policy, 'evaluate', return_value=[]) as evaluate:
-                    dst = promotion.create(self.root, 'example', source, runner=runner)
-                self.assertIs(evaluate.call_args.args[1], runner)
+                dst = self.promote()
                 production = promotion.YamlFile(dst / 'helmrelease.yaml').data
                 self.assertEqual(promotion.image_of(production), promotion.image_of(source))
                 self.assertEqual(production['metadata']['namespace'], 'example-prod')
-                self.assertFalse((dst / 'production-alert.yaml').exists())
-                namespace = promotion.YamlFile(dst / 'namespace.yaml').data['metadata']
-                self.assertEqual(namespace['labels']['platform.swhurl.com/promotion-test'], 'true')
-                self.assertEqual(namespace['annotations']['custom'], '3')
                 expected = json.loads(json.dumps(values['controllers']['main']))
                 expected['containers']['main']['env']['SWHURL_ENV'] = 'prod'  # production's own identity
                 self.assertEqual(production['spec']['values']['controllers']['main'], expected)
@@ -162,20 +161,19 @@ class FirstProductionTests(unittest.TestCase):
                 elif extra:
                     self.assertTrue(production['spec']['values']['persistence']['data']['retain'])
                     self.assertNotIn('existingClaim', production['spec']['values']['persistence']['data'])
+                self.assertIn('app-example-prod.yaml', (self.root / 'clusters/home/kustomization.yaml').read_text(),
+                              'its unit is registered')
                 shutil.rmtree(self.root / 'apps')
                 for unit in (self.root / 'clusters/home').glob('app-example-*.yaml'):
                     unit.unlink()
+                shutil.copyfile(ROOT / 'clusters/home/kustomization.yaml', self.root / 'clusters/home/kustomization.yaml')
 
     def test_production_keeps_the_team_and_gets_its_own_quota_and_network_policy(self):
-        from unittest import mock
-
         import yaml
 
         from swhurl.apps import policy
-        from swhurl.run import FakeRunner
-        source = self.staging('web', '--team', 'payments', '--port', '9000')
-        with mock.patch.object(policy, 'evaluate', return_value=[]):
-            dst = promotion.create(self.root, 'example', source, runner=FakeRunner())
+        self.staging('web', '--team', 'payments', '--port', '9000')
+        dst = self.promote()
         self.assertEqual(yaml.safe_load((dst / 'namespace.yaml').read_text())['metadata']['labels'][contract.TEAM],
                          'payments')
         network = yaml.safe_load((dst / 'networkpolicy.yaml').read_text())
@@ -185,40 +183,31 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(policy.drift([dst, self.root / 'apps/example/staging']), [])
 
     def test_first_promotion_of_a_caller_needs_its_callee_in_production_and_links_them_there(self):
-        from unittest import mock
-
         import yaml
 
         from swhurl.apps import edit, new, policy
-        from swhurl.run import FakeRunner
         for name, extra in (('orders', []), ('reports', ['--calls', 'orders'])):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
         edit.set_calls(self.root, 'reports', 'staging', add=['orders'])
-
-        def encrypt(args, _):
-            Path(args[-1]).write_text(Path(args[-1]).read_text() + 'sops: {}\n')
-            return Result(args, 0, '')
-        from swhurl.run import Result
-        edit.set_events(self.root, 'orders', 'staging', publish=['created'], runner=FakeRunner().on('sops', handler=encrypt))
+        edit.set_events(self.root, 'orders', 'staging', publish=['created'], runner=self.encrypting())
+        edit.set_events(self.root, 'reports', 'staging', subscribe=['orders.created'], runner=self.encrypting())
 
         def env(app, environment):
             release = yaml.safe_load((self.root / 'apps' / app / environment / 'helmrelease.yaml').read_text())
             return release['spec']['values']['controllers']['main']['containers']['main']['env']
-        with mock.patch.object(policy, 'evaluate', return_value=[]):
-            with self.assertRaisesRegex(EditError, 'reports calls orders, which has no production instance: promote that first'):
-                edit.promote(self.root, 'reports', runner=FakeRunner())
-            self.assertFalse((self.root / 'apps/reports/prod').exists())
-            edit.promote(self.root, 'orders', runner=FakeRunner())
-            self.assertNotIn('SWHURL_ALLOWED_CALLERS', env('orders', 'prod'), 'nobody calls it in production yet')
-            edit.promote(self.root, 'reports', runner=FakeRunner())
+        with self.assertRaisesRegex(EditError, 'reports calls orders, which has no production instance: promote that first'):
+            edit.promote(self.root, 'reports', runner=self.encrypting())
+        self.assertFalse((self.root / 'apps/reports/prod').exists())
+        edit.promote(self.root, 'orders', runner=self.encrypting())
+        self.assertNotIn('SWHURL_ALLOWED_CALLERS', env('orders', 'prod'), 'nobody calls it in production yet')
+        self.assertEqual(env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created',
+                         'it publishes what its image does, with a NATS key of its own')
+        self.assertNotEqual(env('orders', 'prod')['SWHURL_EVENTS_NKEY'], env('orders', 'staging')['SWHURL_EVENTS_NKEY'])
+        edit.promote(self.root, 'reports', runner=self.encrypting())
         self.assertEqual(env('reports', 'prod')['SWHURL_ENV'], 'prod')
-        self.assertFalse(any(key.startswith('SWHURL_EVENTS_') for key in env('orders', 'prod')),
-                         'events are declared per environment: production starts without them')
-        production = yaml.safe_load((self.root / 'apps/orders/prod/helmrelease.yaml').read_text())
-        self.assertNotIn('envFrom', production['spec']['values']['controllers']['main']['containers']['main'])
-        self.assertFalse((self.root / 'apps/orders/prod/events.yaml').exists())
+        self.assertNotIn('SWHURL_EVENTS_SUBSCRIBE', env('reports', 'prod'), 'what it receives is declared in production')
         self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [])
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
         self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
@@ -226,61 +215,39 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(policy.check_calls(instances), {})
         self.assertEqual(policy.drift([self.root / 'apps/reports/prod', self.root / 'apps/reports/staging']), [])
 
-    def test_unsupported_shape_and_policy_failure_write_nothing(self):
-        from unittest import mock
-
-        from swhurl.apps import policy
+    def test_a_staging_the_model_cannot_express_writes_nothing(self):
         source = self.staging()
-        before = promotion.fingerprint(self.root, 'example', 'prod')
-        source['spec']['values']['controllers']['sidecar'] = {}
-        with self.assertRaisesRegex(EditError, 'unsupported fields sidecar'):
-            promotion.create(self.root, 'example', source)
-        source['spec']['values']['controllers'].pop('sidecar')
-        with mock.patch.object(policy, 'evaluate', return_value=['non-root: invalid']), \
-                self.assertRaisesRegex(EditError, 'policy refused'):
-            promotion.create(self.root, 'example', source)
-        self.assertFalse((self.root / 'apps/example/prod').exists())
-        self.assertEqual(promotion.fingerprint(self.root, 'example', 'prod'), before)
-        self.assertFalse((self.root / 'clusters/home/app-example-prod.yaml').exists())
-
-    def test_secret_stub_is_new_and_failure_leaves_no_target(self):
-        from unittest import mock
-
-        from swhurl.apps import policy
-        from swhurl.run import FakeRunner, Result
-        source = self.staging('worker')
-        instance = self.root / 'apps/example/staging'
-        doc = promotion.YamlFile(instance / 'helmrelease.yaml')
-        doc.data['spec']['values']['controllers']['main']['containers']['main']['envFrom'] = [
-            {'secretRef': {'name': 'example-secret'}}]
+        doc = promotion.YamlFile(self.root / 'apps/example/staging/helmrelease.yaml')
+        doc.data['spec']['values']['controllers']['sidecar'] = {}
         doc.save()
-        source = doc.data
-        (instance / 'secret.sops.yaml').write_text('stringData:\n  API_TOKEN: ENC[staging-value]\nsops: {}\n')
-        kustomization = promotion.YamlFile(instance / 'kustomization.yaml')
-        kustomization.data['resources'].append('secret.sops.yaml')
-        kustomization.save()
-        runner = FakeRunner().on('sops', returncode=1, stderr='encryption failed')
+        before = sorted(self.root.rglob('*'))
+        with self.assertRaisesRegex(EditError, 'differ from what the platform renders'):
+            self.promote()
+        self.assertEqual(sorted(self.root.rglob('*')), before)
+        del source
+
+    def test_secret_placeholders_are_new_and_failure_leaves_no_target(self):
+        from swhurl.apps import edit
+        from swhurl.run import FakeRunner
+        self.staging('worker', '--secret-keys', 'API_TOKEN')
+        encrypted = 'apiVersion: v1\nkind: Secret\nstringData:\n  API_TOKEN: ENC[staging-value]\nsops: {}\n'
+        edit.set_secret(self.root, 'example', 'staging', 'API_TOKEN', 'staging-value',
+                        runner=FakeRunner().on('sops', stdout=encrypted))
         with self.assertRaisesRegex(EditError, 'SOPS-encrypt'):
-            promotion.create(self.root, 'example', source, runner=runner)
+            self.promote(runner=FakeRunner().on('sops', returncode=1, stderr='encryption failed'))
         self.assertFalse((self.root / 'apps/example/prod').exists())
-
-        def encrypt(args, _):
-            path = Path(args[-1])
-            self.assertNotIn('staging-value', path.read_text())
-            self.assertIn('REPLACE_ME', path.read_text())
-            path.write_text(path.read_text().replace('REPLACE_ME', 'ENC[new-placeholder]') + 'sops: {}\n')
-            return Result(args)
-
-        runner = FakeRunner().on('sops', handler=encrypt)
-        with mock.patch.object(policy, 'evaluate', return_value=[]):
-            dst = promotion.create(self.root, 'example', source, runner=runner)
+        dst = self.promote(runner=self.encrypting())
         secret = (dst / 'secret.sops.yaml').read_text()
         self.assertNotIn('staging-value', secret)
         self.assertIn('namespace: example-prod', secret)
         self.assertIn('example-prod', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
 
-    def test_public_host_and_staging_reference_refusals(self):
-        source = self.staging('web', '--exposure', 'public', '--host', 'staging.example.com')
+    def test_public_host_refusals(self):
+        from swhurl.apps.model import sync as model_sync
+        self.staging('web', '--exposure', 'public', '--host', 'staging.example.com')
+        world, _ = model_sync.read(self.root)
         with self.assertRaisesRegex(EditError, 'distinct production'):
-            promotion.first_args(self.root, 'example', source)
-        self.assertEqual(promotion.first_args(self.root, 'example', source, host='example.com').host, 'example.com')
+            promotion.first_production(self.root, world, 'example')
+        with self.assertRaisesRegex(EditError, 'outside'):
+            promotion.first_production(self.root, world, 'example', host='x.homelab.swhurl.com')
+        self.assertEqual(promotion.first_production(self.root, world, 'example', host='example.com').host, 'example.com')

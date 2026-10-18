@@ -11,19 +11,18 @@ here. Each row says where the value comes from and what a promotion does with st
              regenerate   production is created with its own value
     later    stays        a later promotion leaves production's value alone
              image        it moves with the image
-             offers       it moves with the documents the image offers (edit.carry_offers)
+             offers       it moves with the documents the image offers (edit.staging_offers)
              held         it moves with them too, but a person reviews the change
 
-Three readers, and no other statement of the rule: the env-drift policy rule (what is not compared),
-promotion (what production is created with) and the console's auto-merge gate (what a later promotion
-may change). A setting that staging gets before production (anything read for the image it runs)
-needs a row here: without one, env-drift fails for every app that has a production instance.
+The env-drift policy rule reads it (what is not compared); promotion renders production from the
+app model's records (apps/promotion.py, edit.promote), which the first and later columns describe.
+A setting that staging gets before production (anything read for the image it runs) needs a row
+here: without one, env-drift fails for every app that has a production instance.
 
 Plain data, and only modules the offline policy check may import (no ruamel.yaml).
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from swhurl.apps import contract, egress, events, helmrelease, offers
@@ -34,7 +33,6 @@ from swhurl.apps.calling import (
     ENVIRONMENT_VARIABLE,
     TOKENS_VOLUME,
 )
-from swhurl.apps.instance import Instance
 
 DECLARED, DERIVED, GENERATED = 'declared', 'derived', 'generated'
 CARRY, STRIP, REGENERATE = 'carry', 'strip', 'regenerate'
@@ -154,61 +152,3 @@ def without_reference(release: dict, secret: str) -> None:
             del annotations[contract.RELOAD]
             if not annotations:
                 del workload['annotations']
-
-
-def for_production(staging: dict, app: str, host: str | None) -> dict:
-    """The release a first promotion creates production with, from staging's: every setting marked
-    carry as it is, strip removed, regenerate with production's own value. ``host`` is production's
-    address (None for a private app)."""
-    release = json.loads(json.dumps(staging))
-    values = release['spec']['values']
-    release['metadata']['namespace'] = Instance(app, PRODUCTION).namespace
-    for options in (values.get('defaultPodOptions', {}), release['metadata']):
-        if contract.ENVIRONMENT in options.get('labels', {}):
-            options['labels'][contract.ENVIRONMENT] = PRODUCTION
-    variables = helmrelease.container(release).get('env') or {}
-    if ENVIRONMENT_VARIABLE in variables:
-        variables[ENVIRONMENT_VARIABLE] = PRODUCTION
-    annotations = release['metadata'].get('annotations') or {}
-    for setting in SETTINGS:
-        if setting.first == STRIP:
-            {VARIABLE: variables, ANNOTATION: annotations}[setting.where].pop(setting.key, None)
-    if 'annotations' in release['metadata'] and not annotations:
-        del release['metadata']['annotations']
-    without_reference(release, events.secret_name(app))
-    if host:
-        route = values['ingress']['main']
-        route['hosts'][0]['host'] = host
-        route['tls'][0]['hosts'] = [host]
-    return release
-
-
-def carry_image_variables(staging_variables: dict, release: dict) -> None:
-    """Give ``release`` (in place) staging's value of each variable that moves with the image, or none."""
-    variables = helmrelease.container(release).setdefault('env', {})
-    for setting in SETTINGS:
-        if setting.later == WITH_IMAGE and setting.where == VARIABLE:
-            if setting.key in staging_variables:
-                variables[setting.key] = staging_variables[setting.key]
-            else:
-                variables.pop(setting.key, None)
-
-
-def after_promotion(production: dict, image: dict, *, commit: str = '', served: str = '',
-                    staging_variables: dict | None = None) -> dict:
-    """Production's release after a later promotion to ``image``: nothing but the settings that move
-    with the image (``staging_variables`` holds staging's values of those that are variables) and, when the promotion carries what the image offers (read at ``commit``; its API
-    description served at ``served``), the settings that move with those."""
-    release = json.loads(json.dumps(production))
-    current = helmrelease.image(release)
-    for key in (setting.key for setting in SETTINGS if setting.later == WITH_IMAGE and not setting.where):
-        if key in image:
-            current[key] = image[key]
-        else:
-            current.pop(key, None)
-    carry_image_variables(staging_variables or {}, release)
-    if commit:
-        release.setdefault('metadata', {}).setdefault('annotations', {})[offers.ANNOTATION] = commit
-        if served and helmrelease.port(release) is not None:
-            helmrelease.container(release).setdefault('env', {})[API_VARIABLE] = served
-    return release

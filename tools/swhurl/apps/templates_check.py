@@ -23,7 +23,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl.apps import declaration, new, policy, promotion, repo
+from swhurl.apps import declaration, edit, new, policy, repo
 from swhurl.apps.contract import (
     APP_TYPES,
     STACK_REVISIONS,
@@ -59,9 +59,12 @@ def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
             code = new.main([NAME, '--root', str(root), '--manifest', str(manifest), '--env', env,
                              '--image', IMAGE, '--no-policy-check', '--team', next(iter(teams()), '')])
         else:
-            source, _ = promotion.read(root, NAME)
-            promotion.create(root, NAME, source)
-            code = 0
+            try:
+                edit.promote(root, NAME)
+                code = 0
+            except EditError as error:
+                print(error)
+                code = 1
     return code, out.getvalue()
 
 
@@ -98,8 +101,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
             report.bad(f'{label}: app-new refused its {declaration.FILE} for {env}: {output.strip()}')
             return False
         instances.append(instance_folder(root, NAME, env))
-    # promotion.create has run the policy on prod, exactly as it wrote it; only staging is left.
-    problems = [f'{instances[0].name}: {p}' for p in policy.evaluate(instances[0], runner)]
+    problems = [f'{each.name}: {p}' for each in instances for p in policy.evaluate(each, runner)]
     problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
     problems += [f'app model: {p}' for p in shadow.problems(root)]
     if problems:

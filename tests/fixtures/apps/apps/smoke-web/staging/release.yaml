@@ -1,0 +1,12 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: docker.io/nginxinc/nginx-unprivileged
+  tag: 1.27-alpine
+kind: web
+uid: 101
+port: 8080
+healthPath: /
+telemetry: true
+secrets:
+- GREETING

@@ -44,9 +44,14 @@ class EditTests(unittest.TestCase):
             result = fn(*args, **kwargs)
         return result, out.getvalue()
 
-    def test_promote_copies_only_the_image(self):
+    def new_staging_image(self):
+        """Staging runs 1.28-alpine: its Release record, and what it renders."""
         old_digest = self.staging.read_text().split('digest: ')[1].split('\n')[0]
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(old_digest, NEW_DIGEST))
+        for path in (self.staging, self.staging.parent / 'release.yaml'):
+            path.write_text(path.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(old_digest, NEW_DIGEST))
+
+    def test_promote_copies_only_the_image(self):
+        self.new_staging_image()
         before = yaml.safe_load(self.prod.read_text())
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         before['spec']['values']['controllers']['main']['containers']['main']['image'].update(tag='1.28-alpine', digest=NEW_DIGEST)
@@ -67,8 +72,7 @@ class EditTests(unittest.TestCase):
 
     def test_promotion_refuses_a_source_that_moved_after_review_without_writing(self):
         reviewed = ops.image_reference(derive.container(derive.load_release(self.staging.parent))['image'])
-        self.staging.write_text(self.staging.read_text().replace('tag: 1.27-alpine', 'tag: 1.28-alpine').replace(
-            derive.container(derive.load_release(self.staging.parent))['image']['digest'], NEW_DIGEST))
+        self.new_staging_image()
         before = self.prod.read_bytes()
         with self.assertRaisesRegex(edit.EditError, 'changed since it was reviewed'):
             edit.promote(self.root, 'hello', 'staging', 'prod', expect_image=reviewed)
@@ -92,7 +96,7 @@ class EditTests(unittest.TestCase):
                  (unit, unit.read_text().replace('  interval: 10m', '  - name: platform-mongodb\n  interval: 10m'),
                   lambda: edit.set_team(self.root, 'hello', 'platform'), 'dependsOn'),
                  (self.prod, self.prod.read_text() + '\n---\nextra: document\n',
-                  lambda: edit.scale(self.root, 'hello', 'prod', memory_limit='256Mi'), 'cannot read its records'))
+                  lambda: edit.scale(self.root, 'hello', 'prod', memory_limit='256Mi'), 'differ from what the platform renders'))
         (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n')
         for path, text, command, message in cases:
             with self.subTest(message=message):
@@ -214,6 +218,7 @@ class EditTests(unittest.TestCase):
         """Another web app beside hello, in both environments, made from hello's files."""
         for env in ('staging', 'prod'):
             shutil.copytree(self.root / 'apps/hello' / env, self.root / 'apps' / name / env)
+            shutil.copy(self.root / 'apps/hello/app.yaml', self.root / 'apps' / name / 'app.yaml')
             for path in (self.root / 'apps' / name / env).glob('*.yaml'):
                 path.write_text(path.read_text().replace('hello', name).replace('port: 8080', f'port: {port}'))
         self.quiet(derive.sync, self.root)
@@ -485,9 +490,10 @@ components:
 
     def built_from_a_repository(self, app='orders', tag='7-abc1234'):
         for env in ('staging', 'prod'):
-            path = self.root / 'apps' / app / env / 'helmrelease.yaml'
-            path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
-                            .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
+            for name in ('helmrelease.yaml', 'release.yaml'):  # the record, and what it renders
+                path = self.root / 'apps' / app / env / name
+                path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
+                                .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
         self.quiet(derive.sync, self.root)  # a platform image's staging follows new images
 
     def test_offers_are_read_at_the_images_commit_and_say_what_the_app_publishes(self):

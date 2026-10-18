@@ -74,7 +74,7 @@ from swhurl.apps.model import workload
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import Image, Resources, Storage
+from swhurl.apps.model.records import APP_FILE, Image, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     GenerationError,
@@ -644,8 +644,12 @@ def remove(root: Path, app: str, env: str) -> None:
     unit_file = instance_unit_file(root, app, env)
     shutil.rmtree(instance)
     print(f'[OK] removed {instance.relative_to(root)}/')
-    if not any((root / 'apps' / app).iterdir()):
-        (root / 'apps' / app).rmdir()
+    folder = root / 'apps' / app
+    if not any(path.is_dir() for path in folder.iterdir()):  # its last environment: the App record goes too
+        (folder / APP_FILE).unlink(missing_ok=True)
+        print(f'[OK] removed {(folder / APP_FILE).relative_to(root)}')
+        if not any(folder.iterdir()):
+            folder.rmdir()
     if unit_file.exists():
         unit_file.unlink()
         print(f'[OK] removed {unit_file.relative_to(root)}')

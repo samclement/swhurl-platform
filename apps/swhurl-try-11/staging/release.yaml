@@ -1,0 +1,14 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-11
+  tag: 36-3617864
+  digest: sha256:3cf2d0d448eed19265ebb09e137ad1bb326cc7c7a21f73e922367f934e66dc6c
+kind: web
+uid: 65532
+stack: typescript
+port: 8080
+healthPath: /healthz
+telemetry: true
+apiPath: /openapi.json
+offers: '3617864'

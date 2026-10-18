@@ -41,6 +41,11 @@ for env in ('staging', 'prod'):
     doc['spec']['values']['controllers']['main']['containers']['main']['image'] = new.parse_image(
         IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
     MAIN[rel] = yaml.safe_dump(doc, sort_keys=False).encode()
+    record = f'apps/hello/{env}/release.yaml'  # the Release record says the same image
+    doc = yaml.safe_load(MAIN[record])
+    doc['image'] = new.parse_image(IMAGE if env == 'staging' else 'ghcr.io/me/hello:1.0@sha256:' + 'b' * 64)
+    MAIN[record] = yaml.safe_dump(doc, sort_keys=False).encode()
+MAIN['apps/hello/app.yaml'] = (SAMPLE / 'apps/hello/app.yaml').read_bytes()
 for rel in ('clusters/home/app-hello-staging.yaml', 'clusters/home/app-hello-prod.yaml'):
     MAIN[rel] = (SAMPLE / rel).read_bytes()
 with tempfile.TemporaryDirectory() as tmp:
@@ -895,7 +900,7 @@ class ChangeAppRouteTests(unittest.TestCase):
         main = {rel: data for rel, data in MAIN.items() if 'hello/prod' not in rel and 'app-hello-prod' not in rel}
         main['apps/hello/staging/helmrelease.yaml'] = yaml.safe_dump(release, sort_keys=False).encode()
         for rel, data in MAIN.items():  # orders runs in production: hello's production files, renamed
-            if 'hello/prod' in rel or 'app-hello-prod' in rel:
+            if 'hello/prod' in rel or 'app-hello-prod' in rel or rel == 'apps/hello/app.yaml':
                 main[rel.replace('hello', 'orders')] = data.replace(b'hello', b'orders')
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(MAIN, main, clear=True):
             root = Path(tmp)

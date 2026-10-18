@@ -97,8 +97,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(self.gen('x', *WEB), 0)
         instance = self.tmp / 'apps/x/staging'
         self.assertEqual(sorted(p.name for p in instance.iterdir()),
-                         ['helmrelease.yaml', 'kustomization.yaml', 'namespace.yaml', 'networkpolicy.yaml',
-                          'resourcequota.yaml'])
+                         ['helmrelease.yaml', 'instance.yaml', 'kustomization.yaml', 'namespace.yaml', 'networkpolicy.yaml',
+                          'release.yaml', 'resourcequota.yaml'])
         unit = yaml.safe_load((self.tmp / 'clusters/home/app-x-staging.yaml').read_text())
         self.assertEqual(unit['metadata']['name'], 'app-x-staging')
         self.assertEqual({d['name'] for d in unit['spec']['dependsOn']},

@@ -16,6 +16,7 @@ from swhurl import ROOT, yamlio
 from swhurl.apps import egress, events, helmrelease, new, promotion
 from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.records import APP_FILE, SETTINGS_FILE
 from swhurl.apps.yaml_file import EditError, YamlFile
 from swhurl.run import CommandError, Runner
 
@@ -168,7 +169,7 @@ def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: s
     folder, unit = f'apps/{app}/{env}/', instance_unit_file(Path(), app, env).as_posix()
 
     def own(path: str) -> bool:
-        return path.startswith(folder) or path == unit
+        return path.startswith(folder) or path in (unit, f'apps/{app}/{APP_FILE}')
     changed = changed_files(base, work)
     others = sorted(path for path in changed if not own(path) and path not in (REGISTRY, *DERIVED))
     if others:
@@ -177,7 +178,7 @@ def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: s
     if extra:
         raise Hold('the PR changes files its request does not: ' + ', '.join(extra[:5]))
     for path in sorted(set(changed) | set(files)):
-        if own(path) and not same_file(head / path, work / path, reallocated=path.endswith('/helmrelease.yaml')):
+        if own(path) and not same_file(head / path, work / path, reallocated=path.endswith(('/helmrelease.yaml', f'/{SETTINGS_FILE}'))):
             raise Hold(f'the PR differs from what its request makes on main: {path}')
     made = sorted(path for path in changed if path.endswith('.sops.yaml') and path != f'{folder}{events.SECRET_FILE}')
     if made:
@@ -185,8 +186,8 @@ def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: s
 
 
 def same_file(a: Path, b: Path, *, reallocated: bool = False) -> bool:
-    """Both absent, or the same bytes or the same YAML documents. ``reallocated``: a HelmRelease whose egress
-    port the replay may have chosen again (another instance took the PR's while it was open)."""
+    """Both absent, or the same bytes or the same YAML documents. ``reallocated``: a HelmRelease or Settings
+    record whose egress port the replay may have chosen again (another instance took the PR's meanwhile)."""
     if not (a.is_file() and b.is_file()):
         return a.is_file() == b.is_file()
     if a.read_bytes() == b.read_bytes():
@@ -194,8 +195,11 @@ def same_file(a: Path, b: Path, *, reallocated: bool = False) -> bool:
     def documents(path: Path) -> list:
         found = list(yamlio.load_all(path.read_text()))
         for doc in found if reallocated else ():
-            for key in PROXY_VARIABLES:
-                (helmrelease.container(doc).get('env') or {}).pop(key, None)
+            if isinstance(doc, dict) and isinstance(doc.get('allocations'), dict):  # instance.yaml
+                doc['allocations'].pop('egressPort', None)
+            elif isinstance(doc, dict):
+                for key in PROXY_VARIABLES:
+                    (helmrelease.container(doc).get('env') or {}).pop(key, None)
         return found
     return documents(a) == documents(b)
 

@@ -10,6 +10,9 @@ import re
 from dataclasses import dataclass, field
 
 VERSION = 1
+APP_FILE, RELEASE_FILE, SETTINGS_FILE = 'app.yaml', 'release.yaml', 'instance.yaml'
+RECORD_FILES = frozenset({RELEASE_FILE, SETTINGS_FILE})
+"""An instance folder's record files: never rendered, compared between environments or applied."""
 KINDS = ('web', 'worker', 'job')
 EXPOSURES = ('private', 'authenticated-web', 'public')
 DATABASES = ('sqlite',)

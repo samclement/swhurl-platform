@@ -1,0 +1,14 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/demo-notifier
+  tag: 13-a82c785
+  digest: sha256:dcfc7b3f0f872c2e68fea93c74f7e061a6e295e4e7594c341a6a54302d1dd2b3
+kind: worker
+uid: 65532
+stack: kotlin
+telemetry: true
+resources:
+  cpu: 100m
+  memory: 192Mi
+  memoryLimit: 384Mi

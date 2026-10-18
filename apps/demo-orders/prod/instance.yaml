@@ -1,0 +1,9 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+exposure: authenticated-web
+allocations:
+  egressPort: 30111
+  eventsKey: UDFZTKCTUPLTYYXTE66IHVRDCRYTS5MVGF7JTMDSBHQ3GH6ETX4WMIAV
+  database:
+    size: 1Gi
+    storageClass: local-path-retain

@@ -1,0 +1,20 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-12
+  tag: 49-72f9fd8
+  digest: sha256:bccb928cd5bd087848d2784a2ba76b03423657426ec58a25bd16f8978d2baae2
+kind: web
+uid: 65532
+stack: kotlin
+port: 8080
+healthPath: /healthz
+telemetry: true
+resources:
+  cpu: 100m
+  memory: 192Mi
+  memoryLimit: 384Mi
+apiPath: /openapi.yaml
+publishes:
+- visited
+offers: 72f9fd8

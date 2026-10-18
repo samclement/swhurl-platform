@@ -11,7 +11,7 @@ from pathlib import Path
 from swhurl import ROOT
 from swhurl.apps import derive, edit
 from swhurl.apps.instance import Instance
-from swhurl.apps.model import legacy, render, shadow
+from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
 from swhurl.apps.model.records import (
     Allocations,
@@ -129,11 +129,11 @@ class ShadowTests(unittest.TestCase):
         reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
 
     def problems(self):
-        return shadow.problems(self.root)
+        return generated.problems(self.root)
 
     def test_the_sample_and_the_repository_render_as_committed(self):
         self.assertEqual(self.problems(), [])
-        self.assertEqual(shadow.check(ROOT), [], 'make check-apps reports the differences')
+        self.assertEqual(generated.check(ROOT), [], 'make check-apps reports the differences')
 
     def test_settings_written_by_the_commands_render_as_written(self):
         (self.root / 'platform/egress').mkdir(parents=True)
@@ -144,11 +144,12 @@ class ShadowTests(unittest.TestCase):
             edit.set_egress(self.root, 'hello', 'staging', add=['api.example.com', '*.example.org:8443'])
             edit.set_alerts(self.root, 'hello', {'errors': 'none', 'error-logs': '20'})
             edit.scale(self.root, 'hello', 'staging', replicas=2, memory='256Mi')
-        release = self.root / 'apps/hello/prod/helmrelease.yaml'  # a reviewed exception, written by hand as documented
-        release.write_text(release.read_text().replace('  namespace: hello-prod\n', '  namespace: hello-prod\n  annotations:\n'
-                                                       '    platform.swhurl.com/policy-exceptions: "no-escalation=needs raw sockets"\n', 1))
+        settings = self.root / 'apps/hello/prod/instance.yaml'  # a reviewed exception, written in the record as documented
+        settings.write_text(settings.read_text() + 'exceptions: no-escalation=needs raw sockets\n')
+        with redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
         self.assertEqual(self.problems(), [])
-        entries, _ = legacy.world(self.root)
+        entries, _ = store.world(self.root)
         prod = entries[Instance('hello', 'prod')]
         self.assertEqual((prod.settings.exposure, prod.settings.host), ('public', 'hello.example.com'))
         self.assertEqual(prod.settings.exceptions, 'no-escalation=needs raw sockets')
@@ -162,10 +163,12 @@ class ShadowTests(unittest.TestCase):
         (self.root / 'apps/hello/staging/stray.yaml').write_text('kind: ConfigMap\n')
         self.assertIn('apps/hello/staging/stray.yaml: committed, not rendered', self.problems())
 
-    def test_environments_that_disagree_on_the_team_are_reported(self):
+    def test_a_team_label_edited_by_hand_is_reported(self):
+        """The team is the App record's (apps/<app>/app.yaml): a namespace that says otherwise was edited by hand."""
         namespace = self.root / 'apps/hello/prod/namespace.yaml'
         namespace.write_text(namespace.read_text().replace('platform.swhurl.com/team: demo', 'platform.swhurl.com/team: payments'))
-        self.assertIn('hello: its environments disagree on team or alerts', self.problems())
+        self.assertIn("apps/hello/prod/namespace.yaml: [0].metadata.labels.platform.swhurl.com/team: committed 'payments', "
+                      "rendered 'demo'", self.problems())
 
 
 if __name__ == '__main__':

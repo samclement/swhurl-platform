@@ -1,4 +1,4 @@
 # Read from the app's repository by make app-offers: do not edit.
 repository: samclement/swhurl-try-11
-commit: 3d434c1
+commit: '3617864'
 api: openapi.json

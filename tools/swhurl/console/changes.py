@@ -224,21 +224,29 @@ def main_commit(runner: Runner, github: GitHub) -> str:
 
 def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
     """Immutable Git facts from a complete tree. Missing paths mean absent only after a successful read.
-    Read only HelmReleases; encrypted files and credentials never enter the result."""
+    Read only HelmReleases and the platform's settings files; encrypted files and credentials never enter the result."""
     api = GitHubAPI(runner, github)
     try:
         content = api.call('GET', f'/tarball/{revision}').content
         with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
-            found = {}
+            releases, settings, apps = {}, {}, {}
             for member in archive.getmembers():
                 parts = Path(member.name).parts
-                if len(parts) != 5 or parts[1] != 'apps' or parts[4] != 'helmrelease.yaml' or not member.isfile():
+                if not member.isfile() or len(parts) < 4 or parts[1] != 'apps':
                     continue
-                stream = archive.extractfile(member)
-                release = yaml.safe_load(stream.read())
-                found[f'{parts[2]}/{parts[3]}'] = Target(
+                if len(parts) == 4 and parts[3] == 'app.yaml':
+                    apps[parts[2]] = archive.extractfile(member).read()
+                elif len(parts) == 5 and parts[4] == 'helmrelease.yaml':
+                    releases[f'{parts[2]}/{parts[3]}'] = yaml.safe_load(archive.extractfile(member).read())
+                elif len(parts) == 5 and parts[4] == 'instance.yaml':
+                    settings[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
+            found = {}
+            for name, release in releases.items():
+                mine = settings.get(name)
+                found[name] = Target(
                     (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
-                    helmrelease.image(release).get('digest', ''))
+                    helmrelease.image(release).get('digest', ''),
+                    hashlib.sha256(apps.get(name.split('/')[0], b'') + b'\0' + mine).hexdigest()[:16] if mine is not None else '')
             return found
     except (tarfile.TarError, ValueError, AttributeError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read render targets: {error}') from None

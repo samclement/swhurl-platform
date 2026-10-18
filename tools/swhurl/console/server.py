@@ -353,9 +353,14 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         target = tree.get(job.unit, absent) if tree is not None else None
         desired = current.get(job.unit, absent) if current is not None else None
         row = rows.get(job.unit) if rows is not None else None
-        matches = bool(row and target and row.digest == target.digest and row.image_matches)
-        return stages.judge(job.action, (row.render_state if row else stages.ABSENT) if rows is not None else None,
-                            target, desired, row.render_hash if row else '', row.render_ready if row else False, matches)
+        aim = desired if target and desired and stages.follows(job.action, target, desired) else target
+        matches = bool(row and aim and row.digest == aim.digest and row.image_matches)
+        found = stages.judge(job.action, (row.render_state if row else stages.ABSENT) if rows is not None else None,
+                             target, desired, row.render_hash if row else '', row.render_ready if row else False, matches,
+                             job.reached)
+        if found.state in stages.REACHED:
+            jobs.reach(job)
+        return found
 
     def change_rows(found: list[actions.Job], *, others: bool) -> tuple[list[ChangeRow], str]:
         """Each job as a change with its whole path, and with ``others`` the open pull requests no

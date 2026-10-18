@@ -125,6 +125,7 @@ class Job:
     resume: dict | None = None  # what a later job needs to finish this one, if it can be finished (never a secret)
     live: bool = True  # False for a record read from the store: another pod's job, or one from before a restart
     target_hash: str = ''  # prepared render hash; 'absent' for a removal
+    reached: str = ''  # when its change was first seen at its end (Live, scaled to zero, removed), ISO 8601
 
 
 class Jobs:
@@ -235,6 +236,14 @@ class Jobs:
         else:
             threading.Thread(target=self._run, args=(job, work), daemon=True).start()
         return job
+
+    def reach(self, job: Job) -> None:
+        """Record that ``job``'s change was seen at its end, once: a later change may replace it, but it ran."""
+        if job.reached:
+            return
+        job.reached = self.now().isoformat()
+        if self.store:
+            self.store.save(job)
 
     def _forget(self) -> tuple[int, ...]:
         """The remembered jobs beyond what the store keeps, oldest first: finished ones only."""

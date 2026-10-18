@@ -1,0 +1,13 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-32
+  tag: 0-b0f53b1
+  digest: sha256:5e6f388056e33c778e8e24eac2f049ff030e9beb58de5fac667765e1a24a6605
+kind: worker
+uid: 65532
+telemetry: true
+description: Disposable worker for Activity verification
+publishes:
+- worked
+offers: b0f53b1

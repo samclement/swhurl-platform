@@ -4,7 +4,7 @@ metadata:
   name: swhurl-try-12
   namespace: swhurl-try-12-prod
   annotations:
-    platform.swhurl.com/offers: b7aada8
+    platform.swhurl.com/offers: 72f9fd8
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-12
-              tag: 15-b7aada8
-              digest: sha256:f6d6ca4e7bb76dc2bd3cbfc9a1935c6745af631b45e2f7b36080ba5b73978def
+              tag: 49-72f9fd8
+              digest: sha256:bccb928cd5bd087848d2784a2ba76b03423657426ec58a25bd16f8978d2baae2
             resources:
               requests:
                 cpu: 100m
@@ -59,6 +59,7 @@ spec:
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
+              SWHURL_API_PATH: /openapi.yaml
               HOST_IP:
                 valueFrom:
                   fieldRef:
@@ -67,7 +68,6 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-12
               SWHURL_SERVICE_SWHURL_TRY_10_URL: http://swhurl-try-10.swhurl-try-10-$(SWHURL_ENV).svc.cluster.local:8080
-              SWHURL_API_PATH: /openapi.yaml
               SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UB5OTUGYUKWSQVCUQUMY5RE4P6KGHTUAEBQ76SWYQJ42IGP44PJE3PDR
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222

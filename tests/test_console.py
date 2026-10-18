@@ -14,7 +14,7 @@ from starlette.testclient import TestClient
 from swhurl import kube
 from swhurl.apps import state
 from swhurl.apps.instance import Instance
-from swhurl.console import actions, changes, cluster, server
+from swhurl.console import actions, changes, cluster, server, stages
 from swhurl.run import FakeRunner, Result, SharedReads, is_read
 
 REV = 'main@sha1:abc1234def'
@@ -1175,8 +1175,8 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/event-stream', response.headers['content-type'])
         self.assertEqual(response.headers['x-accel-buffering'], 'no')
-        self.assertIn('id: 1\nevent: line\ndata: {"html": "a", "stage": "resume"}', response.text)
-        self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;", "stage": "resume"}', response.text)
+        self.assertIn('id: 1\nevent: line\ndata: {"html": "a", "stage": "prepared"}', response.text)
+        self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;", "stage": "prepared"}', response.text)
         done = response.text.split('event: done\ndata: ', 1)[1].split('\n', 1)[0]
         payload = json.loads(done)
         self.assertEqual(payload['state'], 'succeeded')
@@ -1226,7 +1226,7 @@ class ActionTests(unittest.TestCase):
         self.assertIn('href="/jobs/7"', activity)
         self.assertIn('<span class="state updating">In progress</span>', activity, 'the state leads the row, as on every list')
         self.assertIn('<details class="openrow change" id="job-7">', activity, 'a job opens to its output without leaving the list')
-        self.assertIn('Now: Resume. Ends: Applied.', activity, 'where it will end is said before it gets there')
+        self.assertIn('Now: Prepared. Ends: Applied.', activity, 'where it will end is said before it gets there')
         self.assertIn('no output yet', activity)
         self.assertIn('just now', activity)
         self.assertIn('href="/units/infra-base">Back to infra-base', c.get('/jobs/7', headers=WHO).text)
@@ -1246,21 +1246,25 @@ class ActionTests(unittest.TestCase):
         runner = fake()
         jobs = actions.Jobs(runner, inline=True)
         jobs._jobs[3] = actions.Job(3, 'promote', 'web/prod', 'sam@swhurl.com', jobs.now(), ['Downloading', 'Opened'], 'succeeded',
-                                    jobs.now(), url, marks=[('prepare', 0), ('open', 1)])
+                                    jobs.now(), url)
         jobs._jobs[4] = actions.Job(4, 'remove', 'gone/staging', 'sam@swhurl.com', jobs.now(), [], 'succeeded', jobs.now(), url)
         c = client(runner, jobs=jobs, github=changes.GitHub('samclement/swhurl-platform', 'tok', transport=httpx.MockTransport(handle)))
-        activity = c.get('/activity', headers=WHO).text
+        with mock.patch.object(changes, 'main_commit', return_value='main'), \
+                mock.patch.object(changes, 'render_targets', return_value={'web/prod': stages.Target('h', 'sha256:x')}), \
+                mock.patch.object(cluster, 'apps', return_value=[cluster.AppRow(Instance('web', 'prod'), state.State('healthy'), False, 'x',
+                    digest='sha256:x', render_hash='h', render_ready=True, render_state=state.State('healthy'), image_matches=True)]):
+            activity = c.get('/activity', headers=WHO).text
+            page = c.get('/jobs/3', headers=WHO).text
         self.assertIn('<span class="state healthy">Live in prod</span>', activity, 'the job opened a pull request; the change ended in production')
         self.assertIn('<li class="stage reached"><span class="node"><span class="mark reached" aria-hidden="true"></span>'
                       '<span class="what"><span class="name">Live in prod<span class="sr-only"> (reached)</span>', activity)
         self.assertIn('merged just now', activity)
         self.assertIn('<span class="state healthy">Removed from staging</span>', activity)
         self.assertLess(activity.index('<h2>Finished</h2>'), activity.index('id="job-3"'))
-        self.assertEqual(asked.count('pulls'), 1, 'the open pull requests are listed once for the page')
-        page = c.get('/jobs/3', headers=WHO).text
+        self.assertEqual(asked.count('pulls'), 2, 'the open pull requests are listed once per page read')
         self.assertIn('Live in prod', page)
-        self.assertIn('<details class="stage-log" id="stage-open" open>', page)
-        self.assertNotIn('hx-trigger="every 30s"', page, 'a change that has ended is not read again')
+        self.assertIn('<details class="stage-log" id="stage-prepared" open>', page)
+        self.assertIn('hx-trigger="every 30s"', page, 'completed progress is also read fresh')
 
     def test_dry_run_plans_the_patches_and_does_not_wait(self):
         runner = fake()

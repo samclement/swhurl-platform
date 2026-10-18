@@ -4,6 +4,8 @@ Pure: no network, no clock, no checkout writes. The order of the capabilities be
 their variables, references and dependencies appear in."""
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +14,14 @@ import yaml
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import alerts, calls, egress, events, exposure, offers, secrets, sqlite, telemetry, workload
 from swhurl.apps.model.draft import APP_SECRET, Platform, World
+
+ANNOTATION = 'platform.swhurl.com/render'
+
+
+def fingerprint(files: dict[Path, list[dict]]) -> str:
+    """Hash paths and rendered objects before adding the hash itself; YAML formatting is immaterial."""
+    payload = {path.as_posix(): documents for path, documents in files.items()}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def text(documents: list[dict]) -> str:
@@ -37,6 +47,7 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
     folder = platform.base / each.app / each.env
     found = {folder / name: documents for name, documents in workload.finish(draft, entry).items()}
     found[UNITS / f'{each.unit}.yaml'] = [draft.unit]
+    draft.annotate(draft.release, ANNOTATION, fingerprint(found))
     return found
 
 

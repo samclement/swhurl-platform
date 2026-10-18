@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: demo-notifier
   namespace: demo-notifier-staging
+  annotations:
+    platform.swhurl.com/render: fe1c800f9236414aff818592b1403138b18d2233439c6fc117832facd3d16940
 spec:
   interval: 30m
   timeout: 3m

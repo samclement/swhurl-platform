@@ -21,7 +21,7 @@ from swhurl import ROOT
 from swhurl.apps import calling, channels, helmrelease, new, ops, promotion, repo
 from swhurl.apps.instance import Instance
 from swhurl.apps.state import State
-from swhurl.console import actions, changes, cluster, merge, server
+from swhurl.console import actions, changes, cluster, merge, server, stages
 from swhurl.console import promotion as console_promotion
 from swhurl.run import CommandError, FakeRunner, Result, Runner
 
@@ -116,6 +116,19 @@ class FakeGitHub:
     def sent(self, key: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if f'{r.method} {r.url.path}'.endswith(key.split(' ', 1)[1])
                 and r.method == key.split(' ', 1)[0]]
+
+
+class RenderTargetTests(unittest.TestCase):
+    def test_complete_tree_reads_targets_without_turning_failed_reads_into_absence(self):
+        api = FakeGitHub()
+        targets = changes.render_targets(FakeRunner(), api.github, HEAD)
+        self.assertIn('hello/staging', targets)
+        self.assertEqual(targets['hello/staging'].digest, 'sha256:' + 'a' * 64)
+        self.assertTrue(targets['hello/staging'].hash)
+        self.assertNotIn('missing/staging', targets)
+        api.fail[f'GET /tarball/{HEAD}'] = (403, 'rate limited')
+        with self.assertRaises(actions.ActionError):
+            changes.render_targets(FakeRunner(), api.github, HEAD)
 
 
 class ConsolePrProgressTests(unittest.TestCase):
@@ -783,68 +796,55 @@ class ChangeAppRouteTests(unittest.TestCase):
                         lambda job, number=number: setattr(job, 'link', f'https://github.com/x/pull/{number}'))
         return mock.Mock(side_effect=lambda _runner, _github, number: ('merged', '2026-10-13T10:00:00Z', f'merge{number}'))
 
-    def row(self, state='healthy', applied='main@sha1:applied'):
-        return cluster.AppRow(Instance('hello', 'staging'), State(state), False, 'x:1',
-                              applied=applied)
+    def row(self, state='healthy', applied='render-b'):
+        return cluster.AppRow(Instance('hello', 'staging'), State(state), False, 'x:1', digest='sha256:a',
+                              render_hash=applied, render_ready=True, render_state=State(state), image_matches=True)
 
-    def test_a_merged_change_is_judged_against_its_own_commit_and_its_ending_kept(self):
-        c, jobs = self.client(tree_fake())
-        own = 'apps/hello/staging/helmrelease.yaml'
-        since = {'merge1': (True, ['docs/x.md', own]), 'merge2': (True, ['docs/x.md'])}
-        compare = mock.Mock(side_effect=lambda _runner, _github, base, _head: since[base])
-        rows = [self.row()]
-        with mock.patch.object(changes, 'console_prs', return_value=[]), mock.patch.object(changes, 'pull_state', self.merged(jobs)), \
-                mock.patch.object(changes, 'changed_since', compare), mock.patch.object(cluster, 'apps', side_effect=lambda _runner: rows):
-            older, newer = (c.get(f'/jobs/{n}', headers=WHO).text for n in (1, 2))
-            self.assertIn('a later change to hello/staging has been applied since', older)
-            self.assertIn('hello/staging runs it.', newer)
-            self.assertEqual([jobs.get(n).ending for n in (1, 2)], [{'state': 'superseded'}, {'state': 'live'}])
-            # Whatever happens to the instance later is not this change's doing, and nothing is asked again.
-            rows[:] = [self.row('failing')]
-            asked = compare.call_count
-            activity = c.get('/activity', headers=WHO).text
-        self.assertIn('hello/staging runs it.', activity)
-        self.assertNotIn('is failing', activity)
-        self.assertEqual(compare.call_count, asked)
-
-    def test_a_merge_flux_has_not_applied_or_that_fails_is_not_over(self):
-        c, jobs = self.client(tree_fake())
-        since = {'merge1': (False, None)}
-        compare = mock.Mock(side_effect=lambda _runner, _github, base, _head: since[base])
-        rows = [self.row('healthy')]
-        with mock.patch.object(changes, 'console_prs', return_value=[]), mock.patch.object(changes, 'pull_state', self.merged(jobs, 1)), \
-                mock.patch.object(changes, 'changed_since', compare), mock.patch.object(cluster, 'apps', side_effect=lambda _runner: rows):
-            self.assertIn('Flux is applying it to hello/staging', c.get('/jobs/1', headers=WHO).text, 'healthy on what ran before')
-            c.get('/jobs/1', headers=WHO)
-            self.assertEqual(compare.call_count, 1, 'two commits always compare the same')
-            rows[:] = [self.row('failing', 'main@sha1:later')]
-            since['merge1'] = (True, [])
-            activity = c.get('/activity', headers=WHO).text
-            self.assertIn('Merged, but hello/staging is failing', activity)
-            self.assertLess(activity.index('Merged, but hello/staging is failing'), activity.index('<h2>Finished</h2>'), 'it needs someone')
-            self.assertIsNone(jobs.get(1).ending, 'failing can recover: it is not kept')
-            rows[:] = []  # removed since, by a change the console does not know: what Flux fetched says so
-            since['merge1'] = (True, ['clusters/home/app-hello-staging.yaml'])
-            self.assertIn('Merged to main', c.get('/jobs/1', headers=WHO).text)
-            rows[:] = [self.row(applied='main@sha1:unseen')]
-            compare.side_effect = actions.ActionError('rate limited')
-            jobs.get(1).ending = None
-            self.assertIn('GitHub could not say whether Flux has applied the merge', c.get('/jobs/1', headers=WHO).text)
-
-    def test_how_a_pull_request_ended_is_read_once_and_outlives_a_github_failure(self):
+    def test_the_merge_tree_wins_over_a_prepared_hash_and_verdicts_are_always_fresh(self):
         c, jobs = self.client(tree_fake())
         read = self.merged(jobs)
-        with mock.patch.object(changes, 'pull_state', read), mock.patch.object(cluster, 'apps', return_value=[self.row()]), \
-                mock.patch.object(changes, 'changed_since', return_value=(True, [])):
-            with mock.patch.object(changes, 'console_prs', return_value=[]):
-                for _ in range(2):
-                    c.get('/activity', headers=WHO)
-            self.assertEqual(read.call_count, 2, 'once per pull request')
-            with mock.patch.object(changes, 'console_prs', side_effect=actions.ActionError('rate limited')):
-                text = c.get('/activity', headers=WHO).text
-        self.assertIn('Could not list open pull requests', text)
-        self.assertNotIn('could not be read from GitHub', text, 'what was read before is still known')
-        self.assertEqual(read.call_count, 2)
+        jobs.get(2).target_hash = 'prepared-before-reallocation'
+        trees = {'merge1': {'hello/staging': stages.Target('render-a', 'sha256:a')},
+                 'merge2': {'hello/staging': stages.Target('render-b', 'sha256:a')},
+                 'main': {'hello/staging': stages.Target('render-b', 'sha256:a')}}
+        rows = [self.row()]
+        with mock.patch.object(changes, 'console_prs', return_value=[]), mock.patch.object(changes, 'pull_state', read), \
+                mock.patch.object(changes, 'main_commit', return_value='main'), \
+                mock.patch.object(changes, 'render_targets', side_effect=lambda _r, _g, sha: trees[sha]) as targets, \
+                mock.patch.object(cluster, 'apps', side_effect=lambda _r, **kw: rows):
+            self.assertIn('Superseded', c.get('/jobs/1', headers=WHO).text)
+            self.assertIn('hello/staging runs it.', c.get('/jobs/2', headers=WHO).text)
+            rows[:] = [self.row('failing')]
+            activity = c.get('/activity', headers=WHO).text
+            self.assertIn('hello/staging is failing', activity, 'a verdict is never saved')
+            self.assertEqual(targets.call_count, 3, 'immutable render facts may be cached')
+            self.assertFalse(hasattr(jobs.get(2), 'ending'))
+
+    def test_current_main_and_cluster_failures_never_complete_a_change(self):
+        c, jobs = self.client(tree_fake())
+        trees = {'hello/staging': stages.Target('render-b', 'sha256:a')}
+        rows = [self.row(applied='old')]
+        with mock.patch.object(changes, 'console_prs', return_value=[]), \
+                mock.patch.object(changes, 'pull_state', self.merged(jobs, 1)), \
+                mock.patch.object(changes, 'main_commit', return_value='main') as main, \
+                mock.patch.object(changes, 'render_targets', return_value=trees), \
+                mock.patch.object(cluster, 'apps', side_effect=lambda _r, **kw: rows) as apps:
+            self.assertIn('Flux is applying it', c.get('/jobs/1', headers=WHO).text)
+            apps.side_effect = cluster.ReadError('offline')
+            self.assertIn('cluster could not be read', c.get('/jobs/1', headers=WHO).text)
+            main.side_effect = actions.ActionError('offline')
+            self.assertIn('current render could not be read', c.get('/jobs/1', headers=WHO).text)
+
+    def test_a_closed_pull_request_is_read_again_and_github_failure_is_unknown(self):
+        c, jobs = self.client(tree_fake())
+        read = mock.Mock(return_value=('closed', '', ''))
+        self.merged(jobs, 1)
+        with mock.patch.object(changes, 'pull_state', read), mock.patch.object(changes, 'console_prs', return_value=[]):
+            self.assertIn('Closed without merging', c.get('/jobs/1', headers=WHO).text)
+            read.return_value = ('open', '', '')
+            self.assertIn('Waiting for you', c.get('/jobs/1', headers=WHO).text)
+            read.side_effect = actions.ActionError('offline')
+            self.assertIn('could not be read from GitHub', c.get('/jobs/1', headers=WHO).text)
 
     def test_scale_promote_and_remove_run_the_clones_commands(self):
         cases = (

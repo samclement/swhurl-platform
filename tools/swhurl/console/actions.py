@@ -60,8 +60,7 @@ class Flux:
                  sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
         self.runner, self.now, self.sleep, self.clock = runner, now, sleep, clock
 
-    def run(self, action: str, unit: str, stage: Callable[[str], None] = lambda key: None) -> Iterator[str]:
-        """``stage`` is told each stage as it begins (``Job.stage``)."""
+    def run(self, action: str, unit: str) -> Iterator[str]:
         if action == 'reconcile':
             spec = self.runner.json(['kubectl', '-n', NAMESPACE, 'get', f'{KUSTOMIZATION}/{unit}', '-o', 'json'])['spec']
             if spec.get('suspend'):
@@ -69,18 +68,15 @@ class Flux:
             ref = spec.get('sourceRef') or {}
             if ref.get('kind') not in SOURCES:
                 raise ActionError(f'{unit} has an unsupported source kind {ref.get("kind")!r}')
-            stage('fetch')
             yield from self.request(ref['kind'], SOURCES[ref['kind']], ref['name'], ref.get('namespace', NAMESPACE))
         else:
             suspend = action == 'suspend'
-            stage(action)
             yield f'► {"suspending" if suspend else "resuming"} Kustomization {unit}'
             self.runner.run(['kubectl', '-n', NAMESPACE, 'patch', f'{KUSTOMIZATION}/{unit}', '--type=merge',
                              '--patch', json.dumps({'spec': {'suspend': suspend}})], mutating=True)
             if suspend:
                 yield f'✔ Kustomization {unit} suspended'
                 return
-        stage('apply')
         yield from self.request('Kustomization', KUSTOMIZATION, unit, NAMESPACE)
 
     def request(self, kind: str, resource: str, name: str, namespace: str) -> Iterator[str]:
@@ -128,12 +124,7 @@ class Job:
     owner: str = ''  # the pod running it
     resume: dict | None = None  # what a later job needs to finish this one, if it can be finished (never a secret)
     live: bool = True  # False for a record read from the store: another pod's job, or one from before a restart
-    marks: list[tuple[str, int]] = field(default_factory=list)  # (stage, the output line it starts at): stages.py
-    ending: dict | None = None  # how its merged change ended on the cluster, once known (stages.Rollout): never judged again
-
-    def stage(self, key: str) -> None:
-        """A stage of the job begins: its output from here on is that stage's."""
-        self.marks.append((key, len(self.lines)))
+    target_hash: str = ''  # prepared render hash; 'absent' for a removal
 
 
 class Jobs:
@@ -196,12 +187,6 @@ class Jobs:
             self._refresh()
             return [*reversed(self._jobs.values()), *sorted(self._before.values(), key=lambda job: -job.id)]
 
-    def settle(self, job: Job, ending: dict) -> None:
-        """Keep how a finished job's change ended. Any pod may: the one that ran it is done with its record."""
-        job.ending = ending
-        if self.store:
-            self.store.save(job)
-
     def drain(self, timeout: float = DRAIN) -> bool:
         """Stop taking jobs and wait for the running ones (the pod is being stopped); False if some outlast ``timeout``."""
         self.draining = True
@@ -222,7 +207,7 @@ class Jobs:
             raise ActionError(f'no Flux unit named {unit!r}')
 
         def work(job: Job) -> None:
-            for line in self.flux.run(action, unit, job.stage):
+            for line in self.flux.run(action, unit):
                 job.lines.append(line)
         return self.submit(action, unit, identity, work)
 
@@ -264,10 +249,10 @@ class Jobs:
 
     def _keep(self, job: Job) -> None:
         """Write a running job's record as its output grows, so another pod can show it."""
-        seen = (len(job.lines), job.link, len(job.marks))
+        seen = (len(job.lines), job.link, job.target_hash)
         while job.state == 'running':
             self.sleep(SAVE_EVERY)
-            now = (len(job.lines), job.link, len(job.marks))
+            now = (len(job.lines), job.link, job.target_hash)
             if now != seen and job.state == 'running':
                 self.store.save(job)
                 seen = now

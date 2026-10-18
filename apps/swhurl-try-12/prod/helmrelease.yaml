@@ -4,6 +4,7 @@ metadata:
   name: swhurl-try-12
   namespace: swhurl-try-12-prod
   annotations:
+    platform.swhurl.com/render: 58cb08e4044853b70145eb868b88d2aa895cb8d8f86f808edabf1db3116a715b
     platform.swhurl.com/offers: 72f9fd8
 spec:
   interval: 30m

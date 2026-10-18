@@ -72,6 +72,7 @@ def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -
         if path.name == 'helmrelease.yaml':
             doc = YamlFile(path).data
             if ignore_image:
+                (doc.get('metadata', {}).get('annotations') or {}).pop('platform.swhurl.com/render', None)
                 image_of(doc).pop('tag', None)
                 image_of(doc).pop('digest', None)
             files[path.name] = json.dumps(doc, sort_keys=True, default=str)

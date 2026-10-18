@@ -3,6 +3,8 @@ kind: HelmRelease
 metadata:
   name: demo-shopper
   namespace: demo-shopper-staging
+  annotations:
+    platform.swhurl.com/render: 18a655527cedd3b0df393b3af09eb5fe723cc501e9b78fde5e04f6cb0efd8bde
 spec:
   interval: 30m
   timeout: 3m

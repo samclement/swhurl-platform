@@ -4,6 +4,7 @@ metadata:
   name: demo-orders
   namespace: demo-orders-staging
   annotations:
+    platform.swhurl.com/render: 81accc5636d3f10fe4db3640dfb0adfa8c5970e13e09f751fa4e64a0f89be875
     platform.swhurl.com/offers: '707d835'
 spec:
   interval: 30m

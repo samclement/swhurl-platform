@@ -5,6 +5,7 @@ metadata:
   namespace: smoke-web-staging
   annotations:
     platform.swhurl.com/secrets: GREETING
+    platform.swhurl.com/render: 1752f7dbf37985f92ae8dc386216228a41d0ae63fb36e7449d88eb97422611b9
 spec:
   interval: 30m
   timeout: 3m

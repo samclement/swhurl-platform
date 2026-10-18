@@ -26,6 +26,7 @@ import re
 import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 from swhurl import ROOT, app_alerts, platform
@@ -45,8 +46,6 @@ from swhurl.apps import (
 from swhurl.apps.calling import (
     API_VARIABLE,
     DESCRIPTION_VARIABLE,
-    callee_address,
-    callee_variable,
     declared_calls,
 )
 from swhurl.apps.contract import (
@@ -89,6 +88,9 @@ from swhurl.apps.derive import (
     values,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
+from swhurl.apps.model import sync as model_sync
+from swhurl.apps.model.draft import EVENTS_SECRET, Entry
+from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ingress_values
 from swhurl.apps.new import (
     check_generated,
@@ -106,42 +108,35 @@ MAX_REPLICAS = 10
 
 
 def set_calls(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
-    """Change which apps ``app/env`` may call: its side here, the callees' side through sync_env."""
+    """Change which apps ``app/env`` may call (its Settings); the callees' side is rendered with it."""
     add, remove = add or [], remove or []
     if not add and not remove:
         raise EditError('give --add and/or --remove with app names')
     instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    variables = mapping(container(document.data), 'env', create=True)
-    current = declared_calls(variables)
+    world, _ = model_sync.read(root)
+    current = list(world[Instance(app, env)].settings.calls)
     for callee in add:
         if callee == app:
             raise EditError('an app does not declare calls to itself')
         if callee in current:
             raise EditError(f'{app}/{env} already calls {callee}')
-        port = service_port(values(YamlFile(instance_dir(root, callee, env) / 'helmrelease.yaml').data))
-        if port is None:
+        found = world.get(Instance.named(callee, env))
+        if found is None:
+            instance_dir(root, callee, env)  # says which instance is missing
+        if found.release.port is None:
             raise EditError(f'{callee} is a worker: it has no address to call')
-        variables[callee_variable(callee)] = callee_address(callee, port)
     for callee in remove:
         if callee not in current:
             raise EditError(f'{app}/{env} does not call {callee}')
-        del variables[callee_variable(callee)]
-    before = document.path.read_text()
-    document.save()
-    try:
-        sync_env(root, env)
-    except EditError:
-        document.path.write_text(before)
-        raise
-    now = declared_calls(mapping(container(YamlFile(instance / 'helmrelease.yaml').data), 'env'))
+    now = tuple([callee for callee in current if callee not in remove] + add)
+    model_sync.change(root, Instance(app, env), lambda entry: replace(entry, settings=replace(entry.settings, calls=now)))
     print(f'[OK] {app}/{env} calls: {", ".join(now) or "nothing"}')
     return instance
 
 
 def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, remove: list[str] | None = None) -> Path:
-    """Change which hosts outside the cluster ``app/env`` may reach (its release's annotation), and the
-    proxy's configuration that follows from every instance's grants."""
+    """Change which hosts outside the cluster ``app/env`` may reach (its Settings); the proxy's
+    configuration, which follows from every instance's grants, is rendered with it."""
     add, remove = [egress.grant(name) for name in add or []], [egress.grant(name) for name in remove or []]
     if not add and not remove:
         raise EditError('give --add and/or --remove with host names')
@@ -151,26 +146,13 @@ def set_egress(root: Path, app: str, env: str, *, add: list[str] | None = None, 
     instance = instance_dir(root, app, env)
     if egress.proxy_file(root) is None:
         raise EditError(f'{egress.PROXY_FILE} is missing: this tree has no egress proxy')
-    document = YamlFile(instance / 'helmrelease.yaml')
-    current = egress.granted(document.data)
-    now = changed_list('hosts', current, None, add, remove)
+    world, _ = model_sync.read(root)
+    now = changed_list('hosts', list(world[Instance(app, env)].settings.egress), None, add, remove)
     within = egress.covered(now)
     if within:
         raise EditError(f'a wildcard grant already covers {", ".join(within)}')
-    annotations = mapping(mapping(document.data, 'metadata'), 'annotations', create=True)
-    if now:
-        annotations[egress.ANNOTATION] = ','.join(now)
-    else:
-        del annotations[egress.ANNOTATION]
-        if not annotations:
-            del document.data['metadata']['annotations']
-    before = document.path.read_text()
-    document.save()
-    try:
-        sync_env(root, env)
-    except EditError:
-        document.path.write_text(before)
-        raise
+    model_sync.change(root, Instance(app, env),
+                      lambda entry: replace(entry, settings=replace(entry.settings, egress=tuple(now))))
     print(f'[OK] {app}/{env} may reach: {", ".join(now) or "nothing outside the cluster"}')
     return instance
 
@@ -191,16 +173,10 @@ def changed_list(what: str, current: list[str], replace: list[str] | None, add: 
     return [name for name in current if name not in remove] + add
 
 
-def nats_key(root: Path, app: str, env: str, *, runner: Runner | None = None) -> bool:
-    """Give an instance its own NATS key if it has none (docs/apps.md#events): the seed in its encrypted
-    Secret, the public key on its release. Whether one was made; sync_env wires what follows."""
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    variables = mapping(container(document.data), 'env', create=True)
+def new_nats_key(instance: Path, app: str, env: str, *, runner: Runner | None = None) -> str:
+    """Write a new NATS seed into the instance's encrypted Secret and return its public key. The seed
+    goes from memory into a file that sops encrypts in place: it is never printed."""
     secret = instance / events.SECRET_FILE
-    if variables.get(events.NKEY_VARIABLE) and secret.is_file():
-        return False
-    # The seed goes from memory into a file that sops encrypts in place: it is never printed.
     seed, public = nkeys.generate()
     secret.write_text(dump([{'apiVersion': 'v1', 'kind': 'Secret',
                              'metadata': {'name': events.secret_name(app), 'namespace': Instance(app, env).namespace},
@@ -213,7 +189,18 @@ def nats_key(root: Path, app: str, env: str, *, runner: Runner | None = None) ->
     if 'sops:' not in secret.read_text():
         secret.unlink()
         raise EditError(f'{secret.name} was not encrypted; removed it')
-    variables[events.NKEY_VARIABLE] = public
+    return public
+
+
+def nats_key(root: Path, app: str, env: str, *, runner: Runner | None = None) -> bool:
+    """Give an instance its own NATS key if it has none (docs/apps.md#events): the seed in its encrypted
+    Secret, the public key on its release. Whether one was made; sync_env wires what follows."""
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    variables = mapping(container(document.data), 'env', create=True)
+    if variables.get(events.NKEY_VARIABLE) and (instance / events.SECRET_FILE).is_file():
+        return False
+    variables[events.NKEY_VARIABLE] = new_nats_key(instance, app, env, runner=runner)
     document.save()
     return True
 
@@ -237,26 +224,23 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
     if bad or len(set(publish or [])) != len(publish or []) or len(set(subscribe or [])) != len(subscribe or []):
         raise EditError('events are lowercase names (created), subscriptions <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))
-    instance = instance_dir(root, app, env)
-    document = YamlFile(instance / 'helmrelease.yaml')
-    variables = mapping(container(document.data), 'env', create=True)
-    for key, value in ((events.PUBLISH_VARIABLE, publish), (events.SUBSCRIBE_VARIABLE, subscribe)):
-        if value:
-            variables[key] = ','.join(value)
-        elif value is not None:
-            variables.pop(key, None)
-    active = bool(events.published(variables) or events.subscribed(variables))
-    before = document.path.read_text()
-    document.save()
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    published = tuple(entry.release.publishes if publish is None else publish)
+    subscribed = tuple(entry.settings.subscriptions if subscribe is None else subscribe)
+    created = ''
+    if (published or subscribed) and not events_keyed(entry):
+        created = new_nats_key(instance, app, env, runner=runner)
+
+    def update(entry: Entry) -> Entry:
+        allocations = replace(entry.settings.allocations, events_key=created) if created else entry.settings.allocations
+        return replace(entry, release=replace(entry.release, publishes=published),
+                       settings=replace(entry.settings, subscriptions=subscribed, allocations=allocations),
+                       encrypted=entry.encrypted | ({EVENTS_SECRET} if created else set()))
     try:
-        created = active and nats_key(root, app, env, runner=runner)
+        model_sync.change(root, each, update)
     except EditError:
-        document.path.write_text(before)
-        raise
-    try:
-        sync_env(root, env)
-    except EditError:
-        document.path.write_text(before)
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)
         raise

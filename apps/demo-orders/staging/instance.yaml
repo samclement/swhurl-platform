@@ -1,10 +1,6 @@
 # Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
 version: 1
 exposure: authenticated-web
-capacity:
-  cpu: 10m
-  memory: 32Mi
-  memoryLimit: 128Mi
 allocations:
   egressPort: 30102
   eventsKey: UBEEVDBYIJ4OB75M7RMLJDXC6IG4344VTY63IKJS3UC3XJTHMOXZ6M2G

@@ -40,6 +40,10 @@ flags:
   type: str
   choices: [none, example]
   default: none
+frontend:
+  type: str
+  choices: [none, vite]
+  default: none
 """
 
 
@@ -160,7 +164,7 @@ class AppRepoTests(unittest.TestCase):
         self.assertEqual([(q.name, q.choices, q.default) for q in questions],
                          [('kind', ('web', 'worker'), 'web'), ('database', ('none', 'sqlite'), 'none'),
                       ('api', ('none', 'openapi'), 'none'), ('events', ('none', 'asyncapi'), 'none'),
-                      ('flags', ('none', 'example'), 'none')])
+                      ('flags', ('none', 'example'), 'none'), ('frontend', ('none', 'vite'), 'none')])
         self.assertEqual(repo.parse_answers('kind=worker database=sqlite'), {'kind': 'worker', 'database': 'sqlite'})
         cluster = Cluster()
         self.create(cluster, repo.Request('notes', answers={'kind': 'worker', 'database': 'sqlite'}))

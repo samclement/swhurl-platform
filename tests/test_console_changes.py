@@ -1220,6 +1220,10 @@ flags:
   type: str
   choices: [none, example]
   default: none
+frontend:
+  type: str
+  choices: [none, vite]
+  default: none
 """
 
 
@@ -1560,7 +1564,7 @@ class NewRepoRouteTests(unittest.TestCase):
                                        f'--image=ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}',
                                        '--team=platform', '--exposure=authenticated-web'))
         copy = next(c for c in runner.calls if 'copy' in c)
-        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'events=asyncapi', 'flags=example'):
+        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'events=asyncapi', 'flags=example', 'frontend=vite'):
             self.assertIn(answer, copy, 'the type sets every answer')
         self.assertEqual(platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)

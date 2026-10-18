@@ -70,9 +70,11 @@ TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.g
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
 HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
 STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
-INCLUDED = {'database': 'SQLite', 'api': 'API description', 'events': 'Events', 'flags': 'Feature flags'}
+INCLUDED = {'frontend': 'Browser frontend', 'database': 'SQLite', 'api': 'API description', 'events': 'Events',
+            'flags': 'Feature flags'}
 """The template answers an app type turns on, as the New app form names them."""
-INCLUDED_TEXT = {'database': 'a database file the platform keeps on a volume and backs up nightly',
+INCLUDED_TEXT = {'frontend': 'a page built with Vite+ that the app serves at /, calling its own /api',
+                 'database': 'a database file the platform keeps on a volume and backs up nightly',
                  'api': 'an OpenAPI document of its routes, so other apps can find and call it',
                  'events': 'an AsyncAPI document of the events it publishes, with an example event',
                  'flags': 'an example feature flag, set per environment from the console'}

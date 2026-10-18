@@ -28,10 +28,10 @@ from swhurl.apps.model.records import Allocations, App, Image, Release, Resource
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 
 
-def platform(root: Path, *, auto_deploy: bool = True, base: Path = Path('apps')) -> Platform:
+def platform(root: Path, base: Path = Path('apps')) -> Platform:
     def key(path: Path) -> str:
         return (root / path).read_text().strip() if (root / path).is_file() else ''
-    return Platform(signing_keys(root), auto_deploy, (root / egress.PROXY_FILE).parent.is_dir(),
+    return Platform(signing_keys(root), (root / egress.PROXY_FILE).parent.is_dir(),
                     key(events.CONTROLLER_KEY_FILE), key(events.CONSOLE_KEY_FILE), base)
 
 

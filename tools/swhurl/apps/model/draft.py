@@ -28,7 +28,6 @@ class Entry:
 class Platform:
     """Inputs that are the platform's, not an app's: read once from the checkout."""
     signing_keys: str = ''
-    auto_deploy: bool = True  # staging follows new images (the generated test fixtures do not)
     egress: bool = True  # the egress proxy exists (not in scratch roots)
     controller_key: str = ''  # NATS: the stream controller's public key; '' where there is no NATS
     console_key: str = ''

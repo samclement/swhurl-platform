@@ -7,9 +7,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import alerts, calls, egress, events, exposure, offers, secrets, sqlite, telemetry, workload
 from swhurl.apps.model.draft import Platform, World
+
+
+def text(documents: list[dict]) -> str:
+    """A file's bytes: the documents in the order rendered, long values on one line."""
+    return yaml.safe_dump_all(documents, sort_keys=False, default_flow_style=False, width=float('inf'))
 
 
 def instance(each: Instance, world: World, platform: Platform) -> dict[Path, list[dict]]:
@@ -17,14 +24,15 @@ def instance(each: Instance, world: World, platform: Platform) -> dict[Path, lis
     entry = world[each]
     draft = workload.start(each, entry, platform)
     exposure.apply(draft, entry)
-    workload.automation(draft, entry, platform)
+    workload.automation(draft, entry)
     secrets.apply(draft, entry)
+    offers.apply(draft, entry)
+    telemetry.apply(draft, entry)
+    sqlite.apply(draft, entry)
     calls.apply(draft, entry, world)
     events.apply(draft, entry, world)
+    calls.admit(draft)
     egress.apply(draft, entry, platform)
-    sqlite.apply(draft, entry)
-    telemetry.apply(draft, entry)
-    offers.apply(draft, entry)
     alerts.apply(draft, entry)
     folder = platform.base / each.app / each.env
     found = {folder / name: documents for name, documents in workload.finish(draft, entry).items()}

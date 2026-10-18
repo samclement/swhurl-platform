@@ -18,5 +18,9 @@ def apply(draft: Draft, entry: Entry, world: World) -> None:
         draft.env[callee_variable(callee)] = callee_address(callee, found.release.port)
     draft.values['persistence'][TOKENS_VOLUME] = tokens_volume(list(entry.settings.calls))
     draft.callers = sorted(other for other, each in others.items() if app in each.settings.calls)
+
+
+def admit(draft: Draft) -> None:
+    """Tell a callee who may call it (after its events, where the files have always had it)."""
     if draft.callers:
         draft.env[CALLERS_VARIABLE] = ','.join(draft.callers)

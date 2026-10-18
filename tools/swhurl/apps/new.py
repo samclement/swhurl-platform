@@ -16,8 +16,8 @@ create production directly (use app-promote). Secret names are recorded without
 values (make app-secret sets them); a first production's placeholders are
 SOPS-encrypted before this script returns, so plaintext never reaches Git.
 
-The output is ordinary YAML: edit it by hand afterwards. `make check-apps`
-checks the rendered result.
+Change it afterwards with the make app-* commands: `make check-apps` checks the rendered
+result, and refuses a hand edit the app model cannot express (apps/model, docs/plan.md section 24).
 """
 from __future__ import annotations
 
@@ -44,7 +44,6 @@ from swhurl.apps.calling import (
 from swhurl.apps.contract import (
     APP,
     APP_OWNER,
-    AUTH_MIDDLEWARE,
     AUTO_DEPLOY_ENV,
     AUTO_DEPLOY_TAG_PATTERN,
     CHART,
@@ -77,7 +76,6 @@ from swhurl.apps.contract import (
     TEAM,
     app_secret,
     default_host,
-    image_policy_name,
     in_cookie_domain,
     network_policy,
     otlp_variables,
@@ -87,6 +85,8 @@ from swhurl.apps.contract import (
     teams,
 )
 from swhurl.apps.instance import ENVIRONMENTS, NAME_RE, Instance, instance_folder, instance_unit_file
+from swhurl.apps.model import workload
+from swhurl.apps.model.exposure import ingress_values
 from swhurl.run import CommandError, Runner
 
 IMAGE_RE = re.compile(r'^(?P<repo>[a-z0-9][a-z0-9._/:-]*?)(?::(?P<tag>[A-Za-z0-9._-]+))?(?:@(?P<digest>sha256:[0-9a-f]{64}))?$')
@@ -170,23 +170,7 @@ def auto_deploys(args) -> bool:
 
 def image_automation(args) -> list[dict]:
     """App-scoped Flux image resources: the policy whose report starts the Deploy workflow."""
-    repository = parse_image(args.image)['repository']
-    labels = {MANAGED: 'true', APP: args.name}
-    return [
-        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImageRepository',
-         'metadata': {'name': args.name, 'namespace': 'flux-system', 'labels': labels},
-         # The app repository's image webhook starts the scan (apps/hooks.py); the interval is the
-         # fallback for a missed delivery.
-         'spec': {'image': repository, 'interval': '1h'}},
-        {'apiVersion': 'image.toolkit.fluxcd.io/v1', 'kind': 'ImagePolicy',
-         'metadata': {'name': image_policy_name(args.name), 'namespace': 'flux-system', 'labels': labels},
-         'spec': {'imageRepositoryRef': {'name': args.name},
-                  'filterTags': {'pattern': AUTO_DEPLOY_TAG_PATTERN, 'extract': '$run'},
-                  'policy': {'numerical': {'order': 'asc'}},
-                  # Tags are immutable, so re-reading the current tag's digest hourly is plenty; a new
-                  # tag's digest is read when the repository scan finds it. Always requires an interval.
-                  'digestReflectionPolicy': 'Always', 'interval': '1h'}},
-    ]
+    return workload.image_automation(args.name, parse_image(args.image)['repository'])
 
 
 def build_values(args) -> dict:
@@ -274,19 +258,6 @@ def build_values(args) -> dict:
     if args.exposure in ('authenticated-web', 'public'):
         values['ingress'] = {'main': ingress_values(args.name, args.host, args.exposure, args.issuer)}
     return values
-
-
-def ingress_values(name: str, host: str, exposure: str, issuer: str) -> dict:
-    """The app-template route for a signed-in or public instance (app-expose writes the same)."""
-    annotations = {'cert-manager.io/cluster-issuer': issuer}
-    if exposure == 'authenticated-web':
-        annotations['traefik.ingress.kubernetes.io/router.middlewares'] = AUTH_MIDDLEWARE
-    return {
-        'className': 'traefik',
-        'annotations': annotations,
-        'hosts': [{'host': host, 'paths': [{'path': '/', 'service': {'identifier': 'main', 'port': 'http'}}]}],
-        'tls': [{'hosts': [host], 'secretName': f'{name}-tls'}],
-    }
 
 
 def depends_on(exposure: str) -> list[str]:

@@ -89,11 +89,11 @@ from swhurl.apps.derive import (
     values,
 )
 from swhurl.apps.instance import ENVIRONMENTS, Instance, instance_folder, instance_unit_file
+from swhurl.apps.model.exposure import ingress_values
 from swhurl.apps.new import (
     check_generated,
     depends_on,
     dump,
-    ingress_values,
     watch_namespace,
 )
 from swhurl.apps.yaml_file import EditError, YamlFile, mapping

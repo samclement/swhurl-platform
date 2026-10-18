@@ -263,6 +263,15 @@ def app_under_test(runner, **kwargs):
 
 
 class FormTests(unittest.TestCase):
+    def test_a_jobs_schedule_is_a_reviewed_change(self):
+        nightly = Instance('nightly', 'staging')
+        change = changes.Change.to_instance('schedule', nightly, {'schedule': '  */10  * * * * '})
+        self.assertEqual(change.commands, (changes.Command('app-schedule', ('nightly', 'staging', '--schedule=*/10 * * * *')),))
+        self.assertEqual(change.title, 'apps: change when it runs: nightly/staging')
+        self.assertFalse(change.auto_merge, 'a person merges it')
+        with self.assertRaisesRegex(actions.ActionError, 'is not five cron fields'):
+            changes.Change.to_instance('schedule', nightly, {'schedule': 'every day'})
+
     def test_an_instance_change_is_a_value_with_its_commands_wording_and_job(self):
         hello = Instance('hello', 'staging')
         change = changes.Change.to_instance('scale', hello, {'replicas': '2', 'memory_limit': '256Mi'})
@@ -736,7 +745,7 @@ def staging_reads(runner):
             'containers': {'main': {'image': new.parse_image(IMAGE)}}}}}}},
         'pods': {'items': [{'metadata': {'name': 'hello-1'}, 'status': {'containerStatuses': [
             {'ready': True, 'imageID': IMAGE.split(':2.0')[0] + '@' + IMAGE.split('@')[1]}]}}]},
-        'deploy,statefulset,daemonset': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'hello'},
+        'deploy,statefulset,daemonset,cronjob': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'hello'},
                                                   'spec': {'replicas': 1}, 'status': {'readyReplicas': 1}}]},
         'ingress': {'items': []}, 'certificate': {'items': []},
     }

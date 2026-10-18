@@ -30,7 +30,7 @@ from swhurl.kube import ready_condition
 from swhurl.run import CommandError, Runner
 
 ACTIONS = ('status', 'logs', 'reconcile', 'check')
-WORKLOAD_KINDS = 'deploy,statefulset,daemonset'
+WORKLOAD_KINDS = 'deploy,statefulset,daemonset,cronjob'
 SOURCE = 'swhurl-platform'  # the GitRepository every instance's unit applies
 INSTANCE_LABEL = 'app.kubernetes.io/instance'  # on an instance's pods and workloads: the app's name
 
@@ -87,6 +87,29 @@ class Replicas:
 
 
 @dataclass(frozen=True)
+class Runs:
+    """A job's runs, as its CronJob records them (times are RFC 3339, so they compare as text)."""
+    schedule: str
+    suspended: bool = False
+    active: int = 0  # runs going now
+    last_schedule: str = ''  # when the newest run started
+    last_success: str = ''  # when the newest successful run finished
+
+    @property
+    def failed(self) -> bool:
+        """The newest run has ended without succeeding: no success since it started, and nothing running."""
+        return bool(self.last_schedule) and not self.active and self.last_success < self.last_schedule
+
+
+def runs_of(cronjob: dict | None) -> Runs | None:
+    if not cronjob:
+        return None
+    spec, status = cronjob.get('spec') or {}, cronjob.get('status') or {}
+    return Runs(str(spec.get('schedule', '')), bool(spec.get('suspend')), len(status.get('active') or []),
+                str(status.get('lastScheduleTime') or ''), str(status.get('lastSuccessfulTime') or ''))
+
+
+@dataclass(frozen=True)
 class Problem:
     pod: str
     reason: str
@@ -117,6 +140,8 @@ class InstanceStatus:
     release_suspended: bool = False
     unit_reason: str = ''  # the unit's Ready reason: tells waiting from failing
     own_change: bool | None = None  # whether the commits its unit has yet to apply change its own files; None: not asked
+    job: bool = False  # a scheduled job: judged by its runs, not its replicas
+    runs: Runs | None = None  # a job's CronJob status; None when it has none yet
 
     @property
     def applied(self) -> bool:
@@ -282,6 +307,15 @@ def status_of(instance: Instance, unit: dict, source: dict, release: dict | None
     """The facts, from the objects as the cluster returns them: the instance's unit, the Git source, its release,
     and its own pods and workloads. A reader that only wants the verdict (``state.verdict``) may leave the routes out."""
     ingresses = app_routes(list(ingresses))
+    job = helmrelease.kind(release) == 'job'
+    if job:
+        # A job's pods have ended: the image is the newest successful run's, and a failed run is judged by
+        # the CronJob's record, not by its pod's exit (state.verdict).
+        succeeded = sorted((pod for pod in (pods or {}).get('items', []) if (pod.get('status') or {}).get('phase') == 'Succeeded'),
+                           key=lambda pod: (pod.get('status') or {}).get('startTime', ''))
+        pods = {'items': succeeded[-1:]}
+        cronjob = next((item for item in (workloads or {}).get('items', []) if item.get('kind') == 'CronJob'), None)
+        workloads = {'items': []}
     return InstanceStatus(
         instance=instance,
         desired_revision=((source.get('status') or {}).get('artifact') or {}).get('revision', ''),
@@ -293,7 +327,7 @@ def status_of(instance: Instance, unit: dict, source: dict, release: dict | None
         replicas=replicas(workloads),
         routes=[rule.get('host') for ingress in ingresses for rule in ingress['spec'].get('rules') or []],
         certificates=[(cert['metadata']['name'], ready_condition(cert)[0]) for cert in certificates],
-        problems=problems(pods, instance, release_settings(release)),
+        problems=[] if job else problems(pods, instance, release_settings(release)),  # a job's are its runs
         settings=release_settings(release),
         exposure=live_exposure(ingresses),
         variables=shown_variables(release)[0],
@@ -302,6 +336,8 @@ def status_of(instance: Instance, unit: dict, source: dict, release: dict | None
         unit_suspended=bool((unit.get('spec') or {}).get('suspend')),
         release_suspended=bool(((release or {}).get('spec') or {}).get('suspend')),
         unit_reason=ready_reason(unit),
+        job=job,
+        runs=runs_of(cronjob) if job else None,
     )
 
 
@@ -342,6 +378,11 @@ def status_lines(found: InstanceStatus, team: str = '', stored: list[str] | None
         lines += [f'Image      desired {found.desired_image}',
                   f"           running {', '.join(found.running_images) or 'none'}{note}"]
     lines += [f'Replicas   {r.workload}: {r.ready}/{r.wanted} ready' for r in found.replicas]
+    if found.runs:
+        lines += [f"Schedule   {found.runs.schedule} (Etc/UTC){' (suspended)' if found.runs.suspended else ''}",
+                  f"Last run   {found.runs.last_schedule or 'none yet'}"
+                  + (' (running)' if found.runs.active else ' (failed)' if found.runs.failed else ''),
+                  f"Succeeded  {found.runs.last_success or 'never'}"]
     if team:
         lines.append(f'Team       {team}')
     lines.append(f'Exposure   {EXPOSURE_LABELS.get(found.exposure, found.exposure)}')

@@ -36,9 +36,10 @@ class TranslationTests(unittest.TestCase):
                 self.assertEqual([path for path, _ in self.read(command).paths], [path])
 
     def test_several_kinds_are_one_request_each_and_a_selector_goes_with_every_one(self):
-        read = self.read('kubectl get deploy,statefulset,daemonset --all-namespaces -l app.kubernetes.io/instance -o json')
+        read = self.read('kubectl get deploy,statefulset,daemonset,cronjob --all-namespaces -l app.kubernetes.io/instance -o json')
         self.assertEqual([path for path, _ in read.paths],
-                         ['/apis/apps/v1/deployments', '/apis/apps/v1/statefulsets', '/apis/apps/v1/daemonsets'])
+                         ['/apis/apps/v1/deployments', '/apis/apps/v1/statefulsets', '/apis/apps/v1/daemonsets',
+                          '/apis/batch/v1/cronjobs'])
         self.assertEqual((read.selector, read.named), ('app.kubernetes.io/instance', False))
         named = self.read('kubectl -n console get pod console-0 --ignore-not-found -o json')
         self.assertEqual((named.named, named.ignore_not_found), (True, True))

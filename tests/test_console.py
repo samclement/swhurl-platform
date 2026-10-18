@@ -670,8 +670,8 @@ class StateTests(unittest.TestCase):
         workloads['items'][0]['status']['readyReplicas'] = 0
         runner = fake(units=units, releases=releases, **{
             'kubectl get pods --all-namespaces': json.dumps(pods), 'kubectl -n web-prod get pods': json.dumps(pods),
-            'kubectl get deploy,statefulset,daemonset --all-namespaces': json.dumps(workloads),
-            'kubectl -n web-prod get deploy,statefulset,daemonset': json.dumps(workloads),
+            'kubectl get deploy,statefulset,daemonset,cronjob --all-namespaces': json.dumps(workloads),
+            'kubectl -n web-prod get deploy,statefulset,daemonset,cronjob': json.dumps(workloads),
             'kubectl -n flux-system get kustomization app-web-prod': json.dumps(units[0]),
             'kubectl -n web-prod get helmrelease web': json.dumps(releases[0]),
             'kubectl -n web-prod get ingress': '{}', 'kubectl -n web-prod get certificate': '{}'})
@@ -802,7 +802,7 @@ class AppDetailTests(unittest.TestCase):
                      for kind, value in (('kustomization', unit('app-web-prod')),
                                          ('gitrepository', {'status': {'artifact': {'revision': 'main@sha1:fff0000'}}}),
                                          ('helmrelease', {**release('web-prod', 'web', tag=tag), 'status': unit('web')['status']}),
-                                         ('pods', {'items': []}), ('deploy,statefulset,daemonset', {'items': []}),
+                                         ('pods', {'items': []}), ('deploy,statefulset,daemonset,cronjob', {'items': []}),
                                          ('ingress', {'items': []}), ('certificate', {'items': []}))}
             return fake(**found)
         app = client(answers('12-abc1234'), repo_opener=opener)
@@ -834,7 +834,7 @@ class AppDetailTests(unittest.TestCase):
             get('helmrelease', {**release('web-prod', 'web', sqlite=True), 'status': unit('web')['status']}),
             get('pods', {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [
                 {'ready': False, 'state': {'waiting': {'reason': 'CrashLoopBackOff'}}}]}}]}),
-            get('deploy,statefulset,daemonset', {'items': []}),
+            get('deploy,statefulset,daemonset,cronjob', {'items': []}),
             get('ingress', {'items': [{'spec': {'rules': [{'host': 'web.homelab.swhurl.com'}]}}]}),
             get('certificate', {'items': []}),
         ])

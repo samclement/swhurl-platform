@@ -96,3 +96,60 @@ class JobInstanceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class JobStateTests(unittest.TestCase):
+    """A job's state from its CronJob's record (state.job_verdict), as app-status and the console show it."""
+    DIGEST = 'sha256:' + 'b' * 64
+
+    def status(self, cron_status: dict | None, suspend=False, pods=()):
+        from swhurl.apps import ops
+        from swhurl.apps.instance import Instance
+        ready = {'status': {'conditions': [{'type': 'Ready', 'status': 'True', 'message': 'ok'}]}}
+        unit = {'status': {**ready['status'], 'lastAppliedRevision': 'main@sha1:abc'}}
+        release = {**ready, 'spec': {'values': {'controllers': {'main': {
+            'type': 'cronjob', 'cronjob': {'schedule': '*/10 * * * *'},
+            'containers': {'main': {'image': {'repository': 'ghcr.io/x/nightly', 'tag': '2-abc', 'digest': self.DIGEST}}}}}}}}
+        workloads = {'items': [] if cron_status is None else [
+            {'kind': 'CronJob', 'metadata': {'name': 'nightly'}, 'spec': {'schedule': '*/10 * * * *', 'suspend': suspend},
+             'status': cron_status}]}
+        return ops.status_of(Instance('nightly', 'staging'), unit, {'status': {'artifact': {'revision': 'main@sha1:abc'}}},
+                             release, {'items': list(pods)}, workloads)
+
+    def pod(self, phase, started, digest):
+        return {'metadata': {'name': f'run-{started}'}, 'spec': {'containers': [{'name': 'main', 'image': f'ghcr.io/x/nightly:2-abc@{digest}'}]},
+                'status': {'phase': phase, 'startTime': started,
+                           'containerStatuses': [{'ready': False, 'imageID': f'ghcr.io/x/nightly@{digest}'}]}}
+
+    def test_each_run_state(self):
+        from swhurl.apps.state import State, verdict
+        cases = (
+            ({}, State('healthy', 'waiting for its first run (*/10 * * * *, Etc/UTC)')),
+            ({'lastScheduleTime': '2026-10-18T10:00:00Z', 'lastSuccessfulTime': '2026-10-18T10:00:20Z'},
+             State('healthy', 'the last run succeeded at 2026-10-18T10:00:20Z')),
+            ({'lastScheduleTime': '2026-10-18T10:10:00Z', 'lastSuccessfulTime': '2026-10-18T10:00:20Z', 'active': [{}]},
+             State('updating', 'a run is in progress (started 2026-10-18T10:10:00Z)')),
+            ({'lastScheduleTime': '2026-10-18T10:10:00Z', 'lastSuccessfulTime': '2026-10-18T10:00:20Z'},
+             State('failing', 'the run started 2026-10-18T10:10:00Z did not succeed; the next runs on schedule (*/10 * * * *)')),
+            ({'lastScheduleTime': '2026-10-18T10:10:00Z'},
+             State('failing', 'the run started 2026-10-18T10:10:00Z did not succeed; the next runs on schedule (*/10 * * * *)')),
+        )
+        for record, expected in cases:
+            with self.subTest(record=record):
+                self.assertEqual(verdict(self.status(record)), expected)
+        self.assertEqual(verdict(self.status({}, suspend=True)).key, 'suspended')
+        self.assertEqual(verdict(self.status(None)), State('unknown', 'its CronJob is missing'))
+
+    def test_a_failed_run_pod_is_not_a_failing_pod_and_the_image_is_the_last_successful_runs(self):
+        from swhurl.apps import ops, state
+        old = 'sha256:' + 'c' * 64
+        found = self.status({'lastScheduleTime': '2026-10-18T10:10:00Z', 'lastSuccessfulTime': '2026-10-18T10:10:30Z'},
+                            pods=[self.pod('Succeeded', '2026-10-18T10:00:00Z', old), self.pod('Failed', '2026-10-18T10:05:00Z', old),
+                                  self.pod('Succeeded', '2026-10-18T10:10:00Z', self.DIGEST)])
+        self.assertEqual(found.problems, [])
+        self.assertEqual(found.image_state, 'matches', 'the newest successful run ran the image Git pins')
+        self.assertTrue(state.runs(found), 'so a promotion may take it')
+        lines = '\n'.join(ops.status_lines(found))
+        self.assertIn('Schedule   */10 * * * * (Etc/UTC)', lines)
+        self.assertIn('Last run   2026-10-18T10:10:00Z', lines)
+        self.assertNotIn('Replicas', lines)

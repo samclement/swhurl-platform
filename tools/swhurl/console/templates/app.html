@@ -19,7 +19,11 @@
     <div><span>State</span><span class="verdict">{{ st.state(state, detail=false) }}</span></div>
     <div><span>Team</span>{% if team %}<a href="/apps?team={{ team }}" title="The apps of team {{ team }}">{{ team }}</a>{% else %}<span class="warn">unknown</span>{% endif %}</div>
     <div><span>Image</span><code title="{{ status.desired_image }}">{{ row.tag if row and row.tag else status.desired_image | short }}</code></div>
+    {% if status.job %}
+    <div><span>Schedule</span>{% if status.runs %}<code title="Etc/UTC">{{ status.runs.schedule }}</code>{% else %}<span class="muted">unknown</span>{% endif %}</div>
+    {% else %}
     <div><span>Replicas</span>{% for r in status.replicas %}<span class="{{ '' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span>{{ ', ' if not loop.last }}{% else %}<span class="muted">none</span>{% endfor %}</div>
+    {% endif %}
     <div><span>Database</span>{% if not status.release %}<span class="muted">unknown</span>{% elif status.variables.get('DATABASE_PATH') %}<span class="pill">SQLite</span>{% else %}<span class="muted">none</span>{% endif %}</div>
     <div><span>Promotion</span>{% if summary and summary.comparison == 'ahead' %}<span class="pill attention" title="Staging runs a newer build than production">Prod behind</span>
       {% elif summary and summary.comparison == 'differs' %}<span class="pill attention" title="Staging and production run different images, and staging is not known to be the newer">Images differ</span>
@@ -196,16 +200,27 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
   </div>
 </section>
 
-<section class="card" id="operate" style="--acts: 1; --pitch: 9.5rem">
+<section class="card" id="operate" style="--acts: {{ 2 if status.job else 1 }}; --pitch: 9.5rem">
   <div class="card-head">
     <h2>Operate</h2>
     <p class="muted">What runs, whether it matches Git, and how to change it.</p>
+    {% if status.job %}
+    <details class="act" name="app-form" style="--slot: 1; --wide: 9rem">
+      <summary class="button">{{ st.icon('edit') }} Schedule</summary>
+      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/schedule">
+        <fieldset>
+          {{ ui.text_field('schedule', 'Schedule', status.runs.schedule if status.runs else '', '17 3 * * *', 'Five cron fields in Etc/UTC (minute hour day-of-month month day-of-week), for example */10 * * * * for every ten minutes, or @hourly, @daily. Changes this environment only.') }}
+        </fieldset>
+        {{ ui.submit('Open schedule PR', 'You review and merge it on GitHub.') }}
+      </form>
+    </details>
+    {% endif %}
     <details class="act" name="app-form" style="--slot: 0; --wide: 9rem">
       <summary class="button">{{ st.icon('edit') }} Scale</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/scale">
         <fieldset>
-          <div class="pair">{% for field, flag, label in scale_fields %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
-          <span class="muted hint">Replicas, CPU and memory. Empty fields keep their current value, shown in grey.
+          <div class="pair">{% for field, flag, label in scale_fields if not (status.job and field == 'replicas') %}{{ ui.text_field(field, label, placeholder=status.settings.get(field, '')) }}{% endfor %}</div>
+          <span class="muted hint">{{ 'CPU and memory of each run.' if status.job else 'Replicas, CPU and memory.' }} Empty fields keep their current value, shown in grey.
             {%- if minimum is not none %} {% if minimum %}The image's minimum, from its <code>swhurl.yaml</code>: {% for field, flag, label in scale_fields if field in minimum %}{{ label | lower }} {{ minimum[field] }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% else %}The image declares no minimum in its <code>swhurl.yaml</code>.{% endif %}{% endif %}</span>
         </fieldset>
         {{ ui.submit('Open scale PR', 'You review and merge it on GitHub.') }}
@@ -222,8 +237,17 @@ events.subscribe("{{ i.app }}.{{ c.publishes[0] }}") { event -> ... }           
           {% if status.image_state == 'different' %}<div class="bad">different image: a rollout in progress or failing</div>
           {% elif status.image_state == 'unpinned' %}<div class="muted">Git pins no digest, so this cannot be compared</div>{% endif %}</dd>
       {% endif %}
+      {% if status.job %}
+      <dt>Runs</dt>
+      <dd>{% if status.runs %}<div>On <code>{{ status.runs.schedule }}</code> <span class="muted">(Etc/UTC){{ ' · suspended' if status.runs.suspended }}</span></div>
+          <div>Last run {% if status.runs.last_schedule %}<span class="mono">{{ status.runs.last_schedule }}</span>{% if status.runs.active %} <span class="warn">running</span>{% elif status.runs.failed %} <span class="bad">did not succeed</span>{% else %} <span class="ok">succeeded</span>{% endif %}{% else %}<span class="muted">none yet</span>{% endif %}</div>
+          <div>Last success {% if status.runs.last_success %}<span class="mono">{{ status.runs.last_success }}</span>{% else %}<span class="muted">never</span>{% endif %}</div>
+          <div class="muted">One pod per run; the last successful and the last failed run are kept (<code>kubectl -n {{ i.namespace }} get jobs</code>).</div>
+          {% else %}<span class="bad">its CronJob is missing</span>{% endif %}</dd>
+      {% else %}
       <dt>Replicas</dt>
       <dd>{% for r in status.replicas %}<div><span class="{{ 'ok' if r.ready == r.wanted else 'bad' }}">{{ r.ready }}/{{ r.wanted }} ready</span> <span class="muted">{{ r.workload }}</span></div>{% else %}<span class="muted">none</span>{% endfor %}</dd>
+      {% endif %}
       <dt>Git revision</dt>
       <dd><span class="mono">{{ status.applied_revision.split(':')[-1] | short }}</span> applied{% if not status.applied %} <span class="warn">· Git has {{ status.desired_revision.split(':')[-1] | short }}, not yet applied</span>{% endif %}</dd>
       <dt>Flux unit</dt>

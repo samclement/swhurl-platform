@@ -8,13 +8,14 @@ bytes is left alone, so an edit's diff shows what it changed.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import yamlio
 from swhurl.apps import egress, events
-from swhurl.apps.instance import ENVIRONMENTS, UNITS
+from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
 from swhurl.apps.model import legacy, render
-from swhurl.apps.model.draft import Platform, RenderError, World
+from swhurl.apps.model.draft import Entry, Platform, RenderError, World
 from swhurl.apps.model.shadow import normal
 from swhurl.apps.yaml_file import EditError
 
@@ -74,14 +75,10 @@ def plan(root: Path, world: World, platform: Platform) -> tuple[dict[Path, str],
     return writes, deletions
 
 
-def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
-    """Write what the platform derives for every instance under ``root``; return the files changed."""
+def write(root: Path, world: World, platform: Platform) -> list[Path]:
+    """Render ``world`` and write what changed, after every file has rendered; return the files changed."""
     from swhurl.apps.new import watch_namespace
 
-    world, problems = legacy.world(root, base)
-    if problems:
-        raise EditError('; '.join(problems))
-    platform = legacy.platform(root, base)
     world = allocate(world, platform)
     writes, deletions = plan(root, world, platform)
     for path, text in writes.items():
@@ -99,3 +96,24 @@ def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
             changed.append(reloader)
     return changed
 
+
+def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
+    world, problems = legacy.world(root, base)
+    if problems:
+        raise EditError('; '.join(problems))
+    return world, legacy.platform(root, base)
+
+
+def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
+    """Write what the platform derives for every instance under ``root``; return the files changed."""
+    return write(root, *read(root, base))
+
+
+def change(root: Path, each: Instance, update: Callable[[Entry], Entry], base: Path = Path('apps')) -> list[Path]:
+    """One operation on one instance's records: apply ``update``, render every instance, write what changed.
+    Nothing is written when any instance fails to render."""
+    world, platform = read(root, base)
+    if each not in world:
+        raise EditError(f'no instance {each}')
+    world[each] = update(world[each])
+    return write(root, world, platform)

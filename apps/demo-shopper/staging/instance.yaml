@@ -3,6 +3,10 @@ version: 1
 exposure: private
 calls:
 - demo-shop
+capacity:
+  cpu: 10m
+  memory: 32Mi
+  memoryLimit: 128Mi
 allocations:
   egressPort: 30104
   eventsKey: UBTEFDHXMWLBQALKXYVDS3WWMVTEAEATHTX36DHE5ENJAFUTGYBCX62N

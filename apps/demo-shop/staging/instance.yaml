@@ -3,6 +3,10 @@ version: 1
 exposure: authenticated-web
 calls:
 - demo-orders
+capacity:
+  cpu: 10m
+  memory: 32Mi
+  memoryLimit: 128Mi
 allocations:
   egressPort: 30103
   eventsKey: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4

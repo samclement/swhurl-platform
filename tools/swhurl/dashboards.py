@@ -117,9 +117,38 @@ def _line(name: str, x: int, y: int, w: int, source: str, select: dict) -> dict:
             'config': {'displayType': 'line', 'sourceId': source, 'groupBy': NAMESPACE, 'select': [select]}}
 
 
+def job_tiles(mine: str, traces: str, logs: str) -> list[dict]:
+    """A scheduled job's tiles: its runs (each a root span \"run\", which the templates make), how many
+    failed and how long they took, its last runs, and its logs. It has no errors alert: the notification
+    checker sends \"run failed\" for each failed run already (docs/apps.md#dashboards)."""
+    runs = f"{mine} AND ParentSpanId = '' AND SpanName = 'run'"
+
+    def select(where: str, **extra) -> dict:
+        return {'aggFn': 'count', 'where': where, 'whereLanguage': 'sql', **extra}
+
+    return [
+        _line('Runs', 0, 0, 8, traces, select(runs, alias='runs')),
+        _line('Failed runs', 8, 0, 8, traces, select(f"{runs} AND StatusCode = 'Error'", alias='failed')),
+        _line('Run duration p95 (s)', 16, 0, 8, traces,
+              {'aggFn': 'quantile', 'level': 0.95, 'valueExpression': 'Duration / 1e9', 'where': runs,
+               'whereLanguage': 'sql', 'alias': 'p95 s'}),
+        {'name': 'Last runs', 'x': 0, 'y': CHART_HEIGHT, 'w': 12, 'h': CHART_HEIGHT,
+         'config': {'displayType': 'search', 'sourceId': traces, 'whereLanguage': 'sql', 'where': runs,
+                    'select': f"Timestamp, {NAMESPACE} AS environment, StatusCode AS status, "
+                              "round(Duration / 1e9, 1) AS seconds, StatusMessage AS reason"}},
+        _line('Error logs', 12, CHART_HEIGHT, 12, logs,
+              select(f"{mine} AND lower(SeverityText) IN ('error', 'fatal')", alias='errors')),
+        {'name': 'Latest logs', 'x': 0, 'y': 2 * CHART_HEIGHT, 'w': 24, 'h': 6,
+         'config': {'displayType': 'search', 'sourceId': logs, 'whereLanguage': 'sql', 'where': mine,
+                    'select': f"Timestamp, {NAMESPACE} AS environment, SeverityText, Body"}},
+    ]
+
+
 def dashboard(app: App, traces: str, logs: str) -> dict:
     """The dashboard definition for ``app`` (request body for create and update)."""
     mine = f'{NAMESPACE} IN ({app.namespaces})'
+    if app.kind == 'job':
+        return {'name': f'App: {app.name}', 'tags': [TAG], 'tiles': job_tiles(mine, traces, logs)}
     spans = f"{mine} AND SpanKind = 'Server'" if app.kind == 'web' else f"{mine} AND ParentSpanId = ''"
     noun = 'Requests' if app.kind == 'web' else 'Runs'
 

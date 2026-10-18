@@ -95,8 +95,15 @@ class RenderProgressTests(unittest.TestCase):
         self.assertEqual(self.judge(action='remove', target=absent, current=TARGET, live=stages.ABSENT).state, 'superseded')
         self.assertEqual(self.judge(action='new', live=stages.ABSENT).state, 'creating')
 
-    def test_failed_reads_and_pre_hash_jobs_are_unknown(self):
-        for changes in ({'live': None}, {'target': None}, {'current': None}, {'target': stages.Target('')},
+    def test_failed_reads_are_unknown_and_merged_pre_hash_jobs_are_finished_history(self):
+        historical = self.judge(target=stages.Target(''))
+        self.assertEqual(historical.state, 'historical')
+        self.assertEqual(self.judge(target=stages.Target(''), current=None, live=None).state, 'historical')
+        track = stages.track(job(), stages.Pull(9, URL, state='merged'), historical)
+        self.assertTrue(track.settled)
+        self.assertEqual(track.label, 'Merged (historical)')
+        self.assertIn('rollout cannot be tracked', track.outcome)
+        for changes in ({'live': None}, {'target': None}, {'current': None},
                         {'current': stages.Target('')}):
             with self.subTest(changes=changes):
                 self.assertEqual(self.judge(**changes).state, 'unread')
@@ -119,7 +126,7 @@ class PullStageTests(unittest.TestCase):
         for state, status, label in (('live', 'done', 'Live in prod'), ('zero', 'done', 'Live in prod'),
                                      ('applying', 'running', 'In progress'), ('creating', 'running', 'In progress'),
                                      ('failing', 'blocked', 'Failed'), ('held', 'waiting', 'Waiting for you'),
-                                     ('unread', 'unknown', 'Unknown'), ('superseded', 'done', 'Superseded')):
+                                     ('unread', 'unknown', 'Unknown'), ('historical', 'done', 'Merged (historical)'), ('superseded', 'done', 'Superseded')):
             with self.subTest(state=state):
                 track = self.track(stages.Rollout(state), state='merged')
                 self.assertEqual((track.status, track.label), (status, label))

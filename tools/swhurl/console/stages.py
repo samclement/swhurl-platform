@@ -105,10 +105,14 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
           applied_hash: str = '', ready: bool = False, image_matches: bool = False) -> Rollout:
     """Five fresh facts, never a saved verdict. Hash equality proves application independently of
     unrelated Git commits. Absence must be proved in Git and on the cluster; a failed read is unknown."""
-    if target is None or current is None:
+    if target is None:
         return Rollout('unread', 'the target or current render could not be read')
-    if not target.hash or not current.hash:
-        return Rollout('unread', 'this change predates render hashes')
+    if not target.hash:
+        return Rollout('historical', 'this change predates render hashes')
+    if current is None:
+        return Rollout('unread', 'the target or current render could not be read')
+    if not current.hash:
+        return Rollout('unread', 'the current render has no hash')
     if target.hash != current.hash:
         return Rollout('superseded')
     if live is None:
@@ -228,6 +232,10 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
             return track(merged, 'done', f'Merged {pull.when}.'.replace(' .', '.'), done, [reached])
         flux = 'Applied'
         found = landed or Rollout('unread', 'it was not read')
+
+        if found.state == 'historical':
+            return track(merged, 'done', f'Merged {pull.when}; this change predates render hashes, so its rollout cannot be tracked.'.replace(' ;', ';'),
+                         done, [Stage('end', 'Merged (historical)', 'reached')])
 
         def applied(status: str, outcome: str, state: str, note: str = '', end: Stage = planned):
             reached = found.applied or found.state in ('live', 'zero', 'removed')

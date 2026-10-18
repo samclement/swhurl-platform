@@ -201,7 +201,7 @@ def exercise(runner: Runner, binary: Path, config: dict, extra_args: list[str], 
         gates = [arg for arg in extra_args if arg.startswith('--feature-gates=')]
         command = [str(binary), *gates, f'--config=file:{path}']
         process = runner.start(command)
-        deadline = time.monotonic() + 8  # failure guard; successful fixtures stop as soon as they flush
+        deadline = time.monotonic() + 30  # parallel checks can delay startup; stop as soon as fixtures flush
         try:
             payload = json.dumps(fixture_payload([c for c in cases if not c.get('framing')])).encode()
             if not _wait_for_otlp_receiver(port, process, deadline):

@@ -45,7 +45,7 @@ The target comes from the PR's **merged tree**: the replay gate may choose anoth
 
 A removal ends at **Removed from …** only when the merged tree and current `main` omit the instance and both its Flux unit and HelmRelease are gone. An uninstalling release keeps it **In progress**. Removal keeps retained storage; it does not destroy data. A team or channel change ends at **On main** when merged.
 
-Progress is read again on each page request, never saved. Immutable Git trees may be cached by commit; GitHub's current PR state, newest `main` and the cluster are read fresh. A failed read is **Unknown**, never absence or success. A historical job whose merged tree predates render hashes is **Unknown**, with that explanation; old saved progress marks and endings are ignored. A failure can recover, and a previously Healthy target can show a new failure.
+Progress is read again on each page request, never saved. Immutable Git trees may be cached by commit; GitHub's current PR state, newest `main` and the cluster are read fresh. A failed read is **Unknown**, never absence or success. A merged historical job whose tree predates render hashes goes in **Finished** as **Merged (historical)**, with an explanation that its rollout cannot be tracked; old saved progress marks and endings are ignored. A failure can recover, and a previously Healthy target can show a new failure.
 
 The row begins with **In progress**, **Waiting for you**, **Failed**, **Interrupted**, **Closed**, **Unknown**, or its terminal stop. **Finished** holds completed or closed changes; an open PR with failed checks or a failing instance stays in **In progress or waiting for you**. Marks have text for screen readers: ✓ done, ↻ running, ‖ waiting, ✕ failed, ○ not reached, ◎ planned end, ◉ reached end.
 
@@ -84,7 +84,7 @@ A local `make console-dev` keeps jobs in memory only and writes nothing to the c
 
 ## Auto-merge
 
-Some console pull requests merge themselves once **Validate** passes; the rest wait for you.
+Some console pull requests merge themselves once **Validate** passes; the rest wait for you. Deleting encrypted files during removal uses the normal manual-review rule.
 
 | Change | Merges itself |
 | --- | --- |

@@ -349,7 +349,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
             else:
                 status = 'M'
             job.lines.append(f'{status} {path}')
-        encrypted = [p for p in changed if p.endswith('.sops.yaml')]
+        encrypted = [p for p in changed if p in after and p.endswith('.sops.yaml')]
         generated_key = bool(encrypted) and all(Path(p).name == events.SECRET_FILE for p in encrypted)
         if generated_key and slug.startswith('new-') and all(p not in before for p in encrypted):
             # A new app's events key is generated whole (nothing is left to fill in, and no one can read it

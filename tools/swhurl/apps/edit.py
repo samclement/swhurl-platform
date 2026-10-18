@@ -228,7 +228,7 @@ RESOURCE_FIELDS = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'),
 def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, app: str) -> tuple[Entry, list[str]]:
     """The records with a new image and what it needs: its port and health path (web), the user it runs as,
     telemetry, a new database's volume, the secret names it reads (a new one arrives without a value),
-    resources raised to its minimum (never lowered) and its description. Returns them and what changed.
+    resources at its minimum or the instance's capacity, whichever is larger, and its description. Returns them and what changed.
     A need the instance cannot take is refused (EditError)."""
     needs, old, settings = declared.needs, entry.release, entry.settings
     if old.kind != needs.kind:
@@ -269,9 +269,8 @@ def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, ap
     release = replace(old, image=image, port=port, health_path=health, uid=needs.uid, telemetry=needs.otlp,
                       database=needs.database or '', secrets=tuple(needs.secrets), description=declared.description,
                       resources=Resources(*(needs.minimum.get(field, '') for field, _, _ in RESOURCE_FIELDS)))
-    # The capacity it runs with now, so a new minimum only ever raises it.
-    capacity = Resources(*(running[section][key] for _, section, key in RESOURCE_FIELDS))
-    found = replace(entry, release=release, settings=replace(settings, replicas=replicas, capacity=capacity, allocations=allocations))
+    # The instance's own capacity stays: resources render as the larger of it and the image's minimum.
+    found = replace(entry, release=release, settings=replace(settings, replicas=replicas, allocations=allocations))
     resources = workload.resources(found)
     for (_, section, key) in RESOURCE_FIELDS:
         if resources[section][key] != running[section][key]:

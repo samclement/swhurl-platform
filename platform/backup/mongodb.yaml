@@ -1,5 +1,5 @@
 # ClickStack's MongoDB, dumped, encrypted and published to S3 each night by the backup image
-# (tools/swhurl/backup_job.py). Suspended until the pilot (docs/plan.md section 25, H3).
+# (tools/swhurl/backup_job.py). Running beside the host timer during the pilot (docs/plan.md section 25, H3).
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -10,7 +10,7 @@ metadata:
 spec:
   schedule: "30 3 * * *"
   timeZone: Etc/UTC
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 1

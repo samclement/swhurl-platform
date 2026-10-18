@@ -2,7 +2,7 @@
 encrypts it and publishes it to S3 (tools/swhurl/backup_job.py), and a Secret with the upload-only key,
 which its unit substitutes from platform-backup's flux-system Secret. The job runs as the app's user with
 the app's claim mounted, no service-account token, and the instance's egress proxy port. Rendered
-suspended until the backups move off the host timer (docs/plan.md section 25)."""
+suspended, except the pilot's (RUNNING), until the backups move off the host timer (docs/plan.md section 25)."""
 from __future__ import annotations
 
 import hashlib
@@ -22,7 +22,8 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.model.draft import Draft, Entry, Platform
 
-SUSPENDED = True
+# Instances whose job runs on schedule; the rest are suspended until the host timer is switched off (H4).
+RUNNING = frozenset({'demo-orders-staging'})
 # What the AWS CLI reads to reach S3 through the instance's proxy port (HOST_IP: NO_PROXY names it).
 PROXY_VARIABLES = ('HOST_IP', egress.HTTP_VARIABLE, egress.HTTPS_VARIABLE, egress.NO_PROXY_VARIABLE)
 
@@ -74,7 +75,7 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
     }
     job = {
         'apiVersion': 'batch/v1', 'kind': 'CronJob', 'metadata': {'name': name, 'namespace': namespace, 'labels': {BACKUP_LABEL: 'true'}},
-        'spec': {'schedule': schedule(namespace), 'timeZone': 'Etc/UTC', 'suspend': SUSPENDED,
+        'spec': {'schedule': schedule(namespace), 'timeZone': 'Etc/UTC', 'suspend': namespace not in RUNNING,
                  'concurrencyPolicy': 'Forbid', 'startingDeadlineSeconds': 3600,
                  'successfulJobsHistoryLimit': 1, 'failedJobsHistoryLimit': 3,
                  'jobTemplate': {'spec': {'backoffLimit': 2, 'activeDeadlineSeconds': 900, 'template': pod}}},

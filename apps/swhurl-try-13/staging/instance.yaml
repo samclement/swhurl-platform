@@ -4,10 +4,6 @@ exposure: private
 subscriptions:
 - swhurl-try-10.visited
 - swhurl-try-12.visited
-capacity:
-  cpu: 10m
-  memory: 32Mi
-  memoryLimit: 128Mi
 allocations:
   egressPort: 30108
   eventsKey: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5

@@ -3,10 +3,6 @@ version: 1
 exposure: private
 subscriptions:
 - demo-orders.created
-capacity:
-  cpu: 100m
-  memory: 192Mi
-  memoryLimit: 384Mi
 allocations:
   egressPort: 30101
   eventsKey: UCWLMGY4L75WNKJ2FRJFZ7QDGKWDDHDLJCJVU3OPXVUJ42THGXEDBJPI

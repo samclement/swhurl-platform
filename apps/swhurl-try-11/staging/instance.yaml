@@ -4,10 +4,6 @@ exposure: authenticated-web
 calls:
 - swhurl-try-10
 - swhurl-try-12
-capacity:
-  cpu: 10m
-  memory: 32Mi
-  memoryLimit: 128Mi
 allocations:
   egressPort: 30106
   eventsKey: UAC7DWRMXAYFNAFO3HJ32BHIGGPNWPF2JKXSJ7RR4YDCWNFY5FRMGEZX

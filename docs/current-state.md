@@ -1889,3 +1889,30 @@ Section 24's stage 1 (`c875b16c`): `make check-apps` reads each instance's App, 
 **Stage 2, the gate's general form, proven live with `swhurl-try-30`** (`72ae3876`, operator-approved, 18 October 2026): console PR bodies carry their commands, and the gate replays a new app's `make app-new` (with the PR's events key) or a later promotion on the newest `main` and pushes the replayed tree as a merge of the PR head. `make check` passed 806 tests; Validate passed and deployed the console. The console's code (`make console-dev` with the deployed console's own tokens, dev identity) created `samclement/swhurl-try-30` (TypeScript Web app, team `demo`, signed-in) at 15:05:06 UTC and opened PR #78 on the seed `0-e5e73c0` 62 s later. The gate (run 39138955992) replayed it and merged `4385e0f8` (author `swhurl auto-merge`, parents `main` and the PR head, tree identical to the PR head as `main` had not moved) at 15:08:07; staging was Healthy at 15:08:50 (3 min 44 s from submission), and the Deploy workflow moved it to its own build `1-e5e73c0` through the new deploy path (`46f18a64`). Plain HTTP answered 301 to HTTPS and HTTPS 302 to Google sign-in. Removed the same day: `make app-remove` (`11628f5e`; Flux uninstalled the release, the namespace and its 1Gi claim are kept), and its GitHub repository and container package (confirmed absent). Its claim awaits `make destroy-data` (operator's decision).
 
 **Not exercised live:** two new apps merging at once through the replay, a first promotion through the new path, the deployed console's promotion pages in a signed-in browser, `app-secret`, and any of the edit commands writing a change to a real instance since the change (the edit and model tests cover them on the sample instance).
+
+
+## Activity from render hashes (18 October 2026)
+
+**Stage 4 of section 24:** `e7a678d7` adds a deterministic render hash to each instance's HelmRelease metadata and derives Activity from the job, PR, current Git target and cluster state. `7de9afcb` finishes pre-hash merged jobs as **Merged (historical)** without claiming their rollout; it also corrects review of deleted encrypted files. Validate passed for both commits; the final console image is `src-d6abfc4ad132f2e4` (`6e0e4c1b`). `make check` passed 807 tests and all 120 supported template policy combinations. The offline collector fixture has a 30-second bound so parallel validation has time to flush; it still stops on failure and never retries a POST.
+
+**Metadata-only introduction:** comparing all 13 app HelmReleases before and after the first reconcile showed the Git hash on each, unchanged generations and Ready conditions. All 13 app pods and their containers predated the annotation commit. The annotation changed no Helm specification or pod template and restarted no app.
+
+**Real signed-in browser acceptance:** the operator completed Google sign-in in an isolated Chromium session; checks used the deployed console's pages and forms, without a supplied identity header or dev identity.
+
+| Change | Browser evidence |
+| --- | --- |
+| Later promotion, job #24 / PR #79 | `swhurl-try-11` production moved to `42-4390f25`; **Live in prod**, Applied and Running done |
+| New worker, job #25 / PR #81 | `swhurl-try-32` first showed Flux applying its seed `0-b0f53b1`, then **Superseded** when its own build 1 became the desired render in Git |
+| Scale, job #26 / PR #82 | The worker's memory limit changed from 128Mi to 256Mi; **Live in staging**, Applied and Running done |
+| Remove, job #27 / PR #83 | First **Flux is removing**, then **Removed from staging**, with the live HelmRelease and namespace absent |
+| Historical job #22 / PR #76 | Under **Finished** as **Merged (historical)**; its rollout predates render hashes and cannot be tracked. The active section is empty |
+
+A newer render replaces an unfinished change's target: **Superseded** describes that old request, not a failed app. After the later removal, the scale request is superseded too; its earlier live state was captured before removal. Removal was of a worker with `database: none`, with no volume or retained data. An initial API throwaway (`swhurl-try-31`, job #23 / PR #80) was mistakenly assumed to have no database; its SQLite declaration was caught before deployment and the PR closed unmerged. Its namespace never existed. Both throwaways' GitHub repositories and container packages were deleted with the documented cleanup tokens and confirmed absent.
+
+**Entry points:** final browser checks returned HTTP 301 to HTTPS, then 200 with the signed-in identity. Signed-out HTTP and HTTPS both redirected to Google; neither exposed an identity. An initial check caught a transient 503 during the console rollout; the settled deployment passed.
+
+**Live verification:** `make flux-reconcile`, `make verify-platform` and `make app-status APP=demo-orders ENV=staging` passed on `6e0e4c1b`. All 13 app HelmReleases are Ready and carry render hashes. Notification checker and dashboard jobs `29872396` succeeded on the final console image.
+
+**Size:** stage 4's `tools/swhurl` diff from `46866761` adds 213 lines and removes 196, net +17. Removed progress machinery includes `Job.stage`, stored marks and endings, `Jobs.settle`, commit-comparison rollout checks and persisted verdicts. Immutable render targets are cached by commit; PR, current main and cluster facts are read afresh.
+
+**Still unexercised:** two simultaneous new-app merges through the replay, a first promotion through the new path, and `app-secret`. Stage 5 (production needs, event compatibility and SQLite backups) remains planned in [section 0](plan.md#0-where-this-paused-and-what-is-left).

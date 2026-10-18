@@ -197,7 +197,7 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': '8f41ddab0e189e4f83548069a79403add04aab97',
+    'typescript': 'a976fade0edad21aedd0100e787390f899555dd3',
     'kotlin': 'b64da734d1a0a79e16555b2ff867b731caec55ad',
 }
 STACK_DESCRIPTIONS = {
@@ -221,9 +221,10 @@ class AppType:
 
 
 APP_TYPES = {
-    'web-app': AppType('Web app', 'A site people use in a browser. Its data belongs in an API it calls; its own '
-                       'SQLite keeps what only it uses.', ('typescript',),
-                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example'},
+    'web-app': AppType('Web app', 'A site people use in a browser: a Vite+ page at / and its own API under /api. '
+                       'Its data belongs in an API it calls; its own SQLite keeps what only it uses.', ('typescript',),
+                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example',
+                        'frontend': 'vite'},
                        'authenticated-web'),
     'api': AppType('API', 'Data and operations other apps call; private: browsers reach it through a web app.',
                    ('typescript', 'kotlin'),

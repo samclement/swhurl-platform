@@ -4,7 +4,7 @@ metadata:
   name: demo-shop
   namespace: demo-shop-staging
   annotations:
-    platform.swhurl.com/offers: 'bb7a44b'
+    platform.swhurl.com/offers: e13694a
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +39,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shop
-              tag: 47-bb7a44b
-              digest: sha256:bb6026992fc06c8709401af3379168ac6a8222c40fe26c8584d26157f4a4bb74
+              tag: 53-e13694a
+              digest: sha256:d6fb5bb0e0c3dbd50faed7bebe2aa5f63faed7d61cd6976b60af02789a7901d7
             resources:
               requests:
                 cpu: 10m
@@ -68,9 +68,9 @@ spec:
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: demo-shop
               SWHURL_SERVICE_DEMO_ORDERS_URL: http://demo-orders.demo-orders-$(SWHURL_ENV).svc.cluster.local:8080
-              SWHURL_ALLOWED_CALLERS: demo-shopper
               SWHURL_EVENTS_NKEY: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              SWHURL_ALLOWED_CALLERS: demo-shopper
               HTTP_PROXY: http://egress.egress.svc.cluster.local:30103
               HTTPS_PROXY: http://egress.egress.svc.cluster.local:30103
               JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30103 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30103 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)

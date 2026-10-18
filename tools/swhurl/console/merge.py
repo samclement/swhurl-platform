@@ -28,6 +28,12 @@ REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
 # A new app's files outside its folder, generated from every instance's declaration (make app-sync): its
 # NATS user, its egress port, Reloader watching its namespace. The gate regenerates them on the merge result.
+REQUEST = re.compile(r'<!-- swhurl-request (\{[^\n]*\}) -->')
+"""What a console PR asks for, in its body: the commands its files came from (no standard input), which
+this gate replays on the newest main."""
+GATE_FLAGS = ('--root', '--manifest', '--no-register', '--no-policy-check', '--policy-check', '--events-key')
+"""app-new options a request may not set: where it writes, what it checks and the prepared key are the gate's."""
+PUBLIC_KEY = re.compile(r'U[A-Z2-7]{55}')  # an nkeys user public key
 DERIVED = ('platform/nats/users.yaml', 'platform/egress/proxy.yaml', 'platform/reloader/helmrelease.yaml')
 REGISTRY = 'clusters/home/kustomization.yaml'
 PROXY_VARIABLES = (egress.HTTP_VARIABLE, egress.HTTPS_VARIABLE, egress.JAVA_VARIABLE, egress.NODE_VARIABLE,
@@ -49,26 +55,6 @@ def review_metadata(body: str) -> dict:
         raise Hold('invalid promotion review metadata') from None
 
 
-def scope(base: Path, candidate: Path, files: list[str], app: str, env: str, new_app: bool = False) -> None:
-    unit = instance_unit_file(Path(), app, env).as_posix()
-    registry = 'clusters/home/kustomization.yaml'
-    events_key = f'apps/{app}/{env}/{events.SECRET_FILE}'
-    for path in files:
-        generated = new_app and (path == events_key or path in DERIVED)  # checked by check_new_app
-        if not generated and (path.endswith('.sops.yaml')
-                              or not (path.startswith(f'apps/{app}/{env}/') or path in (unit, registry))):
-            raise Hold('diff includes encrypted files, infrastructure or unrelated edits')
-        if not (candidate / path).is_file():
-            raise Hold('automatic merge does not delete app resources')
-    if registry in files:
-        old = yamlio.load((base / registry).read_text())
-        updated = yamlio.load((candidate / registry).read_text())
-        expected = json.loads(json.dumps(old))
-        expected['resources'].append(instance_unit_file(Path(), app, env).name)
-        if updated != expected:
-            raise Hold('unit registration changes more than this app')
-
-
 def recipients(root: Path, path: str) -> set[str]:
     """The age recipients .sops.yaml's first rule matching ``path`` encrypts to."""
     config = root / '.sops.yaml'
@@ -78,72 +64,77 @@ def recipients(root: Path, path: str) -> set[str]:
     return set()
 
 
-def release_taken_port(root: Path, app: str) -> None:
-    """Drop the new app's egress port when another instance already has it, so make app-sync gives it a
-    free one: two new apps opened from the same main are each given the first free port."""
-    ports = egress.ports(root)
-    own = ports.pop(Instance(app, 'staging'), None)
-    if own is None or own not in ports.values():
-        return
-    document = YamlFile(instance_folder(root, app, 'staging') / 'helmrelease.yaml')
-    variables = helmrelease.container(document.data).get('env') or {}
-    for key in PROXY_VARIABLES:
-        variables.pop(key, None)
-    document.save()
+def request_marker(commands) -> str:
+    """The marker a console PR's body carries for its commands (each with ``name`` and ``argv``)."""
+    return '<!-- swhurl-request ' + json.dumps({'commands': [[c.name, *c.argv] for c in commands]}) + ' -->'
 
 
-def merge_new_app(runner: Runner, base: Path, candidate: Path, sha: str, app: str, files: list[str]) -> None:
-    """A new app's merge result on the newest main, whatever main gained since its PR was opened. Every
-    new app adds a line to the unit registry and changes the shared files make app-sync derives, so two
-    opened from the same main conflict there and may hold the same egress port: those files are taken
-    from main and made again here (check_new_app then holds anything else). A conflict anywhere else holds
-    the PR."""
-    runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=candidate, check=False)
-    shared = [REGISTRY, *DERIVED]
-    conflicts = [path for path in runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=candidate).splitlines()
-                 if path and path not in shared]
-    if conflicts:
-        raise Hold('new-app PR conflicts with main outside the files every new app changes: ' + ', '.join(conflicts))
-    present = [path for path in shared if (base / path).is_file()]
-    if present:
-        runner.run(['git', 'checkout', 'HEAD', '--', *present], cwd=candidate)
-    new.register(candidate, instance_unit_file(Path(), app, 'staging').name)
-    scope(base, candidate, files, app, 'staging', new_app=True)  # before anything runs on the result
-    release_taken_port(candidate, app)
-    runner.run(['make', 'app-sync'], cwd=candidate)
-    runner.run(['git', 'add', '--', *[path for path in shared if (candidate / path).is_file()],
-                f'apps/{app}/staging'], cwd=candidate)
-    runner.run([*GIT, 'commit', '--no-edit'], cwd=candidate)
+def request(body: str) -> list[list[str]]:
+    """The commands a console PR says its files came from (changes.request_marker)."""
+    match = REQUEST.search(body)
+    try:
+        commands = json.loads(match[1])['commands'] if match else None
+    except (TypeError, ValueError, KeyError):
+        commands = None
+    if not (isinstance(commands, list) and commands
+            and all(isinstance(c, list) and c and all(isinstance(part, str) for part in c) for c in commands)):
+        raise Hold('the PR does not say what it was made with (no request); open a fresh one from the console')
+    return commands
 
 
-def check_new_app(base: Path, candidate: Path, files: list[str], app: str, runner: Runner) -> None:
-    """What a new app adds beyond its own files is only what the platform generates for it.
+def check_events_key(base: Path, head: Path, app: str) -> str:
+    """A new app's events key, the one input the gate cannot make again: a new Secret holding its NATS seed
+    and nothing else, encrypted to this repository's recipients alone (no one, gate or reviewer, can read
+    it). Returns the public key the PR pairs it with."""
+    key = f'apps/{app}/staging/{events.SECRET_FILE}'
+    if (base / key).exists():
+        raise Hold('new-app PR replaces an existing events key')
+    doc = yamlio.load((head / key).read_text()) or {}
+    sops = doc.get('sops') or {}
+    values = doc.get('stringData') or {}
+    if (doc.get('kind') != 'Secret' or 'data' in doc
+            or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
+            or set(values) != {events.SEED_VARIABLE} or not str(values[events.SEED_VARIABLE]).startswith('ENC[')
+            or {r.get('recipient') for r in sops.get('age') or []} != recipients(base, key)
+            or any(sops.get(other) for other in ('kms', 'gcp_kms', 'azure_kv', 'hc_vault', 'pgp'))):
+        raise Hold("the events key is not the app's generated, encrypted NATS seed alone")
+    release = yamlio.load((head / f'apps/{app}/staging/helmrelease.yaml').read_text())
+    public = str(helmrelease.variables(release).get(events.NKEY_VARIABLE, ''))
+    if not PUBLIC_KEY.fullmatch(public):
+        raise Hold("the PR pairs its events key with no NATS public key")
+    return public
 
-    Its events key: a new Secret holding its NATS seed and nothing else, encrypted to this repository's
-    recipients alone (the value cannot be read here, nor by a reviewer). The shared files: exactly what
-    make app-sync derives from every instance's declaration, so no permission is granted by hand."""
+
+def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, files: list[str]) -> None:
+    """The new app's request, run with main's tooling on the newest main (``work``): its egress port, unit
+    registration and the shared files are made there, whatever main gained since the PR was opened. Its
+    events key is the PR's own (check_events_key)."""
+    commands = request(body)
+    if len(commands) != 1 or commands[0][:2] != ['app-new', app]:
+        raise Hold('a new-app PR is one make app-new of its own app')
+    argv = commands[0][1:]
+    if any(arg.split('=')[0] in GATE_FLAGS for arg in argv):
+        raise Hold('the request sets options only the gate may set')
+    if instance_folder(base, app, 'staging').exists():
+        raise Hold('new-app PR overwrites an existing staging instance')
+    extra = []
     key = f'apps/{app}/staging/{events.SECRET_FILE}'
     if key in files:
-        if (base / key).exists():
-            raise Hold('new-app PR replaces an existing events key')
-        doc = yamlio.load((candidate / key).read_text()) or {}
-        sops = doc.get('sops') or {}
-        values = doc.get('stringData') or {}
-        if (doc.get('kind') != 'Secret' or 'data' in doc
-                or doc.get('metadata') != {'name': events.secret_name(app), 'namespace': f'{app}-staging'}
-                or set(values) != {events.SEED_VARIABLE} or not str(values[events.SEED_VARIABLE]).startswith('ENC[')
-                or {r.get('recipient') for r in sops.get('age') or []} != recipients(base, key)
-                or any(sops.get(other) for other in ('kms', 'gcp_kms', 'azure_kv', 'hc_vault', 'pgp'))):
-            raise Hold("the events key is not the app's generated, encrypted NATS seed alone")
-    if any(path in DERIVED for path in files):
-        runner.run(['make', 'app-sync'], cwd=candidate)
-        changed = [line[3:] for line in runner.output(['git', 'status', '--porcelain'], cwd=candidate).splitlines()
-                   if line.strip()]  # 'XY path': the status columns may start with a space
-        if changed:
-            raise Hold('shared files differ from what the instances declare (make app-sync): ' + ', '.join(changed))
+        extra = ['--events-key', check_events_key(base, head, app)]
+        (work / key).parent.mkdir(parents=True)
+        shutil.copyfile(head / key, work / key)
+    said = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(said):
+        problem = new.platform_origin_problem(new.parse_args(argv))
+        code = 2 if problem else new.main([*argv, '--root', str(work), '--no-policy-check', *extra])
+    if code:
+        reason = problem or ([line for line in said.getvalue().splitlines() if line.strip()] or ['it failed'])[-1]
+        raise Hold(f'the request does not replay on main: {reason}')
 
 
-def check_promotion(base: Path, candidate: Path, app: str, body: str, files: list[str], runner: Runner) -> None:
+def replay_promotion(base: Path, head: Path, work: Path, app: str, body: str, runner: Runner) -> None:
+    """A later promotion of the reviewed image, run with main's tooling on the newest main (``work``)."""
+    from swhurl.apps import edit
     from swhurl.console.promotion import inputs_hash
 
     meta = review_metadata(body)
@@ -153,44 +144,60 @@ def check_promotion(base: Path, candidate: Path, app: str, body: str, files: lis
         raise Hold('production changed after review; review a fresh promotion')
     if inputs_hash(base) != meta.get('inputs'):
         raise Hold('promotion tooling, policy, chart or platform settings changed; review again')
-    source, target = promotion.read(base, app)
-    actual = promotion.YamlFile(instance_folder(candidate, app, 'prod') / 'helmrelease.yaml').data
-    if promotion.ops.image_reference(promotion.image_of(actual)) != meta.get('image'):
-        raise Hold('PR no longer pins the reviewed image')
+    _, target = promotion.read(base, app)
     if target is None:
         # Production's own credentials (a NATS key, Secret placeholders) cannot be replayed here.
         raise Hold('a first promotion creates production: a person reviews and merges it')
     if promotion.fingerprint(base, app, 'staging', ignore_image=True) != meta.get('source'):
         raise Hold('staging configuration changed after review; review a fresh promotion')
-    with tempfile.TemporaryDirectory(prefix='merge-promotion-') as tmp:
-        work = Path(tmp) / 'tree'
-        shutil.copytree(base, work, ignore=shutil.ignore_patterns('.git'))
-        # The promotion replayed on main: the PR must be exactly what it produces. Staging may have a newer
-        # build by now; the reviewed image is the one promoted.
-        from swhurl.apps import edit
-        staging = YamlFile(instance_folder(work, app, 'staging') / 'helmrelease.yaml')
-        promotion.image_of(staging.data).update(new.parse_image(meta['image']))
-        staging.save()
-        with contextlib.redirect_stdout(io.StringIO()):
-            edit.promote(work, app, expect_image=meta['image'], runner=runner)
-        shutil.copyfile(instance_folder(base, app, 'staging') / 'helmrelease.yaml', staging.path)
-        world, _ = model_sync.read(work)
-        if world[Instance(app, 'prod')].release.publishes != model_sync.read(base)[0][Instance(app, 'prod')].release.publishes:
-            raise Hold('the promotion changes what the app publishes, which changes NATS: a person reviews it')
-        produced = sorted(path for path in changed_files(base, work))
-        if sorted(files) != produced:
-            raise Hold('later promotion changes more than the image and what it brings: '
-                       + ', '.join(sorted(set(files) ^ set(produced))))
-        for rel in produced:
-            if not same_file(candidate / rel, work / rel):
-                raise Hold(f'the PR differs from the promotion replayed on main: {rel}')
+    # Staging may have a newer build by now; the reviewed image is the one promoted.
+    staging = YamlFile(instance_folder(work, app, 'staging') / 'helmrelease.yaml')
+    promotion.image_of(staging.data).update(new.parse_image(meta['image']))
+    staging.save()
+    with contextlib.redirect_stdout(io.StringIO()):
+        edit.promote(work, app, expect_image=meta['image'], runner=runner)
+    shutil.copyfile(instance_folder(base, app, 'staging') / 'helmrelease.yaml', staging.path)
+    if model_sync.read(work)[0][Instance(app, 'prod')].release.publishes != model_sync.read(base)[0][Instance(app, 'prod')].release.publishes:
+        raise Hold('the promotion changes what the app publishes, which changes NATS: a person reviews it')
 
 
-def same_file(a: Path, b: Path) -> bool:
-    """Both absent, or the same bytes or the same YAML documents."""
+def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: str) -> None:
+    """The replay may change only this instance, its unit and registration and the shared files derived
+    from every instance: a change to another app is that app's team's to review. The PR's own files must
+    be what the replay made; its copies of the shared files are made again (the replay wins)."""
+    folder, unit = f'apps/{app}/{env}/', instance_unit_file(Path(), app, env).as_posix()
+
+    def own(path: str) -> bool:
+        return path.startswith(folder) or path == unit
+    changed = changed_files(base, work)
+    others = sorted(path for path in changed if not own(path) and path not in (REGISTRY, *DERIVED))
+    if others:
+        raise Hold('it also changes ' + ', '.join(others[:5]) + ': a person reviews it')
+    extra = sorted(path for path in files if not own(path) and path not in (REGISTRY, *DERIVED))
+    if extra:
+        raise Hold('the PR changes files its request does not: ' + ', '.join(extra[:5]))
+    for path in sorted(set(changed) | set(files)):
+        if own(path) and not same_file(head / path, work / path, reallocated=path.endswith('/helmrelease.yaml')):
+            raise Hold(f'the PR differs from what its request makes on main: {path}')
+    made = sorted(path for path in changed if path.endswith('.sops.yaml') and path != f'{folder}{events.SECRET_FILE}')
+    if made:
+        raise Hold(f'the request makes an encrypted file, which a person reviews: {", ".join(made)}')
+
+
+def same_file(a: Path, b: Path, *, reallocated: bool = False) -> bool:
+    """Both absent, or the same bytes or the same YAML documents. ``reallocated``: a HelmRelease whose egress
+    port the replay may have chosen again (another instance took the PR's while it was open)."""
     if not (a.is_file() and b.is_file()):
         return a.is_file() == b.is_file()
-    return a.read_bytes() == b.read_bytes() or yamlio.load_all(a.read_text()) == yamlio.load_all(b.read_text())
+    if a.read_bytes() == b.read_bytes():
+        return True
+    def documents(path: Path) -> list:
+        found = list(yamlio.load_all(path.read_text()))
+        for doc in found if reallocated else ():
+            for key in PROXY_VARIABLES:
+                (helmrelease.container(doc).get('env') or {}).pop(key, None)
+        return found
+    return documents(a) == documents(b)
 
 
 def changed_files(base: Path, work: Path) -> list[str]:
@@ -246,35 +253,34 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
     if runner.output(['git', 'rev-parse', 'FETCH_HEAD'], cwd=root).strip() != sha:
         raise Hold('PR head changed during fetch')
     with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
-        base, candidate = Path(tmp) / 'base', Path(tmp) / 'candidate'
+        base, head, work = Path(tmp) / 'base', Path(tmp) / 'candidate', Path(tmp) / 'work'
         try:
-            runner.run(['git', 'worktree', 'add', '--detach', str(base), base_sha], cwd=root)
-            runner.run(['git', 'worktree', 'add', '--detach', str(candidate), base_sha], cwd=root)
+            for path, revision in ((base, base_sha), (head, sha), (work, base_sha)):
+                runner.run(['git', 'worktree', 'add', '--detach', str(path), revision], cwd=root)
+            body = pr.get('body') or ''
             if action == 'new':
-                merge_new_app(runner, base, candidate, sha, app, files)
+                replay_new_app(base, head, work, app, body, files)
             else:
-                runner.run([*GIT, 'merge', '--no-ff', '--no-edit', sha], cwd=candidate)
-            scope(base, candidate, files, app, 'prod' if action == 'promote' else 'staging', new_app=action == 'new')
-            if action == 'promote':
-                check_promotion(base, candidate, app, pr.get('body') or '', files, runner)
-            elif instance_folder(base, app, 'staging').exists():
-                raise Hold('new-app PR overwrites an existing staging instance')
-            else:
-                check_new_app(base, candidate, files, app, runner)
-            # scope holds both actions to app files, their unit and its registration (and a new app's
-            # generated key and derived shared files, checked above). check-repo renders the registered
-            # unit; tooling tests read frozen fixtures, and templates/OTel are unchanged.
-            runner.run(['make', *MERGE_CHECKS], cwd=candidate)
+                replay_promotion(base, head, work, app, body, runner)
+            scope(base, head, work, files, app, 'staging' if action == 'new' else 'prod')
+            # check-repo renders the registered units; tooling tests read frozen fixtures, and templates and
+            # OTel are unchanged.
+            runner.run(['make', *MERGE_CHECKS], cwd=work)
             # Recheck the human's hold and the exact PR head after the potentially long validation.
             eligible(runner.json(['gh', 'api', pr_path]), sha, repo)
             current = runner.output(['git', 'ls-remote', 'origin', 'refs/heads/main'], cwd=root).split()[0]
             if current != base_sha:
                 raise Hold('main moved during validation; retry against the new base')
-            # Fast-forward rejects a concurrent main push. No force push, and no unvalidated merge result.
-            runner.run(['git', 'push', 'origin', 'HEAD:refs/heads/main'], cwd=candidate, mutating=True)
+            # The replayed tree, as a merge of the PR head: GitHub shows the PR merged. Fast-forward rejects
+            # a concurrent main push (the next run replays again). No force push, no unvalidated tree.
+            runner.run(['git', 'add', '-A'], cwd=work)
+            tree = runner.output(['git', 'write-tree'], cwd=work).strip()
+            commit = runner.output([*GIT, 'commit-tree', tree, '-p', base_sha, '-p', sha,
+                                    '-m', f'Merge pull request #{number}: {pr.get("title", "")}'], cwd=work).strip()
+            runner.run(['git', 'push', 'origin', f'{commit}:refs/heads/main'], cwd=work, mutating=True)
             runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
         finally:
-            for path in (candidate, base):
+            for path in (work, head, base):
                 runner.run(['git', 'worktree', 'remove', '--force', str(path)], cwd=root, check=False)
 
 

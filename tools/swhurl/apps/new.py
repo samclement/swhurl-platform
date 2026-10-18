@@ -181,9 +181,11 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
     validate(args, root)
     created = Instance(args.name, args.env)  # validate() has refused any other name
     instance = instance_folder(root, args.name, args.env)
-    for path in (instance, instance_unit_file(root, args.name, args.env)):
-        if path.exists():
-            raise GenerationError(f'{path} already exists; refusing to overwrite')
+    prepared = {instance / events.SECRET_FILE} if args.events_key else set()
+    if args.events_key and not (instance / events.SECRET_FILE).is_file():
+        raise GenerationError(f'--events-key needs its seed in {instance / events.SECRET_FILE}')
+    if instance.exists() and set(instance.iterdir()) - prepared or instance_unit_file(root, args.name, args.env).exists():
+        raise GenerationError(f'{args.name}/{args.env} already exists; refusing to overwrite')
     entry, planned = records(args), {}
     try:
         if getattr(args, 'offers', False) and args.from_repo:
@@ -198,7 +200,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             planned = intake.offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
     except EditError as error:
         raise GenerationError(f'what the app offers could not be read: {error}') from None
-    instance.mkdir(parents=True)
+    instance.mkdir(parents=True, exist_ok=True)
     try:
         encrypted = set()
         if args.secret_keys and args.env == 'prod':
@@ -206,7 +208,10 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             write_encrypted_secret(instance, app_secret(args.name), created.namespace, args.secret_keys, runner=runner)
             encrypted.add(APP_SECRET)
         allocations = entry.settings.allocations
-        if events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions:
+        if args.events_key:
+            allocations = replace(allocations, events_key=args.events_key)
+            encrypted.add(EVENTS_SECRET)
+        elif events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions:
             # Every instance signs in to NATS as itself: its feature flag overrides, and events if it declares them.
             allocations = replace(allocations, events_key=intake.new_nats_key(instance, args.name, args.env, runner=runner))
             encrypted.add(EVENTS_SECRET)
@@ -343,6 +348,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
                    help='staging only: Flux deploys each newer image the app publishes (tags <run>-<sha>); '
                         'production still changes through app-promote')
     p.add_argument('--issuer', default='letsencrypt-prod', choices=['letsencrypt-prod', 'letsencrypt-staging', 'selfsigned'])
+    p.add_argument('--events-key', metavar='PUBLIC', help='the NATS public key whose seed is already in the new '
+                   f"instance's {events.SECRET_FILE} (the merge gate replaying a new app's pull request); default: make one")
     p.add_argument('--root', type=Path, default=ROOT)
     p.add_argument('--no-register', dest='register', action='store_false',
                    help='do not add the unit to clusters/home/kustomization.yaml')

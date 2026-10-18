@@ -1916,3 +1916,11 @@ A newer render replaces an unfinished change's target: **Superseded** describes 
 **Size:** stage 4's `tools/swhurl` diff from `46866761` adds 213 lines and removes 196, net +17. Removed progress machinery includes `Job.stage`, stored marks and endings, `Jobs.settle`, commit-comparison rollout checks and persisted verdicts. Immutable render targets are cached by commit; PR, current main and cluster facts are read afresh.
 
 **Still unexercised:** two simultaneous new-app merges through the replay, a first promotion through the new path, and `app-secret`. Stage 5 (production needs, event compatibility and SQLite backups) remains planned in [section 0](plan.md#0-where-this-paused-and-what-is-left).
+
+## Activity review fixes (18 October 2026)
+
+**Change:** `48f1450b` replaces Activity's health adapter, which rewrote Git revisions to `render` and an Updating Flux unit to True, with an explicit rule in `apps/state.py` (`verdict(render_applied=True)`: once the render hash is proved applied, Git revisions do not count and the unit counts only when failing or suspended). Activity reads pull requests, the cluster, `main` and merged trees at once; merged pull requests are kept (a closed one can be reopened); both caches drop their oldest entry instead of clearing. A job's output is one log; `stage_of`, `sections` and `Section` are gone. Plan sections 21 and 22 name today's functions. `make check` passed 807 tests; Validate passed and deployed console image `src-213fa7ad112a2e74` (`1449ab11`).
+
+**Live verification:** `make flux-reconcile` and `make verify-platform` passed. Notification checker and dashboard jobs `29872443` succeeded on the new image. Through a port-forward with an identity header (not a browser sign-in), `/activity` answered 200 in 1.10 s and then 1.17 s, and job #27's page in 0.64 s with one output block. There is no before measurement, so the gain from concurrent reads is not shown; the cache is in memory, so a restart still reads every merged tree once. Activity showed 5 Applied, 1 Live in prod, 3 Removed from staging, 2 Superseded, 13 Merged (historical), 1 Failed, 1 Interrupted and 1 Closed.
+
+**Open:** what **Superseded** means for a change that went live first (gap 1 of the review) is the operator's decision; the plan says an unfinished change, the console page and code say any change.

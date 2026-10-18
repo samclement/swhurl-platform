@@ -722,8 +722,8 @@ components:
                          {name: {'path': '/ready', 'port': 9090} for name in ('readiness', 'liveness', 'startup')})
         self.assertEqual({app_values['defaultPodOptions']['securityContext'][k] for k in ('runAsUser', 'runAsGroup', 'fsGroup')}, {1000})
         self.assertEqual(main['env']['OTEL_SERVICE_NAME'], 'orders')
-        self.assertEqual(main['resources'], {'requests': {'cpu': '50m', 'memory': '32Mi'}, 'limits': {'memory': '128Mi'}},
-                         'raised to the minimum, never lowered to it')
+        self.assertEqual(main['resources'], {'requests': {'cpu': '50m', 'memory': '16Mi'}, 'limits': {'memory': '128Mi'}},
+                         "the image's minimum where it states one, the platform's default where it does not")
         self.assertTrue(self.env('hello')['SWHURL_SERVICE_ORDERS_URL'].endswith(':9090'), "the caller follows the port")
         network = yaml.safe_load((release.parent / contract.NETWORK_POLICY_FILE).read_text())
         self.assertEqual({p['port'] for rule in network['spec']['ingress'] for p in rule['ports']}, {9090})

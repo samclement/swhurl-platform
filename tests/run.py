@@ -1,9 +1,11 @@
-"""Run the unit tests in parallel, one test class per job (make test).
+"""Run the unit tests in parallel (make test).
 
 Most of the suite's time is spent waiting on subprocesses (make, bash, fake
-kubectl), so a process pool sized to the CPU count cuts wall time. A class is the
-unit so setUpClass runs once. Each class's output is buffered and failures are printed whole after the run.
-It prints the slowest classes, so a slow one is seen before it slows every run.
+kubectl), so a process pool sized to the CPU count cuts wall time. Each test is a
+job, except that a class with setUpClass (or a module with setUpModule) is one job,
+so that setup runs once; one long class then cannot hold the whole run. Each job's
+output is buffered and failures are printed whole after the run. It prints the
+slowest classes, so a slow one is seen before it slows every run.
 Usage: python tests/run.py [-j N] [-v] [-k PATTERN]
 """
 import argparse
@@ -18,15 +20,37 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 
 
-def _classes(suite):
-    """Dotted names of the test classes, in discovery order."""
-    seen = {}
+def _tests(suite):
+    """The leaf tests, in discovery order."""
     for test in suite:
         if isinstance(test, unittest.TestSuite):
-            seen.update(dict.fromkeys(_classes(test)))
+            yield from _tests(test)
         else:
-            seen[test.id().rsplit('.', 1)[0]] = None
+            yield test
+
+
+def _shared_setup(test) -> bool:
+    cls = type(test)
+    module = sys.modules.get(cls.__module__)
+    return cls.setUpClass.__func__ is not unittest.TestCase.setUpClass.__func__ or hasattr(module, 'setUpModule')
+
+
+def _jobs(suite, pattern=''):
+    """Dotted names to run, in discovery order: a test, or a whole class when it shares setup."""
+    seen = {}
+    for test in _tests(suite):
+        name = test.id()
+        cls = name.rsplit('.', 1)[0]
+        if name.startswith('unittest.loader.') or pattern not in cls:
+            continue
+        seen[cls if _shared_setup(test) else name] = None
     return list(seen)
+
+
+def _class_of(name: str) -> str:
+    """The class a job's name belongs to (a job is a class or one of its tests)."""
+    head, _, last = name.rpartition('.')
+    return head if last.startswith('test') else name
 
 
 def _init():
@@ -53,15 +77,15 @@ def main():
     loader = unittest.TestLoader()
     suite = loader.discover(str(TESTS), top_level_dir=str(TESTS))
     # A module that fails to import cannot be named for a worker: report it here.
-    names = [n for n in _classes(suite) if not n.startswith('unittest.loader.') and args.k in n]
+    names = _jobs(suite, args.k)
     if not names:
         print(f'no test class matches {args.k!r}')
         return 1
-    start, ran, skipped, failures, times = time.monotonic(), 0, 0, list(loader.errors), []
+    start, ran, skipped, failures, times = time.monotonic(), 0, 0, list(loader.errors), {}
     with ProcessPoolExecutor(max_workers=args.j, initializer=_init) as pool:
         for name, ok, count, skips, output, seconds in pool.map(_run, names):
             ran, skipped = ran + count, skipped + skips
-            times.append((seconds, name))
+            times[_class_of(name)] = times.get(_class_of(name), 0) + seconds
             if args.v:
                 print(f'{name} ... {"ok" if ok else "FAIL"}', flush=True)
             if not ok:
@@ -69,8 +93,8 @@ def main():
     for output in failures:
         print(output)
     if len(times) > 1 and args.slowest:
-        print('Slowest classes:')
-        for seconds, name in sorted(times, reverse=True)[:args.slowest]:
+        print('Slowest classes (their tests\' time added up):')
+        for name, seconds in sorted(times.items(), key=lambda item: -item[1])[:args.slowest]:
             print(f'  {seconds:6.1f}s  {name}')
     summary = f'Ran {ran} tests in {time.monotonic() - start:.1f}s with {args.j} workers'
     print(summary + (f' (skipped={skipped})' if skipped else ''))

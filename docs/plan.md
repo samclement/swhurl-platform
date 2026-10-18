@@ -8,7 +8,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 
 ### Open work
 
-**Code simplification — design contracts drafted 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) records the operator's direction: consolidate change planning, use explicit operation inputs, generate app manifests from small instance settings and an image-bound release record, narrow supported deployment shapes, and simplify Activity. **Keep seed images and automatic merge for eligible new staging apps** (operator, 18 October); promotions and other configuration PRs become manual. [Contract H](#contract-h-each-database-owns-an-independent-backup-job) adds the detailed backup design: one CronJob per database, a shared backup implementation, verified S3 publication and independent freshness checks. Credential provisioning and the future of the host archive cache must be settled before backup cutover. This is a design, not an implementation or cluster cutover. First implementation step: a fixture-only change planner for calls, proving the same outputs and failure behavior before widening it. The future needs-promotion work in section 21 must use this design rather than add a second transformation.
+**Code simplification — design revised 18 October 2026:** [section 24](#24-code-simplification--design-contracts-18-october-2026) defines the primitives (Instance, Release, Settings, render, check, publish), the use cases as compositions of them, capabilities as the unit of co-location, and the sequence: prune and inventory, remove the console timeline and make promotions manual, a shadow model checked against every instance, operations moved onto it one at a time, then a single cutover commit. **Keep seed images and automatic merge for eligible new staging apps** (operator, 18 October). Operator decisions owed: which throwaway instances to remove, and a ruleset on `main` before promotions become manual. Section 21's deferred needs and section 22's event check build on the model rather than add a transformation. Backups are [section 25](#25-per-database-backups--designed-18-october-2026-not-started); an interim split of the host timer is proposed.
 
 **New app creation speed — delivered 14 October 2026:** Kotlin `v0.2.5` (`03872aa`, template PR #27) and catalogue `89a666e` are deployed. New-app merge verification uses the same schema and app-policy checks as promotions (`4a87c7c`); the Kotlin runtime stage, dependency caches and smoke-test polling are described in [the canonical guide](apps.md#first-builds-of-new-apps). All seven template CI combinations passed on PR and main, and `make check` passed 749 tests and 32 policy combinations. Equivalent fresh console creations became Available in 312 s before and 247 s after; merge verification fell from 71 to 21 s, while the complete image workflow did not improve in this pair. [Dated evidence](current-state.md#new-app-creation-speed-14-october-2026) records each stage and measurement limits. Platform health and HTTP/HTTPS/handler checks passed. The operator keeps `swhurl-try-17/staging` and its repository/package as a current-template example and timing reference. Only the older baseline `swhurl-try-16` is removed from Git and the cluster; owner cleanup remains for its public repository and package because the current `gh` token lacks repository deletion and package access. The signed-in browser path remains unexercised. [Cleanup evidence](current-state.md#timing-app-cleanup-14-october-2026) records the live removal. The next proposed optimisation is separating Kotlin app identity from compiled build inputs, so fresh apps with matching code can reuse compiled layers; current default renders differ in build inputs only at `src/main/resources/application.properties`, and the compile/test/package step took 44–52 s. Preserve local and deployed identity, prove cache hits and invalidation, and retain normal builds for personalised API/events or changed code. This is a proposal, not authorised implementation.
 
@@ -17,7 +17,7 @@ The platform is live. Every deliverable in section 3 is done except PR06's remai
 **Conditional readability — implementation completed 13 October 2026:** [section 19](#19-conditional-readability--approved-13-october-2026). Stages 1–5b are committed, published and live verified ([evidence](current-state.md#conditional-readability-13-october-2026)); the final scan found no chained production ternaries. The signed-in browser check for stage 3d is still pending. No further refactor is authorized by the original outline; reviewed candidates and their boundaries are recorded in section 19.
 
 1. **PR06 — private app repositories and images** ([section 4](#private-app-repositories-and-images--planned-9-october-2026-not-started)). **On hold while the incident reviewer is rolled back.** No private-repository or image change was implemented. The 9 October design in section 4 remains a record for reconsideration, not the next execution task.
-2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: replace the backup use of IAM user `sam` with scoped credentials; implement the per-database CronJobs in [contract H](#contract-h-each-database-owns-an-independent-backup-job) after its credential/cache decisions and restore gates. A public pinned backup image does not depend on the deferred private-image work in PR06.
+2. **PR08a gate** (section 5; drill plan in [section 13](#13-recovery-drill-pr08a-gate-and-fresh-bootstrap--designed-3-october-2026-not-started)): restore on a separate machine from S3 using only the docs. Follow-ups: replace the backup use of IAM user `sam` with scoped credentials; implement the per-database CronJobs in [section 25](#25-per-database-backups--designed-18-october-2026-not-started) after its credential/cache decisions and restore gates. A public pinned backup image does not depend on the deferred private-image work in PR06.
 3. **Final operator exercise** (section 6), using only the docs.
 4. **Operator browser checks:** a real Google-signed-in session for (a) reviewing and submitting a promotion (automated UI proof used the local dev identity) and (b) the live job-output stream, including that Traefik and ForwardAuth do not buffer it ([section 12](#12-live-job-output-on-the-console-deployed-3-october-2026)). Also confirm the console's `GITHUB_TOKEN` is limited to this repository.
 5. **Notification gaps** ([contract](services.md#notification-expectations)): live fixture uninstall/rollback and timed unhealthy/recovery delivery exercises; alerts for failed or stale backups, external availability, certificate expiry or renewal failure and disk pressure.
@@ -1501,131 +1501,97 @@ Checklist: data retention (Kubernetes keeps one successful and one failed Job; l
 
 ## 24. Code simplification — design contracts, 18 October 2026
 
-**Status:** detailed design for review; no implementation or live migration is recorded here. The operator wants the refactors discussed below and their risks explained. The retained creation behavior was explicitly chosen on 18 October: **seed images and automatic merge for eligible new staging apps stay**. This section is the canonical future design; the operating pages continue to describe the implementation that actually runs.
+**Status:** design, revised after review on 18 October 2026; nothing is implemented. The operator keeps **seed images and automatic merge for eligible new staging apps**; promotions and other configuration PRs become manual. The operating pages describe what runs today until each stage ships. Backups moved to [section 25](#25-per-database-backups--designed-18-october-2026-not-started).
 
-### Decision and boundaries
+### Goal and boundaries
 
-The goal is fewer independent descriptions of the same operation, fewer recovery branches, and clear ownership of app settings. Preserve GitOps, existing application capabilities, fast creation, data safety and the current access model. Changing the app access model, CNI, event-compatibility rules or supported app types is separate work. Contract H proposes moving backup execution into Kubernetes while retaining the existing S3 destination; its backup-credential and host-cache decisions are explicit prerequisites, not implicit authorization for live changes.
+Every app operation is a composition of a few primitives with one owner each, so a new app, a deploy and a promotion give predictable results and the code for one capability lives, and is tested, in one place. Measure success by what disappears: manifests read back as inputs, the second promotion implementation, command-line reconstruction, and the console's reconstructed timeline.
 
-| Approach | Reduction and cost | Decision |
+Unchanged: GitOps through Flux, Flux paths and resource names, the access model, the supported app types (section 23), seed images and creation speed. No framework, plugin engine, generic Helm pass-through or new cluster service.
+
+Checked in source on 18 October: grants are read back from generated manifests (`derive.py`, `edit.py`); later promotion is in both `apps/edit.py` (1,279 lines) and `apps/per_environment.py`; first promotion rebuilds arguments for `new.parse_args`; `new` and `edit` import each other; `console/stages.py` reconstructs one timeline from jobs, PRs and rollouts. There are 15 instances, several of them throwaways.
+
+### Primitives
+
+| Primitive | Owns | Never |
 | --- | --- | --- |
-| Move functions into smaller files | Improves navigation; leaves duplicate transformations and sources of truth | Use only when a responsibility becomes clear; not a stage by itself |
-| Consolidate operation inputs, calculations and writes while retaining editable manifests | Smaller, reversible steps; estimated 100–300 production Python lines saved before further product changes | Start here |
-| Generate app manifests from explicit instance settings and image requirements | Removes reverse inference, arbitrary-shape preservation and bespoke first-promotion conversion; needs a migration and ends handwritten app-manifest customization | Target design, with fixture and no-op migration gates before live use |
+| **Instance** (`apps/instance.py`) | app name, environment, path | — |
+| **Release** (`release.yaml`) | image digest, source commit, needs, offers' hashes, seed provenance. Immutable; written only by trusted intake (creation, the Deploy workflow) and copied whole by promotion | grants anything |
+| **Settings** (`instance.yaml`) | team, exposure, calls, subscriptions, egress, alerts, capacity and allocations, per environment; written by platform commands or a reviewed edit | describes the image |
+| **render**(release, settings, platform) → files | every app manifest, and the instance's contribution to shared files | reads the network, chooses an allocation, reads generated files back |
+| **check**(tree) → problems | app policy on Helm-rendered objects, and committed output equals `render` | repairs anything |
+| **publish**(changes) | one Git commit (console, compare-and-swap on `main`) or writing the checkout (CLI) | computes anything |
 
-The reduction estimates overlap. Replacement parsers, rendering and tests also cost code; no 1,000-line saving is promised. Measure net production lines after each completed stage, alongside the operations and compatibility paths actually removed.
+Encrypted `*.sops.yaml` files keep their existing owners; render reads only their names.
 
-**Checked assumptions:** app manifests currently hold grants and derived runtime wiring together; later promotion is implemented in both `apps/edit.py` and `apps/per_environment.py`; first promotion reconstructs command-line inputs; `new` and `edit` import each other; the console's jobs, PRs and rollouts have a combined progress model. These are source observations, not a new live audit.
+### Use cases as compositions
 
-**Design assumptions to verify during the prototype:** all currently deployed instance settings can be represented without a generic Helm override, and deterministic rendering can reproduce their effective Kubernetes objects. An unsupported real instance stops migration and is reported; it is never approximated.
+| Use case | Composition | Merge |
+| --- | --- | --- |
+| New app | create repo → Release(seed) + default Settings → render → check → PR | creation gate, automatic |
+| Staging deploy | new Release → render → check → commit | Deploy workflow, as today |
+| First promotion | staging's Release + new prod Settings (team, capacity copied; host derived; egress and subscriptions empty; calls listed for review) → render → check → PR | manual |
+| Later promotion | staging's Release + existing prod Settings → render → check → PR | manual |
+| Rollback | an earlier Release from Git history → render → check | manual; refused if it does not fit retained storage |
+| Scale, expose, calls, events, egress, alerts, team | edit Settings → render → check → PR or commit | manual |
+| Remove | delete Settings and Release → render shared files → check → PR | manual |
 
-~~~mermaid
-flowchart LR
-  ui["Console / CLI"] --> req["Parse an operation request"]
-  inputs["Pinned release + instance settings + existing allocations"] --> plan["Calculate changes"]
-  req --> plan
-  plan --> render["Render complete app and shared outputs"]
-  render --> validate["Validate proposed tree"]
-  validate --> git["Publish files / one Git commit"]
-  git --> pr["New staging: narrow auto-merge gate<br/>Other console PRs: manual merge"]
-  pr --> flux["Flux and Helm"]
-~~~
+**Example:** release B listens on 9090, A on 8080. Staging selects B and renders its Service, probes and callers' addresses for 9090; production keeps rendering A. Promotion copies B's `release.yaml` into production and renders from production's own Settings. Nothing is inferred and nothing differs by code path.
 
-The same calculations run in a terminal, in the console's downloaded tree and in trusted CI. This remains ordinary Python functions and small records; no plugin engine, general workflow framework or new cluster service is proposed.
+### Capabilities: the unit of co-location
 
-### Contract A: calculate and validate before publishing file edits
+Code is grouped by capability, not by layer. Each capability module owns its part of the Release and Settings schemas, its rendered manifests, its contribution to shared files, its policy rules and its tests:
 
-**Current problem:** commands save a file, derive related files, and restore selected originals on failure. Each command has to know which writes it must undo. `derive.sync_env` already collects many edits; extend that approach instead of introducing a parallel mechanism.
+| Capability | Today | Shared output |
+| --- | --- | --- |
+| workload (by app type: web, API, worker, scheduled job) | `contract.py`, `helmrelease.py`, `new.py` | units, Reloader namespaces |
+| exposure | `new.py`, `ops.py`, `edit.py` | — |
+| calls | `calling.py`, `connections.py` | signing keys |
+| events | `events.py`, `keys.py`, `nkeys.py` | NATS users |
+| egress | `egress.py` | proxy ports |
+| sqlite | `contract.py`, `new.py`, `edit.py` | the backup job ([section 25](#25-per-database-backups--designed-18-october-2026-not-started)) |
+| secrets, telemetry, flags, alerts, offers | spread across `new.py`, `edit.py`, `derive.py`, `offers.py` | — |
 
-The operation boundary has three steps:
+`render` is the workload plus each capability's contribution; shared files are each capability's contribution over every instance; `check` is every capability's rules. Adding or changing a capability touches one module and its test. `policy.py` (613 lines) splits along the same lines. Offline policy imports stay free of `ruamel.yaml` and I/O.
 
-1. **Prepare:** read the repository snapshot and obtain required external facts through existing adapters. Resolve immutable image/source references; prepare a new encrypted credential only if this operation needs one.
-2. **Plan and validate:** calculate the full desired tree in memory or a disposable working tree. Render, check app policy, and identify every write and deletion. No edit to the caller's checkout happens here.
-3. **Publish:** verify preconditions, then install those already validated changes in the checkout, or send one Git tree and commit through the console's GitHub adapter.
+### Rules
 
-Illustrative signatures, not a new public CLI:
+1. **One writer per field.** Release fields come from the image; Settings fields from the platform. A release requests capabilities; it never grants exposure, callers, subscriptions or destinations.
+2. **Release is trusted.** Only intake writes it, after resolving the digest and source commit and reading the image's `swhurl.yaml` at that commit; CI refuses a `release.yaml` that intake did not write. Production's `release.yaml` must equal one staging has had. Render never calls GitHub or GHCR.
+3. **Generated means generated.** `make check-apps` fails when committed output differs from `render`; `make app-sync` regenerates. Nothing reads grants back from output.
+4. **Unavailable is not absent.** A failed read fails the operation; it is never an empty grant set, a missing database or no minimum.
+5. **Allocations persist.** Storage size and class and the egress proxy port are recorded once and survive every render; a new app never renumbers another's port.
+6. **Capacity is a floor-respecting choice.** Effective resources are the larger of the Settings value and the release's minimum.
+7. **Environments share nothing but the release.** No credential, claim or grant crosses from staging to production; first promotion lists staging's calls for review.
+8. **No pass-through.** Unknown fields and versions are errors. A real instance with a setting the schema cannot express stops the migration and is reported, never approximated.
+9. **Deterministic.** Same inputs, same bytes: no timestamps, random values or environment-dependent defaults.
 
-~~~python
-plan_change(snapshot, request, prepared_inputs) -> FileChanges
-validate_change(snapshot, changes) -> list[Problem]
-publish_change(root, changes) -> ChangedFiles
-~~~
-
-`FileChanges` contains relative paths, expected prior content hashes (including expected absence), proposed bytes or an explicit deletion, and a human summary. It contains encrypted Secret bytes where necessary, never plaintext secret values. A plan has a bounded operation scope, including the shared outputs its render changes.
-
-**Invariants:**
-
-- Validation failure, unavailable required input or stale preconditions leave the checkout byte-for-byte unchanged.
-- Preconditions cover every input that influenced the decision, including unchanged dependency settings, schemas and chart/platform inputs, not just files being written. Local publication holds one checkout-write lock across its final precondition check and writes; GitHub publication uses conditional ref updates. An unrelated change may proceed only when the operation's actual input hashes still match.
-- Paths cannot escape the repository or traverse symlinks outside the allowed change scope. Git metadata, age keys, host files and unrelated shared services are not writable through an app operation.
-- Planning the same desired state against its already updated snapshot produces no edits. Replaying an old plan is not an automatic overwrite; stale preconditions refuse it.
-- Complete multi-file atomicity is available at the Git commit boundary, not as a filesystem guarantee. The shared local publisher keeps original bytes and restores all touched paths if publication fails. A failed restoration explicitly reports partial publication and prevents a success result or commit.
-- Credentials and other irreversible external effects are not filesystem transactions. Encryption runs in scratch space through `Runner`; existing ciphertext is reused unchanged. A created GitHub repository is recorded immediately and is not deleted as rollback.
-- `DRY_RUN=true` may read necessary facts but must not create a repository, mint a credential, modify the checkout or run a mutating external tool. If full validation requires an input that dry run cannot prepare, name the outstanding check instead of claiming the complete candidate passed. Preserve the command registry's existing dry-run guarantees.
-
-**Acceptance:** exercise calls first: identical generated files for add/remove, no files touched on a missing callee, stale input rejected, and an injected failure during the final write restores earlier writes. Extend to events, egress, deploy and promotion only after that boundary is proven.
-
-**Deletion target:** per-command save/restore blocks and incomplete rollback bookkeeping. Keep one publisher's recovery path.
-
-### Contract B: explicit inputs; command-line parsing stays at the edge
-
-**Current problem:** `Declaration.needs` rebuilds `Needs` from a dictionary shaped for creation flags; first promotion builds arguments and invokes `new.parser`. Internal operations are coupled to option names, parser defaults and CLI-only behavior.
-
-Use the existing `Instance` and `Needs` concepts. A parsed image declaration contains `Needs` directly. Creation receives a small validated request identifying the instance, selected release, team, exposure and grants. It does not receive `argparse.Namespace`.
-
-- CLI parsing converts flags into the request and reports usage errors.
-- The console converts a form into the same operation inputs; it may still invoke the downloaded trusted tree's CLI. Do not execute a stale in-image implementation merely to avoid a subprocess.
-- Image-intake workflows prepare a release, then invoke the same staging operation.
-- Domain functions validate domain values and return results; they do not parse command lines, read process environment variables or choose exit codes.
-- Required input is absent, invalid, unavailable or present. A failed read is not an empty grant set, an absent resource or an unconstrained minimum.
-
-**Acceptance:** equivalent CLI/form requests generate the same edits; parser changes do not change internal defaults; first production no longer calls `parse_args`. Offline policy imports remain free of `ruamel.yaml` and I/O.
-
-**Deletion target:** argument reconstruction, repeated defaults and conversions between `seed` dictionaries and `Needs`. Do not replace them with several generic request/response frameworks.
-
-### Contract C: two small inputs own app configuration; manifests are outputs
-
-Each migrated instance keeps two non-Kubernetes input documents beside its generated files:
-
-| Input | Writer and meaning |
-| --- | --- |
-| `release.yaml` | Creation, staging intake or promotion writes the selected immutable image, its verified source and normalized requirements/offers. It is a record of that image's contract, not another operator override surface |
-| `instance.yaml` | Platform commands or a reviewed operator edit write environment-specific choices, grants and durable allocations |
-| Existing `*.sops.yaml` files | Existing secret-setting/key-preparation operations own values. Rendering reads names and references, and preserves encrypted file bytes |
-
-These two input documents are not listed as Kubernetes resources in the instance's `kustomization.yaml`. Manifest discovery and schema checks explicitly distinguish them from rendered Kubernetes YAML. Existing Flux paths and resource ownership stay the same.
-
-Illustrative `release.yaml` (field names are part of the prototype contract):
+### Inputs
 
 ~~~yaml
+# apps/orders/staging/release.yaml
 version: 1
 image: ghcr.io/samclement/orders:12-abcdef0@sha256:<digest>
-source:
-  repository: samclement/orders
-  commit: <full-commit-sha>
-identity: {stack: kotlin, kind: web}
+source: {repository: samclement/orders, commit: <full-sha>}
+type: web
 description: Records orders
 needs:
   port: 8080
   healthPath: /healthz
   uid: 65532
-  telemetry: otlp
   resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}
   database: {kind: sqlite, initialSize: 1Gi}
   secrets: [API_TOKEN]
 offers:
-  api: {file: offers/openapi.json, sha256: <content-hash>}
+  api: {file: offers/openapi.json, sha256: <hash>}
 ~~~
 
-Illustrative `instance.yaml`:
-
 ~~~yaml
+# apps/orders/staging/instance.yaml
 version: 1
 team: payments
-exposure: {mode: private}
-capacity:
-  replicas: 1
-  resources: {memory: 256Mi, memoryLimit: 512Mi}
+exposure: private
+capacity: {replicas: 1, memory: 256Mi, memoryLimit: 512Mi}
 calls: [inventory]
 subscriptions: []
 egress: [api.example.com:443]
@@ -1635,249 +1601,96 @@ allocations:
   egressPort: 30101
 ~~~
 
-**Ownership and interpretation:**
+Field names are settled by the stage 2 prototype. Neither file is listed in the instance's `kustomization.yaml`. A seed release records `0-<app-commit>`, its digest and the template revision and answers; the app's first own build replaces it through the same intake.
 
-- Names and environments come from `Instance` and its path, rather than repeated editable identity fields.
-- The image's source commit and digest are resolved and bound before intake commits. Rendering never calls GitHub or GHCR. Requirements cannot be refreshed from the moving default branch or from a new tag target.
-- Trusted preparation checks the normalized declaration and offers against their immutable source files and the existing image/build or seed provenance checks. Generation equality alone cannot prove that a PR's hand-edited release record describes its image. A new or changed release record needs that provenance verification before it can enter trusted main; unavailable evidence refuses adoption. This adds no claim of stronger image attestation than the platform actually verifies.
-- For a seed, record its template revision and answer/type identity as provenance in addition to the new app's source commit. The normalized requirements must correspond to the generated app whose seed was selected; a template source commit must not masquerade as the app's commit.
-- Offers remain ordinary files with content hashes tied to the selected release. The new release record replaces duplicated source metadata where possible; no separate schema registry or retained version history store is added.
-- The `capacity` resources are explicit environment choices, not derived effective values. Rendering uses the greater of each choice and the image minimum. Thus a lower minimum never silently reduces an operator's allocation, and a higher minimum cannot be bypassed by an unavailable GitHub read.
-- `allocations` records values that must survive regeneration: existing storage size/class and the egress proxy port. Allocation is explicit during preparation; the pure renderer never chooses a new value on each run. A subsequent release or unrelated new app must not renumber existing proxy ports.
-- A release may request capabilities; it cannot grant exposure, callers, subscriptions or external destinations. Grants remain platform-owned and separate for staging and production.
-- Output is deterministic for the same inputs and platform settings: stable names, ordering and resource selection; no timestamps, random values, network reads or environment-dependent defaults.
-- Shared outputs (NATS users, egress configuration/ports, Reloader namespaces and unit registration) are derived from the complete proposed instance set. Read no grant back from generated environment variables or annotations.
+### Operations and publishing
 
-**Validation:** unknown versions/fields are errors. Inputs must be complete and internally consistent. Existing policy checks still inspect the Helm-rendered Kubernetes objects: renderer equality does not prove security. `make check-apps` gains a check that committed generated files equal their expected output; `make app-sync` becomes the way to regenerate them. Add no second mandatory regeneration command.
+An operation is a function `(snapshot, request) -> changes`: read the inputs, apply the request, render, check. It writes nothing. Requests are small validated records built by the CLI from flags, by the console from a form and by workflows from an image; no domain function sees `argparse`, environment variables or exit codes. `publish` then either commits the changed tree to `main` through the GitHub adapter with a compare-and-swap ref update (console, workflows) or writes the files (CLI). Local writes happen only after the check passes; a failed write stops and lists what was written, for `git restore`. No per-command save and restore. `DRY_RUN=true` prints the changes and runs nothing that mutates, including repository creation and key minting.
 
-**Supported shape:** the named main workload, its current supported Service/route/probes, SQLite storage, application secret references, telemetry, calls, events and egress. Preserve current chart pins and supported app types. Scheduled jobs and the frontend work in section 23 are separate features, not silently implemented by this migration.
+External effects stay outside the change: a created repository is recorded and never deleted as rollback; a new NATS key is encrypted through `Runner` and reused on retry.
 
-Handwritten app Helm overrides, arbitrary extra containers/volumes/resources, unknown annotations and YAML anchors are not silently preserved. The importer lists each unsupported field by instance and path. The operator either maps a needed setting into the supported schema or defers that instance. No unrestricted `extraHelmValues`, pass-through pod spec or permanent automatic legacy fallback is introduced.
+### Merging and Activity
 
-**Acceptance:** render every real instance and fixture in scratch space; compare effective HelmRelease values and Helm-rendered objects, including pod templates, ports, routes, identity, grants, probes, resources and persistence. Migration preserves resource names, selectors, Secret references, storage bindings, deletion policies and Flux paths. Existing encrypted bytes and database contents are unchanged. Fail on unexplained differences before committing a cutover.
+- **Creation gate (kept):** automatic merge only for a PR from the trusted creation operation that adds one absent staging instance and its shared-file changes. It runs `main`'s tooling, re-renders the shared files on the newest `main` (giving up a taken proxy port if needed), checks the combined tree, confirms the PR head is unchanged and merges with a compare-and-swap. Anything else waits for review.
+- **Everything else is manual.** Promotion-specific auto-merge labels, hold and resume controls are removed. **Prerequisite (operator decision):** a ruleset on `main` with required checks and a documented bypass for the operator and the Deploy and console-image bots, because `main` accepts direct pushes today.
+- **Three surfaces, one meaning each:** a job reports the console action (running, succeeded, failed, interrupted; log and actor); the PR link reports review, CI and merge on GitHub; the app page and `make app-status` report desired versus running through `apps/state.py`. A PR job succeeds when the PR is open ("Promotion PR opened; review and merge on GitHub"). `console/stages.py` and its persisted marks are removed. "Finish creating this app" stays, reusing the recorded repository. Notification checker behaviour is unchanged.
 
-**Deletion target:** inferring grants from generated runtime variables; app-only arbitrary-YAML editing paths; bespoke recognition and preservation of custom first-promotion shapes. Existing YAML editing for platform services may still need `YamlFile`/`ruamel.yaml`; do not claim the dependency disappears.
+### Sequencing
 
-### Contract D: one release-selection and rendering path for deployment and promotion
-
-**Example:** image A listens on 8080; image B listens on 9090. Staging selects B's release record and renders its own Service, probes, callers' addresses and policies for 9090. Production continues to render A and 8080. Promotion selects B's same release record in production and renders production's outputs from production's own settings.
-
-- Staging intake writes the image, requirements and offers as one release selection and one validated commit; a rejected image leaves the previous release and outputs intact.
-- Later promotion changes the selected release and release-bound offers. It preserves production grants, host, explicit capacity and allocations. Description and other image-owned settings follow the selected release.
-- First production creates fresh environment settings: its team is the app's team; replicas/resources are initialized from the reviewed staging choices; a signed-in host is derived for production; a public host must be supplied distinctly. External egress and subscriptions start empty, as today. Initial storage allocation follows that release's declared database, with independent production data. No staging credential value or data is copied.
-- Preserve the existing first-promotion treatment of calls: the review lists the staging calls proposed for production, requires each callee in production, and shows the derived edits admitting that production caller. Those grants become effective only through the manually reviewed first-production PR. A tested staging grant alone is not authorization to widen production access. This refactor does not silently remove existing app integrations or auto-approve new ones.
-- A new required production secret name requires its own production value before that promotion may merge. A staging image may continue to start without its value as today. Readiness and application behavior still determine whether it can serve.
-- A new database requires explicit review and a production allocation. An image never deletes storage, resizes an existing claim or changes the UID of a retained database. Removing those capabilities follows the documented explicit lifecycle path.
-- Rollback selects a previous known release contract as well as its image. It cannot reverse a database migration, delete an allocation, revoke operator grants or shrink explicit resources. A release incompatible with current retained storage is refused with the reason.
-
-Previous release records come from Git history or fresh verification of the old immutable image/source using a supported schema. There is no new release-history database and no fallback that combines an old image with the current image's requirements.
-
-The shared transformation calculates the requested target result; the planner validates the complete graph and rendered policy. Retain a small, explicit list of which input fields belong to the release and which to the environment. Replace raw-YAML cross-environment equality exceptions with input-schema ownership and regeneration checks; legitimate different image versions may have different needs.
-
-**Acceptance:** cover first and later promotion, 8080 to 9090, higher/lower resource floors, different production grants, missing production secret values, new database allocation and rollback with retained data. There is one implementation of each transformation. Trusted validation recomputes the expected generated files rather than accepting a PR's claimed output.
-
-**Deletion target:** separate later-promotion mutation/prediction functions, command-line reconstruction for first production, and `SETTINGS` rows whose only purpose was permitting derived raw YAML to differ. Preserve the actual field-ownership rules.
-
-### Contract E: keep fast creation and a narrow automatic merge gate
-
-The operator chose to retain automatic merge for eligible new staging apps. Removing all merge verification would contradict that choice.
-
-**Creation remains:** select app type/stack and pinned template; render the app repository; create it once; select a verified compatible seed or the ordinary built image; prepare its staging inputs and generated outputs; open a PR; automatically merge only if the creation gate accepts it. Template seeds remain smoke-tested and digest-pinned. Unsupported/custom template answers use an ordinary build with an explicit explanation. A transport/authentication failure is not evidence that a seed is absent.
-
-The staging release records the copied seed as `0-<app-commit>` with its digest and provenance. A later normal app build supersedes it through the same staging intake path. Name, description, telemetry and API identity remain runtime-specific, so two apps using one seed never present the same app identity.
-
-**Automatic merge is limited to creation:**
-
-- The instance is a genuinely absent staging instance, produced by the trusted creation operation; all proposed paths and external identities fit that operation.
-- No production files, destructive operations, arbitrary tool/workflow changes or changes to an existing app's grants qualify. A creation whose requested connections require edits outside the supported creation scope waits for manual review, as existing connection cases can today.
-- The gate runs trusted `main` code against candidate data, not candidate-supplied Python, and verifies the new image/contract/Secret structure and the complete rendered result.
-- A new NATS credential may be prepared and encrypted; the gate verifies permitted shape and recipient metadata without displaying values. It does not mint a replacement on every retry.
-- Before merging, use latest `main`, reconstruct generated shared outputs and reallocate only the not-yet-merged new instance's proxy port if necessary. Existing allocations and credentials remain unchanged. Check the proposed combined tree, verify its PR head is unchanged, and use compare-and-swap Git updates. No force push to `main`.
-- Two concurrent creations must both succeed safely or show a precise manual-review/conflict reason; neither can overwrite the other's units, NATS user, Reloader namespace or proxy port. This gate cannot be replaced by merely looking for a passing old CI run.
-
-**Other console changes:** promotion, scaling, exposure, grants, team changes and uninstall open PRs for manual merge. Remove promotion-specific auto-merge labels, resume/hold controls and eligibility machinery after these actions no longer request auto-merge. Keep the reusable GitHub transport and the new-staging creation gate. Git-driven automatic staging image updates and console image publication are separate existing writers and remain in scope for validation, not conversion into manual releases.
-
-**Manual does not mean unvalidated:** CI checks source schema, exact generated output, app policy, secrets required for production, and the proposed result on an up-to-date base. Stable required-check names and a repository ruleset/merge policy must prevent an ordinary stale or failing PR from merging before deleting the former automatic gate's protection. Today `main` permits direct pushes: enforcing checks and defining a documented operator/bot bypass is an implementation prerequisite, not an assumed existing control. App-only validation uses trusted tooling; tooling/workflow changes require operator review. Existing authorized direct operator commits still require the repository's full local validation loop.
-
-**Acceptance:** exercise both a template seed and a normal build; verify a newly created app's actual name/description; simulate two creations and a PR head/base change during checking; reject unrelated or production changes. Verify promotion now opens an ordinary manually merged PR and that failed/stale checks cannot be bypassed through the normal merge path.
-
-**Deletion target:** automatic promotion-specific proof, labels and controls. Retain creation proof, shared-output conflict resolution, safe push retry and provenance checks. Keeping these reduces the potential code saving compared with deleting all auto-merge.
-
-### Contract F: Activity reports jobs, GitHub reports PRs, the app page reports runtime
-
-Current jobs combine local execution, GitHub validation/merge and cluster rollout into one reconstructed timeline. Replace that with three clearly labeled facts:
-
-| Surface | Authoritative meaning |
-| --- | --- |
-| Job / Activity | The console action is running, succeeded, failed or interrupted; its redacted log, actor, times and result link |
-| Pull request link | Review, CI, conflicts and merge state live on GitHub; the new-staging job may report waiting for its creation gate, but does not invent another PR-state model |
-| App page and `make app-status` | Desired versus running release, readiness and failure reasons, judged by the existing shared `apps.state` functions |
-
-A PR-producing job succeeds when it has published the valid PR, not when it has deployed. The result says, for example, "Promotion PR opened; review and merge on GitHub." A creation job likewise links its PR and app page, naming automatic merge where eligible. Cluster operations such as reconcile retain their real bounded wait and report what they actually verified.
-
-Keep the bounded job record, audit identity, redaction, logs and interruption detection. Delete phase marks, inferred merge/rollout endings and continuous cross-system stage reconstruction once the UI no longer consumes them. Basic log streaming may remain; do not replace the removed timeline with a new set of persisted stages.
-
-Keep the existing notification checker's deployment, rollback, uninstall and prolonged-health behavior. Simplifying the console timeline does not permit earlier success notifications or remove the independent runtime checks that make those messages accurate.
-
-Keep "Finish creating this app" for an interrupted creation: record the created repository identity and non-secret creation choices before waiting. Resume validates the selected published release at its actual source commit and reuses the existing repository; it must never create a second one or guess success after an unreadable external response.
-
-Job-store schema migration must preserve existing history or explicitly mark old fields as historical; a failed read is never an empty successful history. An absent/unknown owning pod is handled conservatively. No new queue, database, operator or reconciliation service is required for this simplification.
-
-**Acceptance:** open a PR, restart during creation, resume without creating a repository, show a failed CI run via its GitHub link, and display an independently failing app correctly. A successful PR job must never be presented as a healthy deployment.
-
-**Deletion target:** `console/stages.py` and corresponding marks/ending persistence and rendering, after remaining consumers are migrated. PR metadata needed by the creation gate is not historical timeline data and stays.
-
-### Contract G: module responsibilities and import direction
-
-Names below are a proposed placement, not a requirement to create every file immediately.
-
-| Responsibility | Home and permitted dependencies |
-| --- | --- |
-| Identity and paths | Existing `apps/instance.py`; retains its small standard-library-only value object |
-| Parse app requirements | `apps/declaration.py` and existing `Needs`; no command-line defaults as the stored domain model |
-| Parse instance/release records | A small `apps/config.py`; typed records and schema validation, usable by offline policy without `ruamel` |
-| Render manifests | `apps/render.py`; pure construction using contract/calling/events/egress helpers; no CLI, HTTP, encryption or checkout writes |
-| Plan app operations | `apps/plan.py`; consumes validated records/prepared inputs, chooses permitted updates, returns file changes; no dependency on the console |
-| External preparation and publication | Existing operation wrappers and `Runner`; explicit GitHub/registry/encryption/file adapters |
-| Validate | Existing `apps/policy.py` plus generation equality; consumes candidate records and rendered objects, never repairs them |
-| Console | Server composition, app/team/job routes and page-data readers; form/HTTP/presentation concerns, no duplicate app transformations |
-
-Creation and derivation depend on rendering rather than importing helpers from a CLI creation module. Move only those shared constructors out of `new.py`; remove the `new -> edit -> new` cycle. Separate CLI wrappers once the functions accept explicit inputs. `commands.py` remains the one command registry and `make` the operator interface.
-
-The console can split into app, team and job routes with explicit readers/services passed at composition. Keep read sharing and the shared runtime verdict. Page readers return both facts and unavailable/invalid status; presentation cannot turn a read failure into "no channel," "no minimum" or "no apps." Cache immutable release facts by image/source identity; mutable status retains its existing short lifetime. Do not build a generic repository class hierarchy or a dependency container to perform these extractions.
-
-**Acceptance:** parse/render/plan modules import without importing HTTP routes or running commands; external tool calls use `Runner`/`FakeRunner`, and HTTP readers use injected transports/openers; no CLI parser is called by promotion; the existing public commands and URLs still reach the same operation contracts.
-
-### Contract H: each database owns an independent backup job
-
-**Example:** `orders/prod` declares SQLite. Its generated manifests include a CronJob that mounts that instance's existing claim, takes an online copy, checks it, encrypts it and uploads it. ClickStack's MongoDB has a separate CronJob. A MongoDB failure cannot prevent any SQLite job from running. A backup no longer depends on the operator's checkout, login, kubeconfig or default AWS profile.
-
-**Starting point, checked in source:** the host's `swhurl-backup-mongodb.timer` starts `make backup-mongodb`, then `make backup-sqlite` only on success. MongoDB dumps through `kubectl exec`; SQLite discovers live Deployments by `DATABASE_PATH`, creates sleeping helper pods and copies through `kubectl exec`. The host owns encryption, local retention and S3 upload. See [current operation](operations.md#backups-and-recovery), [`backupset.py`](../tools/swhurl/backupset.py), [`recovery.py`](../tools/swhurl/recovery.py) and [`sqlite_backup.py`](../tools/swhurl/sqlite_backup.py). These remain the operating contract until cutover.
-
-| Option | What becomes simpler | Remaining cost / decision |
+| Stage | Work | Exit |
 | --- | --- | --- |
-| Separate host timers | Independent MongoDB/SQLite failure and clearer service names | Smallest interim fix; preserves host tools, credentials and discovery/orchestration |
-| One central Kubernetes CronJob | Scheduling and image version live in Git | Still needs broad discovery, pod creation and exec privileges; moving the coordinator preserves most complexity |
-| One CronJob per database | Direct inputs, namespace ownership, bounded permissions and independent status | Target design; requires a published image, credential distribution, network access and a deliberate cache transition |
+| 0 | Operator removes throwaway instances no longer wanted (deletes data: confirm first). Inventory every field of every remaining instance against the primitives | Every field has an owner or is listed as unsupported |
+| 1 | Independent of the model: remove the console timeline (F); after the ruleset decision, make promotions manual (E) | Promotion opens a manually merged PR; failing checks cannot merge; no "deployed" message from a PR job |
+| 2 | **Shadow model:** schemas, capability modules, `render`, and a reader that builds Release and Settings from today's manifests. CI asserts read-then-render reproduces every committed instance | Zero difference for every instance, held through ordinary work (at least one deploy, one promotion and one new app) |
+| 3 | Move operations onto the model one at a time, still writing today's files: calls, events, egress, scale and expose, deploy, promotion, new app. Each move deletes the old mutation code for it and adds golden tests for its use cases | `edit.py`'s inference, `per_environment.py`'s drift rows, `parse_args` reconstruction and the `new`↔`edit` cycle are gone |
+| 4 | **Cutover, one commit:** add `release.yaml` and `instance.yaml` for every instance, switch the reader from manifests to them, delete the manifest reader. Pause console app actions and Deploy dispatches for the window; check a job runs on the new console image | `render` is a no-op on every instance (no rollout); `make verify-platform` and `make app-status` pass |
+| 5 | Build on the model: section 21's deferred needs for apps with production (promotion carries a release; checks decide), section 22's event check as a comparison of two releases, section 25's SQLite backup job as the sqlite capability | Each is one capability change with its tests |
 
-**Design assumption:** GitOps ownership and fewer orchestration paths matter more than minimizing Kubernetes object count. This improves maintainability on the single-node cluster, not its availability: database and backup job still share a host. If preserving host-local archives without another storage/cache mechanism is essential, keep separate host timers until that requirement is resolved. Do not add a backup operator, queue, database or sidecar to achieve this refactor.
+Section 23's stage 5 and section 21's egress stages E3a and E3b continue meanwhile; their changes move with stage 3.
+
+### Cutover: single, behind a shadow period
+
+| | Single cutover after shadow (chosen) | Per-group migration |
+| --- | --- | --- |
+| Code | One reader at a time; no format dispatch | Both formats readable and writable until the last group, plus a list saying which is which |
+| Speed | Stage 4 is one commit and one reconcile | One commit, reconcile and verification per group |
+| Blast radius | All instances at once, but the shadow check has already proven the render is a no-op for each of them, continuously, on real changes | One group at a time |
+| Writers | Paused once, for minutes | Console, Deploy workflow and tests must handle mixed formats for days |
+| Rollback | Revert one commit, while no new-format edits have been accepted | Per group, but a mixed tree is harder to reason about |
+
+The risk per-group migration guards against, an unexpected rendering difference, is caught offline by stage 2's shadow check before anything changes on the cluster. What remains is a writer racing the cutover, which the pause covers. At 15 instances or fewer, per-group's cost (dual-format code across stages 3 and 4) is larger than its benefit. Moving operations in stage 3 while the format stays the same gives the incremental, reversible steps that per-group would otherwise provide.
+
+### Stop conditions
+
+- **A no-op render is not a no-op:** any pod template, route, persistence or permission difference stops the stage until each difference is explained.
+- **A grant, credential, claim or data crosses environments:** stop and fix the model.
+- **An unsupported field on a real instance:** report it by instance and path, and stop; map it into the schema or defer the instance, never pass it through.
+- **Scope growth:** if finishing needs a framework, storage service or open-ended extension schema, stop for a separate decision.
+
+### Done when
+
+- Golden fixture tests cover new app (seed and normal build), staging deploy, first and later promotion, a port change from 8080 to 9090, a resource floor above and below the Settings value, rollback with retained data, and remove.
+- Promotion is one function; adding a capability touches one module and its test; no code path reads a grant from a manifest.
+- Net production lines and removed entry points are measured after each stage and recorded in `docs/current-state.md`.
+
+## 25. Per-database backups — designed 18 October 2026, not started
+
+**Status:** design; nothing implemented. The host timer remains the operating contract ([operations](operations.md#backups-and-recovery)).
+
+**Today:** `swhurl-backup-mongodb.timer` runs `make backup-mongodb`, then `make backup-sqlite` only if MongoDB succeeded. SQLite discovers Deployments by `DATABASE_PATH` and copies through helper pods and `kubectl exec`; the host encrypts, keeps local archives and uploads to S3 with the operator's AWS profile ([`backupset.py`](../tools/swhurl/backupset.py), [`recovery.py`](../tools/swhurl/recovery.py), [`sqlite_backup.py`](../tools/swhurl/sqlite_backup.py)).
+
+**Interim (proposed, needs operator approval):** split the timer into two independent units, so a MongoDB failure no longer stops SQLite backups. Small, host-only, reversible with `make host-backup`; the operator runs it in their own terminal.
+
+**Target:** one CronJob per database. Each SQLite instance's job is rendered by the sqlite capability ([section 24](#24-code-simplification--design-contracts-18-october-2026)) from the instance's allocation: it mounts the existing claim as the allocated UID, takes an online copy with SQLite's backup API, runs `PRAGMA integrity_check`, encrypts to the public age recipient and uploads. ClickStack's MongoDB gets one CronJob beside it that dumps over its Service. A failed job affects only its database; no backup depends on the operator's checkout, kubeconfig or AWS profile.
 
 ~~~mermaid
 flowchart LR
-  inputs["Instance database allocation"] --> render["Pure renderer"]
-  render --> sqlite["SQLite CronJob in app namespace"]
-  clickstack["ClickStack Git manifests"] --> mongo["MongoDB CronJob in observability"]
-  sqlite --> copy["Online copy + integrity check"]
-  mongo --> dump["Authenticated network dump"]
-  copy --> publish["Encrypt + upload archive; publish metadata last"]
-  dump --> publish
-  publish --> s3["Existing S3 bucket and prefixes"]
-  s3 --> verify["Independent freshness check / operator restore"]
+  alloc["Instance allocation"] --> render["sqlite capability render"]
+  render --> sqlite["SQLite CronJob (app namespace)"]
+  git["ClickStack manifests"] --> mongo["MongoDB CronJob (observability)"]
+  sqlite --> pub["Encrypt, upload, metadata last"]
+  mongo --> pub
+  pub --> s3["Existing S3 prefixes"]
+  s3 --> check["Freshness check / restore"]
 ~~~
 
-**Ownership and generation:**
+**Contract:**
 
-- SQLite backup configuration is derived from the validated instance database allocation: namespace, claim, database-relative path and UID. The image's `database: sqlite` need selects the capability; durable allocation and environment identify the data. Rendering must not rediscover these facts from live Deployments or generated environment variables. Under the current format, an explicit transitional adapter prepares the same typed inputs; remove it after contract C's migration, rather than retaining a silent fallback.
-- The app's existing Flux unit owns the CronJob and namespace-local configuration/Secret references; the claim keeps its existing lifecycle and retention. ClickStack's existing Flux unit owns its MongoDB CronJob. No new root Flux unit or edits under `flux-system` are needed for this design.
-- Platform-owned defaults define schedule, deadlines, resource bounds, image digest, public age recipient and destination mapping. Database jobs are internal platform resources, not the user-facing scheduled-job app type. Do not add arbitrary backup commands, destination overrides or another editable copy of the PVC/UID to `swhurl.yaml`.
-- Stage the daily jobs deterministically within a documented window starting at 03:30 UTC to bound load on the single node; persist no new allocation for the offset. Fix and test the window/offset calculation in H0, keeping the longest interval plus deadline below the existing 26-hour freshness limit. `timeZone: Etc/UTC` makes the intended schedule explicit. Expose the next schedule and last completion in the existing instance status/health surfaces rather than a new backup UI.
-- Creation must provision usable backup configuration before reporting a database's protection healthy. First production gets its own job, destination prefix and credentials; promotion never copies staging credentials or data. Removing an instance removes its CronJob; retained PVs and S3 backups are not deleted. Removing the database capability still follows the explicit data lifecycle, not an image update.
+- Same bucket, prefixes (`clickstack-mongodb/`, `app-sqlite/<namespace>/`), archive names, age format and metadata; old archives stay restorable.
+- A backup counts only when its archive is uploaded and verified and its metadata is published after it. Freshness (26 hours) is judged per expected database from these remote pairs, listing expected databases from the instance inputs, not from Job history or live Deployments.
+- Job pods get no Kubernetes API token, kubeconfig or age private key. Each namespace gets its own SOPS-encrypted upload credential, scoped to its prefix. `concurrencyPolicy: Forbid`, explicit deadlines, `timeZone: Etc/UTC`, schedules staggered from 03:30.
+- One pinned public image (`images/backup/`) with the Python package, `age`, AWS CLI, SQLite and MongoDB tools; versions Renovate can see.
+- `make backup-mongodb` and `make backup-sqlite` stay, creating Jobs from the CronJobs and reporting each result. Restore works from a fresh machine with S3 read access and the age key.
 
-**Implementation boundaries:**
+**Decisions before cutover (operator):** scoped upload credentials (replacing IAM user `sam`), and whether the host's local 7-daily, 4-weekly archive cache is retired or kept by a separate download job.
 
-1. Keep operator logic in `tools/swhurl`. Extract small producer functions for SQLite online copying and MongoDB network dumping; keep archive naming, metadata validation and S3 publication shared with `backupset.py`. Use explicit typed job inputs, `Runner` for commands and `FakeRunner` for failure tests. Separate local job execution from operator commands that submit/wait for a Job. No domain function invokes `make`, discovers another database or shells into another pod.
-2. Add a minimal `images/backup/` build containing the Python package, `age`, AWS CLI, SQLite CLI and compatible MongoDB database tools. It runs one database backup and exits. Pin dependencies and the deployed image digest; put versions where Renovate can see them. Build/smoke-test both producer modes in CI; publish a public image with no credential or private key in a layer. Keep this image independent of console runtime dependencies and publish cadence. Adding its workflow and pin update is part of implementation, not a hand-maintained floating tag.
-3. Render a SQLite `backup` CronJob next to each database instance using contract C's renderer. Define one MongoDB CronJob alongside ClickStack. Use a shared small manifest constructor where defaults really match; keep database-specific mounts and connection settings explicit. Policy validates expected ownership, destination, Secret references and least privilege independently of rendering.
-4. Preserve `make backup-mongodb` and `make backup-sqlite` as operator entry points: after cutover they create uniquely named Jobs from the declared CronJobs, wait with a bounded timeout and report each target's real result. A SQLite batch continues other instances after one fails, then exits nonzero. Dry run names targets and planned Jobs without creating them. Register any new command once in `commands.py`; retain local archive/restore operations needed on a fresh recovery machine.
-5. Replace host-local freshness assumptions in `recovery.check_backups`, `sqlite_backup.check_sqlite_backups`, `backupset.check_backup_set` and the `verify.py` registry at the declared cutover. List expected databases from authoritative instance inputs; an empty or unreadable live Deployment list cannot mean every database is protected. The check evaluates complete remote backup pairs and reports each missing, stale, invalid or unavailable target separately. Share parsing with restore; do not introduce a second definition of a valid backup.
-
-**Job execution and data safety:**
-
-- SQLite mounts the existing claim and runs as its allocated UID/GID. Use SQLite's online backup API/CLI with a bounded busy timeout; copy into a private job-local work directory, check `PRAGMA integrity_check`, then record table count, plaintext bytes and SHA-256. Never copy the live `.db` alone or ignore WAL files. Preserve existing stream-truncation detection and archive checksums. Writes continue in the application; lock/time-limit exhaustion fails the backup rather than stopping the app.
-- The existing `ReadWriteOnce`/local-path claim permits a helper on the same node. Rely on the claim's scheduling constraints and prove placement with a fixture/live test; do not hard-code a host name or claim portability across nodes. `ReadWriteOncePod` is incompatible with this helper design while the app mounts the claim and must be refused. This is not a migration to another storage class or an expansion of supported workload/storage combinations.
-- MongoDB uses a Service connection and mounted credential/config file, not pod-name discovery or `kubectl exec`. Confirm the existing database user has the required dump rights, the tool/server compatibility and the intended consistency guarantee. The current single database dump must not be relabeled as a point-in-time or transaction-consistent snapshot without proof; concurrent-write limitations belong in the restore contract. Do not rotate MongoDB credentials as part of packaging the job.
-- Encrypt before uploading; SQLite plaintext exists only in bounded private scratch space in the job, while MongoDB can stream into encryption. Set scratch requests/limits and size bounds based on measured database sizes, including room for ciphertext. Do not promise secure erasure of node-backed `emptyDir`; memory-backed scratch is a separate capacity choice. Delete scratch with the pod, keep host paths and application data out of cleanup scope, and never log payloads or connection strings.
-- Set `concurrencyPolicy: Forbid`, a starting deadline, an execution deadline, bounded retry policy and retained Job limits (initially one successful and one failed Job). Choose exact deadline/resource values from H0 measurements and test them, rather than inheriting unspecified defaults. Kubernetes does not promise exactly-once scheduling. `Forbid` only covers one CronJob's scheduled Jobs: operator-created Jobs must use the same per-database exclusion mechanism. For SQLite use a nonblocking advisory lock on the shared claim, held for the entire run, honored by every supported backup entry point. Choose and prove MongoDB's corresponding exclusion in H0; until then refuse overlapping manual runs rather than relying solely on a preflight status check. Catch-up/retry behavior must not create unbounded runs after downtime.
-
-**Archive publication, retention and restore:**
-
-- Preserve existing S3 bucket, prefixes (`clickstack-mongodb/` and `app-sqlite/<namespace>/`), archive names, age format and readable metadata. Old backups remain restorable; a new metadata version, if necessary, is explicit and has tested old-version reading. No automatic destination or bucket lifecycle change is included.
-- One invocation has one UTC backup identity. Upload the encrypted archive, verify its remote size/checksum using an appropriate S3 checksum or read-back (ETag is not a general SHA-256), and publish matching metadata last. Only a validated pair counts as a completed backup. Readers check identity, expected target, schema, timestamps and archive existence; merely finding a recent object name or a successful pod is insufficient.
-- Reuse identity and exact bytes on an upload retry within that invocation; a new invocation uses a distinct identity and never overwrites another completed backup. Define collision handling without relaxing legacy filename parsing: wait for a new timestamp or refuse an existing key, including during migration. Incomplete uploads/orphan archives do not count as healthy and expire under existing bucket retention; jobs need no delete permission to clean them remotely. Fail nonzero on either producer, encryption, verification or metadata upload failure.
-- Keep the current S3 retention/lifecycle. Proposed target is temporary per-run scratch plus S3 as the authoritative archive store; preserve all existing host archives during migration. **Decision before H4:** approve retiring automatic host-local 7-daily/4-weekly cache maintenance, or define and test an independent encrypted download/cache process that preserves it. The cache is never a dependency of producing a remote backup. No new cache PVC, host mount, pruning or local archive deletion is authorized by this design. Until this decision, the existing local-and-S3 health contract and scheduler remain authoritative.
-- Restore still works from a fresh operator machine with S3 read access and the separately held age private key, without a running console, backup Job history or the original checkout path. Reuse the current checksum/metadata and database restore checks. A successful fresh-machine restore of both producer formats is a cutover gate; Job success alone is not evidence of recoverability.
-
-**Credentials, network and observability:**
-
-- Job pods get no kubeconfig, host AWS profile, age private key or Kubernetes API access; disable service-account token mounting. Use dedicated SOPS-encrypted namespace-local upload credentials, scoped to the instance's destination prefix with only required upload/verification operations, including multipart operations if used. Do not label them write-only if verification requires read/head access. Independent freshness/restore readers get separate read permissions. Provider credential provisioning and rotation require the applicable operator authorization; the renderer never creates cloud credentials. Stop H4 if this prerequisite is incomplete.
-- MongoDB's connection Secret is mounted read-only in `observability`; an app's upload credential cannot read MongoDB or another app's archive prefix. Public age recipient and non-secret settings are ConfigMap/manifest data. Validate Secret shape without displaying values, using `stringData` encoded once. First-production/new-instance credential preparation must be documented and tested, not a post-merge manual surprise.
-- Define backup-pod labels and explicit network policy for DNS, the actual S3 upload/verification route (including multipart/redirect endpoints), and MongoDB Service access where needed. Do not grant app workloads new egress or accidentally select cert-manager solver pods. Check proxy/egress-policy compatibility live; these internal jobs do not inherit an app's API egress grants. Exact permitted endpoints are an H0 inventory result.
-- Short-lived job logs reach ClickStack with namespace, database identity, run identity and redacted failure stage. Check this with a real one-shot job, not only a long-lived pod. New Jobs read current Secret/config at start, so no Reloader opt-in is needed; no credential rotation is implied.
-- `make verify-platform` keeps the 26-hour freshness check per expected database and also identifies missing/suspended CronJobs and stalled Jobs. Freshness comes from verified remote pairs, not Job history, which is intentionally bounded. Job failure and stale/missing backup notifications use the existing notification path; track their implementation with section 0's notification gap. Keep an external/operator freshness check available: an in-cluster checker cannot report while the entire cluster is down.
-
-**Implementation stages and acceptance:** this is a separate bounded workstream; stages A–G need not finish first, but app job generation must use the currently declared input format and later migrate once through contract C. New implementation is not authorized by this documentation change.
-
-| Stage | Concrete change | Proof before proceeding |
+| Stage | Work | Exit |
 | --- | --- | --- |
-| H0 — inventory and decisions | Inventory every database/claim/UID/path, namespace quota and policy, database/tool versions, archive sizes/runtime, IAM permissions and existing local/remote restore guarantees. Fix schedule/deadline/resource bounds, MongoDB exclusion, publication verification and credential delivery. Record the cache decision | Every database has one owner/destination; no unresolved requirement is hidden behind a default; both old archive formats have restore fixtures |
-| H1 — producers and publication | Extract shared archive handling and direct SQLite/MongoDB producers; build/publish pinned image; keep host path working | FakeRunner covers partial producer output, encryption failure, checksum mismatch, archive-only and metadata-only remote objects, upload/retry/collision failure and unavailable reads; existing restore compatibility passes; container smoke tests run both modes |
-| H2 — generated manifests, suspended | Generate namespace-owned CronJobs and credential/config references, initially suspended; add policy and render fixtures, including production | No PVC/data/UID/route/grant changes; missing credential refs and unsupported storage fail validation; image and network policies are pinned/reviewable; schedules meet freshness bounds |
-| H3 — manual pilot, existing scheduler authoritative | With provisioned scoped credentials, run a Job for one approved SQLite instance and MongoDB; verify S3 pairs, log collection, policies, resource use and exclusion | Restore each new-format archive in an approved isolated target; test one failed database does not stop another; legacy restore still works; test manual/scheduled overlap; no source data deletion or host-cache loss |
-| H4 — controlled scheduler cutover | After cache/credential decisions and restore proof, disable old timer, drain active host backups, then unsuspend declared CronJobs through Git; switch freshness checks to the agreed store contract in the same bounded rollout | No double scheduling or gap beyond freshness limit; verify every database manually, then observe a daily run and a bounded missed-run/retry exercise; independent check catches upload failure/staleness; record dated evidence |
-| H5 — remove obsolete orchestration | Remove host backup timer templates/installer branch, Deployment discovery, sleeping helper-pod and exec-stream coordination, default-profile dependency and migrated host-only checks; keep operator submission/restore tools and reusable archive code | Search shows no remaining callers; command docs/operations/bootstrap match reality; fresh-machine restore and `make check` pass; measure net production code and operational entry points removed |
+| H0 | Inventory databases, sizes, run times, tool versions, network routes; take the two decisions | Every database has one owner and destination |
+| H1 | Direct producers and shared publication in `tools/swhurl`; build and publish the image | `FakeRunner` failure tests; old archives restore |
+| H2 | Render CronJobs suspended (after section 24's cutover, or from today's format through the shadow reader) | Policy and fixtures pass; nothing else changes |
+| H3 | Pilot one SQLite instance and MongoDB with the host timer still authoritative | New archives restore in an isolated target; logs reach ClickStack |
+| H4 | Disable the host timer (operator, own terminal), unsuspend through Git, switch the freshness check | A daily run and a missed-run retry observed; no gap beyond 26 hours |
+| H5 | Remove host scheduling, Deployment discovery and exec pipelines | No callers left; fresh-machine restore passes |
 
-H4's host timer change uses `sudo`: hand the operator the exact commands **run in your own terminal**, check completion and active processes, and keep watching rollout rather than asking them to prompt continuation. Do not remove an active timer until the documented rollback and all pilot gates pass. No new public test app is required; use fixtures and an approved database pilot. Any restore requiring namespace/PV/data deletion, real credential rotation or backup destination change still needs the applicable explicit confirmation.
-
-**Risks and rollback:** missing Secret permissions, egress/proxy routing, SQLite locking/claim placement, MongoDB consistency, scratch exhaustion and upload-pair validation can each yield a green-looking Job with no usable backup unless independently tested. A stale check must fail on unavailable reads; an absent target is not silently skipped. Keep the old tooling/timer definition available until H5. To roll back a cutover, suspend CronJobs through Git, wait for active jobs to finish or account for them explicitly, restore the prior health/cache contract and re-enable the host timer; ensure only one scheduling path is active. Do not revoke the old upload credential or delete local archives during this window. A Git rollback cannot reverse credential revocation, bucket lifecycle changes or deleted data.
-
-**Component checklist:** retention is covered by the explicit scratch/Job/S3/cache contracts; credentials by scoped SOPS references; logs by the one-shot ClickStack proof; health by independent remote-pair freshness; recovery by old/new and fresh-machine restore tests; restarts by fresh Job configuration; failure by bounded runs and injected failure tests; upgrades by pinned image/tool compatibility; docs by [operations](operations.md#backups-and-recovery), [commands](commands.md), [bootstrap](bootstrap.md) and the existing app lifecycle pages updated with implementation. The component stores no additional durable control state. No backup of Job history is required.
-
-**Deletion target:** host-dependent backup scheduling, host credential/profile coupling, live Deployment inference, dynamic helper-pod orchestration and remote exec pipelines. Preserve real consistency, encryption, integrity, retention, restore and freshness guarantees; moving code into an image is not itself a reduction. Operator proof after implementation: run the documented manual backup targets, inspect each verified S3 result with the health command, and restore one SQLite and one MongoDB archive in approved isolated targets.
-
-### Migration, sequencing and proof
-
-Each row is a separately reviewable implementation milestone. This design document does not execute these milestones.
-
-| Stage | Work | Exit condition |
-| --- | --- | --- |
-| 0 | Inventory current instance settings, supported template/type combinations, gate consumers and live allocations; capture baseline outputs and creation timing | Every supported field has an owner; exceptions and current unexercised paths are listed, with no inferred defaults |
-| 1 | File-change plan and shared publisher for calls; keep existing on-disk format | Equal outputs; no checkout changes on refusal or stale input; injected publication failure restores all touched files |
-| 2 | Explicit requests and shared promotion transformation; break creation/editing imports | First/later promotion use no CLI parser and one transformation; safety refusals and current outputs preserved |
-| 3 | Add strict instance/release records, pure rendering, and a one-time importer in scratch space | All real instances and fixtures round-trip to equal effective objects; any unsupported field blocks migration |
-| 4 | Migrate fixtures and one staging app, then all staging apps, then production instances; retain fixed Flux paths and resource names | Per group, rendering is a no-op for pod templates, data bindings, routes, permissions and shared allocations; checks and live evidence pass before continuing |
-| 5 | Apply release-bound needs through staging and manual production promotion using the renderer | Port-change and minimum-resource cases work with production present; Secret/storage and rollback cases refuse or require the documented review |
-| 6 | Retain only creation auto-merge; establish enforceable manual-merge checks and simplify Activity/jobs and console boundaries | Concurrent fast creations remain safe; ordinary promotions are manual; failed/stale checks cannot merge through the normal path; no false deployed-success message |
-| 7 | Remove legacy input dispatch, one-time importer from routine paths, obsolete YAML inference, duplicate promotion logic and unused timeline code/tests | No production reader falls back to manifests when the new input is missing; searches show no live callers of removed paths; measure net lines and retained behavior |
-
-During migration each instance has exactly one declared input format. Use an explicit temporary migration list, not "if parsing failed, try the old format." New instances use the new format once its path is enabled. Every renderer and validator must reject an ambiguous mixed instance. Delete the migration dispatch when all instances and fixtures have moved; Git history retains the old implementation.
-
-The migration commit for a group includes input records, generated output, format selection and compatible tooling. No live cutover while the deployed console/Deploy workflow can still write only the old form: publish a reader/writer-compatible version first or explicitly pause those writers during the bounded cutover, then resume and verify a job on the new image. Schema versions prevent an old image from editing a newer format. The compatibility period has one named removal stage.
-
-Until stage 5 proves promotion of changed needs, retain the current holds for an app that already has production. Importing its unchanged settings must not accidentally enable needs changes that the production path still cannot carry safely.
-
-Validation uses existing fixtures and `FakeRunner` for failures, plus meaningful rendering, policy and integration checks. Run `make check` before each commit; for script/Makefile/layout changes also run the shell syntax loop in `AGENTS.md`. Regenerate affected fixtures. Push, wait for the matching console image when tooling changes, reconcile and verify according to the existing operator loop; record dated evidence and remaining unexercised cases in `docs/current-state.md`. Verify a checker job runs the new image.
-
-For a rollout-affecting stage, verify HTTP/HTTPS and signed-in/out behavior of the affected entry points. Resource/Secret migration proof compares bytes/hashes and rendered structures without printing values. A real signed-in browser session is a separate operator action; a hand-set identity header is insufficient.
-
-Real test repositories, packages, data deletion, credential/ruleset changes and any `flux-system` changes require the applicable explicit operator authorization before those live actions. Reuse offline fixtures before any approved throwaway test. If new public repositories are authorized, use `swhurl-try-<n>` and list the remaining repositories/packages for deletion afterwards.
-
-### Risks to watch and stop conditions
-
-| Risk | Observable failure | Required response |
-| --- | --- | --- |
-| Two sources of truth survive | An edited manifest works until the next command silently overwrites it, or commands infer grants from outputs again | Generated-output equality fails CI; migrate explicitly; remove legacy readers at stage 7 |
-| Importer loses customization | A route, security setting, mount or annotation disappears | Report the exact unmapped path; stop that instance's migration; no broad pass-through escape hatch |
-| Renderer changes cause unintended rollout | Pod-template differences during a supposed no-op import | Stop the group and explain every diff before committing; do not normalize unrelated chart defaults |
-| Credentials or data move across environments | Production reuses a staging value, claim binding or caller grant | Preserve ciphertext ownership, derive names by environment, and refuse cross-environment references; compare without printing secrets |
-| Local publication is mistaken for a transaction | A disk failure leaves a partially modified checkout | Shared publisher restores all paths; report any recovery failure and stop; never commit success automatically |
-| Missing external facts become defaults | A scale/deploy succeeds with no known minimum, source or policy | Distinguish unavailable from absent; required reads fail the operation |
-| Shared allocation changes affect existing apps | A second app takes an existing proxy port or drops a NATS user | Preserve allocations, re-render latest complete state, validate uniqueness and use conditional Git updates |
-| Creation gate becomes a general merge bot | A PR that edits production, tools or unrelated grants merges automatically | Scope to eligible new staging; run trusted checks; require manual review outside that scope |
-| Manual merge removes a safety boundary | A stale or failing promotion can merge by the normal route | Establish enforceable combined-base checks and a documented bypass before removing the old gate |
-| Simpler Activity hides real failures | "PR opened" is read as "app deployed," or interruption loses the repo identity | Label operation completion precisely, retain logs/resume metadata, and link to independent runtime status |
-| Retained seeds no longer match a new type | A fast deployment serves the wrong identity/API or lacks a required capability | Verify type/answers/template provenance and smoke tests; select a normal build when seed compatibility is unproven |
-| Scope expands into a replacement platform | New framework, storage service or unconstrained extension schema is needed to finish a cleanup | Stop and make a separate decision; the small-record/pure-function design must earn its reduction |
-
-**Rollback:** before live migration, keep the pre-migration Git revision and bounded baseline evidence. Revert a behavior-only stage through Git. A schema cutover rollback must restore a compatible tooling-and-data combination; reverting only one side is unsafe. After new-format edits have been accepted, generate reviewed legacy outputs from the current intended state before returning to old writers; do not blindly reset to an old commit that loses subsequent app changes. None of these Git rollbacks undo database migrations or recover deleted data.
-
-**Done / left / next at design handoff:** the direction, contracts A–H, retained creation behavior, migration gates and risks are documented. All implementation stages remain. Next for A–G is stage 0's inventory followed by the fixture-only calls planner; next for backups is H0's inventory and cache/credential decisions. Approval to perform implementation or the later live cutovers is not implied by this design.
+**Rollback:** suspend the CronJobs through Git and re-enable the host timer; keep the old credential and local archives until H5.

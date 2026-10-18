@@ -830,6 +830,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             activity = c.get('/activity', headers=WHO).text
             self.assertIn('hello/staging is failing', activity, 'a verdict is never saved')
             self.assertEqual(targets.call_count, 3, 'immutable render facts may be cached')
+            self.assertEqual(sorted(call.args[2] for call in read.call_args_list), [1, 2], 'a merged pull request is read once')
             self.assertFalse(hasattr(jobs.get(2), 'ending'))
 
     def test_current_main_and_cluster_failures_never_complete_a_change(self):

@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import contextlib
 import datetime as dt
+import functools
 import hashlib
 import json
 import logging
@@ -65,6 +66,7 @@ ASSETS = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(STATIC.rglob('*'
 TEMPLATES.env.globals['assets'] = ASSETS
 # Pages that only show state re-read themselves; pages with forms never change under you.
 SELF_REFRESHING = {'overview.html', 'apps.html', 'platform.html', 'activity.html'}
+KEPT = 60  # merged trees and merged pull requests kept between Activity reads; the oldest goes first
 # A Ready status ('True', 'False', 'Unknown') as a CSS class.
 TEMPLATES.env.filters['state'] = lambda status: {'True': 'ok', 'False': 'bad'}.get(status, 'warn')
 # Every page names an app instance <app>/<env> (never its Flux unit's name); see cluster.target.
@@ -298,35 +300,57 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
                            changes.AUTO_MERGE_LABEL in pr.labels and not refused, reason.split('. ')[0].rstrip('.'))
 
-    renders: dict[str, dict[str, stages.Target]] = {}  # immutable Git trees, never progress verdicts
+    # Facts that never change once read, kept across page reads; never progress verdicts.
+    renders: dict[str, dict[str, stages.Target]] = {}  # a commit's render targets
+    merged: dict[int, stages.Pull] = {}  # merged pull requests (a closed one can be reopened)
 
-    def pull_of(number: int, url: str, *, read: bool = True) -> stages.Pull:
+    def keep(cache: dict, key, value) -> None:
+        if len(cache) >= KEPT:
+            cache.pop(next(iter(cache)))  # the oldest
+        cache[key] = value
+
+    def pull_of(number: int, url: str, read: bool) -> stages.Pull:
+        if number in merged:
+            return merged[number]
         if not read or github is None:
             return stages.Pull(number, url)
         try:
             state, when, commit = changes.pull_state(runner, github, number)
-            return stages.Pull(number, url, state, when=when, commit=commit)
         except actions.ActionError:
             return stages.Pull(number, url)
+        found = stages.Pull(number, url, state, when=when, commit=commit)
+        if state == 'merged':
+            keep(merged, number, found)
+        return found
 
     def targets(commit: str) -> dict[str, stages.Target] | None:
+        """A commit's render targets, or None when they could not be read (not kept: read again next time)."""
         if not commit or github is None:
             return None
         if commit not in renders:
             try:
-                found = changes.render_targets(runner, github, commit)
+                keep(renders, commit, changes.render_targets(runner, github, commit))
             except actions.ActionError:
                 return None
-            if len(renders) >= 60:
-                renders.clear()
-            renders[commit] = found
-        return renders[commit]
+        return renders.get(commit)
 
-    def rollout_of(job: actions.Job, pull: stages.Pull, rows: dict[str, cluster.AppRow] | None,
+    def main_targets() -> tuple[str, dict[str, stages.Target] | None]:
+        try:
+            head = changes.main_commit(runner, github) if github is not None else ''
+        except actions.ActionError:
+            return '', None
+        return head, targets(head)
+
+    def cluster_rows() -> dict[str, cluster.AppRow] | None:
+        try:
+            return {f'{row.instance.app}/{row.instance.env}': row for row in cluster.apps(runner, include_removing=True)}
+        except cluster.ReadError:
+            return None
+
+    def rollout_of(job: actions.Job, tree: dict[str, stages.Target] | None, rows: dict[str, cluster.AppRow] | None,
                    current: dict[str, stages.Target] | None) -> stages.Rollout:
-        merged = targets(pull.commit)
         absent = stages.Target(stages.ABSENT)
-        target = merged.get(job.unit, absent) if merged is not None else None
+        target = tree.get(job.unit, absent) if tree is not None else None
         desired = current.get(job.unit, absent) if current is not None else None
         row = rows.get(job.unit) if rows is not None else None
         matches = bool(row and target and row.digest == target.digest and row.image_matches)
@@ -335,18 +359,18 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
     def change_rows(found: list[actions.Job], *, others: bool) -> tuple[list[ChangeRow], str]:
         """Each job as a change with its whole path, and with ``others`` the open pull requests no
-        remembered job opened. Also why open pull requests could not be listed, if they could not."""
+        remembered job opened. Also why open pull requests could not be listed, if they could not.
+        Independent reads (pull requests, then the cluster, main and merged trees) run at once."""
         proposed = {job.id: stages.number(job) for job in found if job.state == 'succeeded' and not stages.control(job)}
         proposed = {job_id: number for job_id, number in proposed.items() if number}
         prs, prs_error = open_prs() if others or proposed else ([], '')
         is_open = {pr.number: pr for pr in prs}
-        pulls = {}
-        for job in found:
-            number = proposed.get(job.id)
-            if number in is_open:
-                pulls[job.id] = pull_view(is_open[number])
-            elif number:
-                pulls[job.id] = pull_of(number, job.link, read=not prs_error and github is not None)
+        pulls = {job_id: pull_view(is_open[number]) for job_id, number in proposed.items() if number in is_open}
+        closed = [job for job in found if job.id in proposed and job.id not in pulls]
+        read = not prs_error and github is not None
+        pulls |= dict(zip((job.id for job in closed), runner.together(
+            *(functools.partial(pull_of, proposed[job.id], job.link, read) for job in closed)), strict=True))
+
         def lands(job: actions.Job) -> bool:
             """A merged change to an instance: where it ends is on the cluster."""
             pull = pulls.get(job.id)
@@ -354,19 +378,17 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
 
         states: dict[str, cluster.AppRow] | None = {}
         current = None
-        if any(lands(job) for job in found):
-            try:
-                states = {f'{row.instance.app}/{row.instance.env}': row for row in cluster.apps(runner, include_removing=True)}
-            except cluster.ReadError:
-                states = None
-            try:
-                current = targets(changes.main_commit(runner, github)) if github is not None else None
-            except actions.ActionError:
-                current = None
+        trees: dict[str, dict[str, stages.Target] | None] = {}
+        landing = [job for job in found if lands(job)]
+        if landing:
+            commits = sorted({pulls[job.id].commit for job in landing})
+            states, (_, current), *read_trees = runner.together(
+                cluster_rows, main_targets, *(functools.partial(targets, commit) for commit in commits))
+            trees = dict(zip(commits, read_trees, strict=True))
         rows = []
         for job in found:
             pull = pulls.get(job.id)
-            rollout = rollout_of(job, pull, states, current) if lands(job) else None
+            rollout = rollout_of(job, trees.get(pull.commit), states, current) if lands(job) else None
             track = stages.track(job, pull and replace(pull, when=ago(pull.when) if pull.when else ''), rollout)
             rows.append(ChangeRow(f'job-{job.id}', track, job, is_open.get(proposed.get(job.id))))
         if others:
@@ -593,7 +615,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return page(request, 'error.html', status_code=404, error='No such job (only the newest jobs are kept).')
         with runner.once():
             (row,), _error = change_rows([found], others=False)
-        return page(request, 'job.html', job=found, track=row.track, sections=stages.sections(found), pr=row.pr,
+        return page(request, 'job.html', job=found, track=row.track, stage=stages.prepared(found), pr=row.pr,
                     can_resume=bool(resumable(found) and github and app_repos))
 
     async def job_events(request: Request) -> Response:
@@ -620,7 +642,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 new = found.lines[sent:]
                 for line in new:
                     sent += 1
-                    body = json.dumps({'html': str(short_hashes(line)), 'stage': stages.stage_of(found, sent - 1)}, ensure_ascii=False)
+                    body = json.dumps({'html': str(short_hashes(line))}, ensure_ascii=False)
                     yield f'id: {sent}\nevent: line\ndata: {body}\n\n'
                     last_activity = time.monotonic()
                 if finished and not new:

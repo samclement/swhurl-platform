@@ -1175,8 +1175,8 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/event-stream', response.headers['content-type'])
         self.assertEqual(response.headers['x-accel-buffering'], 'no')
-        self.assertIn('id: 1\nevent: line\ndata: {"html": "a", "stage": "prepared"}', response.text)
-        self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;", "stage": "prepared"}', response.text)
+        self.assertIn('id: 1\nevent: line\ndata: {"html": "a"}', response.text)
+        self.assertIn('id: 2\nevent: line\ndata: {"html": "&lt;b&gt;"}', response.text)
         done = response.text.split('event: done\ndata: ', 1)[1].split('\n', 1)[0]
         payload = json.loads(done)
         self.assertEqual(payload['state'], 'succeeded')
@@ -1263,7 +1263,7 @@ class ActionTests(unittest.TestCase):
         self.assertLess(activity.index('<h2>Finished</h2>'), activity.index('id="job-3"'))
         self.assertEqual(asked.count('pulls'), 2, 'the open pull requests are listed once per page read')
         self.assertIn('Live in prod', page)
-        self.assertIn('<details class="stage-log" id="stage-prepared" open>', page)
+        self.assertIn('<details class="stage-log" id="output" open>', page)
         self.assertIn('hx-trigger="every 30s"', page, 'completed progress is also read fresh')
 
     def test_dry_run_plans_the_patches_and_does_not_wait(self):

@@ -18,15 +18,11 @@
 <p id="job-link"{% if not job.link or pr %} hidden{% endif %}><a id="job-link-anchor" href="{{ job.link }}">{{ job.link }}</a></p>
 <h2>Output</h2>
 {# The job's chronological output; progress is derived from facts, not log markers. #}
-<div id="log">
-{% for sec in sections %}
-<details class="stage-log" id="stage-{{ sec.stage.key }}"{{ ' hidden' if not sec.started }}{{ ' open' if sec.stage.state in ('running', 'failed') or loop.last or sec.lines | length <= 12 }}>
-  <summary>{{ st.mark(sec.stage.mark) }} {{ sec.stage.label }} <span class="muted"><span class="count">{{ sec.lines | length }}</span> lines</span></summary>
-  <pre>{% for line in sec.lines %}{{ line | short }}
+<details class="stage-log" id="output" open>
+  <summary>{{ st.mark(stage.mark) }} {{ stage.label }} <span class="muted"><span class="count">{{ job.lines | length }}</span> lines</span></summary>
+  <pre>{% for line in job.lines %}{{ line | short }}
 {% endfor %}</pre>
 </details>
-{% endfor %}
-</div>
 {% if can_resume %}
 <form class="action-row" method="post" action="/jobs/{{ job.id }}/resume" data-confirm="Finish creating {{ job.unit }}? It uses the repository this job created and the choices made then (team, access, connections), waits for its image and opens the platform pull request. No second repository is created." data-confirm-label="Finish creating the app">
   <button class="primary">Finish creating this app</button>
@@ -43,14 +39,10 @@
     document.querySelector(selector).replaceWith(fresh);
     if (window.htmx) htmx.process(fresh);
   }).catch(() => location.reload());
-  let stage = '{{ (sections | selectattr("started") | list | last).stage.key }}';
   es.addEventListener('line', e => {
-    const line = JSON.parse(e.data);
-    const section = document.getElementById('stage-' + line.stage);
-    section.hidden = false;
-    section.querySelector('pre').insertAdjacentHTML('beforeend', line.html + '\n');
-    section.querySelector('.count').textContent = section.querySelector('pre').textContent.split('\n').length - 1;
-    if (line.stage !== stage) { stage = line.stage; section.open = true; reread('#track'); }
+    const pre = document.querySelector('#output pre');
+    pre.insertAdjacentHTML('beforeend', JSON.parse(e.data).html + '\n');
+    document.querySelector('#output .count').textContent = pre.textContent.split('\n').length - 1;
   });
   // The console restarting cuts this stream; the page is read again, from whichever pod now answers.
   es.onerror = () => { es.close(); setTimeout(() => location.reload(), 3000); };

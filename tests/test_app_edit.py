@@ -84,33 +84,6 @@ class EditTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(self.prod.read_bytes(), before)
 
-    def test_scale_preserves_handwritten_comments_quotes_and_flow_style(self):
-        text = '# tuned by hand\n' + self.prod.read_text()
-        text = text.replace('memory: 128Mi', 'memory: "128Mi"  # measured limit')
-        text = text.replace('cpu: 10m\n                memory: 32Mi', "cpu: '10m'\n                memory: 32Mi")
-        text = text.replace('type: RuntimeDefault', 'type: RuntimeDefault  # leave this alone')
-        text += '# operator footer\n'
-        self.prod.write_text(text)
-        self.quiet(edit.scale, self.root, 'hello', 'prod', memory_limit='256Mi')
-        self.assertEqual(self.prod.read_text(), text.replace('"128Mi"', '"256Mi"'))
-        text = self.prod.read_text()
-        text = text.replace("requests:\n                cpu: '10m'\n                memory: 32Mi",
-                            "requests: {cpu: '10m', memory: 32Mi}")
-        self.prod.write_text(text)
-        self.quiet(edit.scale, self.root, 'hello', 'prod', cpu='20m')
-        self.assertEqual(self.prod.read_text(), text.replace("'10m'", "'20m'"))
-
-    def test_scale_preserves_four_space_mapping_indentation(self):
-        text = ('# four space mappings\n'
-                'spec:\n    values:\n        controllers:\n            main:\n'
-                '                containers:\n                    main:\n'
-                '                        resources:\n                            limits:\n'
-                '                                memory: 128Mi\n')
-        # Only a mapping scalar changes; indentation and every other line survive.
-        self.prod.write_text(text)
-        self.quiet(edit.scale, self.root, 'hello', 'prod', memory_limit='256Mi')
-        self.assertEqual(self.prod.read_text(), text.replace('memory: 128Mi', 'memory: 256Mi'))
-
     def test_promote_preserves_target_quotes_and_manual_comments(self):
         text = self.prod.read_text().replace('tag: 1.27-alpine', 'tag: "1.27-alpine"  # release approved')
         self.prod.write_text('# production settings\n' + text)
@@ -120,17 +93,26 @@ class EditTests(unittest.TestCase):
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertEqual(self.prod.read_text(), before.replace('"1.27-alpine"', '"1.28-alpine"').replace(old_digest, NEW_DIGEST))
 
-    def test_scale_refuses_invalid_or_shared_target_without_writing(self):
-        original = self.prod.read_text()
-        cases = [original + '\n---\nextra: document\n', original + 'spec: {}\n',
-                 original.replace('resources:', 'resources: &shared'),
-                 original.replace('resources:', 'resources: [not-a-mapping]\n            ignored:')]
-        for text in cases:
-            with self.subTest(text=text[-80:]):
-                self.prod.write_text(text)
-                with self.assertRaises(edit.EditError):
-                    edit.scale(self.root, 'hello', 'prod', memory_limit='256Mi')
-                self.assertEqual(self.prod.read_text(), text)
+    def test_a_command_refuses_files_the_model_cannot_express_without_writing(self):
+        unit = self.root / 'clusters/home/app-hello-staging.yaml'
+        route = self.staging.read_text().replace('className: traefik', 'className: traefik\n        labels: {owner: sam}')
+        cases = ((self.staging, route, lambda: edit.scale(self.root, 'hello', 'staging', memory_limit='256Mi'), 'labels'),
+                 (self.staging, self.staging.read_text().replace('    ingress:', '    ingress:\n      extra: {enabled: true}'),
+                  lambda: edit.expose(self.root, 'hello', 'staging', 'private'), 'ingress.extra'),
+                 (unit, unit.read_text().replace('  interval: 10m', '  - name: platform-mongodb\n  interval: 10m'),
+                  lambda: edit.set_team(self.root, 'hello', 'platform'), 'dependsOn'),
+                 (self.prod, self.prod.read_text() + '\n---\nextra: document\n',
+                  lambda: edit.scale(self.root, 'hello', 'prod', memory_limit='256Mi'), 'cannot read its records'))
+        (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n')
+        for path, text, command, message in cases:
+            with self.subTest(message=message):
+                original = path.read_text()
+                path.write_text(text)
+                before = {file: file.read_bytes() for file in self.root.rglob('*') if file.is_file()}
+                with self.assertRaisesRegex(edit.EditError, message):
+                    command()
+                self.assertEqual({file: file.read_bytes() for file in self.root.rglob('*') if file.is_file()}, before)
+                path.write_text(original)
 
     def test_requested_policy_failure_is_nonzero_after_edit(self):
         with mock.patch.object(new.policy, 'evaluate', side_effect=CommandError(['helm'], 'helm unavailable')):
@@ -141,12 +123,16 @@ class EditTests(unittest.TestCase):
         self.assertIn('memory: 256Mi', self.prod.read_text())
 
     def test_scale_changes_only_what_was_asked(self):
-        before = self.prod.read_text()
+        before = yaml.safe_load(self.prod.read_text())
         self.quiet(edit.scale, self.root, 'hello', 'prod', replicas=2, memory_limit='256Mi')
-        self.assertEqual(sorted(changed_lines(before, self.prod.read_text())),
-                         sorted(['+        replicas: 2', '-                memory: 128Mi', '+                memory: 256Mi']))
+        main = before['spec']['values']['controllers']['main']
+        main['replicas'] = 2
+        main['containers']['main']['resources']['limits']['memory'] = '256Mi'
+        self.assertEqual(yaml.safe_load(self.prod.read_text()), before)
         with self.assertRaisesRegex(edit.EditError, 'already has'):
             edit.scale(self.root, 'hello', 'prod', replicas=2)
+        with self.assertRaisesRegex(edit.EditError, r"below the platform's default resources: --cpu 5m \(at least 10m\)"):
+            edit.scale(self.root, 'hello', 'prod', cpu='5m')
 
     def expose(self, env, exposure, host=None):
         return self.quiet(edit.expose, self.root, 'hello', env, exposure, host)
@@ -215,24 +201,13 @@ class EditTests(unittest.TestCase):
             self.assertEqual(edit.main_alerts(['hello', '--errors', 'none', '--error-logs', '9', '--root', str(self.root)]), 0)
         self.assertEqual(self.alert_settings('prod'), 'error-logs=9,errors=none')
 
-    def test_team_moves_every_environment_and_fills_in_missing_isolation(self):
+    def test_team_moves_every_environment(self):
         (self.root / 'apps/teams.yaml').write_text('teams:\n  platform: {}\n  payments: {}\n')
-        for env in ('staging', 'prod'):  # an instance from before quotas and policies existed
-            instance = self.root / 'apps/hello' / env
-            for name in contract.ISOLATION_FILES:
-                (instance / name).unlink()
-            listing = instance / 'kustomization.yaml'
-            listing.write_text(''.join(line for line in listing.read_text().splitlines(keepends=True)
-                                       if not any(name in line for name in contract.ISOLATION_FILES)))
         self.quiet(edit.set_team, self.root, 'hello', 'payments')
         for env in ('staging', 'prod'):
             instance = self.root / 'apps/hello' / env
             labels = yaml.safe_load((instance / 'namespace.yaml').read_text())['metadata']['labels']
             self.assertEqual(labels[contract.TEAM], 'payments')
-            resources = yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources']
-            self.assertEqual(resources[-2:], list(contract.ISOLATION_FILES))
-            self.assertEqual(yaml.safe_load((instance / 'networkpolicy.yaml').read_text())['metadata']['namespace'],
-                             f'hello-{env}')
         self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
         with self.assertRaisesRegex(edit.EditError, 'already belongs to payments'):
             edit.set_team(self.root, 'hello', 'payments')
@@ -524,6 +499,7 @@ components:
             path = self.root / 'apps' / app / env / 'helmrelease.yaml'
             path.write_text(path.read_text().replace('docker.io/nginxinc/nginx-unprivileged', f'ghcr.io/samclement/{app}')
                             .replace('tag: 1.27-alpine', f'tag: {tag}' if env == 'staging' else 'tag: 6-0000000'))
+        self.quiet(derive.sync, self.root)  # a platform image's staging follows new images
 
     def test_offers_are_read_at_the_images_commit_and_say_what_the_app_publishes(self):
         from swhurl.apps import offers
@@ -981,56 +957,6 @@ components:
                       '--no-policy-check', '--team', 'demo'])
         with self.assertRaisesRegex(edit.EditError, 'worker'):
             edit.expose(self.root, 'job', 'staging', 'public', 'job.example.com')
-    def test_expose_preserves_custom_annotations_dependencies_and_comments(self):
-        namespace = self.root / 'apps/hello/staging/namespace.yaml'
-        unit = self.root / 'clusters/home/app-hello-staging.yaml'
-        namespace.write_text('# namespace notes\n' + namespace.read_text())
-        unit.write_text('# Flux notes\n' + unit.read_text().replace('  interval: 10m',
-                       '  - name: platform-mongodb  # database readiness\n  interval: 10m'))
-        text = self.staging.read_text().replace(
-            contract.AUTH_MIDDLEWARE, contract.AUTH_MIDDLEWARE + ',ingress-rate-limit@kubernetescrd')
-        text = text.replace('className: traefik', 'className: traefik  # custom route\n        labels: {owner: sam}')
-        text = text.replace('secretName: hello-tls', 'secretName: "custom-tls"')
-        self.staging.write_text(text)
-        self.expose('staging', 'public', 'hello.example.com')
-        route = derive.load_release(self.staging.parent)['spec']['values']['ingress']['main']
-        self.assertEqual(route['labels'], {'owner': 'sam'})
-        self.assertEqual(route['tls'][0]['secretName'], 'custom-tls')
-        self.assertEqual(route['annotations']['traefik.ingress.kubernetes.io/router.middlewares'],
-                         'ingress-rate-limit@kubernetescrd')
-        self.assertIn('className: traefik  # custom route', self.staging.read_text())
-        self.assertIn('secretName: "custom-tls"', self.staging.read_text())
-        self.assertTrue(namespace.read_text().startswith('# namespace notes\n'))
-        self.assertTrue(unit.read_text().startswith('# Flux notes\n'))
-        self.assertIn('platform-mongodb  # database readiness', unit.read_text())
-        self.expose('staging', 'authenticated-web')
-        self.assertIn(contract.AUTH_MIDDLEWARE + ',ingress-rate-limit@kubernetescrd', self.staging.read_text())
-        self.assertIn('platform-mongodb  # database readiness', unit.read_text())
-
-    def test_expose_refuses_ambiguous_routes_without_any_writes(self):
-        namespace = self.root / 'apps/hello/staging/namespace.yaml'
-        unit = self.root / 'clusters/home/app-hello-staging.yaml'
-        self.staging.write_text(self.staging.read_text().replace('    ingress:',
-                               '    ingress:\n      extra: {enabled: true}'))
-        before = {path: path.read_bytes() for path in (self.staging, namespace, unit)}
-        with self.assertRaisesRegex(edit.EditError, 'additional ingress routes'):
-            edit.expose(self.root, 'hello', 'staging', 'private')
-        self.assertEqual({path: path.read_bytes() for path in before}, before)
-
-    def test_expose_refuses_bad_dependencies_without_any_writes(self):
-        unit = self.root / 'clusters/home/app-hello-staging.yaml'
-        original = unit.read_text()
-        for replacement, message in (('  dependsOn: {name: infra-base}\n', 'expected a list'),
-                                     ('  dependsOn: &shared\n  - name: infra-base\n', 'uses a YAML anchor')):
-            with self.subTest(message=message):
-                unit.write_text(original.replace(
-                    '  dependsOn:\n  - name: infra-base\n  - name: platform-oauth2-proxy\n', replacement))
-                before = {path: path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
-                with self.assertRaisesRegex(edit.EditError, message):
-                    edit.expose(self.root, 'hello', 'staging', 'public', 'hello.example.com')
-                self.assertEqual({path: path.read_bytes() for path in before}, before)
-                self.assertEqual({path for path in self.root.rglob('*') if path.is_file()}, set(before))
-
     def test_scale_refuses_bad_values(self):
         for kwargs, message in (({}, 'at least one'), ({'replicas': 11}, '0 to 10'), ({'replicas': -1}, '0 to 10'),
                                 ({'cpu': '1core'}, 'quantity'), ({'memory': '64M'}, 'quantity'),

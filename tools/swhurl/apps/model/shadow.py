@@ -12,7 +12,7 @@ from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import legacy, render
-from swhurl.apps.model.draft import RenderError
+from swhurl.apps.model.draft import Platform, RenderError, World
 
 FIXTURES = Path('tests/fixtures/apps')
 """The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
@@ -72,24 +72,30 @@ def _reloader(root: Path) -> set[str] | None:
     return {name.strip() for name in (match[1] if match else '').split(',') if name.strip()}
 
 
+def instance_problems(root: Path, each: Instance, world: World, platform: Platform, base: Path = Path('apps')) -> list[str]:
+    """Where one instance's committed files differ from what its records render."""
+    try:
+        rendered = render.instance(each, world, platform)
+    except RenderError as error:
+        return [f'{each}: cannot render: {error}']
+    found = []
+    committed = _committed(root, each.folder(root, base), root / UNITS / f'{each.unit}.yaml')
+    for path in sorted(set(rendered) | set(committed)):
+        if path not in committed:
+            found.append(f'{path}: rendered, not committed')
+        elif path not in rendered:
+            found.append(f'{path}: committed, not rendered')
+        else:
+            found += [f'{path}: {line}' for line in
+                      differences(_documents(committed[path]), [normal(doc) for doc in rendered[path]])]
+    return found
+
+
 def problems(root: Path, base: Path = Path('apps')) -> list[str]:
     world, found = legacy.world(root, base)
     platform = legacy.platform(root, base)
     for each in world:
-        try:
-            rendered = render.instance(each, world, platform)
-        except RenderError as error:
-            found.append(f'{each}: cannot render: {error}')
-            continue
-        committed = _committed(root, each.folder(root, base), root / UNITS / f'{each.unit}.yaml')
-        for path in sorted(set(rendered) | set(committed)):
-            if path not in committed:
-                found.append(f'{path}: rendered, not committed')
-            elif path not in rendered:
-                found.append(f'{path}: committed, not rendered')
-            else:
-                found += [f'{path}: {line}' for line in
-                          differences(_documents(committed[path]), [normal(doc) for doc in rendered[path]])]
+        found += instance_problems(root, each, world, platform, base)
     try:
         shared = render.shared(world, platform)
     except RenderError as error:

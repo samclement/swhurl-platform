@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from swhurl import app_alerts, yamlio
 from swhurl.apps import egress, events, helmrelease, offers
 from swhurl.apps.calling import API_VARIABLE, DESCRIPTION_VARIABLE, declared_calls, signing_keys
@@ -94,7 +96,7 @@ def world(root: Path, base: Path = Path('apps')) -> tuple[World, list[str]]:
     for each in instances(root / base):
         try:
             found[each] = read(each.folder(root, base), each)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError) as error:
             problems.append(f'{each}: cannot read its records: {error}')
     apps: dict[str, set[App]] = {}
     for each, entry in found.items():

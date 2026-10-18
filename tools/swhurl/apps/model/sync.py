@@ -14,9 +14,8 @@ from pathlib import Path
 from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
-from swhurl.apps.model import legacy, render
+from swhurl.apps.model import legacy, render, shadow
 from swhurl.apps.model.draft import Entry, Platform, RenderError, World
-from swhurl.apps.model.shadow import normal
 from swhurl.apps.yaml_file import EditError
 
 RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
@@ -42,7 +41,7 @@ def _same(path: Path, text: str) -> bool:
     if not path.is_file():
         return False
     try:
-        return [normal(doc) for doc in yamlio.load_all(path.read_text())] == [normal(doc) for doc in yamlio.load_all(text)]
+        return [shadow.normal(doc) for doc in yamlio.load_all(path.read_text())] == [shadow.normal(doc) for doc in yamlio.load_all(text)]
     except Exception:  # unreadable YAML on disk: write the rendered file
         return False
 
@@ -109,11 +108,21 @@ def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
     return write(root, *read(root, base))
 
 
-def change(root: Path, each: Instance, update: Callable[[Entry], Entry], base: Path = Path('apps')) -> list[Path]:
-    """One operation on one instance's records: apply ``update``, render every instance, write what changed.
-    Nothing is written when any instance fails to render."""
+def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
+           base: Path = Path('apps')) -> list[Path]:
+    """One operation on some instances' records: apply ``update`` to each, render every instance, write
+    what changed. Refused when a target's files are not what its records render (a hand edit the model
+    cannot express would be lost); nothing is written when any instance fails to render."""
     world, platform = read(root, base)
-    if each not in world:
-        raise EditError(f'no instance {each}')
-    world[each] = update(world[each])
+    targets = [targets] if isinstance(targets, Instance) else targets
+    for each in targets:
+        if each not in world:
+            raise EditError(f'no instance {each}')
+    held = [line for each in targets for line in shadow.instance_problems(root, each, world, platform, base)]
+    if held:
+        shown = '; '.join(held[:5]) + (f'; and {len(held) - 5} more' if len(held) > 5 else '')
+        raise EditError(f'the files differ from what the platform renders, so a command cannot change them '
+                        f'(make check-apps lists every difference): {shown}')
+    for each in targets:
+        world[each] = update(world[each])
     return write(root, world, platform)

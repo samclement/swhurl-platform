@@ -70,12 +70,22 @@ class CheckTemplatesTests(unittest.TestCase):
         self.assertEqual(code, 1, 'any other copier failure still fails')
 
     def test_every_combination_becomes_a_staging_and_prod_instance(self):
-        runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
+        runner = template_runner(lambda a: (WORKER if a['kind'] == 'worker' else WEB) + f"# {a['database']}\n")
         code, out = run(runner)
         self.assertEqual(code, 0, out)
         for combo in ('kind=web database=none', 'kind=web database=sqlite', 'kind=worker database=none',
                       'kind=worker database=sqlite'):
             self.assertIn(f'[OK] typescript {combo}: staging and prod pass the app policy', out)
+
+    def test_combinations_rendering_the_same_manifest_are_checked_once(self):
+        checked = []
+        runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
+        code, out = run(runner, problems=lambda path: checked.append(path.name) or [])
+        self.assertEqual(code, 0, out)
+        self.assertIn('[OK] typescript kind=web database=none (and 1 rendering the same swhurl.yaml): staging and prod pass', out)
+        self.assertIn('[INFO] typescript: 4 combinations, 2 distinct swhurl.yaml checked', out)
+        self.assertEqual(sorted(checked), ['prod', 'prod', 'staging', 'staging'], 'two manifests, each in both environments')
+        renders = [c for c in runner.calls if c[:2] == ('copier', 'copy')]
         renders = [c for c in runner.calls if c[:2] == ('copier', 'copy')]
         self.assertEqual(len(renders), 4)
         self.assertTrue(all('--vcs-ref' not in c for c in renders), 'renders the pinned checkout as a plain folder')
@@ -101,3 +111,67 @@ class CheckTemplatesTests(unittest.TestCase):
         questions = repo.parse_questions(COPIER_YML)
         self.assertEqual(len(templates_check.combinations(questions)), 4)
         self.assertEqual(templates_check.combinations([]), [{}])
+
+
+class StampTests(unittest.TestCase):
+    """A full pass is remembered with a hash of what it read; any change to that renders again."""
+
+    def test_a_pass_is_reused_until_a_module_a_read_file_or_a_tool_changes(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root, stamp = Path(tmp) / 'repo', Path(tmp) / 'cache/check-templates.json'
+            (root / 'tools').mkdir(parents=True)
+            (root / 'tools/mod.py').write_text('A = 1\n')
+            (root / 'apps').mkdir()
+            (root / 'apps/teams.yaml').write_text('teams: {}\n')
+            runner = FakeRunner().on('helm', stdout='v3.19.0').on('kubectl', stdout='v1.34')
+            with mock.patch.object(templates_check, 'ROOT', root), \
+                    mock.patch.object(templates_check, 'loaded_modules', return_value=['tools/mod.py']):
+                self.assertEqual(templates_check.unchanged(runner, stamp), '', 'no stamp: render')
+                templates_check.remember(runner, templates_check.dt.datetime(2026, 10, 18, 19, tzinfo=templates_check.dt.UTC), stamp)
+                self.assertEqual(templates_check.unchanged(runner, stamp), '2026-10-18 19:00 UTC')
+                (root / 'apps/teams.yaml').write_text('teams: {a: {}}\n')
+                self.assertEqual(templates_check.unchanged(runner, stamp), '', 'a file it reads changed')
+                templates_check.remember(runner, templates_check.dt.datetime(2026, 10, 18, 19, tzinfo=templates_check.dt.UTC), stamp)
+                (root / 'tools/mod.py').write_text('A = 2\n')
+                self.assertEqual(templates_check.unchanged(runner, stamp), '', 'a module it loaded changed')
+                templates_check.remember(runner, templates_check.dt.datetime(2026, 10, 18, 19, tzinfo=templates_check.dt.UTC), stamp)
+                newer = FakeRunner().on('helm', stdout='v3.20.0').on('kubectl', stdout='v1.34')
+                self.assertEqual(templates_check.unchanged(newer, stamp), '', 'Helm changed')
+                stamp.write_text('not json')
+                self.assertEqual(templates_check.unchanged(runner, stamp), '', 'an unreadable stamp renders')
+
+    def test_only_a_real_full_run_uses_the_stamp(self):
+        with mock.patch.dict(templates_check.os.environ, {'FORCE': 'false'}), \
+                mock.patch.object(templates_check, 'unchanged', return_value='earlier') as asked, \
+                mock.patch.object(templates_check, 'check', return_value=0), \
+                mock.patch.object(templates_check, 'remember') as kept:
+            out = io.StringIO()
+            self.assertEqual(templates_check.main([], runner=None, report=Report(out)), 0)
+            self.assertIn('nothing the template check reads has changed since it passed at earlier', out.getvalue())
+            templates_check.main(['--force'], report=Report(io.StringIO()))
+            self.assertEqual(asked.call_count, 1, '--force does not ask')
+            self.assertEqual(kept.call_count, 1, 'a forced pass is remembered')
+            templates_check.main(['--stack', 'kotlin'], report=Report(io.StringIO()))
+            templates_check.main([], runner=FakeRunner(), report=Report(io.StringIO()))
+            self.assertEqual((asked.call_count, kept.call_count), (1, 1), 'one stack, or a test runner, never uses it')
+
+    def test_the_check_reads_only_the_listed_repository_files(self):
+        """READS was measured on a real run; a check that starts reading another file must list it."""
+        import sys
+
+        from swhurl import ROOT
+        opened, watching = set(), [True]
+
+        def hook(event, args):  # an audit hook cannot be removed: it stops recording when the test ends
+            if watching[0] and event == 'open' and isinstance(args[0], str) and args[0].startswith(str(ROOT)):
+                opened.add(str(Path(args[0]).relative_to(ROOT)))
+        sys.addaudithook(hook)
+        try:
+            code, out = run(template_runner(lambda a: WEB))
+        finally:
+            watching[0] = False
+        self.assertEqual(code, 0, out)
+        read = {name for name in opened if not name.endswith(('.py', '.pyc')) and '__pycache__' not in name}
+        self.assertTrue(read, 'the hook saw the check read the repository')
+        self.assertLessEqual(read, set(templates_check.READS))

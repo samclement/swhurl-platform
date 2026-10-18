@@ -95,6 +95,15 @@ class AlertTests(unittest.TestCase):
         self.assertTrue(all(a['tags'] == ['swhurl-app', 'web'] for a in created), 'the app\'s name is a tag: filter the alerts page by it')
         self.assertIn('[OK] created swhurl:web:error-logs', out)
 
+    def test_a_job_has_its_error_logs_alert_but_no_errors_alert(self):
+        job = dashboards.App('nightly', 'job', ('staging',))
+        api = HyperDX([with_ids(dashboards.dashboard(job, 't1', 'l1'), 'd1')], webhooks=self.HOOK)
+        code, out = run(api, [job])
+        self.assertEqual(code, 0, out)
+        created = [body for method, path, body in api.calls if (method, path) == ('POST', '/alerts')]
+        self.assertEqual([(a['name'], a['tileId']) for a in created], [('swhurl:nightly:error-logs', 'd1-Error logs')],
+                         'a failed run is already one "run failed" message from the notification checker')
+
     def test_alerts_that_match_are_left_and_the_rest_are_updated_in_place_or_deleted(self):
         live = [self.alert('web', 'error-logs', 'Error logs', tags=['swhurl-app']),  # made before alerts carried their app's tag
                 self.alert('web', 'errors', 'Errors', tileId='old-tile'),            # the dashboard was rebuilt
@@ -252,6 +261,18 @@ class DefinitionTests(unittest.TestCase):
         self.assertTrue(all(t['x'] + t['w'] <= 24 for t in web['tiles']))
         self.assertEqual({t['h'] for t in web['tiles'] if t['config']['displayType'] == 'line'}, {dashboards.CHART_HEIGHT})
         self.assertEqual([t['y'] for t in web['tiles']], [0, 0, 0, 9, 9, 18], 'rows stack without overlapping')
+
+    def test_a_jobs_dashboard_shows_its_runs(self):
+        board = dashboards.dashboard(dashboards.App('nightly', 'job', ('staging', 'prod')), 't1', 'l1')
+        tiles = {t['name']: t for t in board['tiles']}
+        self.assertEqual(list(tiles), ['Runs', 'Failed runs', 'Run duration p95 (s)', 'Last runs', 'Error logs', 'Latest logs'])
+        runs = tiles['Runs']['config']['select'][0]['where']
+        self.assertIn("IN ('nightly-staging', 'nightly-prod')", runs)
+        self.assertIn("ParentSpanId = '' AND SpanName = 'run'", runs)
+        self.assertIn("StatusCode = 'Error'", tiles['Failed runs']['config']['select'][0]['where'])
+        self.assertEqual((tiles['Last runs']['config']['displayType'], tiles['Last runs']['config']['sourceId']), ('search', 't1'))
+        self.assertTrue(all(t['x'] + t['w'] <= 24 for t in board['tiles']))
+        self.assertEqual([t['y'] for t in board['tiles']], [0, 0, 0, 9, 9, 18], 'rows stack without overlapping')
 
     def test_server_defaults_do_not_count_as_a_change(self):
         wanted = dashboards.dashboard(WEB, 't1', 'l1')

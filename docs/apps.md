@@ -812,11 +812,11 @@ An instance fails fast: if its pods are not Ready within 3 minutes of a change (
 
 The scheduled `console-dashboards` job gives every Flux-managed app a HyperDX dashboard named `App: <app>` (tag `swhurl-app`), with staging and production as separate lines:
 
-| Row | Web app | Worker |
-| --- | --- | --- |
-| Traces (needs `--otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans |
-| Logs (every app) | Error logs and log lines per minute | the same |
-| Logs | The latest log lines, with their environment | the same |
+| Row | Web app | Worker | Scheduled job |
+| --- | --- | --- | --- |
+| Traces (needs `--otlp`) | Requests per minute, errors, p95 latency of server spans | Runs per minute, errors, p95 duration of root spans | **Runs**, **Failed runs** and **Run duration p95 (s)**: its root spans named `run`, one per run |
+| Second row | Error logs and log lines per minute | the same | **Last runs** (time, environment, status, seconds, reason) and error logs |
+| Logs | The latest log lines, with their environment | the same | the same |
 
 The in-cluster `console-dashboards` CronJob runs every minute. It asks Kubernetes for HelmRelease records in all namespaces, then keeps only records whose Flux labels identify an `app-<name>-<env>` unit in `flux-system` and whose release name and namespace match that app and environment. This excludes shared services and manually installed releases. It does not check readiness, so discovery starts as soon as the app Flux unit creates the HelmRelease, even while Helm is still installing it. The job groups discovered environments by app and creates or updates one HyperDX dashboard named `App: <app>`; first promotion adds a production line to the dashboard created for staging. The API call is to HyperDX; dashboards are not Kubernetes resources or Git files. Each run also records each app's dashboard id in the `console/app-dashboards` ConfigMap, which is what the console's **Dashboard ↗** links read ([console](console.md#automatic-app-dashboards)). This works for console PRs and CLI changes, including auto-merges.
 
@@ -829,7 +829,7 @@ Every app also gets default alerts, kept by the same job as its dashboard: nothi
 | Alert | Fires when | Recovers |
 | --- | --- | --- |
 | `swhurl:<app>:error-logs` | 5 or more log lines of severity `error` or `fatal` from one environment of the app in 5 minutes (the dashboard's **Error logs** tile) | When a 5-minute window stays below that |
-| `swhurl:<app>:errors` | 5 or more failed requests (web) or failed runs (worker) in 5 minutes (the **Errors** tile; needs traces, so `telemetry: otlp`) | The same |
+| `swhurl:<app>:errors` | 5 or more failed requests (web) or failed runs (worker) in 5 minutes (the **Errors** tile; needs traces, so `telemetry: otlp`). A [scheduled job](#scheduled-jobs) has none: the notification checker sends `run failed` for each failed run already | The same |
 
 ```mermaid
 flowchart LR

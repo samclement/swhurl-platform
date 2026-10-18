@@ -123,7 +123,8 @@ class FirstProductionTests(unittest.TestCase):
 
         from swhurl.apps import policy
         from swhurl.run import FakeRunner
-        for kind, extra in [('web', []), ('worker', []), ('worker', ['--database', 'sqlite'])]:
+        for kind, extra in [('web', []), ('worker', []), ('worker', ['--database', 'sqlite']),
+                            ('job', ['--schedule', '*/10 * * * *'])]:
             with self.subTest(kind=kind, extra=extra):
                 source = self.staging(kind, *extra)
                 values = source['spec']['values']
@@ -155,7 +156,10 @@ class FirstProductionTests(unittest.TestCase):
                                      'example.homelab.swhurl.com')
                 else:
                     self.assertNotIn('ingress', production['spec']['values'])
-                if extra:
+                if kind == 'job':
+                    self.assertEqual(production['spec']['values']['controllers']['main']['cronjob']['schedule'], '*/10 * * * *',
+                                     "production starts with staging's schedule")
+                elif extra:
                     self.assertTrue(production['spec']['values']['persistence']['data']['retain'])
                     self.assertNotIn('existingClaim', production['spec']['values']['persistence']['data'])
                 shutil.rmtree(self.root / 'apps')

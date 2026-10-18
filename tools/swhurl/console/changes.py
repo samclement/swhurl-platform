@@ -59,7 +59,7 @@ UNSET = ('', 'REPLACE_ME')
 EXPOSURE_LABELS = {
     'authenticated-web': ('Signed in', 'A web address under {domain}, behind Google sign-in: only the accounts on the sign-in list.'),
     'public': ('Public', 'Anyone on the internet, no sign-in. Needs a host outside {domain}.'),
-    'private': ('Private', 'No web address: only the apps granted a call to it can reach it. For APIs and workers.'),
+    'private': ('Private', 'No web address: only the apps granted a call to it can reach it. For APIs, workers and jobs.'),
 }
 """The form's plain-language names for each exposure: (title, description)."""
 
@@ -702,7 +702,7 @@ class NewApp:
             raise ActionError(f'choose the team that owns the app: one of {", ".join(teams)} ({TEAMS_FILE})')
         flags = [f'--team={team}']
         exposure, host = form.get('exposure', '').strip() or APP_TYPES[app_type].exposure, form.get('host', '').strip()
-        if answers.get('kind') == 'worker':
+        if answers.get('kind') != 'web':
             if host:
                 raise ActionError('a worker has no web address; leave Host empty')
         else:

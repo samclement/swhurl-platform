@@ -41,7 +41,7 @@ from swhurl.apps.instance import ENVIRONMENTS
 
 FILE = 'swhurl.yaml'
 VERSION = 1
-KINDS = ('web', 'worker')
+KINDS = ('web', 'worker', 'job')
 TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 MAX_DESCRIPTION = 200
@@ -63,7 +63,7 @@ class Field:
 FIELDS = (
     Field('version', IDENTITY, LIVE, 'every time the file is read: another version is refused'),
     Field('stack', IDENTITY, LIVE, "by the console, from the repository's default branch, for the language it shows"),
-    Field('kind', IDENTITY, SEED, 'nothing: web or worker is fixed at creation, and an image that changes it is held'),
+    Field('kind', IDENTITY, SEED, 'nothing: web, worker or job is fixed at creation, and an image that changes it is held'),
     Field('description', IDENTITY, LIVE, WITH_IMAGE + ', as SWHURL_DESCRIPTION; a promotion carries it with the image'),
     Field('port', NEED, LIVE, WITH_IMAGE),
     Field('healthPath', NEED, LIVE, WITH_IMAGE),
@@ -280,6 +280,8 @@ def of(doc: object, source: str = FILE) -> Declaration:
     elif any(doc.get(k) is not None for k in ('port', 'healthPath')):
         raise fail('port and healthPath apply to kind web only')
     if field('database', str, DATABASES):
+        if kind == 'job':
+            raise fail('database does not apply to kind job: a run has no pod to keep it in between runs')
         defaults['database'] = doc['database']
         if field('databaseSize', str):
             defaults['database_size'] = doc['databaseSize']

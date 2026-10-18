@@ -132,8 +132,9 @@ A new app is created by **type**: what a team is building. The type sets every a
 | `web-app` | A site people use in a browser | TypeScript | `web` | `vite` | `sqlite` | `openapi` | `asyncapi` | `example` | signed-in |
 | `api` | Data and operations other apps call | TypeScript, Kotlin | `web` | — | `sqlite` | `openapi` | `asyncapi` | `example` | private |
 | `worker` | Reacting to events, or work in a steady loop | TypeScript, Kotlin | `worker` | — | `none` | `none` | `asyncapi` | `example` | private (no route) |
+| `scheduled-job` | Work at a time of day: each run does its work and ends | TypeScript, Kotlin | `job` | — | `none` | `none` | `asyncapi` | `example` | private (no route); [runs on a schedule](#scheduled-jobs) |
 
-Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** or `make app-expose`, and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with, so changing a type changes new apps only. `make app-repo ANSWERS="kind=worker database=sqlite"` still sets the template's questions directly, over a type's or instead of one, for the operator: a combination no type has may be one the template's CI does not build, and it warns. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below). A scheduled job is planned ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
+Data shared between apps belongs in an API; a web app's own SQLite keeps what only it uses. A browser reaches an API through a web app, which calls it for the signed-in person ([a browser calling an API](#calling-another-app)). Access changes later with **Change access** or `make app-expose`, and calls, events and scale as for any app. A type is not recorded on the app: its `.copier-answers.yml` keeps the answers it was made with, so changing a type changes new apps only. `make app-repo ANSWERS="kind=worker database=sqlite"` still sets the template's questions directly, over a type's or instead of one, for the operator: a combination no type has may be one the template's CI does not build, and it warns. A web app's page is served at `/` and its own API under `/api/*`, which the Catalogue does not list (`frontend`, below). A scheduled job runs as a CronJob ([scheduled jobs](#scheduled-jobs)) ([plan](plan.md#23-app-types-for-new-apps--decided-17-october-2026)).
 
 ### Stacks and features
 
@@ -148,7 +149,7 @@ A **stack** is a [Copier](https://copier.readthedocs.io/) template repository fo
 
 | Feature | Choices | The app gets | The platform adds |
 | --- | --- | --- | --- |
-| `kind` | `web` (default), `worker` | An HTTP service answering `/healthz`, or a background process that works every `WORK_INTERVAL_MS` | A worker is private: no Service or route (the console hides **Change access**) |
+| `kind` | `web` (default), `worker`, `job` | An HTTP service answering `/healthz`, a background process that works every `WORK_INTERVAL_MS`, or a [scheduled job](#scheduled-jobs): one run of `work()` that ends with its status | A worker is private: no Service or route (the console hides **Change access**) |
 | `database` | `none` (default), `sqlite` | SQLite at `DATABASE_PATH` with migrations in `migrations/` applied at startup | A retained volume, one copy running at a time, nightly backups and `make restore-sqlite` ([operations](operations.md#backups-and-recovery)). Staging and production each have their own database; a promote copies the image, not the data |
 | `api` | `none` (default), `openapi` | Web only. An [OpenAPI](https://www.openapis.org) description generated from the app's routes, committed in its repository and served by the app: `openapi.json` (TypeScript, Hono with `@hono/zod-openapi`) or `src/main/resources/openapi.yaml` (Kotlin, Micronaut OpenAPI). A test fails while the file and the routes disagree | The link on the app page (`provides.api`), and the document kept beside each instance (`provides.apiFile`; [what an app offers](#what-an-app-offers)) |
 | `events` | `none` (default), `asyncapi` | An [AsyncAPI 3](https://www.asyncapi.com) document, `asyncapi.yaml`, describing each event the app publishes (name, meaning, payload schema, example), with one example event (`visited` for web, `worked` for a worker). The helper refuses to publish an event that is not in the file or a payload that does not fit its schema | Its NATS key and stream at creation, and what it publishes from the document from then on ([what an app offers](#what-an-app-offers)). Every app can publish and subscribe without this feature: it adds the description |
@@ -239,7 +240,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | --- | --- | --- | --- |
 | `version` | identity | read again | Checked every time the file is read |
 | `stack` | identity | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
-| `kind` | identity | read once | Fixed: web or worker cannot change; an image that changes it is held |
+| `kind` | identity | read once | Fixed: web, worker or job cannot change; an image that changes it is held. A job has no `port`, `healthPath` or `database` |
 | `description` | identity | read again | With every new staging image, as `SWHURL_DESCRIPTION`; a promotion carries it with the image. Templates from `v0.2.14` declare it and serve it, with `SWHURL_APP`, in their API description, so an image built for another app (a [seed](#first-builds-of-new-apps)) describes this one |
 | `port` | need | read again | With every new staging image: the Service, the probes, its callers' addresses and its NetworkPolicy follow |
 | `healthPath` | need | read again | With every new staging image: the readiness, liveness and startup probes |
@@ -258,6 +259,26 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `calls` | grant | refused | `make app-calls`, or `--calls` and the New app form's **Connections** at creation |
 | `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` and the New app form's **Connections** at creation |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
+
+## Scheduled jobs
+
+A job (`kind: job`, the **Scheduled job** type) has no web address and no running pod between runs: Kubernetes starts one pod per run, on the schedule, from a CronJob the chart makes (`controllers.main.type: cronjob`). The run calls the app's `work()` once and ends: status 0 is a successful run, anything else a failed one. For example, a job that runs every ten minutes in staging:
+
+```bash
+make app-schedule APP=nightly-report ENV=staging ARGS="--schedule '*/10 * * * *'"   # five cron fields, Etc/UTC
+git add apps/nightly-report && git commit -m "apps: nightly-report/staging every ten minutes" && git push
+```
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `schedule` | `17 3 * * *` (daily, 03:17 UTC) at creation, or `--schedule` | Changed per environment with `make app-schedule`; the first promotion starts production with staging's |
+| `concurrencyPolicy` | `Forbid` | A run never starts while the last one is still going |
+| `backoffLimit` | 0 | A failed run is not retried: the next scheduled run is the retry |
+| `activeDeadlineSeconds` | 3600 | A run still going after an hour is stopped, and counts as failed |
+| `startingDeadlineSeconds` | 300 | A run that cannot start within five minutes of its time is skipped |
+| History | the last successful and the last failed Job | Their pods' logs stay readable with `kubectl logs`; everything else is in ClickStack |
+
+A job keeps no database (`database` is refused in its `swhurl.yaml` and by its template: the SQLite backup runs in the app's running pod, and a job has none). It is private, takes no calls (it has no Service) and has no replicas: `make app-scale` changes only its resources. It can call other apps, publish events and read its feature flags like any app; its template waits up to 5 s for the flag overrides before the run. The templates' example declares a second flag, `fail-run`, off everywhere: turning it on for an environment on the app page makes the next run fail on purpose, to see how a failed run is reported.
 
 ## Who can reach it
 

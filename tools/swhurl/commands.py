@@ -183,6 +183,8 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command('app-logs', 'Recent workload logs (FOLLOW=true, TAIL=N, PREVIOUS=true)', READ, 'swhurl.apps.ops:main', ('logs',), (APP, ENV)),
         Command('app-reconcile', 'Fetch Git and reconcile only that instance', CLUSTER, 'swhurl.apps.ops:main', ('reconcile',), (APP, ENV)),
         Command('app-check', 'Render one instance and check it against the app policy', LOCAL, 'swhurl.apps.ops:main', ('check',), (APP, ENV)),
+        _edit('app-schedule', 'edit:main_schedule', 'Change when a job runs (five cron fields, Etc/UTC)',
+              APP, ENV, args('"--schedule \'*/10 * * * *\'"')),
         _edit('app-scale', 'edit:main_scale', "Change replicas or resources (never below the image's minimum)", APP, ENV, args('"--replicas N --cpu Q --memory Q --memory-limit Q"')),
         _edit('app-remove', 'edit:main_remove', "Delete an instance's files and unregister its unit (Flux uninstalls on push)", APP, ENV),
         Command('console-image', 'Pin platform/console to the image published for this commit', GIT, 'swhurl.images:main'),

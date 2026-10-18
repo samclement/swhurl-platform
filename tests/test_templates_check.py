@@ -49,6 +49,26 @@ def run(runner, problems=lambda path: []):
 
 
 class CheckTemplatesTests(unittest.TestCase):
+    def test_a_combination_the_template_refuses_is_skipped_not_failed(self):
+        refusal = ("Traceback (most recent call last):\n  raise ValueError(f\"Validation error for question '{self.var_name}'\")\n"
+                   "ValueError: Validation error for question 'database': a worker cannot keep a database\n")
+        runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
+
+        def copier(args, _input):
+            if 'kind=worker' in args and 'database=sqlite' in args:
+                return Result(args, 1, '', refusal)
+            Path(args[-1]).mkdir(parents=True)
+            (Path(args[-1]) / 'swhurl.yaml').write_text(WORKER if 'kind=worker' in args else WEB)
+            return Result(args, 0, '', '')
+        runner._rules[-1] = (('copier', 'copy'), copier)
+        code, out = run(runner)
+        self.assertEqual(code, 0, out)
+        self.assertIn('[INFO] typescript kind=worker database=sqlite: the template refuses it (a worker cannot keep a database)', out)
+        broken = template_runner(lambda a: WEB)
+        broken._rules[-1] = (('copier', 'copy'), lambda args, _input: Result(args, 1, '', 'no such template'))
+        code, out = run(broken)
+        self.assertEqual(code, 1, 'any other copier failure still fails')
+
     def test_every_combination_becomes_a_staging_and_prod_instance(self):
         runner = template_runner(lambda a: WORKER if a['kind'] == 'worker' else WEB)
         code, out = run(runner)

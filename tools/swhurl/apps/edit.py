@@ -70,6 +70,7 @@ from swhurl.apps.contract import (
     otlp_variables,
     over_quota,
     quantity,
+    schedule_problem,
     secret_key_problem,
     stored_secrets,
     teams,
@@ -419,9 +420,10 @@ def apply_needs(release: dict, app: str, needs: declaration.Needs) -> list[str]:
     app_values, main, workload = values(release), container(release), controller(release)
     changes: list[str] = []
     port = service_port(app_values)
-    if (port is None) != (needs.kind == 'worker'):
-        raise EditError(f'kind: {needs.kind}, but the instance is a {"worker" if port is None else "web app"}: '
-                        'web or worker is fixed at creation (create a new app for the other kind)')
+    running = helmrelease.kind(release)
+    if running != needs.kind:
+        raise EditError(f'kind: {needs.kind}, but the instance is a {"web app" if running == "web" else running}: '
+                        'web, worker or job is fixed at creation (create a new app for the other kind)')
     if needs.port is not None and port != needs.port:
         app_values['service']['main']['ports']['http']['port'] = needs.port
         changes.append(f'port {port} -> {needs.port}')
@@ -803,6 +805,9 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     instance = instance_dir(root, app, env)
     document = YamlFile(instance / 'helmrelease.yaml')
     main = controller(document.data)
+    if replicas is not None and helmrelease.kind(document.data) == 'job':
+        raise EditError(f'{app}/{env} is a job: it runs one pod per run, on its schedule (make app-schedule); '
+                        'only its resources can be changed')
     resources = mapping(container(document.data), 'resources', create=True) if cpu or memory or memory_limit else None
     changes = []
     if replicas is not None and main.get('replicas', 1) != replicas:
@@ -819,6 +824,23 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
         raise EditError(f'{app}/{env} already has those settings')
     document.save()
     print(f'[OK] {app}/{env}: {", ".join(changes)}')
+    return instance
+
+
+def schedule(root: Path, app: str, env: str, when: str) -> Path:
+    """Change when a job runs: five cron fields in its time zone (Etc/UTC)."""
+    if problem := schedule_problem(when):
+        raise EditError(problem)
+    instance = instance_dir(root, app, env)
+    document = YamlFile(instance / 'helmrelease.yaml')
+    if helmrelease.kind(document.data) != 'job':
+        raise EditError(f'{app}/{env} is not a job: only a job runs on a schedule')
+    settings = mapping(controller(document.data), 'cronjob')
+    if settings.get('schedule') == when:
+        raise EditError(f'{app}/{env} already runs on {when!r}')
+    previous, settings['schedule'] = settings.get('schedule'), when
+    document.save()
+    print(f'[OK] {app}/{env}: schedule {previous!r} -> {when!r} ({settings.get("timeZone", "UTC")})')
     return instance
 
 
@@ -1056,6 +1078,16 @@ def main_scale(argv: list[str] | None = None, opener: offers.Opener = offers._op
         return scale(root, args.app, args.env, replicas=args.replicas, cpu=args.cpu,
                      memory=args.memory, memory_limit=args.memory_limit, minimum=minimum)
     return run(change, True)
+
+
+def main_schedule(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog='swhurl app-schedule', description='Change when a job runs')
+    p.add_argument('app')
+    p.add_argument('env', choices=ENVIRONMENTS)
+    p.add_argument('--schedule', required=True, help='five cron fields in Etc/UTC, for example "*/10 * * * *", or @hourly, @daily')
+    p.add_argument('--root', type=Path, default=ROOT)
+    args = p.parse_args(argv)
+    return run(lambda: schedule(args.root.resolve(), args.app, args.env, args.schedule), True)
 
 
 def main_expose(argv: list[str] | None = None) -> int:

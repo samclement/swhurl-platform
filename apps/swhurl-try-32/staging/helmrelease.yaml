@@ -5,7 +5,7 @@ metadata:
   namespace: swhurl-try-32-staging
   annotations:
     platform.swhurl.com/offers: b0f53b1
-    platform.swhurl.com/render: ecbce10a97923e6f87f9d276e67111d73c100bfc88396cba3dc43223ed44427a
+    platform.swhurl.com/render: aacff446b610be2bf8eb9118c47f2b836bee4efa2d0e469cd73a76513d5da126
 spec:
   interval: 30m
   timeout: 3m
@@ -47,7 +47,7 @@ spec:
                 cpu: 10m
                 memory: 32Mi
               limits:
-                memory: 128Mi
+                memory: 256Mi
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true

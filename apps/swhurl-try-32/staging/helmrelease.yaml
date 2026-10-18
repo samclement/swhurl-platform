@@ -1,0 +1,96 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: swhurl-try-32
+  namespace: swhurl-try-32-staging
+  annotations:
+    platform.swhurl.com/offers: b0f53b1
+    platform.swhurl.com/render: e6026868f26a67008b55120e9f4c559c67fd3e9cf3ff4720597d83854b8c274a
+spec:
+  interval: 30m
+  timeout: 3m
+  chart:
+    spec:
+      chart: app-template
+      version: 5.2.1
+      sourceRef:
+        kind: HelmRepository
+        name: bjw-s
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 1
+  upgrade:
+    remediation:
+      retries: 1
+  values:
+    defaultPodOptions:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        containers:
+          main:
+            image:
+              repository: ghcr.io/samclement/swhurl-try-32
+              tag: 0-b0f53b1
+              digest: sha256:5e6f388056e33c778e8e24eac2f049ff030e9beb58de5fac667765e1a24a6605
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            env:
+              SWHURL_APP: swhurl-try-32
+              SWHURL_ENV: staging
+              SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_DESCRIPTION: Disposable worker for Activity verification
+              HOST_IP:
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+              OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
+              OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+              OTEL_SERVICE_NAME: swhurl-try-32
+              SWHURL_EVENTS_PUBLISH: worked
+              SWHURL_EVENTS_NKEY: UCYNLRPTXPJKLJAUSQGAJI2LGLRXHT6MHEDWP6UPGHYUQLDROMOTUCGF
+              SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
+              HTTP_PROXY: http://egress.egress.svc.cluster.local:30109
+              HTTPS_PROXY: http://egress.egress.svc.cluster.local:30109
+              JAVA_TOOL_OPTIONS: -Dhttp.proxyHost=egress.egress.svc.cluster.local -Dhttp.proxyPort=30109 -Dhttps.proxyHost=egress.egress.svc.cluster.local -Dhttps.proxyPort=30109 -Dhttp.nonProxyHosts=localhost|127.*|*.svc|*.cluster.local|$(HOST_IP)
+              NODE_USE_ENV_PROXY: '1'
+              NO_PROXY: localhost,127.0.0.1,.svc,.cluster.local,$(HOST_IP)
+            envFrom:
+            - secretRef:
+                name: swhurl-try-32-events
+        annotations:
+          secret.reloader.stakater.com/reload: swhurl-try-32-events
+    persistence:
+      tmp:
+        type: emptyDir
+        globalMounts:
+        - path: /tmp
+      tokens:
+        type: projected
+        sources:
+        - serviceAccountToken:
+            audience: notify
+            expirationSeconds: 600
+            path: notify/token
+        globalMounts:
+        - path: /var/run/swhurl/tokens
+          readOnly: true

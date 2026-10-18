@@ -1,0 +1,17 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-31
+  tag: 0-0a18f5f
+  digest: sha256:182f458f1b6488e48edeaf0a4ae7a993a2ca6162e003be9f15ac04f61f389640
+kind: web
+uid: 65532
+port: 8080
+healthPath: /healthz
+telemetry: true
+database: sqlite
+description: Disposable API for Activity verification
+apiPath: /openapi.json
+publishes:
+- visited
+offers: 0a18f5f

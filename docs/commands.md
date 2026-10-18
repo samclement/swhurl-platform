@@ -73,8 +73,8 @@ App creation/editing and template checks use `uv` with locked dependencies. App 
 | --- | --- | --- |
 | `suspend`, `resume` `TARGET=kustomization/<name>\|helmrelease/<ns>/<name>` † | `flux suspend/resume`; workloads and data untouched | Cluster |
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
-| `backup-mongodb` † | Encrypted MongoDB dump to `~/.local/state/swhurl-platform/backups` (`BACKUP_DIR`), prune to 7 daily + 4 weekly (`PRUNE=false` skips), then upload files the bucket lacks to `BACKUP_S3_URI` (empty skips; AWS CLI default credentials or `AWS_PROFILE`) | Cluster (read), local, S3 |
-| `backup-sqlite` † | For each app with a SQLite database (`DATABASE_PATH`): a short-lived pod running as the app's user copies it with `sqlite3 .backup`, checks it (`integrity_check`), and streams it through age to `BACKUP_DIR/sqlite/<namespace>/`; prune to 7 daily + 4 weekly, then upload to `SQLITE_S3_URI<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
+| `backup-mongodb` † | Start a Job from ClickStack MongoDB's backup CronJob (`observability/backup-mongodb`), wait for it and show its log; the job dumps, encrypts and publishes to `clickstack-mongodb/` ([operations](operations.md#backups-and-recovery)) | Cluster, S3 |
+| `backup-sqlite` † | Start a Job from each app SQLite database's backup CronJob (`<app>-backup`), wait for them and show their logs; each copies, checks, encrypts and publishes to `app-sqlite/<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
 | `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database from its newest backup in `BACKUP_DIR/sqlite/<app>-<env>/` (`BACKUP_FILE`, `AGE_KEY_FILE`): suspends its HelmRelease, stops the app, checks the copy, keeps the replaced files in `before-restore-<UTC>/`, starts the app ([backups](operations.md#backups-and-recovery)) | Cluster |
 
 ## Offline checks
@@ -110,7 +110,7 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `host-backup`, `host-backup-delete` † | Install or remove the daily system timer (`swhurl-backup-mongodb`) that runs `backup-mongodb` and then `backup-sqlite`, and so the S3 uploads, at 03:30 | Host |
+| `host-backup`, `host-backup-delete` † | Install or remove the retired daily system timer (`swhurl-backup-mongodb`); the backup jobs replaced it, and `host-backup-delete` switches it off (removed with H5 of [plan section 25](plan.md#25-per-database-backups--designed-18-october-2026-started-18-october-2026)) | Host |
 | `host-heartbeat`, `host-heartbeat-delete` † | Install or remove the five-minute notification checker heartbeat timer (`swhurl-notification-heartbeat`) | Host |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`) | Host |
 

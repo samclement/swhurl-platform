@@ -1730,7 +1730,7 @@ The risk per-group migration guards against, an unexpected rendering difference,
 
 ## 25. Per-database backups — designed 18 October 2026, started 18 October 2026
 
-**Status:** H0 to H3 done 18 October 2026; H4 in progress: every job runs on schedule beside the host timer from 19 October, and the freshness check reads S3 only. Left for H4: check the night's runs, then the operator switches the timer off and `make backup-sqlite` and `make backup-mongodb` start Jobs from the CronJobs (branch `h4-cutover`, pushed after the timer is off). The host timer remains the operating contract until H4 ([operations](operations.md#backups-and-recovery)). The interim timer split is dropped: the jobs replace the timer.
+**Status:** H0 to H4 done; the backup jobs are the operating contract and the host timer is off. Next H5. The host timer remains the operating contract until H4 ([operations](operations.md#backups-and-recovery)). The interim timer split is dropped: the jobs replace the timer.
 
 **H0 inventory (18 October 2026):** four SQLite databases (`demo-orders` and `swhurl-try-10`, staging and prod), each on a 1Gi `local-path-retain` claim, newest archives 17 to 217 KB; ClickStack MongoDB 532 KB, growing about 90 KB a day. The timer backs up all five in 33 to 50 s (84 MB peak). The bucket held 190 objects (5.5 MB), including the prefixes of eight removed instances. Job pods in app namespaces must reach S3 through the egress proxy once E3a lands (section 21), and need an S3 grant before E3b.
 

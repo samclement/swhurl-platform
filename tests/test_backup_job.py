@@ -2,6 +2,7 @@
 import base64
 import datetime as dt
 import hashlib
+import json
 import shutil
 import sqlite3
 import tempfile
@@ -163,6 +164,57 @@ class MongoJobTests(unittest.TestCase):
             self.assertEqual(backup_job.mongodb_main([], runner=job.runner), 1)
         self.assertEqual(job.published, [])
         self.assertNotIn('s3cret', ''.join(call.args[0] for call in err.write.call_args_list))
+
+
+class RunNowTests(unittest.TestCase):
+    """make backup-sqlite and make backup-mongodb start a Job from each CronJob and wait for it."""
+
+    def cluster(self, outcomes):
+        runner = FakeRunner()
+        cronjobs = {'items': [{'metadata': {'namespace': ns, 'name': name}} for ns, name in
+                              (('observability', 'backup-mongodb'), ('notes-prod', 'notes-backup'), ('a-staging', 'a-backup'))]}
+        runner.on('kubectl', 'get', 'cronjobs', stdout=json.dumps(cronjobs))
+        runner.on('kubectl', '-n', 'notes-prod', 'create', 'job', stdout='created')
+        runner.on('kubectl', '-n', 'a-staging', 'create', 'job', stdout='created')
+        runner.on('kubectl', '-n', 'observability', 'create', 'job', stdout='created')
+        polls = {ns: iter(states) for ns, states in outcomes.items()}
+
+        def job(args, _):
+            state = next(polls[args[2]], None)
+            conditions = [{'type': state, 'status': 'True'}] if state else []
+            return Result(args, 0, json.dumps({'status': {'conditions': conditions}}))
+        for ns in outcomes:
+            runner.on('kubectl', '-n', ns, 'get', 'job', handler=job)
+            runner.on('kubectl', '-n', ns, 'logs', stdout=f'[OK] {ns}: published\n')
+        return runner
+
+    def test_sqlite_runs_every_app_job_waits_and_fails_if_one_failed(self):
+        runner = self.cluster({'a-staging': [None, 'Complete'], 'notes-prod': ['Failed']})
+        with mock.patch('time.sleep'), mock.patch('sys.stdout'), mock.patch('sys.stderr') as err:
+            self.assertEqual(backup_job.run_sqlite_main([], runner=runner), 1)
+        created = [(call[2], call[5].split('-manual-')[0], call[6]) for call in runner.calls if 'create' in call]
+        self.assertEqual(created, [('a-staging', 'a-backup', '--from=cronjob/a-backup'),
+                                   ('notes-prod', 'notes-backup', '--from=cronjob/notes-backup')], 'not MongoDB')
+        self.assertIn('notes-prod/notes-backup-manual', ''.join(call.args[0] for call in err.write.call_args_list))
+
+    def test_mongodb_runs_only_its_job_and_dry_run_creates_nothing(self):
+        runner = self.cluster({'observability': ['Complete']})
+        out = []
+        self.assertEqual(backup_job.run_now(runner, [backup_job.MONGODB], now=NOW, sleep=lambda s: None, out=out.append), [])
+        self.assertIn('[OK] observability/backup-mongodb-manual-20261001t033000z', out)
+        runner = self.cluster({})
+        runner.dry_run = True
+        out = []
+        backup_job.run_now(runner, [backup_job.MONGODB], now=NOW, out=out.append)
+        self.assertEqual([call for call in runner.calls if 'create' in call], [])
+        self.assertIn('--from=cronjob/backup-mongodb', out[1])
+
+    def test_a_job_that_never_finishes_is_reported(self):
+        runner = self.cluster({'observability': []})
+        out = []
+        self.assertEqual(backup_job.run_now(runner, [backup_job.MONGODB], now=NOW, sleep=lambda s: None, out=out.append),
+                         ['observability/backup-mongodb-manual-20261001t033000z'])
+        self.assertIn(f'did not finish in {backup_job.WAIT_SECONDS} s', out[-1])
 
 
 class RenderedJobTests(unittest.TestCase):

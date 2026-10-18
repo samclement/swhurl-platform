@@ -158,3 +158,87 @@ def mongodb_main(argv: list[str] | None = None, runner: Runner | None = None) ->
         return backup_mongodb(runner, settings, env['MONGODB_URI'], env.get('MONGO_DATABASE') or 'hyperdx',
                               facts=mongo_facts)
     return _main(take, runner)
+
+
+# Running them now (make backup-sqlite, make backup-mongodb) ----------------------------------------------
+
+LABEL_SELECTOR = 'platform.swhurl.com/backup=true'
+MONGODB = ('observability', 'backup-mongodb')
+WAIT_SECONDS = 900  # the jobs' own activeDeadlineSeconds
+
+
+def cronjobs(runner: Runner) -> list[tuple[str, str]]:
+    """Every backup CronJob, as (namespace, name)."""
+    items = runner.json(['kubectl', 'get', 'cronjobs', '--all-namespaces', '-l', LABEL_SELECTOR, '-o', 'json']).get('items') or []
+    return sorted((item['metadata']['namespace'], item['metadata']['name']) for item in items)
+
+
+def outcome(job: dict) -> str | None:
+    """'Complete' or 'Failed' once the Job has finished; None while it runs."""
+    for condition in (job.get('status') or {}).get('conditions') or []:
+        if condition.get('type') in ('Complete', 'Failed') and condition.get('status') == 'True':
+            return condition['type']
+    return None
+
+
+def run_now(runner: Runner, targets: list[tuple[str, str]], *, now: dt.datetime | None = None,
+            sleep: Callable[[float], None] | None = None, out: Callable[[str], None] = print) -> list[str]:
+    """Start a Job from each CronJob, wait for all of them and show each one's log; return the ones that failed."""
+    import time
+    sleep = sleep or time.sleep
+    name = f'manual-{backupset.stamp(now).lower()}'
+    if runner.dry_run:
+        out('Plan (backup jobs):')
+        for namespace, cronjob in targets:
+            out(f'  - kubectl -n {namespace} create job {cronjob}-{name} --from=cronjob/{cronjob}, wait, show its log')
+        return []
+    for namespace, cronjob in targets:
+        runner.run(['kubectl', '-n', namespace, 'create', 'job', f'{cronjob}-{name}'[:63], f'--from=cronjob/{cronjob}'],
+                   mutating=True)
+    failed, waiting, waited = [], list(targets), 0.0
+    while waiting:
+        for namespace, cronjob in list(waiting):
+            job = f'{cronjob}-{name}'[:63]
+            state = outcome(runner.json(['kubectl', '-n', namespace, 'get', 'job', job, '-o', 'json']))
+            if state is None and waited < WAIT_SECONDS:
+                continue
+            waiting.remove((namespace, cronjob))
+            log = runner.output(['kubectl', '-n', namespace, 'logs', f'job/{job}', '--tail=20'], check=False).strip()
+            for line in log.splitlines():
+                out(f'  {namespace}: {line}')
+            if state == 'Complete':
+                out(f'[OK] {namespace}/{job}')
+            else:
+                failed.append(f'{namespace}/{job}')
+                out(f'[ERROR] {namespace}/{job} {"failed" if state else f"did not finish in {WAIT_SECONDS} s"}')
+        if waiting:
+            sleep(5)
+            waited += 5
+    return failed
+
+
+def _run_main(pick: Callable[[Runner], list[tuple[str, str]]], what: str, runner: Runner | None) -> int:
+    runner = runner or Runner.from_environment()
+    try:
+        targets = pick(runner)
+        if not targets:
+            print(f'[INFO] No {what} backup job: nothing to run.')
+            return 0
+        failed = run_now(runner, targets)
+    except CommandError as error:
+        print(f'[ERROR] {error}', file=sys.stderr)
+        return 1
+    if failed:
+        print(f'[ERROR] backup failed for {", ".join(failed)}', file=sys.stderr)
+        return 1
+    return 0
+
+
+def run_sqlite_main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    """make backup-sqlite: every app SQLite database's backup job, now."""
+    return _run_main(lambda runner: [each for each in cronjobs(runner) if each != MONGODB], 'app SQLite', runner)
+
+
+def run_mongodb_main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
+    """make backup-mongodb: ClickStack MongoDB's backup job, now."""
+    return _run_main(lambda runner: [MONGODB], 'MongoDB', runner)

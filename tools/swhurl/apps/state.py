@@ -71,6 +71,8 @@ def verdict(status: InstanceStatus) -> State:
         return State('unknown', 'the desired or applied Git revision is missing')
     if not status.current:
         return State('updating', 'a Git change is not applied yet')
+    if status.job:
+        return job_verdict(status)
     if status.image_state == 'different':
         return State('updating', 'a new image is rolling out (or failing to)')
     if status.release[0] != 'True':
@@ -84,6 +86,24 @@ def verdict(status: InstanceStatus) -> State:
     if status.image_state == 'none':
         return State('unknown', 'no running image could be observed')
     return State('healthy')
+
+
+def job_verdict(status: InstanceStatus) -> State:
+    """A scheduled job's state from its runs: it has no pods between them, and a failed run is not retried."""
+    runs = status.runs
+    if status.release and status.release[0] != 'True':
+        return State('updating', status.release[1])
+    if runs is None:
+        return State('unknown', 'its CronJob is missing')
+    if runs.suspended:
+        return State('suspended', 'its schedule is suspended: no run starts')
+    if runs.active:
+        return State('updating', f'a run is in progress (started {runs.last_schedule})')
+    if runs.failed:
+        return State('failing', f'the run started {runs.last_schedule} did not succeed; the next runs on schedule ({runs.schedule})')
+    if not runs.last_schedule:
+        return State('healthy', f'waiting for its first run ({runs.schedule}, Etc/UTC)')
+    return State('healthy', f'the last run succeeded at {runs.last_success}')
 
 
 def runs(status: InstanceStatus) -> bool:

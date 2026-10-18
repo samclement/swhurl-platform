@@ -19,6 +19,9 @@ rules:
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets]
     verbs: [list]
+  - apiGroups: [batch]
+    resources: [cronjobs]  # a scheduled job's runs
+    verbs: [list]
   - apiGroups: [""]
     resources: [pods, events]
     verbs: [list]

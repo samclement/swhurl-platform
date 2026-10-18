@@ -65,6 +65,52 @@ def acknowledged(state, now):
     return state
 
 
+def job(last_schedule='', last_success='', active=0, suspend=False):
+    """healthy() with its Deployment replaced by a scheduled job's CronJob, as its record says."""
+    data = healthy()
+    release = data['releases'][0]
+    release['spec']['values']['controllers']['main'].update(type='cronjob', cronjob={'schedule': '17 3 * * *'})
+    status = {k: v for k, v in (('lastScheduleTime', last_schedule), ('lastSuccessfulTime', last_success)) if v}
+    if active:
+        status['active'] = [{'name': 'run'}] * active
+    labels = data['workloads'][0]['metadata']['labels']
+    data['workloads'] = [{'kind': 'CronJob', 'metadata': {'namespace': 'example-staging', 'name': 'example', 'labels': labels},
+                          'spec': {'schedule': '17 3 * * *', 'suspend': suspend}, 'status': status}]
+    data['pods'] = []
+    return data
+
+
+class JobTests(unittest.TestCase):
+    def test_a_failed_run_is_one_notice_at_once_and_the_next_success_recovers_it(self):
+        state = n.evaluate(None, job('2026-10-03T03:17:00Z', '2026-10-03T03:17:20Z'), NOW, BASE)
+        self.assertEqual(own(state), [], 'a successful last run is healthy, with no pods')
+        failed = job('2026-10-04T03:17:00Z', '2026-10-03T03:17:20Z')
+        state = n.evaluate(state, failed, NOW + 60, BASE)
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging run failed'], 'no grace: at once')
+        self.assertIn('The run started 2026-10-04T03:17:00Z did not succeed', own(state)[0]['message'])
+        state = acknowledged(state, NOW + 60)
+        self.assertEqual(own(n.evaluate(state, failed, NOW + 2 * n.REMINDER, BASE)), [], 'no hourly reminder for the same run')
+        again = job('2026-10-05T03:17:00Z', '2026-10-03T03:17:20Z')
+        state = n.evaluate(state, again, NOW + 3 * n.REMINDER, BASE)
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging run failed'], 'another failed run: another notice')
+        state = acknowledged(state, NOW + 3 * n.REMINDER)
+        fixed = job('2026-10-06T03:17:00Z', '2026-10-06T03:17:30Z')
+        state = n.evaluate(state, fixed, NOW + 4 * n.REMINDER, BASE)
+        state = n.evaluate(state, fixed, NOW + 4 * n.REMINDER + n.RECOVERY, BASE)
+        self.assertEqual([x['title'] for x in own(state)], ['example/staging recovered'])
+
+    def test_a_running_waiting_or_suspended_job_is_not_an_incident(self):
+        for data in (job(), job('2026-10-04T03:17:00Z', '2026-10-03T03:17:20Z', active=1),
+                     job('2026-10-04T03:17:00Z', suspend=True)):
+            state = n.evaluate(None, data, NOW, BASE)
+            self.assertEqual(own(n.evaluate(state, data, NOW + 2 * n.GRACE, BASE)), [])
+        missing = job()
+        missing['workloads'] = []
+        state = n.evaluate(None, missing, NOW, BASE)
+        self.assertEqual([x['title'] for x in own(n.evaluate(state, missing, NOW + 2 * n.GRACE, BASE))],
+                         ['example/staging unhealthy'], 'a job whose CronJob is gone')
+
+
 class LifecycleTests(unittest.TestCase):
     def test_evaluation_leaves_nested_previous_state_and_snapshot_unchanged(self):
         data = healthy()
@@ -403,7 +449,7 @@ def fake_runner(state=None, data=None, *, dry_run=False, fails=()):
         {'data': {'state.json': json.dumps(state)}} if state is not None else {}))
     runner.on('kubectl', '-n', 'flux-system', 'get', handler=response({'items': data['units']}))
     for resource, key in [('helmreleases.helm.toolkit.fluxcd.io', 'releases'),
-                          ('deployments,statefulsets,daemonsets', 'workloads'), ('pods', 'pods'), ('events', 'events')]:
+                          ('deployments,statefulsets,daemonsets,cronjobs', 'workloads'), ('pods', 'pods'), ('events', 'events')]:
         runner.on('kubectl', 'get', resource, handler=response({'items': data[key]}))
     def patch(args, text):
         saved.append(json.loads(json.loads(text)['data']['state.json']))

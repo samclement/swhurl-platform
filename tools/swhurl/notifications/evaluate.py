@@ -6,7 +6,7 @@ import datetime as dt
 import logging
 from dataclasses import dataclass
 
-from swhurl.apps import ops
+from swhurl.apps import helmrelease, ops
 from swhurl.apps.instance import Instance
 from swhurl.kube import ready_condition
 from swhurl.run import Runner
@@ -39,7 +39,7 @@ def snapshot(runner: Runner) -> dict:
     commands = {
         'units': ['-n', 'flux-system', 'get', 'kustomizations.kustomize.toolkit.fluxcd.io'],
         'releases': ['get', 'helmreleases.helm.toolkit.fluxcd.io', '--all-namespaces'],
-        'workloads': ['get', 'deployments,statefulsets,daemonsets', '--all-namespaces'],
+        'workloads': ['get', 'deployments,statefulsets,daemonsets,cronjobs', '--all-namespaces'],
         'pods': ['get', 'pods', '--all-namespaces'],
         'events': ['get', 'events', '--all-namespaces'],
     }
@@ -90,7 +90,7 @@ def link(base: str, entry: dict, *, removed: bool = False) -> str:
 
 
 def incident(state: dict, record: dict, fault: str | None, *, title: str, detail: str,
-             grace: int, now: float, click: str, about: list[str] | None = None) -> None:
+             grace: int, now: float, click: str, about: list[str] | None = None, remind: bool = True) -> None:
     # None is unknown: do not advance recovery or reset a fault's first-observed time.
     if fault is None:
         record.pop('healthy_since', None)
@@ -99,7 +99,8 @@ def incident(state: dict, record: dict, fault: str | None, *, title: str, detail
         record.pop('healthy_since', None)
         record.setdefault('since', now)
         record['fault'] = fault
-        if now - record['since'] >= grace and now - record.get('last_notice', -REMINDER) >= REMINDER:
+        if (now - record['since'] >= grace and now - record.get('last_notice', -REMINDER) >= REMINDER
+                and (remind or not record.get('notified'))):
             minutes = int((now - record['since']) // 60)
             enqueue(state, f"incident:{title}:{record['since']}:{now}", f'{title} {fault}',
                     f'{detail}. Observed for {minutes} minutes.', high=True, click=click, now=now, about=about)
@@ -137,6 +138,9 @@ def health(entry: dict, release: dict | None, data: dict, *, unit: bool = True) 
                 and (obj['metadata'].get('labels') or {}).get(selector) == entry['name']
                 and (obj['metadata'].get('labels') or {}).get('app.kubernetes.io/controller', 'main') == 'main')
     workloads = [w for w in data['workloads'] if owned(w)]
+    if helmrelease.kind(release) == 'job':
+        return job_health(entry, release, next((w for w in workloads if w.get('kind') == 'CronJob'), None), unit=unit)
+    workloads = [w for w in workloads if w.get('kind') != 'CronJob']
     pods = [p for p in data['pods'] if owned(p) and not p['metadata'].get('deletionTimestamp')]
     replicas = ops.replicas({'items': workloads})
     if not replicas or any(r.wanted is None for r in replicas):
@@ -173,6 +177,28 @@ def health(entry: dict, release: dict | None, data: dict, *, unit: bool = True) 
     return '', 'Workload is Ready and deployment is current'
 
 
+RUN_FAILED = 'run failed'
+
+
+def job_health(entry: dict, release: dict, cronjob: dict | None, *, unit: bool = True) -> tuple[str | None, str]:
+    """A scheduled job's health from its CronJob's record: it has no pods between runs."""
+    runs = ops.runs_of(cronjob)
+    if runs is None:
+        return 'unhealthy', 'CronJob is missing'
+    if runs.suspended or (release.get('spec') or {}).get('suspend') or (entry['unit_object'].get('spec') or {}).get('suspend'):
+        return 'suspended', 'Its schedule or deployment reconciliation is suspended'
+    generation = release['metadata'].get('generation', 0)
+    ready = next((c for c in (release.get('status') or {}).get('conditions', []) if c.get('type') == 'Ready'), {})
+    if ready.get('status') != 'True' or ready.get('observedGeneration', -1) != generation:
+        return 'deployment stalled', f'HelmRelease is not current/Ready ({ready.get("reason", "Unknown")})'
+    if runs.failed:
+        return RUN_FAILED, (f'The run started {runs.last_schedule} did not succeed (its logs: the app page, or kubectl '
+                            f'logs in {entry["namespace"]}); the next runs on schedule ({runs.schedule}, Etc/UTC)')
+    if unit and ready_condition(entry['unit_object'])[0] != 'True':
+        return 'deployment stalled', 'Flux unit is blocked or has not finished applying the request'
+    return '', 'The last run succeeded' if runs.last_success else 'Waiting for its first run'
+
+
 def observe_instances(state: dict, current: dict, releases: dict, data: dict, now: float, base: str) -> None:
     """Refresh active identities and health incidents in the candidate state."""
     for key, entry in current.items():
@@ -189,13 +215,19 @@ def observe_instances(state: dict, current: dict, releases: dict, data: dict, no
             record['generation'] = release['metadata'].get('generation', 0)
             record['retained'] = bool(release.get('spec', {}).get('values', {}).get('persistence', {}).get('data'))
         fault, detail = health(entry, release, data)
+        if fault == RUN_FAILED:
+            # One notice for each failed run, at once (a run that has ended does not fix itself), and none
+            # again until another run fails; the next successful run recovers it.
+            run = detail.split(' did not succeed', 1)[0]
+            if record['incident'].get('run') != run:
+                record['incident'] = {'run': run}
         if fault == 'stopped' or (fault == 'suspended' and record['incident'].get('fault') != 'unhealthy'):
             record['incident'].clear()
         else:
             incident(state, record['incident'], '' if fault == 'suspended' else fault,
                      title=entry['title'], detail=detail,
-                     grace=CONSOLE_GRACE if entry['console'] else GRACE, now=now, click=link(base, entry),
-                     about=entry.get('about'))
+                     grace=0 if fault == RUN_FAILED else CONSOLE_GRACE if entry['console'] else GRACE, now=now,
+                     click=link(base, entry), about=entry.get('about'), remind=fault != RUN_FAILED)
 
 
 def prune_instances(state: dict, current: dict, releases: dict, now: float) -> None:

@@ -40,6 +40,7 @@ from swhurl.apps.contract import (
     EXPOSURES,
     STACKS,
     TEAMS_FILE,
+    schedule_problem,
     type_answers,
 )
 from swhurl.apps.instance import NAME_RE, Instance
@@ -543,7 +544,7 @@ class Command:
         return f'make {self.name} APP={self.argv[0]} ENV={self.argv[1]}{flags}'
 
 
-INSTANCE_CHANGES = {'scale': 'scale', 'expose': 'change access to', 'connect': 'change the connections of',
+INSTANCE_CHANGES = {'scale': 'scale', 'schedule': 'change when it runs:', 'expose': 'change access to', 'connect': 'change the connections of',
                     'disconnect': 'change the connections of', 'egress': 'change the hosts outside the cluster of',
                     'remove': 'remove'}
 """Each change the app page can propose for an instance, and its pull request's verb. A promotion
@@ -577,6 +578,11 @@ class Change:
         app, env, touches_others = instance.app, instance.env, False
         if kind == 'scale':
             commands: tuple[Command, ...] = (Command('app-scale', (app, env, *scale_flags(form))),)
+        elif kind == 'schedule':
+            when = ' '.join(form.get('schedule', '').split())
+            if problem := schedule_problem(when):
+                raise ActionError(problem)
+            commands = (Command('app-schedule', (app, env, f'--schedule={when}')),)
         elif kind == 'expose':
             commands = (Command('app-expose', (app, env, *expose_flags(form))),)
         elif kind == 'connect':

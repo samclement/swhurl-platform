@@ -27,7 +27,7 @@ def cluster(**overrides):
             'containers': {'main': {'image': {'repository': 'docker.io/x/web', 'tag': '1.0', 'digest': DIGEST}}}}}}}},
         'pods': {'items': [{'metadata': {'name': 'web-1'}, 'status': {'containerStatuses': [
             {'ready': True, 'imageID': f'docker-pullable://docker.io/x/web@{DIGEST}'}]}}]},
-        'deploy,statefulset,daemonset': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'web'},
+        'deploy,statefulset,daemonset,cronjob': {'items': [{'kind': 'Deployment', 'metadata': {'name': 'web'},
                                                     'spec': {'replicas': 1}, 'status': {'readyReplicas': 1}}]},
         'ingress': {'items': [{'metadata': {'annotations': {
             'traefik.ingress.kubernetes.io/router.middlewares': 'ingress-oauth-auth-shared@kubernetescrd'}},

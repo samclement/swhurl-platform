@@ -90,8 +90,17 @@ class PromotionTests(unittest.TestCase):
                 self.assertEqual(state.verdict(waiting).key, 'updating', 'unasked, every reader still sees it updating')
                 self.assertEqual(promotion.source_problem(promotion.settled(waiting, changed([])), image), '')
                 self.assertTrue(promotion.source_problem(promotion.settled(waiting, changed(['apps/example/staging/namespace.yaml'])), image))
+            with self.subTest(unit=unit, render_applied=True):
+                self.assertEqual(state.verdict(waiting, render_applied=True).key, 'healthy',
+                                 'a proved render hash says the waiting is not about this instance')
+                same = dataclasses.replace(waiting, desired_revision='main@sha1:abc')
+                self.assertEqual(state.verdict(same, render_applied=True).key, 'healthy', 'nor is re-applying the same revision')
         failing = dataclasses.replace(behind, unit=('False', 'kustomize build failed'), unit_reason='BuildFailed')
         self.assertIn('healthy', promotion.source_problem(promotion.settled(failing, changed([])), image))
+        self.assertEqual(state.verdict(failing, render_applied=True).key, 'failing', 'a failing unit still counts')
+        self.assertEqual(state.verdict(dataclasses.replace(behind, unit_suspended=True), render_applied=True).key, 'suspended')
+        self.assertEqual(state.verdict(dataclasses.replace(behind, replicas=[ops.Replicas('Deployment/example', 1, 0)]),
+                                       render_applied=True).key, 'updating', 'workload facts still count')
         unhealthy = dataclasses.replace(behind, release=('False', 'upgrade failed'))
         self.assertIn('healthy', promotion.source_problem(promotion.settled(unhealthy, changed([])), image))
         applied = dataclasses.replace(behind, desired_revision='main@sha1:abc')

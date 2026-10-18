@@ -26,7 +26,7 @@ class JobStageTests(unittest.TestCase):
         track = stages.track(running)
         self.assertEqual((track.stages[0].label, track.stages[0].state, track.status), ('Prepared', 'running', 'running'))
         self.assertEqual(track.stages[-1].label, 'Live in staging')
-        self.assertEqual(stages.sections(running)[0].lines, ('created repository', 'building'))
+        self.assertEqual(stages.prepared(running).state, 'running')
         failed = stages.track(job(state='failed', lines=['[ERROR] build failed']))
         self.assertEqual((failed.status, failed.outcome), ('failed', 'Stopped at Prepared: build failed.'))
         interrupted = stages.track(job(state='interrupted'))

@@ -5,7 +5,7 @@ import functools
 import io
 import re
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from swhurl.apps import calling, contract, egress, events, helmrelease, offers, ops
 from swhurl.apps import connections as links
@@ -71,7 +71,7 @@ class AppRow:
     applied: str = ''  # the Git revision its Flux unit last applied
     render_hash: str = ''
     render_ready: bool = False
-    render_state: State = State('unknown')
+    render_state: State = State('unknown')  # the verdict once render_hash is proved to be Git's target (stages.judge)
     image_matches: bool = False
 
 
@@ -244,9 +244,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
                            teams.get(instance.namespace, ''), connections, status.applied_revision,
                            ((release or {}).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
                            release_ready(release),
-                           verdict(replace(status, desired_revision='render', applied_revision='render',
-                                           unit=('True', '') if unit_state(status.unit, reason=status.unit_reason).key == 'updating'
-                                           else status.unit)) if states else NOT_READ,
+                           verdict(status, render_applied=True) if states else NOT_READ,
                            status.image_state == 'matches'))
     return sorted(rows, key=lambda row: (row.instance.app, row.instance.env))
 

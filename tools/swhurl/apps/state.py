@@ -50,8 +50,12 @@ def unit_state(ready: tuple[str, str], suspended: bool = False, reason: str = ''
     return State('failing', message)
 
 
-def verdict(status: InstanceStatus) -> State:
-    """An instance's state, worst first, with the reason."""
+def verdict(status: InstanceStatus, render_applied: bool = False) -> State:
+    """An instance's state, worst first, with the reason.
+
+    ``render_applied``: the caller has proved the live HelmRelease carries the render Git wants for this
+    instance (Activity compares render hashes, which no other instance's commit changes). The Git revisions
+    then say nothing more about it, and its Flux unit counts only when failing or suspended."""
     if status.unit_suspended:
         return State('suspended', 'Git changes are not applied until its Flux unit is resumed')
     if status.release_suspended:
@@ -63,14 +67,15 @@ def verdict(status: InstanceStatus) -> State:
         return unit
     if status.release and status.release[0] == 'False':
         return State('failing', status.release[1])
-    if unit.key == 'updating' and not status.unaffected:
+    if unit.key == 'updating' and not (status.unaffected or render_applied):
         return unit
     if status.release is None:
         return State('unknown', 'the app release is missing')
-    if not status.desired_revision or not status.applied_revision:
-        return State('unknown', 'the desired or applied Git revision is missing')
-    if not status.current:
-        return State('updating', 'a Git change is not applied yet')
+    if not render_applied:
+        if not status.desired_revision or not status.applied_revision:
+            return State('unknown', 'the desired or applied Git revision is missing')
+        if not status.current:
+            return State('updating', 'a Git change is not applied yet')
     if status.job:
         return job_verdict(status)
     if status.image_state == 'different':

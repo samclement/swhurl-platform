@@ -1320,11 +1320,11 @@ Stage 4 is not built now; the hold above stays. Reasons: only `demo-orders` and 
 
 **Build when a production app first needs a changed need, or before the final operator exercise if it changes one.** Build the narrow version then:
 
-- **Staging records the image's whole needs:** an annotation with the image's own resources minimum, and `needs_of(release)` to rebuild `declaration.Needs` from staging's release, so promotion and gate need no GitHub read.
-- **`edit.promote` and `after_promotion` call `apply_needs`** on production with staging's needs (same refusals; a rollback across a database or uid change is refused), plus `namespace.yaml`, the Reloader list and `sync_env(prod)` on a port change; `SETTINGS` rows for the keys `apply_needs` writes, so env-drift lets staging run ahead.
-- **The gate does not auto-merge a promotion whose needs differ** from production's; the operator merges it after setting any missing production secret value. Auto-merge then applies only when the needs match, as today.
+- **Staging's release already holds the image's whole needs** (section 24's `release.yaml`, resources minimum included), so promotion and gate need no GitHub read.
+- **`edit.promote` copies staging's Release whole** and renders it with production's Settings, so a changed port, database or secret name reaches production in the same commit as the image. Still to build: lifting the hold, the same refusals `edit.with_needs` makes for staging, and refusing a rollback across a database or uid change.
+- **The gate does not auto-merge a promotion whose needs differ** from production's (`console/merge.py`, `replay_promotion`); the operator merges it after setting any missing production secret value. Auto-merge then applies only when the needs match, as today.
 
-The full version (auto-merging a change of needs) would also replace the later-promotion file list in `console/merge.py` with re-running `promote` on main and comparing every file, as for a first promotion, and let a secret value set after review keep the review valid. Build it only if the operator wants needs promoted without a review.
+The full version (auto-merging a change of needs) would also let a secret value set after review keep the review valid; the gate already replays the promotion on `main`. Build it only if the operator wants needs promoted without a review.
 
 ### Stage 5: egress grants
 
@@ -1415,7 +1415,7 @@ A schema construct the comparator does not understand (for example `oneOf`) coun
 | # | Stage | Ends in |
 | --- | --- | --- |
 | 1 | `offers.compatible(old, new, received)`: a pure function over two payload schemas, returning each breaking difference with its path (`created.placedBy: removed`); tests for every row of the rule above, including `$ref` and nested objects | `make test` passes; nothing calls it yet |
-| 2 | Deploy: `read_offers` (`apps/edit.py`) compares the instance's kept `offers/asyncapi.yaml` with the new image's, against the staging subscribers; a breaking change holds that app's image as a refused offer does now (the run fails naming the property and the subscribers; the others deploy). Production: `carry_offers` refuses a promotion whose documents break a production subscriber. The console's review page shows the reason | `make check`; a throwaway live test on `swhurl-try-*`: rename a received property and see the image held, then add one and see it deploy |
+| 2 | Deploy: `edit.deploy_staging` compares the instance's kept `offers/asyncapi.yaml` with the new image's (`release.read_offers`), against the staging subscribers; a breaking change holds that app's image as a refused offer does now (the run fails naming the property and the subscribers; the others deploy). Production: `edit.promote` refuses a promotion whose documents (`edit.staging_offers`) break a production subscriber. The console's review page shows the reason | `make check`; a throwaway live test on `swhurl-try-*`: rename a received property and see the image held, then add one and see it deploy |
 | 3 | Docs: the rule in [what an app offers](apps.md#what-an-app-offers), the hold in [deploy a new image](apps.md#deploy-a-new-image) and [promote](apps.md#promote-to-production), expand and contract in the template READMEs; dated evidence in `current-state.md` | Docs match behaviour |
 | Later (operator decides) | Let the auto-merge gate merge a promotion that adds an event or a property, holding only breaking ones; today any change to what an app publishes waits for review | A decision, not part of B |
 

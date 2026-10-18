@@ -139,14 +139,6 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
     return Rollout('applying', live.detail or 'waiting for the target image to be Healthy', applied=True)
 
 
-@dataclass(frozen=True)
-class Section:
-    """One stage's share of a job's output."""
-    stage: Stage
-    lines: tuple[str, ...]
-    started: bool
-
-
 def number(job: Job) -> int | None:
     """The pull request a job opened, from its link."""
     found = PULL.search(job.link or '')
@@ -158,10 +150,6 @@ def control(job: Job) -> bool:
     return job.unit.startswith('PR #')
 
 
-def stage_of(job: Job, index: int) -> str:
-    return 'prepared'
-
-
 def error(job: Job) -> str:
     """Why a job stopped, from its output."""
     if job.state == 'interrupted':
@@ -171,14 +159,11 @@ def error(job: Job) -> str:
     return said if len(said) <= NOTE else said[:NOTE].rstrip() + '…'
 
 
-def job_stages(job: Job) -> list[Stage]:
+def prepared(job: Job) -> Stage:
+    """The job's own stage; its output is one chronological log under it."""
     state = 'done' if job.state == 'succeeded' else 'running' if job.state == 'running' else 'failed'
     note = error(job) if state == 'failed' else 'PR opened' if state == 'done' and number(job) else ''
-    return [Stage('prepared', 'Prepared', state, note)]
-
-
-def sections(job: Job) -> list[Section]:
-    return [Section(job_stages(job)[0], tuple(job.lines), True)]
+    return Stage('prepared', 'Prepared', state, note)
 
 
 def end_label(action: str, target: str) -> str:
@@ -276,7 +261,7 @@ def after_pull(pull: Pull, action: str, target: str, landed: Rollout | None) -> 
 
 def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) -> Track:
     """The whole path of the change ``job`` started."""
-    stages = job_stages(job)
+    first = prepared(job)
     flux = job.action in ('reconcile', 'suspend', 'resume')
     if flux:
         end = 'Suspended' if job.action == 'suspend' else 'Applied'
@@ -290,21 +275,19 @@ def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) ->
     if not flux and not control(job) and end != 'On main' and job.action != 'remove':
         after.append(Stage('running', 'Running', 'todo'))
     if job.state == 'running':
-        current = next(stage.label for stage in stages if stage.state == 'running')
         ends = end if flux or control(job) else f'{end}, once its pull request is merged'
-        return Track((*stages, *after, Stage('end', end, 'planned')), 'running', f'Now: {current}. Ends: {ends}.')
+        return Track((first, *after, Stage('end', end, 'planned')), 'running', f'Now: {first.label}. Ends: {ends}.')
     if job.state != 'succeeded':
-        failed = next(stage for stage in stages if stage.state == 'failed')
-        stages = [Stage(stage.key, stage.label, stage.state) for stage in stages]  # the reason is the sentence under the track
-        return Track((*stages, *after, Stage('end', end, 'planned')), 'interrupted' if job.state == 'interrupted' else 'failed',
-                     f'Stopped at {failed.label}: {failed.note or "see its output"}.')
+        shown = Stage(first.key, first.label, first.state)  # the reason is the sentence under the track
+        return Track((shown, *after, Stage('end', end, 'planned')), 'interrupted' if job.state == 'interrupted' else 'failed',
+                     f'Stopped at {first.label}: {first.note or "see its output"}.')
     if flux or control(job):
         said = next((line for line in reversed(job.lines) if line.startswith('✔ applied revision ')), '')
-        return Track((*stages, Stage('end', end, 'reached', said.removeprefix('✔ applied revision '))), 'done', f'{end}.')
+        return Track((first, Stage('end', end, 'reached', said.removeprefix('✔ applied revision '))), 'done', f'{end}.')
     if pull is None:  # a dry run, or a job that had nothing to propose
-        return Track((*stages, Stage('end', 'No pull request opened', 'reached')), 'done', 'No pull request was opened.')
+        return Track((first, Stage('end', 'No pull request opened', 'reached')), 'done', 'No pull request was opened.')
     rest, status, outcome = after_pull(pull, job.action, job.unit, rollout)
-    return Track((*stages, *rest), status, outcome)
+    return Track((first, *rest), status, outcome)
 
 
 def target_of(branch: str) -> tuple[str, str]:

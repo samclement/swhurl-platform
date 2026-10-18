@@ -10,6 +10,7 @@ def apply(draft: Draft, entry: Entry) -> None:
     names, app = entry.release.secrets, draft.instance.app
     if names:
         draft.annotate(draft.release, SECRET_NAMES, ','.join(names))
+    if names or APP_SECRET in entry.encrypted:  # a value may be set before the image that reads it
         # Optional: the app starts before the Secret has its first value.
         draft.env_from(app_secret(app), optional=True)
         draft.reload(app_secret(app))

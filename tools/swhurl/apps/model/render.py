@@ -11,7 +11,7 @@ import yaml
 
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import alerts, calls, egress, events, exposure, offers, secrets, sqlite, telemetry, workload
-from swhurl.apps.model.draft import Platform, World
+from swhurl.apps.model.draft import APP_SECRET, Platform, World
 
 
 def text(documents: list[dict]) -> str:
@@ -50,6 +50,7 @@ class Shared:
 
 
 def shared(world: World, platform: Platform) -> Shared:
-    reloaded = frozenset(each.namespace for each, entry in world.items() if events.keyed(entry) or entry.release.secrets)
+    reloaded = frozenset(each.namespace for each, entry in world.items()
+                         if events.keyed(entry) or entry.release.secrets or APP_SECRET in entry.encrypted)
     return Shared(events.users(world, platform), egress.proxy(world, platform), reloaded,
                   frozenset(f'{each.unit}.yaml' for each in world))

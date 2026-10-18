@@ -74,26 +74,43 @@ def plan(root: Path, world: World, platform: Platform) -> tuple[dict[Path, str],
     return writes, deletions
 
 
-def write(root: Path, world: World, platform: Platform) -> list[Path]:
-    """Render ``world`` and write what changed, after every file has rendered; return the files changed."""
+@dataclasses.dataclass(frozen=True)
+class Prepared:
+    """A rendered change not yet written: the records and every file to write or delete."""
+    world: World
+    platform: Platform
+    writes: dict[Path, str]
+    deletions: list[Path]
+
+
+def render_all(root: Path, world: World, platform: Platform) -> Prepared:
+    world = allocate(world, platform)
+    return Prepared(world, platform, *plan(root, world, platform))
+
+
+def apply(root: Path, prepared: Prepared) -> list[Path]:
+    """Write a prepared change; return the files changed."""
     from swhurl.apps.new import watch_namespace
 
-    world = allocate(world, platform)
-    writes, deletions = plan(root, world, platform)
-    for path, text in writes.items():
+    for path, text in prepared.writes.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
-    for path in deletions:
+    for path in prepared.deletions:
         path.unlink()
-    changed = [*writes, *deletions]
+    changed = [*prepared.writes, *prepared.deletions]
     reloader = root / RELOADER_FILE
     if reloader.is_file():
         before = reloader.read_text()
-        for namespace in sorted(render.shared(world, platform).reloaded):
+        for namespace in sorted(render.shared(prepared.world, prepared.platform).reloaded):
             watch_namespace(root, namespace)
         if reloader.read_text() != before:
             changed.append(reloader)
     return changed
+
+
+def write(root: Path, world: World, platform: Platform) -> list[Path]:
+    """Render ``world`` and write what changed, after every file has rendered; return the files changed."""
+    return apply(root, render_all(root, world, platform))
 
 
 def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
@@ -108,11 +125,11 @@ def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
     return write(root, *read(root, base))
 
 
-def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
-           base: Path = Path('apps')) -> list[Path]:
-    """One operation on some instances' records: apply ``update`` to each, render every instance, write
-    what changed. Refused when a target's files are not what its records render (a hand edit the model
-    cannot express would be lost); nothing is written when any instance fails to render."""
+def prepare(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
+            base: Path = Path('apps')) -> Prepared:
+    """One operation on some instances' records, rendered but not written: ``update`` applied to each.
+    Refused when a target's files are not what its records render (a hand edit the model cannot
+    express would be lost), or when any instance fails to render."""
     world, platform = read(root, base)
     targets = [targets] if isinstance(targets, Instance) else targets
     for each in targets:
@@ -125,4 +142,10 @@ def change(root: Path, targets: Instance | list[Instance], update: Callable[[Ent
                         f'(make check-apps lists every difference): {shown}')
     for each in targets:
         world[each] = update(world[each])
-    return write(root, world, platform)
+    return render_all(root, world, platform)
+
+
+def change(root: Path, targets: Instance | list[Instance], update: Callable[[Entry], Entry],
+           base: Path = Path('apps')) -> list[Path]:
+    """``prepare``, then write what changed; return the files changed."""
+    return apply(root, prepare(root, targets, update, base))

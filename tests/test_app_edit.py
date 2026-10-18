@@ -647,12 +647,8 @@ components:
         return opener
 
     def automatic(self, app='orders'):
-        (self.root / 'apps' / app / 'staging/image-automation.yaml').write_text(
-            f'apiVersion: image.toolkit.fluxcd.io/v1\nkind: ImageRepository\nmetadata: {{name: {app}, namespace: flux-system}}\n'
-            f'spec: {{image: ghcr.io/samclement/{app}, interval: 1h}}\n---\n'
-            f'apiVersion: image.toolkit.fluxcd.io/v1\nkind: ImagePolicy\nmetadata: {{name: {app}-staging, namespace: flux-system}}\n'
-            f'spec:\n  imageRepositoryRef: {{name: {app}}}\n'
-            f'  filterTags: {{pattern: "^(?P<run>[0-9]+)-[0-9a-f]{{7,40}}$", extract: $run}}\n  policy: {{numerical: {{order: asc}}}}\n')
+        """Staging follows the app's images: rendered for a platform image (built_from_a_repository)."""
+        self.assertTrue((self.root / 'apps' / app / 'staging/image-automation.yaml').is_file())
 
     def test_staging_gets_the_newest_image_and_what_it_offers_in_one_change(self):
         import hashlib
@@ -810,14 +806,12 @@ components:
     def test_a_push_does_not_change_who_owns_a_volume(self):
         self.with_units()
         self.built_from_a_repository()
-        self.automatic()
         self.without_production()
-        release = self.root / 'apps/orders/staging/helmrelease.yaml'
-        release.write_text(release.read_text().replace('    persistence:\n', '    persistence:\n      data:\n'
-                                                       '        type: persistentVolumeClaim\n        size: 1Gi\n', 1))
+        declared = 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\ndatabase: sqlite\n'
+        self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', ['8-def5678'], {'swhurl.yaml': declared}))
         with self.assertRaisesRegex(edit.EditError, 'keeps a volume whose files belong to uid 101'):
             edit.deploy_staging(self.root, 'orders', opener=self.registry(
-                'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\n'}))
+                'orders', ['9-0000000'], {'swhurl.yaml': declared.replace('uid: 101', 'uid: 1000')}))
 
     def test_a_new_image_brings_its_database_and_secret_names(self):
         self.with_units()

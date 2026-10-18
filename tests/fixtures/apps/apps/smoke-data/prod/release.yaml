@@ -1,0 +1,15 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: docker.io/library/busybox
+  tag: '1.37'
+  digest: sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+kind: worker
+uid: 65532
+command:
+- sh
+- -c
+- date -u >> /data/log; exec sleep 3600000
+database: sqlite
+secrets:
+- GREETING

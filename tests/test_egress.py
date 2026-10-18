@@ -57,10 +57,8 @@ class EgressTests(unittest.TestCase):
         self.assertEqual(egress.problems(self.root), [])
 
         # A port once given stays, whatever else is free.
-        release = self.root / 'apps/hello/staging/helmrelease.yaml'
-        release.write_text(release.read_text().replace(':30101', ':30107').replace('Port=30101', 'Port=30107'))
-        self.assertIn('egress-ports: platform/egress/proxy.yaml is not what the instances declare; make app-sync rewrites it',
-                      egress.problems(self.root))
+        settings = self.root / 'apps/hello/staging/instance.yaml'
+        settings.write_text(settings.read_text().replace('egressPort: 30101', 'egressPort: 30107'))
         self.sync()
         self.assertEqual(egress.port_of(self.env('staging')), 30107)
         self.assertEqual(self.proxy()[0]['service']['main']['ports'], {'p30102': {'port': 30102}, 'p30107': {'port': 30107}})

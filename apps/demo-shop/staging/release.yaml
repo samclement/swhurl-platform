@@ -1,0 +1,14 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/demo-shop
+  tag: 47-bb7a44b
+  digest: sha256:bb6026992fc06c8709401af3379168ac6a8222c40fe26c8584d26157f4a4bb74
+kind: web
+uid: 65532
+stack: typescript
+port: 8080
+healthPath: /healthz
+telemetry: true
+apiPath: /openapi.json
+offers: bb7a44b

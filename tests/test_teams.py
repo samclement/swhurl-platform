@@ -11,7 +11,7 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import channels, contract, policy, teams
+from swhurl.apps import channels, contract, derive, policy, teams
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import FakeRunner, Result
 
@@ -54,14 +54,18 @@ class TeamTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaisesRegex(EditError, message):
                 fn(self.root, *args)
 
+    def owned_by(self, team):
+        """hello belongs to ``team``: its App record, and what that renders."""
+        path = self.root / 'apps/hello/app.yaml'
+        path.write_text(path.read_text().replace('team: demo', f'team: {team}'))
+        self.quiet(derive.sync)
+
     def test_a_rename_relabels_every_app_of_the_team(self):
         self.quiet(teams.remove, 'payments')
         self.quiet(teams.add, 'core')
         self.quiet(teams.remove, 'core')  # round trip of an empty team
         (self.root / 'apps/teams.yaml').write_text('teams:\n  demo: {}\n  legacy: {description: Old}\n  payments: {}\n')
-        for env in ('staging', 'prod'):
-            path = self.root / 'apps/hello' / env / 'namespace.yaml'
-            path.write_text(path.read_text().replace('team: demo', 'team: legacy'))
+        self.owned_by('legacy')
         out = self.quiet(teams.change, 'legacy', rename='orders')
         self.assertIn('renamed to orders; relabelled 1 app(s)', out)
         self.assertEqual(list(self.registered()), ['demo', 'orders', 'payments'], 'it keeps its place and description')
@@ -76,9 +80,7 @@ class TeamTests(unittest.TestCase):
 
     def test_a_team_with_apps_is_not_removed_unless_they_are_moved(self):
         self.quiet(teams.add, 'legacy')
-        for env in ('staging', 'prod'):
-            path = self.root / 'apps/hello' / env / 'namespace.yaml'
-            path.write_text(path.read_text().replace('team: demo', 'team: legacy'))
+        self.owned_by('legacy')
         before = (self.root / 'apps/teams.yaml').read_text()
         with self.assertRaisesRegex(EditError, 'team legacy still owns hello: move them with --move-apps-to'):
             teams.remove(self.root, 'legacy')

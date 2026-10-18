@@ -1,0 +1,17 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/demo-orders
+  tag: 34-707d835
+  digest: sha256:c5c032a83a76c8a31617ef6817a86cf82b244d07a90b91c152d95a701c8fc111
+kind: web
+uid: 65532
+stack: typescript
+port: 8080
+healthPath: /healthz
+telemetry: true
+database: sqlite
+apiPath: /openapi.json
+publishes:
+- created
+offers: 707d835

@@ -1,9 +1,9 @@
 """Sync: what the platform derives, written from the records (make app-sync and every edit command).
 
-Reads every instance's records (from its manifests until the cutover), gives an instance without an
-egress port the lowest free one (allocation is an operation's, never rendering's), renders, and writes
-each file whose parsed content differs from the file on disk. A file that is the same objects in other
-bytes is left alone, so an edit's diff shows what it changed.
+Reads every instance's records (store.py), gives an instance without an egress port the lowest free
+one (allocation is an operation's, never rendering's), renders, and writes the records and each file
+whose parsed content differs from the file on disk. A file that is the same objects in other bytes is
+left alone, so an edit's diff shows what it changed.
 """
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from pathlib import Path
 from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.instance import ENVIRONMENTS, UNITS, Instance
-from swhurl.apps.model import legacy, render, shadow
+from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import Entry, Platform, RenderError, World
+from swhurl.apps.model.records import RECORD_FILES
 from swhurl.apps.yaml_file import EditError
 
 RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
@@ -42,7 +43,7 @@ def _same(path: Path, text: str) -> bool:
     if not path.is_file():
         return False
     try:
-        return [shadow.normal(doc) for doc in yamlio.load_all(path.read_text())] == [shadow.normal(doc) for doc in yamlio.load_all(text)]
+        return [generated.normal(doc) for doc in yamlio.load_all(path.read_text())] == [generated.normal(doc) for doc in yamlio.load_all(text)]
     except Exception:  # unreadable YAML on disk: write the rendered file
         return False
 
@@ -62,10 +63,13 @@ def plan(root: Path, world: World, platform: Platform, added: frozenset[Instance
                 text = render.text(documents)
                 if not _same(target, text):
                     writes[target] = text
-            kept = {root / path for path in rendered}
+            kept = {root / path for path in rendered} | {folder / name for name in RECORD_FILES}
             deletions += [path for path in sorted(folder.glob('*.yaml'))
                           if path not in kept and not path.name.endswith('.sops.yaml')]
         shared = render.shared(world, platform)
+        for path, text in store.documents(world, platform.base).items():
+            if not ((root / path).is_file() and (root / path).read_text() == text):
+                writes[root / path] = text
     except RenderError as error:
         raise EditError(str(error)) from None
     for path, text in ((events.USERS_FILE, shared.nats_users is not None and events.users_configmap(shared.nats_users)),
@@ -127,10 +131,10 @@ def write(root: Path, world: World, platform: Platform) -> list[Path]:
 
 
 def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
-    world, problems = legacy.world(root, base)
+    world, problems = store.world(root, base)
     if problems:
         raise EditError('; '.join(problems))
-    return world, legacy.platform(root, base)
+    return world, store.platform(root, base)
 
 
 def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
@@ -141,7 +145,7 @@ def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
 def guard(root: Path, world: World, platform: Platform, targets: list[Instance], base: Path = Path('apps')) -> None:
     """Refuse instances whose files are not what their records render: a hand edit the model cannot
     express would be lost by writing them."""
-    held = [line for each in targets for line in shadow.instance_problems(root, each, world, platform, base)]
+    held = [line for each in targets for line in generated.instance_problems(root, each, world, platform, base)]
     if held:
         shown = '; '.join(held[:5]) + (f'; and {len(held) - 5} more' if len(held) > 5 else '')
         raise EditError(f'the files differ from what the platform renders, so a command cannot change them '

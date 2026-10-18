@@ -33,7 +33,7 @@ from swhurl.apps.contract import (
     type_answers,
 )
 from swhurl.apps.instance import ENVIRONMENTS, instance_folder
-from swhurl.apps.model import shadow
+from swhurl.apps.model import generated
 from swhurl.apps.yaml_file import EditError
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
@@ -103,7 +103,7 @@ def check_combination(runner: Runner, report: Report, template: Path, stack: str
         instances.append(instance_folder(root, NAME, env))
     problems = [f'{each.name}: {p}' for each in instances for p in policy.evaluate(each, runner)]
     problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
-    problems += [f'app model: {p}' for p in shadow.problems(root)]
+    problems += [f'app model: {p}' for p in generated.problems(root)]
     if problems:
         report.bad(f'{label}: ' + '; '.join(problems))
         return False

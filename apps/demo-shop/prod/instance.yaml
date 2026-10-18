@@ -1,0 +1,8 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+exposure: authenticated-web
+calls:
+- demo-orders
+allocations:
+  egressPort: 30112
+  eventsKey: UBLHEBE7OTP4VO2AU774JTYVGDHCDGNTQMWGQ6Q6L2SE2XFUAAUHF3DV

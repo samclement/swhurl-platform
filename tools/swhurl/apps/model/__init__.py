@@ -6,7 +6,7 @@
 
 ``render`` builds an instance's files, and the shared files, from the records of every instance. Each
 capability (workload, exposure, calls, events, egress, sqlite, secrets, telemetry, offers) is one
-module that adds its part. Stage 1 is a shadow: ``legacy`` reads the records back from today's
-manifests and ``shadow`` checks that rendering them reproduces every instance (make check-apps).
-Nothing writes the record files yet.
+module that adds its part. ``store`` reads and writes the records, ``sync`` is how a command changes
+them and writes what follows, and ``generated`` is make check-apps' proof that every committed file is
+what the records render.
 """

@@ -1,7 +1,8 @@
-"""The shadow check (docs/plan.md section 24, stage 1): read every instance's records from its
-manifests, render them, and compare the result with what is committed, as parsed objects.
+"""Generated means generated (docs/plan.md section 24): render every instance's records and compare the
+result with what is committed, as parsed objects.
 
-A difference means the model cannot yet describe that instance exactly; make check-apps fails on it.
+A difference is a hand edit, or a record changed without rendering: make check-apps fails on it, and
+make app-sync writes what the records render.
 """
 from __future__ import annotations
 
@@ -11,8 +12,9 @@ from pathlib import Path
 from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.instance import UNITS, Instance
-from swhurl.apps.model import legacy, render
+from swhurl.apps.model import render, store
 from swhurl.apps.model.draft import Platform, RenderError, World
+from swhurl.apps.model.records import RECORD_FILES
 
 FIXTURES = Path('tests/fixtures/apps')
 """The generated fixtures (tests/fixtures/apps.sh) are a root of their own."""
@@ -58,7 +60,8 @@ def _documents(path: Path) -> list:
 
 def _committed(root: Path, folder: Path, unit: Path) -> dict[Path, Path]:
     found = {path.relative_to(root): path for path in sorted(folder.rglob('*.yaml'))
-             if not path.name.endswith('.sops.yaml') and 'offers' not in path.relative_to(folder).parts}
+             if not path.name.endswith('.sops.yaml') and path.name not in RECORD_FILES
+             and 'offers' not in path.relative_to(folder).parts}
     if unit.is_file():
         found[unit.relative_to(root)] = unit
     return found
@@ -92,8 +95,8 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
 
 
 def problems(root: Path, base: Path = Path('apps')) -> list[str]:
-    world, found = legacy.world(root, base)
-    platform = legacy.platform(root, base)
+    world, found = store.world(root, base)
+    platform = store.platform(root, base)
     for each in world:
         found += instance_problems(root, each, world, platform, base)
     try:

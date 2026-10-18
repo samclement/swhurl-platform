@@ -187,11 +187,10 @@ class MergeTests(unittest.TestCase):
             self.assertEqual(self.pushes(runner), [])
 
     def test_destination_or_tooling_change_requires_fresh_review(self):
-        path = self.root / 'apps/example/prod/helmrelease.yaml'
-        original = path.read_text()
-        path.write_text(original.replace('cpu: 10m', 'cpu: 75m'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit.scale(self.root, 'example', 'prod', cpu='75m')
         self.held('production changed')
-        path.write_text(original)
+        self.promotion()
         (self.root / 'tools/swhurl/apps').mkdir(parents=True)
         (self.root / 'tools/swhurl/apps/new.py').write_text('# changed generator\n')
         self.held('tooling, policy')

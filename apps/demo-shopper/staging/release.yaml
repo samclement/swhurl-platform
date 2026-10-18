@@ -1,0 +1,10 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/demo-shopper
+  tag: 39-5b946fc
+  digest: sha256:80bcfa7523d44fde0f1121ef78b737bd8c060c3e28ab34cb533938bed8f5147e
+kind: worker
+uid: 65532
+stack: typescript
+telemetry: true

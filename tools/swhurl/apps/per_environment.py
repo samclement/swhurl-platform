@@ -33,6 +33,7 @@ from swhurl.apps.calling import (
     ENVIRONMENT_VARIABLE,
     TOKENS_VOLUME,
 )
+from swhurl.apps.model.records import RECORD_FILES
 
 DECLARED, DERIVED, GENERATED = 'declared', 'derived', 'generated'
 CARRY, STRIP, REGENERATE = 'carry', 'strip', 'regenerate'
@@ -131,8 +132,9 @@ def may_differ(key: object, value: object = None, *, exposure_differs: bool = Fa
 
 
 def compared(name: str) -> bool:
-    """Whether a file of an instance's folder is compared between environments."""
-    return not name.endswith(ENCRYPTED) and name not in {file.name for file in FILES}
+    """Whether a file of an instance's folder is compared between environments: not its records, which
+    say what each environment is rendered from (the rendered files are compared)."""
+    return not name.endswith(ENCRYPTED) and name not in {file.name for file in FILES} | RECORD_FILES
 
 
 def without_reference(release: dict, secret: str) -> None:

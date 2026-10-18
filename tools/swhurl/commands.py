@@ -263,6 +263,10 @@ INTERNAL = (
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
     Command('prune-backups', 'Prune ClickStack MongoDB backups to the retention set', run='swhurl.recovery:prune_backups', internal=True),
+    Command('backup-job-sqlite', "The backup job's pod: copy, check, encrypt and publish one app's SQLite database",
+            run='swhurl.backup_job:sqlite_main', internal=True),
+    Command('backup-job-mongodb', "The backup job's pod: dump, encrypt and publish ClickStack's MongoDB",
+            run='swhurl.backup_job:mongodb_main', internal=True),
 )
 
 COMMANDS: dict[str, Command] = {command.name: command for commands in (*(found for _, found in SECTIONS), INTERNAL) for command in commands}

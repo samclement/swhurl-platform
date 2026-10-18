@@ -87,9 +87,9 @@ CHECKS = (
              'Telemetry expires after 30 days and ClickHouse system logs after 7, no merge failed in the last hour, '
              'and the MongoDB volume is retained'),
     Check.of('backups', 'host', recovery.check_backups,
-             'The newest MongoDB backup, on this host and in S3, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
-    Check.of('sqlite-backups', 'cluster host', sqlite_backup.check_sqlite_backups,
-             "Each app SQLite database's newest backup, on this host and in S3, is as young"),
+             'The newest MongoDB backup in S3, archive and metadata, is younger than `BACKUP_MAX_AGE_HOURS` (26)'),
+    Check.of('sqlite-backups', 'host', sqlite_backup.check_sqlite_backups,
+             "Each instance whose release declares a SQLite database has a backup in S3 as young"),
     Check.of('push-webhook', 'cluster host', flux.check_push_webhook,
              "Flux's GitHub receiver is Ready; GitHub's latest push delivery returned 200 (warns otherwise)"),
     Check.of('image-webhooks', 'cluster host', apps.check_image_webhooks,

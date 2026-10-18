@@ -22,10 +22,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from swhurl import backupset, platform
+from swhurl import ROOT, backupset, platform, yamlio
 from swhurl.apps.contract import (
     DATABASE_PATH_VARIABLE,
 )
+from swhurl.apps.instance import Instance, instances
 from swhurl.backupset import BackupError, BackupSet
 from swhurl.recovery import BackupSettings
 from swhurl.report import Report
@@ -197,22 +198,25 @@ def backup_sqlite(argv: list[str] | None = None, runner: Runner | None = None) -
     return 0
 
 
+def expected(root: Path = ROOT) -> list[Instance]:
+    """The instances whose release declares a SQLite database: each must have backups."""
+    return [each for each in instances(root / 'apps')
+            if (yamlio.load((each.folder(root) / 'release.yaml').read_text()) or {}).get('database') == 'sqlite']
+
+
 def check_sqlite_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
-                         now: dt.datetime | None = None) -> None:
-    """Each app SQLite database's newest backup, locally and off-host, is younger than BACKUP_MAX_AGE_HOURS (26)."""
+                         now: dt.datetime | None = None, root: Path = ROOT) -> None:
+    """Each instance with a SQLite database (its release.yaml in Git, not what runs) has a backup in S3 younger
+    than BACKUP_MAX_AGE_HOURS (26)."""
     env = os.environ if env is None else env
     report.section('App SQLite backups')
-    try:
-        databases = find(runner)
-    except (CommandError, BackupError, KeyError, TypeError) as error:
-        report.bad(f'cannot find app SQLite databases: {error}')
-        return
+    databases = expected(root)
     if not databases:
         report.ok('no app has a SQLite database')
         return
     uri = env.get('SQLITE_S3_URI', platform.SQLITE_S3_URI)
-    for db in databases:
-        backupset.check_backup_set(runner, report, backups(backupset.backup_dir(env), db.namespace),
-                         f'{uri}{db.namespace}/' if uri else '', env=env, now=now, what='SQLite',
-                         run='make backup-sqlite', prefix=f'{db.name}: ',
-                         hint='systemctl status swhurl-backup-mongodb (runs backup-sqlite too)')
+    for each in databases:
+        backupset.check_backup_set(runner, report, backups(backupset.backup_dir(env), each.namespace),
+                         f'{uri}{each.namespace}/' if uri else '', env=env, now=now, what='SQLite',
+                         run='make backup-sqlite', prefix=f'{each.namespace}: ',
+                         hint=f'kubectl -n {each.namespace} get jobs -l platform.swhurl.com/backup=true')

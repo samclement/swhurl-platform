@@ -431,30 +431,37 @@ class BackupAgeTests(unittest.TestCase):
         return report, runner
 
     def test_fresh_backups_pass(self):
-        name = 'clickstack-mongodb-20260929T033000Z.archive.gz.age'
-        report, _ = self.check(local=[name, 'clickstack-mongodb-20260929T033000Z.json'], remote=[name])
+        name = 'clickstack-mongodb-20260929T033000Z'
+        report, _ = self.check(remote=[f'{name}.archive.gz.age', f'{name}.json'])
         self.assertEqual(report.failures, 0, report.lines)
 
-    def test_stale_missing_or_unlistable_backups_fail(self):
-        old = 'clickstack-mongodb-20260928T030000Z.archive.gz.age'
-        new = 'clickstack-mongodb-20260929T033000Z.archive.gz.age'
+    def test_stale_missing_incomplete_or_unlistable_backups_fail(self):
+        old, new = 'clickstack-mongodb-20260928T030000Z', 'clickstack-mongodb-20260929T033000Z'
         cases = {
-            'local stale': ({'local': [old], 'remote': [new]}, 'is 33 h old'),
-            'remote stale': ({'local': [new], 'remote': [old]}, 's3://bucket/p/ is 33 h old'),
-            'none local': ({'remote': [new]}, 'no MongoDB backup in'),
-            'metadata only': ({'local': ['clickstack-mongodb-20260929T033000Z.json'], 'remote': [new]}, 'no MongoDB backup'),
-            'remote unlistable': ({'local': [new], 'remote_rc': 255}, 'cannot list backups in s3://bucket/p/'),
-            'tighter limit': ({'local': [new], 'remote': [new], 'max_hours': '6'}, 'is 8 h old'),
+            'stale': ({'remote': [f'{old}.archive.gz.age', f'{old}.json']}, 's3://bucket/p/ is 33 h old'),
+            'none': ({'remote': []}, 'no MongoDB backup in s3://bucket/p/'),
+            'archive without its metadata': ({'remote': [f'{new}.archive.gz.age', f'{old}.archive.gz.age', f'{old}.json']},
+                                             'is 33 h old'),
+            'local only': ({'local': [f'{new}.archive.gz.age', f'{new}.json'], 'remote': []}, 'no MongoDB backup in s3'),
+            'unlistable': ({'remote_rc': 255}, 'cannot list backups in s3://bucket/p/'),
+            'tighter limit': ({'remote': [f'{new}.archive.gz.age', f'{new}.json'], 'max_hours': '6'}, 'is 8 h old'),
+            'no location': ({'uri': ''}, 'no S3 location'),
         }
         for label, (kwargs, message) in cases.items():
             with self.subTest(label):
                 report, _ = self.check(**kwargs)
                 self.assertTrue(any(line.startswith('[BAD]') and message in line for line in report.lines), report.lines)
 
-    def test_empty_uri_checks_only_local(self):
-        report, runner = self.check(local=['clickstack-mongodb-20260929T033000Z.archive.gz.age'], uri='')
-        self.assertEqual(report.failures, 0)
-        self.assertEqual(runner.calls, [])
+    def test_expected_sqlite_databases_come_from_the_releases_in_git(self):
+        from swhurl import sqlite_backup
+        names = [each.namespace for each in sqlite_backup.expected()]
+        self.assertIn('demo-orders-prod', names)
+        self.assertNotIn('demo-shop-prod', names)
+        runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', stdout='[]')
+        report = Report(io.StringIO())
+        sqlite_backup.check_sqlite_backups(runner, report, {}, now=self.NOW)
+        self.assertEqual(report.failures, len(names), 'no backup in S3: each expected database fails')
+        self.assertTrue(all(call[:3] == ('aws', 's3api', 'list-objects-v2') for call in runner.calls), 'reads no cluster')
 
 
 class VerifyConfigTests(unittest.TestCase):

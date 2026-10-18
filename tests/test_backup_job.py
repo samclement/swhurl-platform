@@ -174,7 +174,7 @@ class RenderedJobTests(unittest.TestCase):
         cls.world, cls.platform = sync.read(ROOT)
         cls.render = staticmethod(lambda app, env: render.instance(Instance(app, env), cls.world, cls.platform))
 
-    def test_a_sqlite_instance_gets_a_suspended_job_as_its_app_with_the_key_substituted(self):
+    def test_a_sqlite_instance_gets_a_nightly_job_as_its_app_with_the_key_substituted(self):
         files = self.render('demo-orders', 'prod')
         secret, job = files[Path('apps/demo-orders/prod') / contract.BACKUP_FILE]
         self.assertEqual(set(secret['stringData'].values()),
@@ -182,9 +182,7 @@ class RenderedJobTests(unittest.TestCase):
         self.assertTrue(validate.substituted(secret))
         self.assertFalse(validate.substituted({**secret, 'stringData': {'AWS_ACCESS_KEY_ID': 'AKIA...'}}))
         spec = job['spec']
-        self.assertEqual((spec['suspend'], spec['concurrencyPolicy'], spec['timeZone']), (True, 'Forbid', 'Etc/UTC'))
-        staging = self.render('demo-orders', 'staging')[Path('apps/demo-orders/staging') / contract.BACKUP_FILE][1]
-        self.assertFalse(staging['spec']['suspend'], 'the pilot runs on schedule')
+        self.assertEqual((spec['suspend'], spec['concurrencyPolicy'], spec['timeZone']), (False, 'Forbid', 'Etc/UTC'))
         pod = spec['jobTemplate']['spec']['template']['spec']
         uid = self.world[Instance('demo-orders', 'prod')].release.uid
         self.assertEqual((pod['securityContext']['runAsUser'], pod['automountServiceAccountToken']), (uid, False))

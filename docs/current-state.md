@@ -1924,3 +1924,19 @@ A newer render replaces an unfinished change's target: **Superseded** describes 
 **Live verification:** `make flux-reconcile` and `make verify-platform` passed. Notification checker and dashboard jobs `29872443` succeeded on the new image. Through a port-forward with an identity header (not a browser sign-in), `/activity` answered 200 in 1.10 s and then 1.17 s, and job #27's page in 0.64 s with one output block. There is no before measurement, so the gain from concurrent reads is not shown; the cache is in memory, so a restart still reads every merged tree once. Activity showed 5 Applied, 1 Live in prod, 3 Removed from staging, 2 Superseded, 13 Merged (historical), 1 Failed, 1 Interrupted and 1 Closed.
 
 **Superseded, decided (operator, 18 October 2026):** `cca4e9bc` (console image `src-a12062f5a8d5dff7`, `815072f6`) follows a change to a newer release when main still renders its `instance.yaml` and `app.yaml` (a staging deploy; never a promotion), and keeps in the job record when its change was first seen at its end, so a later change shows "from <time>; a newer configuration has since replaced it". `make check` passed 809 tests and Validate passed. After `make flux-reconcile`, `make verify-platform` passed and checker and dashboard jobs `29872480` succeeded on the new image. The first Activity read stored that time on 4 of the 27 job records (the Live in prod promotion and the 3 removals); the two Superseded rows (jobs #25 and #26, whose instance was later removed) were never seen at their end and stay Superseded, now worded "replaced it before it was seen live in staging". **Unexercised live:** a new app's seed followed to its build 1, and a change shown as replaced; both are covered offline.
+
+## Faster offline validation (18 October 2026)
+
+**Change:** `21feb960`. `make check-templates` renders every combination but checks each distinct `swhurl.yaml` once (of 144 combinations, 24 are refused and 120 render 64 distinct files), and remembers a full pass outside the repository with a hash of what it read; `FORCE=true` renders anyway. The files it reads besides its modules were measured with an audit hook on a real run (`apps/teams.yaml`, `apps/signing-keys.json`, the platform settings and Helm repositories); a test fails if it opens another. `tests/run.py` runs each test as its own job unless its class has `setUpClass`.
+
+**Measured on the 4-CPU host (load average 9 to 13 from the cluster itself):**
+
+| | Before | After |
+| --- | --- | --- |
+| `make test` alone | 165 s | 68 s |
+| `make check-templates` alone, rendering | 262 s | 221 s |
+| `make check-templates`, nothing it reads changed | 262 s | 0.8 s |
+| `make check`, nothing the template check reads changed | 3 to 4 min | 86 to 103 s |
+| `make check` with a change the template check reads | 3 to 4 min | about 280 s (both renders and tests compete for 4 CPUs) |
+
+Per combination, Copier takes 1.3 s (0.5 s of it starting Python) and the platform half 1.3 s (Helm and kustomize, 0.6 s per environment). Validate passed on GitHub (templates 79 s, tooling tests 48 s) and deployed console image `src-21db1234284394c4` (`93528a5c`); `make flux-reconcile` and `make verify-platform` passed, and checker and dashboard jobs `29872518` succeeded on it.

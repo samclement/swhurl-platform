@@ -1822,3 +1822,24 @@ The API is private (a Service, no Ingress) with `DATABASE_PATH`; the worker has 
 [Plan section 24](plan.md#24-code-simplification--design-contracts-18-october-2026) records the proposed operation, input, rendering, promotion, console and migration contracts. The operator explicitly keeps seed images and automatic merge for eligible new staging apps; promotions and other configuration PRs become manual under the target design.
 
 This change is documentation only. The input formats, merge workflow, Activity implementation and deployed app manifests have not been refactored. `make check` passed, including 795 existing tests and both templates' policy combinations; documentation links and whitespace were checked. These checks validate the design's integration into the repository, not the future renderer or its migration. The fixture prototype, live no-op migration proof and creation timing/concurrency proof remain implementation acceptance gates.
+
+## A Web app with a browser frontend (18 October 2026)
+
+Stage 4 of [app types](plan.md#23-app-types-for-new-apps--decided-17-october-2026). TypeScript template `v0.2.16` (#58 `a976fad`; 11 Template combinations, every one published as a seed), pinned in `0b874c4a`: the question `frontend` (`vite`) gives a web app `web/`, its own npm project built with Vite+ 1.3.0 (MIT, stable since 28 September 2026); the image build runs `vp check` (formatting, lint, type-aware type checks) and `vp build`, and the app serves the page at `/` and its routes under `/api/*`. The Web app type answers it. The first push of #58 broke the Dockerfile of every app without a frontend (`RUN npm ciFROM deps`); Template CI caught it, and the fixed render is byte-identical to the previous release's.
+
+**Live,** `swhurl-try-28` (Web app, TypeScript) through the deployed console (console image `src-f3c1eb119da01e15`, port-forward, hand-set identity), submitted 07:31:48 UTC: PR #76 merged itself at 158 s, Available on its seed `0-c3b3f7e` at 200 s, then its own `1-c3b3f7e`.
+
+| Check | Result |
+| --- | --- |
+| `http://staging-swhurl-try-28.homelab.swhurl.com/` | 301 to https |
+| `https://…/`, `/api/hello`, `/api/flags`, signed out | 302 to Google sign-in; Let's Encrypt certificate ready |
+| Inside the pod with `x-auth-request-email` (as oauth2-proxy sets it) | `/` HTML and its script asset 200; `/api/hello` names the person, counts the visit and publishes `visited`; `/api/flags` `{"shout":true}` (staging) |
+| `/openapi.json` | the runtime name and description; one path, `/api/hello` |
+| Catalogue | no API offered: `offers/` holds the events and flags only, no `SWHURL_API_PATH` |
+| Chromium through a port-forward | the page rendered the greeting and flags, no console errors |
+
+`make backup-sqlite` made its first backup; `make verify-platform` passed; `make app-status`: running, matches desired.
+
+**Not exercised:** the page in a real signed-in browser (the operator's Google sign-in), and a web app's route calling an API on the person's behalf from the page.
+
+**Removed:** the instance, its volume (`make destroy-data`), its namespace, and its GitHub repository and package (the `secrets/` tokens).

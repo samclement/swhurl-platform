@@ -18,3 +18,4 @@ resources:
   - app-swhurl-try-11-prod.yaml
   - app-demo-shop-prod.yaml
   - app-swhurl-try-29-staging.yaml
+  - app-swhurl-try-29-prod.yaml

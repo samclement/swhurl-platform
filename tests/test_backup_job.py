@@ -183,6 +183,8 @@ class RenderedJobTests(unittest.TestCase):
         self.assertFalse(validate.substituted({**secret, 'stringData': {'AWS_ACCESS_KEY_ID': 'AKIA...'}}))
         spec = job['spec']
         self.assertEqual((spec['suspend'], spec['concurrencyPolicy'], spec['timeZone']), (True, 'Forbid', 'Etc/UTC'))
+        staging = self.render('demo-orders', 'staging')[Path('apps/demo-orders/staging') / contract.BACKUP_FILE][1]
+        self.assertFalse(staging['spec']['suspend'], 'the pilot runs on schedule')
         pod = spec['jobTemplate']['spec']['template']['spec']
         uid = self.world[Instance('demo-orders', 'prod')].release.uid
         self.assertEqual((pod['securityContext']['runAsUser'], pod['automountServiceAccountToken']), (uid, False))
@@ -220,7 +222,6 @@ class RenderedJobTests(unittest.TestCase):
         container = job['spec']['jobTemplate']['spec']['template']['spec']['containers'][0]
         env = {var['name']: var.get('value') for var in container['env']}
         self.assertEqual((container['image'], env['AGE_RECIPIENT']), (contract.BACKUP_IMAGE, contract.BACKUP_RECIPIENT))
-        self.assertTrue(job['spec']['suspend'])
         self.assertEqual(recovery.sops_recipient(), contract.BACKUP_RECIPIENT)
         self.assertEqual(contract.SQLITE_BACKUP_URI, platform.SQLITE_S3_URI)
         self.assertEqual(env['BACKUP_S3_URI'], platform.BACKUP_S3_URI)

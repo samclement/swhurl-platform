@@ -1722,6 +1722,46 @@ The risk per-group migration guards against, an unexpected rendering difference,
 
 A read-only review of `console/merge.py` against stage 2's exit found the gate safe (it merges only a tree it replayed, with a compare-and-swap push) but not one function. **Fixed:** a rollback promotion merged itself; the console now opens it unlabelled and the gate holds it. **Open, for the move of promotion onto a request and one merge rule:** (1) the staging fingerprint hashes `release.yaml` whole, so any newer staging build holds an open promotion (now tested as such; the patch-and-restore in `replay_promotion` changes nothing that matters); (2) the production fingerprint covers values other apps derive (allowed callers) and `inputs_hash` holds on any tooling commit but misses `apps/model/`, and each hold sends the operator to GitHub's merge button, which skips the replay; (3) failures are sorted by exception type, so a transient `gh` failure holds for good while `GenerationError` aborts the whole queue; (4) a lost race waits for an unrelated trigger, because `GITHUB_TOKEN` pushes start no Validate run; (5) `scope` compares the PR with a replay on the newest `main`, so a render change on `main` holds a correct PR (replay on the PR's base to prove it, on `main` to build the merge); (6) the new-app replay goes through `argparse` (`allow_abbrev` lets `--no-reg` past `GATE_FLAGS`) and reports the last stderr line; (7) merge rules live in about eight places, and what a promotion leaves to a person is stated three times (`per_environment` `HELD` rows, read by nothing else; `replay_promotion`; `edit.take_release`). Order proposed: promotion first (request `{app, digest}`, a rule over two Release records, deleting fingerprints, `inputs_hash`, review metadata and hold/resume), then new app, then scale and the other operations. Decisions to take first: whether a reviewed PR is merged by the gate after a GitHub approval; whether `SETTINGS` shrinks to env-drift's facts; which app proves it live.
 
+### Decision brief: how a console change reaches `main` (19 October 2026, not decided)
+
+**Decision.** How a console change (new app, promotion, scale, ...) gets from the console to `main`, now that the gate review found the gate's complexity has one cause: a console PR carries **generated files** (`helmrelease.yaml`, NetworkPolicy, NATS users, egress ports) made from the `main` of when it opened, so before merging someone must make them again on the newest `main` and prove the PR still matches (replay, `scope`, fingerprints, review metadata). GitHub approval is not available as a review signal: the console opens PRs with the operator's token, and GitHub does not let a PR's author approve it.
+
+**Assumptions** (checked 19 October unless marked):
+
+- Since the cutover every instance has three input records (`release.yaml`, `instance.yaml`, `app.yaml`); every other app file and the shared files are rendered from them (`make app-sync`).
+- Pushes made with `GITHUB_TOKEN` start no workflows (`deploy.yml`, GitHub docs); a merge made with the GitHub button by the operator does start `on: push` workflows.
+- `main` has no branch protection (`console.md`). GitHub's own auto-merge only waits on a blocking rule, so it would need a ruleset requiring Validate, which direct pushes would then have to bypass.
+- Activity's stages follow the PR: Validate checks, merged, then the live render hash (`console/stages.py`).
+- The console image has `helm` and `kubectl` but not `flux-schema`; its container is limited to 256 Mi of memory with a 10m CPU request (`platform/console/helmrelease.yaml`).
+
+**Timings today** (observed): a promotion PR opened to merged in 36 s (#77, #79), a new app's in 71 to 121 s (#73 to #85); Validate on a console PR 54 to 57 s; an Auto-merge run 18 to 27 s, its merge step 41 s (2 October) to 77 s (worst seen); `check-repo` + `check-apps` 16 s locally on 4 cores; a Deploy run 19 to 28 s; Flux fetches a push in about 2 s and Helm finishes about 20 s later. For a new app the first image build (1 to 2 minutes) dominates whichever option is chosen.
+
+**Options.**
+
+- **A. Keep the gate, simplified.** Delete the fingerprints and `inputs_hash`, write each operation's merge rule once, catch failures per PR, retry a lost race in the same run, and add a **Merge after checks** button that sets a `merge-reviewed` label the gate accepts for held changes. PRs still carry generated files and the gate still replays and compares.
+- **B. PRs carry only the input records; merging renders on the newest `main`.** A PR changes only the app's records (and its encrypted events key). Merging is `git merge` of the PR onto the newest `main`, then `app-sync`, the checks and one push: done by the gate for automatic changes, and by a *Render* workflow on `push` after the operator presses GitHub's **Merge** on a held one. Egress ports are chosen when `main` renders, not in the PR, so two new apps cannot take the same port. A PR for two changes to the same app conflicts in Git and GitHub says so.
+- **C. The console commits to `main` itself; PRs only for review.** For an automatic change the console job reads the newest `main`, runs the operation and the checks, and updates `main` with a compare-and-swap, retrying on a lost race (the Deploy workflow's pattern). A held change opens a PR to read; the console's **Merge** redoes it on the newest `main` and closes the PR. The Auto-merge workflow and `merge.py` go.
+- *Rejected:* GitHub's own auto-merge with a ruleset requiring Validate. It needs a ruleset that the Deploy bot and operator pushes must bypass, and still merges generated files made from an old `main`.
+
+| | A. Simplified gate | B. Records-only PRs | C. Console commits |
+| --- | --- | --- | --- |
+| **What you do: automatic change** | Unchanged: click, PR merges itself | Unchanged | Click; no PR, a `[console]` commit |
+| **What you do: held change** | Press **Merge after checks** in the console (never GitHub's Merge) | Press **Merge** on GitHub, as for any PR | Press **Merge** in the console (never GitHub's) |
+| **What the PR shows** | All generated files | A few record lines (`tag: 34-… → 35-…`); the rendered diff only on the console's review page or a Validate comment | Held changes only |
+| **False holds** (newer staging build, tooling commit, another app's call) | Gone | Gone | Gone |
+| **Same-app conflicts** | Gate holds one | Git conflict on GitHub; close and reopen from the console | Console retries |
+| **Click to `main`, promotion** | About 36 s, as today | About 36 s automatic; held: when you merge, plus a Render run (about 20 to 30 s, estimated from Deploy) before Flux sees it | Validate-on-PR (about 55 s) and the gate go; the console's own checks take their place: 16 s on 4 local cores, likely slower at a 10m CPU request (not measured) |
+| **Commits per change** | 1 | 1 automatic; 2 after a held merge (merge, then render) | 1 |
+| **Checked before reaching `main`** | Yes (Validate on PR, gate) | Yes (Validate on PR renders the records; gate or Render checks before pushing) | Only by the console; Validate runs after |
+| **Stale generated files ever on `main`** | Only via GitHub's Merge button | No (the gap after a held merge leaves `main`'s previous files live, unchanged) | Only via GitHub's Merge button |
+| **Code** | Smallest change; replay, `scope` and labels stay | Removes replay, `scope`, `same_file`, fingerprints, metadata, `GATE_FLAGS`, hold/resume; adds Render workflow and render-time port choice; Validate and `check-apps` read records on PRs; Activity reads the target render hash from the merge commit | Removes `merge.py` and its workflow; Activity tracks commits instead of PRs; console image gains `flux-schema` and more CPU and memory |
+| **Matches plan section 24** | Partly (rules once) | Yes: inputs are records, everything else is rendered on `main` | Partly (operations in one place) |
+| **Reversible** | Yes | Yes (code and workflows only) | Yes |
+
+**Recommendation: B.** It removes the cause instead of checking around it: nothing generated travels in a PR, so GitHub's Merge button is safe, held changes need no special button, and a newer staging build or another app's change can no longer hold a PR. It keeps PRs as the record of every change and Activity's PR-based stages. Cost: the most work (every console operation, Validate, `check-apps`, a Render workflow, port allocation and Activity's target), a second commit and about 20 to 30 s more after you merge a held change, and a PR diff that shows records rather than manifests. Build it promotion first: its PR becomes `prod/release.yaml` and its offers documents.
+
+**What would change it.** Prefer **C** if automatic changes need no PR trail and the 55 s Validate wait matters more than checking before `main` (the console would also need more CPU and memory). Prefer **A** if the aim is only to stop false holds soon, or if a second commit after a held merge is unacceptable. Neither A nor C makes GitHub's Merge button safe.
+
 ### Stop conditions
 
 - **A no-op render is not a no-op:** any pod template, route, persistence or permission difference stops the stage until each difference is explained.

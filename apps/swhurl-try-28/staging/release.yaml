@@ -1,0 +1,16 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+image:
+  repository: ghcr.io/samclement/swhurl-try-28
+  tag: 0-e2245bc
+  digest: sha256:c048bc10c34d02c1e21ede755ed7156c83404d8313c9890db7de018003b005b7
+kind: web
+uid: 65532
+port: 8080
+healthPath: /healthz
+telemetry: true
+database: sqlite
+description: Throwaway web app (section 26 F2)
+publishes:
+- visited
+offers: e2245bc

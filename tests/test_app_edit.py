@@ -965,13 +965,18 @@ components:
         self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
         self.assertIn('tag: 8-def5678', release.read_text())
 
-        # app-scale may set more than the minimum, never less.
+        # app-scale may set more than the minimum its Release records, never less, and reads no network.
+        record = release.parent / 'release.yaml'
         with self.assertRaisesRegex(edit.EditError, r"below the image's minimum.*--cpu 20m \(at least 50m\)"):
-            edit.scale(self.root, 'orders', 'staging', cpu='20m', minimum={'cpu': '50m'})
-        self.quiet(edit.scale, self.root, 'orders', 'staging', cpu='0.1', minimum={'cpu': '50m'})
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, mock.patch.object(edit, 'check_generated', return_value=0):
-            code = edit.main_scale(['orders', 'staging', '--memory', '8Mi', '--root', str(self.root)],
-                                   opener=self.repository({'swhurl.yaml': manifest})[0])
+            edit.scale(self.root, 'orders', 'staging', cpu='20m')
+        kept = record.read_bytes()
+        self.quiet(edit.scale, self.root, 'orders', 'staging', cpu='0.1')
+        self.quiet(edit.scale, self.root, 'orders', 'staging', replicas=2)
+        self.assertEqual(record.read_bytes(), kept, "a scale changes Settings only: the image's minimum stays")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err, \
+                mock.patch.object(edit, 'check_generated', return_value=0), \
+                mock.patch('urllib.request.urlopen', side_effect=AssertionError('app-scale reads no network')):
+            code = edit.main_scale(['orders', 'staging', '--memory', '8Mi', '--root', str(self.root)])
         self.assertEqual(code, 2)
         self.assertIn('--memory 8Mi (at least 16Mi)', err.getvalue())
 

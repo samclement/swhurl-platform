@@ -36,10 +36,11 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from swhurl import ROOT, dashboards, kube
+from swhurl import ROOT, dashboards, kube, yamlio
 from swhurl.apps import contract, declaration, new, ops, repo
 from swhurl.apps import promotion as gate
 from swhurl.apps.instance import ENVIRONMENTS, Instance
+from swhurl.apps.model import records
 from swhurl.apps.state import verdict
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import (
@@ -482,7 +483,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                     flag_changed=request.query_params.get('flag', ''), team=(row.team if row else '') or ops.team_of(runner, found),
                     connections=row.connections if row else cluster.Connections(), connectable=connectable(found.env, found.app), logs=logs_url(found.app), dashboard=dashboard_urls(runner).get(found.app, ''),
                     stack=stacks([found.app]).get(found.app, ''), stack_names=STACK_NAMES, owner=contract.APP_OWNER,
-                    scale_fields=changes.SCALE_FIELDS, minimum=image_minimum(found.app, status.desired_image), github=github,
+                    scale_fields=changes.SCALE_FIELDS, minimum=image_minimum(found), github=github,
                     promotion_problem=promotion_problem,
                     exposures=ops.EXPOSURE_LABELS, exposure_text=changes.EXPOSURE_LABELS, domain=contract.COOKIE_DOMAIN,
                     summary=summary, state=verdict(status), unit_jobs=change_rows([j for j in jobs.recent() if j.unit in (found.unit, f'{found.app}/{found.env}')], others=False)[0])
@@ -732,28 +733,19 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             stacks_cache[app] = (time.monotonic(), found)
         return {app: stacks_cache[app][1] for app in apps}
 
-    minimums_cache: dict[str, tuple[float, dict | None]] = {}
-
-    def image_minimum(app: str, image: str) -> dict | None:
-        """The resources the image needs at least (``resources`` in swhurl.yaml at the commit its tag names), by
-        Scale field; None when that cannot be read. Kept for good, since a commit does not change; a failure for 5 minutes."""
-        tag = re.fullmatch(r'[0-9]+-([0-9a-f]{7,40})', image.split('@')[0].rpartition(':')[2])
-        if not tag:
+    def image_minimum(found: Instance) -> dict | None:
+        """The resources the image needs at least, by Scale field, from the instance's Release in Git (written
+        with each image, as make app-scale reads it); None when Git cannot be read."""
+        if document_source is None:
             return None
-        commit = tag[1]
-        cached = minimums_cache.get(f'{app}@{commit}')
-        if cached and (cached[1] is not None or time.monotonic() - cached[0] <= 300):
-            return cached[1]
-        found = None
         try:
-            opener = {'opener': lambda request: repo_opener(request)[1]} if repo_opener else {}
-            declared = declaration.read(f'{contract.APP_OWNER}/{app}', commit, **opener)
-            if declared:
-                found = {field: declared.seed[field] for field in ('cpu', 'memory', 'memory_limit') if field in declared.seed}
-        except declaration.DeclarationError:
-            pass  # unreachable, or a file the platform would refuse: say nothing
-        minimums_cache[f'{app}@{commit}'] = (time.monotonic(), found)
-        return found
+            text = document_source(f'apps/{found.app}/{found.env}/{records.RELEASE_FILE}')
+            if text is None:
+                return None
+            resources = records.Release.parse(yamlio.load(text)).resources
+        except Exception:  # noqa: BLE001 (GitHub unavailable or an unreadable record: the form says nothing)
+            return None
+        return {field: value for field in ('cpu', 'memory', 'memory_limit') if (value := getattr(resources, field))}
 
     def teams_page(request: Request, status_code: int = 200, error: str = '') -> Response:
         """Every team with the apps that belong to it, and the changes that keep the two in step."""

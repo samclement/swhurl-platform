@@ -500,26 +500,11 @@ def egress_difference(app: str, staging: Entry, production: Entry) -> None:
               f'make app-egress APP={app} ENV=prod ARGS="--add {",".join(missing)}"')
 
 
-def image_minimum(root: Path, app: str, env: str, *, token: str = '', opener: offers.Opener = offers._open) -> dict:
-    """The resources the image ``app/env`` runs needs at least (``resources`` in its swhurl.yaml), by
-    app-scale option; empty for an image no app repository built. Unreachable GitHub is a warning:
-    the next image raises anything below its minimum."""
-    instance_dir(root, app, env)
-    world, _ = model_sync.read(root)
-    image = world[Instance(app, env)].release.image
-    if not image.repository.startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(image.tag):
-        return {}
-    try:
-        return image_declaration(image, app, env, token=token, opener=opener).needs.minimum
-    except EditError as error:
-        print(f"[WARN] could not read the image's minimum resources, so they are not checked: {error}", file=sys.stderr)
-        return {}
-
-
 def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: str | None = None,
-          memory: str | None = None, memory_limit: str | None = None, minimum: dict | None = None) -> Path:
-    """Change replicas or the capacity in the instance's Settings; never resources below ``minimum``, what
-    the image needs (image_minimum), or below the platform's default where the image states none."""
+          memory: str | None = None, memory_limit: str | None = None) -> Path:
+    """Change replicas or the capacity in the instance's Settings, and nothing else; never resources below
+    the image's minimum (its Release, written with each image), or below the platform's default where the
+    image states none."""
     if replicas is None and not (cpu or memory or memory_limit):
         raise EditError('give at least one of --replicas, --cpu, --memory, --memory-limit')
     if replicas is not None and not 0 <= replicas <= MAX_REPLICAS:
@@ -529,7 +514,10 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
         flag = f'--{field.replace("_", "-")}'
         if value and not (CPU_RE if field == 'cpu' else MEMORY_RE).match(value):
             raise EditError(f'{flag} {value!r} is not a quantity like ' + ('100m or 0.5' if field == 'cpu' else '64Mi'))
-    minimum = minimum or {}
+    instance, each = instance_dir(root, app, env), Instance(app, env)
+    world, _ = model_sync.read(root)
+    entry = world[each]
+    minimum = {field: value for field in requested if (value := getattr(entry.release.resources, field))}
     below = [f'--{field.replace("_", "-")} {value} (at least {minimum[field]})'
              for field, value in requested.items()
              if value and field in minimum and quantity(value) < quantity(minimum[field])]
@@ -540,9 +528,6 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
              if value and field not in minimum and quantity(value) < quantity(getattr(DEFAULT_RESOURCES, field))]
     if below:
         raise EditError(f"below the platform's default resources: {', '.join(below)}")
-    instance, each = instance_dir(root, app, env), Instance(app, env)
-    world, _ = model_sync.read(root)
-    entry = world[each]
     if replicas is not None and entry.release.kind == 'job':
         raise EditError(f'{app}/{env} is a job: it runs one pod per run, on its schedule (make app-schedule); '
                         'only its resources can be changed')
@@ -559,12 +544,10 @@ def scale(root: Path, app: str, env: str, *, replicas: int | None = None, cpu: s
     changes += [f'{labels[field]} {value}' for field, value in requested.items() if value and value != effective[field]]
     if not changes:
         raise EditError(f'{app}/{env} already has those settings')
-    # The image's minimum (or the default) and the capacity chosen here, which renders as the larger.
-    floor = Resources(*(minimum.get(field, '') for field in requested))
+    # The capacity chosen here; resources render as the larger of it and the image's minimum (or the default).
     capacity = Resources(*(requested[field] or effective[field] for field in requested))
     model_sync.change(root, each, lambda entry: replace(
-        entry, release=replace(entry.release, resources=floor),
-        settings=replace(entry.settings, replicas=replicas, capacity=capacity)))
+        entry, settings=replace(entry.settings, replicas=replicas, capacity=capacity)))
     print(f'[OK] {app}/{env}: {", ".join(changes)}')
     return instance
 
@@ -734,7 +717,7 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
         return 1
 
 
-def main_scale(argv: list[str] | None = None, opener: offers.Opener = offers._open) -> int:
+def main_scale(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog='swhurl app-scale', description='Change replicas or resources of an app instance')
     p.add_argument('app')
     p.add_argument('env', choices=ENVIRONMENTS)
@@ -746,11 +729,8 @@ def main_scale(argv: list[str] | None = None, opener: offers.Opener = offers._op
     args = p.parse_args(argv)
 
     def change():
-        root = args.root.resolve()
-        lowered = args.cpu or args.memory or args.memory_limit
-        minimum = image_minimum(root, args.app, args.env, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener) if lowered else {}
-        return scale(root, args.app, args.env, replicas=args.replicas, cpu=args.cpu,
-                     memory=args.memory, memory_limit=args.memory_limit, minimum=minimum)
+        return scale(args.root.resolve(), args.app, args.env, replicas=args.replicas, cpu=args.cpu,
+                     memory=args.memory, memory_limit=args.memory_limit)
     return run(change, True)
 
 

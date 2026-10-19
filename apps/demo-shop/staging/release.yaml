@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shop
-  tag: 53-e13694a
-  digest: sha256:d6fb5bb0e0c3dbd50faed7bebe2aa5f63faed7d61cd6976b60af02789a7901d7
+  tag: 57-e4e81f4
+  digest: sha256:0edb76809c70660359b63c987037efa9135125ab2a56e415f51e5be67778eb47
 kind: web
 uid: 65532
 stack: typescript
@@ -11,4 +11,4 @@ port: 8080
 healthPath: /healthz
 telemetry: true
 apiPath: /openapi.json
-offers: e13694a
+offers: e4e81f4

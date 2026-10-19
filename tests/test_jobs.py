@@ -18,12 +18,19 @@ IMAGE = 'ghcr.io/example/nightly:2-abcdef0@sha256:' + 'a' * 64
 
 class ScheduleTests(unittest.TestCase):
     def test_five_cron_fields_or_a_name(self):
-        for good in ('17 3 * * *', '*/10 * * * *', '0 9-17 * * 1-5', '0,30 * * * *', '@daily', '@hourly'):
+        for good in ('17 3 * * *', '*/10 * * * *', '0 9-17 * * 1-5', '0,30 * * * *', '@daily', '@hourly',
+                     '59 23 31 12 6', '0 0 1 1 0', '0-30/5 * * * *'):
             with self.subTest(good=good):
                 self.assertEqual(contract.schedule_problem(good), '')
         for bad in ('', '* * * *', '17 3 * * * *', 'every day', '@reboot', '1;2 * * * *', '$(x) * * * *'):
             with self.subTest(bad=bad):
                 self.assertIn('is not five cron fields', contract.schedule_problem(bad))
+        for bad, message in (('99 99 * * *', 'minute 99 is outside 0-59'), ('0 24 * * *', 'hour 24 is outside 0-23'),
+                             ('0 0 0 * *', 'day-of-month 0 is outside 1-31'), ('0 0 * 13 *', 'month 13 is outside 1-12'),
+                             ('0 0 * * 8', 'day-of-week 8 is outside 0-6'), ('*/0 * * * *', 'minute step 0 must be at least 1'),
+                             ('5-1 * * * *', 'minute range 5-1 runs backwards'), ('0 0,25 * * *', 'hour 25 is outside 0-23')):
+            with self.subTest(bad=bad):
+                self.assertEqual(contract.schedule_problem(bad), f'schedule {bad!r}: {message}')
 
     def test_a_job_keeps_no_database(self):
         self.assertEqual(declaration.of({'version': 1, 'kind': 'job'}).seed['exposure'], 'private')

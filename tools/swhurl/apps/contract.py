@@ -258,15 +258,39 @@ JOB_DEADLINE_SECONDS = 3600  # a run still going after this is stopped, and coun
 JOB_START_DEADLINE_SECONDS = 300  # a run that cannot start within this of its time is skipped
 CRON_FIELD = re.compile(r'(\*|[0-9]+(-[0-9]+)?)(/[0-9]+)?(,(\*|[0-9]+(-[0-9]+)?)(/[0-9]+)?)*')
 CRON_NAMES = ('@hourly', '@daily', '@weekly', '@monthly', '@yearly')
+CRON_RANGES = (('minute', 0, 59), ('hour', 0, 23), ('day-of-month', 1, 31), ('month', 1, 12), ('day-of-week', 0, 6))
+"""Each field's name and the values the Kubernetes CronJob controller accepts in it."""
+
+
+def _cron_range_problem(field: str, name: str, low: int, high: int) -> str:
+    """Why one cron field (already the right shape) is outside its range, or ''."""
+    for item in field.split(','):
+        base, _, step = item.partition('/')
+        if step and int(step) < 1:
+            return f'{name} step {step} must be at least 1'
+        if base == '*':
+            continue
+        first, _, last = base.partition('-')
+        values = [int(first), int(last or first)]
+        if any(not low <= value <= high for value in values):
+            return f'{name} {base} is outside {low}-{high}'
+        if values[0] > values[1]:
+            return f'{name} range {base} runs backwards'
+    return ''
 
 
 def schedule_problem(schedule: str) -> str:
     """Why ``schedule`` is not a cron schedule a job can run on, or ''."""
-    fields = schedule.split()
-    if schedule in CRON_NAMES or (len(fields) == 5 and all(CRON_FIELD.fullmatch(field) for field in fields)):
+    if schedule in CRON_NAMES:
         return ''
-    return (f'schedule {schedule!r} is not five cron fields (minute hour day-of-month month day-of-week, '
-            f'for example "17 3 * * *" or "*/10 * * * *") or one of {", ".join(CRON_NAMES)}')
+    fields = schedule.split()
+    if not (len(fields) == 5 and all(CRON_FIELD.fullmatch(field) for field in fields)):
+        return (f'schedule {schedule!r} is not five cron fields (minute hour day-of-month month day-of-week, '
+                f'for example "17 3 * * *" or "*/10 * * * *") or one of {", ".join(CRON_NAMES)}')
+    for field, (name, low, high) in zip(fields, CRON_RANGES, strict=True):
+        if problem := _cron_range_problem(field, name, low, high):
+            return f'schedule {schedule!r}: {problem}'
+    return ''
 
 
 def type_answers(app_type: str, stack: str) -> dict[str, str]:

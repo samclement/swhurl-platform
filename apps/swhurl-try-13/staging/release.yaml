@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-13
-  tag: 43-c09c6cb
-  digest: sha256:7a594d5488c32ba814fbb4b55417cde839c134eb9774dbde74ad84dfb955e03c
+  tag: 47-e7b2070
+  digest: sha256:55b3c84a525aed7c8e914453e2d9ee6852c1532be373f85ea243c7716f3b3f9a
 kind: worker
 uid: 65532
 stack: typescript

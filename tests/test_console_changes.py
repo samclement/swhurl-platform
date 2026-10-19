@@ -331,17 +331,14 @@ class FormTests(unittest.TestCase):
 
     def test_connections_are_added_and_removed_by_the_commands_make_runs(self):
         hello, offered = Instance('hello', 'staging'), ({'orders', 'billing'}, {'orders.created'})
-        change = changes.Change.to_instance('connect', hello, {'calls': 'orders, billing', 'subscribe': 'orders.created',
-                                                               'publish': 'seen'})
+        change = changes.Change.to_instance('connect', hello, {'calls': 'orders, billing', 'subscribe': 'orders.created'})
         self.assertEqual(change.commands,
                          (changes.Command('app-calls', ('hello', 'staging', '--add=orders,billing')),
-                          changes.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created', '--add-publish=seen'))))
+                          changes.Command('app-events', ('hello', 'staging', '--add-subscribe=orders.created'))))
         self.assertTrue(change.touches_others, 'a call or a subscription changes the other app too')
         self.assertEqual(change.manual_merge_reason, 'also changes existing app settings for billing, orders')
-        publishing = changes.Change.to_instance('connect', hello, {'publish': 'seen, gone'})
-        self.assertEqual(publishing.commands, (changes.Command('app-events', ('hello', 'staging', '--add-publish=seen,gone')),))
-        self.assertFalse(publishing.touches_others)
-        for form, message in (({}, 'choose an app to call'), ({'publish': '--root=/'}, 'a published event a lowercase name')):
+        for form, message in (({}, 'choose an app to call'), ({'publish': '--root=/'}, 'edit asyncapi.yaml'),
+                              ({'publish': ''}, 'edit asyncapi.yaml')):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
                 changes.Change.to_instance('connect', hello, form)
         for form in ({'calls': 'reports'}, {'subscribe': 'orders.paid'}):
@@ -350,21 +347,21 @@ class FormTests(unittest.TestCase):
         removed = {'calls': ({'role': 'calls', 'app': 'orders'}, changes.Command('app-calls', ('hello', 'staging', '--remove=orders'))),
                    'subscribes': ({'role': 'subscribes', 'app': 'orders', 'event': 'created'},
                                   changes.Command('app-events', ('hello', 'staging', '--remove-subscribe=orders.created'))),
-                   'publishes': ({'role': 'publishes', 'event': 'seen'},
-                                 changes.Command('app-events', ('hello', 'staging', '--remove-publish=seen'))),
                    'reaches': ({'role': 'reaches', 'event': 'api.stripe.com:443'},
                                changes.Command('app-egress', ('hello', 'staging', '--remove=api.stripe.com:443')))}
         for role, (form, command) in removed.items():
             with self.subTest(role=role):
                 self.assertEqual(changes.Change.to_instance('disconnect', hello, form).commands, (command,))
         for form in ({}, {'role': 'called-by', 'app': 'orders'}, {'role': 'calls', 'app': '--root=/'},
-                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'}, {'role': 'publishes', 'event': 'Seen'},
+                     {'role': 'subscribes', 'app': 'orders', 'event': 'a.b'},
                      {'role': 'reaches', 'event': '--root=/'}):
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, 'no such connection to remove'):
                 changes.Change.to_instance('disconnect', hello, form)
-        both = changes.Change.to_instance('connect', hello, {'calls': 'orders', 'publish': 'seen'})
+        with self.assertRaisesRegex(actions.ActionError, 'edit asyncapi.yaml'):
+            changes.Change.to_instance('disconnect', hello, {'role': 'publishes', 'event': 'seen'})
+        both = changes.Change.to_instance('connect', hello, {'calls': 'orders', 'subscribe': 'orders.created'})
         self.assertEqual(both.make, 'make app-calls APP=hello ENV=staging ARGS="--add=orders" && '
-                         'make app-events APP=hello ENV=staging ARGS="--add-publish=seen"')
+                         'make app-events APP=hello ENV=staging ARGS="--add-subscribe=orders.created"')
         self.assertEqual((both.title, both.slug), ('apps: change the connections of hello/staging', 'connect-hello-staging'))
         granting = changes.Change.to_instance('egress', hello, {'hosts': 'API.stripe.com, *.example.com:8443'})
         self.assertEqual((granting.commands, granting.touches_others), ((changes.Command(
@@ -670,17 +667,19 @@ class NewAppRouteTests(unittest.TestCase):
     def test_connections_become_app_new_arguments_and_only_offered_ones_are_accepted(self):
         offered = ({'orders', 'billing'}, {'orders.created'})
         teams = {'platform': ''}
-        chosen = changes.NewApp.from_form({**NEW, 'calls': 'orders,billing', 'subscribe': 'orders.created',
-                                           'publish': 'sent, failed'}, [], teams, *offered)
+        chosen = changes.NewApp.from_form({**NEW, 'calls': 'orders,billing', 'subscribe': 'orders.created'}, [], teams, *offered)
         self.assertEqual(chosen.flags, ('--team=platform', '--exposure=authenticated-web', '--calls=orders,billing',
-                                        '--subscribe=orders.created', '--publish=sent,failed'))
+                                        '--subscribe=orders.created'))
         self.assertTrue(chosen.touches_others)
-        alone = changes.NewApp.from_form({**NEW, 'publish': 'sent'}, [], teams, *offered)
-        self.assertEqual((alone.flags[2:], alone.touches_others), (('--publish=sent',), False), 'publishing changes no other app')
+        with self.assertRaisesRegex(actions.ActionError, 'edit asyncapi.yaml'):
+            changes.NewApp.from_form({**NEW, 'publish': 'sent'}, [], teams, *offered)
+        stale = {**chosen.record, 'extra': [*chosen.flags, '--publish=sent']}
+        with self.assertRaisesRegex(actions.ActionError, 'start a new job'):
+            changes.NewApp.from_record(stale)
         self.assertEqual(changes.NewApp.from_form(NEW, [], teams, *offered).flags[2:], (), 'nothing chosen adds nothing')
         cases = (({'calls': 'stranger'}, 'not a web app, or an event, that staging has now'),
                  ({'subscribe': 'orders.cancelled'}, 'not a web app, or an event, that staging has now'),
-                 ({'calls': '--root=/'}, 'a call names an app'), ({'publish': 'Sent'}, 'a published event a lowercase name'),
+                 ({'calls': '--root=/'}, 'a call names an app'), ({'publish': 'Sent'}, 'edit asyncapi.yaml'),
                  ({'subscribe': 'created'}, 'a subscription <app>.<event>'))
         for form, message in cases:
             with self.subTest(form=form), self.assertRaisesRegex(actions.ActionError, message):
@@ -892,19 +891,19 @@ class ChangeAppRouteTests(unittest.TestCase):
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
-            ('/apps/hello/staging/connect', {'publish': 'created, paid'},
-             ('app-events', 'hello', 'staging', '--add-publish=created,paid'), 'hello/staging',
+            ('/apps/hello/staging/connect', {'subscribe': 'orders.created'},
+             ('app-events', 'hello', 'staging', '--add-subscribe=orders.created'), 'hello/staging',
              'console/connect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
             ('/apps/hello/staging/disconnect', {'role': 'subscribes', 'app': 'orders', 'event': 'created'},
              ('app-events', 'hello', 'staging', '--remove-subscribe=orders.created'), 'hello/staging',
              'console/disconnect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
-            ('/catalogue/staging/use', {'app': 'hello', 'publish': 'created'},  # the catalogue's choice of app: the same change
-             ('app-events', 'hello', 'staging', '--add-publish=created'), 'hello/staging',
+            ('/catalogue/staging/use', {'app': 'hello', 'subscribe': 'orders.created'},  # the same subscription grant
+             ('app-events', 'hello', 'staging', '--add-subscribe=orders.created'), 'hello/staging',
              'console/connect-hello-staging-abc1234', '[console] apps: change the connections of hello/staging'),
         )
         for path, form, command, target, branch, title in cases:
             with self.subTest(path=path):
-                runner = tree_fake()
+                runner = tree_fake(staging=(staging_app('orders', {'SWHURL_EVENTS_PUBLISH': 'created'}),))
                 c, jobs = self.client(runner)
                 response = c.post(path, data=form, headers=WHO, follow_redirects=False)
                 self.assertEqual(response.status_code, 303, response.text)
@@ -990,7 +989,9 @@ class ChangeAppRouteTests(unittest.TestCase):
         for path, form, code in (('/apps/hello/prod/promote', {}, 400), ('/apps/hello/prod/scale', {}, 400),
                                  ('/apps/hello/prod/scale', {'replicas': '2; rm'}, 400), ('/apps/hello/prod/delete', {}, 404),
                                  ('/apps/hello/prod/connect', {}, 400), ('/apps/hello/prod/connect', {'calls': '--root=/'}, 400),
-                                 ('/apps/hello/prod/connect', {'publish': 'Created'}, 400),
+                                 ('/apps/hello/prod/connect', {'publish': 'created'}, 400),
+                                 ('/catalogue/prod/use', {'app': 'hello', 'publish': 'created'}, 400),
+                                 ('/apps/hello/prod/disconnect', {'role': 'publishes', 'event': 'created'}, 400),
                                  ('/apps/hello/prod/connect', {'subscribe': 'created'}, 400),
                                  ('/apps/hello/prod/disconnect', {'role': 'called-by', 'app': 'orders'}, 400),
                                  ('/catalogue/prod/use', {'calls': 'orders'}, 400), ('/catalogue/prod/use', {'app': '../hello', 'calls': 'orders'}, 404),
@@ -1634,14 +1635,14 @@ class NewRepoRouteTests(unittest.TestCase):
         jobs = actions.Jobs(runner, audit=lambda line: None, inline=True)
         platform_api, app_api = FakeGitHub(), FakeAppGitHub(runs=[{'status': 'completed', 'conclusion': 'success'}])
         c = TestClient(app_under_test(runner, jobs=jobs, github=platform_api.github, app_repos=app_api.config))
-        form = 'name=notes&type=worker&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created&publish=sent'
+        form = 'name=notes&type=worker&stack=typescript&team=payments&calls=orders&calls=billing&subscribe=orders.created'
         response = c.post('/new/repo', content=form, headers={**WHO, 'content-type': 'application/x-www-form-urlencoded'},
                           follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         self.assertEqual(jobs.get(1).state, 'succeeded', '\n'.join(jobs.get(1).lines))
         app_new = next(c for c in runner.calls if c[3:4] == ('app-new',))
         self.assertEqual(app_new[7:], ('--image=ghcr.io/samclement/notes:1-9f8e7d6@' + DIGEST, '--team=payments',
-                                       '--calls=orders,billing', '--subscribe=orders.created', '--publish=sent'))
+                                       '--calls=orders,billing', '--subscribe=orders.created'))
         self.assertEqual(platform_api.sent('POST /issues/7/labels'), [],
                          'it changes other apps, so it is not labelled to merge itself')
         refused = c.post('/new/repo', content='name=notes2&type=worker&stack=typescript&team=platform&calls=stranger',

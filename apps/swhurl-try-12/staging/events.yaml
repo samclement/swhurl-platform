@@ -8,6 +8,7 @@ spec:
   subjects:
   - staging.swhurl-try-12.>
   storage: file
+  preventDelete: true
   replicas: 1
   retention: limits
   discard: old

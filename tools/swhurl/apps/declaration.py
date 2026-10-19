@@ -5,17 +5,13 @@ and a test compares them; GLOSSARY.md defines the words):
 
 - **identity**: what the app is (``version``, ``stack``, ``kind``, ``description``).
 - **need**: what the image needs to run (port, probes, user, telemetry, resources, database, secret names).
-- **offer**: what other apps can use (``provides``, ``flags``, ``events.publish``).
+- **offer**: what other apps can use (``provides``, ``flags``); AsyncAPI send operations declare publications.
 - **grant**: what the platform allows the app (team, exposure, alerts, calls, ``events.subscribe``). It
   belongs to this repository and is refused in the file, naming the command that sets it.
 
-Separately, each field the file may hold is read at one of two times:
-
-- **seed**: read once, when ``app-new`` creates the staging instance. From then on the instance in
-  this repository is the truth; a later edit of the field in the app's repository changes nothing,
-  and the command named beside it is how the instance changes.
-- **live**: read again from the app's repository, so an edit there reaches the platform. The needs
-  (``Needs``) are written with every new staging image (edit.deploy_staging).
+Each supported field is read again from the app's repository. The needs (``Needs``) are written
+with every new staging image (edit.deploy_staging); offers are read at that image's commit too.
+``kind`` is checked but cannot change. Grant fields are refused.
 
 ``autoDeploy`` is accepted and ignored: staging always follows new images.
 
@@ -46,7 +42,7 @@ TELEMETRY = ('otlp', 'none')
 MAX_BYTES = 512 * 1024
 MAX_DESCRIPTION = 200
 """One line, as the New app form and make app-repo take it."""
-SEED, LIVE, IGNORED, REFUSED = 'seed', 'live', 'ignored', 'refused'
+LIVE, IGNORED, REFUSED = 'live', 'ignored', 'refused'
 IDENTITY, NEED, OFFER, GRANT, DROPPED = 'identity', 'need', 'offer', 'grant', 'dropped'
 WITH_IMAGE = 'with every new staging image (make app-deploy, the Deploy workflow)'
 Opener = Callable[[urllib.request.Request], bytes]
@@ -54,10 +50,10 @@ Opener = Callable[[urllib.request.Request], bytes]
 
 @dataclass(frozen=True)
 class Field:
-    name: str  # a top-level field, or events.publish and events.subscribe, which differ in kind
+    name: str  # a top-level field, or events.subscribe
     kind: str  # IDENTITY, NEED, OFFER, GRANT or DROPPED
-    read: str  # SEED, LIVE, IGNORED or REFUSED (every grant)
-    then: str  # seed: what changes the instance afterwards; live: when it is read again; refused: what sets it
+    read: str  # LIVE, IGNORED or REFUSED (every grant)
+    then: str  # live: when it is read again; refused: what sets it
 
 
 FIELDS = (
@@ -76,7 +72,6 @@ FIELDS = (
     Field('secrets', NEED, LIVE, WITH_IMAGE + ': a new name deploys without its value until make app-secret sets it'),
     Field('provides', OFFER, LIVE, "by make app-offers, at the commit of every new staging image (the Deploy workflow)"),
     Field('flags', OFFER, LIVE, "by the app's own build, which generates a typed accessor for each flag"),
-    Field('events.publish', OFFER, SEED, 'make app-events; once the app has provides.eventsFile, that file instead'),
     Field('team', GRANT, REFUSED, 'make app-team'),
     Field('exposure', GRANT, REFUSED, 'make app-expose'),
     Field('alerts', GRANT, REFUSED, 'make app-alerts'),
@@ -151,17 +146,12 @@ def _resource_defaults(resources: dict, fail: Callable[[str], DeclarationError])
     return defaults
 
 
-def _event_defaults(declared: dict, fail: Callable[[str], DeclarationError]) -> dict:
-    defaults: dict = {}
-    if set(declared) - {'publish', 'subscribe'}:
-        raise fail('events may set publish only')
-    names = declared.get('publish') or []
-    if not isinstance(names, list) or not all(isinstance(n, str) and re.fullmatch(r'[a-z]([a-z0-9-]{0,38}[a-z0-9])?', n) for n in names) \
-            or len(set(names)) != len(names):
-        raise fail('events.publish lists event names (created)')
-    if names:
-        defaults['publish'] = names
-    return defaults
+def _check_events(declared: dict, fail: Callable[[str], DeclarationError]) -> None:
+    if 'publish' in declared:
+        raise fail('events.publish is no longer supported: declare send operations in asyncapi.yaml and name it '
+                   'with provides.eventsFile; remove events.publish')
+    if set(declared) - {'subscribe'}:
+        raise fail('events may not declare publications here: use provides.eventsFile and asyncapi.yaml')
 
 
 def _provides_defaults(provides: dict, kind: str, fail: Callable[[str], DeclarationError]) -> dict:
@@ -297,7 +287,7 @@ def of(doc: object, source: str = FILE) -> Declaration:
             raise fail(problem)
         defaults['secret_keys'] = secrets
     defaults.update(_resource_defaults(field('resources', dict) or {}, fail))
-    defaults.update(_event_defaults(field('events', dict) or {}, fail))
+    _check_events(field('events', dict) or {}, fail)
     provides = field('provides', dict) or {}
     defaults.update(_provides_defaults(provides, kind, fail))
     flags = field('flags', dict) or {}

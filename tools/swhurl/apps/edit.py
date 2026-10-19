@@ -6,7 +6,7 @@
     app-team APP --team T                          move an app (every environment) to a registered team
     app-calls APP ENV [--add A,B] [--remove C]     change which apps an instance may call
     app-egress APP ENV [--add H[:P],...] [--remove H[:P]]   change which hosts outside the cluster an instance may reach
-    app-events APP ENV [--publish A,B] [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance publishes and receives
+    app-events APP ENV [--subscribe APP.EVENT,...] [--add-subscribe APP.EVENT] ...   change the events an instance receives
     app-offers APP ENV | --all ENV                 read what an app offers (its API and event documents) from its repository
     app-deploy [APP] [--refresh]                   bring staging to the newest image, with what it needs and offers
     app-secret APP ENV NAME                        set one secret value, read from standard input (needs the age key)
@@ -165,38 +165,32 @@ def changed_list(what: str, current: list[str], replace: list[str] | None, add: 
     return [name for name in current if name not in remove] + add
 
 
-def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = None, subscribe: list[str] | None = None,
-               add_publish: list[str] | None = None, remove_publish: list[str] | None = None,
+def set_events(root: Path, app: str, env: str, *, subscribe: list[str] | None = None,
                add_subscribe: list[str] | None = None, remove_subscribe: list[str] | None = None,
                runner: Runner | None = None) -> Path:
-    """Change the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives: each list
-    replaced whole (None: unchanged, an empty list: none) or with names added and removed. The first
-    time, the instance gets its own NATS key; everything else follows in sync_env."""
+    """Grant the ``<app>.<event>`` pairs ``app/env`` receives: replace the list, or add/remove names.
+    Publications belong to the image's AsyncAPI document, never to this command."""
     now = helmrelease.variables(read(instance_dir(root, app, env) / 'helmrelease.yaml'))
-    publish = changed_list('publish', events.published(now), publish, add_publish or [], remove_publish or [])
     subscribe = changed_list('subscribe', ['.'.join(pair) for pair in events.subscribed(now)], subscribe,
                              add_subscribe or [], remove_subscribe or [])
-    if publish is None and subscribe is None:
-        raise EditError('give --publish and/or --subscribe (an empty value clears it), or --add-publish, '
-                        '--remove-publish, --add-subscribe, --remove-subscribe')
-    bad = [name for name in publish or [] if not events.EVENT_RE.match(name)]
-    bad += [name for name in subscribe or [] if not events.SUBSCRIPTION_RE.match(name)]
-    if bad or len(set(publish or [])) != len(publish or []) or len(set(subscribe or [])) != len(subscribe or []):
-        raise EditError('events are lowercase names (created), subscriptions <app>.<event> (orders.created), each once'
+    if subscribe is None:
+        raise EditError('give --subscribe (an empty value clears it), --add-subscribe or --remove-subscribe; '
+                        'to publish, edit asyncapi.yaml named by provides.eventsFile')
+    bad = [name for name in subscribe if not events.SUBSCRIPTION_RE.match(name)]
+    if bad or len(set(subscribe)) != len(subscribe):
+        raise EditError('subscriptions are <app>.<event> (orders.created), each once'
                         + (f': {", ".join(bad)}' if bad else ''))
     instance, each = instance_dir(root, app, env), Instance(app, env)
     world, _ = model_sync.read(root)
     entry = world[each]
-    published = tuple(entry.release.publishes if publish is None else publish)
-    subscribed = tuple(entry.settings.subscriptions if subscribe is None else subscribe)
+    subscribed = tuple(subscribe)
     created = ''
-    if (published or subscribed) and not events_keyed(entry):
+    if (entry.release.publishes or subscribed) and not events_keyed(entry):
         created = new_nats_key(instance, app, env, runner=runner)
 
     def update(entry: Entry) -> Entry:
         allocations = replace(entry.settings.allocations, events_key=created) if created else entry.settings.allocations
-        return replace(entry, release=replace(entry.release, publishes=published),
-                       settings=replace(entry.settings, subscriptions=subscribed, allocations=allocations),
+        return replace(entry, settings=replace(entry.settings, subscriptions=subscribed, allocations=allocations),
                        encrypted=entry.encrypted | ({EVENTS_SECRET} if created else set()))
     try:
         model_sync.change(root, each, update)
@@ -836,19 +830,19 @@ def main_egress(argv: list[str] | None = None) -> int:
 def main_events(argv: list[str] | None = None) -> int:
     def names(text: str) -> list[str]:
         return [name.strip() for name in text.split(',') if name.strip()]
-    p = argparse.ArgumentParser(prog='swhurl app-events', description='Set the events an instance publishes and receives')
+    p = argparse.ArgumentParser(prog='swhurl app-events', description='Set the events an instance receives; '
+                                'publications come from asyncapi.yaml named by provides.eventsFile')
     p.add_argument('app')
     p.add_argument('env', choices=ENVIRONMENTS)
-    p.add_argument('--publish', type=names, help='comma-separated events this app publishes ("" for none)')
     p.add_argument('--subscribe', type=names, help='comma-separated <app>.<event> it receives ("" for none)')
-    p.add_argument('--add-publish', type=names, default=[], help='comma-separated events to start publishing')
-    p.add_argument('--remove-publish', type=names, default=[], help='comma-separated events to stop publishing')
     p.add_argument('--add-subscribe', type=names, default=[], help='comma-separated <app>.<event> to start receiving')
     p.add_argument('--remove-subscribe', type=names, default=[], help='comma-separated <app>.<event> to stop receiving')
     p.add_argument('--root', type=Path, default=ROOT)
+    argv = sys.argv[1:] if argv is None else argv
+    if any(arg.partition('=')[0] in ('--publish', '--add-publish', '--remove-publish') for arg in argv):
+        p.error('publishing flags are no longer supported: edit asyncapi.yaml named by swhurl.yaml provides.eventsFile')
     args = p.parse_args(argv)
-    return run(lambda: set_events(args.root.resolve(), args.app, args.env, publish=args.publish, subscribe=args.subscribe,
-                                  add_publish=args.add_publish, remove_publish=args.remove_publish,
+    return run(lambda: set_events(args.root.resolve(), args.app, args.env, subscribe=args.subscribe,
                                   add_subscribe=args.add_subscribe, remove_subscribe=args.remove_subscribe), True)
 
 

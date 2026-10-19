@@ -192,6 +192,7 @@ def manifests(app: str, env: str, publishes: list[str], subscribes: list[tuple[s
         docs.append({'apiVersion': 'jetstream.nats.io/v1beta2', 'kind': 'Stream',
                      'metadata': {'name': stream(env, app), 'namespace': namespace},
                      'spec': {'name': stream(env, app), 'subjects': [subject(env, app, '>')], 'storage': 'file',
+                              'preventDelete': True,  # stopping publication must not erase retained messages
                               'replicas': 1, 'retention': 'limits', 'discard': 'old', 'maxAge': RETENTION,
                               'maxBytes': MAX_BYTES}})
     for publisher, event in subscribes:

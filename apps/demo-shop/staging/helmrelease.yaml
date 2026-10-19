@@ -6,7 +6,7 @@ metadata:
   annotations:
     platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: a244f82
-    platform.swhurl.com/render: 70d68b51cb9dee0d0b3744516aef26f77d237f195ef36bda53c2f562d958823d
+    platform.swhurl.com/render: f58573cc98a2861871b8682b85f0f6e035678e1742eeafc1ba34165bb6714a58
 spec:
   interval: 30m
   timeout: 3m

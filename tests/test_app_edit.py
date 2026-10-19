@@ -357,11 +357,23 @@ class EditTests(unittest.TestCase):
         key.parent.mkdir(parents=True, exist_ok=True)
         key.write_text('UCONTROLLER\n')
 
+    def publish_events(self, app, names, runner, env='staging'):
+        """Intake a document for a fixture image: publications have no manual edit command."""
+        from swhurl.apps import offers
+        text = yaml.safe_dump({
+            'asyncapi': '3.0.0', 'info': {'title': app, 'version': '1.0.0'},
+            'channels': {name: {'address': name, 'messages': {'message': {
+                'payload': {'type': 'object'}, 'examples': [{'payload': {}}]}}} for name in names},
+            'operations': {f'send_{name}': {'action': 'send', 'channel': {'$ref': f'#/channels/{name}'}} for name in names},
+        }, sort_keys=False)
+        return self.quiet(intake.write_offers, self.root, app, env, f'samclement/{app}', 'abc1234',
+                          {offers.EVENTS_NAME: text}, offers.events(text), runner=runner)
+
     def test_events_give_a_publisher_a_stream_and_a_subscriber_a_consumer_and_both_a_nats_user(self):
         from swhurl.apps import events
         self.with_units()
         runner = self.sops()
-        self.quiet(edit.set_events, self.root, 'orders', 'staging', publish=['created', 'cancelled'], runner=runner)
+        self.publish_events('orders', ['created', 'cancelled'], runner)
         self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
 
         publisher, subscriber = self.env('orders'), self.env('hello')
@@ -384,10 +396,11 @@ class EditTests(unittest.TestCase):
             self.assertLessEqual({'events.yaml', 'events.sops.yaml'}, set(listed))
         self.assertIn('orders-staging', (self.root / 'platform/reloader/helmrelease.yaml').read_text())
         self.assertEqual(len(self.seeds), 2, 'a later change reuses the key')
-        self.quiet(edit.set_events, self.root, 'orders', 'staging', publish=['created', 'cancelled', 'paid'], runner=runner)
+        self.publish_events('orders', ['created', 'cancelled', 'paid'], runner)
         self.assertEqual(len(self.seeds), 2)
 
         stream, = yaml.safe_load_all((self.root / 'apps/orders/staging/events.yaml').read_text())
+        self.assertTrue(stream['spec']['preventDelete'], 'stopping publication must not delete retained messages')
         self.assertEqual((stream['kind'], stream['spec']['name'], stream['spec']['subjects'], stream['spec']['maxAge']),
                          ('Stream', 'staging-orders', ['staging.orders.>'], '168h'))
         consumer, = yaml.safe_load_all((self.root / 'apps/hello/staging/events.yaml').read_text())
@@ -420,7 +433,7 @@ class EditTests(unittest.TestCase):
         with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
             edit.remove(self.root, 'orders', 'staging')
         with self.assertRaisesRegex(edit.EditError, 'subscribes to orders.created, which orders/staging does not publish'):
-            edit.set_events(self.root, 'orders', 'staging', publish=['paid'], runner=runner)
+            self.publish_events('orders', ['paid'], runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,cancelled,paid', 'a refused change is undone')
 
         # Without events an instance keeps its NATS identity (its flag overrides), and loses its consumers.
@@ -466,23 +479,22 @@ class EditTests(unittest.TestCase):
     def test_events_are_added_and_removed_one_at_a_time_like_calls(self):
         self.with_units()
         runner = self.sops()
-        self.quiet(edit.set_events, self.root, 'orders', 'staging', add_publish=['created'], runner=runner)
-        self.quiet(edit.set_events, self.root, 'orders', 'staging', add_publish=['paid'], runner=runner)
+        self.publish_events('orders', ['created'], runner)
+        self.publish_events('orders', ['created', 'paid'], runner)
         self.quiet(edit.set_events, self.root, 'hello', 'staging', add_subscribe=['orders.created'], runner=runner)
         self.quiet(edit.set_events, self.root, 'hello', 'staging', add_subscribe=['orders.paid'],
                    remove_subscribe=['orders.created'], runner=runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'what was there stays')
         self.assertEqual(self.env('hello')['SWHURL_EVENTS_SUBSCRIBE'], 'orders.paid')
-        cases = (('orders', {'add_publish': ['paid']}, 'already there: paid'),
-                 ('orders', {'remove_publish': ['refunded']}, 'not there to remove: refunded'),
-                 ('orders', {'remove_publish': ['paid']}, 'subscribes to orders.paid, which orders/staging does not publish'),
-                 ('orders', {'publish': ['x'], 'add_publish': ['y']}, '--publish replaces the list'),
+        cases = (('hello', {'add_subscribe': ['orders.paid']}, 'already there: orders.paid'),
+                 ('hello', {'remove_subscribe': ['orders.refunded']}, 'not there to remove: orders.refunded'),
+                 ('hello', {'subscribe': [], 'add_subscribe': ['orders.paid']}, '--subscribe replaces the list'),
                  ('hello', {'add_subscribe': ['orders.refunded']}, 'which orders/staging does not publish'))
         for app, kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
                 edit.set_events(self.root, app, 'staging', runner=runner, **kwargs)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'a refused change is undone')
-        self.quiet(edit.set_events, self.root, 'orders', 'staging', remove_publish=['created'], runner=runner)
+        self.publish_events('orders', ['paid'], runner)
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'paid')
 
     ASYNCAPI = """asyncapi: 3.0.0
@@ -574,14 +586,161 @@ components:
             intake.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
 
-        # An app that stops describing itself keeps what it publishes; the documents and its API link go.
+        # Removing the document cannot bypass dependencies; a refused read changes nothing.
         opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\nhealthPath: /healthz\n'})
+        with self.assertRaisesRegex(edit.EditError, 'hello/staging subscribes to orders.paid'):
+            intake.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
+        self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
         self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
         self.assertNotIn(offers.API_ANNOTATION, yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}),
                          'no provides.api: no API description to link')
         self.assertNotIn('platform.swhurl.com/offers', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}))
-        self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
+        self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders'))
+        self.assertFalse((instance / 'events.yaml').exists(), 'the protected Stream CR is removed, not the broker history')
+        self.assertIn('SWHURL_EVENTS_NKEY', self.env('orders'), 'its flags identity remains')
+        users = yaml.safe_load(yaml.safe_load((self.root / 'platform/nats/users.yaml').read_text())['data']['values.yaml'])
+        user = next(u for u in users['config']['merge']['authorization']['users'] if u['nkey'] == self.env('orders')['SWHURL_EVENTS_NKEY'])
+        self.assertNotIn('staging.orders.>', user['permissions']['publish']['allow'])
+        self.assertFalse(self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0])
+
+    def test_stopping_publications_keeps_subscriptions_and_checks_production_on_promotion(self):
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        self.publish_events('orders', ['created'], runner)
+        self.publish_events('orders', ['created'], runner, env='prod')
+        self.publish_events('hello', ['seen'], runner)
+        self.quiet(edit.set_events, self.root, 'orders', 'staging', subscribe=['hello.seen'], runner=runner)
+        self.quiet(edit.set_events, self.root, 'hello', 'prod', subscribe=['orders.created'], runner=runner)
+        folder = self.root / 'apps/orders/staging'
+        stream = next(d for d in yaml.safe_load_all((folder / 'events.yaml').read_text()) if d['kind'] == 'Stream')
+        self.assertTrue(stream['spec']['preventDelete'], 'protection is present before the Stream CR is removed')
+        key = self.env('orders')['SWHURL_EVENTS_NKEY']
+        self.publish_events('orders', [], runner)
+        self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders'))
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_SUBSCRIBE'], 'hello.seen')
+        self.assertEqual(self.env('orders')['SWHURL_EVENTS_NKEY'], key)
+        self.assertEqual([d['kind'] for d in yaml.safe_load_all((folder / 'events.yaml').read_text())], ['Consumer'])
+        # A different image with no publications can be valid in staging but break production.
+        for name in ('helmrelease.yaml', 'release.yaml'):
+            path = folder / name
+            path.write_text(path.read_text().replace(path.read_text().split('digest: ')[1].split('\n')[0], NEW_DIGEST))
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(edit.EditError, 'hello/prod subscribes to orders.created'):
+            edit.promote(self.root, 'orders', runner=runner)
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
+        self.quiet(edit.set_events, self.root, 'hello', 'prod', subscribe=[], runner=runner)
+        self.quiet(edit.promote, self.root, 'orders', runner=runner)
+        self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'))
+
+    def test_removing_the_last_send_operation_clears_publications_even_with_channels_left(self):
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
+        document = yaml.safe_load(self.ASYNCAPI)
+        for operations in (None, {}, {'receiveCreated': {'action': 'receive', 'channel': {'$ref': '#/channels/created'}}}):
+            with self.subTest(operations=operations):
+                self.publish_events('orders', ['created'], runner)
+                key = self.env('orders')['SWHURL_EVENTS_NKEY']
+                document.pop('operations', None)
+                if operations is not None:
+                    document['operations'] = operations
+                text = yaml.safe_dump(document)
+                self.assertEqual(offers.events(text), [], 'channels alone never authorize publication')
+                opener, _ = self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': text})
+                # Even removing the final send operation must honor existing subscribers.
+                self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=runner)
+                before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+                with self.assertRaisesRegex(edit.EditError, 'hello/staging subscribes to orders.created'):
+                    intake.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
+                self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
+                self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=[], runner=runner)
+                self.assertTrue(self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0])
+                self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders'))
+                self.assertEqual(self.env('orders')['SWHURL_EVENTS_NKEY'], key)
+                self.assertFalse((self.root / 'apps/orders/staging/events.yaml').exists())
+                self.assertFalse(self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)[0])
+
+    def test_invalid_event_operations_preserve_the_whole_tree(self):
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        self.publish_events('orders', ['created'], runner)
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
+        cases = (
+            ([], 'operations must be a mapping'),
+            (None, 'operations must be a mapping'),
+            ({'broken': 'send'}, 'operation broken must be a mapping'),
+            ({'broken': {}}, 'action must be send or receive'),
+            ({'broken': {'action': 'snd', 'channel': {'$ref': '#/channels/created'}}}, 'action must be send or receive'),
+            ({'broken': {'action': 'send', 'channel': {'$ref': '#/channels/missing'}}}, 'channel must reference an existing'),
+            ({'broken': {'action': 'receive', 'channel': {'$ref': '#/channels/missing'}}}, 'channel must reference an existing'),
+            ({'broken': {'action': 'send', 'channel': 'created'}}, 'channel must reference an existing'),
+            ({'broken': {'action': 'send'}}, 'channel must reference an existing'),
+            ({'broken': {'$ref': '#/components/operations/missing'}}, 'points at nothing'),
+        )
+        for operations, message in cases:
+            with self.subTest(operations=operations):
+                document = yaml.safe_load(self.ASYNCAPI)
+                document['operations'] = operations
+                text = yaml.safe_dump(document)
+                with self.assertRaisesRegex(offers.OfferError, message):
+                    offers.events(text)
+                with self.assertRaisesRegex(edit.EditError, message):
+                    intake.set_offers(self.root, 'orders', 'staging',
+                                      opener=self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': text})[0], runner=runner)
+                self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
+
+    def test_failed_event_document_reads_preserve_an_existing_release_and_shared_configuration(self):
+        import urllib.error
+        self.with_units()
+        self.built_from_a_repository()
+        runner = self.sops()
+        self.publish_events('orders', ['created'], runner)
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
+        for files in ({'swhurl.yaml': manifest}, {'swhurl.yaml': manifest, 'asyncapi.yaml': 'not: [valid'}):
+            with self.subTest(files=files), self.assertRaises(edit.EditError):
+                intake.set_offers(self.root, 'orders', 'staging', opener=self.repository(files)[0], runner=runner)
+            self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
+
+        def unreachable(request):
+            if '/swhurl.yaml?' in request.full_url:
+                return manifest.encode()
+            raise urllib.error.URLError('offline')
+        with self.assertRaisesRegex(edit.EditError, 'could not reach GitHub'):
+            intake.set_offers(self.root, 'orders', 'staging', opener=unreachable, runner=runner)
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
+
+    def test_policy_rejects_publications_without_an_events_document(self):
+        from swhurl.apps import offers
+        folder = self.staging.parent
+        self.assertIn('provides.eventsFile', offers.problems(folder, ['created'])[0])
+        self.with_units()
+        self.quiet(intake.write_offers, self.root, 'orders', 'staging', 'samclement/orders', 'abc1234',
+                   {offers.FLAGS_NAME: '{"shout": {"type": "boolean", "default": false}}'}, None)
+        folder = self.root / 'apps/orders/staging'
+        self.assertIn('provides.eventsFile', offers.problems(folder, ['created'], 'abc1234')[0])
+        self.assertEqual(offers.problems(folder, [], 'abc1234'), [])
+
+    def test_obsolete_publication_flags_are_refused_without_writes(self):
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        for flag in ('--publish=created', '--add-publish=created', '--remove-publish=created'):
+            error = io.StringIO()
+            with self.subTest(flag=flag), redirect_stderr(error), self.assertRaises(SystemExit) as raised:
+                edit.main_events(['hello', 'staging', '--root', str(self.root), flag])
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn('provides.eventsFile', error.getvalue())
+        with redirect_stderr(io.StringIO()):
+            result, _ = self.quiet(new.main, ['hello', '--root', str(self.root), '--publish=created'])
+        self.assertEqual(result, 2)
+        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
 
     def test_declared_flags_are_kept_with_the_images_commit_and_carried_by_promotion(self):
         import json
@@ -1040,8 +1199,8 @@ components:
     def test_event_refusals_change_nothing(self):
         self.with_units()
         before = self.staging.read_text()
-        cases = (({}, 'give --publish and/or --subscribe'), ({'publish': ['Created']}, 'lowercase names'),
-                 ({'subscribe': ['created']}, '<app>.<event>'), ({'publish': ['a', 'a']}, 'each once'),
+        cases = (({}, 'give --subscribe'),
+                 ({'subscribe': ['created']}, '<app>.<event>'), ({'subscribe': ['orders.created', 'orders.created']}, 'each once'),
                  ({'subscribe': ['orders.created']}, 'which orders/staging does not publish'))
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), self.assertRaisesRegex(edit.EditError, message):
@@ -1050,8 +1209,7 @@ components:
         self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists())
         from swhurl.run import FakeRunner
         with self.assertRaisesRegex(edit.EditError, 'could not SOPS-encrypt'):
-            edit.set_events(self.root, 'hello', 'staging', publish=['created'],
-                        runner=FakeRunner().on('sops', returncode=1, stderr='no key'))
+            self.publish_events('hello', ['created'], FakeRunner().on('sops', returncode=1, stderr='no key'))
         self.assertFalse((self.root / 'apps/hello/staging/events.sops.yaml').exists(), 'no plaintext seed is left')
         self.assertEqual(self.staging.read_text(), before)
 

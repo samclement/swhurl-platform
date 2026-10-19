@@ -87,7 +87,7 @@
         {{ ui.submit('Open egress PR', 'It changes this instance and the egress proxy; you review and merge it on GitHub.') }}
       </form>
     </details>
-    <details class="act" name="app-form" style="--slot: {{ 0 if c.offers else 1 }}; --wide: 11rem">
+    <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
       <summary class="button">{{ st.icon('plus') }} Connect to an app</summary>
       <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
         <div class="rows">
@@ -96,18 +96,6 @@
         {{ ui.submit('Open connection PR', 'It changes this instance and each app chosen; you review and merge it on GitHub.') }}
       </form>
     </details>
-    {# An app that describes its events (asyncapi.yaml in its repository) declares them there, not here. #}
-    {% if not c.offers %}
-    <details class="act" name="app-form" style="--slot: 0; --wide: 11rem">
-      <summary class="button">{{ st.icon('plus') }} Publish an event</summary>
-      <form class="wizard" method="post" action="/apps/{{ i.app }}/{{ i.env }}/connect">
-        <fieldset>
-          {{ ui.text_field('connect_publish', 'New event', name='publish', placeholder='created', hint='A lowercase name; several comma-separated. Other apps see it as ' ~ i.app ~ '.<event> and can subscribe. What ' ~ i.app ~ ' publishes already stays.') }}
-        </fieldset>
-        {{ ui.submit('Open event PR', 'The first time, it also creates this instance\'s NATS key. You review and merge it on GitHub.') }}
-      </form>
-    </details>
-    {% endif %}
   </div>
   <div class="card-body">
     <dl class="plain">

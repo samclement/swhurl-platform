@@ -199,7 +199,14 @@ class FirstProductionTests(unittest.TestCase):
             args = new.parse_args([name, '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging',
                                    '--image', f'ghcr.io/example/{name}:2-abcdef0@' + DIGEST, '--no-auto-deploy', *extra])
             new.generate(args, self.root)
-        edit.set_events(self.root, 'orders', 'staging', publish=['created'], runner=self.encrypting())
+        from swhurl.apps import offers
+        from swhurl.apps import release as intake
+        document = ('asyncapi: 3.0.0\ninfo: {title: orders, version: 1.0.0}\n'
+                    'channels:\n  created:\n    address: created\n    messages:\n'
+                    '      created: {payload: {type: object}, examples: [{payload: {}}]}\n'
+                    'operations:\n  sendCreated: {action: send, channel: {$ref: "#/channels/created"}}\n')
+        intake.write_offers(self.root, 'orders', 'staging', 'example/orders', 'abcdef0',
+                            {offers.EVENTS_NAME: document}, offers.events(document), runner=self.encrypting())
         edit.set_events(self.root, 'reports', 'staging', subscribe=['orders.created'], runner=self.encrypting())
 
         def env(app, environment):

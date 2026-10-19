@@ -151,8 +151,7 @@ def records(args) -> Entry:
         health_path=args.health_path if web else '', telemetry=bool(args.otlp),
         resources=Resources() if resources == workload.DEFAULT_RESOURCES else resources, database=args.database or '',
         secrets=tuple(args.secret_keys or ()), description=args.description or '',
-        api_path=getattr(args, 'api_path', '') if web else '',  # provides.api only (--from-repo, --manifest)
-        publishes=tuple(args.publish or ()))
+        api_path=getattr(args, 'api_path', '') if web else '')  # provides.api only (--from-repo, --manifest)
     settings = Settings(
         exposure=args.exposure, host=args.host if args.host and args.host != default_host(args.name, args.env) else '',
         issuer='' if args.issuer == DEFAULT_ISSUER else args.issuer, calls=tuple(args.calls or ()),
@@ -330,8 +329,6 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
                    help=f'sqlite: a retained volume with the database at {SQLITE_PATH}, passed as ${DATABASE_PATH_VARIABLE}; '
                         'one replica, stop-first updates')
     p.add_argument('--database-size', default=DEFAULT_DATABASE_SIZE, metavar='SIZE', help='the database volume (default %(default)s)')
-    p.add_argument('--publish', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
-                   help='comma-separated events this app publishes (make app-events later)')
     p.add_argument('--subscribe', type=lambda s: [k.strip() for k in s.split(',') if k.strip()],
                    help='comma-separated <app>.<event> it receives: each must be published in this environment')
     p.add_argument('--description', metavar='TEXT', help="one line saying what the app does (swhurl.yaml's description): "
@@ -359,6 +356,10 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
 
 
 def parse_args(argv=None, opener: declaration.Opener = declaration._open) -> argparse.Namespace:
+    argv = sys.argv[1:] if argv is None else argv
+    if any(arg.partition('=')[0] == '--publish' for arg in argv):
+        raise GenerationError('--publish is no longer supported: declare send operations in asyncapi.yaml '
+                              'named by swhurl.yaml provides.eventsFile')
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument('--from-repo')
     pre.add_argument('--manifest', type=Path)

@@ -8,6 +8,7 @@ spec:
   subjects:
   - prod.swhurl-try-10.>
   storage: file
+  preventDelete: true
   replicas: 1
   retention: limits
   discard: old

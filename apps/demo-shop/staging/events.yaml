@@ -8,6 +8,7 @@ spec:
   subjects:
   - staging.demo-shop.>
   storage: file
+  preventDelete: true
   replicas: 1
   retention: limits
   discard: old

@@ -5,7 +5,7 @@ metadata:
   namespace: smoke-data-prod
   annotations:
     platform.swhurl.com/secrets: GREETING
-    platform.swhurl.com/render: 8bb4bcaba5bd210771115f97f649e16c98a0a1d0de6aa1837418c937456fd334
+    platform.swhurl.com/render: d774ce008bae1be794bd1b197c1df893a3b76b44673adc1a20038eea0e5b2b41
 spec:
   interval: 30m
   timeout: 3m
@@ -29,9 +29,9 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
         seccompProfile:
           type: RuntimeDefault
     controllers:
@@ -39,9 +39,9 @@ spec:
         containers:
           main:
             image:
-              repository: docker.io/library/busybox
-              tag: '1.37'
-              digest: sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+              repository: docker.io/nginxinc/nginx-unprivileged
+              tag: 1.27-alpine
+              digest: sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
             resources:
               requests:
                 cpu: 10m
@@ -57,12 +57,38 @@ spec:
             command:
             - sh
             - -c
-            - date -u >> /data/log; exec sleep 3600000
+            - date -u >> /data/log; exec nginx -g "daemon off;"
             env:
               SWHURL_APP: smoke-data
               SWHURL_ENV: prod
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
+              SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
               DATABASE_PATH: /data/app.db
+            probes:
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: 8080
+                  periodSeconds: 5
+                  failureThreshold: 24
             envFrom:
             - secretRef:
                 name: smoke-data-secret
@@ -94,3 +120,9 @@ spec:
         globalMounts:
         - path: /var/run/swhurl/tokens
           readOnly: true
+    service:
+      main:
+        controller: main
+        ports:
+          http:
+            port: 8080

@@ -1,12 +1,11 @@
 """Create an app's GitHub repository from a stack's template and wait for its first image.
 
-    make app-repo NAME=<app> TYPE=web-app|api|worker [STACK=typescript|kotlin] [DESCRIPTION="..."]
+    make app-repo NAME=<app> TYPE=web-app|api|worker|scheduled-job [STACK=typescript|kotlin] [DESCRIPTION="..."]
 
-TYPE sets every answer of the stack template (contract.APP_TYPES) and the exposure staging starts
-with; STACK defaults to the type's first. ANSWERS="kind=worker database=sqlite" sets the template's
-own questions (its copier.yml, read from GitHub) instead of, or over, a type's: a combination no
-type has is one the template's CI may not build, so it is the operator's, with a warning. Unknown
-questions and choices are refused before anything is created.
+TYPE sets every answer of the stack template (contract.APP_TYPES), the only answers the template
+accepts, and the exposure staging starts with; STACK defaults to the type's first. A type whose
+answers the template no longer offers (its copier.yml, read from GitHub) is refused before anything
+is created.
 
 1. refuses if OWNER/NAME already exists;
 2. renders the stack's Copier template (uvx copier) into a scratch directory, commits it;
@@ -109,17 +108,6 @@ def check_answers(answers: dict[str, str], questions: list[Question]) -> None:
             raise RepoError(f'unknown question {key!r}; this stack asks: {", ".join(by_name) or "nothing"}')
         if value not in by_name[key].choices:
             raise RepoError(f'{key} must be one of {", ".join(by_name[key].choices)} (got {value!r})')
-
-
-def parse_answers(text: str) -> dict[str, str]:
-    """``"kind=worker database=sqlite"`` as a mapping."""
-    answers = {}
-    for item in text.split():
-        key, sep, value = item.partition('=')
-        if not sep or not key or not value:
-            raise RepoError(f'ANSWERS items must be question=choice, got {item!r}')
-        answers[key] = value
-    return answers
 
 
 @dataclass
@@ -270,29 +258,18 @@ def create(runner: Runner, req: Request, *, out: Callable[[str], None] = print,
     return image
 
 
-def from_environment(name: str, environ: Mapping[str, str], warn: Callable[[str], None] | None = None) -> Request:
-    """The request make's variables describe: TYPE (and STACK), or ANSWERS for a combination no type has."""
-    warn = warn or (lambda line: print(line, file=sys.stderr))
+def from_environment(name: str, environ: Mapping[str, str]) -> Request:
+    """The request make's variables describe: TYPE, and STACK when the type has more than one."""
     app_type, stack = environ.get('TYPE', '').strip(), environ.get('STACK', '').strip()
-    overrides = parse_answers(environ.get('ANSWERS', ''))
-    if app_type:
-        if app_type not in APP_TYPES:
-            raise RepoError(f'TYPE must be one of {", ".join(APP_TYPES)}')
-        stack = stack or APP_TYPES[app_type].stacks[0]
-        try:
-            answers = type_answers(app_type, stack)
-        except ValueError as error:
-            raise RepoError(str(error)) from None
-        exposure = APP_TYPES[app_type].exposure
-    elif overrides:
-        answers, exposure = {}, ''
-    else:
-        raise RepoError(f'TYPE is required: one of {", ".join(APP_TYPES)} (or ANSWERS="..." for a combination no type has)')
-    if overrides:
-        warn(f'[WARN] ANSWERS {" ".join(f"{k}={v}" for k, v in sorted(overrides.items()))}: a combination the template\'s CI '
-             'may not build or test; prefer TYPE alone')
-    return Request(name, stack or 'typescript', environ.get('OWNER') or APP_OWNER, environ.get('DESCRIPTION', ''),
-                   {**answers, **overrides}, exposure)
+    if app_type not in APP_TYPES:
+        raise RepoError(f'TYPE is required: one of {", ".join(APP_TYPES)}')
+    stack = stack or APP_TYPES[app_type].stacks[0]
+    try:
+        answers = type_answers(app_type, stack)
+    except ValueError as error:
+        raise RepoError(str(error)) from None
+    return Request(name, stack, environ.get('OWNER') or APP_OWNER, environ.get('DESCRIPTION', ''),
+                   answers, APP_TYPES[app_type].exposure)
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:

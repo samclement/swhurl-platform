@@ -1,40 +1,28 @@
-"""check-templates: every stack template, in every combination of its questions, still fits the platform.
+"""check-templates: each app type, rendered from its stack's template, still fits the platform.
 
-For each stack in ``contract.STACKS``: clone its template once, read the choice questions from its
-copier.yml, render every combination with Copier (as ``make app-repo`` does) and turn the rendered
-``swhurl.yaml`` into a staging and a prod instance with ``app-new --manifest`` in a scratch root. Each
-instance must pass the app policy, and the two must not drift apart (``make check-apps`` rules).
+For each stack in ``contract.STACKS``: clone its template at the pinned revision, render each app type
+built with it (``contract.APP_TYPES``, the only answers the template accepts) with Copier, as ``make
+app-repo`` does, and turn the rendered ``swhurl.yaml`` into a staging and a prod instance with ``app-new
+--manifest`` in a scratch root. Each instance must pass the app policy, and the two must not drift apart
+(``make check-apps`` rules). One set of answers no type has (``OUTSIDE_TYPES``) must be refused by the
+template's validator.
 
-Combinations render in parallel, one process each (``--jobs``, default every CPU). Many render the same
-``swhurl.yaml`` (an answer that changes only the app's code): each distinct one is checked once, again in
-parallel, with kustomize and Helm in its own scratch folder.
+Renders and checks run in parallel, one process each (``--jobs``, default every CPU).
 
-This is the platform half of a template's contract: the template's own CI builds and runs the app, this
+This is the platform half of a template's contract: the template's own CI builds and runs each type, this
 check proves the platform accepts what the template declares, in seconds and without building anything.
-
-A full pass is remembered (``STAMP``, outside the repository) with a hash of what it read: the tooling
-modules it loaded (the pinned template revisions among them), the repository files below (measured with
-an audit hook: no app instance, console or notification file is read), the lock file and the Helm and
-kubectl versions. The next run with the same hash passes without rendering; ``FORCE=true`` renders anyway.
-CI starts with no stamp, so it always renders.
 """
 from __future__ import annotations
 
 import argparse
-import datetime as dt
-import hashlib
-import itertools
-import json
 import os
 import shutil
-import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from swhurl import ROOT
 from swhurl.apps import declaration, edit, new, policy, repo
 from swhurl.apps.contract import (
     APP_TYPES,
@@ -54,17 +42,8 @@ NAME = 'contract-check'
 REFUSED = 'Validation error for question'  # how Copier says the template's validator refused an answer
 # A template app's staging image (auto-deploy needs <run>-<sha>) pinned with a digest, as prod requires.
 IMAGE = f'ghcr.io/samclement/{NAME}:1-abcdef0@sha256:' + '0' * 64
-STAMP = policy.CACHE.parent / 'check-templates.json'
-# Repository files the check reads besides its modules (measured with an audit hook; a test fails if it opens another).
-READS = ('apps/teams.yaml', 'apps/signing-keys.json', 'clusters/home/flux-system/sources/configmap-platform-settings.yaml',
-         'clusters/home/flux-system/sources/helmrepositories.yaml', 'uv.lock')
-TOOLS = (('helm', 'version', '--short'), ('kubectl', 'version', '--client'))
-
-
-def combinations(questions: list[repo.Question]) -> list[dict[str, str]]:
-    """Every combination of the questions' choices, in file order (one empty combination if there are none)."""
-    return [dict(zip([q.name for q in questions], picked, strict=True))
-            for picked in itertools.product(*[q.choices for q in questions])]
+# A worker with a database: no app type has it, so the template's validator must refuse it.
+OUTSIDE_TYPES = {'kind': 'worker', 'database': 'sqlite'}
 
 
 def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
@@ -86,12 +65,12 @@ def instance(root: Path, manifest: Path, env: str) -> tuple[int, str]:
 
 
 def label_of(stack: str, answers: dict[str, str]) -> str:
-    return f"{stack} {' '.join(f'{k}={v}' for k, v in answers.items()) or '(no questions)'}"
+    return f"{stack} {' '.join(f'{k}={v}' for k, v in sorted(answers.items()))}"
 
 
 def render_combination(runner: Runner, template: Path, stack: str, answers: dict[str, str],
                        work: Path) -> tuple[str, str | bytes]:
-    """Copier, as ``make app-repo`` runs it: ``('manifest', its swhurl.yaml)``, ``('refused', why)``,
+    """Copier, as ``make app-repo`` runs it, for one set of answers: ``('manifest', its swhurl.yaml)``, ``('refused', why)``,
     ``('missing', '')`` or ``('error', what failed)``."""
     rendered = work / 'app'
     shutil.rmtree(rendered, ignore_errors=True)
@@ -103,7 +82,7 @@ def render_combination(runner: Runner, template: Path, stack: str, answers: dict
         return 'error', str(error)
     said = f'{rendered_by.stderr or ""}{rendered_by.stdout or ""}'
     if rendered_by.returncode and REFUSED in said:
-        # The template's own validator refuses the combination (a job with a database): no app can have it.
+        # The template's own validator refuses answers that are not an app type.
         return 'refused', [line for line in said.splitlines() if REFUSED in line][-1].split(':', 2)[-1].strip()
     if rendered_by.returncode:
         return 'error', f'copier copy exited {rendered_by.returncode}: {said.strip()[-400:]}'
@@ -152,8 +131,8 @@ def manifest_job(runner: Runner, label: str, manifest: bytes, work: Path) -> tup
 def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs: int = 1,
           types: dict[str, AppType] = APP_TYPES) -> int:
     """``jobs`` above 1 runs renders and checks in that many processes (a FakeRunner needs 1: it records in-process).
-    Each app type built with a stack must answer that template's questions with choices it offers. Combinations
-    that render the same swhurl.yaml are checked once: app-new reads nothing else from the rendered app."""
+    Each app type built with a stack must answer that template's questions with choices it offers, render, and
+    pass; ``OUTSIDE_TYPES`` must be refused."""
     work = Path(tempfile.mkdtemp(prefix='check-templates-'))
     failed = 0
 
@@ -172,101 +151,54 @@ def check(runner: Runner, report: Report, stacks: dict[str, str] = STACKS, jobs:
             # the checkout above pins the revision, and only the answers file's _commit differs.
             shutil.rmtree(template / '.git', ignore_errors=True)
             questions = [] if runner.dry_run else repo.parse_questions((template / 'copier.yml').read_text())
+            answered: list[tuple[str, dict[str, str]]] = []  # (label, answers) of each type built with this stack
             for key, app_type in types.items():
-                if stack not in app_type.stacks or runner.dry_run:
+                if stack not in app_type.stacks:
                     continue
+                answers = type_answers(key, stack)
                 try:
-                    repo.check_answers(type_answers(key, stack), questions)
-                    report.ok(f'{stack}: the template offers every answer of the {app_type.title} type')
+                    if not runner.dry_run:
+                        repo.check_answers(answers, questions)
+                    answered.append((f'{label_of(stack, answers)} ({key})', answers))
                 except repo.RepoError as error:
                     report.bad(f'{stack}: the {app_type.title} type ({key}) no longer fits the template: {error}')
                     failed += 1
-            answered = combinations(questions)
+            todo = [*answered, (label_of(stack, OUTSIDE_TYPES), OUTSIDE_TYPES)]
             rendered = run(render_combination, [(runner, template, stack, answers, work / f'{stack}-{i}')
-                                                 for i, answers in enumerate(answered)])
-            alike: dict[bytes, list[str]] = {}  # each distinct swhurl.yaml, with the combinations that render it
-            for answers, (kind, found) in zip(answered, rendered, strict=True):
-                label = label_of(stack, answers)
+                                                 for i, (_, answers) in enumerate(todo)])
+            (outside_label, _), (outside, why) = todo[-1], rendered[-1]
+            if outside == 'refused':
+                report.ok(f'{outside_label}: the template refuses it ({why})')
+            elif not runner.dry_run:
+                report.bad(f'{outside_label}: no app type has these answers, but the template ' +
+                           ('accepts them' if outside == 'manifest' else f'failed otherwise: {why}'))
+                failed += 1
+            checks = []
+            for (label, _), (kind, found) in zip(answered, rendered, strict=False):
                 if kind == 'manifest':
-                    alike.setdefault(found, []).append(label)
-                elif kind == 'refused':
-                    report.info(f'{label}: the template refuses it ({found})')
+                    checks.append((runner, label, found, work / f'{stack}-check-{len(checks)}'))
                 else:
-                    report.bad(f'{label}: ' + (f'the template rendered no {declaration.FILE}' if kind == 'missing' else found))
+                    report.bad(f'{label}: ' + {'missing': f'the template rendered no {declaration.FILE}',
+                                               'refused': f'the template refuses it ({found})'}.get(kind, str(found)))
                     failed += 1
             if runner.dry_run:
                 continue
-            groups = list(alike.items())
-            results = run(manifest_job, [(runner, labels[0] + (f' (and {len(labels) - 1} rendering the same {declaration.FILE})'
-                                                             if len(labels) > 1 else ''), manifest, work / f'{stack}-check-{i}')
-                                         for i, (manifest, labels) in enumerate(groups)])
-            for ok, entries in results:  # in combination order, whichever finished first
+            for ok, entries in run(manifest_job, checks):  # in type order, whichever finished first
                 for level, message in entries:
                     getattr(report, level)(message)
                 failed += not ok
-            report.info(f'{stack}: {len(answered)} combinations, {len(groups)} distinct {declaration.FILE} checked')
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return 1 if failed else 0
-
-
-def loaded_modules() -> list[str]:
-    """The repository's Python files this process has imported, relative to the root."""
-    found = set()
-    for module in list(sys.modules.values()):
-        path = Path(getattr(module, '__file__', None) or '/').resolve()
-        if path.is_relative_to(ROOT) and path.suffix == '.py':
-            found.add(str(path.relative_to(ROOT)))
-    return sorted(found)
-
-
-def fingerprint(runner: Runner, modules: list[str]) -> str:
-    """A hash of everything a pass depended on; a missing file or tool hashes as missing."""
-    digest = hashlib.sha256()
-    for name in sorted({*modules, *READS}):
-        path = ROOT / name
-        digest.update(f'{name}\0'.encode() + (path.read_bytes() if path.is_file() else b'<missing>') + b'\0')
-    for tool in TOOLS:
-        try:
-            digest.update(runner.output(list(tool)).encode())
-        except CommandError:
-            digest.update(f'{tool[0]} <missing>'.encode())
-    return digest.hexdigest()
-
-
-def unchanged(runner: Runner, stamp: Path = STAMP) -> str:
-    """When the last full pass ran, if nothing it read has changed since; '' otherwise."""
-    try:
-        last = json.loads(stamp.read_text())
-        return last['passed'] if last['key'] == fingerprint(runner, last['modules']) else ''
-    except (OSError, ValueError, KeyError, TypeError):
-        return ''
-
-
-def remember(runner: Runner, now: dt.datetime, stamp: Path = STAMP) -> None:
-    modules = loaded_modules()
-    stamp.parent.mkdir(parents=True, exist_ok=True)
-    stamp.write_text(json.dumps({'passed': now.strftime('%Y-%m-%d %H:%M UTC'), 'modules': modules,
-                                 'key': fingerprint(runner, modules)}))
 
 
 def main(argv: list[str] | None = None, runner: Runner | None = None, report: Report | None = None) -> int:
     parser = argparse.ArgumentParser(prog='swhurl check-templates', description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--stack', choices=sorted(STACKS), help='only this stack')
-    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1, help='combinations at once (default: every CPU)')
-    parser.add_argument('--force', action='store_true', default=os.environ.get('FORCE') == 'true',
-                        help='render even when nothing it reads changed since the last pass (FORCE=true)')
+    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 1, help='renders at once (default: every CPU)')
     args = parser.parse_args(argv)
-    # Only a real full run reads or writes the stamp: tests pass their own runner.
-    stamped = runner is None and not args.stack and os.environ.get('DRY_RUN') != 'true'
     jobs = args.jobs if runner is None else 1
     runner, report = runner or Runner(), report or Report()
-    if stamped and not args.force and (passed := unchanged(runner)):
-        report.ok(f'nothing the template check reads has changed since it passed at {passed}; FORCE=true renders anyway')
-        return 0
     stacks = {args.stack: STACKS[args.stack]} if args.stack else STACKS
-    code = check(runner, report, stacks, jobs)
-    if code == 0 and stamped and not runner.dry_run:
-        remember(runner, dt.datetime.now(dt.UTC))
-    return code
+    return check(runner, report, stacks, jobs)

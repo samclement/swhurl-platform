@@ -147,7 +147,7 @@ class FirstProductionTests(unittest.TestCase):
         return FakeRunner().on('sops', handler=encrypt)
 
     def test_web_worker_and_sqlite_conversion_preserves_settings(self):
-        for kind, extra in [('web', []), ('worker', []), ('worker', ['--database', 'sqlite']),
+        for kind, extra in [('web', []), ('worker', []), ('web', ['--database', 'sqlite']),
                             ('job', ['--schedule', '*/10 * * * *'])]:
             with self.subTest(kind=kind, extra=extra):
                 source = self.staging(kind, *extra)

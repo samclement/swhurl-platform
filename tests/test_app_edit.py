@@ -604,6 +604,19 @@ components:
         (instance / 'offers/flags.json').write_text(json.dumps({'shout': {'type': 'boolean', 'default': 'yes'}}))
         self.assertIn("flags.shout.default must be a boolean, not 'yes'", offers.problems(instance, [], 'abc1234')[0])
 
+    def test_an_events_document_with_no_events_is_accepted(self):
+        """An app that publishes nothing keeps its template's asyncapi.yaml with no channels."""
+        from swhurl.apps import offers
+        self.with_units()
+        self.built_from_a_repository()
+        manifest = 'version: 1\nkind: web\nhealthPath: /healthz\nprovides: {eventsFile: asyncapi.yaml}\n'
+        empty = 'asyncapi: 3.0.0\ninfo: {title: orders, version: 0.1.0}\nchannels: {}\n'
+        opener, _ = self.repository({'swhurl.yaml': manifest, 'asyncapi.yaml': empty})
+        changed, _ = self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=self.sops())
+        self.assertTrue(changed)
+        self.assertEqual(tuple(offers.read(self.root / 'apps/orders/staging').described), ())
+        self.assertFalse(self.env('orders').get('SWHURL_EVENTS_PUBLISH'), 'publishes nothing')
+
     def test_offers_that_cannot_be_used_are_refused_and_change_nothing(self):
         self.with_units()
         self.built_from_a_repository()

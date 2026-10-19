@@ -74,7 +74,9 @@ HASH = re.compile(r'\b([0-9a-f]{12})[0-9a-f]{8,}\b')
 STACK_NAMES = {'typescript': 'TypeScript', 'kotlin': 'Kotlin'}  # a stack as the language it is
 INCLUDED = {'frontend': 'Browser frontend', 'database': 'SQLite', 'api': 'API description', 'events': 'Events',
             'flags': 'Feature flags'}
-"""The template answers an app type turns on, as the New app form names them."""
+"""What an app type includes, as the New app form names it: template answers it turns on, and EVERY_APP."""
+EVERY_APP = ('events', 'flags')
+"""Included in every app whatever its type (no template question)."""
 INCLUDED_TEXT = {'frontend': 'a page built with Vite+ that the app serves at /, calling its own /api',
                  'database': 'a database file the platform keeps on a volume and backs up nightly',
                  'api': 'an OpenAPI document of its routes, so other apps can find and call it',
@@ -828,7 +830,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         teams, teams_error = platform_teams()
         callable_apps, offered_events, connections_error = connectable()
         return page(request, 'new_repo.html', status_code=status_code,
-                    app_types=contract.APP_TYPES, included=INCLUDED, included_text=INCLUDED_TEXT,
+                    app_types=contract.APP_TYPES, included=INCLUDED, included_text=INCLUDED_TEXT, every_app=EVERY_APP,
                     stack_types={stack: ' '.join(key for key, found in contract.APP_TYPES.items() if stack in found.stacks)
                                  for stack in contract.STACKS},
                     stacks=contract.STACKS, stack_names=STACK_NAMES, stack_text=contract.STACK_DESCRIPTIONS,

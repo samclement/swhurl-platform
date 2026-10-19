@@ -35,24 +35,31 @@ class ManifestTests(unittest.TestCase):
             doc = yaml.safe_load((ROOT / f'tests/fixtures/manifests/{name}.yaml').read_text())
             self.assertEqual(seed(doc)['kind'], name)
 
+    def test_only_a_web_app_declares_a_database(self):
+        for kind in ('worker', 'job'):
+            with self.subTest(kind=kind), self.assertRaisesRegex(declaration.DeclarationError,
+                                                                 f'database applies to kind web only: a {kind} keeps'):
+                seed({'version': 1, 'kind': kind, 'database': 'sqlite'})
+
     def test_every_capability_maps_to_its_app_new_option(self):
-        doc = {'version': 1, 'kind': 'worker', 'database': 'sqlite', 'databaseSize': '2Gi',
+        doc = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'database': 'sqlite', 'databaseSize': '2Gi',
                'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
                'events': {'publish': ['created']}}
         self.assertEqual(seed(doc), {
-            'kind': 'worker', 'uid': 65532, 'otlp': False, 'auto_deploy': True, 'exposure': 'private',
-            'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
+            'kind': 'web', 'uid': 65532, 'otlp': False, 'auto_deploy': True, 'exposure': 'authenticated-web',
+            'port': 8080, 'health_path': '/healthz', 'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
             'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'publish': ['created']})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
         self.assertEqual(seed(web)['api_path'], '/openapi.json')
         seed({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
         self.assertTrue(seed({**doc, 'provides': {'eventsFile': 'asyncapi.yaml'}})['offers'], 'app-new reads the documents')
         self.assertNotIn('offers', seed(web))
-        for bad, message in (({**doc, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
+        worker = {'version': 1, 'kind': 'worker'}
+        for bad, message in (({**worker, 'provides': {'api': '/x'}}, 'kind web only'), ({**web, 'provides': {'api': 'x'}}, 'a path such as'),
                              ({**web, 'provides': {'events': []}}, 'apiFile and eventsFile only'),
                              ({**web, 'provides': {'apiFile': '../x'}}, 'a file in the repository, such as openapi.json'),
                              ({**web, 'provides': {'eventsFile': '/etc/x'}}, 'such as asyncapi.yaml'),
-                             ({**doc, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only')):
+                             ({**worker, 'provides': {'apiFile': 'openapi.json'}}, 'provides.apiFile applies to kind web only')):
             with self.subTest(bad=bad), self.assertRaisesRegex(DeclarationError, message):
                 seed(bad)
 

@@ -28,7 +28,7 @@
           <label class="choice"><input type="radio" name="type" value="{{ key }}" data-exposure="{{ t.exposure }}" data-kind="{{ t.answers.kind }}" {{ 'checked' if chosen_type == key }}>
             <span><strong>{{ t.title }}</strong><br><span class="muted">{{ t.text }}</span><br>
               {% for stack in t.stacks %}<span class="pill">{{ stack_names.get(stack, stack) }}</span> {% endfor %}
-              {% for answer, label in included.items() if t.answers.get(answer, 'none') != 'none' %}<span class="pill ok">{{ label }}</span> {% endfor %}</span></label>
+              {% for answer, label in included.items() if answer in every_app or t.answers.get(answer, 'none') != 'none' %}<span class="pill ok">{{ label }}</span> {% endfor %}</span></label>
           {% endfor %}
         </div>
         <span class="muted hint">What each includes: {% for answer, label in included.items() %}<strong>{{ label }}</strong> {{ included_text[answer] }}{{ '; ' if not loop.last else '.' }}{% endfor %}</span>

@@ -9,9 +9,9 @@ gen smoke-worker --env staging --kind worker --image docker.io/library/busybox:1
 gen smoke-web --env staging --exposure authenticated-web --host smoke-web.homelab.swhurl.com \
   --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine --uid 101 --health-path / \
   --secret-keys GREETING --issuer letsencrypt-staging --otlp
-gen smoke-data --env staging --kind worker --database sqlite --database-size 64Mi --secret-keys GREETING \
-  --image docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e \
-  --command 'sh -c "date -u >> /data/log; exec sleep 3600000"'
+gen smoke-data --env staging --kind web --health-path / --uid 101 --database sqlite --database-size 64Mi --secret-keys GREETING \
+  --image docker.io/nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0 \
+  --command "sh -c 'date -u >> /data/log; exec nginx -g \"daemon off;\"'"
 # Generate production through the same conversion as an operator, then retain only the prod fixture.
 mkdir -p "$root/clusters/home"
 printf 'resources: []\n' > "$root/clusters/home/kustomization.yaml"

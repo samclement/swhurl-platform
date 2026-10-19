@@ -110,9 +110,9 @@ def validate(args, root: Path = ROOT) -> None:
         raise GenerationError(problem)
     if args.kind != 'web' and args.exposure != 'private':
         raise GenerationError(f'a {args.kind} has no Service or route; use --exposure private')
+    if args.database and args.kind != 'web':
+        raise GenerationError(f'a {args.kind} keeps no database: it keeps what it needs in an API it calls (docs/apps.md#app-types)')
     if args.kind == 'job':
-        if args.database:
-            raise GenerationError('a job keeps no volume or database: a run has no pod to keep it in between runs')
         if problem := schedule_problem(args.schedule):
             raise GenerationError(f'--schedule: {problem}')
     elif args.schedule != JOB_SCHEDULE:

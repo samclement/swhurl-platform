@@ -794,12 +794,16 @@ class AppDetailTests(unittest.TestCase):
                 self.assertIn(detail, response.text)
                 self.assertNotIn('No such app instance', response.text)
 
-    def test_the_scale_form_shows_the_minimum_the_running_image_declares(self):
+    def test_the_scale_form_shows_the_minimum_the_release_records(self):
         asked = []
 
         def opener(request):
-            asked.append(request.full_url)
-            return {}, b'version: 1\nkind: web\nhealthPath: /h\nresources: {cpu: 100m, memoryLimit: 384Mi}\n'
+            asked.append(request.full_url)  # the page's stack lookup reads the default branch; the minimum reads none
+            return {}, b'version: 1\nkind: web\nhealthPath: /h\nstack: typescript\n'
+        recorded = ('version: 1\nimage: {repository: ghcr.io/samclement/web, tag: 12-abc1234}\nkind: web\nuid: 65532\n'
+                    'port: 8080\nhealthPath: /h\nresources: {cpu: 100m, memoryLimit: 384Mi}\n')
+        bare = 'version: 1\nimage: {repository: ghcr.io/samclement/web, tag: 12-abc1234}\nkind: web\nuid: 65532\nport: 8080\nhealthPath: /h\n'
+
         def answers(tag):
             found = {f'kubectl -n {"flux-system" if kind in ("kustomization", "gitrepository") else "web-prod"} get {kind}': json.dumps(value)
                      for kind, value in (('kustomization', unit('app-web-prod')),
@@ -808,14 +812,14 @@ class AppDetailTests(unittest.TestCase):
                                          ('pods', {'items': []}), ('deploy,statefulset,daemonset,cronjob', {'items': []}),
                                          ('ingress', {'items': []}), ('certificate', {'items': []}))}
             return fake(**found)
-        app = client(answers('12-abc1234'), repo_opener=opener)
-        for _ in range(2):
-            text = app.get('/apps/web/prod', headers=WHO).text
-            self.assertIn("The image's minimum, from its <code>swhurl.yaml</code>: cpu request 100m, memory limit 384Mi.", text)
-        self.assertEqual([url for url in asked if 'ref=abc1234' in url],
-                         ['https://api.github.com/repos/samclement/web/contents/swhurl.yaml?ref=abc1234'], 'a commit is read once')
-        text = client(answers('1.0'), repo_opener=opener).get('/apps/web/prod', headers=WHO).text
-        self.assertNotIn("image's minimum", text, 'a tag that names no commit says nothing')
+        documents = {'apps/web/prod/release.yaml': recorded}.get
+        text = client(answers('12-abc1234'), repo_opener=opener, documents=documents).get('/apps/web/prod', headers=WHO).text
+        self.assertIn("The image's minimum, from its <code>swhurl.yaml</code>: cpu request 100m, memory limit 384Mi.", text)
+        self.assertEqual([url for url in asked if 'ref=' in url], [], "no read at the image's commit for the minimum")
+        text = client(answers('12-abc1234'), repo_opener=opener, documents={'apps/web/prod/release.yaml': bare}.get).get('/apps/web/prod', headers=WHO).text
+        self.assertIn('The image declares no minimum', text)
+        text = client(answers('12-abc1234'), repo_opener=opener, documents={}.get).get('/apps/web/prod', headers=WHO).text
+        self.assertNotIn("image's minimum", text, 'a release Git cannot give says nothing')
         self.assertIn('Calls, subscriptions and hosts outside the cluster are granted here', text)
 
     def test_a_later_read_failure_does_not_show_partial_health(self):

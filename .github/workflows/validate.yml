@@ -86,6 +86,11 @@ jobs:
       - name: Lint remaining bash
         run: pipx run --spec shellcheck-py==0.11.0.1 shellcheck -x $(git ls-files '*.sh')
 
+      # The tests also check that the repository renders as committed (a records-only push: see repo).
+      - name: Render the records
+        if: needs.changes.outputs.records_only == 'true'
+        run: PYTHONPATH=tools python3 -m swhurl app-sync
+
       - name: Test operator safety, app contract and dry runs
         env:
           REQUIRE_HELM: '1'

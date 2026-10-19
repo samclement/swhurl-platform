@@ -2,9 +2,13 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-13
-  tag: 47-e7b2070
-  digest: sha256:55b3c84a525aed7c8e914453e2d9ee6852c1532be373f85ea243c7716f3b3f9a
+  tag: 49-bfa12a9
+  digest: sha256:861aab18f1510335cc7ba59c1b38a81a90c972519b5bf67117d6140ce27d8699
 kind: worker
 uid: 65532
 stack: typescript
 telemetry: true
+description: 'throwaway: team platform T4 subscriber (notifier), delete me'
+publishes:
+- worked
+offers: bfa12a9

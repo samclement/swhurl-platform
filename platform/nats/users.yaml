@@ -81,6 +81,7 @@ data:
                 - $JS.API.CONSUMER.CREATE.KV_flags-staging.*.$KV.flags-staging.staging.demo-shop.>
                 - $JS.API.CONSUMER.DELETE.KV_flags-staging.*
                 - $JS.API.CONSUMER.INFO.KV_flags-staging.*
+                - staging.demo-shop.>
               subscribe:
                 allow:
                 - _INBOX.staging.demo-shop.>

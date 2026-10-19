@@ -6,3 +6,6 @@ calls:
 allocations:
   egressPort: 30103
   eventsKey: UA7ZLBBXHVDXOTNNDGOPVWCXCH4OBVFBR7TQFRDUKWJ3NAZVV64DXEV4
+  database:
+    size: 1Gi
+    storageClass: local-path-retain

@@ -1,4 +1,5 @@
 # Read from the app's repository by make app-offers: do not edit.
 repository: samclement/demo-shop
-commit: e4e81f4
-api: openapi.json
+commit: 5bb895b
+events: asyncapi.yaml
+flags: flags.json

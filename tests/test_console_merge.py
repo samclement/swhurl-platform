@@ -208,14 +208,31 @@ class MergeTests(unittest.TestCase):
         (self.root / 'tools/swhurl/apps/new.py').write_text('# changed generator\n')
         self.held('tooling, policy')
 
-    def test_unrelated_changes_and_newer_staging_build_keep_reviewed_image(self):
+    def test_unrelated_changes_keep_the_reviewed_image(self):
         (self.root / 'README.md').write_text('unrelated documentation update\n')
-        source = self.root / 'apps/example/staging/helmrelease.yaml'
-        source.write_text(source.read_text().replace('2-abcdef0', '3-abcdef0').replace('a' * 64, 'd' * 64))
         runner = self.runner()
         self.check(runner)
         self.assertTrue(self.pushes(runner))
         self.assertIn('tag: 2-abcdef0', (self.work / 'apps/example/prod/helmrelease.yaml').read_text())
+
+    def test_a_newer_staging_deploy_holds_the_reviewed_promotion(self):
+        """A staging deploy writes its image into release.yaml, which the staging fingerprint hashes whole: the
+        open promotion is held for a fresh review (docs/plan.md section 24, gate review finding 1)."""
+        record = self.root / 'apps/example/staging/release.yaml'
+        record.write_text(record.read_text().replace('2-abcdef0', '3-abcdef0').replace('a' * 64, 'd' * 64))
+        with contextlib.redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+        self.held('staging configuration changed after review')
+
+    def test_a_rollback_is_merged_by_a_person(self):
+        """Production runs a newer build than the reviewed image: the gate holds it, whatever the PR body says."""
+        record = self.root / 'apps/example/prod/release.yaml'
+        record.write_text(record.read_text().replace('1-abcdef0', '3-abcdef0'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+        self.promotion()
+        self.assertNotIn('rollback', self.meta)
+        self.held('older than production')
 
     def test_a_promotion_may_carry_what_the_image_offers_and_nothing_else(self):
         """The documents read at the reviewed image's commit merge with it; anything else in the PR waits."""

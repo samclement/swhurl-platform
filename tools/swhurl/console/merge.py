@@ -155,6 +155,8 @@ def replay_promotion(base: Path, head: Path, work: Path, app: str, body: str, ru
     # Staging may have a newer build by now; the reviewed image is the one promoted.
     staging = YamlFile(instance_folder(work, app, 'staging') / 'helmrelease.yaml')
     promotion.image_of(staging.data).update(new.parse_image(meta['image']))
+    if promotion.decide(staging.data, target).rollback:
+        raise Hold('the reviewed image is older than production\'s (a rollback): a person reviews it')
     staging.save()
     with contextlib.redirect_stdout(io.StringIO()):
         edit.promote(work, app, expect_image=meta['image'], runner=runner)

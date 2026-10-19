@@ -929,6 +929,20 @@ class ChangeAppRouteTests(unittest.TestCase):
                 self.assertEqual(self.api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}] if merges else [])
                 self.assertEqual('Merges itself when Validate and the trusted merge checks pass' in self.api.sent('POST /pulls')[0]['body'], merges)
 
+    def test_a_rollback_promotion_is_merged_by_a_person(self):
+        """Staging runs an older build than production: the PR opens without the auto-merge label."""
+        older = promotion.Decision('update', IMAGE, 'ghcr.io/me/hello:3.0', rollback=True)
+        c, jobs = self.client(tree_fake())
+        with mock.patch.object(promotion, 'decide', return_value=older):
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
+        job = jobs.get(1)
+        self.assertEqual(job.state, 'succeeded', job.lines)
+        self.assertEqual(self.api.sent('POST /issues/7/labels'), [])
+        self.assertTrue(any(line.startswith('Merge plan: Manual merge required') and 'rollback' in line for line in job.lines))
+        body = self.api.sent('POST /pulls')[0]['body']
+        self.assertNotIn('Merges itself', body)
+        self.assertTrue(console_promotion.body_metadata(body)['rollback'])
+
     def test_a_first_promotion_that_changes_the_apps_it_calls_is_merged_by_a_person(self):
         """The merge gate holds a promotion to its own app: one that edits its callees must not be labelled for it."""
         release = yaml.safe_load(MAIN['apps/hello/staging/helmrelease.yaml'])
@@ -1129,6 +1143,8 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Manual merge required: held by you', 'resume'))
         self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})),
                          ('Manual merge required: setup needs your review', ''), 'setup is never automatic')
+        self.assertEqual(mode(pr(meta={'image': IMAGE, 'rollback': True})),
+                         ('Manual merge required: a rollback needs your review', ''), 'a rollback is never automatic')
         self.assertEqual(mode(pr(labels=('promotion-review-required',), meta={'image': IMAGE})),
                          ('Manual merge required: auto-merge was refused', ''))
         self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Auto-merge after checks', ''),
@@ -1171,13 +1187,13 @@ class ChangeAppRouteTests(unittest.TestCase):
 
 
 class PromotionControlTests(unittest.TestCase):
-    def client(self, setup=False, labels=('auto-merge',)):
+    def client(self, setup=False, labels=('auto-merge',), rollback=False):
         requests = []
         pr = {'state': 'open', 'base': {'ref': 'main'},
               'head': {'ref': 'console/promote-hello-staging-abcdef0',
                        'repo': {'full_name': 'samclement/swhurl-platform'}},
               'labels': [{'name': label} for label in labels],
-              'body': '<!-- swhurl-promotion ' + json.dumps({'app': 'hello', 'image': IMAGE, 'setup': setup}) + ' -->'}
+              'body': '<!-- swhurl-promotion ' + json.dumps({'app': 'hello', 'image': IMAGE, 'setup': setup, 'rollback': rollback}) + ' -->'}
 
         def reply(request):
             requests.append(request)
@@ -1194,9 +1210,9 @@ class PromotionControlTests(unittest.TestCase):
         console_promotion.control(runner, github, 7, 'resume')
         self.assertEqual(json.loads(requests[-1].content), {'labels': ['auto-merge']})
 
-    def test_setup_and_failed_merge_checks_cannot_be_resumed(self):
-        for setup, labels in [(True, ()), (False, ('promotion-review-required',))]:
-            runner, github, requests = self.client(setup=setup, labels=labels)
+    def test_setup_rollback_and_failed_merge_checks_cannot_be_resumed(self):
+        for setup, labels, rollback in [(True, (), False), (False, ('promotion-review-required',), False), (False, (), True)]:
+            runner, github, requests = self.client(setup=setup, labels=labels, rollback=rollback)
             with self.assertRaises(actions.ActionError):
                 console_promotion.control(runner, github, 7, 'resume')
             self.assertTrue(all(r.method == 'GET' for r in requests))

@@ -124,6 +124,8 @@ def merge_mode(pr: changes.PullRequest) -> tuple[str, str]:
     if changes.AUTO_MERGE_LABEL in pr.labels:
         return 'Auto-merge after checks', 'hold' if promote else ''
     meta = body_metadata(pr.body) if promote else {}
+    if meta.get('rollback'):
+        return 'Manual merge required: a rollback needs your review', ''
     if meta and not meta.get('setup'):
         return 'Manual merge required: held by you', 'resume'
     if promote and meta.get('setup'):
@@ -156,10 +158,12 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
     if previous:
         job.lines.append('Reusing the existing promotion pull request')
         return previous.url
-    captured, admits, own_setup = {}, [], []
+    captured, admits, own_setup, rollback = {}, [], [], []
 
     def change(root: Path):
         source, target = promotion.read(root, app)
+        if target is not None and promotion.decide(source, target).rollback:
+            rollback.append(True)  # the merge gate holds a rollback too (merge.replay_promotion)
         if promotion.fingerprint(root, app, 'prod') != form['target']:
             raise ActionError('production changed since review; refresh and review it again')
         if promotion.fingerprint(root, app, 'staging') != form['configuration']:
@@ -169,7 +173,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
         if first:  # a person merges every first promotion (merge.check_promotion)
             own_setup.append(True)
         setup = bool(own_setup or admits)
-        captured.update(metadata(root, app, image, setup))
+        captured.update(metadata(root, app, image, setup), rollback=bool(rollback))
         if admits:
             job.lines.append(f"Not merging automatically: it also lets {app} call {', '.join(admits)} in production, "
                              "changing those apps' allowed callers and network policy; review them, then merge it yourself")
@@ -206,9 +210,10 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
 
     return changes.open_pr(runner, github, job, slug=f'promote-{app}-staging',
                            title=f'apps: promote {app}/staging to {app}/prod', body=body, change=change,
-                           auto_merge=lambda: form.get('hold') != 'on' and not captured.get('setup'),
+                           auto_merge=lambda: form.get('hold') != 'on' and not captured.get('setup') and not rollback,
                            manual_merge_reason=lambda: (f'also changes the allowed callers and network policy for {", ".join(admits)}'
-                                                        if admits else 'needs production setup review' if own_setup else ''),
+                                                        if admits else 'needs production setup review' if own_setup
+                                                        else 'promotes an older image than production runs (a rollback)' if rollback else ''),
                            verify=verify)
 
 
@@ -229,6 +234,8 @@ def control(runner: Runner, github: changes.GitHub, number: int, action: str) ->
                 raise ActionError('merge verification failed; close this PR and review a fresh promotion')
             if meta.get('setup'):
                 raise ActionError('this promotion needs setup and manual merging; it cannot auto-merge')
+            if meta.get('rollback'):
+                raise ActionError('this promotion is a rollback: a person reviews and merges it')
             if not meta:
                 raise ActionError('this PR has no reviewed configuration; create a fresh promotion')
             api.call('POST', f'/issues/{number}/labels', {'labels': [changes.AUTO_MERGE_LABEL]})

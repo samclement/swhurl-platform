@@ -152,7 +152,7 @@ jobs:
         run: make check-apps
 
   templates:
-    name: Check every app template combination
+    name: Check every app type against the templates
     needs: changes
     if: needs.changes.outputs.app_instance_only != 'true'
     runs-on: ubuntu-latest

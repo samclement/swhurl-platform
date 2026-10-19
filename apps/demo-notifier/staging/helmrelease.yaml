@@ -4,7 +4,8 @@ metadata:
   name: demo-notifier
   namespace: demo-notifier-staging
   annotations:
-    platform.swhurl.com/render: fe1c800f9236414aff818592b1403138b18d2233439c6fc117832facd3d16940
+    platform.swhurl.com/offers: eab35a3
+    platform.swhurl.com/render: 0602f8ca679b196303e0ec0cef2dcb30f8a5cc972e3a8f8cf068c27f9749346b
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-notifier
-              tag: 13-a82c785
-              digest: sha256:dcfc7b3f0f872c2e68fea93c74f7e061a6e295e4e7594c341a6a54302d1dd2b3
+              tag: 21-eab35a3
+              digest: sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be
             resources:
               requests:
                 cpu: 100m
@@ -57,6 +58,7 @@ spec:
               SWHURL_APP: demo-notifier
               SWHURL_ENV: staging
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_DESCRIPTION: 'Demo: receives demo-orders.created and tells the team about big orders'
               HOST_IP:
                 valueFrom:
                   fieldRef:

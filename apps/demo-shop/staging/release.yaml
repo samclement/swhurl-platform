@@ -12,7 +12,6 @@ healthPath: /healthz
 telemetry: true
 database: sqlite
 description: 'Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log'
-apiPath: /openapi.json
 publishes:
 - visited
 offers: a244f82

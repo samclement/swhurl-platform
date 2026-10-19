@@ -4,8 +4,8 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
-    platform.swhurl.com/offers: 1be2b99
-    platform.swhurl.com/render: 03ecac05770aabe0568e8057bc8db7f2030ddb990170beb7bf6965aedb2235c9
+    platform.swhurl.com/offers: a4fdeeb
+    platform.swhurl.com/render: 9af781abfcafd180632e260ac13039c857b38d07f3561cc3ef81832d5dadd52b
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-10
-              tag: 47-1be2b99
-              digest: sha256:c04fb0d9cbb5f071d6b1b6d6064c481d734518d65ecc66e66de953ad3ea1a0cc
+              tag: 49-a4fdeeb
+              digest: sha256:af50f171ceef27081685741bfade323c46dac7782c2168a68d2c0572c88b574a
             resources:
               requests:
                 cpu: 10m
@@ -61,6 +61,7 @@ spec:
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
               SWHURL_API_PATH: /openapi.json
+              SWHURL_DESCRIPTION: 'throwaway: team platform T2 callee (orders), delete me'
               HOST_IP:
                 valueFrom:
                   fieldRef:

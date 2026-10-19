@@ -14,6 +14,7 @@ from unittest import mock
 from swhurl import ROOT
 from swhurl.apps import derive, edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
+from swhurl.apps.yaml_file import YamlFile
 from swhurl.console import merge
 from swhurl.console import promotion as console
 from swhurl.run import CommandError, FakeRunner, Result
@@ -75,7 +76,7 @@ class MergeTests(unittest.TestCase):
         self.make_pr = self.promoted
 
     def promoted(self, tree: Path):
-        staging = promotion.YamlFile(tree / 'apps/example/staging/helmrelease.yaml')
+        staging = YamlFile(tree / 'apps/example/staging/helmrelease.yaml')
         promotion.image_of(staging.data).update(new.parse_image(IMAGE))  # the reviewed image, whatever staging runs now
         staging.save()
         with contextlib.redirect_stdout(io.StringIO()):

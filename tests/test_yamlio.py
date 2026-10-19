@@ -37,6 +37,17 @@ class YamlioTests(unittest.TestCase):
         self.assertEqual(next(docs), {'a': 1})
         self.assertRaises(yaml.YAMLError, next, docs)
 
+    def test_dump_writes_what_the_pure_python_dumper_writes(self):
+        long = 'x ' * 200
+        docs = [{'b': 1, 'a': [long, 'yes', '', 'multi\nline\n', 'naïve', None, 1.5, '2026-10-17']}, {'list': []}]
+        for wrap, width in ((True, 80), (False, float('inf'))):
+            with self.subTest(wrap=wrap):
+                expected = yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False, width=width)
+                self.assertEqual(yamlio.dump_all(docs, wrap=wrap), expected)
+                self.assertEqual(yamlio.dump(docs[0], wrap=wrap),
+                                 yaml.safe_dump(docs[0], sort_keys=False, default_flow_style=False, width=width))
+        self.assertEqual(len(yamlio.dump({'a': long}, wrap=False).splitlines()), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

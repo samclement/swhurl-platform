@@ -1,7 +1,8 @@
-"""Reading YAML: PyYAML's safe loader, through libyaml where PyYAML was built with it.
+"""Reading and writing YAML: PyYAML's safe loader and dumper, through libyaml where PyYAML was built with it.
 
 The pure-Python parser made the checks that read every instance and unit take seconds each, and the
-verifier's tests minutes. Both loaders build the same objects and raise ``yaml.YAMLError``.
+verifier's tests minutes. Both loaders build the same objects and raise ``yaml.YAMLError``; both
+dumpers write the same bytes, libyaml about eight times faster (rendering every instance on each edit).
 
 Text already parsed is not parsed again: one verifier run reads the same files hundreds of times, and a
 copy costs a tenth of a parse. The key is the text itself, so a changed file is always parsed afresh,
@@ -13,6 +14,8 @@ from functools import lru_cache
 import yaml
 
 LOADER = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
+DUMPER = getattr(yaml, 'CSafeDumper', yaml.SafeDumper)
+NO_WRAP = 2**31 - 1  # libyaml takes an int width; the pure-Python dumper also took float('inf')
 
 
 @lru_cache(maxsize=1024)
@@ -42,3 +45,15 @@ def load_all(stream):
         return
     for doc in docs:
         yield copy.deepcopy(doc)
+
+
+def dump_all(docs, *, wrap: bool = True) -> str:
+    """``yaml.safe_dump_all`` with keys in the order given and block style, faster; ``wrap=False`` keeps
+    long values on one line."""
+    return yaml.dump_all(docs, Dumper=DUMPER, sort_keys=False, default_flow_style=False,
+                         **({} if wrap else {'width': NO_WRAP}))
+
+
+def dump(doc, *, wrap: bool = True) -> str:
+    """One document, as ``dump_all``."""
+    return dump_all([doc], wrap=wrap)

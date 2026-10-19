@@ -237,7 +237,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                 if len(parts) == 4 and parts[3] == 'app.yaml':
                     apps[parts[2]] = archive.extractfile(member).read()
                 elif len(parts) == 5 and parts[4] == 'helmrelease.yaml':
-                    releases[f'{parts[2]}/{parts[3]}'] = yaml.safe_load(archive.extractfile(member).read())
+                    releases[f'{parts[2]}/{parts[3]}'] = yamlio.load(archive.extractfile(member).read().decode())
                 elif len(parts) == 5 and parts[4] == 'instance.yaml':
                     settings[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
             found = {}
@@ -340,7 +340,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         parts = job.unit.split('/')
         if len(parts) == 2 and all(NAME_RE.fullmatch(part) for part in parts):
             path = tree / 'apps' / parts[0] / parts[1] / 'helmrelease.yaml'
-            job.target_hash = ((yaml.safe_load(path.read_text()).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '')
+            job.target_hash = ((yamlio.load(path.read_text()).get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '')
                                if path.is_file() else ABSENT)
         body = body(tree) if callable(body) else body
         auto_merge = auto_merge() if callable(auto_merge) else auto_merge

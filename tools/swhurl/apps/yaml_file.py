@@ -1,13 +1,20 @@
-"""Round-trip YAML files for app edits; generation and policy keep using PyYAML."""
+"""Round-trip YAML files for app edits (``YamlFile``), and ``read`` for a file that is only read.
+
+A round-trip parse keeps comments and layout so a saved file changes only where edited; it is about
+thirty times slower than libyaml, so a file that is never saved is read with ``read``.
+"""
 from __future__ import annotations
 
 import io
 from pathlib import Path
 
+import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.util import load_yaml_guess_indent
+
+from swhurl import yamlio
 
 
 class EditError(Exception):
@@ -66,6 +73,17 @@ class YamlFile:
 
     def save(self) -> None:
         self.path.write_text(self.render())
+
+
+def read(path: Path) -> dict:
+    """One mapping document, to read only (PyYAML through libyaml); open it as ``YamlFile`` to change it."""
+    try:
+        data = yamlio.load(path.read_text())
+    except (OSError, yaml.YAMLError) as error:
+        raise EditError(f'cannot read {path}: {error}') from None
+    if not isinstance(data, dict):
+        raise EditError(f'{path}: expected one YAML mapping document')
+    return data
 
 
 def mapping(parent: dict, key: str, *, create: bool = False) -> dict:

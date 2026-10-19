@@ -30,9 +30,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-import yaml
-
-from swhurl import ROOT, app_alerts
+from swhurl import ROOT, app_alerts, yamlio
 from swhurl.apps import declaration, events, offers, policy
 from swhurl.apps.calling import (
     NOTIFY,
@@ -230,7 +228,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
 
 
 def dump(docs) -> str:
-    return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
+    return yamlio.dump_all(docs)
 
 
 def write_encrypted_secret(instance: Path, name: str, namespace: str, keys: list[str], *, runner: Runner | None = None) -> Path:

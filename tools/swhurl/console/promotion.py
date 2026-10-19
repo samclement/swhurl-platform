@@ -74,7 +74,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     problem = promotion.source_problem(status, decision.image)
     if problem:
         raise ActionError(problem)
-    namespace = promotion.YamlFile(instance_folder(root, app, 'staging') / 'namespace.yaml').data
+    namespace = promotion.read_yaml(instance_folder(root, app, 'staging') / 'namespace.yaml')
     exposure = namespace.get('metadata', {}).get('labels', {}).get(promotion.contract.EXPOSURE)
     if exposure not in promotion.contract.EXPOSURES:
         raise EditError('staging needs a supported exposure label')

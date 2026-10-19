@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.calling import signing_keys
 from swhurl.apps.contract import SECRET_FILE
@@ -39,7 +40,7 @@ def platform(root: Path, base: Path = Path('apps')) -> Platform:
 
 
 def _load(path: Path) -> object:
-    return yaml.safe_load(path.read_text())
+    return yamlio.load(path.read_text())
 
 
 def world(root: Path, base: Path = Path('apps')) -> tuple[World, list[str]]:
@@ -68,7 +69,7 @@ def world(root: Path, base: Path = Path('apps')) -> tuple[World, list[str]]:
 
 
 def text(document: dict) -> str:
-    return HEADER + yaml.safe_dump(document, sort_keys=False, default_flow_style=False, width=float('inf'))
+    return HEADER + yamlio.dump(document, wrap=False)
 
 
 def documents(world: World, base: Path = Path('apps')) -> dict[Path, str]:

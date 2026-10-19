@@ -90,7 +90,7 @@ from swhurl.apps.release import (
     read_offers,
     set_offers,
 )
-from swhurl.apps.yaml_file import EditError, YamlFile
+from swhurl.apps.yaml_file import EditError, read
 from swhurl.run import CommandError, Runner
 
 PRUNE_DISABLED = 'kustomize.toolkit.fluxcd.io/prune'
@@ -172,7 +172,7 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
     """Change the events ``app/env`` publishes and/or the ``<app>.<event>`` pairs it receives: each list
     replaced whole (None: unchanged, an empty list: none) or with names added and removed. The first
     time, the instance gets its own NATS key; everything else follows in sync_env."""
-    now = helmrelease.variables(YamlFile(instance_dir(root, app, env) / 'helmrelease.yaml').data)
+    now = helmrelease.variables(read(instance_dir(root, app, env) / 'helmrelease.yaml'))
     publish = changed_list('publish', events.published(now), publish, add_publish or [], remove_publish or [])
     subscribe = changed_list('subscribe', ['.'.join(pair) for pair in events.subscribed(now)], subscribe,
                              add_subscribe or [], remove_subscribe or [])
@@ -204,7 +204,7 @@ def set_events(root: Path, app: str, env: str, *, publish: list[str] | None = No
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)
         raise
-    now = helmrelease.variables(YamlFile(instance / 'helmrelease.yaml').data)
+    now = helmrelease.variables(read(instance / 'helmrelease.yaml'))
     print(f'[OK] {app}/{env} publishes: {", ".join(events.published(now)) or "nothing"}; '
           f'subscribes to: {", ".join(".".join(pair) for pair in events.subscribed(now)) or "nothing"}')
     return instance
@@ -352,7 +352,7 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
     try:
         if path.is_file():
-            if 'stringData' not in YamlFile(path).data:
+            if 'stringData' not in read(path):
                 raise EditError(f'{relative} keeps its values under data, not stringData: set {name} with sops by hand')
             runner.run(['sops', 'set', '--value-stdin', relative, f'["stringData"]["{name}"]'], input=json.dumps(value), cwd=root)
         else:
@@ -868,7 +868,7 @@ def main_offers(argv: list[str] | None = None, opener: offers.Opener = offers._o
         return run(lambda: set_offers(root, args.app, args.env, token=token, opener=opener) and instance_dir(root, args.app, args.env), True)
     failed = 0
     for app in instances_in(root, args.all):
-        image = helmrelease.image(YamlFile(instance_folder(root, app, args.all) / 'helmrelease.yaml').data)
+        image = helmrelease.image(read(instance_folder(root, app, args.all) / 'helmrelease.yaml'))
         if not str(image.get('repository', '')).startswith('ghcr.io/') or not offers.IMAGE_COMMIT.match(str(image.get('tag', ''))):
             continue  # not built from an app repository (a fixture, a pinned third-party image)
         try:

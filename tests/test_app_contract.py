@@ -77,21 +77,23 @@ class GeneratorTests(unittest.TestCase):
         self.assertFalse((self.tmp / 'apps').exists(), 'a refused instance wrote files')
 
     def test_sqlite_capability_wires_volume_path_and_a_single_writer(self):
-        self.assertEqual(self.gen('notes', '--env', 'staging', '--kind', 'worker', '--image', 'r/notes:1', '--database', 'sqlite'), 0)
+        self.assertEqual(self.gen('notes', '--env', 'staging', '--health-path', '/healthz', '--image', 'r/notes:1', '--database', 'sqlite'), 0)
         values = yaml.safe_load((self.tmp / 'apps/notes/staging/helmrelease.yaml').read_text())['spec']['values']
         main = values['controllers']['main']
         self.assertEqual((main['replicas'], main['strategy']), (1, 'Recreate'))
-        self.assertEqual(main['containers']['main']['env'],
-                         {'SWHURL_APP': 'notes', 'SWHURL_ENV': 'staging', 'DATABASE_PATH': '/data/app.db',
-                          'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'})
+        self.assertEqual(main['containers']['main']['env']['DATABASE_PATH'], '/data/app.db')
         data = values['persistence']['data']
         self.assertEqual((data['size'], data['storageClass'], data['globalMounts']), ('1Gi', 'local-path-retain', [{'path': '/data'}]))
         namespace = yaml.safe_load((self.tmp / 'apps/notes/staging/namespace.yaml').read_text())
         self.assertEqual(namespace['metadata']['annotations'], {'kustomize.toolkit.fluxcd.io/prune': 'disabled'}, 'data outlives the app')
-        self.assertEqual(self.gen('sized', '--env', 'staging', '--kind', 'worker', '--image', 'r/s:1', '--database', 'sqlite',
+        self.assertEqual(self.gen('sized', '--env', 'staging', '--health-path', '/healthz', '--image', 'r/s:1', '--database', 'sqlite',
                                   '--database-size', '5Gi'), 0)
         sized = yaml.safe_load((self.tmp / 'apps/sized/staging/helmrelease.yaml').read_text())['spec']['values']
         self.assertEqual(sized['persistence']['data']['size'], '5Gi')
+        for kind in ('worker', 'job'):
+            with self.subTest(kind=kind):
+                self.assertNotEqual(self.gen(f'{kind}-db', '--env', 'staging', '--kind', kind, '--image', 'r/w:1',
+                                             '--database', 'sqlite'), 0, 'only a web app keeps a database')
 
     def test_writes_registers_and_refuses_overwrite(self):
         self.assertEqual(self.gen('x', *WEB), 0)

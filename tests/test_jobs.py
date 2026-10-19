@@ -27,7 +27,7 @@ class ScheduleTests(unittest.TestCase):
 
     def test_a_job_keeps_no_database(self):
         self.assertEqual(declaration.of({'version': 1, 'kind': 'job'}).seed['exposure'], 'private')
-        with self.assertRaisesRegex(declaration.DeclarationError, 'database does not apply to kind job'):
+        with self.assertRaisesRegex(declaration.DeclarationError, 'database applies to kind web only: a job keeps'):
             declaration.of({'version': 1, 'kind': 'job', 'database': 'sqlite'})
         with self.assertRaisesRegex(declaration.DeclarationError, 'port and healthPath apply to kind web only'):
             declaration.of({'version': 1, 'kind': 'job', 'port': 8080})
@@ -67,7 +67,7 @@ class JobInstanceTests(unittest.TestCase):
     def test_what_a_job_refuses_at_creation(self):
         for extra, message in ((['--schedule', 'every day'], 'is not five cron fields'),
                                (['--exposure', 'authenticated-web', '--host', 'n.homelab.swhurl.com'], 'a job has no Service or route'),
-                               (['--database', 'sqlite'], 'a job keeps no volume or database')):
+                               (['--database', 'sqlite'], 'a job keeps no database')):
             with self.subTest(extra=extra), self.assertRaisesRegex(new.GenerationError, message):
                 self.generate(*extra)
         with self.assertRaisesRegex(new.GenerationError, '--schedule applies to kind job only'):

@@ -207,8 +207,8 @@ STACKS = {'typescript': 'samclement/swhurl-app-template-typescript',
           'kotlin': 'samclement/swhurl-app-template-kotlin'}
 # Questions, rendering and contract checks use the same reviewed catalogue commit.
 STACK_REVISIONS = {
-    'typescript': '57e0558ad0300d6e84e8b5dfdb2383eff6cb39bf',
-    'kotlin': '1a6a8c1941e5dd760bb073693f48714e31afef25',
+    'typescript': '52153504aa9412762684f6767d9a9c169a7b0e4a',
+    'kotlin': '04752d79a92e4e1e1e2d2453464f78eedb562c81',
 }
 STACK_DESCRIPTIONS = {
     'typescript': 'Node 24 and TypeScript: starts in a second, about 60 MB of memory.',
@@ -221,8 +221,9 @@ STACK_DESCRIPTIONS = {
 @dataclass(frozen=True)
 class AppType:
     """What a team is building. A new app is created by type: the type sets every template answer and the
-    exposure staging starts with (docs/apps.md#app-types). Changing a type here changes new apps only:
-    each app's .copier-answers.yml keeps the answers it was made with."""
+    exposure staging starts with (docs/apps.md#app-types). The templates accept only these answers (each
+    one's validator lists them): changing a type here needs its new answers there too, and the old ones
+    kept there until no app records them. Each app's .copier-answers.yml keeps the answers it was made with."""
     title: str
     text: str
     stacks: tuple[str, ...]
@@ -233,19 +234,19 @@ class AppType:
 APP_TYPES = {
     'web-app': AppType('Web app', 'A site people use in a browser: a Vite+ page at / and its own API under /api. '
                        'Its data belongs in an API it calls; its own SQLite keeps what only it uses.', ('typescript',),
-                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example',
+                       {'kind': 'web', 'database': 'sqlite', 'api': 'openapi',
                         'frontend': 'vite'},
                        'authenticated-web'),
     'api': AppType('API', 'Data and operations other apps call; private: browsers reach it through a web app.',
                    ('typescript', 'kotlin'),
-                   {'kind': 'web', 'database': 'sqlite', 'api': 'openapi', 'events': 'asyncapi', 'flags': 'example'},
+                   {'kind': 'web', 'database': 'sqlite', 'api': 'openapi'},
                    'private'),
     'worker': AppType('Worker', 'Reacts to events, or works in a steady loop; no web address.', ('typescript', 'kotlin'),
-                      {'kind': 'worker', 'database': 'none', 'api': 'none', 'events': 'asyncapi', 'flags': 'example'},
+                      {'kind': 'worker', 'database': 'none', 'api': 'none'},
                       'private'),
     'scheduled-job': AppType('Scheduled job', 'Work at a time of day: each run does its work and exits. Daily at 03:17 '
                              'UTC until changed; no web address and no database.', ('typescript', 'kotlin'),
-                             {'kind': 'job', 'database': 'none', 'api': 'none', 'events': 'asyncapi', 'flags': 'example'},
+                             {'kind': 'job', 'database': 'none', 'api': 'none'},
                              'private'),
 }
 

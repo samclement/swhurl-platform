@@ -280,8 +280,9 @@ def of(doc: object, source: str = FILE) -> Declaration:
     elif any(doc.get(k) is not None for k in ('port', 'healthPath')):
         raise fail('port and healthPath apply to kind web only')
     if field('database', str, DATABASES):
-        if kind == 'job':
-            raise fail('database does not apply to kind job: a run has no pod to keep it in between runs')
+        if kind != 'web':
+            raise fail(f'database applies to kind web only: a {kind} keeps what it needs in an API it calls '
+                       '(docs/apps.md#app-types)')
         defaults['database'] = doc['database']
         if field('databaseSize', str):
             defaults['database_size'] = doc['databaseSize']

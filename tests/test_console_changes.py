@@ -1620,7 +1620,7 @@ class NewRepoRouteTests(unittest.TestCase):
                                        f'--image=ghcr.io/samclement/notes:1-9f8e7d6@{DIGEST}',
                                        '--team=platform', '--exposure=authenticated-web'))
         copy = next(c for c in runner.calls if 'copy' in c)
-        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'events=asyncapi', 'flags=example', 'frontend=vite'):
+        for answer in ('kind=web', 'database=sqlite', 'api=openapi', 'frontend=vite'):
             self.assertIn(answer, copy, 'the type sets every answer')
         self.assertEqual(platform_api.sent('POST /issues/7/labels'), [{'labels': ['auto-merge']}], 'a new staging app')
         self.assertIn('https://github.com/x/pull/7', c.get('/jobs/1', headers=WHO).text)
@@ -1663,7 +1663,7 @@ class NewRepoRouteTests(unittest.TestCase):
         self.assertIn('kind=worker', copy)
         self.assertIn('database=none', copy)
         self.assertIn('Rendering samclement/swhurl-app-template-typescript (typescript) for notes with api=none, database=none, '
-                      'events=asyncapi, flags=example, kind=worker', jobs.get(1).lines)
+                      'kind=worker', jobs.get(1).lines)
         for form, message in (({'type': 'cron'}, 'type must be one of web-app, api, worker'),
                               ({}, 'type must be one of web-app, api, worker'),
                               ({'type': 'web-app', 'stack': 'kotlin'}, 'a Web app is built with typescript, not kotlin'),

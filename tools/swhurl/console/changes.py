@@ -486,11 +486,10 @@ def expose_flags(form: Mapping[str, str]) -> list[str]:
 
 @dataclass(frozen=True)
 class Connections:
-    """What a form chose to connect an app to: apps to call, ``<app>.<event>`` to receive and
-    events to publish, each a comma-separated field of that name."""
+    """Platform grants: apps to call and ``<app>.<event>`` to receive.
+    Publications belong to the image's AsyncAPI document, not a connection form."""
     calls: tuple[str, ...] = ()
     subscribe: tuple[str, ...] = ()
-    publish: tuple[str, ...] = ()
 
     @classmethod
     def from_flags(cls, flags: tuple[str, ...]) -> Connections:
@@ -498,19 +497,23 @@ class Connections:
         values = {}
         for flag in flags:
             field, separator, value = flag.removeprefix('--').partition('=')
-            if separator and field in ('calls', 'subscribe', 'publish'):
+            if separator and field == 'publish':
+                raise ActionError('publishing choices are no longer supported: edit asyncapi.yaml named by '
+                                  'provides.eventsFile, then start a new job')
+            if separator and field in ('calls', 'subscribe'):
                 values[field] = tuple(value.split(','))
-        return cls(values.get('calls', ()), values.get('subscribe', ()), values.get('publish', ()))
+        return cls(values.get('calls', ()), values.get('subscribe', ()))
 
     @classmethod
     def from_form(cls, form: Mapping[str, str]) -> Connections:
+        if 'publish' in form:
+            raise ActionError('publishing choices are no longer supported: edit asyncapi.yaml named by provides.eventsFile')
         chosen = cls(*(tuple(name.strip() for name in form.get(field, '').split(',') if name.strip())
-                       for field in ('calls', 'subscribe', 'publish')))
+                       for field in ('calls', 'subscribe')))
         bad = [name for name in chosen.calls if not NAME_RE.match(name)]
         bad += [name for name in chosen.subscribe if not events.SUBSCRIPTION_RE.match(name)]
-        bad += [name for name in chosen.publish if not events.EVENT_RE.match(name)]
         if bad:
-            raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>, a published event a lowercase name')
+            raise ActionError(f'{", ".join(bad)}: a call names an app, a subscription <app>.<event>')
         return chosen
 
     @property
@@ -533,9 +536,9 @@ class Connections:
             raise ActionError(f'{", ".join(missing)}: not a web app, or an event, that staging has now; reload the form')
 
     def new_app_flags(self) -> list[str]:
-        """``--calls=``, ``--subscribe=`` and ``--publish=`` for app-new."""
+        """``--calls=`` and ``--subscribe=`` for app-new."""
         return [f'--{field}={",".join(names)}' for field, names in
-                (('calls', self.calls), ('subscribe', self.subscribe), ('publish', self.publish)) if names]
+                (('calls', self.calls), ('subscribe', self.subscribe)) if names]
 
     def adding(self, app: str, env: str) -> tuple[Command, ...]:
         """The app-calls and app-events commands that add these to an instance; one clone runs both,
@@ -543,12 +546,10 @@ class Connections:
         commands = []
         if self.calls:
             commands.append(Command('app-calls', (app, env, f'--add={",".join(self.calls)}')))
-        added = [f'--add-{field}={",".join(names)}' for field, names in
-                 (('subscribe', self.subscribe), ('publish', self.publish)) if names]
-        if added:
-            commands.append(Command('app-events', (app, env, *added)))
+        if self.subscribe:
+            commands.append(Command('app-events', (app, env, f'--add-subscribe={",".join(self.subscribe)}')))
         if not commands:
-            raise ActionError('choose an app to call, an event to receive or an event to publish')
+            raise ActionError('choose an app to call or an event to receive')
         return tuple(commands)
 
 
@@ -559,8 +560,9 @@ def removing(app: str, env: str, form: Mapping[str, str]) -> tuple[Command, ...]
         return (Command('app-calls', (app, env, f'--remove={other}')),)
     if role == 'subscribes' and events.SUBSCRIPTION_RE.match(f'{other}.{event}'):
         return (Command('app-events', (app, env, f'--remove-subscribe={other}.{event}')),)
-    if role == 'publishes' and events.EVENT_RE.match(event):
-        return (Command('app-events', (app, env, f'--remove-publish={event}')),)
+    if role == 'publishes':
+        raise ActionError('to stop publishing, edit asyncapi.yaml named by provides.eventsFile; '
+                          'publications cannot be removed on the platform')
     if role == 'reaches' and not egress.grant_problem(event):
         return (Command('app-egress', (app, env, f'--remove={event}')),)
     raise ActionError('no such connection to remove: only the app that declared one can remove it')
@@ -776,6 +778,7 @@ class NewApp:
         name, stack, flags = str(record['name']), str(record['stack']), tuple(str(flag) for flag in record['extra'])
         if not NAME_RE.match(name) or stack not in STACKS or not all(flag.startswith('--') for flag in flags):
             raise ValueError(name)
+        Connections.from_flags(flags)  # refuse obsolete publishing jobs before creating anything
         return cls(name, stack, str(record.get('description') or ''),
                    {str(k): str(v) for k, v in (record.get('answers') or {}).items()}, flags, bool(record.get('touches_others')))
 

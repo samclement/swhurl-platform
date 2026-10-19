@@ -58,7 +58,7 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 
 From nothing to a running staging app in a few minutes (about two for TypeScript; a little longer for Kotlin, whose build also compiles and tests): the platform creates the app's GitHub repository from a template, waits for its first image and adds it to staging. Every push to the app's `main` then deploys to staging on its own.
 
-**In the console:** **New app** → **Start a new app** (the default). Pick what you are building ([app types](#app-types)), give a name, pick a stack, choose its team, who can reach it and what it connects to (apps to call, events to receive and publish), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
+**In the console:** **New app** → **Start a new app** (the default). Pick what you are building ([app types](#app-types)), give a name, pick a stack, choose its team, who can reach it and what it connects to (apps to call and events to receive), and press **Create repository and open pull request**. The job page shows each step; when it finishes it links to a pull request here that adds `<name>/staging`. Merge it, and Flux deploys it within a minute ([what the job does, and when it stops](console.md#use-it)).
 
 ### What happens, and when
 
@@ -206,15 +206,12 @@ Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates 
 
 - **Identity**: what the app is. `version`, `stack`, `kind`, `description`.
 - **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
-- **Offer**: what other apps can use. `provides`, `flags`, `events.publish`.
+- **Offer**: what other apps can use. `provides`, `flags`. AsyncAPI send operations define the published events; there is no second publishing list.
 - **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
 
-Separately, each field the file may hold is read at one of two times:
+**The rule.** Supported fields are read again: every new staging image brings the declaration and documents from the commit it was built from, written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)). A removed field clears the value or restores its documented default; it never means "keep the previous image's value". Required fields cannot be removed. A change that would lose database data or break another app's declared subscription is held with a reason; nothing is written. A declared document that is missing, invalid or cannot be fetched is a failure, not an empty declaration.
 
-- **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
-- **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself. Every need is read at the commit of every new staging image and written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)).
-
-**The rule for a field read again.** With every new image the platform replaces its copy of what the file says. A field you remove means none (no API link, no telemetry, the default port), except where that would lose data or break another app: then the image is held and the message says why (a database whose volume exists, an event another app receives). One exception remains: an app that stops naming an events document keeps what it publishes ([plan](plan.md#27-one-rule-for-what-swhurlyaml-declares--decided-19-october-2026-started-19-october-2026), S6). What the app reads arrives as a `SWHURL_*` variable; what only the platform reads (the offers commit, where the API description is served, the secret names) is an annotation on the instance's HelmRelease, which restarts nothing.
+What the app reads arrives in runtime configuration (for example `SWHURL_DESCRIPTION` and `SWHURL_EVENTS_PUBLISH`); what only the platform reads is an annotation on the instance's HelmRelease, not the pod template. Changing that annotation alone does not change the pod spec. These are generated views, not additional developer inputs. The app's source of truth is `swhurl.yaml` and the documents it names; the platform owns grants in its instance records.
 
 `autoDeploy` is accepted and ignored: staging always follows new images.
 
@@ -234,7 +231,6 @@ secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 # Offers: what other apps can use
 provides: {api: /openapi.json}   # optional, web only: where its API description is served (no flag)
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
-events: {publish: [created]}     # optional, until the app has provides.eventsFile   --publish
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
   new-checkout: {type: boolean, default: false, staging: true}
 # Grants (team, exposure, alerts, calls, events.subscribe) are refused here. Set them on the platform: the
@@ -257,13 +253,27 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until `make app-secret` sets it; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
 | `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
-| `events.publish` | offer | read once | `make app-events`; once the app has `provides.eventsFile`, that file says what it publishes |
 | `team` | grant | refused | `make app-team`, or `--team` and the New app form at creation |
 | `exposure` | grant | refused | `make app-expose`, or `--exposure` at creation (default: web apps signed-in, workers private) |
 | `alerts` | grant | refused | `make app-alerts`, or `--alerts` at creation |
 | `calls` | grant | refused | `make app-calls`, or `--calls` and the New app form's **Connections** at creation |
 | `events.subscribe` | grant | refused | `make app-events`, or `--subscribe` and the New app form's **Connections** at creation |
 | `autoDeploy` | dropped | ignored | Nothing: staging always follows new images; the templates no longer write it |
+
+| Configuration | If removed | Who reads the generated result |
+| --- | --- | --- |
+| `version`, `kind`, web `healthPath` | Refused: required | Declaration reader / workload and probes |
+| `description`, `stack` | Empty identity metadata; the console's language lookup still reads the default branch separately | App (`SWHURL_DESCRIPTION`); platform release record |
+| `port`, `uid`, `telemetry` | Defaults: 8080, 65532, no telemetry; uid changes are refused on existing database files | Kubernetes and runtime telemetry configuration |
+| `resources` | No image minimum; instance capacity and platform defaults still apply | Kubernetes resource settings |
+| `database`, `databaseSize` | Refused if that would remove a database or change its allocated size; omitted size defaults to 1Gi | PVC, workload and `DATABASE_PATH` |
+| `secrets` | No names required by the image; stored values remain, shown as unused | Platform metadata and the app's Secret references |
+| `provides.api` | No console link; does not remove the app's route or its offered API document | HelmRelease annotation `platform.swhurl.com/api-description`, read by the console |
+| `provides.apiFile` | No API document in the Catalogue; does not remove the app's route or console link | `offers/`, read by the platform |
+| `provides.eventsFile` | No publications; refused while subscribed to; does not erase retained messages | `SWHURL_EVENTS_PUBLISH`, NATS permissions and protected stream resources |
+| `flags` | No flags in the image's declaration or console form; existing overrides are a separate runtime store | App-generated accessors and `offers/flags.json` |
+
+The independent API fields are intentional: `provides.api` links a running description; `provides.apiFile` publishes a repository document to the Catalogue. Neither creates a route, grants access or controls where the app's business API lives (`/api/*` for a web app). A web app may serve its own API without offering it to other apps.
 
 ## Scheduled jobs
 
@@ -381,7 +391,18 @@ make app-events APP=demo-notifier ENV=staging ARGS="--add-subscribe demo-orders.
 
 or, when the subscriber is created, `--subscribe demo-orders.created` or the New app form's **Connections**. Receiving an event is a [grant](#swhurlyaml): it is set on the platform, not in the app's repository.
 
-What `demo-orders` publishes is not declared on the platform at all: it [describes its events](#what-an-app-offers) in its own `asyncapi.yaml`, and the platform reads that. An app that does not describe them declares the list instead: `make app-events APP=<app> ENV=staging ARGS="--publish created,cancelled"`, or `events: {publish: [created, cancelled]}` in `swhurl.yaml`.
+What `demo-orders` publishes has one source: the send operations in its `asyncapi.yaml`, named by `provides.eventsFile` in `swhurl.yaml`. The platform reads it at the image's commit and derives the publishing list, runtime variables, stream and NATS permissions. There is no publishing form or `--publish` command; `events.publish` in `swhurl.yaml` is refused with directions to the document.
+
+| As a developer, I want to… | What I change | What the platform does |
+| --- | --- | --- |
+| Publish `demo-orders.cancelled` | Add its send operation, payload and example to `asyncapi.yaml`, implement the publisher, test and push | Deploy the new staging release and list the event in the Catalogue; no second list to edit |
+| Receive `demo-orders.cancelled` | Implement a handler, then request the subscription through the Catalogue or `app-events` | Grant only that environment's subscription; the app repository cannot grant itself access |
+| Replace an old event | Add the replacement, migrate consumers and remove old subscriptions, then remove the old send operation | Refuse removal while any same-environment app still subscribes; leave the existing release unchanged |
+| Publish nothing | Keep a valid document without send operations (`channels: {}` is valid), or remove `provides.eventsFile` | Clear publications, subject to subscriber checks; subscriptions and the app's flags identity remain |
+| Fix a typo or a missing document | Correct the declared file and push again | A failed read never clears the old configuration; the image is held |
+| Promote the release | Review promotion on the platform | Carry publications with the image and check production's own subscribers |
+
+Stopping publication does not erase retained messages. Stream deletion protection and the limits that still expire old messages are described in [NATS lifecycle](services.md#nats).
 
 ```mermaid
 flowchart LR
@@ -389,7 +410,7 @@ flowchart LR
   stream -- "consumer demo-notifier_created" --> notifier["demo-notifier<br/>subscribe demo-orders.created"]
 ```
 
-An event is named `<app>.<event>`: only its app may publish it. `--publish` and `--subscribe` replace a whole list (`""` clears it); `--add-publish`, `--remove-publish`, `--add-subscribe` and `--remove-subscribe` change one name and keep the rest, as `make app-calls` does and as the console's Connect card runs them. What the command writes, in one commit:
+An event is named `<app>.<event>`: only its app may publish it. `app-events --subscribe` replaces the subscription list (`""` clears it); `--add-subscribe` and `--remove-subscribe` change names and keep the rest, as `make app-calls` does and as the console's Connect card runs them. Document intake and subscription commands keep these generated files in step:
 
 | Where | What | Why |
 | --- | --- | --- |
@@ -403,7 +424,7 @@ An event is named `<app>.<event>`: only its app may publish it. `--publish` and 
 
 **When it takes effect.** After the commit is applied, NATS learns the app's user within a minute or two (the time Kubernetes takes to refresh the server's mounted configuration). An app that starts sooner is refused at first; the helper keeps trying every five seconds and logs each try.
 
-**Rules.** A subscription must name an event that an app of the same environment publishes; removing that event or its app is refused while someone subscribes. An app that [describes its events](#what-an-app-offers) publishes what its `asyncapi.yaml` says: `--publish` on it is overwritten the next time its documents are read. Staging and production are separate: an app's production instance has its own key and cannot read staging's events; subscriptions are declared with `make app-events ENV=prod` after promotion, and so is what it publishes unless the app describes its events, which promotion then carries. A stream keeps seven days or 64Mi, whichever comes first, and is not backed up: keep anything you must not lose in the app's own database. `make check-apps` fails when the files disagree with the declaration (rules `events`, `event-users`); `make app-sync` rewrites them.
+**Rules.** A subscription must name an event that an app of the same environment publishes; removing that event, its document reference or its app is refused while someone subscribes. Production has its own key and cannot read staging's events; subscriptions are granted with `make app-events ENV=prod` after promotion, while publications travel with the release. Checks protect declared subscriptions, not undeclared external consumers. Streams are not a system of record: keep anything you must not lose in a database ([retention and lifecycle](services.md#nats)). `make check-apps` fails when files disagree with the declaration (rules `offers`, `events`, `event-users`); `make app-sync` rewrites generated resources, not the release's publishing declaration.
 
 ## Reaching outside the cluster
 
@@ -461,7 +482,7 @@ flowchart LR
 
 **Where it shows.** The console's [Catalogue](console.md#use-it) lists what every app offers, described or not, and the Connect picker on an app page and in New app says what each choice is.
 
-**Limits.** The repository is read anonymously, so it must be public (a private one needs `GITHUB_TOKEN`). The documents are checked for the shape the platform uses, not against the full specifications; the templates' own tests do more. An app that stops naming its documents loses `offers/` and keeps publishing what it published.
+**Limits.** The repository is read anonymously, so it must be public (a private one needs `GITHUB_TOKEN`). The documents are checked for the shape the platform uses, not against the full specifications; the templates' own tests do more. Operations must be mappings with `action: send` or `action: receive` and a channel reference to an existing entry in `channels`; malformed operations are refused without writes. Channels without send operations declare no publications. An app that stops naming its documents loses `offers/` and clears publications, subject to [subscriber checks and retained-stream protection](#events).
 
 ## Notifications
 

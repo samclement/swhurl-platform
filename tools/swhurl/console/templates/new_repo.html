@@ -95,12 +95,11 @@
   <section class="card" id="connections" style="--acts: 1; --pitch: 9.5rem">
     <div class="card-head">
       <h2><span class="step">4</span> Connects to <span class="pill">optional</span></h2>
-      <p class="muted">The apps it calls, and the events it receives and publishes. Each can be set later on the app's page.</p>
-      <details class="act" style="--slot: 0; --wide: 9rem" {{ 'open' if chosen_calls or chosen_events or form.publish }}>
+      <p class="muted">The apps it calls and the events it receives. Change these later on the app's page. To publish events, edit the app's <code>asyncapi.yaml</code>.</p>
+      <details class="act" style="--slot: 0; --wide: 9rem" {{ 'open' if chosen_calls or chosen_events }}>
         <summary class="button">{{ st.icon('plus') }} Connections</summary>
         <div class="rows">
           {{ links.choices(callable_apps, offered_events, chosen_calls, chosen_events, 'staging', problem=connections_error) }}
-          {{ ui.text_field('publish', 'Events it publishes', form.publish or '', 'created, cancelled', 'Optional. Event names, comma-separated; other apps see them as <name>.<event> and can subscribe.') }}
           <p class="muted">Choosing a call or a subscription also changes the other app, so the pull request waits for your review instead of merging itself.</p>
         </div>
       </details>

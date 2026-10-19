@@ -115,19 +115,38 @@ class Event:
 
 def events(text: str, name: str = EVENTS_NAME) -> list[Event]:
     """The events an AsyncAPI 3 document says its app sends, as the stack templates' helpers read it:
-    a channel's address is the event's name, and with an ``operations`` section only the channels an
-    operation sends to count. Raises OfferError for a document the platform cannot use."""
+    a channel's address is the event's name, and only channels referenced by send operations count.
+    Missing or empty operations means no publications. Raises OfferError for an unusable document."""
     doc = _document(text, name)
     if not str(doc.get('asyncapi', '')).startswith('3.'):
         raise OfferError(f'{name} must be an AsyncAPI 3 document (asyncapi: 3.x)')
-    channels = doc.get('channels') or {}
-    operations = [op for op in (doc.get('operations') or {}).values() if isinstance(op, dict)]
+    channels = doc.get('channels', {})
+    operations = doc.get('operations', {})
     if not isinstance(channels, dict):
         raise OfferError(f'{name}: channels must be a mapping')
-    sends = {(op.get('channel') or {}).get('$ref') for op in operations if op.get('action') == 'send'}
+    if not isinstance(operations, dict):
+        raise OfferError(f'{name}: operations must be a mapping')
+    references = {f'#/channels/{str(key).replace("~", "~0").replace("/", "~1")}': key for key in channels}
+    sends = set()
+    for key, operation in operations.items():
+        if not isinstance(operation, dict):
+            raise OfferError(f'{name}: operation {key} must be a mapping')
+        operation = _settled(doc, operation, name)
+        if operation.get('action') not in ('send', 'receive'):
+            raise OfferError(f'{name}: operation {key} action must be send or receive')
+        channel = operation.get('channel')
+        reference = channel.get('$ref') if isinstance(channel, dict) else None
+        if not isinstance(reference, str) or reference not in references:
+            raise OfferError(f'{name}: operation {key} channel must reference an existing #/channels/ entry')
+        target = channels[references[reference]]
+        if not isinstance(target, dict):
+            raise OfferError(f'{name}: channel {references[reference]} must be a mapping')
+        _settled(doc, target, name)  # reject dangling channel references for receive operations too
+        if operation['action'] == 'send':
+            sends.add(references[reference])
     found = []
     for key, channel in channels.items():
-        if operations and f'#/channels/{key}' not in sends:
+        if key not in sends:
             continue
         channel = _settled(doc, channel, name)
         event = str(channel.get('address') or key)
@@ -135,7 +154,10 @@ def events(text: str, name: str = EVENTS_NAME) -> list[Event]:
             raise OfferError(f'{name}: channel {key} has the address {event!r}; an event is a lowercase name such as created')
         if event in [e.name for e in found]:
             raise OfferError(f'{name}: {event} is described twice')
-        messages = list((channel.get('messages') or {}).values())
+        declared_messages = channel.get('messages', {})
+        if not isinstance(declared_messages, dict):
+            raise OfferError(f'{name}: channel {key} messages must be a mapping')
+        messages = list(declared_messages.values())
         message = _settled(doc, messages[0], name) if messages else {}
         payload = _settled(doc, message.get('payload'), name) if message.get('payload') else None
         examples = message.get('examples') or []
@@ -243,8 +265,13 @@ def problems(instance: Path, published: list[str], annotation: str = '') -> list
     except OfferError as error:
         return [f'offers: {error}; make app-offers reads them again']
     if offers is None:
-        return [f'offers: the release is annotated {ANNOTATION} but the instance keeps no {OFFERS_DIR}/'] if annotation else []
+        found = [f'offers: the release is annotated {ANNOTATION} but the instance keeps no {OFFERS_DIR}/'] if annotation else []
+        if published:
+            found.append('offers: publications need an AsyncAPI document named by swhurl.yaml provides.eventsFile')
+        return found
     found = []
+    if published and offers.described is None:
+        found.append('offers: publications need an AsyncAPI document named by swhurl.yaml provides.eventsFile')
     if annotation != offers.commit:
         found.append(f'offers: the release says its offers are from {annotation or "nowhere"}, {OFFERS_DIR}/{SOURCE_FILE} says {offers.commit}')
     if offers.described is not None and [e.name for e in offers.described] != published:

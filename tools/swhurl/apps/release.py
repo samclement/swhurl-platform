@@ -99,21 +99,19 @@ def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path,
 def offered(release: Release, commit: str, files: dict[str, str], described: list[offers.Event] | None,
             api_path: str) -> Release:
     """A release with what it offers: the commit its documents were read at, where a web app serves its
-    API description (none when its swhurl.yaml no longer says: ``api_path`` is ''), and, with an events
-    document, the events it publishes."""
+    API description (none when its swhurl.yaml no longer says: ``api_path`` is ''), and its published
+    events (none without an events document)."""
     release = replace(release, offers=commit if files else '')
     if release.kind == 'web':
         release = replace(release, api_path=api_path)
-    if described is not None:
-        release = replace(release, publishes=tuple(event.name for event in described))
-    return release
+    return replace(release, publishes=tuple(event.name for event in described or ()))
 
 
 def write_offers(root: Path, app: str, env: str, repository: str, commit: str, files: dict[str, str],
                  described: list[offers.Event] | None, *, api_path: str = '', runner: Runner | None = None) -> bool:
     """Keep an instance's offers (``files``: name in the offers directory -> text) and what follows from
     them on its release (``offered``). Returns whether anything changed. Without files the directory
-    and the note of their commit go; what it publishes is left as it is. A refusal (an event another
+    and the note of their commit go; without an events document, publications clear. A refusal (an event another
     app still receives is gone) writes nothing."""
     each = Instance(app, env)
     world, _ = model_sync.read(root)

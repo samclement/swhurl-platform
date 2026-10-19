@@ -8,6 +8,7 @@ spec:
   subjects:
   - prod.demo-orders.>
   storage: file
+  preventDelete: true
   replicas: 1
   retention: limits
   discard: old

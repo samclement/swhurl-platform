@@ -39,7 +39,8 @@ def body(t: LiveTest, caller: str, callee: str, subscriber: str, env: str) -> No
         raise Preflight(f'{caller}/{env} does not declare a call to {callee}: make app-calls APP={caller} ENV={env} ARGS="--add {callee}"')
     published = events.published(helmrelease.variables(releases[callee]))
     if not published:
-        raise Preflight(f'{callee}/{env} publishes no event: make app-events APP={callee} ENV={env} ARGS="--publish visited"')
+        raise Preflight(f'{callee}/{env} publishes no event: add a send operation to its asyncapi.yaml '
+                        'named by provides.eventsFile, then deploy it')
     event = published[0]
     if (callee, event) not in events.subscribed(helmrelease.variables(releases[subscriber])):
         raise Preflight(f'{subscriber}/{env} does not subscribe to {callee}.{event}: '

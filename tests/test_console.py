@@ -233,8 +233,8 @@ class ConnectionsTests(unittest.TestCase):
         orders = page('orders')
         self.assertIn('name="calls" value="reports"', orders)
         self.assertNotIn('name="calls" value="job"', orders, 'a worker cannot be called')
-        self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 2, 'only what it declared: its two events')
-        self.assertIn('Publish an event</summary>', orders)
+        self.assertEqual(orders.count('/apps/orders/staging/disconnect'), 0, 'publications cannot be edited on the platform')
+        self.assertNotIn('Publish an event</summary>', orders)
         self.assertNotIn('Describes itself', orders)
         expected = {orders: [('← incoming', 'call', 'reports', 'calls this app', '&lt;b&gt;insights'),
                              ('→ outgoing', 'event', 'any subscriber', 'publishes paid', ''),
@@ -274,6 +274,8 @@ channels:
       created:
         payload: {type: object, required: [id], properties: {id: {type: string}}}
         examples: [{payload: {id: o-1}}]
+operations:
+  sendCreated: {action: send, channel: {$ref: '#/channels/created'}}
 """
     OPENAPI = '{"openapi": "3.1.0", "info": {"title": "orders", "description": "Create and read orders"}, "paths": {"/orders/{id}": {"get": {"summary": "Read one order"}}}}'
 
@@ -842,9 +844,10 @@ class AppDetailTests(unittest.TestCase):
         text = client(fake(**answers)).get('/apps/web/prod', headers=WHO).text
         self.assertIn('not yet applied', text)
         self.assertIn('id="replicas" name="replicas" value="" placeholder="1"', text)
-        self.assertEqual(text.count('<form class="wizard"'), 5, 'the app page uses the New app form layout')
+        self.assertEqual(text.count('<form class="wizard"'), 4, 'the app page uses the New app form layout')
         self.assertIn('action="/apps/web/prod/egress"', text)
-        self.assertEqual(text.count('action="/apps/web/prod/connect"'), 2, 'connect to an app, and publish an event')
+        self.assertEqual(text.count('action="/apps/web/prod/connect"'), 1, 'only subscription and call grants')
+        self.assertNotIn('name="publish"', text, 'publications come only from the app document')
         self.assertNotIn('<table class="compact connections">', text, 'nothing to list')
         self.assertIn('No connections: it calls nothing', text)
         self.assertLess(text.index('>Use</h2>'), text.index('>Connect</h2>'))
@@ -853,7 +856,7 @@ class AppDetailTests(unittest.TestCase):
         self.assertIn('<h1>web <span class="pill"', text)
         for part in ('use', 'connect', 'operate'):
             self.assertIn(f'<section class="card" id="{part}"', text, 'each part is a card of its own')
-        self.assertEqual(text.count('<details class="act" name="app-form"'), 5, 'each change opens in its card, one at a time')
+        self.assertEqual(text.count('<details class="act" name="app-form"'), 4, 'each change opens in its card, one at a time')
         self.assertIn('<div><span>State</span>', text, 'the summary: one fact per column')
         self.assertIn('hx-post="/units/app-web-prod/reconcile" hx-target="this" hx-select="unset"', text, 'Reconcile answers in place')
         self.assertIn('href="https://github.com/samclement/web"', text)

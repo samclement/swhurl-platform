@@ -43,12 +43,11 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_capability_maps_to_its_app_new_option(self):
         doc = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'database': 'sqlite', 'databaseSize': '2Gi',
-               'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'},
-               'events': {'publish': ['created']}}
+               'secrets': ['API_TOKEN', 'DB_URL'], 'resources': {'cpu': '50m', 'memory': '256Mi', 'memoryLimit': '512Mi'}}
         self.assertEqual(seed(doc), {
             'kind': 'web', 'uid': 65532, 'otlp': False, 'auto_deploy': True, 'exposure': 'authenticated-web',
             'port': 8080, 'health_path': '/healthz', 'database': 'sqlite', 'database_size': '2Gi', 'secret_keys': ['API_TOKEN', 'DB_URL'],
-            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi', 'publish': ['created']})
+            'cpu': '50m', 'memory': '256Mi', 'memory_limit': '512Mi'})
         web = {'version': 1, 'kind': 'web', 'healthPath': '/healthz', 'provides': {'api': '/openapi.json'}}
         self.assertEqual(seed(web)['api_path'], '/openapi.json')
         seed({**web, 'provides': {'api': '/openapi.json', 'apiFile': 'openapi.json', 'eventsFile': 'src/main/resources/asyncapi.yaml'}})
@@ -72,8 +71,9 @@ class ManifestTests(unittest.TestCase):
             ({'resources': {'memory': 64, 'cpu': 1}},
              'resources.cpu must be a quantity string, for example "100m"'),
             ({'events': {'publish': ['Bad']}, 'provides': {'api': 'relative'}},
-             'events.publish lists event names (created)'),
-            ({'events': {'unknown': [], 'publish': ['Bad']}}, 'events may set publish only'),
+             'events.publish is no longer supported: declare send operations in asyncapi.yaml and name it '
+             'with provides.eventsFile; remove events.publish'),
+            ({'events': {'unknown': []}}, 'events may not declare publications here: use provides.eventsFile and asyncapi.yaml'),
             ({'provides': {'api': 'relative', 'apiFile': '../bad'}},
              'provides may set api, a path such as /openapi.json that the app serves, and apiFile and eventsFile only'),
             ({'provides': {'eventsFile': '../events', 'apiFile': '../api'}},
@@ -95,11 +95,16 @@ class ManifestTests(unittest.TestCase):
         for empty in (None, {}):
             with self.subTest(empty=empty):
                 self.assertEqual(seed({**WEB, 'resources': empty, 'events': empty, 'provides': empty}), expected)
-        self.assertEqual(seed({**WEB, 'resources': {'cpu': None}, 'events': {'publish': False, 'subscribe': None},
+        self.assertEqual(seed({**WEB, 'resources': {'cpu': None}, 'events': {'subscribe': None},
                                'calls': None, 'uid': 0, 'port': 0}), expected)
         for field in ('resources', 'events', 'provides'):
             with self.subTest(field=field), self.assertRaisesRegex(DeclarationError, f'{field} must be dict'):
                 seed({**WEB, field: False})
+
+    def test_obsolete_publication_lists_are_refused_even_when_empty(self):
+        for value in ([], ['created'], None, False):
+            with self.subTest(value=value), self.assertRaisesRegex(DeclarationError, 'events.publish is no longer supported.*provides.eventsFile'):
+                seed({**WEB, 'events': {'publish': value}})
 
     def test_every_web_app_gets_the_same_startup_allowance(self):
         with self.assertRaisesRegex(DeclarationError, 'unknown field.*startupSeconds'):
@@ -154,13 +159,13 @@ class LifetimeTests(unittest.TestCase):
         self.assertEqual({item.kind for item in declaration.FIELDS}, set(kinds))
         self.assertEqual([item.kind for item in declaration.FIELDS], sorted((item.kind for item in declaration.FIELDS), key=kinds.index),
                          'FIELDS is ordered by kind, as the page and the templates are')
-        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.SEED, declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
+        self.assertEqual({item.read for item in declaration.FIELDS}, {declaration.LIVE, declaration.IGNORED, declaration.REFUSED})
         self.assertEqual([item.name for item in declaration.FIELDS if item.read == declaration.LIVE],
                          ['version', 'stack', 'kind', 'description', 'port', 'healthPath', 'uid', 'telemetry', 'resources', 'database', 'databaseSize', 'secrets', 'provides', 'flags'])
         page = (ROOT / 'docs/apps.md').read_text()
         section = page[page.index('## swhurl.yaml'):page.index('## Who can reach it')]
         rows = re.findall(r'^\| `([A-Za-z.]+)` \| ([a-z]+) \| (read once|read again|ignored|refused) \|', section, re.M)
-        read = {declaration.SEED: 'read once', declaration.LIVE: 'read again', declaration.IGNORED: 'ignored', declaration.REFUSED: 'refused'}
+        read = {declaration.LIVE: 'read again', declaration.IGNORED: 'ignored', declaration.REFUSED: 'refused'}
         self.assertEqual(rows, [(item.name, item.kind, read[item.read]) for item in declaration.FIELDS])
         for item in declaration.FIELDS:
             if item.then.startswith('make '):

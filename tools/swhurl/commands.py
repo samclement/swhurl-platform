@@ -290,11 +290,15 @@ def call(command: Command, argv: list[str]) -> int:
 
 def make(argv: list[str] | None = None, env: Mapping[str, str] | None = None,
          execute: Callable[[str, list[str]], object] = os.execvp) -> int:
-    """``swhurl make <target>``: refuse a missing variable, build the arguments, run the command (under uv when it needs it)."""
+    """``swhurl make <target>``: refuse a missing variable, or DRY_RUN=true where the command has no dry run,
+    build the arguments, run the command (under uv when it needs it)."""
     env = os.environ if env is None else env
     command = TARGETS.get(argv[0]) if argv and len(argv) == 1 else None
     if command is None or not command.run:
         print(f'usage: python3 -m swhurl make <target> (one of: {" ".join(n for n, c in TARGETS.items() if c.run)})', file=sys.stderr)
+        return USAGE_EXIT
+    if env.get('DRY_RUN') == 'true' and not command.dry_run:
+        print(f'[ERROR] make {command.name} has no dry run: DRY_RUN=true would be ignored, so nothing was done', file=sys.stderr)
         return USAGE_EXIT
     if command.missing(env):
         print(f'Usage: make {command.signature()}', file=sys.stderr)

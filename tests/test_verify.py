@@ -456,7 +456,8 @@ class BackupAgeTests(unittest.TestCase):
         from swhurl import sqlite_backup
         names = [each.namespace for each in sqlite_backup.expected()]
         self.assertIn('demo-orders-prod', names)
-        self.assertNotIn('demo-shop-prod', names)
+        self.assertNotIn('swhurl-try-12-prod', names, 'a web app without a database')
+        self.assertNotIn('demo-shopper-staging', names, 'a worker')
         runner = FakeRunner().on('aws', 's3api', 'list-objects-v2', stdout='[]')
         report = Report(io.StringIO())
         sqlite_backup.check_sqlite_backups(runner, report, {}, now=self.NOW)

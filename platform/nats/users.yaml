@@ -143,6 +143,7 @@ data:
                 - $JS.API.CONSUMER.CREATE.KV_flags-staging.*.$KV.flags-staging.staging.swhurl-try-13.>
                 - $JS.API.CONSUMER.DELETE.KV_flags-staging.*
                 - $JS.API.CONSUMER.INFO.KV_flags-staging.*
+                - staging.swhurl-try-13.>
                 - $JS.API.CONSUMER.INFO.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.API.CONSUMER.MSG.NEXT.staging-swhurl-try-10.swhurl-try-13_visited
                 - $JS.ACK.staging-swhurl-try-10.swhurl-try-13_visited.>

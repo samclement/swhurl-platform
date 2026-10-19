@@ -1,4 +1,20 @@
 apiVersion: jetstream.nats.io/v1beta2
+kind: Stream
+metadata:
+  name: staging-swhurl-try-13
+  namespace: swhurl-try-13-staging
+spec:
+  name: staging-swhurl-try-13
+  subjects:
+  - staging.swhurl-try-13.>
+  storage: file
+  replicas: 1
+  retention: limits
+  discard: old
+  maxAge: 168h
+  maxBytes: 67108864
+---
+apiVersion: jetstream.nats.io/v1beta2
 kind: Consumer
 metadata:
   name: swhurl-try-10-visited

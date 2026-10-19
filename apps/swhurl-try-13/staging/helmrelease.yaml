@@ -4,7 +4,8 @@ metadata:
   name: swhurl-try-13
   namespace: swhurl-try-13-staging
   annotations:
-    platform.swhurl.com/render: 57fabc839712cbf7c8891189593ec125ad90025f1e9ba8fa57286d1b4d90c709
+    platform.swhurl.com/offers: bfa12a9
+    platform.swhurl.com/render: d1eed984b0575d33e807211859bcb1cc593887fec76941a5b8cd6cf162df9998
 spec:
   interval: 30m
   timeout: 3m
@@ -39,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-13
-              tag: 47-e7b2070
-              digest: sha256:55b3c84a525aed7c8e914453e2d9ee6852c1532be373f85ea243c7716f3b3f9a
+              tag: 49-bfa12a9
+              digest: sha256:861aab18f1510335cc7ba59c1b38a81a90c972519b5bf67117d6140ce27d8699
             resources:
               requests:
                 cpu: 10m
@@ -57,6 +58,7 @@ spec:
               SWHURL_APP: swhurl-try-13
               SWHURL_ENV: staging
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
+              SWHURL_DESCRIPTION: 'throwaway: team platform T4 subscriber (notifier), delete me'
               HOST_IP:
                 valueFrom:
                   fieldRef:
@@ -64,6 +66,7 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: swhurl-try-13
+              SWHURL_EVENTS_PUBLISH: worked
               SWHURL_EVENTS_SUBSCRIBE: swhurl-try-10.visited,swhurl-try-12.visited
               SWHURL_EVENTS_NKEY: UD2OPEOUJ7C3V2TCCLNQBNGYT67UJUPQQU7D3HWQG6MU5XVVGAWQEXI5
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222

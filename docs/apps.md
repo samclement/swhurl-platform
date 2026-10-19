@@ -21,17 +21,17 @@ Four small apps, owned by team `demo`, show how apps on the platform work togeth
 
 ```mermaid
 flowchart LR
-  person(["you, signed in"]) -- "POST /buy" --> shop
-  shopper["demo-shopper<br/>worker: buys every 30 s"] -- "call, as the app demo-shopper" --> shop["demo-shop<br/>web, signed-in"]
-  shop -- "call, with a token only<br/>demo-orders accepts" --> orders["demo-orders<br/>web, SQLite"]
+  person(["you, signed in"]) -- "the page at /, then POST /api/buy" --> shop
+  shopper["demo-shopper<br/>worker: buys every 30 s"] -- "POST /api/buy, as the app demo-shopper" --> shop["demo-shop<br/>web app, SQLite"]
+  shop -- "call, with a token only demo-orders<br/>accepts, for the signed-in person" --> orders["demo-orders<br/>API, SQLite"]
   orders -. "event demo-orders.created" .-> notifier["demo-notifier<br/>Kotlin worker"]
   notifier -- "an order of 10 or more" --> team(["team demo's<br/>notification channel"])
 ```
 
 | App | Stack | Where | What it shows | Read about it |
 | --- | --- | --- | --- | --- |
-| [`demo-orders`](https://github.com/samclement/demo-orders) | TypeScript, web, SQLite | staging, prod | An API only other apps may use; its API and its event described in its own repository; a database the platform keeps and backs up | [Calling another app](#calling-another-app), [what an app offers](#what-an-app-offers), [backups](operations.md#backups-and-recovery) |
-| [`demo-shop`](https://github.com/samclement/demo-shop) | TypeScript, web | staging, prod | Calling another app with a platform-issued token; telling a signed-in person from an app | [Calling another app](#calling-another-app), [who can reach it](#who-can-reach-it) |
+| [`demo-orders`](https://github.com/samclement/demo-orders) | TypeScript, API | staging, prod | An API only other apps may use; its API and its event described in its own repository; a database the platform keeps and backs up | [Calling another app](#calling-another-app), [what an app offers](#what-an-app-offers), [backups](operations.md#backups-and-recovery) |
+| [`demo-shop`](https://github.com/samclement/demo-shop) | TypeScript, web app | staging, prod | A page people use, calling its own `/api/*`; calling another app with a platform-issued token, for the signed-in person; telling a person from an app; its own SQLite for what only it uses (the purchases made through it) | [App types](#app-types), [calling another app](#calling-another-app), [who can reach it](#who-can-reach-it) |
 | [`demo-shopper`](https://github.com/samclement/demo-shopper) | TypeScript, worker | staging | A worker; an app calling another as itself; the steady traffic | [Stacks and features](#stacks-and-features) |
 | [`demo-notifier`](https://github.com/samclement/demo-notifier) | Kotlin, worker | staging | Receiving another app's event; a message to the team; the second stack | [Events](#events), [notifications](#notifications) |
 
@@ -42,17 +42,17 @@ All web addresses require sign-in: `https://staging-demo-shop.homelab.swhurl.com
 | To see | Do this |
 | --- | --- |
 | The apps and how they are connected | Console → **Deployments** → **Map**: two solid lines (calls) and one dashed (the event) |
-| What each offers, and its routes or payload | Console → **Catalogue** → team `demo`; open `created` under `demo-orders` for its fields and an example |
-| A purchase | Open `https://staging-demo-shop.homelab.swhurl.com/`: `latestOrders` shows what `demo-shopper` bought seconds ago |
+| What each offers, and its routes or payload | Console → **Catalogue** → team `demo`; open `created` under `demo-orders` for its fields and an example (demo-shop's API serves its page, so it is not listed) |
+| A purchase | Open `https://staging-demo-shop.homelab.swhurl.com/`: **Latest orders** shows what `demo-shopper` bought seconds ago; buy something and it appears under **Your recent purchases** |
 | That only apps may place orders | Signed in, `POST https://staging-demo-orders.homelab.swhurl.com/orders` answers 401: you are a person, not `demo-shop` |
 | One request through every app | Console → `demo-shop/staging` → **Logs and traces**: one trace runs `demo-shopper` → `demo-shop` → `demo-orders` → `demo-notifier` |
 | Traffic and errors over time | Console → any demo app → **Dashboard** |
-| A team notification | Signed in, `POST https://staging-demo-shop.homelab.swhurl.com/buy?item=tea&quantity=12`: ten or more makes `demo-notifier` tell the team's channel |
+| A team notification | On the shop's page, buy 12 of something: ten or more makes `demo-notifier` tell the team's channel |
 | A promotion | Console → `demo-shop/staging` → **Review promotion** (it needs `demo-orders` in production, which it has) |
 
-**The traffic.** `demo-shopper` visits the shop every half minute: about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it: `make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 0"`, commit and push.
+**The traffic.** `demo-shopper` visits the shop every half minute (`POST /api/buy`, then `GET /api/shop`): about four requests a minute through `demo-shop` and `demo-orders` and two events, with quantities of one to three so nobody is notified. `demo-orders` keeps the latest 1000 orders. To pause it: `make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 0"`, commit and push.
 
-**Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Add an app**; to start an app like one of them, choose the same stack and features in **New app** and copy what its README points at.
+**Use them as a pattern.** To call `demo-orders` or receive its event from your own app, use the Catalogue's **Add an app**; to start an app like one of them, choose the same type and stack in **New app** and copy what its README points at.
 
 ## Start a new app
 
@@ -797,7 +797,7 @@ make app-status APP=demo-orders ENV=prod     # state, Git revision applied?, run
 make app-logs APP=demo-orders ENV=prod       # FOLLOW=true, TAIL=N, PREVIOUS=true (last crashed container)
 make app-reconcile APP=demo-orders ENV=prod  # fetch Git and reconcile this instance's unit now
 make app-check APP=demo-orders ENV=prod      # the app policy, offline
-make app-scale APP=demo-shop ENV=staging ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
+make app-scale APP=demo-shopper ENV=staging ARGS="--replicas 2 --memory-limit 256Mi"   # Git edit: commit and push
 ```
 
 Every instance is rendered from three records, which only the platform's commands write ([design](plan.md#24-code-simplification--design-contracts-18-october-2026)); Flux never applies them:

@@ -4,8 +4,8 @@ metadata:
   name: demo-orders
   namespace: demo-orders-staging
   annotations:
-    platform.swhurl.com/offers: ba8c860
-    platform.swhurl.com/render: acba11b2b787bd63b453766163268cf070ad1d47e024f8328ffe84c8f9b803ee
+    platform.swhurl.com/offers: 82b0f86
+    platform.swhurl.com/render: 36bc73a9d498a6cf1e94f8b6cbd01b3cb93a7a05959a71ded2d7b3a94d1cb30a
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-orders
-              tag: 44-ba8c860
-              digest: sha256:debf4ef8a9be50c96bf16f7d269342c6eebebf488327c07514aa185262f003a6
+              tag: 47-82b0f86
+              digest: sha256:2c24bf2e03f977413ad098a954b6ecd7389c4b2b89892ad3bed24a7133abbb2d
             resources:
               requests:
                 cpu: 10m
@@ -61,6 +61,7 @@ spec:
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
               SWHURL_API_PATH: /openapi.json
+              SWHURL_DESCRIPTION: 'Demo: takes orders, keeps them in SQLite, describes its API and publishes an event for each'
               HOST_IP:
                 valueFrom:
                   fieldRef:

@@ -242,25 +242,40 @@ elif 'secret' in argv:
                 self.assertFalse(self.calls.exists())
 
     def test_verifier_checks_actual_bytes_and_never_prints_credentials(self):
-        """End to end through real subprocesses and the fake kubectl (contract test)."""
-        scenarios = ('match', 'double', 'mismatch', 'missing', 'invalid', 'newline', 'mongo-failure', 'unready')
+        """End to end through real subprocesses and the fake kubectl (contract test).
+
+        ``match`` and ``unready`` run the whole verify-platform; the key scenarios change only the
+        ingestion Secret, so they run that one check (a whole run costs about 60 fake tool processes)."""
+        whole = ('match', 'unready')
+        key_only = ('double', 'mismatch', 'missing', 'invalid', 'newline', 'mongo-failure')
+        check = ('import sys\n'
+                 'from swhurl import clickstack\n'
+                 'from swhurl.report import Report\n'
+                 'from swhurl.run import Runner\n'
+                 'runner, report = Runner(), Report()\n'
+                 'report.redact = runner.redact\n'
+                 'clickstack.check_ingestion(runner, report)\n'
+                 'sys.exit(report.exit_code())\n')
 
         def verify(scenario):
-            return subprocess.run([sys.executable, '-m', 'swhurl', 'verify-platform'], cwd=ROOT,
+            argv = ['-m', 'swhurl', 'verify-platform'] if scenario in whole else ['-c', check]
+            return subprocess.run([sys.executable, *argv], cwd=ROOT,
                                   env=dict(self.env, SCENARIO=scenario, PYTHONPATH=str(ROOT / 'tools')),
                                   capture_output=True, text=True)
 
         # The scenarios are independent processes; running them together keeps make test quick.
+        scenarios = whole + key_only
         with ThreadPoolExecutor() as pool:
             results = dict(zip(scenarios, pool.map(verify, scenarios), strict=True))
         for scenario, result in results.items():
             with self.subTest(scenario=scenario):
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, scenario == 'match', output)
+                if scenario in key_only:
+                    self.assertIn('Ingestion Key Sync', output, 'the key check ran')
                 for value in (KEY, OTHER_KEY):
                     self.assertNotIn(value, output)
                     self.assertNotIn(base64.b64encode(value.encode()).decode(), output)
-
 
 if __name__ == '__main__':
     unittest.main()

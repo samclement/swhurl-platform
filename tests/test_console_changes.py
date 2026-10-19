@@ -91,7 +91,6 @@ class FakeGitHub:
             return httpx.Response(code, json={'message': message})
         answers = {
             'GET /git/ref/heads/main': {'object': {'sha': HEAD}},
-            f'GET /tarball/{HEAD}': self.tarball(),
             f'GET /git/commits/{HEAD}': {'tree': {'sha': 'tree0'}},
             'POST /git/blobs': {'sha': f'blob{len(self.sent("POST /git/blobs")) - 1}'},
             'POST /git/trees': {'sha': 'tree1'},
@@ -108,6 +107,8 @@ class FakeGitHub:
                             'head': {'ref': 'renovate/x'}, 'created_at': '2026-10-01T07:00:00Z'}],
         }
         answers.update(self.also)
+        if key == f'GET /tarball/{HEAD}' and key not in answers:  # built only when asked: compressing is the cost
+            answers[key] = self.tarball()
         if key not in answers:
             return httpx.Response(404, json={'message': 'Not Found'})
         answer = answers[key]

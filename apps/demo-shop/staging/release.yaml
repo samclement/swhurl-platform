@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shop
-  tag: 59-5bb895b
-  digest: sha256:9677fe536a247ea94500d19144c323edcafc273f839ddc17410842710bec2a9f
+  tag: 61-a244f82
+  digest: sha256:e7e516fd6c3897b6d13c5045a9ad97fce094c66bb148e8f95b2ab2cecc0d63ec
 kind: web
 uid: 65532
 stack: typescript
@@ -15,4 +15,4 @@ description: 'Demo: the shop people open; a page that places orders in demo-orde
 apiPath: /openapi.json
 publishes:
 - visited
-offers: 5bb895b
+offers: a244f82

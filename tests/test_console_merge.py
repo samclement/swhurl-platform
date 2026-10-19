@@ -1,5 +1,7 @@
 """Auto-merge gates preserve reviewed settings and never push on failed or stale checks."""
+import atexit
 import contextlib
+import functools
 import io
 import json
 import shutil
@@ -35,6 +37,22 @@ def seed(*_args, **_kwargs):
     return declaration.parse((MANIFESTS / 'web.yaml').read_text(), 'web.yaml').seed
 
 
+@functools.cache
+def baseline() -> Path:
+    """main with example in staging and production, generated once per process; each test copies it.
+
+    Not setUpClass: the test runner keeps such a class in one job, and these tests are better spread out."""
+    root = Path(tempfile.mkdtemp())
+    atexit.register(shutil.rmtree, root, True)
+    (root / 'clusters/home').mkdir(parents=True)
+    (root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
+    for env in ('staging', 'prod'):
+        image = IMAGE if env == 'staging' else IMAGE.replace('2-', '1-').replace('a' * 64, 'c' * 64)
+        args = new.parse_args(['example', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', env, '--no-auto-deploy', '--image', image])
+        new.generate(args, root)
+    return root
+
+
 class MergeTests(unittest.TestCase):
     """The gate replays a PR's request on the newest main and pushes the replayed tree."""
 
@@ -42,12 +60,7 @@ class MergeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'main'
-        (self.root / 'clusters/home').mkdir(parents=True)
-        (self.root / 'clusters/home/kustomization.yaml').write_text('resources: []\n')
-        for env in ('staging', 'prod'):
-            image = IMAGE if env == 'staging' else IMAGE.replace('2-', '1-').replace('a' * 64, 'c' * 64)
-            args = new.parse_args(['example', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', env, '--no-auto-deploy', '--image', image])
-            new.generate(args, self.root)
+        shutil.copytree(baseline(), self.root)
         self.promotion()
         self.after_candidate = None  # edits the PR's tree after its request ran
 

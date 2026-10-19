@@ -4,9 +4,8 @@ metadata:
   name: demo-shop
   namespace: demo-shop-prod
   annotations:
-    platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: a244f82
-    platform.swhurl.com/render: eb1b07a202d776fc7af7bf9a7f2e206a18958afb8132af2b03a1c3205caac434
+    platform.swhurl.com/render: 9cfc4ed0a8eb3d13ebe4f30375365be39e28c85bb926e99cab7c8e8023f6002e
 spec:
   interval: 30m
   timeout: 3m

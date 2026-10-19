@@ -1,31 +1,24 @@
-"""Back up ClickStack MongoDB and prove a backup restores.
+"""Prove ClickStack MongoDB's backup restores, and check its backups are fresh.
 
-    backup-mongodb             dump the hyperdx database, encrypted with age, to BACKUP_DIR
     live-test-restore-mongodb  restore the newest backup into a throwaway namespace and check it
-    prune-backups              prune a directory of MongoDB backups to the retention set
 
-Plaintext never touches disk: the dump streams from ``mongodump`` straight into
-``age`` (and on restore from ``age -d`` into ``mongorestore``) through an OS
-pipe that Python never reads. MongoDB requires a login: the connection string
-the MongoDB operator writes (``clickstack-mongodb-hyperdx-hyperdx``) reaches
-``mongodump`` as a config file on stdin, never in a command line. The archives
-are a backup set (``backupset``), which names, orders, prunes and uploads them. Settings come
-from the environment, as the Makefile passes them: BACKUP_DIR, DRY_RUN, PRUNE,
-KEEP_DAILY, KEEP_WEEKLY, AGE_RECIPIENT, MONGO_DATABASE, BACKUP_S3_URI (backup; empty
-skips the upload, which uses the AWS CLI's default credentials or AWS_PROFILE) and
-BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE, KEEP, MONGO_IMAGE (restore test).
+The backup itself is the ``backup-mongodb`` CronJob (``backup_job``). The restore test downloads the
+newest complete backup from BACKUP_S3_URI into a private temporary directory with the AWS CLI's own
+credentials (or takes BACKUP_FILE, with its metadata beside it), then streams ``age -d`` straight
+into ``mongorestore`` through an OS pipe that Python never reads, so plaintext never touches disk.
+Settings come from the environment: BACKUP_S3_URI, BACKUP_FILE, AGE_KEY_FILE, RECOVERY_NAMESPACE,
+KEEP, MONGO_IMAGE.
 """
 from __future__ import annotations
 
-import argparse
 import base64
 import binascii
 import contextlib
 import datetime as dt
 import json
 import os
-import re
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -56,97 +49,11 @@ def sops_recipient(root: Path = ROOT) -> str:
     return recipients.pop()
 
 
-# Backup ----------------------------------------------------------------------
-
-@dataclass
-class BackupSettings:
-    backup_dir: Path
-    recipient: str
-    namespace: str = clickstack.NS
-    pod: str = clickstack.MONGO_POD
-    database: str = 'hyperdx'
-    prune: bool = True
-    keep_daily: int = 7
-    keep_weekly: int = 4
-    s3_uri: str = ''
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> BackupSettings:
-        return cls(
-            backup_dir=backupset.backup_dir(env),
-            recipient=env.get('AGE_RECIPIENT') or sops_recipient(),
-            database=env.get('MONGO_DATABASE') or 'hyperdx',
-            prune=env.get('PRUNE', 'true') == 'true',
-            keep_daily=int(env.get('KEEP_DAILY', 7)),
-            keep_weekly=int(env.get('KEEP_WEEKLY', 4)),
-            s3_uri=env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI),
-        )
-
-
-def backup(runner: Runner, settings: BackupSettings, *, now: dt.datetime | None = None,
-           out: Callable[[str], None] = print) -> Path:
-    """Write ``clickstack-mongodb-<UTC>.archive.gz.age`` plus metadata; return the archive path."""
-    stamp = backupset.stamp(now)
-    archives = backups(settings.backup_dir)
-    archive = archives.path(stamp)
-    exec_mongo = ['kubectl', '-n', settings.namespace, 'exec', '-i', settings.pod, '-c', 'mongod', '--']
-
-    if runner.dry_run:
-        out('Plan (backup-mongodb):')
-        out(f'  - mongodump --db {settings.database} from {settings.namespace}/{settings.pod}, '
-            f'logging in with {clickstack.MONGO_URI_SECRET}')
-        out(f'  - encrypt to age recipient {settings.recipient}')
-        out(f'  - write {archive} and a metadata file; no cluster changes')
-        if settings.prune:
-            out(f'  - prune {settings.backup_dir} to the newest backup of each of the last {settings.keep_daily} '
-                f'backup days and {settings.keep_weekly} ISO weeks')
-        if settings.s3_uri:
-            out(f'  - upload local backups not yet in {settings.s3_uri}')
-        return archive
-
-    uri = clickstack.read_secret(runner, clickstack.MONGO_URI_SECRET).get('connectionString.standard', '')
-    if not uri:
-        raise BackupError(f'{settings.namespace}/{clickstack.MONGO_URI_SECRET} has no connection string')
-    with archives.writing(stamp) as partial:
-        runner.pipe([*exec_mongo, 'mongodump', '--quiet', '--config=/dev/stdin', '--db', settings.database,
-                     '--archive', '--gzip'],
-                    ['age', '-r', settings.recipient, '-o', partial], input=f'uri: {json.dumps(uri)}\n')
-        if not partial.is_file() or partial.stat().st_size == 0:
-            raise BackupError('Backup archive is empty')
-        counts = clickstack.mongo(runner, uri, clickstack.COLLECTION_COUNTS)
-        version_text = runner.output([*exec_mongo, 'mongod', '--version'])
-        match = re.search(r'^db version v(\S+)', version_text, re.M)
-        if not match:
-            raise BackupError('could not read the MongoDB version')
-    metadata = archives.record(archive, {
-        'source': f'{settings.namespace}/{settings.pod}', 'database': settings.database,
-        'mongodb_version': match[1], 'age_recipient': settings.recipient, 'collections': counts})
-    out(f'[OK] Encrypted backup: {archive}')
-    out(f'[OK] Metadata: {metadata}')
-    if settings.prune:
-        archives.prune(settings.keep_daily, settings.keep_weekly, out=out)
-    if settings.s3_uri:
-        archives.upload(runner, settings.s3_uri, out)
-    else:
-        out('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.')
-    return archive
-
-
-def backup_mongodb(argv: list[str] | None = None, runner: Runner | None = None) -> int:
-    try:
-        settings = BackupSettings.from_env(os.environ)
-        backup(runner or Runner.from_environment(), settings)
-    except (BackupError, CommandError, ValueError) as error:
-        print(f'[ERROR] {error}', file=sys.stderr)
-        return 1
-    return 0
-
-
 # Restore test ----------------------------------------------------------------
 
 @dataclass
 class RestoreSettings:
-    backup_dir: Path
+    uri: str
     age_key: Path
     backup_file: Path | None = None
     namespace: str = 'recovery-test'
@@ -156,16 +63,13 @@ class RestoreSettings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> RestoreSettings:
         return cls(
-            backup_dir=backupset.backup_dir(env),
+            uri=env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI),
             age_key=backupset.age_key(env),
             backup_file=Path(env['BACKUP_FILE']) if env.get('BACKUP_FILE') else None,
             namespace=env.get('RECOVERY_NAMESPACE') or 'recovery-test',
             keep=env.get('KEEP', 'false') == 'true',
             image=env.get('MONGO_IMAGE') or None,
         )
-
-    def archive(self) -> Path | None:
-        return self.backup_file or backups(self.backup_dir).newest()
 
 
 def recovery_pod(image: str) -> str:
@@ -182,21 +86,26 @@ def recovery_pod(image: str) -> str:
 def restore_test(runner: Runner, settings: RestoreSettings, report: Report, *,
                  sleep: Callable[[float], None] = time.sleep) -> int:
     report.redact = runner.redact
-    archive = settings.archive()
     ns = settings.namespace
     if runner.dry_run:
         report.line('Plan (live-test-restore-mongodb):')
         report.line(f'  - create disposable namespace {ns} (label {RECOVERY_LABEL}=true) with a throwaway MongoDB pod')
-        report.line(f'  - decrypt {archive or f"<latest backup in {settings.backup_dir}>"} with {settings.age_key} '
-                    'and mongorestore into it')
+        report.line(f'  - download {settings.backup_file or f"the newest complete backup in {settings.uri}"}, '
+                    f'decrypt it with {settings.age_key} and mongorestore into it')
         report.line(f'  - decrypt {ROOT / INGESTION_SECRET} into {ns} and compare with the restored team ingestion key')
         report.line(f'  - compare restored collection counts with the backup metadata, then delete {ns}')
         return 0
 
-    if not archive:
-        raise BackupError('No backup archive found (set BACKUP_FILE or BACKUP_DIR)')
     if not os.access(settings.age_key, os.R_OK):
         raise BackupError(f'Cannot read age key: {settings.age_key}')
+    with tempfile.TemporaryDirectory(prefix='restore-mongodb-') as scratch:
+        archive = settings.backup_file or backups(Path(scratch)).fetch(runner, settings.uri)
+        return restored(runner, settings, report, archive, sleep=sleep)
+
+
+def restored(runner: Runner, settings: RestoreSettings, report: Report, archive: Path, *,
+             sleep: Callable[[float], None]) -> int:
+    ns = settings.namespace
     metadata = backups(archive.parent).read(archive)
 
     existing = runner.run(['kubectl', 'get', 'namespace', ns, '-o', 'json'], check=False)
@@ -288,23 +197,11 @@ def restore_test_mongodb(argv: list[str] | None = None, runner: Runner | None = 
         return 1
 
 
-def prune_backups(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='Prune ClickStack MongoDB backups to the newest of each of the '
-                                     'last --daily backup days and --weekly ISO weeks.')
-    parser.add_argument('directory', type=Path)
-    parser.add_argument('--daily', type=int, default=7)
-    parser.add_argument('--weekly', type=int, default=4)
-    parser.add_argument('--dry-run', action='store_true')
-    args = parser.parse_args(argv)
-    backups(args.directory).prune(args.daily, args.weekly, dry_run=args.dry_run)
-    return 0
-
-
 def check_backups(runner: Runner, report: Report, env: Mapping[str, str] | None = None,
                   now: dt.datetime | None = None) -> None:
     """The newest MongoDB backup in S3 must be younger than BACKUP_MAX_AGE_HOURS (26)."""
     env = os.environ if env is None else env
     report.section('Backups')
-    backupset.check_backup_set(runner, report, backups(backupset.backup_dir(env)),
+    backupset.check_backup_set(runner, report, backups(Path()),
                      env.get('BACKUP_S3_URI', platform.BACKUP_S3_URI), env=env, now=now, what='MongoDB',
                      run='make backup-mongodb', hint='kubectl -n observability get jobs -l platform.swhurl.com/backup=true')

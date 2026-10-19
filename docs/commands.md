@@ -75,7 +75,7 @@ App creation/editing and template checks use `uv` with locked dependencies. App 
 | `destroy-data TARGET=pvc/<ns>/<name>\|pv/<name> CONFIRM=<TARGET>` † | Delete a released claim or volume and its host data ([lifecycle](operations.md#lifecycle)) | Cluster |
 | `backup-mongodb` † | Start a Job from ClickStack MongoDB's backup CronJob (`observability/backup-mongodb`), wait for it and show its log; the job dumps, encrypts and publishes to `clickstack-mongodb/` ([operations](operations.md#backups-and-recovery)) | Cluster, S3 |
 | `backup-sqlite` † | Start a Job from each app SQLite database's backup CronJob (`<app>-backup`), wait for them and show their logs; each copies, checks, encrypts and publishes to `app-sqlite/<namespace>/`. No app with a database: nothing to do | Cluster, S3 |
-| `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database from its newest backup in `BACKUP_DIR/sqlite/<app>-<env>/` (`BACKUP_FILE`, `AGE_KEY_FILE`): suspends its HelmRelease, stops the app, checks the copy, keeps the replaced files in `before-restore-<UTC>/`, starts the app ([backups](operations.md#backups-and-recovery)) | Cluster |
+| `restore-sqlite APP= ENV= CONFIRM=<app>/<env>` † | Restore an app's SQLite database from its newest backup in S3 (or `BACKUP_FILE`; `AGE_KEY_FILE`; needs S3 read access): suspends its HelmRelease, stops the app, checks the copy, keeps the replaced files in `before-restore-<UTC>/`, starts the app ([backups](operations.md#backups-and-recovery)) | Cluster |
 
 ## Offline checks
 
@@ -100,8 +100,8 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 | `live-test-lifecycle` † | Prove lifecycle commands on a throwaway app | Cluster (throwaway) |
 | `live-test-reloader` † | Prove Reloader's opt-in and namespace scope | Cluster (throwaway) |
 | `live-test-app-template` † | Deploy the generated fixtures through Flux, check, remove | Cluster (throwaway) |
-| `live-test-restore-mongodb` † | Restore the latest backup into a throwaway namespace and check it (`BACKUP_FILE`, `AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
-| `live-test-restore-sqlite` † | Back up a throwaway app's SQLite database, change it, restore it with `restore-sqlite` and check the rows, the kept files and the resumed HelmRelease (`AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
+| `live-test-restore-mongodb` † | Restore the newest backup in S3 (or `BACKUP_FILE`) into a throwaway namespace and check it (`AGE_KEY_FILE`, `KEEP=true`; needs S3 read access) | Cluster (throwaway) |
+| `live-test-restore-sqlite` † | Back up a throwaway app's SQLite database with the backup job, change it, restore it from S3 with `restore-sqlite` and check the rows, the kept files and the resumed HelmRelease (`AGE_KEY_FILE`, `KEEP=true`) | Cluster (throwaway) |
 | `live-test-call-identity` † | Prove a callee with no API token verifies a caller's short-lived, audience-bound service-account token against the cluster's public keys handed to it as a ConfigMap, and that the Kubernetes API refuses that token. Waits about 8 minutes for the kubelet to replace the token (`SKIP_ROTATION=true` skips that) | Cluster (throwaway) |
 | `live-test-team-scenario CALLER= CALLEE= SUBSCRIBER= [ENV=staging]` † | Send one request through three deployed, linked apps (CALLER calls CALLEE, which publishes an event SUBSCRIBER receives) and check in ClickStack that one trace holds all three, with the caller named and each app's team. The apps need the stack templates' example routes | Cluster (one request; creates nothing) |
 | `live-test-network-policy` † | Prove a NetworkPolicy selecting an app's pods blocks another namespace while Traefik, probes and an unselected pod on 8089 keep working | Cluster (throwaway) |
@@ -110,7 +110,6 @@ Verbs: `check` and `check-*` never touch the cluster and `verify-*` only read it
 
 | Target | Does | Touches |
 | --- | --- | --- |
-| `host-backup`, `host-backup-delete` † | Install or remove the retired daily system timer (`swhurl-backup-mongodb`); the backup jobs replaced it, and `host-backup-delete` switches it off (removed with H5 of [plan section 25](plan.md#25-per-database-backups--designed-18-october-2026-started-18-october-2026)) | Host |
 | `host-heartbeat`, `host-heartbeat-delete` † | Install or remove the five-minute notification checker heartbeat timer (`swhurl-notification-heartbeat`) | Host |
 | `host-dns`, `host-dns-delete` † | Install or remove the Route 53 dynamic DNS system timer (`aws-dns-updater`, every 10 minutes; records in `host/dns.env`) | Host |
 

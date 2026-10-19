@@ -60,7 +60,7 @@ spec:
           insecure_skip_verify: true
         hostmetrics:
           collection_interval: 30s
-        # Host systemd timers (make host-backup, make host-dns) append their output
+        # Host systemd timers (make host-dns, make host-heartbeat) append their output
         # to /var/log/swhurl-platform/<unit>.log; the file name becomes service.name
         # and [ERROR]/[BAD]/[WARN]/[INFO]/[OK] prefixes become severities.
         file_log/host-timers:

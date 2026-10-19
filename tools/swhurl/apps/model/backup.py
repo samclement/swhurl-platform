@@ -39,21 +39,17 @@ def variables(values: dict) -> list[dict]:
     return [{'name': name, **(value if isinstance(value, dict) else {'value': str(value)})} for name, value in values.items()]
 
 
-def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
-    if entry.release.database != 'sqlite':
-        return
-    app, namespace = draft.instance.app, draft.instance.namespace
-    name, uid = f'{app}-backup', entry.release.uid
-    port = entry.settings.allocations.egress_port
-    proxied = egress.variables(port) if platform.egress and port is not None else {}
-    proxy = {key: value for key, value in proxied.items() if key in PROXY_VARIABLES}
+def manifests(app: str, namespace: str, uid: int, *, claim: str, proxy: dict, path: str = SQLITE_PATH,
+              key: tuple[str, str] = ('${BACKUP_AWS_ACCESS_KEY_ID}', '${BACKUP_AWS_SECRET_ACCESS_KEY}')) -> tuple[dict, dict]:
+    """The job's Secret (``key``: Flux substitutes the references) and CronJob; the SQLite restore live test
+    runs the same job on its throwaway app."""
+    name = f'{app}-backup'
     secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': name, 'namespace': namespace}, 'type': 'Opaque',
-              'stringData': {'AWS_ACCESS_KEY_ID': '${BACKUP_AWS_ACCESS_KEY_ID}',
-                             'AWS_SECRET_ACCESS_KEY': '${BACKUP_AWS_SECRET_ACCESS_KEY}'}}
+              'stringData': {'AWS_ACCESS_KEY_ID': key[0], 'AWS_SECRET_ACCESS_KEY': key[1]}}
     container = {
         'name': 'backup', 'image': BACKUP_IMAGE, 'args': ['backup-job-sqlite'],
         'env': variables({**proxy, 'AGE_RECIPIENT': BACKUP_RECIPIENT, 'BACKUP_S3_URI': f'{SQLITE_BACKUP_URI}{namespace}/',
-                          'BACKUP_SOURCE': f'{namespace}/{app}', DATABASE_PATH_VARIABLE: SQLITE_PATH}),
+                          'BACKUP_SOURCE': f'{namespace}/{app}', DATABASE_PATH_VARIABLE: path}),
         'envFrom': [{'secretRef': {'name': name}}],
         'resources': {'requests': {'cpu': '10m', 'memory': '64Mi'}, 'limits': {'memory': '256Mi'}},
         'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},
@@ -68,7 +64,7 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
                                 'seccompProfile': {'type': 'RuntimeDefault'}},
             'containers': [container],
             # The app's own claim: ReadWriteOnce admits a second pod on the same (only) node.
-            'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': app}},
+            'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': claim}},
                         {'name': 'scratch', 'emptyDir': {'sizeLimit': '1Gi'}}, {'name': 'tmp', 'emptyDir': {}}],
         },
     }
@@ -79,6 +75,18 @@ def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
                  'successfulJobsHistoryLimit': 1, 'failedJobsHistoryLimit': 3,
                  'jobTemplate': {'spec': {'backoffLimit': 2, 'activeDeadlineSeconds': 900, 'template': pod}}},
     }
+    return secret, job
+
+
+def apply(draft: Draft, entry: Entry, platform: Platform) -> None:
+    if entry.release.database != 'sqlite':
+        return
+    app, namespace = draft.instance.app, draft.instance.namespace
+    uid = entry.release.uid
+    port = entry.settings.allocations.egress_port
+    proxied = egress.variables(port) if platform.egress and port is not None else {}
+    proxy = {key: value for key, value in proxied.items() if key in PROXY_VARIABLES}
+    secret, job = manifests(app, namespace, uid, claim=app, proxy=proxy)
     draft.add_file(BACKUP_FILE, [secret, job])
     draft.depend(BACKUP_UNIT)
     draft.unit['spec']['postBuild'] = {'substituteFrom': [{'kind': 'Secret', 'name': BACKUP_WRITER, 'optional': False}]}

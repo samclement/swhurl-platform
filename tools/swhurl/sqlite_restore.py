@@ -1,16 +1,18 @@
 """Restore one app's SQLite database from its backup (the ``--database sqlite`` capability).
 
-    restore-sqlite <app> <env>   CONFIRM=<app>/<env>, optional BACKUP_FILE, BACKUP_DIR, AGE_KEY_FILE
+    restore-sqlite <app> <env>   CONFIRM=<app>/<env>, optional BACKUP_FILE, AGE_KEY_FILE, SQLITE_S3_URI
 
-Takes the newest ``BACKUP_DIR/sqlite/<app>-<env>/sqlite-*.db.age`` (or BACKUP_FILE), checks its
-checksum and that it came from this instance, then:
+Downloads the newest complete backup from ``SQLITE_S3_URI<app>-<env>/`` into a private temporary
+directory with the AWS CLI's own credentials (S3 read access), or takes BACKUP_FILE (a local
+``sqlite-*.db.age`` with its metadata beside it), checks its checksum and that it came from this
+instance, then:
 
   1. suspends the instance's HelmRelease (so no upgrade starts the app mid-restore) and scales
      the Deployment to 0, waiting until its pods are gone;
-  2. starts a pod as the app's user on the app's claim (as backup-sqlite does) and streams
+  2. starts a pod as the app's user on the app's claim (as its backup job does) and streams
      ``age -d`` into it, so plaintext never reaches this host's disk;
   3. checks the restored file against the backup's metadata (SHA-256 of the plaintext, recorded by
-     backup-sqlite in the pod, then ``integrity_check`` and the table count);
+     the backup job, then ``integrity_check`` and the table count);
   4. moves the current database and its ``-wal``/``-shm`` files into ``before-restore-<UTC>/``
      beside it, then puts the restored file in their place;
   5. scales back, resumes the HelmRelease and waits for the rollout.
@@ -25,26 +27,92 @@ import json
 import os
 import posixpath
 import sys
+import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import backupset
+from swhurl.apps.contract import DATABASE_PATH_VARIABLE
 from swhurl.apps.instance import Instance
 from swhurl.backupset import BackupError
 from swhurl.run import CommandError, Runner
-from swhurl.sqlite_backup import Database, backups, backups_in, find, plain_fingerprint, pod_manifest
+from swhurl.sqlite_backup import backups_in, uri
 
+# The restore pod's sqlite3 and coreutils.
+IMAGE = 'docker.io/keinos/sqlite3:3.53.4@sha256:637e4ac26b6b5c0bf0acf0f5625f7d18453f39407bee18787d1d16875ad07e24'
 HELM_NAME = 'helm.toolkit.fluxcd.io/name'
 
 
-def newest(backup_dir: Path, namespace: str) -> Path:
-    """The newest backup of the instance in ``namespace``."""
-    archives = backups(backup_dir, namespace)
-    archive = archives.newest()
-    if archive is None:
-        raise BackupError(f'no backup in {archives.directory} (set BACKUP_FILE, or copy one from S3 there)')
-    return archive
+@dataclass(frozen=True)
+class Database:
+    namespace: str
+    app: str
+    claim: str
+    mount: str  # where the app mounts the claim
+    path: str  # DATABASE_PATH, inside the mount
+    uid: int
+
+    @property
+    def name(self) -> str:
+        return f'{self.namespace}/{self.app}'
+
+    @property
+    def in_pod(self) -> str:
+        """The database's path in the restore pod, which mounts the claim at /data."""
+        return '/data/' + self.path.removeprefix(self.mount).lstrip('/')
+
+
+def database(runner: Runner, namespace: str) -> Database:
+    """The one Deployment in ``namespace`` whose main container has DATABASE_PATH, and the claim it is on."""
+    found = []
+    for deploy in runner.json(['kubectl', '-n', namespace, 'get', 'deployments', '-o', 'json']).get('items') or []:
+        spec = deploy['spec']['template']['spec']
+        for container in spec.get('containers') or []:
+            path = {v.get('name'): v.get('value') for v in container.get('env') or []}.get(DATABASE_PATH_VARIABLE)
+            if not path:
+                continue
+            claims = {v['name']: v['persistentVolumeClaim']['claimName'] for v in spec.get('volumes') or []
+                      if 'persistentVolumeClaim' in v}
+            mounts = [m for m in container.get('volumeMounts') or []
+                      if m['name'] in claims and path.startswith(m['mountPath'].rstrip('/') + '/')]
+            if not mounts:
+                raise BackupError(f"{namespace}/{deploy['metadata']['name']}: "
+                                  f'{DATABASE_PATH_VARIABLE}={path} is not on a mounted claim')
+            uid = (spec.get('securityContext') or {}).get('runAsUser', 65532)
+            found.append(Database(namespace, deploy['metadata']['name'], claims[mounts[0]['name']],
+                                  mounts[0]['mountPath'], path, uid))
+    if len(found) != 1:
+        raise BackupError(f'expected one SQLite database in {namespace}, found {len(found)}')
+    return found[0]
+
+
+def pod_manifest(db: Database, name: str) -> dict:
+    """The restore pod: the app's user, the app's claim, nothing else (as hardened as an app pod)."""
+    return {
+        'apiVersion': 'v1', 'kind': 'Pod',
+        'metadata': {'name': name, 'namespace': db.namespace},
+        'spec': {
+            'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'activeDeadlineSeconds': 900,
+            'securityContext': {'runAsNonRoot': True, 'runAsUser': db.uid, 'runAsGroup': db.uid, 'fsGroup': db.uid,
+                                'seccompProfile': {'type': 'RuntimeDefault'}},
+            'containers': [{
+                'name': 'sqlite', 'image': IMAGE, 'command': ['sleep', '900'],
+                'resources': {'requests': {'cpu': '10m', 'memory': '32Mi'}, 'limits': {'memory': '256Mi'}},
+                'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
+                                    'capabilities': {'drop': ['ALL']}},
+                'volumeMounts': [{'name': 'data', 'mountPath': '/data'}, {'name': 'tmp', 'mountPath': '/tmp'}],
+            }],
+            'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': db.claim}},
+                        {'name': 'tmp', 'emptyDir': {}}],
+        },
+    }
+
+
+def sha256_in_pod(runner: Runner, exec_pod: list[str], path: str) -> str:
+    """SHA-256 of a file in the pod, so the restored copy is checked without plaintext on this host."""
+    return runner.output([*exec_pod, 'sha256sum', path]).split()[0]
 
 
 def checked_metadata(db: Database, archive: Path) -> dict:
@@ -110,7 +178,7 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
         runner.pipe(['age', '-d', '-i', age_key, archive],
                     ['kubectl', '-n', ns, 'exec', '-i', pod, '-c', 'sqlite', '--', 'sh', '-c', 'cat > "$1"', 'sh',
                      incoming], mutating=True)
-        _, digest = plain_fingerprint(runner, exec_pod, incoming)
+        digest = sha256_in_pod(runner, exec_pod, incoming)
         check = runner.output([*exec_pod, 'sqlite3', incoming, 'PRAGMA integrity_check;']).strip()
         tables = runner.output([*exec_pod, 'sqlite3', incoming,
                                 "SELECT count(*) FROM sqlite_master WHERE type = 'table';"]).strip()
@@ -134,13 +202,6 @@ def restore(runner: Runner, db: Database, archive: Path, age_key: Path, *, stamp
     return aside_app
 
 
-def database(runner: Runner, namespace: str) -> Database:
-    found = [db for db in find(runner) if db.namespace == namespace]
-    if len(found) != 1:
-        raise BackupError(f'expected one SQLite database in {namespace}, found {len(found)}')
-    return found[0]
-
-
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     argv = argv or []
     if len(argv) != 2:
@@ -159,8 +220,9 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     try:
         db = database(runner, instance.namespace)
         named = os.environ.get('BACKUP_FILE')
-        archive = Path(named) if named else newest(backupset.backup_dir(os.environ), db.namespace)
-        restore(runner, db, archive, backupset.age_key(os.environ), stamp=backupset.stamp())
+        with tempfile.TemporaryDirectory(prefix='restore-sqlite-') as scratch:
+            archive = Path(named) if named else backups_in(Path(scratch)).fetch(runner, uri(db.namespace))
+            restore(runner, db, archive, backupset.age_key(os.environ), stamp=backupset.stamp())
     except (BackupError, CommandError, ValueError) as error:
         print(f'[ERROR] {error}', file=sys.stderr)
         return 1

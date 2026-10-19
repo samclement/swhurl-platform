@@ -1,27 +1,32 @@
 """
-Prove an app's SQLite database restores from its backup (backup-sqlite, restore-sqlite):
+Prove an app's SQLite database restores from its backup job's archive in S3 (restore-sqlite):
   - a throwaway HelmRelease of app-template in namespace sqlite-restore-test (label
     platform.swhurl.com/sqlite-restore-test=true) holds a WAL-mode database with rows one, two
-  - backup-sqlite's backup of it goes to a scratch directory (no S3 upload)
+  - the same backup job an app gets (suspended CronJob, started once as make backup-sqlite does) publishes
+    it to SQLITE_S3_URI sqlite-restore-test/ with the upload-only key from flux-system/backup-writer
   - the live data then changes (row three added, row one deleted)
-  - restore-sqlite brings back one, two; the replaced files are kept beside it and still read two, three
+  - restore-sqlite downloads the backup from S3 and brings back one, two; the replaced files are kept beside
+    it and still read two, three
   - the HelmRelease is resumed and Ready, and the app runs again
-Needs the age key (AGE_KEY_FILE, default ./age.agekey). Deletes the namespace and its volume afterwards
-(KEEP=true leaves them for inspection).
+Needs the age key (AGE_KEY_FILE, default ./age.agekey) and S3 read and delete access through the AWS CLI's
+own credentials. Deletes the namespace, its volume and the test's S3 prefix afterwards (KEEP=true leaves
+them for inspection).
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
-from swhurl import backupset, platform
+from swhurl import backup_job, backupset, platform
+from swhurl.apps.contract import BACKUP_WRITER
+from swhurl.apps.model import backup
 from swhurl.backupset import BackupError
 from swhurl.livetests import LiveTest, Preflight, run_live_test
-from swhurl.recovery import BackupSettings, sops_recipient
-from swhurl.sqlite_backup import IMAGE, backup_one
-from swhurl.sqlite_restore import database, restore
+from swhurl.sqlite_backup import backups_in, uri
+from swhurl.sqlite_restore import IMAGE, database, restore
 
 NS = 'sqlite-restore-test'
 LABEL = platform.label('sqlite-restore-test')
@@ -67,14 +72,17 @@ def body(t: LiveTest) -> None:
         raise Preflight(f'Cannot read the age key {age_key} (set AGE_KEY_FILE)')
     if t.get('get', 'namespace', NS):
         raise Preflight(f'Namespace {NS} already exists; delete it first')
-    scratch = Path(tempfile.mkdtemp(prefix='sqlite-restore-test-'))
+    published = uri(NS)
+    scratch = t.cleanup.enter_context(tempfile.TemporaryDirectory(prefix='sqlite-restore-test-'))
 
     def cleanup() -> None:
-        shutil.rmtree(scratch, ignore_errors=True)
         if os.environ.get('KEEP') == 'true':
-            t.report.info(f'KEEP=true: leaving namespace {NS}')
-        elif t.delete_namespace_if_labelled(NS, LABEL, wait=True):
+            t.report.info(f'KEEP=true: leaving namespace {NS} and {published}')
+            return
+        if t.delete_namespace_if_labelled(NS, LABEL, wait=True):
             t.report.info(f'Deleted namespace {NS} and its volume')
+        t.runner.run(['aws', 's3', 'rm', '--recursive', '--only-show-errors', published], check=False)
+        t.report.info(f'Deleted the test backups in {published}')
     t.cleanup.callback(cleanup)
 
     t.step('Throwaway app with a SQLite database')
@@ -86,11 +94,25 @@ def body(t: LiveTest) -> None:
            "INSERT INTO notes(body) VALUES ('one'), ('two');")
     t.check(sql(t, ROWS) == 'one,two', 'database holds one, two', 'seeding the database failed')
 
-    t.step('Backup, then change the live data')
+    t.step('Backup job, then change the live data')
     db = database(t.runner, NS)
+    writer = (t.runner.json(['kubectl', '-n', 'flux-system', 'get', 'secret', BACKUP_WRITER, '-o', 'json'],
+                            secret_output=True) or {}).get('data') or {}
+    key = tuple(base64.b64decode(writer.get(name, '')).decode()
+                for name in ('BACKUP_AWS_ACCESS_KEY_ID', 'BACKUP_AWS_SECRET_ACCESS_KEY'))
+    for value in key:
+        t.runner.add_secret(value)
+    if not all(key):
+        raise Preflight(f'flux-system/{BACKUP_WRITER} has no upload key')
+    secret, cronjob = backup.manifests(APP, NS, db.uid, claim=db.claim, proxy={}, path=DB, key=key)
+    cronjob['spec']['suspend'] = True  # started once below, never on its schedule
+    t.runner.run(['kubectl', '-n', NS, 'apply', '-f', '-'], input=json.dumps(secret), secret_output=True)
+    t.apply(cronjob, namespace=NS)
+    failed = backup_job.run_now(t.runner, [(NS, cronjob['metadata']['name'])], sleep=t.sleep, out=t.report.line)
+    if not t.check(not failed, f'backup job published to {published}', 'the backup job failed'):
+        return
+    archive = backups_in(Path(scratch)).fetch(t.runner, published)
     stamp = backupset.stamp()
-    archive = backup_one(t.runner, db, BackupSettings(backup_dir=scratch, recipient=sops_recipient()),
-                         stamp=stamp, out=t.report.line)
     sql(t, "INSERT INTO notes(body) VALUES ('three'); DELETE FROM notes WHERE body = 'one';")
     t.check(sql(t, ROWS) == 'two,three', 'live data changed to two, three', 'changing the live data failed')
 

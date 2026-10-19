@@ -1956,3 +1956,16 @@ Plan section 25, H3 (`148e1378`): `backup-mongodb` and `demo-orders-staging`'s `
 ## Backup jobs beside the timer (18 October 2026)
 
 Plan section 25, H4 part one (`3d193d8c`): all five backup CronJobs are unsuspended, so from 19 October each database is backed up by its job and by the host timer. `make verify-platform` now judges freshness from S3 alone, counting a backup only with its metadata, and expects one for every instance whose `release.yaml` declares SQLite; it passed with MongoDB 0.3 h old and the four SQLite databases at most 13.9 h old. Validate passed and deployed console image `src-f75e3f121fd0179f` (`d49b118f`). The cutover (`make backup-*` start Jobs from the CronJobs; the timer retired) is on local branch `h4-cutover`, to merge once the operator has switched the timer off.
+
+## Fixed answers per app type (19 October 2026)
+
+Plan section 26, F1 and F2. **Templates:** TypeScript `v0.2.18` (#60, `5215350`) and Kotlin `v0.2.17` (#46, `04752d7`) accept only the app types' answers (a validator on the last question), always render `asyncapi.yaml` and the example flag, and build 4 and 3 types on PR and `main` (was 9 each); all 7 seeds were read back anonymously from GHCR. Each type's render is byte-identical to the previous release's with `events=asyncapi flags=example`, apart from comments and the AsyncAPI tests, which accept a document with no events (a worker with `channels: {}` passed its tests locally on both stacks). **Platform** (`01b38134`, console image `src-aa9882ac54e633ed`): pinned; `make app-repo` requires `TYPE`; `make check-templates` renders the 7 types and one refused set per stack in 16 s (was 221 s uncached, 144 renders) and passed locally and in Validate; `app-new` and `swhurl.yaml` refuse a database for a worker; `make check` passed (824 tests).
+
+**Live,** submitted together at 05:38:09 UTC through the deployed console's New app form (port-forward, hand-set identity), team `demo`, TypeScript:
+
+| App | Type | `.copier-answers.yml` | Platform PR | Available on its seed | Then |
+| --- | --- | --- | --- | --- | --- |
+| `swhurl-try-28` | Web app | `v0.2.18`, web, sqlite, openapi, vite (no events or flags keys) | #85 merged itself at 141 s | 204 s, `0-e2245bc` | own build `1-e2245bc` |
+| `swhurl-try-29` | Worker | `v0.2.18`, worker, none, none, none | #84 merged itself at 153 s | 206 s, `0-b5ae9e2` | own build `1-b5ae9e2` |
+
+The web app has a Service, Ingress, a claim and `DATABASE_PATH`, publishes `visited`; `http://` answers 301 to `https://`, which signed out answers 302 to Google sign-in (page and `/api/*`); signed in, `/` serves the page and `/api/hello` answers as the person with a visit count, and `/openapi.json` names the app. The worker has no Service, Ingress or claim and publishes `worked`; its first run was refused by NATS (`Authorization Violation`, the known wait for the server's config) and then reported `WORK DONE` every minute (`shout` is on in staging). `make app-status` shows both Healthy and `make verify-platform` passed. Both instances stay until the operator approves removing them (the web app's volume needs `make destroy-data`).

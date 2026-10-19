@@ -142,6 +142,21 @@ class RenderTargetTests(unittest.TestCase):
         with self.assertRaises(actions.ActionError):
             changes.render_targets(FakeRunner(), api.github, HEAD)
 
+    def test_held_later_promotion_waits_for_render_not_the_healthy_previous_image(self):
+        record_path = 'apps/hello/prod/release.yaml'
+        promoted = yaml.safe_load(MAIN[record_path])
+        promoted['image'] = new.parse_image(IMAGE)
+        # GitHub's merge changes only the records. Production's rendered HelmRelease and pod
+        # still run the previous image until Render pushes its follow-up commit.
+        with mock.patch.dict(MAIN, {record_path: yaml.safe_dump(promoted).encode()}):
+            target = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['hello/prod']
+        self.assertEqual((target.hash, target.digest), (stages.UNRENDERED, 'sha256:' + 'a' * 64))
+        old_hash = (yaml.safe_load(MAIN['apps/hello/prod/helmrelease.yaml'])['metadata']['annotations']
+                    ['platform.swhurl.com/render'])
+        progress = stages.judge('promote', State('healthy'), target, target, old_hash, True, True)
+        self.assertEqual((progress.state, progress.detail), ('applying', 'main has not rendered it yet'))
+        self.assertNotIn(progress.state, stages.REACHED, 'the old image must not persist a first-seen time')
+
 
 class ConsolePrProgressTests(unittest.TestCase):
     def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=(),

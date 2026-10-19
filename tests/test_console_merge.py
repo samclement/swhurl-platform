@@ -163,10 +163,10 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(self.pushes(runner), [])
         return runner
 
-    def test_a_held_unvalidated_or_moved_pr_is_skipped_and_a_failed_check_is_held(self):
+    def test_a_held_unvalidated_or_moved_pr_is_skipped_and_a_failed_check_is_retryable(self):
         held = {**self.pr, 'labels': []}
         for runner, error in [(self.runner(passed=False), merge.Skip), (self.runner(latest=held), merge.Skip),
-                              (self.runner(current='d' * 40), merge.Skip), (self.runner(validation=1), merge.Hold)]:
+                              (self.runner(current='d' * 40), merge.Skip), (self.runner(validation=1), CommandError)]:
             with self.subTest(error=error), self.assertRaises(error):
                 self.check(runner)
             self.assertEqual(self.pushes(runner), [])
@@ -215,7 +215,7 @@ class MergeTests(unittest.TestCase):
 
     def test_new_app_validation_failure_and_base_race_never_push(self):
         self.new_app()
-        for runner, error in ((self.runner(validation=1), merge.Hold), (self.runner(current='d' * 40), merge.Skip)):
+        for runner, error in ((self.runner(validation=1), CommandError), (self.runner(current='d' * 40), merge.Skip)):
             with self.subTest(error=error), self.assertRaises(error):
                 self.check(runner)
             self.assertEqual(self.pushes(runner), [])
@@ -302,7 +302,7 @@ class PromotionGateTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'main'
         shutil.copytree(baseline(), self.root)
-        self.staged = {IMAGE.split('@')[1]}  # the digests staging's release.yaml has held on main
+        self.staged = []  # complete staging Release snapshots selected on main, not a set of digest strings
         self.pr = {'state': 'open', 'head': {'ref': 'console/promote-example-staging-aaaaaaa', 'sha': HEAD,
                                            'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
                    'labels': [{'name': 'auto-merge'}], 'title': 'apps: promote example/staging to example/prod',
@@ -323,13 +323,15 @@ class PromotionGateTests(unittest.TestCase):
                     shutil.copyfile(self.base / path, self.head / path)
                 else:
                     (self.head / path).unlink()
+        self.staged.append((self.base / 'apps/example/staging/release.yaml').read_text())
         if edit_head:
             edit_head(self.head)
         self.files = sorted(merge.changed_files(self.base, self.head))
 
-    def runner(self, *, checks=0, push_failures=0, latest=None):
+    def runner(self, *, checks=0, push_failures=0, latest=None, history_failure=0, merge_failure=0, sync_failure=0):
         runner = FakeRunner()
         reads, self.attempts = 0, 0
+        self.conflicts = ''
 
         def pr(args, _):
             nonlocal reads
@@ -346,7 +348,10 @@ class PromotionGateTests(unittest.TestCase):
             paths = set(merge.changed_files(self.base, self.head))
             ours = set(merge.changed_files(self.base, work))
             conflicts = [path for path in paths & ours if not merge.same_file(self.head / path, work / path)]
+            if merge_failure:
+                return Result(args, merge_failure, '', 'fatal: could not read object')
             if conflicts:
+                self.conflicts = '\n'.join(conflicts)
                 return Result(args, 1, '', f'CONFLICT (content): Merge conflict in {conflicts[0]}')
             for path in paths:
                 if (self.head / path).is_file():
@@ -364,8 +369,13 @@ class PromotionGateTests(unittest.TestCase):
             return Result(args)
 
         def logged(args, _):
-            digest = next(arg[2:] for arg in args if arg.startswith('-S'))
-            return Result(args, stdout='f' * 40 + '\n' if digest in self.staged else '')
+            if history_failure:
+                return Result(args, history_failure, '', 'fatal: could not read history')
+            return Result(args, stdout='\n'.join(f'{i + 1:040x}' for i in range(len(self.staged))))
+
+        def shown(args, _):
+            revision = args[2].split(':', 1)[0]
+            return Result(args, stdout=self.staged[int(revision, 16) - 1])
 
         def push(args, _):
             self.attempts += 1
@@ -383,6 +393,8 @@ class PromotionGateTests(unittest.TestCase):
                 return three_way(argv, cwd)
             if argv[:4] == (sys.executable, '-m', 'swhurl', 'app-sync'):
                 runner.calls.append(argv)
+                if sync_failure:
+                    return Result(argv, sync_failure, '', 'temporary render tool failure')
                 with contextlib.redirect_stdout(io.StringIO()):
                     return Result(argv, edit.main_sync(['--root', str(cwd)]))
             return real(argv, input=input, env=env, cwd=cwd)
@@ -395,6 +407,8 @@ class PromotionGateTests(unittest.TestCase):
          .on('git', 'worktree', 'add', handler=worktree)
          .on('git', 'worktree', 'remove', handler=removed)
          .on('git', 'log', handler=logged)
+         .on('git', 'show', handler=shown)
+         .on('git', 'diff', '--name-only', '--diff-filter=U', handler=lambda args, _: Result(args, stdout=self.conflicts))
          .on('git', 'push', 'origin', '--delete')
          .on('git', 'push', handler=push)
          .on(*merge.GIT, 'commit-tree', stdout=COMMIT)
@@ -529,16 +543,60 @@ class PromotionGateTests(unittest.TestCase):
         runner = self.held("not example's promotion records")
         self.assertFalse([c for c in runner.calls if c[:3] == ('git', 'worktree', 'add')], 'nothing is merged')
 
-    def test_a_merge_conflict_staging_never_ran_and_failed_checks_are_held(self):
+    def test_a_merge_conflict_and_a_release_not_selected_in_staging_are_held(self):
         self.open()
         record = self.root / 'apps/example/prod/release.yaml'
         record.write_text(record.read_text().replace(PROD_TAG, '4-abcdef0'))
         self.held('conflicts with main: close it and promote again')
         shutil.copyfile(self.base / 'apps/example/prod/release.yaml', record)
         self.staged.clear()
-        self.held('an image staging never ran')
-        self.staged.add(IMAGE.split('@')[1])
-        self.held('fails make check-repo check-apps: \\[BAD\\] policy: broken', self.runner(checks=1))
+        self.held('does not match staging.*history')
+
+    def test_history_merge_render_and_check_errors_keep_the_label_and_never_push(self):
+        self.open()
+        for failure in ({'history_failure': 128}, {'merge_failure': 128}, {'sync_failure': 1}, {'checks': 1}):
+            with self.subTest(failure=failure):
+                runner = self.runner(**failure)
+                with mock.patch.object(merge, 'ROOT', self.root), \
+                        mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(merge.main(['7', HEAD], runner), 1)
+                self.assertEqual(self.pushes(runner), [])
+                self.assertFalse([call for call in runner.calls if call[:4] == ('gh', 'api', '--method', 'DELETE')],
+                                 'an operational error must not remove auto-merge')
+                self.assertFalse([call for call in runner.calls if call[:4] == ('gh', 'api', '--method', 'POST')],
+                                 'an operational error must not leave a permanent refusal')
+
+    def test_a_retagged_rollback_or_tampered_release_cannot_use_a_staged_digest(self):
+        prod = self.root / 'apps/example/prod/release.yaml'
+        prod.write_text(prod.read_text().replace(PROD_TAG, '3-abcdef0'))
+        self.sync()
+        def retag(tree):
+            record = tree / 'apps/example/prod/release.yaml'
+            record.write_text(record.read_text().replace('2-abcdef0', '999-abcdef0'))
+        self.open(retag)
+        self.held('does not match staging.*history')
+        prod.write_text(prod.read_text().replace('3-abcdef0', PROD_TAG))
+        self.sync()
+        for before, after in (('healthPath: /healthz', 'healthPath: /tampered'), ('uid: 65532', 'uid: 10000')):
+            def tamper(tree, before=before, after=after):
+                record = tree / 'apps/example/prod/release.yaml'
+                text = record.read_text()
+                self.assertIn(before, text)
+                record.write_text(text.replace(before, after))
+            self.open(tamper)
+            self.held('does not match staging.*history')
+
+    def test_a_digest_in_a_comment_is_not_a_selected_image(self):
+        self.open()
+        text = self.staged[-1]
+        self.staged = [text.replace('a' * 64, 'd' * 64) + '\n# observed digest ' + IMAGE.split('@')[1] + '\n']
+        self.held('does not match staging.*history')
+        runner = self.runner()
+        self.held('does not match staging.*history', runner)
+        history = next(call for call in runner.calls if call[:2] == ('git', 'log'))
+        self.assertIn('--first-parent', history, 'a side branch is not evidence that main selected a release')
+        self.assertIn('--diff-filter=AM', history, 'only snapshots with the record present are read')
 
     def test_a_label_removed_during_the_checks_is_not_pushed(self):
         self.open()

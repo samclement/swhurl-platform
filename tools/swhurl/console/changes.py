@@ -256,10 +256,15 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                 release = releases.get(name)
                 if release is None and (mine is None or record is None):
                     continue  # neither rendered nor recorded: not an instance
+                rendered_digest = helmrelease.image(release).get('digest', '') if release else ''
+                requested_digest = str(((yamlio.load(record.decode()) or {}).get('image') or {}).get('digest', '')) \
+                    if record is not None else rendered_digest
+                # A held later promotion merges new records alongside the old HelmRelease. Its
+                # healthy old pod is not evidence that the promoted image has been rendered or run.
+                pending = release is None or requested_digest != rendered_digest
                 found[name] = Target(
-                    (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '') if release else UNRENDERED,
-                    helmrelease.image(release).get('digest', '') if release else
-                    str(((yamlio.load(record.decode()) or {}).get('image') or {}).get('digest', '')),
+                    UNRENDERED if pending else (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
+                    requested_digest,
                     digest(app, mine) if mine is not None else '',
                     digest(app, record, mine) if mine is not None and record is not None else '')
             return found

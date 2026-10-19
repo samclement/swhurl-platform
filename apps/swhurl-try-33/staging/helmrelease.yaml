@@ -4,8 +4,8 @@ metadata:
   name: swhurl-try-33
   namespace: swhurl-try-33-staging
   annotations:
-    platform.swhurl.com/offers: 7d37e90
-    platform.swhurl.com/render: 5ca1c3e30b58afb0e33b6558b86f0f366c3862826f253c7a696bb471f47ae83e
+    platform.swhurl.com/offers: 737a1ec
+    platform.swhurl.com/render: 91d17a8619234d549149e02dcee9f5ab7bef0ef7e0a9e7c78734ebb83b02297b
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-try-33
-              tag: 0-7d37e90
-              digest: sha256:a1a18224b70ff15e8719eb1d407a6d6c705c91c676bbbb69d53cef2887c52542
+              tag: 2-737a1ec
+              digest: sha256:ed93da082df8eb7f1f8c2a559ffdd206466a953b799fcfa6a894d1603e8c7d11
             resources:
               requests:
                 cpu: 10m
@@ -58,7 +58,7 @@ spec:
               SWHURL_APP: swhurl-try-33
               SWHURL_ENV: staging
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
-              SWHURL_DESCRIPTION: A swhurl app
+              SWHURL_DESCRIPTION: R3 default-branch description
               HOST_IP:
                 valueFrom:
                   fieldRef:

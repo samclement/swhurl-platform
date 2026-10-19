@@ -2,12 +2,13 @@
 version: 1
 image:
   repository: ghcr.io/samclement/swhurl-try-33
-  tag: 0-7d37e90
-  digest: sha256:a1a18224b70ff15e8719eb1d407a6d6c705c91c676bbbb69d53cef2887c52542
+  tag: 2-737a1ec
+  digest: sha256:ed93da082df8eb7f1f8c2a559ffdd206466a953b799fcfa6a894d1603e8c7d11
 kind: worker
 uid: 65532
+stack: typescript
 telemetry: true
-description: A swhurl app
+description: R3 default-branch description
 publishes:
 - worked
-offers: 7d37e90
+offers: 737a1ec

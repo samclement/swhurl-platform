@@ -30,7 +30,7 @@ spec:
       logFormat: json
       watchGlobally: false
       # Add a namespace here before annotating a workload in it.
-      namespaces: [ingress, logging, console, swhurl-try-10-staging, swhurl-try-13-staging, swhurl-try-12-staging, demo-orders-staging, demo-notifier-staging, demo-orders-prod, swhurl-try-12-prod, swhurl-try-10-prod, demo-shop-staging, demo-shopper-staging, swhurl-try-11-staging, demo-shop-prod, swhurl-try-11-prod, swhurl-try-30-staging]
+      namespaces: [ingress, logging, console, swhurl-try-10-staging, swhurl-try-13-staging, swhurl-try-12-staging, demo-orders-staging, demo-notifier-staging, demo-orders-prod, swhurl-try-12-prod, swhurl-try-10-prod, demo-shop-staging, demo-shopper-staging, swhurl-try-11-staging, demo-shop-prod, swhurl-try-11-prod, swhurl-try-30-staging, swhurl-try-30-prod]
       ignoreConfigMaps: true
       # Patch a pod-template annotation rather than injecting env vars.
       reloadStrategy: annotations

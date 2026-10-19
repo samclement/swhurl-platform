@@ -233,3 +233,16 @@ data:
               subscribe:
                 allow:
                 - _INBOX.prod.swhurl-try-12.>
+          - nkey: UDMFZNPD46HTW5V5UTF4S6DV2RPYHL6YAUU7JJFM7BPBXA4O3DA5XVQC
+            permissions:
+              publish:
+                allow:
+                - $JS.API.INFO
+                - $JS.API.STREAM.INFO.KV_flags-prod
+                - $JS.API.CONSUMER.CREATE.KV_flags-prod.*.$KV.flags-prod.prod.swhurl-try-30.>
+                - $JS.API.CONSUMER.DELETE.KV_flags-prod.*
+                - $JS.API.CONSUMER.INFO.KV_flags-prod.*
+                - prod.swhurl-try-30.>
+              subscribe:
+                allow:
+                - _INBOX.prod.swhurl-try-30.>

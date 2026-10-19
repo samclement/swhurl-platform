@@ -2,13 +2,17 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shop
-  tag: 30-c9a263b
-  digest: sha256:fb5a3d5ccb0fdd327b103407ca515ec6623dfc156c11f601dc24001aaf399d21
+  tag: 61-a244f82
+  digest: sha256:e7e516fd6c3897b6d13c5045a9ad97fce094c66bb148e8f95b2ab2cecc0d63ec
 kind: web
 uid: 65532
 stack: typescript
 port: 8080
 healthPath: /healthz
 telemetry: true
+database: sqlite
+description: 'Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log'
 apiPath: /openapi.json
-offers: c9a263b
+publishes:
+- visited
+offers: a244f82

@@ -8,3 +8,5 @@ metadata:
     platform.swhurl.com/environment: prod
     platform.swhurl.com/exposure: authenticated-web
     platform.swhurl.com/team: demo
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled

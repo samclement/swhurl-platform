@@ -4,8 +4,8 @@ metadata:
   name: demo-shop
   namespace: demo-shop-prod
   annotations:
-    platform.swhurl.com/render: 5cd6848dad06c8f1321ac89fe8e2b3d378d58f8113a8efc6cdc8cea52c5aaf4c
-    platform.swhurl.com/offers: c9a263b
+    platform.swhurl.com/offers: a244f82
+    platform.swhurl.com/render: 2ab08cd2fd042d711e715e3234f57ce77ae6524bac547f9410fa49dc15b18711
 spec:
   interval: 30m
   timeout: 3m
@@ -40,8 +40,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/demo-shop
-              tag: 30-c9a263b
-              digest: sha256:fb5a3d5ccb0fdd327b103407ca515ec6623dfc156c11f601dc24001aaf399d21
+              tag: 61-a244f82
+              digest: sha256:e7e516fd6c3897b6d13c5045a9ad97fce094c66bb148e8f95b2ab2cecc0d63ec
             resources:
               requests:
                 cpu: 10m
@@ -61,6 +61,7 @@ spec:
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
               SWHURL_API_PATH: /openapi.json
+              SWHURL_DESCRIPTION: 'Demo: the shop people open; a page that places orders in demo-orders and keeps its own purchase log'
               HOST_IP:
                 valueFrom:
                   fieldRef:
@@ -68,7 +69,9 @@ spec:
               OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4318
               OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
               OTEL_SERVICE_NAME: demo-shop
+              DATABASE_PATH: /data/app.db
               SWHURL_SERVICE_DEMO_ORDERS_URL: http://demo-orders.demo-orders-$(SWHURL_ENV).svc.cluster.local:8080
+              SWHURL_EVENTS_PUBLISH: visited
               SWHURL_EVENTS_NKEY: UBLHEBE7OTP4VO2AU774JTYVGDHCDGNTQMWGQ6Q6L2SE2XFUAAUHF3DV
               SWHURL_EVENTS_URL: nats://nats.messaging.svc.cluster.local:4222
               HTTP_PROXY: http://egress.egress.svc.cluster.local:30112
@@ -103,6 +106,8 @@ spec:
             envFrom:
             - secretRef:
                 name: demo-shop-events
+        replicas: 1
+        strategy: Recreate
         annotations:
           secret.reloader.stakater.com/reload: demo-shop-events
     persistence:
@@ -110,6 +115,14 @@ spec:
         type: emptyDir
         globalMounts:
         - path: /tmp
+      data:
+        type: persistentVolumeClaim
+        storageClass: local-path-retain
+        accessMode: ReadWriteOnce
+        size: 1Gi
+        retain: true
+        globalMounts:
+        - path: /data
       tokens:
         type: projected
         sources:

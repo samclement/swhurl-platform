@@ -62,8 +62,7 @@ class EditTests(unittest.TestCase):
 
     def test_a_promotion_carries_a_new_port_to_production_and_its_callers(self):
         """Release B listens on 9090, A on 8080: staging renders B, production keeps A until the
-        promotion copies B's release.yaml. (A staging deploy still holds a changed need while the app
-        has production: test_staging_gets_what_each_new_image_needs.)"""
+        promotion copies B's release.yaml."""
         self.with_units()
         for env in ('staging', 'prod'):
             self.quiet(edit.set_calls, self.root, 'orders', env, add=['hello'])
@@ -81,7 +80,7 @@ class EditTests(unittest.TestCase):
                     *(port['port'] for rule in network['spec']['ingress'] for port in rule['ports']),
                     int(self.env('orders', env)['SWHURL_SERVICE_HELLO_URL'].rsplit(':', 1)[1])}
         self.assertEqual((listens('staging'), listens('prod')), ({9090}, {8080}))
-        self.assertTrue(policy.drift([self.prod.parent, self.staging.parent]), 'staging ahead of production is drift')
+        self.assertEqual(policy.drift([self.prod.parent, self.staging.parent]), [], 'staging ahead of production: held, not drift')
 
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertEqual(listens('prod'), {9090})
@@ -811,16 +810,48 @@ components:
         self.assertEqual(code, 2)
         self.assertIn('--memory 8Mi (at least 16Mi)', err.getvalue())
 
-    def test_a_new_port_holds_the_image_while_the_app_has_production(self):
+    def test_a_new_database_port_and_secret_name_reach_staging_then_production_with_the_promotion(self):
+        """What production must be ready for no longer holds staging's image while the app has production:
+        the promotion carries it in the same commit as the image, and a person merges that promotion."""
         self.with_units()
         self.built_from_a_repository()
         self.automatic()
-        before = {p: p.read_bytes() for p in self.root.rglob('*.yaml')}
-        with self.assertRaisesRegex(edit.EditError, r'env-drift: staging differs from prod at .*ports.http.port.*'
-                                                    'a new port, secret name or database waits while the app has production'):
-            edit.deploy_staging(self.root, 'orders', opener=self.registry(
-                'orders', ['8-def5678'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9090\nhealthPath: /\nuid: 101\n'}))
-        self.assertEqual({p: p.read_bytes() for p in self.root.rglob('*.yaml')}, before)
+        declared = 'version: 1\nkind: web\nport: 9090\nhealthPath: /\nuid: 101\ndatabase: sqlite\nsecrets: [API_TOKEN]\n'
+        changed, out = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['8-def5678'], {'swhurl.yaml': declared}))
+        self.assertTrue(changed)
+        self.assertIn('database sqlite on a new 1Gi volume', out)
+        prod = self.root / 'apps/orders/prod'
+
+        def values(env):
+            return yaml.safe_load((self.root / 'apps/orders' / env / 'helmrelease.yaml').read_text())['spec']['values']
+        self.assertNotIn('data', values('prod')['persistence'], 'production keeps the old release until the promotion')
+        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [], 'staging ahead of production: held, not drift')
+
+        _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
+        for change in ('port 9000 -> 9090', 'database sqlite on a new 1Gi volume', 'secret names +API_TOKEN'):
+            self.assertIn(change, out)
+        self.assertIn('[INFO] orders/prod reads new secret names API_TOKEN: set their values before merging', out)
+        main = values('prod')['controllers']['main']
+        self.assertEqual((main['replicas'], main['strategy']), (1, 'Recreate'), 'one writer, stop-first')
+        self.assertEqual(main['containers']['main']['env']['DATABASE_PATH'], '/data/app.db')
+        self.assertEqual(values('prod')['persistence']['data']['storageClass'], 'local-path-retain', 'its own volume')
+        self.assertEqual(values('prod')['service']['main']['ports']['http']['port'], 9090)
+        self.assertTrue((prod / contract.BACKUP_FILE).is_file(), 'nightly backups of its own')
+        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [])
+
+    def test_a_rollback_never_crosses_a_database_change(self):
+        self.with_units()
+        self.built_from_a_repository()
+        self.automatic()
+        # Staging runs an image older than production's (6-0000000) that keeps a database production has not.
+        self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry(
+            'orders', ['5-1111111'], {'swhurl.yaml': 'version: 1\nkind: web\nport: 9000\nhealthPath: /\nuid: 101\ndatabase: sqlite\n'}))
+        prod = self.root / 'apps/orders/prod'
+        before = {p: p.read_bytes() for p in prod.rglob('*.yaml')}
+        with self.assertRaisesRegex(edit.EditError, 'older image with another database than production: a rollback never changes'):
+            edit.promote(self.root, 'orders', 'staging', 'prod')
+        self.assertEqual({p: p.read_bytes() for p in prod.rglob('*.yaml')}, before)
 
     def test_health_path_user_telemetry_and_minimum_move_with_the_image_to_production(self):
         self.with_units()
@@ -843,7 +874,8 @@ components:
         self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [], 'not drift: they move with the image')
 
         _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
-        self.assertIn('[OK] orders/prod: requests.memory 32Mi -> 64Mi (the image\'s minimum)', out)
+        self.assertIn("[OK] orders/prod: health path / -> /ready, uid 101 -> 1000, telemetry otlp, requests.memory 32Mi -> 64Mi "
+                      "(the image's minimum)", out)
         self.assertEqual(runs('prod'), runs('staging'))
 
         # Production's own capacity still wins where it is higher; a minimum its quota cannot hold is refused.

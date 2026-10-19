@@ -158,8 +158,15 @@ def replay_promotion(base: Path, head: Path, work: Path, app: str, body: str, ru
     with contextlib.redirect_stdout(io.StringIO()):
         edit.promote(work, app, expect_image=meta['image'], runner=runner)
     shutil.copyfile(instance_folder(base, app, 'staging') / 'helmrelease.yaml', staging.path)
-    if model_sync.read(work)[0][Instance(app, 'prod')].release.publishes != model_sync.read(base)[0][Instance(app, 'prod')].release.publishes:
+    before, after = (model_sync.read(root)[0][Instance(app, 'prod')].release for root in (base, work))
+    if after.publishes != before.publishes:
         raise Hold('the promotion changes what the app publishes, which changes NATS: a person reviews it')
+    # What production must be ready for (per_environment rows held): a person merges it, after setting
+    # the value of any new secret name in production.
+    if moved := [name for name, field in (('port', 'port'), ('database', 'database'), ('secret names', 'secrets'))
+                 if getattr(after, field) != getattr(before, field)]:
+        raise Hold(f"the promotion changes production's {', '.join(moved)}: a person reviews it "
+                   '(and sets any new secret value in production first)')
 
 
 def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: str) -> None:

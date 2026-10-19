@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-notifier
-  tag: 13-a82c785
-  digest: sha256:dcfc7b3f0f872c2e68fea93c74f7e061a6e295e4e7594c341a6a54302d1dd2b3
+  tag: 21-eab35a3
+  digest: sha256:578f4aa722861ac50fcc67805e9e82bb0cfb67c2503216c276b84e9dd09a09be
 kind: worker
 uid: 65532
 stack: kotlin
@@ -12,3 +12,5 @@ resources:
   cpu: 100m
   memory: 192Mi
   memoryLimit: 384Mi
+description: 'Demo: receives demo-orders.created and tells the team about big orders'
+offers: eab35a3

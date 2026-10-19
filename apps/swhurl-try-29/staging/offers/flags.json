@@ -1,8 +1,0 @@
-{
-  "shout": {
-    "type": "boolean",
-    "description": "Say hello in capitals",
-    "default": false,
-    "staging": true
-  }
-}

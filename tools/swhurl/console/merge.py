@@ -1,4 +1,11 @@
-"""Validate the exact merge result and fast-forward main only while its checked base still matches."""
+"""The merge gate: merge an eligible console PR onto the newest main, check the result and push it.
+
+A promotion PR carries only its app's records: the gate merges it onto the newest main, applies
+promotion's one rule (promotion.held), renders with app-sync, checks and pushes one commit, merging
+again when main moved first. A new-app PR is replayed on the newest main (replay_new_app) and compared
+with its request. A PR the gate holds loses its auto-merge label and gets a comment saying why; any
+other failure keeps the label, so the next run tries again.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -7,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -14,16 +22,15 @@ from pathlib import Path
 
 from swhurl import ROOT, yamlio
 from swhurl.apps import declaration, egress, events, helmrelease, new, promotion
-from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
-from swhurl.apps.model import sync as model_sync
-from swhurl.apps.model.records import APP_FILE, SETTINGS_FILE
-from swhurl.apps.yaml_file import EditError, YamlFile
-from swhurl.run import CommandError, Runner
+from swhurl.apps.instance import instance_folder, instance_unit_file
+from swhurl.apps.model.records import APP_FILE, RELEASE_FILE, SETTINGS_FILE
+from swhurl.apps.yaml_file import EditError
+from swhurl.run import Runner
 
-MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
 MERGE_CHECKS = ['-j2', '--output-sync=target', 'check-repo', 'check-apps']
+ATTEMPTS = 3  # a promotion is merged again on a newer main this many times when its push loses a race
 REFUSAL = 'Auto-merge refused: '  # starts the comment the gate leaves on a PR it holds; the console shows the rest
 REFUSAL_LIMIT = 300
 BRANCH = re.compile(r'console/(new|promote)-([a-z][a-z0-9-]*)-staging-[0-9a-f]{7,40}')
@@ -43,17 +50,11 @@ GIT = ['git', '-c', 'user.name=swhurl auto-merge', '-c', 'user.email=console@use
 
 
 class Hold(Exception):
-    pass
+    """A person merges this PR: the gate removes its label and comments the reason."""
 
 
-def review_metadata(body: str) -> dict:
-    match = MARKER.search(body)
-    if not match:
-        raise Hold('promotion has no reviewed configuration; create a fresh promotion')
-    try:
-        return json.loads(match[1])
-    except (TypeError, ValueError):
-        raise Hold('invalid promotion review metadata') from None
+class Skip(Exception):
+    """Not this run's to merge (held, not yet validated, moved): nothing is said on the PR."""
 
 
 def recipients(root: Path, path: str) -> set[str]:
@@ -134,44 +135,6 @@ def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, file
         raise Hold(f'the request does not replay on main: {reason}')
 
 
-def replay_promotion(base: Path, head: Path, work: Path, app: str, body: str, runner: Runner) -> None:
-    """A later promotion of the reviewed image, run with main's tooling on the newest main (``work``)."""
-    from swhurl.apps import edit
-    from swhurl.console.promotion import inputs_hash
-
-    meta = review_metadata(body)
-    if meta.get('app') != app or meta.get('setup'):
-        raise Hold('promotion needs setup or a fresh review')
-    if promotion.fingerprint(base, app, 'prod') != meta.get('target'):
-        raise Hold('production changed after review; review a fresh promotion')
-    if inputs_hash(base) != meta.get('inputs'):
-        raise Hold('promotion tooling, policy, chart or platform settings changed; review again')
-    _, target = promotion.read(base, app)
-    if target is None:
-        # Production's own credentials (a NATS key, Secret placeholders) cannot be replayed here.
-        raise Hold('a first promotion creates production: a person reviews and merges it')
-    if promotion.fingerprint(base, app, 'staging', ignore_image=True) != meta.get('source'):
-        raise Hold('staging configuration changed after review; review a fresh promotion')
-    # Staging may have a newer build by now; the reviewed image is the one promoted.
-    staging = YamlFile(instance_folder(work, app, 'staging') / 'helmrelease.yaml')
-    promotion.image_of(staging.data).update(new.parse_image(meta['image']))
-    if promotion.decide(staging.data, target).rollback:
-        raise Hold('the reviewed image is older than production\'s (a rollback): a person reviews it')
-    staging.save()
-    with contextlib.redirect_stdout(io.StringIO()):
-        edit.promote(work, app, expect_image=meta['image'], runner=runner)
-    shutil.copyfile(instance_folder(base, app, 'staging') / 'helmrelease.yaml', staging.path)
-    before, after = (model_sync.read(root)[0][Instance(app, 'prod')].release for root in (base, work))
-    if after.publishes != before.publishes:
-        raise Hold('the promotion changes what the app publishes, which changes NATS: a person reviews it')
-    # What production must be ready for (per_environment rows held): a person merges it, after setting
-    # the value of any new secret name in production.
-    if moved := [name for name, field in (('port', 'port'), ('database', 'database'), ('secret names', 'secrets'))
-                 if getattr(after, field) != getattr(before, field)]:
-        raise Hold(f"the promotion changes production's {', '.join(moved)}: a person reviews it "
-                   '(and sets any new secret value in production first)')
-
-
 def scope(base: Path, head: Path, work: Path, files: list[str], app: str, env: str) -> None:
     """The replay may change only this instance, its unit and registration and the shared files derived
     from every instance: a change to another app is that app's team's to review. The PR's own files must
@@ -231,7 +194,7 @@ def eligible(pr: dict, sha: str, repo: str) -> tuple[str, str]:
             or pr.get('head', {}).get('sha') != sha
             or pr.get('head', {}).get('repo', {}).get('full_name') != repo
             or 'auto-merge' not in {label['name'] for label in pr.get('labels', [])} or pr.get('draft')):
-        raise Hold('PR is held, moved, closed, a fork, or outside the supported console branches')
+        raise Skip('PR is held, moved, closed, a fork, or outside the supported console branches')
     return match[1], match[2]
 
 
@@ -244,16 +207,43 @@ def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
                             '--event', 'pull_request', '--limit', '1', '--json', 'databaseId,status,conclusion'])
         if runs and runs[0].get('status') == 'completed':
             if runs[0].get('conclusion') != 'success':
-                raise Hold('Validate has not passed on the current PR head')
+                raise Skip('Validate has not passed on the current PR head')
             if waited:
                 print(f'Validate passed after a {waited} s wait', flush=True)
             return
         if waited >= VALIDATE_WAIT:
-            raise Hold('Validate has not passed on the current PR head (still running)')
+            raise Skip('Validate has not passed on the current PR head (still running)')
         if not waited:
             print(f'Waiting up to {VALIDATE_WAIT} s for Validate on {sha[:7]}', flush=True)
         sleep(VALIDATE_POLL)
         waited += VALIDATE_POLL
+
+
+def fetch(runner: Runner, root: Path, number: int, sha: str) -> str:
+    """Fetch main and the PR head (separately: together, FETCH_HEAD is main's); main's commit."""
+    runner.run(['git', 'fetch', 'origin', 'main'], cwd=root)
+    runner.run(['git', 'fetch', 'origin', f'pull/{number}/head'], cwd=root)
+    base = runner.output(['git', 'rev-parse', 'origin/main'], cwd=root).strip()
+    if runner.output(['git', 'rev-parse', 'FETCH_HEAD'], cwd=root).strip() != sha:
+        raise Skip('PR head changed during fetch')
+    return base
+
+
+def checked(runner: Runner, work: Path) -> None:
+    """check-repo renders the registered units; tooling tests read frozen fixtures, and templates and
+    OTel are unchanged by a console PR. A failure is the merge result's, which a person looks at."""
+    done = runner.run(['make', *MERGE_CHECKS], cwd=work, check=False)
+    if done.returncode:
+        said = [line for line in (done.stdout + done.stderr).splitlines() if line.strip()] or ['it failed']
+        raise Hold(f'the merged result fails make check-repo check-apps: {runner.redact(said[-1])}')
+
+
+def commit(runner: Runner, work: Path, base: str, sha: str, number: int, pr: dict) -> str:
+    """The tree in ``work`` as a merge of the PR head into ``base``: GitHub shows the PR merged."""
+    runner.run(['git', 'add', '-A'], cwd=work)
+    tree = runner.output(['git', 'write-tree'], cwd=work).strip()
+    return runner.output([*GIT, 'commit-tree', tree, '-p', base, '-p', sha,
+                          '-m', f'Merge pull request #{number}: {pr.get("title", "")}'], cwd=work).strip()
 
 
 def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
@@ -263,44 +253,102 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
     action, app = eligible(pr, sha, repo)
     validated(runner, sha, sleep)
     files = runner.output(['gh', 'pr', 'diff', str(number), '--repo', repo, '--name-only']).splitlines()
-    runner.run(['git', 'fetch', 'origin', 'main'], cwd=root)
-    runner.run(['git', 'fetch', 'origin', f'pull/{number}/head'], cwd=root)
-    base_sha = runner.output(['git', 'rev-parse', 'origin/main'], cwd=root).strip()
-    if runner.output(['git', 'rev-parse', 'FETCH_HEAD'], cwd=root).strip() != sha:
-        raise Hold('PR head changed during fetch')
+    if action == 'promote':
+        merge_promotion(runner, root, number, sha, repo, pr, app, files)
+    else:
+        merge_new_app(runner, root, number, sha, repo, pr, app, files, opener)
+    runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
+
+
+def staged(runner: Runner, work: Path, app: str, digest: str) -> bool:
+    """Whether staging ran ``digest``: it is in the history of staging's Release record on main."""
+    path = instance_folder(Path(), app, 'staging') / RELEASE_FILE
+    found = runner.run(['git', 'log', f'-S{digest}', '--format=%H', 'HEAD', '--', path.as_posix()], cwd=work, check=False)
+    return not found.returncode and bool(found.stdout.strip())
+
+
+def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, app: str,
+                    files: list[str]) -> None:
+    """Merge the PR's records onto the newest main, render, check, apply promotion's rule and push; a push
+    that loses to another writer is merged again on the newer main (ATTEMPTS times)."""
+    if other := sorted(path for path in files if not promotion.records(app, path)):
+        raise Hold(f"it changes {', '.join(other[:5])}, which are not {app}'s promotion records: a person reviews it")
+    for attempt in range(1, ATTEMPTS + 1):
+        base = fetch(runner, root, number, sha)
+        with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
+            work = Path(tmp) / 'work'
+            runner.run(['git', 'worktree', 'add', '--detach', str(work), base], cwd=root)
+            try:
+                try:
+                    before = promotion.release_of(work, app, 'prod')
+                except EditError as error:
+                    raise Hold(f"main's production release record cannot be read: {error}") from None
+                merged = runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=work, check=False)
+                if merged.returncode:
+                    raise Hold('it conflicts with main: close it and promote again from the console')
+                try:
+                    after = promotion.release_of(work, app, 'prod')
+                except EditError as error:
+                    raise Hold(str(error)) from None
+                if reason := promotion.held(app, files, before, after, lambda digest, work=work: staged(runner, work, app, digest)):
+                    raise Hold(f'it {reason}: a person reviews it')
+                synced = runner.run([sys.executable, '-m', 'swhurl', 'app-sync'], cwd=work, check=False,
+                                    env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
+                if synced.returncode:
+                    said = [line for line in (synced.stdout + synced.stderr).splitlines() if line.strip()] or ['it failed']
+                    raise Hold(f'main does not render it: {runner.redact(said[-1])}')
+                checked(runner, work)
+                # Recheck the person's hold and the exact PR head after the checks.
+                eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)
+                made = commit(runner, work, base, sha, number, pr)
+                # Not forced: a main that moved since the fetch refuses it, and the merge is made again.
+                pushed = runner.run(['git', 'push', 'origin', f'{made}:refs/heads/main'], cwd=work, mutating=True, check=False)
+            finally:
+                runner.run(['git', 'worktree', 'remove', '--force', str(work)], cwd=root, check=False)
+        if not pushed.returncode:
+            return
+        print(f'#{number}: main moved before the push (attempt {attempt} of {ATTEMPTS}); merging again', flush=True)
+    raise RuntimeError(f'main kept moving: {ATTEMPTS} pushes lost; the next run tries again')
+
+
+def merge_new_app(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, app: str,
+                  files: list[str], opener: declaration.Opener) -> None:
+    base_sha = fetch(runner, root, number, sha)
     with tempfile.TemporaryDirectory(prefix='auto-merge-') as tmp:
         base, head, work = Path(tmp) / 'base', Path(tmp) / 'candidate', Path(tmp) / 'work'
         try:
             for path, revision in ((base, base_sha), (head, sha), (work, base_sha)):
                 runner.run(['git', 'worktree', 'add', '--detach', str(path), revision], cwd=root)
-            body = pr.get('body') or ''
-            if action == 'new':
-                replay_new_app(base, head, work, app, body, files, opener)
-            else:
-                replay_promotion(base, head, work, app, body, runner)
-            scope(base, head, work, files, app, 'staging' if action == 'new' else 'prod')
-            # check-repo renders the registered units; tooling tests read frozen fixtures, and templates and
-            # OTel are unchanged.
-            runner.run(['make', *MERGE_CHECKS], cwd=work)
+            replay_new_app(base, head, work, app, pr.get('body') or '', files, opener)
+            scope(base, head, work, files, app, 'staging')
+            checked(runner, work)
             # Recheck the human's hold and the exact PR head after the potentially long validation.
-            eligible(runner.json(['gh', 'api', pr_path]), sha, repo)
+            eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)
             current = runner.output(['git', 'ls-remote', 'origin', 'refs/heads/main'], cwd=root).split()[0]
             if current != base_sha:
-                raise Hold('main moved during validation; retry against the new base')
-            # The replayed tree, as a merge of the PR head: GitHub shows the PR merged. Fast-forward rejects
-            # a concurrent main push (the next run replays again). No force push, no unvalidated tree.
-            runner.run(['git', 'add', '-A'], cwd=work)
-            tree = runner.output(['git', 'write-tree'], cwd=work).strip()
-            commit = runner.output([*GIT, 'commit-tree', tree, '-p', base_sha, '-p', sha,
-                                    '-m', f'Merge pull request #{number}: {pr.get("title", "")}'], cwd=work).strip()
-            runner.run(['git', 'push', 'origin', f'{commit}:refs/heads/main'], cwd=work, mutating=True)
-            runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
+                raise Skip('main moved during validation; the next run replays it on the new base')
+            # Fast-forward rejects a concurrent main push (the next run replays again). No force push.
+            made = commit(runner, work, base_sha, sha, number, pr)
+            runner.run(['git', 'push', 'origin', f'{made}:refs/heads/main'], cwd=work, mutating=True)
         finally:
             for path in (work, head, base):
                 runner.run(['git', 'worktree', 'remove', '--force', str(path)], cwd=root, check=False)
 
 
+def refuse(runner: Runner, repo: str, number: int, reason: str) -> None:
+    """Hand the PR to a person: remove its label and leave the reason, one redacted line, where the
+    console's Activity reads it."""
+    runner.run(['gh', 'api', '--method', 'DELETE', f'repos/{repo}/issues/{number}/labels/auto-merge'],
+               mutating=True, check=False)
+    said = ' '.join(reason.split())[:REFUSAL_LIMIT]
+    runner.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/issues/{number}/comments', '--input', '-'],
+               input=json.dumps({'body': f'{REFUSAL}{said}\n\nReview the changes and merge this yourself, or close it '
+                                         'and start again from the console.'}), mutating=True, check=False)
+
+
 def main(argv=None, runner: Runner | None = None) -> int:
+    """Merge the eligible console PRs one at a time. A hold or a failure of one PR is reported and the
+    queue goes on; the run fails at the end if any PR was held or failed."""
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('number', type=int, nargs='?')
@@ -310,39 +358,32 @@ def main(argv=None, runner: Runner | None = None) -> int:
         parser.error('provide both PR number and SHA, or neither to process the eligible queue')
     runner = runner or Runner()
     runner.add_secret(os.environ.get('GH_TOKEN'))
-    number = None
-    try:
-        repo = os.environ['GITHUB_REPOSITORY']
-        queue = [{'number': args.number, 'headRefOid': args.sha}] if args.number is not None else runner.json(
-            ['gh', 'pr', 'list', '--state', 'open', '--label', 'auto-merge',
-             '--json', 'number,headRefOid,headRefName'])
-        for item in queue:
-            if args.number is None and not item['headRefName'].startswith('console/'):
-                continue
-            number = item['number']
-            try:
-                merge(runner, ROOT, number, item['headRefOid'], repo)
-            except Hold as error:
-                if 'Validate has not passed' in str(error) or 'PR is held' in str(error):
-                    print(f'Not merging #{number}: {error}')
-                    continue
-                raise
-    except (Hold, EditError, CommandError, KeyError, ValueError, TypeError, IndexError) as error:
-        reason = runner.redact(str(error))
-        print(f'Not merging {"#" + str(number) if number is not None else "console PRs"}: {reason}')
-        transient = 'main moved during validation' in reason or (isinstance(error, CommandError)
-                                                                 and error.args_run[:2] == ('git', 'push'))
-        repo = os.environ.get('GITHUB_REPOSITORY')
-        if repo and number is not None and not transient:
-            # Persist the failed merge gate across console restarts, without changing reviewed PR contents.
-            runner.run(['gh', 'api', '--method', 'DELETE', f'repos/{repo}/issues/{number}/labels/auto-merge'],
-                       mutating=True, check=False)
-            runner.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/issues/{number}/labels', '--input', '-'],
-                       input=json.dumps({'labels': ['promotion-review-required']}), mutating=True, check=False)
-            # The reason, where the console's Activity reads it: one line, already redacted.
-            said = ' '.join(reason.split())[:REFUSAL_LIMIT]
-            runner.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/issues/{number}/comments', '--input', '-'],
-                       input=json.dumps({'body': f'{REFUSAL}{said}\n\nReview the changes and merge this yourself, or close it '
-                                                 'and review a fresh promotion.'}), mutating=True, check=False)
+    repo = os.environ.get('GITHUB_REPOSITORY', '')
+    if not repo:
+        print('Not merging console PRs: GITHUB_REPOSITORY is not set')
         return 1
-    return 0
+    try:
+        queue = [{'number': args.number, 'headRefOid': args.sha, 'headRefName': 'console/'}] if args.number is not None \
+            else runner.json(['gh', 'pr', 'list', '--state', 'open', '--label', 'auto-merge',
+                              '--json', 'number,headRefOid,headRefName'])
+    except Exception as error:  # noqa: BLE001 - reported, and the run fails
+        print(f'Not merging console PRs: {runner.redact(str(error))}')
+        return 1
+    failed = False
+    for item in queue:
+        if not item['headRefName'].startswith('console/'):
+            continue
+        number = item['number']
+        try:
+            merge(runner, ROOT, number, item['headRefOid'], repo)
+        except Skip as error:
+            print(f'Not merging #{number}: {error}')
+        except Hold as error:
+            reason = runner.redact(str(error))
+            print(f'Not merging #{number}: {reason}')
+            refuse(runner, repo, number, reason)
+            failed = True
+        except Exception as error:  # noqa: BLE001 - one PR's failure keeps its label; the queue goes on
+            print(f'Could not merge #{number} ({type(error).__name__}), the next run tries again: {runner.redact(str(error))}')
+            failed = True
+    return 1 if failed else 0

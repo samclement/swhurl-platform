@@ -296,6 +296,7 @@ p.outcome { margin: 0; font-size: var(--size-detail); max-width: 60em; }
 details.stage-log { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); margin: 0 0 var(--gap-2); }
 details.stage-log > summary { cursor: pointer; padding: var(--gap-2) var(--gap-3); font-weight: 600; }
 details.stage-log > pre { margin: 0; border-top: 1px dashed var(--line); padding: var(--gap-2) var(--gap-3); max-height: 28rem; overflow-y: auto; }
+details.rendered-diff > pre { max-height: 28rem; overflow: auto; }
 details.stage-log > pre:empty { display: none; }
 @media (max-width: 640px) {
   ol.track { flex-direction: column; } .stage + .stage::before { display: none; }

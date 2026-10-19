@@ -32,6 +32,7 @@ STATUS = {'running': ('updating', 'In progress'), 'waiting': ('suspended', 'Wait
           # Failed, but not over: its pull request is still open, or the instance it reached is failing.
           'blocked': ('failing', 'Failed')}
 ABSENT = 'absent'  # an instance read from the cluster and not there
+UNRENDERED = 'unrendered'  # an instance with records in a tree and no HelmRelease yet (a merged first promotion)
 PULL = re.compile(r'/pull/(\d+)$')
 BRANCH = re.compile(r'console/([a-z]+)-(.+)-(staging|prod)-[0-9a-f]{7,40}')
 NOTE = 160
@@ -91,10 +92,12 @@ class Pull:
 
 @dataclass(frozen=True)
 class Target:
-    """An instance's render in a Git tree; 'absent' is a proven missing HelmRelease."""
+    """An instance's render in a Git tree; 'absent' is a proven missing HelmRelease, 'unrendered' records
+    that main has not rendered yet."""
     hash: str
     digest: str = ''
     settings: str = ''  # a hash of its instance.yaml and app.yaml: what the platform, not the image, decides
+    records: str = ''  # a hash of its app.yaml, release.yaml and instance.yaml: everything it is rendered from
 
 
 @dataclass(frozen=True)
@@ -109,11 +112,24 @@ class Rollout:
 REACHED = ('live', 'zero', 'removed')  # where a change ends; Job.reached records the first time it was seen there
 
 
+def ours(target: Target, current: Target) -> bool:
+    """Main's records for the instance are still the ones this change merged: whatever main renders from
+    them now is this change's render (a records-only merge rendered later, or another app's records
+    changing what the platform derives for it)."""
+    return bool(target.records) and target.records == current.records
+
+
 def follows(action: str, target: Target, current: Target) -> bool:
     """Main renders something else for the instance only because a newer release arrived (the Deploy
     workflow): its settings are the ones this change made, so the change is still in force. A promotion
     chooses the release itself, so a newer one replaces it."""
     return action != 'promote' and bool(target.settings) and target.settings == current.settings
+
+
+def aim(action: str, target: Target, current: Target) -> Target:
+    """The render a change is judged against: main's when it is still this change's (ours) or carries
+    it (follows), else the merge commit's own."""
+    return current if ours(target, current) or follows(action, target, current) else target
 
 
 def judge(action: str, live: State | str | None, target: Target | None, current: Target | None,
@@ -123,12 +139,16 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
     ``reached`` is when the change was first seen at its end: a replaced change still ran."""
     if target is None:
         return Rollout('unread', 'the target or current render could not be read')
+    if current is not None and ours(target, current):
+        target = current  # main's render of this change's records, whatever the merge commit held
     if not target.hash:
         return Rollout('historical', 'this change predates render hashes')
     if current is None:
         return Rollout('unread', 'the target or current render could not be read')
     if not current.hash:
         return Rollout('unread', 'the current render has no hash')
+    if target.hash == UNRENDERED:  # its records are main's, and main has not rendered them yet
+        return Rollout('applying', 'main has not rendered it yet')
     newer = ''
     if target.hash != current.hash:
         if not follows(action, target, current):
@@ -174,11 +194,6 @@ def number(job: Job) -> int | None:
     """The pull request a job opened, from its link."""
     found = PULL.search(job.link or '')
     return int(found[1]) if found else None
-
-
-def control(job: Job) -> bool:
-    """A job that only changed a pull request's label (Hold, Request auto-merge)."""
-    return job.unit.startswith('PR #')
 
 
 def error(job: Job) -> str:
@@ -308,23 +323,21 @@ def track(job: Job, pull: Pull | None = None, rollout: Rollout | None = None) ->
     flux = job.action in ('reconcile', 'suspend', 'resume')
     if flux:
         end = 'Suspended' if job.action == 'suspend' else 'Applied'
-    elif control(job):
-        end = 'Held for you to merge' if job.action.startswith('hold') else 'Auto-merge requested'
     else:
         end = end_label(job.action, job.unit)
     # What follows the job, not reached while it runs or once it has failed.
-    after = [] if flux or control(job) else [Stage(key, LABELS[key], 'todo') for key in
-                                             ('validate', 'merge', *(['rollout'] if end != 'On main' else []))]
-    if not flux and not control(job) and end != 'On main' and job.action != 'remove':
+    after = [] if flux else [Stage(key, LABELS[key], 'todo') for key in
+                             ('validate', 'merge', *(['rollout'] if end != 'On main' else []))]
+    if not flux and end != 'On main' and job.action != 'remove':
         after.append(Stage('running', 'Running', 'todo'))
     if job.state == 'running':
-        ends = end if flux or control(job) else f'{end}, once its pull request is merged'
+        ends = end if flux else f'{end}, once its pull request is merged'
         return Track((first, *after, Stage('end', end, 'planned')), 'running', f'Now: {first.label}. Ends: {ends}.')
     if job.state != 'succeeded':
         shown = Stage(first.key, first.label, first.state)  # the reason is the sentence under the track
         return Track((shown, *after, Stage('end', end, 'planned')), 'interrupted' if job.state == 'interrupted' else 'failed',
                      f'Stopped at {first.label}: {first.note or "see its output"}.')
-    if flux or control(job):
+    if flux:
         said = next((line for line in reversed(job.lines) if line.startswith('✔ applied revision ')), '')
         return Track((first, Stage('end', end, 'reached', said.removeprefix('✔ applied revision '))), 'done', f'{end}.')
     if pull is None:  # a dry run, or a job that had nothing to propose

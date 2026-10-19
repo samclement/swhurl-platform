@@ -2,16 +2,7 @@
 import unittest
 
 from swhurl.apps import calling, contract, events, offers, per_environment
-from swhurl.apps.per_environment import (
-    CARRY,
-    HELD,
-    REGENERATE,
-    SETTINGS,
-    STAYS,
-    STRIP,
-    WITH_IMAGE,
-    WITH_OFFERS,
-)
+from swhurl.apps.per_environment import CARRY, REGENERATE, SETTINGS, STRIP
 
 KEY = 'U' + 'A' * 55
 
@@ -57,7 +48,6 @@ class TableTests(unittest.TestCase):
                 self.assertIn(row.first, (CARRY, STRIP, REGENERATE))
                 self.assertTrue(row.note)
         for setting in SETTINGS:
-            self.assertIn(setting.later, (STAYS, WITH_IMAGE, WITH_OFFERS, HELD))
             if setting.first == STRIP:
                 self.assertTrue(setting.where, f'{setting.key}: a promotion must know where to find what it strips')
         keys = [setting.key for setting in SETTINGS]
@@ -69,10 +59,8 @@ class TableTests(unittest.TestCase):
         self.assertFalse(per_environment.may_differ('SWHURL_APP', 'orders'))
         for key in ('probes', 'runAsUser', 'fsGroup', 'OTEL_SERVICE_NAME', contract.OTLP_HOST_IP):
             self.assertTrue(per_environment.may_differ(key, 'x'), f'{key} moves with the image')
-        held = {setting.key for setting in SETTINGS if setting.later == HELD}
         for key in ('port', 'envFrom', 'persistence', 'strategy', 'DATABASE_PATH', contract.SECRET_NAMES):
             self.assertTrue(per_environment.may_differ(key, 'x'), f'{key} moves with the image')
-            self.assertIn(key, held, f'{key}: a person reviews the promotion that carries it')
         self.assertTrue(per_environment.may_differ('hosts', ['a.example.com']), 'a list of names (TLS)')
         self.assertFalse(per_environment.may_differ('hosts', [{'host': 'a.example.com'}]), 'a list of rules is compared')
         for key in ('ingress', contract.EXPOSURE):

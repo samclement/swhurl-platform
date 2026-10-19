@@ -10,9 +10,8 @@
 {% macro items(list) %}<ul class="items">{% for p in list %}<li>{{ mark(p.level) }} {% if p.link %}<a href="{{ p.link }}">{{ p.text | short }}</a>{% else %}{{ p.text | short }}{% endif %}</li>{% endfor %}</ul>{% endmacro %}
 {# A job running on the thing a row is about: where the row's button was, linking to the job, and re-reading the page until it ends. #}
 {% macro running(j, refresh_url) %}<a class="started" href="/jobs/{{ j.id }}" {{ follow(refresh_url) }}>{{ mark('updating') }} {{ j.action }} · job #{{ j.id }}</a>{% endmacro %}
-{# How an open console pull request gets merged, with the one control that applies now. #}
-{% macro merging(pr) %}{% set words, control = merge_mode(pr) %}<span class="merging">{{ words }}{% if control %}
-  <form class="inline" method="post" action="/promotion-prs/{{ pr.number }}/{{ control }}" hx-post="/promotion-prs/{{ pr.number }}/{{ control }}" hx-target="this" hx-select="unset" hx-swap="outerHTML"><button title="{{ 'Remove its auto-merge label: it then waits for you to merge it' if control == 'hold' else 'Label it auto-merge again: it merges itself once fresh checks pass' }}">{{ 'Hold' if control == 'hold' else 'Request auto-merge' }}</button></form>{% endif %}</span>{% endmacro %}
+{# How an open console pull request gets merged: by the merge gate, or by you and why. #}
+{% macro merging(pr) %}<span class="merging">{{ merge_mode(pr) }}</span>{% endmacro %}
 {# What a list page is for, one click away: the list itself starts right under the title. #}
 {% macro about() %}<details class="about" id="about"><summary>{{ icon('info') }} About this page</summary><p class="lead">{{ caller() }}</p></details>{% endmacro %}
 {# A change's whole path (stages.Track): each stage with its mark and label, the last one the terminal stop, then one
@@ -36,7 +35,7 @@
       <div class="about-change">
         <div class="top">
           {{ change_state(c.track) }}
-          {% if j %}{% set label, link = (j.unit, j.link or '/activity') if j.unit.startswith('PR #') else target(j.unit) %}<span class="title">{{ j.action | capitalize }} <a href="{{ link }}">{{ label }}</a></span>
+          {% if j %}{% set label, link = target(j.unit) %}<span class="title">{{ j.action | capitalize }} <a href="{{ link }}">{{ label }}</a></span>
           <span class="muted when" title="{{ j.started.strftime('%Y-%m-%d %H:%M:%S') }} UTC">job #{{ j.id }} · {{ j.started | ago }}{% if j.finished %} · took {{ j | took }}{% endif %} · {{ j.identity }}</span>
           {% else %}<span class="title"><a href="{{ c.pr.url }}" title="{{ c.pr.branch }}">#{{ c.pr.number }} {{ c.pr.title | replace('[console] ', '') }}</a></span>
           <span class="muted when" title="{{ c.pr.opened }}">opened {{ c.pr.opened | ago }}</span>{% endif %}

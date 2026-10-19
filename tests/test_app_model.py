@@ -176,6 +176,29 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(entries[Instance('hello', 'staging')].settings.replicas, 2)
         self.assertEqual(prod.app.alerts, entries[Instance('hello', 'staging')].app.alerts)
 
+    def test_records_without_a_render_or_unit_are_rendered_and_registered(self):
+        """A first promotion merged on GitHub carries only records: make app-sync on main renders production
+        and registers its unit (docs/console.md#auto-merge)."""
+        prod = self.root / 'apps/hello/prod'
+        for path in prod.iterdir():
+            if path.name not in ('release.yaml', 'instance.yaml'):
+                path.unlink()
+        unit, registry = self.root / 'clusters/home/app-hello-prod.yaml', self.root / 'clusters/home/kustomization.yaml'
+        unit.unlink()
+        registry.write_text(registry.read_text().replace('- app-hello-prod.yaml\n', ''))
+        self.assertIn(Instance('hello', 'prod'), store.world(self.root)[0], 'found by its records')
+        with redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+        self.assertTrue((prod / 'helmrelease.yaml').is_file())
+        self.assertTrue(unit.is_file())
+        self.assertIn('app-hello-prod.yaml', registry.read_text())
+        self.assertEqual(self.problems(), [])
+        registry.unlink()  # a tree without the registry (a test tree) gets no unit
+        unit.unlink()
+        with redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+        self.assertFalse(unit.exists())
+
     def test_a_hand_edit_the_model_cannot_express_is_reported_by_path(self):
         release = self.root / 'apps/hello/staging/helmrelease.yaml'
         release.write_text(release.read_text().replace('    controllers:', '    extra: true\n    controllers:', 1))

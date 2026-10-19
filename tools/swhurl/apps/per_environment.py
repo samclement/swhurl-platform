@@ -9,14 +9,10 @@ here. Each row says where the value comes from and what a promotion does with st
     first    carry        production is created with staging's value
              strip        production is created without it
              regenerate   production is created with its own value
-    later    stays        a later promotion leaves production's value alone
-             image        it moves with the image
-             offers       it moves with the documents the image offers (edit.staging_offers)
-             held         it moves with the image or its documents too, but a person reviews the change
-                          (the auto-merge gate holds such a promotion: console/merge.py)
 
 The env-drift policy rule reads it (what is not compared); promotion renders production from the
-app model's records (apps/promotion.py, edit.promote), which the first and later columns describe.
+app model's records (apps/promotion.py, edit.promote), which the first column describes; a later
+promotion takes staging's Release whole, and which of its changes a person reviews is promotion.held.
 A setting that staging gets before production (anything read for the image it runs) needs a row
 here: without one, env-drift fails for every app that has a production instance.
 
@@ -37,7 +33,6 @@ from swhurl.apps.model.records import RECORD_FILES
 
 DECLARED, DERIVED, GENERATED = 'declared', 'derived', 'generated'
 CARRY, STRIP, REGENERATE = 'carry', 'strip', 'regenerate'
-STAYS, WITH_IMAGE, WITH_OFFERS, HELD = 'stays', 'image', 'offers', 'held'
 VARIABLE, ANNOTATION = 'variable', 'annotation'  # where a promotion finds it: the container's env, the release's annotations
 PRODUCTION = 'prod'
 
@@ -49,7 +44,6 @@ class Setting:
     origin: str
     first: str
     note: str
-    later: str = STAYS
     where: str = ''
     prefix: bool = False  # every key that starts with this
     names_only: bool = False  # only where it holds a list of names; a list of mappings is compared entry by entry
@@ -72,31 +66,24 @@ SETTINGS = (
     Setting('host', DECLARED, REGENERATE, 'the generated production address, or --host for a public app'),
     Setting('hosts', DECLARED, REGENERATE, 'the same host under TLS', names_only=True),
     Setting('cert-manager.io/cluster-issuer', DECLARED, CARRY, 'which certificate authority issues the route'),
-    Setting('tag', DECLARED, CARRY, 'staging follows new images; production gets the promoted one', later=WITH_IMAGE),
-    Setting('digest', DECLARED, CARRY, 'as the tag', later=WITH_IMAGE),
+    Setting('tag', DECLARED, CARRY, 'staging follows new images; production gets the promoted one'),
+    Setting('digest', DECLARED, CARRY, 'as the tag'),
     Setting('platform.swhurl.com/render', GENERATED, REGENERATE,
             'hash of this instance and environment: recomputed by render, never copied', where=ANNOTATION),
-    Setting(DESCRIPTION_VARIABLE, GENERATED, CARRY, "what the app says it does: read from the image's swhurl.yaml",
-            later=WITH_IMAGE, where=VARIABLE),
-    Setting('probes', GENERATED, CARRY, "the image's health path (its port must still match: the Service is compared)",
-            later=WITH_IMAGE),
-    *(Setting(key, GENERATED, CARRY, 'the user the image runs as', later=WITH_IMAGE)
-      for key in ('runAsUser', 'runAsGroup', 'fsGroup')),
-    Setting('OTEL_', GENERATED, CARRY, 'telemetry: the image has an OpenTelemetry SDK', later=WITH_IMAGE,
-            where=VARIABLE, prefix=True),
-    Setting(contract.OTLP_HOST_IP, GENERATED, CARRY, 'the node the collector runs on, for telemetry', later=WITH_IMAGE,
-            where=VARIABLE),
+    Setting(DESCRIPTION_VARIABLE, GENERATED, CARRY, "what the app says it does: read from the image's swhurl.yaml", where=VARIABLE),
+    Setting('probes', GENERATED, CARRY, "the image's health path (its port must still match: the Service is compared)"),
+    *(Setting(key, GENERATED, CARRY, 'the user the image runs as') for key in ('runAsUser', 'runAsGroup', 'fsGroup')),
+    Setting('OTEL_', GENERATED, CARRY, 'telemetry: the image has an OpenTelemetry SDK', where=VARIABLE, prefix=True),
+    Setting(contract.OTLP_HOST_IP, GENERATED, CARRY, 'the node the collector runs on, for telemetry', where=VARIABLE),
     # What the image needs that production must be ready for: staging takes it with a new image, a promotion
-    # carries it with the image (edit.take_release), and a person reviews that promotion.
-    Setting('port', GENERATED, CARRY, 'the port the image listens on (its Service; probes, policy and callers follow)',
-            later=HELD),
-    Setting('persistence', GENERATED, CARRY, "the image's database volume: each environment has its own", later=HELD),
-    Setting('strategy', GENERATED, CARRY, 'stop-first updates for a database (rule single-writer)', later=HELD),
-    Setting(contract.DATABASE_PATH_VARIABLE, GENERATED, CARRY, 'where the database file is', later=HELD, where=VARIABLE),
-    Setting('kustomize.toolkit.fluxcd.io/prune', GENERATED, CARRY, 'a database outlives its app: Flux keeps the namespace', later=HELD, where=ANNOTATION),
-    Setting(contract.SECRET_NAMES, GENERATED, CARRY, 'the secret names the image reads (values are set per environment)',
-            later=HELD, where=ANNOTATION),
-    Setting('envFrom', GENERATED, CARRY, "the environment's Secret, read once the image reads a secret name", later=HELD),
+    # carries it with the image (edit.take_release), and a person reviews that promotion (promotion.held).
+    Setting('port', GENERATED, CARRY, 'the port the image listens on (its Service; probes, policy and callers follow)'),
+    Setting('persistence', GENERATED, CARRY, "the image's database volume: each environment has its own"),
+    Setting('strategy', GENERATED, CARRY, 'stop-first updates for a database (rule single-writer)'),
+    Setting(contract.DATABASE_PATH_VARIABLE, GENERATED, CARRY, 'where the database file is', where=VARIABLE),
+    Setting('kustomize.toolkit.fluxcd.io/prune', GENERATED, CARRY, 'a database outlives its app: Flux keeps the namespace', where=ANNOTATION),
+    Setting(contract.SECRET_NAMES, GENERATED, CARRY, 'the secret names the image reads (values are set per environment)', where=ANNOTATION),
+    Setting('envFrom', GENERATED, CARRY, "the environment's Secret, read once the image reads a secret name"),
     Setting('replicas', DECLARED, CARRY, 'make app-scale'),
     Setting('schedule', DECLARED, CARRY, "when a job runs (make app-schedule): production starts with staging's"),
     Setting('resources', DECLARED, CARRY, 'make app-scale'),
@@ -106,7 +93,7 @@ SETTINGS = (
     Setting(CALLERS_VARIABLE, DERIVED, STRIP, "who may call it: make app-sync works it out from production's callers",
             where=VARIABLE),
     Setting(events.PUBLISH_VARIABLE, DECLARED, STRIP, "what it publishes: set again from the image's event document, when "
-            'it has one', later=HELD, where=VARIABLE),
+            'it has one', where=VARIABLE),
     Setting(events.SUBSCRIBE_VARIABLE, DECLARED, STRIP, 'what it receives: declared in production (make app-events ENV=prod)',
             where=VARIABLE),
     Setting(events.URL_VARIABLE, DERIVED, STRIP, "follows from the instance's NATS key", where=VARIABLE),
@@ -118,10 +105,8 @@ SETTINGS = (
     Setting(egress.ANNOTATION, DECLARED, STRIP, 'the hosts outside the cluster it may reach: granted in production '
             'separately (make app-egress ENV=prod), so a promotion never widens it', where=ANNOTATION),
     Setting(contract.RELOAD, DERIVED, CARRY, "restart on a Secret change; staging's events Secret is taken out of it"),
-    Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them",
-            later=WITH_OFFERS, where=ANNOTATION),
-    Setting(offers.API_ANNOTATION, GENERATED, CARRY, 'where the image serves its API description', later=WITH_OFFERS,
-            where=ANNOTATION),
+    Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them", where=ANNOTATION),
+    Setting(offers.API_ANNOTATION, GENERATED, CARRY, 'where the image serves its API description', where=ANNOTATION),
     # Exposure may differ (a signed-in staging preview of a public app). The routes of two environments
     # are compared only when their exposure is the same; each is still checked against its own.
     Setting('ingress', DECLARED, CARRY, 'the route (make app-expose)', with_exposure=True),

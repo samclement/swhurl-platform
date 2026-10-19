@@ -20,6 +20,7 @@ from starlette.testclient import TestClient
 from swhurl import ROOT
 from swhurl.apps import calling, channels, helmrelease, new, ops, promotion, repo
 from swhurl.apps.instance import Instance
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.state import State
 from swhurl.console import actions, changes, cluster, merge, server, stages
 from swhurl.console import promotion as console_promotion
@@ -48,14 +49,14 @@ for env in ('staging', 'prod'):
 MAIN['apps/hello/app.yaml'] = (SAMPLE / 'apps/hello/app.yaml').read_bytes()
 for rel in ('clusters/home/app-hello-staging.yaml', 'clusters/home/app-hello-prod.yaml'):
     MAIN[rel] = (SAMPLE / rel).read_bytes()
-with tempfile.TemporaryDirectory() as tmp:
+with tempfile.TemporaryDirectory() as tmp:  # rendered from its records, as main always is
     root = Path(tmp)
     for rel, data in MAIN.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_bytes(data)
-    PROMOTION = {'image': IMAGE,
-                 'configuration': promotion.fingerprint(root, 'hello', 'staging'),
-                 'target': promotion.fingerprint(root, 'hello', 'prod')}
+    model_sync.sync(root)
+    MAIN = {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+PROMOTION = {'image': IMAGE}  # what the review page submits
 
 
 
@@ -127,17 +128,27 @@ class RenderTargetTests(unittest.TestCase):
         self.assertEqual(targets['hello/staging'].digest, 'sha256:' + 'a' * 64)
         self.assertTrue(targets['hello/staging'].hash)
         self.assertEqual(len(targets['hello/staging'].settings), 16, 'its instance.yaml and app.yaml, hashed')
+        self.assertEqual(len(targets['hello/staging'].records), 16, 'its app.yaml, release.yaml and instance.yaml, hashed')
+        self.assertNotEqual(targets['hello/staging'].records, targets['hello/prod'].records)
         self.assertNotIn('missing/staging', targets)
+        records_only = {rel.replace('hello/prod', 'fresh/prod').replace('apps/hello/app', 'apps/fresh/app'): data
+                        for rel, data in MAIN.items() if rel.endswith(('hello/prod/release.yaml', 'hello/prod/instance.yaml', 'hello/app.yaml'))}
+        with mock.patch.dict(MAIN, records_only):
+            fresh = changes.render_targets(FakeRunner(), FakeGitHub().github, HEAD)['fresh/prod']
+        self.assertEqual((fresh.hash, fresh.digest), (stages.UNRENDERED, 'sha256:' + 'b' * 64),
+                         'a merged first promotion: records, not yet rendered')
+        self.assertTrue(fresh.records)
         api.fail[f'GET /tarball/{HEAD}'] = (403, 'rate limited')
         with self.assertRaises(actions.ActionError):
             changes.render_targets(FakeRunner(), api.github, HEAD)
 
 
 class ConsolePrProgressTests(unittest.TestCase):
-    def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=()):
+    def listed(self, *, labels=('auto-merge',), sha=HEAD, runs=(), mergeable='clean', fail=None, comments=(),
+               branch='console/scale-hello-staging-abc1234'):
         requests = []
         pull = {'number': 7, 'title': 'apps: scale hello', 'html_url': 'https://github.com/x/pull/7',
-                'head': {'ref': 'console/scale-hello-staging-abc1234', 'sha': sha},
+                'head': {'ref': branch, 'sha': sha},
                 'created_at': '2026-10-01T07:00:00Z', 'labels': [{'name': label} for label in labels]}
 
         def handle(request):
@@ -185,22 +196,26 @@ class ConsolePrProgressTests(unittest.TestCase):
                 self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7'] if sha else ['/pulls'])
                 self.assertEqual(pr.checks, 'pending' if sha else '')
 
-    def test_a_refused_merge_shows_the_gates_newest_reason_and_nobody_elses(self):
-        held = ('promotion-review-required', 'auto-merge')
+    def test_a_held_gate_pr_shows_the_gates_newest_reason_and_nobody_elses(self):
+        """Without its label, a PR the gate takes shows why the gate held it, when it said so."""
         gate, person = {'login': 'github-actions[bot]'}, {'login': 'someone'}
         said = [{'user': gate, 'body': 'Auto-merge refused: production changed after review\n\nReview the changes.'},
                 {'user': gate, 'body': 'Auto-merge refused: diff includes unrelated edits\n\nReview the changes.'},
                 {'user': person, 'body': 'Auto-merge refused: <b>trust me</b>'}, {'user': gate, 'body': 'another note'}]
+        waiting = 'Awaiting setup or manual review'
         cases = ((said, None, 'Auto-merge refused: diff includes unrelated edits'),
-                 (said[2:], None, 'Auto-merge refused; reason in its checks'),
-                 ((), None, 'Auto-merge refused; reason in its checks'),
+                 (said[2:], None, waiting), ((), None, waiting),
                  ([{'user': gate, 'body': 'Auto-merge refused: ' + 'x' * 400}], None, 'Auto-merge refused: ' + 'x' * 300),
-                 (said, '/issues/7/comments', 'Auto-merge refused; reason in its checks'))
+                 (said, '/issues/7/comments', waiting))
         for comments, fail, expected in cases:
             with self.subTest(expected=expected, fail=fail):
-                pr, requests = self.listed(labels=held, comments=comments, fail=fail)
+                pr, requests = self.listed(labels=(), comments=comments, fail=fail,
+                                           branch='console/promote-hello-staging-abc1234')
                 self.assertEqual((pr.progress, pr.checks_url), (expected, pr.url + '/checks'))
+                self.assertEqual(pr.refused, expected.removeprefix('Auto-merge refused: ') if expected != waiting else '')
                 self.assertEqual(requests, ['/pulls', '/actions/runs', '/pulls/7', '/issues/7/comments'])
+        pr, requests = self.listed(labels=('auto-merge',), comments=said, branch='console/promote-hello-staging-abc1234')
+        self.assertEqual((pr.refused, requests[-1]), ('', '/pulls/7'), 'a labelled PR is the gate\'s again: no comment read')
 
     def test_only_validate_for_this_sha_counts_and_first_matching_run_wins(self):
         run = {'name': 'Validate', 'head_sha': HEAD, 'conclusion': 'failure', 'html_url': 'matching'}
@@ -237,13 +252,32 @@ class TreeRunner(FakeRunner):
 
     def __init__(self, edit=None, **kwargs):
         super().__init__(**kwargs)
-        self.edit = edit if edit is not None else (lambda tree: (tree / 'apps/x').mkdir(parents=True, exist_ok=True)
-                                                   or (tree / 'apps/x/helmrelease.yaml').write_text('new\n'))
+        self.edit = edit  # None: app-promote writes production's records, anything else a new file
 
     def _execute(self, argv, *, input, env, cwd):
         if cwd is not None and argv[:3] == (sys.executable, '-m', 'swhurl'):
-            self.edit(Path(cwd))
+            if self.edit is not None:
+                self.edit(Path(cwd))
+            elif argv[3:4] == ('app-promote',):
+                promoted(Path(cwd))
+            else:
+                (Path(cwd) / 'apps/x').mkdir(parents=True, exist_ok=True)
+                (Path(cwd) / 'apps/x/helmrelease.yaml').write_text('new\n')
         return super()._execute(argv, input=input, env=env, cwd=cwd)
+
+
+def promoted(tree: Path) -> None:
+    """What app-promote writes that a promotion PR carries: production's Release with staging's image
+    (and, for a first promotion, production's Settings)."""
+    staging = yaml.safe_load((tree / 'apps/hello/staging/release.yaml').read_text())
+    target = tree / 'apps/hello/prod/release.yaml'
+    doc = yaml.safe_load(target.read_text()) if target.is_file() else dict(staging)
+    doc['image'] = staging['image']
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(doc, sort_keys=False))
+    settings = tree / 'apps/hello/prod/instance.yaml'
+    if not settings.is_file():
+        settings.write_text('version: 1\nexposure: authenticated-web\n')
 
 
 APP_NEW_OK = Result((), 0, '[OK] wrote apps/weather-api/staging/helmrelease.yaml\n')
@@ -887,7 +921,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             ('/apps/hello/prod/scale', {'replicas': '2', 'memory_limit': '256Mi', 'cpu': ''},
              ('app-scale', 'hello', 'prod', '--replicas=2', '--memory-limit=256Mi'), 'hello/prod',
              'console/scale-hello-prod-abc1234', '[console] apps: scale hello/prod'),
-            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}', f'--expect-config={PROMOTION["configuration"]}'), 'hello/prod',
+            ('/apps/hello/staging/promote', PROMOTION, ('app-promote', 'hello', f'--expect-image={IMAGE}'), 'hello/prod',
              'console/promote-hello-staging-abc1234', '[console] apps: promote hello/staging to hello/prod'),
             ('/apps/hello/staging/remove', {}, ('app-remove', 'hello', 'staging'), 'hello/staging',
              'console/remove-hello-staging-abc1234', '[console] apps: remove hello/staging'),
@@ -931,9 +965,8 @@ class ChangeAppRouteTests(unittest.TestCase):
 
     def test_a_rollback_promotion_is_merged_by_a_person(self):
         """Staging runs an older build than production: the PR opens without the auto-merge label."""
-        older = promotion.Decision('update', IMAGE, 'ghcr.io/me/hello:3.0', rollback=True)
         c, jobs = self.client(tree_fake())
-        with mock.patch.object(promotion, 'decide', return_value=older):
+        with mock.patch.object(promotion, 'older', return_value=True):
             c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
         job = jobs.get(1)
         self.assertEqual(job.state, 'succeeded', job.lines)
@@ -941,7 +974,8 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertTrue(any(line.startswith('Merge plan: Manual merge required') and 'rollback' in line for line in job.lines))
         body = self.api.sent('POST /pulls')[0]['body']
         self.assertNotIn('Merges itself', body)
-        self.assertTrue(console_promotion.body_metadata(body)['rollback'])
+        self.assertIn('a rollback', body)
+        self.assertEqual(console_promotion.promoted_image(body), IMAGE)
 
     def test_a_first_promotion_that_changes_the_apps_it_calls_is_merged_by_a_person(self):
         """The merge gate holds a promotion to its own app: one that edits its callees must not be labelled for it."""
@@ -966,8 +1000,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             page = c.get('/apps/hello/staging/promotion', headers=WHO).text
             self.assertIn('This also lets hello call orders in production', page)
             self.assertNotIn('name="hold"', page, 'there is no automatic merge to hold')
-            form = {'image': IMAGE, 'configuration': review['configuration'], 'target': review['target']}
-            c.post('/apps/hello/staging/promote', data=form, headers=WHO)
+            c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
         job = jobs.get(1)
         self.assertEqual(job.state, 'succeeded', job.lines)
         self.assertTrue(any(line.startswith('Merge plan: Manual merge required') and 'orders' in line for line in job.lines))
@@ -975,7 +1008,10 @@ class ChangeAppRouteTests(unittest.TestCase):
         body = self.api.sent('POST /pulls')[0]['body']
         self.assertIn('This also lets `hello` call `orders/prod`', body)
         self.assertNotIn('Merges itself', body)
-        self.assertTrue(console_promotion.body_metadata(body)['setup'], 'the promotion needs review and cannot be resumed')
+        self.assertIn('creates production', body)
+        committed = [entry['path'] for entry in self.api.sent('POST /git/trees')[0]['tree']]
+        self.assertTrue(committed and all(promotion.records('hello', path) for path in committed),
+                        f'a first promotion carries records only: {committed}')
 
     def test_a_change_the_tooling_refuses_shows_its_own_words_and_opens_nothing(self):
         """The console runs the same commands as make, so their refusals read the same in the job."""
@@ -1100,7 +1136,7 @@ class ChangeAppRouteTests(unittest.TestCase):
             c.get('/apps/hello/staging/promotion', headers=WHO)
         self.assertFalse([r for r in self.api.requests if '/compare/' in r.url.path], 'an applied staging asks GitHub nothing more')
 
-    def test_review_page_submits_the_displayed_image_and_configuration(self):
+    def test_review_page_submits_the_displayed_image_and_shows_what_main_renders(self):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
         c, _ = self.client(tree_fake())
         with mock.patch.object(ops, 'gather_status', return_value=good):
@@ -1108,6 +1144,10 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         for name, value in PROMOTION.items():
             self.assertIn(f'name="{name}" value="{value}"', response.text)
+        self.assertNotIn('name="configuration"', response.text)
+        self.assertIn('What main renders differently', response.text)
+        self.assertIn('b/apps/hello/prod/helmrelease.yaml', response.text, 'the rendered diff, against main')
+        self.assertNotIn('b/apps/hello/prod/release.yaml', response.text, 'records are in the PR, not the diff')
         self.assertIn('Hold for manual review', response.text)
         with mock.patch.object(ops, 'gather_status', return_value=replace(good, release=None)):
             response = c.get('/apps/hello/staging/promotion', headers=WHO)
@@ -1117,7 +1157,7 @@ class ChangeAppRouteTests(unittest.TestCase):
     def test_duplicate_click_and_restart_recover_the_existing_pr(self):
         pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',
                                  'console/promote-hello-staging-abcdef0', '2026-10-03',
-                                 '<!-- swhurl-promotion ' + json.dumps({'image': IMAGE}) + ' -->')
+                                 f'Promote the reviewed staging image `{IMAGE}` to `hello/prod`.')
         runner = tree_fake()
         c, jobs = self.client(runner)
         with mock.patch.object(changes, 'console_prs', return_value=[pr]):
@@ -1127,54 +1167,39 @@ class ChangeAppRouteTests(unittest.TestCase):
             fresh, fresh_jobs = self.client(tree_fake())
             response = fresh.get('/apps/hello/staging/promotion', headers=WHO)
             self.assertIn(pr.url, response.text)
-            self.assertIn('Manual merge required: held by you', response.text)
-            self.assertIn('action="/promotion-prs/9/resume"', response.text)
-            self.assertNotIn('action="/promotion-prs/9/hold"', response.text, 'only the control that applies now')
+            self.assertIn('Manual merge required', response.text)
+            self.assertNotIn('/promotion-prs/', response.text, 'no hold or resume control: the label is the request')
             self.assertEqual(fresh_jobs.recent(), [])
         self.assertFalse(any(c[:3] == (sys.executable, '-m', 'swhurl') for c in runner.calls))
         self.assertEqual(self.api.sent('POST /pulls'), [])
 
-    def test_an_open_pr_says_who_merges_it_and_offers_the_one_control_that_applies(self):
-        def pr(branch='console/promote-hello-staging-abcdef0', labels=(), meta=None):
-            body = '<!-- swhurl-promotion ' + json.dumps(meta) + ' -->' if meta else ''
-            return changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9', branch, '2026-10-03', body, labels)
+    def test_an_open_pr_says_who_merges_it(self):
+        def pr(branch='console/promote-hello-staging-abcdef0', labels=(), body='', refused=''):
+            return changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9', branch, '2026-10-03', body, labels,
+                                       refused=refused)
         mode = server.promotion.merge_mode
-        self.assertEqual(mode(pr(labels=('auto-merge',), meta={'image': IMAGE})), ('Auto-merge after checks', 'hold'))
-        self.assertEqual(mode(pr(meta={'image': IMAGE})), ('Manual merge required: held by you', 'resume'))
-        self.assertEqual(mode(pr(meta={'image': IMAGE, 'setup': True})),
-                         ('Manual merge required: setup needs your review', ''), 'setup is never automatic')
-        self.assertEqual(mode(pr(meta={'image': IMAGE, 'rollback': True})),
-                         ('Manual merge required: a rollback needs your review', ''), 'a rollback is never automatic')
-        self.assertEqual(mode(pr(labels=('promotion-review-required',), meta={'image': IMAGE})),
-                         ('Manual merge required: auto-merge was refused', ''))
-        self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), ('Auto-merge after checks', ''),
-                         'only a promotion can be held')
-        self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), ('Manual merge required', ''))
-        manual = changes.PullRequest(9, 'new hello', 'https://github.com/x/pull/9',
-                                     'console/new-hello-staging-abcdef0', '2026-10-03',
-                                     '**Merge plan:** Manual merge required: this pull request also changes existing app settings for orders.')
-        self.assertEqual(mode(manual),
-                         ('Manual merge required: this pull request also changes existing app settings for orders.', ''))
+        self.assertEqual(mode(pr(labels=('auto-merge',))), 'Auto-merge after checks')
+        self.assertEqual(mode(pr('console/new-hello-staging-abcdef0', ('auto-merge',))), 'Auto-merge after checks')
+        self.assertEqual(mode(pr(refused='it promotes an older image than production runs (a rollback): a person reviews it')),
+                         'Manual merge required: auto-merge was refused: it promotes an older image than production runs '
+                         '(a rollback): a person reviews it')
+        plan = '**Merge plan:** Manual merge required: this pull request creates production. Review the changes, then merge it yourself.'
+        self.assertEqual(mode(pr(body=plan)), 'Manual merge required: this pull request creates production. Review the changes, '
+                                              'then merge it yourself.')
+        self.assertEqual(mode(pr(body=plan, refused='it conflicts with main')),
+                         'Manual merge required: auto-merge was refused: it conflicts with main', "the gate's reason comes first")
+        self.assertEqual(mode(pr('console/scale-hello-prod-abcdef0')), 'Manual merge required')
 
     def test_existing_pr_requires_explicit_replacement_for_another_image(self):
         pr = changes.PullRequest(9, 'promote hello', 'https://github.com/x/pull/9',
                                  'console/promote-hello-staging-abcdef0', '2026-10-03',
-                                 '<!-- swhurl-promotion ' + json.dumps({'image': 'older'}) + ' -->')
+                                 'Promote the reviewed staging image `older` to `hello/prod`.')
         c, jobs = self.client(tree_fake())
         with mock.patch.object(changes, 'console_prs', return_value=[pr]):
             response = c.post('/apps/hello/staging/promote', data=PROMOTION, headers=WHO)
         self.assertEqual(response.status_code, 400)
         self.assertIn('Close it explicitly', response.text)
         self.assertEqual(jobs.recent(), [])
-
-    def test_configuration_or_destination_movement_opens_nothing(self):
-        for field in ('configuration', 'target'):
-            c, jobs = self.client(tree_fake())
-            response = c.post('/apps/hello/staging/promote', data={**PROMOTION, field: 'stale'}, headers=WHO)
-            self.assertEqual(response.status_code, 200)  # redirect to the failed job page
-            self.assertEqual(jobs.get(1).state, 'failed')
-            self.assertIn('changed since review', jobs.get(1).lines[-1])
-            self.assertEqual(self.api.sent('POST /pulls'), [])
 
     def test_staging_movement_after_generation_still_opens_nothing(self):
         good = ops.gather_status(staging_reads(FakeRunner()), Instance('hello', 'staging'))
@@ -1184,38 +1209,6 @@ class ChangeAppRouteTests(unittest.TestCase):
         self.assertEqual(jobs.get(1).state, 'failed')
         self.assertIn('changed', jobs.get(1).lines[-1])
         self.assertEqual(self.api.sent('POST /git/refs'), [])
-
-
-class PromotionControlTests(unittest.TestCase):
-    def client(self, setup=False, labels=('auto-merge',), rollback=False):
-        requests = []
-        pr = {'state': 'open', 'base': {'ref': 'main'},
-              'head': {'ref': 'console/promote-hello-staging-abcdef0',
-                       'repo': {'full_name': 'samclement/swhurl-platform'}},
-              'labels': [{'name': label} for label in labels],
-              'body': '<!-- swhurl-promotion ' + json.dumps({'app': 'hello', 'image': IMAGE, 'setup': setup, 'rollback': rollback}) + ' -->'}
-
-        def reply(request):
-            requests.append(request)
-            return httpx.Response(200, json=pr if request.method == 'GET' else {})
-        github = changes.GitHub('samclement/swhurl-platform', TOKEN, transport=httpx.MockTransport(reply))
-        return FakeRunner(), github, requests
-
-    def test_hold_removes_only_the_auto_merge_label_and_resume_requests_rechecks(self):
-        runner, github, requests = self.client()
-        console_promotion.control(runner, github, 7, 'hold')
-        self.assertEqual([(r.method, r.url.path.split('/issues/')[-1]) for r in requests if r.method != 'GET'],
-                         [('DELETE', '7/labels/auto-merge')])
-        runner, github, requests = self.client(labels=())
-        console_promotion.control(runner, github, 7, 'resume')
-        self.assertEqual(json.loads(requests[-1].content), {'labels': ['auto-merge']})
-
-    def test_setup_rollback_and_failed_merge_checks_cannot_be_resumed(self):
-        for setup, labels, rollback in [(True, (), False), (False, ('promotion-review-required',), False), (False, (), True)]:
-            runner, github, requests = self.client(setup=setup, labels=labels, rollback=rollback)
-            with self.assertRaises(actions.ActionError):
-                console_promotion.control(runner, github, 7, 'resume')
-            self.assertTrue(all(r.method == 'GET' for r in requests))
 
 
 if __name__ == '__main__':

@@ -1,33 +1,32 @@
-"""Review and recover promotion PRs using GitHub's authoritative tree, not cached cluster rows."""
+"""Review and open promotion PRs using GitHub's authoritative tree, not cached cluster rows.
+
+A promotion PR carries only the app's records (promotion.records): production's Release, its offers
+documents and, for a first promotion, its Settings and encrypted files. Main renders the rest when the
+PR is merged (the merge gate, or the Render workflow after a merge on GitHub)."""
 from __future__ import annotations
 
-import hashlib
-import json
+import contextlib
+import difflib
+import io
 import re
 import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from swhurl import platform
 from swhurl.apps import calling, helmrelease, ops, promotion
 from swhurl.apps.instance import Instance, instance_folder
 from swhurl.apps.model import sync as model_sync
+from swhurl.apps.new import GenerationError
 from swhurl.apps.yaml_file import EditError
 from swhurl.console import changes
 from swhurl.console.actions import ActionError, Job
-from swhurl.run import Runner
+from swhurl.run import CommandError, Runner
 
-MARKER = re.compile(r'<!-- swhurl-promotion (\{[^\n]*\}) -->')
-
-
-def inputs_hash(root: Path) -> str:
-    files = [*sorted((root / 'tools/swhurl/apps').glob('*.py')),
-             root / platform.SETTINGS, root / platform.HELM_REPOSITORIES, root / '.sops.yaml',
-             root / 'tools/swhurl/console/promotion.py', root / 'tools/swhurl/console/merge.py',
-             root / '.github/workflows/auto-merge.yml']
-    return hashlib.sha256(json.dumps({p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-                                     for p in files if p.is_file()}, sort_keys=True).encode()).hexdigest()
+IMAGE_LINE = re.compile(r'(?m)^Promote the reviewed staging image `([^`\n]+)` to `[a-z0-9-]+/prod`\.')
+"""The PR body's first line, which names the promoted image: an open PR for another image is refused."""
+RENDERED = ('apps', 'clusters', 'platform')  # where a promotion's rendered files are
+DIFF_LINES = 400  # the review page's rendered diff stops here
 
 
 def main_tree(runner: Runner, github: changes.GitHub, read: Callable[[Path], object]):
@@ -61,14 +60,40 @@ def staging_status(runner: Runner, github: changes.GitHub | None, instance: Inst
 
 
 def admitting(root: Path, app: str, source: dict) -> list[str]:
-    """The production apps a first promotion of ``app`` also edits: each app staging calls that already
-    runs in production gains the new caller in its allowed callers and network policy. The merge gate
-    holds a promotion to its own app, so such a pull request is merged by a person."""
+    """The production apps a first promotion of ``app`` also changes once main renders it: each app staging
+    calls that already runs in production gains the new caller in its allowed callers and network policy."""
     return [callee for callee in calling.declared_calls(helmrelease.variables(source))
             if callee != app and instance_folder(root, callee, 'prod').is_dir()]
 
 
-def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
+def contents(root: Path) -> dict[str, bytes]:
+    """Every file under the folders a promotion writes, by path from ``root``."""
+    return {path.relative_to(root).as_posix(): path.read_bytes()
+            for top in RENDERED for path in sorted((root / top).rglob('*')) if path.is_file()}
+
+
+def rendered_diff(root: Path, app: str, image: str, runner: Runner) -> tuple[str, int, list[str]]:
+    """What a later promotion of ``image`` changes in main (``root``, which is changed): ``(unified diff of
+    the rendered files, how many, the records it changes)``, the diff stopping after DIFF_LINES lines.
+    Records are left out of the diff: the PR shows them."""
+    before = contents(root)
+    with contextlib.redirect_stdout(io.StringIO()):
+        from swhurl.apps import edit
+        edit.promote(root, app, expect_image=image, runner=runner)
+    after = contents(root)
+    changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
+    paths = [path for path in changed if not promotion.records(app, path)]
+    lines: list[str] = []
+    for path in paths:
+        lines += difflib.unified_diff(before.get(path, b'').decode(errors='replace').splitlines(),
+                                      after.get(path, b'').decode(errors='replace').splitlines(),
+                                      f'a/{path}', f'b/{path}', lineterm='')
+    if len(lines) > DIFF_LINES:
+        lines = [*lines[:DIFF_LINES], f'… {len(lines) - DIFF_LINES} more lines']
+    return '\n'.join(lines), len(paths), [path for path in changed if promotion.records(app, path)]
+
+
+def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | None = None) -> dict:
     source, target = promotion.read(root, app)
     decision = promotion.decide(source, target)
     problem = promotion.source_problem(status, decision.image)
@@ -90,60 +115,49 @@ def review(root: Path, app: str, status: ops.InstanceStatus) -> dict:
     else:
         addresses = ()
     database = first.entry.settings.allocations.database if first else None
-    return {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
-            'rollback': decision.rollback,
-            'configuration': promotion.fingerprint(root, app, 'staging'),
-            'target': promotion.fingerprint(root, app, 'prod'), 'needs_host': needs_host,
-            'secrets': first.secret_keys if first else [], 'storage': database.size if database else None,
-            'admits': admits,
-            'address': ', '.join('https://' + address for address in addresses) or
-            ('private (no route)' if not needs_host else ''),
-            'setup': decision.outcome == 'create'}  # a person merges every first promotion (merge.check_promotion)
+    found = {'app': app, 'outcome': decision.outcome, 'image': decision.image, 'previous': decision.previous,
+             'rollback': decision.rollback, 'needs_host': needs_host,
+             'secrets': first.secret_keys if first else [], 'storage': database.size if database else None,
+             'admits': admits,
+             'address': ', '.join('https://' + address for address in addresses) or
+             ('private (no route)' if not needs_host else ''),
+             'setup': decision.outcome == 'create', 'diff': '', 'diff_files': 0, 'diff_problem': '', 'held': ''}
+    if decision.outcome == 'update':
+        before, staged = promotion.release_of(root, app, 'prod'), promotion.release_of(root, app, 'staging')
+        try:
+            found['diff'], found['diff_files'], records = rendered_diff(root, app, decision.image, runner or Runner())
+        except (EditError, CommandError, GenerationError) as error:
+            found['diff_problem'] = str(error)
+        else:
+            # Why a person would merge it (promotion.held), shown before the PR exists; staging runs this digest.
+            found['held'] = promotion.held(app, records, before, promotion.release_of(root, app, 'prod'),
+                                           lambda digest: bool(staged) and digest == staged.image.digest)
+    return found
 
 
-def metadata(root: Path, app: str, image: str, setup: bool) -> dict:
-    return {'app': app, 'image': image, 'setup': setup,
-            'source': promotion.fingerprint(root, app, 'staging', ignore_image=True),
-            'target': promotion.fingerprint(root, app, 'prod'), 'inputs': inputs_hash(root)}
-
-
-def body_metadata(body: str) -> dict:
-    match = MARKER.search(body)
-    try:
-        return json.loads(match[1]) if match else {}
-    except ValueError:
-        return {}
-
-
-def merge_mode(pr: changes.PullRequest) -> tuple[str, str]:
-    """How an open console PR gets merged, and the one control that applies to it now:
-    ``(words, 'hold' | 'resume' | '')``. Only a promotion can be held or handed back to auto-merge."""
-    if 'promotion-review-required' in pr.labels:
-        return 'Manual merge required: auto-merge was refused', ''
-    promote = pr.branch.startswith('console/promote-')
+def merge_mode(pr: changes.PullRequest) -> str:
+    """How an open console PR gets merged: by the gate (its label), or by a person and why."""
     if changes.AUTO_MERGE_LABEL in pr.labels:
-        return 'Auto-merge after checks', 'hold' if promote else ''
-    meta = body_metadata(pr.body) if promote else {}
-    if meta.get('rollback'):
-        return 'Manual merge required: a rollback needs your review', ''
-    if meta and not meta.get('setup'):
-        return 'Manual merge required: held by you', 'resume'
-    if promote and meta.get('setup'):
-        return 'Manual merge required: setup needs your review', ''
+        return 'Auto-merge after checks'
+    if pr.refused:
+        return f'Manual merge required: auto-merge was refused: {pr.refused}'
     plan = re.search(r'(?m)^\*\*Merge plan:\*\* (.+)$', pr.body)
-    if plan:
-        return plan.group(1), ''
-    return 'Manual merge required', ''
+    return plan.group(1) if plan else 'Manual merge required'
 
 
 def matching(pr: changes.PullRequest, app: str) -> bool:
     return re.fullmatch(rf'console/promote-{re.escape(app)}-staging-[0-9a-f]{{7,40}}', pr.branch) is not None
 
 
+def promoted_image(body: str) -> str:
+    found = IMAGE_LINE.search(body)
+    return found[1] if found else ''
+
+
 def existing(runner: Runner, github: changes.GitHub, app: str, image: str) -> changes.PullRequest | None:
     for pr in changes.console_prs(runner, github):
         if matching(pr, app):
-            if body_metadata(pr.body).get('image') != image:
+            if promoted_image(pr.body) != image:
                 raise ActionError(f'A promotion PR is already open: {pr.url}. Close it explicitly before reviewing a replacement image.')
             return pr
     return None
@@ -158,89 +172,49 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
     if previous:
         job.lines.append('Reusing the existing promotion pull request')
         return previous.url
-    captured, admits, own_setup, rollback = {}, [], [], []
+    reasons, admits, first = [], [], []
 
     def change(root: Path):
         source, target = promotion.read(root, app)
-        if target is not None and promotion.decide(source, target).rollback:
-            rollback.append(True)  # the merge gate holds a rollback too (merge.replay_promotion)
-        if promotion.fingerprint(root, app, 'prod') != form['target']:
-            raise ActionError('production changed since review; refresh and review it again')
-        if promotion.fingerprint(root, app, 'staging') != form['configuration']:
-            raise ActionError('staging configuration changed since review; refresh and review it again')
-        first = promotion.first_production(root, model_sync.read(root)[0], app, host=form.get('host') or None) if target is None else None
-        admits.extend(admitting(root, app, source) if target is None else [])
-        if first:  # a person merges every first promotion (merge.check_promotion)
-            own_setup.append(True)
-        setup = bool(own_setup or admits)
-        captured.update(metadata(root, app, image, setup), rollback=bool(rollback))
-        if admits:
-            job.lines.append(f"Not merging automatically: it also lets {app} call {', '.join(admits)} in production, "
-                             "changing those apps' allowed callers and network policy; review them, then merge it yourself")
-        argv = [app, f'--expect-image={image}', f'--expect-config={form["configuration"]}']
+        if target is None:
+            first.append(True)
+            admits.extend(admitting(root, app, source))
+        before_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}
+        before = promotion.release_of(root, app, 'prod')
+        argv = [app, f'--expect-image={image}']
         if staging and staging.unaffected:
             argv.append(f'--source-unchanged={promotion.sha(staging.applied_revision)}..{promotion.sha(staging.desired_revision)}')
         if form.get('host'):
             argv.append(f'--host={form["host"]}')
         changes.run_tool(runner, job, root, 'app-promote', argv)
+        after_files = {path: data for path, data in contents(root).items() if promotion.records(app, path)}
+        changed = [path for path in before_files.keys() | after_files.keys() if before_files.get(path) != after_files.get(path)]
+        staged = promotion.release_of(root, app, 'staging')
+        # Staging runs the reviewed digest now (source_problem), and its record says so on main.
+        reason = promotion.held(app, changed, before, promotion.release_of(root, app, 'prod'),
+                                lambda digest: bool(staged) and digest == staged.image.digest)
+        if reason:
+            reasons.append(reason)
+        if admits:
+            reasons.append(f'also changes the allowed callers and network policy for {", ".join(admits)} once main renders it')
 
     def body(_root: Path) -> str:
         instructions = ''
-        if own_setup:
+        if first:
             instructions += ('\n\nBefore merging, review the production hostname, and if Secret placeholders were created, set each value on this branch '
-                             f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal) and review Reloader registration.')
+                             f'with `make app-secret APP={app} ENV=prod NAME=<name>` (in your own terminal). Main renders production when this is merged.')
         if admits:
             instructions += (f"\n\nThis also lets `{app}` call {', '.join(f'`{callee}/prod`' for callee in admits)}: "
-                             "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy. The merge gate holds a "
-                             'promotion to its own app, so review those changes and merge this yourself.')
-        return (f'Promote the reviewed staging image `{image}` to `{app}/prod`.' + instructions
-                + '\n\n<!-- swhurl-promotion ' + json.dumps(captured, sort_keys=True) + ' -->')
+                             "each gains it in `SWHURL_ALLOWED_CALLERS` and its network policy when main renders it.")
+        return f'Promote the reviewed staging image `{image}` to `{app}/prod`.' + instructions
 
     def verify():
         problem = promotion.source_problem(staging_status(runner, github, Instance(app, 'staging')), image)
         if problem:
             raise ActionError(problem)
 
-        def current(root):
-            if (promotion.fingerprint(root, app, 'staging') != form['configuration']
-                    or promotion.fingerprint(root, app, 'prod') != form['target']
-                    or inputs_hash(root) != captured['inputs']):
-                raise ActionError('configuration changed before PR creation; refresh and review it again')
-        main_tree(runner, github, current)
-
     return changes.open_pr(runner, github, job, slug=f'promote-{app}-staging',
                            title=f'apps: promote {app}/staging to {app}/prod', body=body, change=change,
-                           auto_merge=lambda: form.get('hold') != 'on' and not captured.get('setup') and not rollback,
-                           manual_merge_reason=lambda: (f'also changes the allowed callers and network policy for {", ".join(admits)}'
-                                                        if admits else 'needs production setup review' if own_setup
-                                                        else 'promotes an older image than production runs (a rollback)' if rollback else ''),
-                           verify=verify)
-
-
-def control(runner: Runner, github: changes.GitHub, number: int, action: str) -> str:
-    api = changes.GitHubAPI(runner, github)
-    try:
-        pr = api.json('GET', f'/pulls/{number}')
-        if (pr.get('state') != 'open' or not pr.get('head', {}).get('ref', '').startswith('console/promote-')
-                or pr.get('head', {}).get('repo', {}).get('full_name') != github.repo or pr.get('base', {}).get('ref') != 'main'):
-            raise ActionError('only an open promotion PR from this repository can be held or resumed')
-        if action == 'hold':
-            labels = {label['name'] for label in pr.get('labels', [])}
-            if changes.AUTO_MERGE_LABEL in labels:
-                api.call('DELETE', f'/issues/{number}/labels/{changes.AUTO_MERGE_LABEL}')
-        elif action == 'resume':
-            meta = body_metadata(pr.get('body') or '')
-            if 'promotion-review-required' in {label['name'] for label in pr.get('labels', [])}:
-                raise ActionError('merge verification failed; close this PR and review a fresh promotion')
-            if meta.get('setup'):
-                raise ActionError('this promotion needs setup and manual merging; it cannot auto-merge')
-            if meta.get('rollback'):
-                raise ActionError('this promotion is a rollback: a person reviews and merges it')
-            if not meta:
-                raise ActionError('this PR has no reviewed configuration; create a fresh promotion')
-            api.call('POST', f'/issues/{number}/labels', {'labels': [changes.AUTO_MERGE_LABEL]})
-        else:
-            raise ActionError('choose hold or resume')
-        return pr.get('html_url', f'https://github.com/{github.repo}/pull/{number}')
-    finally:
-        api.client.close()
+                           auto_merge=lambda: form.get('hold') != 'on' and not reasons,
+                           manual_merge_reason=lambda: ' and '.join(reasons), verify=verify,
+                           keep=lambda path: promotion.records(app, path))

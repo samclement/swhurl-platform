@@ -47,7 +47,7 @@ from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.apps.model.render import ANNOTATION
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.merge import REFUSAL, REFUSAL_LIMIT, request_marker
-from swhurl.console.stages import ABSENT, Target
+from swhurl.console.stages import ABSENT, UNRENDERED, Target
 from swhurl.run import Runner
 
 DEFAULT_REPO = platform.GITHUB_REPO
@@ -146,32 +146,37 @@ class PullRequest:
     progress: str = 'Awaiting review'
     checks_url: str = ''
     checks: str = ''  # Validate on its head: passed, failed, running, pending, conflict, or '' (not read)
+    refused: str = ''  # why the merge gate held it (its comment), when it did and the label is off
+
+
+GATE_BRANCHES = (f'{BRANCH_PREFIX}new-', f'{BRANCH_PREFIX}promote-')
+"""The console branches the merge gate takes; only these can carry its refusal."""
 
 
 def refusal(runner: Runner, github: GitHub, number: int) -> str:
-    """Why the merge gate holds a PR: the newest reason it left as a comment. Anyone can comment on a
-    public repository, so only the workflow's own comments count."""
-    words = 'Auto-merge refused'
+    """Why the merge gate held a PR: the newest reason it left as a comment, or '' (none, or unreadable).
+    Anyone can comment on a public repository, so only the workflow's own comments count."""
     api = GitHubAPI(runner, github)
     try:
         comments = api.json('GET', f'/issues/{number}/comments?per_page=100')
     except ActionError:
-        return f'{words}; reason in its checks'
+        return ''
     finally:
         api.client.close()
     for comment in reversed(comments):
         first = (comment.get('body') or '').split('\n', 1)[0]
         if comment.get('user', {}).get('login') == GATE_AUTHOR and first.startswith(REFUSAL):
-            return f'{words}: {first.removeprefix(REFUSAL)[:REFUSAL_LIMIT]}'
-    return f'{words}; reason in its checks'
+            return first.removeprefix(REFUSAL)[:REFUSAL_LIMIT]
+    return ''
 
 
-def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str, str]:
-    """Describe review or validation progress, its best available checks link, and how Validate went on
-    its head (``PullRequest.checks``), which is read whoever merges it."""
+def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str, ...]) -> tuple[str, str, str, str]:
+    """Describe review or validation progress, its best available checks link, how Validate went on its
+    head (``PullRequest.checks``, read whoever merges it) and, without the auto-merge label, why the
+    merge gate held it (``PullRequest.refused``)."""
     checks_url = pull['html_url'] + '/checks'
     if not pull['head'].get('sha'):
-        return 'Awaiting setup or manual review', checks_url, ''
+        return 'Awaiting setup or manual review', checks_url, '', ''
     api = GitHubAPI(runner, github)
     try:
         runs = api.json('GET', f"/actions/runs?head_sha={pull['head']['sha']}&event=pull_request&per_page=30")
@@ -194,11 +199,11 @@ def pull_progress(runner: Runner, github: GitHub, pull: dict, labels: tuple[str,
         checks, progress = '', 'Merge requested; check progress on GitHub'
     finally:
         api.client.close()
-    if 'promotion-review-required' in labels:
-        return refusal(runner, github, pull['number']), pull['html_url'] + '/checks', checks
     if AUTO_MERGE_LABEL not in labels:
-        return 'Awaiting setup or manual review', pull['html_url'] + '/checks', checks
-    return progress, checks_url, checks
+        refused = refusal(runner, github, pull['number']) if pull['head']['ref'].startswith(GATE_BRANCHES) else ''
+        progress = f'Auto-merge refused: {refused}' if refused else 'Awaiting setup or manual review'
+        return progress, pull['html_url'] + '/checks', checks, refused
+    return progress, checks_url, checks, ''
 
 
 def pull_state(runner: Runner, github: GitHub, number: int) -> tuple[str, str, str]:
@@ -229,7 +234,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
     try:
         content = api.call('GET', f'/tarball/{revision}').content
         with tarfile.open(fileobj=io.BytesIO(content), mode='r:gz') as archive:
-            releases, settings, apps = {}, {}, {}
+            releases, settings, records, apps = {}, {}, {}, {}
             for member in archive.getmembers():
                 parts = Path(member.name).parts
                 if not member.isfile() or len(parts) < 4 or parts[1] != 'apps':
@@ -240,13 +245,23 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                     releases[f'{parts[2]}/{parts[3]}'] = yamlio.load(archive.extractfile(member).read().decode())
                 elif len(parts) == 5 and parts[4] == 'instance.yaml':
                     settings[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
+                elif len(parts) == 5 and parts[4] == 'release.yaml':
+                    records[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
+
+            def digest(*parts: bytes) -> str:
+                return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
             found = {}
-            for name, release in releases.items():
-                mine = settings.get(name)
+            for name in releases.keys() | records.keys():
+                app, mine, record = apps.get(name.split('/')[0], b''), settings.get(name), records.get(name)
+                release = releases.get(name)
+                if release is None and (mine is None or record is None):
+                    continue  # neither rendered nor recorded: not an instance
                 found[name] = Target(
-                    (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
-                    helmrelease.image(release).get('digest', ''),
-                    hashlib.sha256(apps.get(name.split('/')[0], b'') + b'\0' + mine).hexdigest()[:16] if mine is not None else '')
+                    (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, '') if release else UNRENDERED,
+                    helmrelease.image(release).get('digest', '') if release else
+                    str(((yamlio.load(record.decode()) or {}).get('image') or {}).get('digest', '')),
+                    digest(app, mine) if mine is not None else '',
+                    digest(app, record, mine) if mine is not None and record is not None else '')
             return found
     except (tarfile.TarError, ValueError, AttributeError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read render targets: {error}') from None
@@ -287,9 +302,9 @@ def console_prs(runner: Runner, github: GitHub) -> list[PullRequest]:
         if not p['head']['ref'].startswith(BRANCH_PREFIX):
             continue
         labels = tuple(label['name'] for label in p.get('labels', []))
-        progress, checks_url, checks = pull_progress(runner, github, p, labels)
+        progress, checks_url, checks, refused = pull_progress(runner, github, p, labels)
         out.append(PullRequest(p['number'], p['title'], p['html_url'], p['head']['ref'], p['created_at'][:10],
-                               p.get('body') or '', labels, progress, checks_url, checks))
+                               p.get('body') or '', labels, progress, checks_url, checks, refused))
     return out
 
 
@@ -320,8 +335,10 @@ def download(api: GitHubAPI, revision: str, workdir: Path) -> Path:
 
 def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, body: str | Callable[[Path], str],
             change: Callable[[Path], None], auto_merge: bool | Callable[[], bool] = False,
-            manual_merge_reason: str | Callable[[], str] = '', verify: Callable[[], None] | None = None) -> str:
+            manual_merge_reason: str | Callable[[], str] = '', verify: Callable[[], None] | None = None,
+            keep: Callable[[str], bool] | None = None) -> str:
     """Download ``main``, apply ``change(tree)``, commit its files to a new branch and open a PR. Returns the PR's URL.
+    ``keep``: which of the changed paths the PR carries (a promotion's records); the rest are left out.
 
     With ``auto_merge`` the PR is labelled to merge itself once Validate passes, unless it adds or changes an
     encrypted file: a new Secret's values are ``REPLACE_ME`` until someone sets them on the branch. A new
@@ -346,7 +363,7 @@ def open_pr(runner: Runner, github: GitHub, job: Job, *, slug: str, title: str, 
         auto_merge = auto_merge() if callable(auto_merge) else auto_merge
         manual_merge_reason = manual_merge_reason() if callable(manual_merge_reason) else manual_merge_reason
         after = snapshot(tree)
-        changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p))
+        changed = sorted(p for p in after.keys() | before.keys() if after.get(p) != before.get(p) and (keep is None or keep(p)))
         if not changed:
             raise ActionError('the change left no files changed; nothing to propose')
         for path in changed:

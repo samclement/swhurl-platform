@@ -17,7 +17,7 @@ from swhurl import yamlio
 from swhurl.apps import egress, events
 from swhurl.apps.calling import signing_keys
 from swhurl.apps.contract import SECRET_FILE
-from swhurl.apps.instance import instances
+from swhurl.apps.instance import Instance
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry, Platform, World
 from swhurl.apps.model.records import (
     APP_FILE,
@@ -43,12 +43,20 @@ def _load(path: Path) -> object:
     return yamlio.load(path.read_text())
 
 
+def recorded(folder: Path) -> list[Instance]:
+    """The instances under ``folder`` (``<root>/apps``): each ``<app>/<env>`` with a HelmRelease or a Release
+    record, in order. A merged first promotion has its records before main renders it."""
+    paths = {path.parent for name in ('helmrelease.yaml', RELEASE_FILE) for path in folder.glob(f'*/*/{name}')}
+    found = (Instance.named(path.parent.name, path.name) for path in sorted(paths))
+    return [each for each in found if each]
+
+
 def world(root: Path, base: Path = Path('apps')) -> tuple[World, list[str]]:
     """Every instance's records under ``root``, and why any could not be read."""
     found: World = {}
     problems: list[str] = []
     apps: dict[str, App | None] = {}
-    for each in instances(root / base):
+    for each in recorded(root / base):
         folder = each.folder(root, base)
         try:
             if each.app not in apps:

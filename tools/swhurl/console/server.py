@@ -172,7 +172,7 @@ class ChangeRow:
     id: str
     track: stages.Track
     job: actions.Job | None = None
-    pr: changes.PullRequest | None = None  # its pull request while it is open: what Hold and Request auto-merge act on
+    pr: changes.PullRequest | None = None  # its pull request while it is open
 
 
 
@@ -297,11 +297,10 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             return [], f'Could not list open pull requests: {error}'
 
     def pull_view(pr: changes.PullRequest) -> stages.Pull:
-        words, _control = promotion.merge_mode(pr)
-        refused = 'promotion-review-required' in pr.labels
-        reason = pr.progress if refused else words.removeprefix('Manual merge required').removeprefix(': ')
-        return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url,
-                           changes.AUTO_MERGE_LABEL in pr.labels and not refused, reason.split('. ')[0].rstrip('.'))
+        auto = changes.AUTO_MERGE_LABEL in pr.labels
+        reason = '' if auto else promotion.merge_mode(pr).removeprefix('Manual merge required').removeprefix(': ')
+        return stages.Pull(pr.number, pr.url, 'open', pr.checks, pr.checks_url or pr.url, auto,
+                           reason.split('. ')[0].rstrip('.'))
 
     # Facts that never change once read, kept across page reads; never progress verdicts.
     renders: dict[str, dict[str, stages.Target]] = {}  # a commit's render targets
@@ -356,7 +355,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         target = tree.get(job.unit, absent) if tree is not None else None
         desired = current.get(job.unit, absent) if current is not None else None
         row = rows.get(job.unit) if rows is not None else None
-        aim = desired if target and desired and stages.follows(job.action, target, desired) else target
+        aim = stages.aim(job.action, target, desired) if target and desired else target
         matches = bool(row and aim and row.digest == aim.digest and row.image_matches)
         found = stages.judge(job.action, (row.render_state if row else stages.ABSENT) if rows is not None else None,
                              target, desired, row.render_hash if row else '', row.render_ready if row else False, matches,
@@ -369,7 +368,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
         """Each job as a change with its whole path, and with ``others`` the open pull requests no
         remembered job opened. Also why open pull requests could not be listed, if they could not.
         Independent reads (pull requests, then the cluster, main and merged trees) run at once."""
-        proposed = {job.id: stages.number(job) for job in found if job.state == 'succeeded' and not stages.control(job)}
+        proposed = {job.id: stages.number(job) for job in found if job.state == 'succeeded'}
         proposed = {job_id: number for job_id, number in proposed.items() if number}
         prs, prs_error = open_prs() if others or proposed else ([], '')
         is_open = {pr.number: pr for pr in prs}
@@ -910,26 +909,12 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             status = promotion.staging_status(runner, github, found)
             if status is None:
                 raise actions.ActionError('staging is missing; deploy staging before promoting')
-            reviewed = promotion.main_tree(runner, github, lambda root: promotion.review(root, app, status))
+            reviewed = promotion.main_tree(runner, github, lambda root: promotion.review(root, app, status, runner))
             return page(request, 'promotion.html', review=reviewed, prs=existing)
         except (EditError, new.GenerationError, actions.ActionError) as error:
             return page(request, 'error.html', status_code=409, error=str(error))
         except (CommandError, cluster.ReadError) as error:
             return page(request, 'error.html', status_code=502, error=str(error))
-
-    async def control_promotion(request: Request) -> Response:
-        if github is None:
-            return page(request, 'error.html', status_code=409, error='No GitHub token is configured.')
-        number, action = request.path_params['number'], request.path_params['action']
-        def work(job):
-            job.link = promotion.control(runner, github, number, action)
-            job.lines.append('PR held for manual review.' if action == 'hold' else
-                             'Automatic merge requested; validation and merge verification still apply.')
-        try:
-            job = jobs.submit(action + ' promotion PR', f'PR #{number}', request.state.identity, work)
-        except actions.ActionError as error:
-            return refusal(error) if in_place(request) else page(request, 'error.html', status_code=409, error=str(error))
-        return started(request, job)
 
     async def change_app(request: Request) -> Response:
         """Promote, scale, change access to, change the connections of or remove an instance: a PR made by the clone's app-* commands."""
@@ -967,7 +952,7 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
             raise actions.ActionError('promote from the staging instance')
         image = form.get('image', '')
         changes.checked_host(form.get('host', ''))
-        if not image or not form.get('configuration') or not form.get('target'):
+        if not image:
             raise actions.ActionError('refresh the staging app page and review the image before promotion')
         if not promotion.existing(runner, github, app, image):
             problem = gate.source_problem(promotion.staging_status(runner, github, found), image)
@@ -1038,7 +1023,6 @@ def create_app(runner: Runner, *, dev_identity: str | None = None, jobs: actions
                 Route('/platform', platform), Route('/egress', egress_page), Route('/units', moved('/platform#units')), Route('/units/{unit}', unit),
                 Route('/healthz', healthz), Route('/units/{unit}/{action}', start, methods=['POST']),
                 Route('/apps/{app}/staging/promotion', review_promotion),
-                Route('/promotion-prs/{number:int}/{action}', control_promotion, methods=['POST']),
                 Route('/activity', activity), Route('/jobs', moved('/activity')), Route('/jobs/{id:int}', job),
                 Route('/jobs/{id:int}/events', job_events), Route('/jobs/{id:int}/resume', resume_job, methods=['POST']),
                 Route('/new', new_repo_form), Route('/new/repo', new_repo, methods=['POST']),

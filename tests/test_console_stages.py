@@ -33,11 +33,10 @@ class JobStageTests(unittest.TestCase):
         self.assertIn('the console restarted', interrupted.outcome)
         self.assertEqual(interrupted.status, 'interrupted')
 
-    def test_flux_and_label_jobs_still_end_inside_the_console(self):
+    def test_flux_jobs_still_end_inside_the_console(self):
         done = stages.track(job('reconcile', 'infra-base', lines=['✔ applied revision main@sha1:abc'], link=''))
         self.assertEqual((done.label, done.stages[-1].note), ('Applied', 'main@sha1:abc'))
         self.assertEqual(stages.track(job('suspend', 'infra-base', link='')).label, 'Suspended')
-        self.assertEqual(stages.track(job('hold promotion PR', 'PR #9')).label, 'Held for you to merge')
         self.assertEqual(stages.track(job(link='')).label, 'No pull request opened')
 
     def test_only_job_facts_and_target_survive_restart_and_old_progress_is_ignored(self):
@@ -92,6 +91,33 @@ class RenderProgressTests(unittest.TestCase):
                          'replaced', 'once it ran, a newer image rolling out is not this change in progress')
         self.assertEqual(self.judge(action='scale', target=stages.Target('render-a', 'sha256:a'), current=stages.Target('render-b')).state,
                          'superseded', 'a tree without settings is never followed')
+
+    def test_main_rendering_this_changes_records_is_this_changes_render(self):
+        """A merge commit's records still on main: main's render is this change's, whatever the commit held."""
+        merged = stages.Target(stages.UNRENDERED, 'sha256:b', 'settings-1', 'records-1')  # merged on GitHub, records only
+        rendered = stages.Target('render-b', 'sha256:b', 'settings-1', 'records-1')  # the Render workflow's commit
+        stale = stages.Target('render-a', 'sha256:a', 'settings-1', 'records-1')  # a held PR merged with the old render
+        self.assertEqual(self.judge(target=merged, current=merged).state, 'applying', 'main has not rendered it yet')
+        self.assertEqual(self.judge(target=merged, current=merged).detail, 'main has not rendered it yet')
+        for target in (merged, stale):
+            with self.subTest(target=target.hash):
+                found = self.judge(target=target, current=rendered, applied='render-b')
+                self.assertEqual((found.state, found.newer), ('live', ''), 'not superseded by its own render')
+        self.assertEqual(self.judge(target=stale, current=rendered, applied='render-a').state, 'applying',
+                         "main's render must itself be applied")
+        callers = stages.Target('render-c', 'sha256:b', 'settings-1', 'records-1')  # another app's call changed the render
+        self.assertEqual(self.judge(target=rendered, current=callers, applied='render-c').state, 'live',
+                         "another app's records do not replace it")
+        newer = stages.Target('render-d', 'sha256:c', 'settings-1', 'records-2')  # a later promotion
+        self.assertEqual(self.judge(target=rendered, current=newer, applied='render-d').state, 'superseded',
+                         'a newer prod release replaces a promotion')
+        self.assertEqual(self.judge(action='scale', target=rendered, current=newer, applied='render-d').state, 'live',
+                         'a newer release carries a scale (same settings)')
+        self.assertEqual(stages.aim('promote', rendered, callers), callers)
+        self.assertEqual(stages.aim('promote', rendered, newer), rendered)
+        no_records = stages.Target('render-a', 'sha256:a')
+        self.assertEqual(self.judge(target=no_records, current=stages.Target('render-b', 'sha256:a')).state, 'superseded',
+                         'a tree without records is never matched')
 
     def test_a_healthy_old_release_cannot_complete_a_new_change(self):
         self.assertEqual(self.judge(applied='old').state, 'applying')

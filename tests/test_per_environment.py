@@ -21,11 +21,11 @@ def staging() -> dict:
     env = {'SWHURL_APP': 'orders', calling.ENVIRONMENT_VARIABLE: 'staging', calling.CALLERS_VARIABLE: 'reports',
            'SWHURL_SERVICE_STOCK_URL': 'http://stock.stock-$(SWHURL_ENV).svc.cluster.local:8080',
            events.PUBLISH_VARIABLE: 'created', events.SUBSCRIBE_VARIABLE: 'stock.low', events.URL_VARIABLE: events.URL,
-           events.NKEY_VARIABLE: KEY, calling.API_VARIABLE: '/openapi.json', 'LOG_LEVEL': 'info'}
+           events.NKEY_VARIABLE: KEY, 'LOG_LEVEL': 'info'}
     host = contract.default_host('orders', 'staging')
     return {
         'apiVersion': 'helm.toolkit.fluxcd.io/v2', 'kind': 'HelmRelease',
-        'metadata': {'name': 'orders', 'namespace': 'orders-staging', 'annotations': {offers.ANNOTATION: 'abc1234'}},
+        'metadata': {'name': 'orders', 'namespace': 'orders-staging', 'annotations': {offers.ANNOTATION: 'abc1234', offers.API_ANNOTATION: '/openapi.json'}},
         'spec': {'values': {
             'defaultPodOptions': {'labels': {contract.ENVIRONMENT: 'staging'}},
             'controllers': {'main': {

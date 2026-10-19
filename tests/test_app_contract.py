@@ -136,7 +136,9 @@ class GeneratorTests(unittest.TestCase):
     def test_every_instance_is_told_who_it_is_and_a_web_app_gets_the_issuer_and_keys(self):
         (self.tmp / 'apps').mkdir()
         (self.tmp / 'apps/signing-keys.json').write_text('{"keys": [{"kid": "k1"}]}')
-        self.assertEqual(self.gen('web', '--image', 'r/web:1', '--health-path', '/h', '--otlp', '--api-path', '/openapi.json'), 0)
+        manifest = self.tmp / 'swhurl.yaml'  # where it serves its API description comes only from provides.api
+        manifest.write_text('version: 1\nkind: web\nhealthPath: /h\ntelemetry: otlp\nprovides: {api: /openapi.json}\n')
+        self.assertEqual(self.gen('web', '--image', 'r/web:1', '--manifest', str(manifest), '--no-auto-deploy'), 0)
         self.assertEqual(self.gen('job', '--image', 'r/job:1', '--kind', 'worker'), 0)
 
         def env(app):
@@ -146,7 +148,9 @@ class GeneratorTests(unittest.TestCase):
                          'first, so $(SWHURL_ENV) expands in what follows')
         self.assertEqual((env('web')['SWHURL_APP'], env('web')['SWHURL_ENV'], env('web')['SWHURL_AUTH_KEYS']),
                          ('web', 'staging', '{"keys":[{"kid":"k1"}]}'))
-        self.assertEqual(env('web')['SWHURL_API_PATH'], '/openapi.json')
+        self.assertNotIn('SWHURL_API_PATH', env('web'), 'no app reads it')
+        web = yaml.safe_load((self.tmp / 'apps/web/staging/helmrelease.yaml').read_text())
+        self.assertEqual(web['metadata']['annotations']['platform.swhurl.com/api-description'], '/openapi.json')
         self.assertEqual(env('job'), {'SWHURL_APP': 'job', 'SWHURL_ENV': 'staging', 'SWHURL_NOTIFY_URL': 'http://notify.notify.svc.cluster.local:8080'},
                          'a worker receives no calls')
 

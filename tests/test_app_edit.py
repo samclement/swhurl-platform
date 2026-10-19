@@ -556,7 +556,9 @@ components:
         release = yaml.safe_load((instance / 'helmrelease.yaml').read_text())
         self.assertEqual(release['metadata']['annotations'][offers.ANNOTATION], 'abc1234')
         self.assertNotIn('offers', yaml.safe_load((instance / 'kustomization.yaml').read_text())['resources'], 'documents, not resources')
-        self.assertEqual(self.env('orders')['SWHURL_API_PATH'], '/openapi.json', 'where it serves its description, from swhurl.yaml')
+        self.assertEqual(release['metadata']['annotations'][offers.API_ANNOTATION], '/openapi.json',
+                         'where it serves its description, from swhurl.yaml: an annotation, since no app reads it')
+        self.assertNotIn('SWHURL_API_PATH', self.env('orders'))
         self.assertEqual(offers.problems(instance, ['created', 'paid'], 'abc1234'), [])
         self.assertIn('describes created, paid', offers.problems(instance, ['created'], 'abc1234')[0])
         self.assertIn('the release says its offers are from 0000000', offers.problems(instance, ['created', 'paid'], '0000000')[0])
@@ -572,10 +574,12 @@ components:
             intake.set_offers(self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertEqual({p: p.read_text() for p in instance.rglob('*') if p.is_file()}, before)
 
-        # An app that stops describing itself keeps what it publishes; only the documents go.
+        # An app that stops describing itself keeps what it publishes; the documents and its API link go.
         opener, _ = self.repository({'swhurl.yaml': 'version: 1\nkind: web\nhealthPath: /healthz\n'})
         self.quiet(intake.set_offers, self.root, 'orders', 'staging', opener=opener, runner=runner)
         self.assertFalse((instance / 'offers').exists())
+        self.assertNotIn(offers.API_ANNOTATION, yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}),
+                         'no provides.api: no API description to link')
         self.assertNotIn('platform.swhurl.com/offers', yaml.safe_load((instance / 'helmrelease.yaml').read_text())['metadata'].get('annotations', {}))
         self.assertEqual(self.env('orders')['SWHURL_EVENTS_PUBLISH'], 'created,paid')
 
@@ -757,7 +761,7 @@ components:
         self.without_production()
         self.quiet(edit.set_calls, self.root, 'hello', 'staging', add=['orders'])
         release = self.root / 'apps/orders/staging/helmrelease.yaml'
-        manifest = ('version: 1\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\ntelemetry: otlp\n'
+        manifest = ('version: 1\nstack: kotlin\nkind: web\nport: 9090\nhealthPath: /ready\nuid: 1000\ntelemetry: otlp\n'
                     'resources: {cpu: 50m, memory: 16Mi}\nflags: {shout: {type: boolean, default: false}}\n')
         changed, out = self.quiet(edit.deploy_staging, self.root, 'orders',
                                   opener=self.registry('orders', ['8-def5678'], {'swhurl.yaml': manifest}))
@@ -777,6 +781,8 @@ components:
         network = yaml.safe_load((release.parent / contract.NETWORK_POLICY_FILE).read_text())
         self.assertEqual({p['port'] for rule in network['spec']['ingress'] for p in rule['ports']}, {9090})
         self.assertEqual(policy.check_calls([self.root / 'apps/hello/staging', release.parent]), {})
+        self.assertEqual(yaml.safe_load((release.parent / 'release.yaml').read_text())['stack'], 'kotlin',
+                         'the record says what the image says it is built with')
 
         # The same image again changes nothing and reads nothing; --refresh reads it again.
         changed, _ = self.quiet(edit.deploy_staging, self.root, 'orders', opener=self.registry('orders', ['8-def5678'], {}))
@@ -1025,7 +1031,9 @@ components:
             self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         self.assertEqual((offers.read(prod).commit, self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH']), ('abc1234', 'created,paid'))
         release = self.root / 'apps/orders/staging/helmrelease.yaml'
-        release.write_text(release.read_text().replace('SWHURL_APP: orders', 'SWHURL_APP: orders\n              SWHURL_API_PATH: /openapi.json', 1))
+        doc = yaml.safe_load(release.read_text())
+        doc['metadata'].setdefault('annotations', {})[offers.API_ANNOTATION] = '/openapi.json'
+        release.write_text(yaml.safe_dump(doc, sort_keys=False))
         self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [],
                          'staging describes its API before production runs that image')
 

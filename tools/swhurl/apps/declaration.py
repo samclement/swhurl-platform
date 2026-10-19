@@ -63,7 +63,8 @@ class Field:
 FIELDS = (
     Field('version', IDENTITY, LIVE, 'every time the file is read: another version is refused'),
     Field('stack', IDENTITY, LIVE, "by the console, from the repository's default branch, for the language it shows"),
-    Field('kind', IDENTITY, SEED, 'nothing: web, worker or job is fixed at creation, and an image that changes it is held'),
+    Field('kind', IDENTITY, LIVE, 'with every new staging image, and checked: web, worker or job is fixed at creation, '
+          'and an image that changes it is held'),
     Field('description', IDENTITY, LIVE, WITH_IMAGE + ', as SWHURL_DESCRIPTION; a promotion carries it with the image'),
     Field('port', NEED, LIVE, WITH_IMAGE),
     Field('healthPath', NEED, LIVE, WITH_IMAGE),

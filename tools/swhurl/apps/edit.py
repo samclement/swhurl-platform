@@ -225,7 +225,7 @@ RESOURCE_FIELDS = (('cpu', 'requests', 'cpu'), ('memory', 'requests', 'memory'),
 def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, app: str) -> tuple[Entry, list[str]]:
     """The records with a new image and what it needs: its port and health path (web), the user it runs as,
     telemetry, a new database's volume, the secret names it reads (a new one arrives without a value),
-    resources at its minimum or the instance's capacity, whichever is larger, and its description. Returns them and what changed.
+    resources at its minimum or the instance's capacity, whichever is larger, its description and its stack. Returns them and what changed.
     A need the instance cannot take is refused (EditError)."""
     needs, old = declared.needs, entry.release
     if old.kind != needs.kind:
@@ -234,7 +234,7 @@ def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, ap
     web = needs.kind == 'web'
     release = replace(old, image=image, port=needs.port if web else None, health_path=needs.health_path if web else '',
                       uid=needs.uid, telemetry=needs.otlp, database=needs.database or '', secrets=tuple(needs.secrets),
-                      description=declared.description,
+                      description=declared.description, stack=declared.stack,
                       resources=Resources(*(needs.minimum.get(field, '') for field, _, _ in RESOURCE_FIELDS)))
     return take_release(entry, release, app, needs.database_size, 'swhurl.yaml')
 

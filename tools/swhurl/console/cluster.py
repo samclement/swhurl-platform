@@ -221,7 +221,8 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
         variables, port, image = helmrelease.variables(release), helmrelease.port(release), helmrelease.image(release)
         hosts = helmrelease.hosts(release)
         address = f'http://{instance.app}.{instance.namespace}.svc.cluster.local:{port}' if port else ''
-        path = str(variables.get(calling.API_VARIABLE, '')) if address else ''
+        annotations = ((release or {}).get('metadata') or {}).get('annotations') or {}
+        path = str(annotations.get(offers.API_ANNOTATION, '')) if address else ''
         calls, callers = calling.declared_calls(variables), calling.allowed_callers(variables)
         publishes, subscribes = events.published(variables), events.subscribed(variables)
         subscribers = [(event, subscriber) for env, publisher, event, subscriber in subscribed
@@ -232,7 +233,7 @@ def apps(runner: Runner, states: bool = True, *, include_removing: bool = False)
             links.rows(calls, callers, publishes, subscribes, subscribers,
                        {other.app: teams.get(other.namespace, '') for other, _, _ in found if other.env == instance.env},
                        egress.granted(release)),
-            str((((release or {}).get('metadata') or {}).get('annotations') or {}).get(offers.ANNOTATION, '')),
+            str(annotations.get(offers.ANNOTATION, '')),
             tuple(egress.granted(release)), egress.port_of(variables))
         mine = (instance.namespace, instance.app)
         status = ops.status_of(instance, unit, source, release, {'items': owned['pods'][mine]},

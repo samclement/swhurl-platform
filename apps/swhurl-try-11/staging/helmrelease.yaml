@@ -4,8 +4,9 @@ metadata:
   name: swhurl-try-11
   namespace: swhurl-try-11-staging
   annotations:
+    platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: 544842b
-    platform.swhurl.com/render: 3b7cc6f1889204cc62141fa79a10429b5744a0b718da7c0991e0c84ed628d649
+    platform.swhurl.com/render: 2c5a7b0e3635d0d6c9d394e46a7b424cdde0cce02f00013b9b32130b0f34a85c
 spec:
   interval: 30m
   timeout: 3m
@@ -60,7 +61,6 @@ spec:
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
-              SWHURL_API_PATH: /openapi.json
               HOST_IP:
                 valueFrom:
                   fieldRef:

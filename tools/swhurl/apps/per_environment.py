@@ -28,7 +28,6 @@ from dataclasses import dataclass
 
 from swhurl.apps import contract, egress, events, helmrelease, offers
 from swhurl.apps.calling import (
-    API_VARIABLE,
     CALLERS_VARIABLE,
     DESCRIPTION_VARIABLE,
     ENVIRONMENT_VARIABLE,
@@ -121,7 +120,8 @@ SETTINGS = (
     Setting(contract.RELOAD, DERIVED, CARRY, "restart on a Secret change; staging's events Secret is taken out of it"),
     Setting(offers.ANNOTATION, GENERATED, STRIP, "the commit the image's documents were read at: carried with them",
             later=WITH_OFFERS, where=ANNOTATION),
-    Setting(API_VARIABLE, GENERATED, CARRY, 'where the image serves its API description', later=WITH_OFFERS, where=VARIABLE),
+    Setting(offers.API_ANNOTATION, GENERATED, CARRY, 'where the image serves its API description', later=WITH_OFFERS,
+            where=ANNOTATION),
     # Exposure may differ (a signed-in staging preview of a public app). The routes of two environments
     # are compared only when their exposure is the same; each is still checked against its own.
     Setting('ingress', DECLARED, CARRY, 'the route (make app-expose)', with_exposure=True),

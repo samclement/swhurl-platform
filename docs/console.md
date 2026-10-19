@@ -45,7 +45,7 @@ The target comes from the PR's **merged tree**: the gate renders it on the newes
 
 | Why it differs | The row |
 | --- | --- |
-| Nothing it was rendered from: the instance's `release.yaml` and `instance.yaml` and the app's `app.yaml` on `main` are the merge commit's | `main`'s render is this change's: a held PR merged on GitHub (records only) and rendered by the [Render workflow](#promotions) a minute later, or a render that changed only because of another app's records (who may call it). Until `main` renders a merged first promotion, it is **In progress** ("main has not rendered it yet") |
+| Nothing it was rendered from: the instance's `release.yaml` and `instance.yaml` and the app's `app.yaml` on `main` are the merge commit's | `main`'s render is this change's: a held PR merged on GitHub (records only) and rendered by the [Render workflow](#promotions) a minute later, or a render that changed only because of another app's records (who may call it). Until `main` renders a merged first promotion, or renders a held later promotion's requested digest instead of the previous image, it is **In progress** ("main has not rendered it yet") |
 | Only a newer release: the instance's `instance.yaml` and the app's `app.yaml` are as the change left them (a staging deploy) | Follows the change to that release: a new app whose seed is replaced by its own build 1, or a scale followed by a deploy, ends **Live in staging** once the newer release runs ("runs it, with a newer image"). A promotion chooses its release, so it is never followed |
 | The change was seen at its end before | Stays at its end (**Live in prod**, scaled to zero, **Removed from …**), "from <time>; a newer configuration has since replaced it" |
 | Otherwise | **Superseded**: a newer configuration replaced it before Activity saw it at its end, even before Flux applies the replacement |
@@ -122,7 +122,7 @@ A promotion PR carries only the app's records: production's `release.yaml` and i
 
 - it changes nothing but production's `release.yaml` and `offers/` (a change to production's `instance.yaml`, such as a new database volume, is reviewed);
 - production already exists (a first promotion creates its address, credentials and settings: you review it);
-- staging ran the promoted digest (it is in the history of staging's `release.yaml` on `main`);
+- the promoted Release matches a complete staging `release.yaml` selected on `main`'s first-parent history, including its image repository, tag and digest (a digest mentioned elsewhere is not evidence, and retagging an old image does not disguise a rollback);
 - it is not a rollback (the promoted `<run>-<sha>` tag is not older than production's);
 - what the app publishes, its port, database and secret names are the same as production's (set any new secret's production value first).
 
@@ -140,7 +140,7 @@ For a **new app**, it never merges the PR's files as they are: it reads what the
 
 `check-repo` renders and schema-validates the registered units, and `check-apps` checks app policy; tooling tests read frozen fixtures, and template, collector and tooling inputs are unchanged by an eligible diff. Operator commits still require the full `make check` described in [contributing](contributing.md).
 
-**When the gate does not merge:** a PR it holds (the rule, a conflict, failed checks, a render that fails) loses `auto-merge` and gets a comment with the reason (`Auto-merge refused: ...`); Activity shows that reason on the pull request's row, reading only the workflow's own comments. Any other failure (a `gh` or `git` command, an unexpected error) keeps the label, so the next run tries again; the queue goes on to the next PR, and the run fails at the end so the failure is seen. A PR not yet validated, or whose label was removed, is skipped without a comment. Activity's **Validate** and **Merge** stages distinguish queued and running checks, failed validation, merge conflicts, the merge gate checking it and a merge that waits for you; if GitHub check reads fail, the stages stay unreached and link to GitHub.
+**When the gate does not merge:** a PR it holds (the rule or a confirmed Git content conflict) loses `auto-merge` and gets a comment with the reason (`Auto-merge refused: ...`); Activity shows that reason on the pull request's row, reading only the workflow's own comments. Any other failure (a `gh` or `git` command, rendering or checks failing, an unexpected error) keeps the label, so the next run tries again; the queue goes on to the next PR, and the run fails at the end so the failure is seen. A PR not yet validated, or whose label was removed, is skipped without a comment. Activity's **Validate** and **Merge** stages distinguish queued and running checks, failed validation, merge conflicts, the merge gate checking it and a merge that waits for you; if GitHub check reads fail, the stages stay unreached and link to GitHub.
 
 A merge made by the workflow's token starts no workflow on `main`; Flux's webhook still applies it. `main` has no branch protection, and direct operator pushes remain supported.
 

@@ -131,7 +131,7 @@ def review(root: Path, app: str, status: ops.InstanceStatus, runner: Runner | No
         else:
             # Why a person would merge it (promotion.held), shown before the PR exists; staging runs this digest.
             found['held'] = promotion.held(app, records, before, promotion.release_of(root, app, 'prod'),
-                                           lambda digest: bool(staged) and digest == staged.image.digest)
+                                           lambda release: release == staged)
     return found
 
 
@@ -192,7 +192,7 @@ def open_pr(runner: Runner, github: changes.GitHub, job: Job, app: str, form: di
         staged = promotion.release_of(root, app, 'staging')
         # Staging runs the reviewed digest now (source_problem), and its record says so on main.
         reason = promotion.held(app, changed, before, promotion.release_of(root, app, 'prod'),
-                                lambda digest: bool(staged) and digest == staged.image.digest)
+                                lambda release: release == staged)
         if reason:
             reasons.append(reason)
         if admits:

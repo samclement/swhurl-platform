@@ -115,6 +115,16 @@ class RenderProgressTests(unittest.TestCase):
                          'a newer release carries a scale (same settings)')
         self.assertEqual(stages.aim('promote', rendered, callers), callers)
         self.assertEqual(stages.aim('promote', rendered, newer), rendered)
+        self.assertEqual(self.judge(target=merged, current=newer).state, 'superseded',
+                         'a promotion replaced before Render ran does not keep waiting for its render')
+        pending_newer = stages.Target(stages.UNRENDERED, 'sha256:c', 'settings-1', 'records-2')
+        self.assertEqual(self.judge(target=merged, current=pending_newer).state, 'superseded',
+                         'two pending renders share a sentinel, not their records')
+        absent = stages.Target(stages.ABSENT)
+        self.assertEqual(self.judge(target=merged, current=absent).state, 'superseded',
+                         'production removed before Render is proven absence, not an indefinitely pending render')
+        seen = NOW.isoformat()
+        self.assertEqual(self.judge(target=merged, current=absent, reached=seen).state, 'replaced')
         no_records = stages.Target('render-a', 'sha256:a')
         self.assertEqual(self.judge(target=no_records, current=stages.Target('render-b', 'sha256:a')).state, 'superseded',
                          'a tree without records is never matched')

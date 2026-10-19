@@ -97,10 +97,10 @@ REVIEWED = (('publishes', 'publishes', 'what it publishes'), ('port', 'port', 'i
 
 
 def held(app: str, changed: Iterable[str], before: Release | None, after: Release | None,
-         staged: Callable[[str], bool]) -> str:
+         staged: Callable[[Release], bool]) -> str:
     """Promotion's one rule: why a person merges this promotion of ``app``, or '' when it merges itself.
     ``changed``: the paths it changes; ``before`` and ``after``: production's Release on main and with
-    it merged; ``staged(digest)``: whether staging ran that digest (main's history of its release.yaml).
+    it merged; ``staged(release)``: whether that exact Release was selected in staging on main.
     The words follow "this pull request" (console) and "Auto-merge refused:" (the gate)."""
     changed = list(changed)
     if before is None:
@@ -111,12 +111,12 @@ def held(app: str, changed: Iterable[str], before: Release | None, after: Releas
         return f"changes {', '.join(other[:5])}, which a promotion of the image alone does not"
     if after.image.repository != before.image.repository:
         return 'changes the image repository'
-    if after.image.digest != before.image.digest and not (after.image.digest and staged(after.image.digest)):
-        return f'promotes an image staging never ran ({after.image.digest or "no digest"})'
     if older(after.image.tag, before.image.tag):
         return 'promotes an older image than production runs (a rollback)'
     if moved := [words for _, field, words in REVIEWED if getattr(after, field) != getattr(before, field)]:
         return f"changes {', '.join(moved)} in production (set any new secret value in production first)"
+    if not (after.image.digest and staged(after)):
+        return f'promotes a release that does not match staging\'s history ({after.image.digest or "no digest"})'
     return ''
 
 

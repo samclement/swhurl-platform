@@ -23,9 +23,9 @@ from pathlib import Path
 from swhurl import ROOT, yamlio
 from swhurl.apps import declaration, egress, events, helmrelease, new, promotion
 from swhurl.apps.instance import instance_folder, instance_unit_file
-from swhurl.apps.model.records import APP_FILE, RELEASE_FILE, SETTINGS_FILE
+from swhurl.apps.model.records import APP_FILE, RELEASE_FILE, SETTINGS_FILE, Release
 from swhurl.apps.yaml_file import EditError
-from swhurl.run import Runner
+from swhurl.run import CommandError, Runner
 
 VALIDATE_WAIT = 120  # seconds this run waits for Validate on the PR head, asking every VALIDATE_POLL
 VALIDATE_POLL = 5
@@ -231,11 +231,8 @@ def fetch(runner: Runner, root: Path, number: int, sha: str) -> str:
 
 def checked(runner: Runner, work: Path) -> None:
     """check-repo renders the registered units; tooling tests read frozen fixtures, and templates and
-    OTel are unchanged by a console PR. A failure is the merge result's, which a person looks at."""
-    done = runner.run(['make', *MERGE_CHECKS], cwd=work, check=False)
-    if done.returncode:
-        said = [line for line in (done.stdout + done.stderr).splitlines() if line.strip()] or ['it failed']
-        raise Hold(f'the merged result fails make check-repo check-apps: {runner.redact(said[-1])}')
+    OTel are unchanged by a console PR. A failed command keeps the label so a later run can retry."""
+    runner.run(['make', *MERGE_CHECKS], cwd=work)
 
 
 def commit(runner: Runner, work: Path, base: str, sha: str, number: int, pr: dict) -> str:
@@ -260,11 +257,19 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
     runner.run(['git', 'push', 'origin', '--delete', pr['head']['ref']], cwd=root, mutating=True, check=False)
 
 
-def staged(runner: Runner, work: Path, app: str, digest: str) -> bool:
-    """Whether staging ran ``digest``: it is in the history of staging's Release record on main."""
-    path = instance_folder(Path(), app, 'staging') / RELEASE_FILE
-    found = runner.run(['git', 'log', f'-S{digest}', '--format=%H', 'HEAD', '--', path.as_posix()], cwd=work, check=False)
-    return not found.returncode and bool(found.stdout.strip())
+def staged(runner: Runner, work: Path, app: str, release: Release) -> bool:
+    """Whether main selected this exact Release for staging, including changes that kept its digest
+    (a refreshed declaration). A digest in a comment or a retagged rollback cannot authenticate it.
+    Follow only main's first-parent history; failed Git reads propagate instead of becoming a hold."""
+    path = (instance_folder(Path(), app, 'staging') / RELEASE_FILE).as_posix()
+    revisions = runner.output(['git', 'log', '--first-parent', '--diff-filter=AM',
+                               '--format=%H', 'HEAD', '--', path], cwd=work).splitlines()
+    for revision in revisions:
+        text = runner.output(['git', 'show', f'{revision}:{path}'], cwd=work)
+        selected = Release.parse(yamlio.load(text), f'{app}/staging at {revision}')
+        if selected == release:
+            return True
+    return False
 
 
 def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str, pr: dict, app: str,
@@ -285,18 +290,18 @@ def merge_promotion(runner: Runner, root: Path, number: int, sha: str, repo: str
                     raise Hold(f"main's production release record cannot be read: {error}") from None
                 merged = runner.run([*GIT, 'merge', '--no-ff', '--no-commit', sha], cwd=work, check=False)
                 if merged.returncode:
-                    raise Hold('it conflicts with main: close it and promote again from the console')
+                    conflicts = runner.output(['git', 'diff', '--name-only', '--diff-filter=U'], cwd=work)
+                    if conflicts.strip():
+                        raise Hold('it conflicts with main: close it and promote again from the console')
+                    raise CommandError(merged.args, runner.redact(merged.stderr or merged.stdout), merged.returncode)
                 try:
                     after = promotion.release_of(work, app, 'prod')
                 except EditError as error:
                     raise Hold(str(error)) from None
-                if reason := promotion.held(app, files, before, after, lambda digest, work=work: staged(runner, work, app, digest)):
+                if reason := promotion.held(app, files, before, after, lambda release, work=work: staged(runner, work, app, release)):
                     raise Hold(f'it {reason}: a person reviews it')
-                synced = runner.run([sys.executable, '-m', 'swhurl', 'app-sync'], cwd=work, check=False,
-                                    env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
-                if synced.returncode:
-                    said = [line for line in (synced.stdout + synced.stderr).splitlines() if line.strip()] or ['it failed']
-                    raise Hold(f'main does not render it: {runner.redact(said[-1])}')
+                runner.run([sys.executable, '-m', 'swhurl', 'app-sync'], cwd=work,
+                           env={'PYTHONPATH': str(work / 'tools'), 'PYTHONDONTWRITEBYTECODE': '1'})
                 checked(runner, work)
                 # Recheck the person's hold and the exact PR head after the checks.
                 eligible(runner.json(['gh', 'api', f'repos/{repo}/pulls/{number}']), sha, repo)

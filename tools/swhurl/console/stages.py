@@ -147,7 +147,10 @@ def judge(action: str, live: State | str | None, target: Target | None, current:
         return Rollout('unread', 'the target or current render could not be read')
     if not current.hash:
         return Rollout('unread', 'the current render has no hash')
-    if target.hash == UNRENDERED:  # its records are main's, and main has not rendered them yet
+    if target.hash == UNRENDERED:
+        if current.hash == ABSENT or (target.records and current.records and not ours(target, current)
+                                      and not follows(action, target, current)):
+            return Rollout('replaced', reached) if reached else Rollout('superseded')
         return Rollout('applying', 'main has not rendered it yet')
     newer = ''
     if target.hash != current.hash:

@@ -272,27 +272,38 @@ class FromRepoTests(unittest.TestCase):
             return (text if text is not None else yaml.safe_dump(WEB)).encode()
         return open_
 
-    def test_reads_the_manifest_at_a_ref_and_flags_still_win(self):
-        args = app_new.parse_args(['notes', '--from-repo', 'samclement/notes@v1', '--env', 'staging',
+    def test_reads_the_manifest_at_the_images_commit_and_flags_still_win(self):
+        args = app_new.parse_args(['notes', '--from-repo', 'samclement/notes', '--env', 'staging',
                                    '--image', 'ghcr.io/samclement/notes:1-abc1234', '--no-otlp'], self.opener())
         (request,) = self.requests
-        self.assertEqual(request.full_url, 'https://api.github.com/repos/samclement/notes/contents/swhurl.yaml?ref=v1')
+        self.assertEqual(request.full_url, 'https://api.github.com/repos/samclement/notes/contents/swhurl.yaml?ref=abc1234')
         self.assertEqual(request.get_header('Accept'), 'application/vnd.github.raw+json')
         self.assertIsNone(request.get_header('Authorization'))
         self.assertEqual((args.kind, args.health_path, args.exposure, args.auto_deploy, args.otlp),
                          ('web', '/healthz', 'authenticated-web', True, False))
+        self.assertEqual(args.declaration.seed['kind'], 'web', 'generate reads what it offers from this one read')
+
+    def test_a_ref_or_a_tag_naming_no_commit_is_refused_before_github_is_asked(self):
+        for argv, message in (
+                (['--from-repo', 'samclement/notes@v1', '--image', 'ghcr.io/samclement/notes:1-abc1234'], 'without @REF'),
+                (['--from-repo', 'samclement/notes', '--image', 'ghcr.io/samclement/notes:1.0'], 'commit it was built from is unknown'),
+                (['--from-repo', 'samclement/notes', '--image', 'ghcr.io/samclement/notes@sha256:' + 'a' * 64],
+                 'commit it was built from is unknown')):
+            with self.subTest(message=message), self.assertRaisesRegex(app_new.GenerationError, re.escape(message)):
+                app_new.parse_args(['notes', '--env', 'staging', *argv], self.opener())
+        self.assertEqual(self.requests, [])
 
     def test_a_missing_manifest_or_bad_spec_is_a_clear_error(self):
         for argv, opener, message in (
-                (['--from-repo', 'samclement/notes'], self.opener(status=404), 'has no swhurl.yaml, or is private'),
+                (['--from-repo', 'samclement/notes'], self.opener(status=404), 'has no swhurl.yaml there, or the repository is private'),
                 (['--from-repo', 'notes'], self.opener(), 'OWNER/REPO'),
                 (['--from-repo', 'samclement/notes'], self.opener('version: 1\nkind: [web'), 'not valid YAML'),
                 (['--from-repo', 'samclement/notes'], self.opener(json.dumps({'version': 1, 'kind': 'web'})),
-                 'samclement/notes:swhurl.yaml: healthPath is required')):
+                 'samclement/notes@abc1234:swhurl.yaml: healthPath is required')):
             with self.subTest(message=message):
                 err = io.StringIO()
                 with redirect_stderr(err):
-                    code = app_new.main(['notes', '--env', 'staging', '--image', 'x:1', *argv], opener)
+                    code = app_new.main(['notes', '--env', 'staging', '--image', 'ghcr.io/samclement/notes:1-abc1234', *argv], opener)
                 self.assertEqual(code, 2)
                 self.assertIn(message, err.getvalue())
 

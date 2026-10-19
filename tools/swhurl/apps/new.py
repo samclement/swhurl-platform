@@ -192,7 +192,7 @@ def generate(args, root: Path, runner: Runner | None = None, *, opener: declarat
             token = os.environ.get('GITHUB_TOKEN', '')
             image = entry.release.image
             repository, commit = intake.image_source(image, args.name, args.env)
-            found = intake.image_declaration(image, args.name, args.env, token=token, **({'opener': opener} if opener else {}))
+            found = args.declaration  # parse_args read it at the image's commit
             files, described, served = intake.read_offers(repository, commit, found, token=token, **({'opener': opener} if opener else {}))
             entry = replace(entry, release=intake.offered(entry.release, commit, files, described, served))
             planned = intake.offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
@@ -278,21 +278,29 @@ def watch_namespace(root: Path, namespace: str) -> None:
         path.write_text(text)
 
 
-REPO_RE = re.compile(r'^(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:@(?P<ref>[A-Za-z0-9_./-]+))?$')
+REPO_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 
 
-def declared(spec: str, *, token: str = '', opener: declaration.Opener = declaration._open) -> dict:
-    """app-new's defaults from the swhurl.yaml of ``OWNER/REPO[@REF]`` on GitHub (default branch without a ref)."""
-    match = REPO_RE.match(spec)
-    if not match:
-        raise GenerationError(f'--from-repo must be OWNER/REPO or OWNER/REPO@REF: {spec}')
+def declared(spec: str, image: str, *, token: str = '', opener: declaration.Opener = declaration._open) -> declaration.Declaration:
+    """The swhurl.yaml of ``OWNER/REPO`` on GitHub at the commit the image's tag names (``<run>-<sha>``): the
+    one declaration a new instance's needs and offers both come from."""
+    if '@' in spec:
+        raise GenerationError(f'--from-repo takes OWNER/REPO without @REF: {declaration.FILE} is read at the commit '
+                              f'the --image tag names: {spec}')
+    if not REPO_RE.match(spec):
+        raise GenerationError(f'--from-repo must be OWNER/REPO: {spec}')
     try:
-        found = declaration.read(match['repo'], match['ref'] or '', token=token, opener=opener)
+        commit = offers.commit_of(parse_image(image).get('tag', ''))
+    except offers.OfferError as error:
+        raise GenerationError(f'--image: {error}') from None
+    try:
+        found = declaration.read(spec, commit, token=token, opener=opener)
     except declaration.DeclarationError as error:
         raise GenerationError(str(error)) from None
     if found is None:
-        raise GenerationError(f'could not read {declaration.FILE} from {spec}: {spec} has no {declaration.FILE}, or is private (set GITHUB_TOKEN)')
-    return found.seed
+        raise GenerationError(f'could not read {declaration.FILE} from {spec}@{commit}: it has no {declaration.FILE} '
+                              'there, or the repository is private (set GITHUB_TOKEN)')
+    return found
 
 
 def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
@@ -300,8 +308,8 @@ def parser(defaults: dict | None = None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog='swhurl app-new', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('name')
     source = p.add_mutually_exclusive_group()
-    source.add_argument('--from-repo', metavar='OWNER/REPO[@REF]',
-                        help=f"the app's repository: defaults from its {declaration.FILE} on GitHub")
+    source.add_argument('--from-repo', metavar='OWNER/REPO',
+                        help=f"the app's repository: defaults from its {declaration.FILE} on GitHub, at the commit the --image tag names")
     source.add_argument('--manifest', type=Path, metavar='PATH',
                         help=f'defaults from a local {declaration.FILE} (check-templates and tests)')
     p.add_argument('--env', default='staging', choices=ENVIRONMENTS, help='staging only; production is created by app-promote')
@@ -363,12 +371,14 @@ def parse_args(argv=None, opener: declaration.Opener = declaration._open) -> arg
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument('--from-repo')
     pre.add_argument('--manifest', type=Path)
+    pre.add_argument('--image')
     known, _ = pre.parse_known_args(argv)
     defaults = None
     if known.from_repo and known.manifest:
         raise GenerationError('--from-repo and --manifest cannot be combined')
-    if known.from_repo:
-        defaults = declared(known.from_repo, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
+    if known.from_repo and known.image:  # without --image the parser below says it is required
+        found = declared(known.from_repo, known.image, token=os.environ.get('GITHUB_TOKEN', ''), opener=opener)
+        defaults = {**found.seed, 'declaration': found}  # generate reads what the app offers from this one
     elif known.manifest:
         try:
             defaults = declaration.parse(known.manifest.read_text(), str(known.manifest)).seed
@@ -383,7 +393,7 @@ def platform_origin_problem(args) -> str | None:
     """Why this is not an app the platform created (make app-repo, or the console's Start a new app)."""
     repository = f'{APP_OWNER}/{args.name}'
     create = f'create the app with make app-repo NAME={args.name} (or the console) and run the line it prints'
-    if (args.from_repo or '').split('@')[0] != repository:
+    if args.from_repo != repository:
         return f'--from-repo {repository} is required: every app comes from a stack template; {create}'
     if parse_image(args.image)['repository'] != f'ghcr.io/{repository}':
         return f'the image must be ghcr.io/{repository}, which the app repository publishes; {create}'

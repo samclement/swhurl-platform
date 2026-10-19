@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from swhurl import ROOT, yamlio
-from swhurl.apps import egress, events, helmrelease, new, promotion
+from swhurl.apps import declaration, egress, events, helmrelease, new, promotion
 from swhurl.apps.instance import Instance, instance_folder, instance_unit_file
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model.records import APP_FILE, SETTINGS_FILE
@@ -106,7 +106,8 @@ def check_events_key(base: Path, head: Path, app: str) -> str:
     return public
 
 
-def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, files: list[str]) -> None:
+def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, files: list[str],
+                   opener: declaration.Opener = declaration._open) -> None:
     """The new app's request, run with main's tooling on the newest main (``work``): its egress port, unit
     registration and the shared files are made there, whatever main gained since the PR was opened. Its
     events key is the PR's own (check_events_key)."""
@@ -126,8 +127,8 @@ def replay_new_app(base: Path, head: Path, work: Path, app: str, body: str, file
         shutil.copyfile(head / key, work / key)
     said = io.StringIO()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(said):
-        problem = new.platform_origin_problem(new.parse_args(argv))
-        code = 2 if problem else new.main([*argv, '--root', str(work), '--no-policy-check', *extra])
+        problem = new.platform_origin_problem(new.parse_args(argv, opener))
+        code = 2 if problem else new.main([*argv, '--root', str(work), '--no-policy-check', *extra], opener)
     if code:
         reason = problem or ([line for line in said.getvalue().splitlines() if line.strip()] or ['it failed'])[-1]
         raise Hold(f'the request does not replay on main: {reason}')
@@ -254,7 +255,7 @@ def validated(runner: Runner, sha: str, sleep: Callable[[float], None]) -> None:
 
 
 def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
-          sleep: Callable[[float], None] = time.sleep) -> None:
+          sleep: Callable[[float], None] = time.sleep, opener: declaration.Opener = declaration._open) -> None:
     pr_path = f'repos/{repo}/pulls/{number}'
     pr = runner.json(['gh', 'api', pr_path])
     action, app = eligible(pr, sha, repo)
@@ -272,7 +273,7 @@ def merge(runner: Runner, root: Path, number: int, sha: str, repo: str,
                 runner.run(['git', 'worktree', 'add', '--detach', str(path), revision], cwd=root)
             body = pr.get('body') or ''
             if action == 'new':
-                replay_new_app(base, head, work, app, body, files)
+                replay_new_app(base, head, work, app, body, files, opener)
             else:
                 replay_promotion(base, head, work, app, body, runner)
             scope(base, head, work, files, app, 'staging' if action == 'new' else 'prod')

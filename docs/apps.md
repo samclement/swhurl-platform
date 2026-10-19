@@ -185,7 +185,7 @@ Production is created by the first [promotion](#promote-to-production) from revi
 
 | Option | Rules |
 | --- | --- |
-| `--from-repo samclement/<name>[@REF]` | Required: reads `swhurl.yaml` from the app repository's default branch (or `REF`) through GitHub's API, with `GITHUB_TOKEN` if set; its fields become the defaults and a flag you give wins (for example `--exposure public --host weather.example.com`) |
+| `--from-repo samclement/<name>` | Required: reads `swhurl.yaml` once, at the commit the `--image` tag names (`<run>-<sha>`), through GitHub's API, with `GITHUB_TOKEN` if set; the instance's needs and what it offers both come from that one read. Its fields become the defaults and a flag you give wins (for example `--exposure public --host weather.example.com`). `@REF`, or a tag that names no commit, is refused |
 | `--env` | `staging` (default); production is created by promotion |
 | `--kind` | `web` (Service and probes on `--health-path`, required) or `worker` (no Service, no route) |
 | `--image` | `ghcr.io/samclement/<name>:<run>-<sha>@sha256:…`, as `make app-repo` and the app's workflow print it |

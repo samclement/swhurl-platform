@@ -279,7 +279,7 @@ class GeneratorTests(unittest.TestCase):
         def problem(*argv):
             return app_new.platform_origin_problem(app_new.parse_args(
                 ['w', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'staging', *argv]))
-        ours = argparse.Namespace(name='w', env='staging', from_repo='samclement/w@v1', image=TEMPLATE_IMAGE,
+        ours = argparse.Namespace(name='w', env='staging', from_repo='samclement/w', image=TEMPLATE_IMAGE,
                                   auto_deploy=True)
         self.assertIsNone(app_new.platform_origin_problem(ours))
         for change, expected in (({'from_repo': None}, '--from-repo samclement/w is required'),
@@ -304,6 +304,26 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual((args.otlp, args.port, args.exposure, args.health_path), (False, 3000, 'private', '/healthz'))
         worker = app_new.parse_args(['q', '--manifest', str(MANIFESTS / 'worker.yaml'), '--team', 'demo', '--env', 'staging', '--image', 'r/q:1'])
         self.assertEqual((worker.kind, worker.exposure, worker.otlp), ('worker', 'private', True))
+
+    def test_from_repo_records_the_needs_at_the_images_commit_not_the_default_branch(self):
+        web = (MANIFESTS / 'web.yaml').read_text()
+        files = {'': web.replace('port: 8080', 'port: 3000'),  # the default branch has moved on
+                 'abcdef0': web.replace('port: 8080', 'port: 9000').replace('uid: 65532', 'uid: 1000')}
+        asked = []
+
+        def github(request):
+            ref = request.full_url.partition('?ref=')[2]
+            asked.append(ref)
+            return files[ref].encode()
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(app_new.main(['w', '--from-repo', 'samclement/w', '--env', 'staging', '--image', TEMPLATE_IMAGE,
+                                           '--root', str(self.tmp), '--no-policy-check', '--team', 'demo'], github), 0)
+        self.assertEqual(asked, ['abcdef0'], 'one read, at the commit the tag names')
+        release = yaml.safe_load((self.tmp / 'apps/w/staging/release.yaml').read_text())
+        text = yaml.safe_dump(release)
+        self.assertIn('9000', text)
+        self.assertIn('1000', text)
+        self.assertNotIn('3000', text)
 
     def test_signed_in_host_is_derived_per_environment(self):
         self.assertEqual(contract.default_host('w', 'prod'), 'w.homelab.swhurl.com')

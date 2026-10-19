@@ -48,8 +48,8 @@ spec:
           main:
             image:
               repository: ghcr.io/samclement/swhurl-console
-              tag: src-f75e3f121fd0179f # image: console
-              digest: sha256:d56c146e651952c7be53d2949b4bb8de76440a84c78fa3747c6ca82145d3d35e # image: console
+              tag: src-aa9882ac54e633ed # image: console
+              digest: sha256:c6c2074fb168c0cc55fd1eafb28acd31e2c7f0a15d2756bf833da1a753abf013 # image: console
             command: [python, -m, swhurl, notify-serve]
             resources:
               requests:

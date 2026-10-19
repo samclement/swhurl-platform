@@ -1,0 +1,6 @@
+# Written by the platform's commands (make app-*): docs/apps.md. Rendered files follow from it.
+version: 1
+exposure: private
+allocations:
+  egressPort: 30109
+  eventsKey: UD2QOVON5SXZVZ35YXENPMPOSLPBM7UURQ5MPX4OOQ4QLPE6X2DQLDGW

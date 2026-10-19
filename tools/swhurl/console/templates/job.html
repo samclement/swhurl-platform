@@ -4,7 +4,7 @@
 {# A job this console runs sends its output as it arrives; one another console pod is finishing (a restart) is read again every few seconds. #}
 {% block head %}{% if job.state == 'running' %}{% if job.live %}<noscript><meta http-equiv="refresh" content="2"></noscript>{% else %}<meta http-equiv="refresh" content="3">{% endif %}{% endif %}{% endblock %}
 {% block main %}
-{% set label, link = (job.unit, job.link or '/activity') if job.unit.startswith('PR #') else target(job.unit) %}
+{% set label, link = target(job.unit) %}
 <p class="crumbs"><a href="/activity">Activity</a> › Job #{{ job.id }}</p>
 <h1>{{ job.action | capitalize }} <a href="{{ link }}">{{ label }}</a>
   · {{ st.change_state(track) }}</h1>

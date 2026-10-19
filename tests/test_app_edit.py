@@ -1165,6 +1165,23 @@ components:
             with self.subTest(name=name), self.assertRaisesRegex(edit.EditError, message):
                 edit.set_secret(self.root, 'orders', 'staging', name, value, runner=runner)
 
+    def test_a_secret_on_a_records_only_first_promotion_writes_the_encrypted_file_alone(self):
+        """A first promotion's branch carries production's records and nothing rendered: make app-secret sets a
+        value there without rendering, and main renders it when the branch is merged."""
+        from swhurl.run import FakeRunner, Result
+        self.with_units()
+        prod = self.root / 'apps/orders/prod'
+        for path in prod.iterdir():
+            if path.name not in ('release.yaml', 'instance.yaml'):
+                path.unlink()
+        runner = FakeRunner().on('sops', handler=lambda args, given: Result(
+            args, 0, given.replace('s3cret-value', 'ENC[AES256_GCM,data:x]') + 'sops:\n  age: []\n'))
+        self.quiet(edit.set_secret, self.root, 'orders', 'prod', 'API_TOKEN', 's3cret-value', runner=runner)
+        self.assertEqual(sorted(path.name for path in prod.iterdir()), ['instance.yaml', 'release.yaml', 'secret.sops.yaml'])
+        self.assertEqual(contract.stored_secrets((prod / 'secret.sops.yaml').read_text()), ['API_TOKEN'])
+        with self.assertRaisesRegex(edit.EditError, 'no instance orders/dev|ENV'):
+            edit.set_secret(self.root, 'orders', 'dev', 'API_TOKEN', 'x', runner=runner)
+
     def test_promotion_carries_what_the_promoted_image_offers(self):
         from swhurl.apps import offers
         self.with_units()

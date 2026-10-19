@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import dataclasses
-import hashlib
-import json
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -12,9 +10,10 @@ from pathlib import Path
 from swhurl.apps import contract, ops, state
 from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
-from swhurl.apps.model.records import Allocations, Settings, Storage
+from swhurl.apps.model.records import RELEASE_FILE, Allocations, RecordError, Release, Settings, Storage
 from swhurl.apps.yaml_file import EditError, mapping
 from swhurl.apps.yaml_file import read as read_yaml
+from swhurl.yamlio import load
 
 
 @dataclass(frozen=True)
@@ -43,9 +42,13 @@ def decide(source: dict, target: dict | None) -> Decision:
         raise EditError('production uses a different image repository; change the repository by hand')
     if previous.get('digest') == image['digest']:
         return Decision('same', reference, ops.image_reference(previous))
-    runs = [re.fullmatch(contract.AUTO_DEPLOY_TAG_PATTERN, i.get('tag', '')) for i in (image, previous)]
-    rollback = all(runs) and int(runs[0]['run']) < int(runs[1]['run'])
-    return Decision('update', reference, ops.image_reference(previous), bool(rollback))
+    return Decision('update', reference, ops.image_reference(previous), older(image.get('tag', ''), previous.get('tag', '')))
+
+
+def older(tag: str, than: str) -> bool:
+    """Whether image ``tag`` was built before ``than``: both ``<run>-<sha>`` tags, with an earlier run."""
+    runs = [re.fullmatch(contract.AUTO_DEPLOY_TAG_PATTERN, each) for each in (tag, than)]
+    return bool(all(runs) and int(runs[0]['run']) < int(runs[1]['run']))
 
 
 def read(root: Path, app: str) -> tuple[dict, dict | None]:
@@ -63,26 +66,58 @@ def read(root: Path, app: str) -> tuple[dict, dict | None]:
     return source, target
 
 
-def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -> str:
-    """Hash effective configuration and resource files; never return Secret contents."""
-    files = {}
-    instance = instance_folder(root, app, env)
-    for path in sorted(instance.rglob('*')):
-        if not path.is_file():
-            continue
-        if path.name == 'helmrelease.yaml':
-            doc = read_yaml(path)
-            if ignore_image:
-                (doc.get('metadata', {}).get('annotations') or {}).pop('platform.swhurl.com/render', None)
-                image_of(doc).pop('tag', None)
-                image_of(doc).pop('digest', None)
-            files[path.name] = json.dumps(doc, sort_keys=True, default=str)
-        else:
-            files[path.relative_to(instance).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    unit = instance_unit_file(root, app, env)
-    if unit.exists():
-        files['unit'] = hashlib.sha256(unit.read_bytes()).hexdigest()
-    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+def records(app: str, path: str) -> bool:
+    """Whether ``path`` is one of the records a promotion of ``app`` writes: its App record, and production's
+    Release, Settings, encrypted files and offers documents. Everything else is rendered from them on main."""
+    prod = f'apps/{app}/prod/'
+    return path == f'apps/{app}/app.yaml' or (path.startswith(prod) and (
+        path.removeprefix(prod) in (RELEASE_FILE, 'instance.yaml') or path.startswith(f'{prod}offers/')
+        or ('/' not in path.removeprefix(prod) and path.endswith('.sops.yaml'))))
+
+
+def automatic(app: str, path: str) -> bool:
+    """The records a promotion may change and still merge itself: production's Release and offers documents."""
+    return path == f'apps/{app}/prod/{RELEASE_FILE}' or path.startswith(f'apps/{app}/prod/offers/')
+
+
+def release_of(root: Path, app: str, env: str) -> Release | None:
+    """An instance's Release record in the tree at ``root``; None when it has none."""
+    path = instance_folder(root, app, env) / RELEASE_FILE
+    if not path.is_file():
+        return None
+    try:
+        return Release.parse(load(path.read_text()), f'{app}/{env}: {RELEASE_FILE}')
+    except (RecordError, ValueError) as error:
+        raise EditError(str(error)) from None
+
+
+REVIEWED = (('publishes', 'publishes', 'what it publishes'), ('port', 'port', 'its port'),
+            ('database', 'database', 'its database'), ('secrets', 'secrets', 'its secret names'))
+"""The Release fields production must be ready for: a promotion that changes one is reviewed."""
+
+
+def held(app: str, changed: Iterable[str], before: Release | None, after: Release | None,
+         staged: Callable[[str], bool]) -> str:
+    """Promotion's one rule: why a person merges this promotion of ``app``, or '' when it merges itself.
+    ``changed``: the paths it changes; ``before`` and ``after``: production's Release on main and with
+    it merged; ``staged(digest)``: whether staging ran that digest (main's history of its release.yaml).
+    The words follow "this pull request" (console) and "Auto-merge refused:" (the gate)."""
+    changed = list(changed)
+    if before is None:
+        return 'creates production: a person reviews its address, credentials and settings'
+    if after is None:
+        return "removes production's release record"
+    if other := sorted(path for path in changed if not automatic(app, path)):
+        return f"changes {', '.join(other[:5])}, which a promotion of the image alone does not"
+    if after.image.repository != before.image.repository:
+        return 'changes the image repository'
+    if after.image.digest != before.image.digest and not (after.image.digest and staged(after.image.digest)):
+        return f'promotes an image staging never ran ({after.image.digest or "no digest"})'
+    if older(after.image.tag, before.image.tag):
+        return 'promotes an older image than production runs (a rollback)'
+    if moved := [words for _, field, words in REVIEWED if getattr(after, field) != getattr(before, field)]:
+        return f"changes {', '.join(moved)} in production (set any new secret value in production first)"
+    return ''
 
 
 def sha(revision: str) -> str:
@@ -112,8 +147,8 @@ def settled(status: ops.InstanceStatus | None,
 
 
 def source_problem(status: ops.InstanceStatus | None, image: str) -> str:
-    """Why staging cannot be promoted now, or ''. The image pins what was reviewed; the caller pins staging's
-    configuration by its ``fingerprint``. ``status`` should be ``settled``, or any commit to main refuses."""
+    """Why staging cannot be promoted now, or ''. The image pins what was reviewed. ``status`` should be
+    ``settled``, or any commit to main refuses."""
     if status is None:
         return 'staging no longer exists; refresh the app page'
     if status.desired_image != image:

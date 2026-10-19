@@ -138,8 +138,12 @@ def read(root: Path, base: Path = Path('apps')) -> tuple[World, Platform]:
 
 
 def sync(root: Path, base: Path = Path('apps')) -> list[Path]:
-    """Write what the platform derives for every instance under ``root``; return the files changed."""
-    return write(root, *read(root, base))
+    """Write what the platform derives for every instance under ``root``; return the files changed. In a
+    tree with the unit registry, an instance whose records exist and whose unit file does not (a merged
+    first promotion, which carries only records) is added: its unit is written and registered."""
+    world, platform = read(root, base)
+    added = frozenset(each for each in world if (root / REGISTRY_FILE).is_file() and not each.unit_file(root).is_file())
+    return apply(root, render_all(root, world, platform, added))
 
 
 def guard(root: Path, world: World, platform: Platform, targets: list[Instance], base: Path = Path('apps')) -> None:

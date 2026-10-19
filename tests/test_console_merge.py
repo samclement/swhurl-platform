@@ -1,10 +1,11 @@
-"""Auto-merge gates preserve reviewed settings and never push on failed or stale checks."""
+"""The merge gate merges what its rule allows onto the newest main, and never pushes a failed or held change."""
 import atexit
 import contextlib
 import functools
 import io
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,9 +15,7 @@ from unittest import mock
 from swhurl import ROOT
 from swhurl.apps import derive, edit, egress, events, new, policy, promotion
 from swhurl.apps import release as intake
-from swhurl.apps.yaml_file import YamlFile
 from swhurl.console import merge
-from swhurl.console import promotion as console
 from swhurl.run import CommandError, FakeRunner, Result
 
 BASE = 'a' * 40
@@ -55,33 +54,20 @@ def baseline() -> Path:
 
 
 class MergeTests(unittest.TestCase):
-    """The gate replays a PR's request on the newest main and pushes the replayed tree."""
+    """A new-app PR is replayed on the newest main and the replayed tree pushed."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'main'
         shutil.copytree(baseline(), self.root)
-        self.promotion()
+        self.pr = {'state': 'open', 'head': {'ref': 'console/new-fresh-staging-aaaaaaa', 'sha': HEAD,
+                                           'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
+                   'labels': [{'name': 'auto-merge'}]}
+        self.new_app()
         self.after_candidate = None  # edits the PR's tree after its request ran
 
     # What the console would open ------------------------------------------------------------------
-
-    def promotion(self):
-        self.meta = console.metadata(self.root, 'example', IMAGE, False)
-        self.pr = {'state': 'open', 'head': {'ref': 'console/promote-example-staging-aaaaaaa', 'sha': HEAD,
-                                           'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
-                   'labels': [{'name': 'auto-merge'}], 'title': 'apps: promote example/staging to example/prod',
-                   'body': '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'}
-        self.make_pr = self.promoted
-
-    def promoted(self, tree: Path):
-        staging = YamlFile(tree / 'apps/example/staging/helmrelease.yaml')
-        promotion.image_of(staging.data).update(new.parse_image(IMAGE))  # the reviewed image, whatever staging runs now
-        staging.save()
-        with contextlib.redirect_stdout(io.StringIO()):
-            edit.promote(tree, 'example', runner=FakeRunner())
-        shutil.copyfile(self.root / 'apps/example/staging/helmrelease.yaml', tree / 'apps/example/staging/helmrelease.yaml')
 
     def new_app(self, argv=NEW_ARGV):
         self.pr = {**self.pr, 'head': {**self.pr['head'], 'ref': 'console/new-fresh-staging-aaaaaaa'},
@@ -168,7 +154,7 @@ class MergeTests(unittest.TestCase):
             merge.merge(runner, self.root, 7, HEAD, REPO, sleep=self.slept.append, opener=github)
 
     def pushes(self, runner):
-        return [c for c in runner.calls if c[:3] == ('git', 'push', 'origin')]
+        return [c for c in runner.calls if c[:3] == ('git', 'push', 'origin') and c[3] != '--delete']
 
     def held(self, message, runner=None):
         runner = runner or self.runner()
@@ -177,133 +163,13 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(self.pushes(runner), [])
         return runner
 
-    # Promotions ----------------------------------------------------------------------------------
-
-    def test_a_promotion_pushes_the_replayed_tree_as_a_merge_of_the_pr(self):
-        runner = self.runner()
-        self.check(runner)
-        self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'fetch')],
-                         [('git', 'fetch', 'origin', 'main'), ('git', 'fetch', 'origin', 'pull/7/head')])
-        self.assertIn((*merge.GIT, 'commit-tree', '', '-p', BASE, '-p', HEAD, '-m',
-                       'Merge pull request #7: apps: promote example/staging to example/prod'), runner.calls)
-        self.assertEqual(self.pushes(runner)[0], ('git', 'push', 'origin', f'{COMMIT}:refs/heads/main'))
-        self.assertEqual([c for c in runner.calls if c[0] == 'make'], [CHECKS])
-        self.assertLess(runner.calls.index(CHECKS), runner.calls.index(self.pushes(runner)[0]))
-        self.assertIn('tag: 2-abcdef0', (self.work / 'apps/example/prod/helmrelease.yaml').read_text())
-
-    def test_head_validation_failure_merge_failure_hold_and_base_race_never_push(self):
+    def test_a_held_unvalidated_or_moved_pr_is_skipped_and_a_failed_check_is_held(self):
         held = {**self.pr, 'labels': []}
-        for runner, error in [(self.runner(passed=False), merge.Hold), (self.runner(validation=1), CommandError),
-                              (self.runner(latest=held), merge.Hold), (self.runner(current='d' * 40), merge.Hold)]:
+        for runner, error in [(self.runner(passed=False), merge.Skip), (self.runner(latest=held), merge.Skip),
+                              (self.runner(current='d' * 40), merge.Skip), (self.runner(validation=1), merge.Hold)]:
             with self.subTest(error=error), self.assertRaises(error):
                 self.check(runner)
             self.assertEqual(self.pushes(runner), [])
-
-    def test_destination_or_tooling_change_requires_fresh_review(self):
-        with contextlib.redirect_stdout(io.StringIO()):
-            edit.scale(self.root, 'example', 'prod', cpu='75m')
-        self.held('production changed')
-        self.promotion()
-        (self.root / 'tools/swhurl/apps').mkdir(parents=True)
-        (self.root / 'tools/swhurl/apps/new.py').write_text('# changed generator\n')
-        self.held('tooling, policy')
-
-    def test_unrelated_changes_keep_the_reviewed_image(self):
-        (self.root / 'README.md').write_text('unrelated documentation update\n')
-        runner = self.runner()
-        self.check(runner)
-        self.assertTrue(self.pushes(runner))
-        self.assertIn('tag: 2-abcdef0', (self.work / 'apps/example/prod/helmrelease.yaml').read_text())
-
-    def test_a_newer_staging_deploy_holds_the_reviewed_promotion(self):
-        """A staging deploy writes its image into release.yaml, which the staging fingerprint hashes whole: the
-        open promotion is held for a fresh review (docs/plan.md section 24, gate review finding 1)."""
-        record = self.root / 'apps/example/staging/release.yaml'
-        record.write_text(record.read_text().replace('2-abcdef0', '3-abcdef0').replace('a' * 64, 'd' * 64))
-        with contextlib.redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
-        self.held('staging configuration changed after review')
-
-    def test_a_rollback_is_merged_by_a_person(self):
-        """Production runs a newer build than the reviewed image: the gate holds it, whatever the PR body says."""
-        record = self.root / 'apps/example/prod/release.yaml'
-        record.write_text(record.read_text().replace('1-abcdef0', '3-abcdef0'))
-        with contextlib.redirect_stdout(io.StringIO()):
-            derive.sync(self.root)
-        self.promotion()
-        self.assertNotIn('rollback', self.meta)
-        self.held('older than production')
-
-    def test_a_promotion_may_carry_what_the_image_offers_and_nothing_else(self):
-        """The documents read at the reviewed image's commit merge with it; anything else in the PR waits."""
-        api = 'openapi: 3.0.1\npaths: {}\n'
-        with contextlib.redirect_stdout(io.StringIO()):
-            intake.write_offers(self.root, 'example', 'staging', 'example/app', 'abcdef0', {'openapi.yaml': api}, None,
-                                api_path='/openapi.yaml')
-        self.promotion()
-        carried = self.runner()
-        self.check(carried)
-        self.assertTrue(self.pushes(carried))
-        self.assertTrue((self.work / 'apps/example/prod/offers/openapi.yaml').is_file())
-
-        def another_commit(tree):
-            path = tree / 'apps/example/prod/offers/source.yaml'
-            path.write_text(path.read_text().replace('abcdef0', '1234567'))
-
-        def another_document(tree):
-            (tree / 'apps/example/prod/offers/openapi.yaml').write_text(api.replace('{}', '{/x: {}}'))
-
-        def publishes_more(tree):
-            path = tree / 'apps/example/prod/helmrelease.yaml'
-            path.write_text(path.read_text().replace('SWHURL_APP: example', 'SWHURL_APP: example\n              SWHURL_EVENTS_PUBLISH: created'))
-        for change, rel in ((another_commit, 'offers/source.yaml'), (another_document, 'offers/openapi.yaml'),
-                            (publishes_more, 'helmrelease.yaml')):
-            self.after_candidate = change
-            with self.subTest(change=change.__name__):
-                self.held(f'differs from what its request makes on main: apps/example/prod/{rel}')
-
-    def test_a_promotion_that_changes_what_production_needs_is_merged_by_a_person(self):
-        """A new port or secret name reaches production with the image (edit.promote); a person merges it,
-        after setting any new secret value in production."""
-        record = self.root / 'apps/example/staging/release.yaml'
-        original = record.read_text()
-        for change, needs in (('port: 8080', 'port: 9090'), ('telemetry: true', 'telemetry: true\nsecrets: [API_TOKEN]')):
-            with self.subTest(needs=needs):
-                record.write_text(original.replace(*(change, needs)))
-                with contextlib.redirect_stdout(io.StringIO()):
-                    derive.sync(self.root)
-                self.promotion()
-                self.held("the promotion changes production's " + ('port' if 'port' in needs else 'secret names'))
-        record.write_text(original)
-
-    def test_a_first_production_is_merged_by_a_person(self):
-        shutil.rmtree(self.root / 'apps/example/prod')
-        (self.root / 'clusters/home/app-example-prod.yaml').unlink()
-        (self.root / 'clusters/home/kustomization.yaml').write_text('resources:\n- app-example-staging.yaml\n')
-        self.promotion()
-        self.make_pr = lambda tree: None
-        self.held('a person reviews and merges it')
-
-    def test_setup_infrastructure_and_other_app_files_cannot_merge(self):
-        def reloader(tree):
-            (tree / 'platform/reloader').mkdir(parents=True, exist_ok=True)
-            (tree / 'platform/reloader/helmrelease.yaml').write_text('edited: by hand\n')
-        self.after_candidate = reloader
-        runner = self.runner()
-        self.check(runner)
-        self.assertFalse((self.work / 'platform/reloader/helmrelease.yaml').exists(),
-                         "a shared file is made on main: the PR's copy is not merged")
-        for filename in ('apps/other/prod/helmrelease.yaml', 'apps/example/prod/secret.sops.yaml'):
-            def extra(tree, filename=filename):
-                (tree / filename).parent.mkdir(parents=True, exist_ok=True)
-                (tree / filename).write_text('added: by hand\n')
-            self.after_candidate = extra
-            with self.subTest(filename=filename):
-                self.held('changes files its request does not|differs from what its request makes')
-        self.after_candidate = None
-        self.meta['setup'] = True
-        self.pr['body'] = '<!-- swhurl-promotion ' + json.dumps(self.meta) + ' -->'
-        self.held('setup')
 
     # New apps ------------------------------------------------------------------------------------
 
@@ -349,7 +215,7 @@ class MergeTests(unittest.TestCase):
 
     def test_new_app_validation_failure_and_base_race_never_push(self):
         self.new_app()
-        for runner, error in ((self.runner(validation=1), CommandError), (self.runner(current='d' * 40), merge.Hold)):
+        for runner, error in ((self.runner(validation=1), merge.Hold), (self.runner(current='d' * 40), merge.Skip)):
             with self.subTest(error=error), self.assertRaises(error):
                 self.check(runner)
             self.assertEqual(self.pushes(runner), [])
@@ -412,38 +278,314 @@ class MergeTests(unittest.TestCase):
 
     def test_a_failed_validate_is_not_waited_for_and_a_stuck_one_is_given_up(self):
         runner = self.runner(passed=False)
-        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'):
+        with self.assertRaisesRegex(merge.Skip, 'Validate has not passed'):
             self.check(runner)
         self.assertEqual((self.slept, self.pushes(runner)), ([], []))
         runner = self.runner(validate=['[{"databaseId": 1, "status": "queued", "conclusion": ""}]'])
-        with self.assertRaisesRegex(merge.Hold, 'Validate has not passed'), contextlib.redirect_stdout(io.StringIO()):
+        with self.assertRaisesRegex(merge.Skip, 'Validate has not passed'), contextlib.redirect_stdout(io.StringIO()):
             self.check(runner)
         self.assertEqual(sum(self.slept), merge.VALIDATE_WAIT)
         self.assertEqual(self.pushes(runner), [])
 
 
-class RefusalTests(unittest.TestCase):
-    """A refused merge leaves its reason on the pull request, where the console's Activity reads it."""
 
-    def test_a_refusal_swaps_the_label_and_comments_the_reason_on_one_line(self):
-        runner = FakeRunner().on('gh', 'api')
+STAGED_IMAGE = IMAGE  # staging runs build 2
+PROD_TAG = '1-abcdef0'
+
+
+class PromotionGateTests(unittest.TestCase):
+    """A promotion PR carries production's records; the gate merges them onto the newest main, applies
+    promotion.held, renders, checks and pushes (docs/console.md#auto-merge)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / 'main'
+        shutil.copytree(baseline(), self.root)
+        self.staged = {IMAGE.split('@')[1]}  # the digests staging's release.yaml has held on main
+        self.pr = {'state': 'open', 'head': {'ref': 'console/promote-example-staging-aaaaaaa', 'sha': HEAD,
+                                           'repo': {'full_name': REPO}}, 'base': {'ref': 'main'},
+                   'labels': [{'name': 'auto-merge'}], 'title': 'apps: promote example/staging to example/prod',
+                   'body': f'Promote the reviewed staging image `{IMAGE}` to `example/prod`.'}
+
+    def open(self, edit_head=None):
+        """The PR as the console opens it from main as it is now: app-promote's records, nothing rendered."""
+        self.base = Path(self.tmp.name) / 'pr-base'
+        self.head = Path(self.tmp.name) / 'pr-head'
+        for path in (self.base, self.head):
+            shutil.rmtree(path, ignore_errors=True)
+            shutil.copytree(self.root, path)
+        with contextlib.redirect_stdout(io.StringIO()):
+            edit.promote(self.head, 'example', runner=FakeRunner())
+        for path in merge.changed_files(self.base, self.head):
+            if not promotion.records('example', path):  # the console leaves rendered files out
+                if (self.base / path).is_file():
+                    shutil.copyfile(self.base / path, self.head / path)
+                else:
+                    (self.head / path).unlink()
+        if edit_head:
+            edit_head(self.head)
+        self.files = sorted(merge.changed_files(self.base, self.head))
+
+    def runner(self, *, checks=0, push_failures=0, latest=None):
+        runner = FakeRunner()
+        reads, self.attempts = 0, 0
+
+        def pr(args, _):
+            nonlocal reads
+            reads += 1
+            return Result(args, stdout=json.dumps(latest if reads > 1 and latest is not None else self.pr))
+
+        def worktree(args, _):
+            shutil.copytree(self.root, Path(args[-2]))
+            return Result(args)
+
+        def three_way(args, cwd):
+            """git merge --no-commit of the PR head into the worktree (main), by whole files."""
+            work = Path(cwd)
+            paths = set(merge.changed_files(self.base, self.head))
+            ours = set(merge.changed_files(self.base, work))
+            conflicts = [path for path in paths & ours if not merge.same_file(self.head / path, work / path)]
+            if conflicts:
+                return Result(args, 1, '', f'CONFLICT (content): Merge conflict in {conflicts[0]}')
+            for path in paths:
+                if (self.head / path).is_file():
+                    (work / path).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(self.head / path, work / path)
+                else:
+                    (work / path).unlink(missing_ok=True)
+            return Result(args)
+
+        def removed(args, _):
+            if Path(args[-1]).name == 'work' and Path(args[-1]).is_dir():
+                self.result = Path(self.tmp.name) / 'result'
+                shutil.rmtree(self.result, ignore_errors=True)
+                shutil.copytree(args[-1], self.result)
+            return Result(args)
+
+        def logged(args, _):
+            digest = next(arg[2:] for arg in args if arg.startswith('-S'))
+            return Result(args, stdout='f' * 40 + '\n' if digest in self.staged else '')
+
+        def push(args, _):
+            self.attempts += 1
+            if self.attempts <= push_failures:
+                (self.root / 'NEWS.md').write_text(f'another writer {self.attempts}\n')  # main moved
+                return Result(args, 1, '', '! [rejected] (fetch first)')
+            return Result(args)
+
+        real = runner._execute
+
+        def execute(argv, *, input, env, cwd):
+            """git merge and app-sync act on the worktree they run in (``cwd``)."""
+            if argv[:len(merge.GIT) + 1] == (*merge.GIT, 'merge'):
+                runner.calls.append(argv)
+                return three_way(argv, cwd)
+            if argv[:4] == (sys.executable, '-m', 'swhurl', 'app-sync'):
+                runner.calls.append(argv)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    return Result(argv, edit.main_sync(['--root', str(cwd)]))
+            return real(argv, input=input, env=env, cwd=cwd)
+        runner._execute = execute
+        (runner.on('gh', 'api', f'repos/{REPO}/pulls/7', handler=pr)
+         .on('gh', 'run', 'list', stdout='[{"databaseId": 1, "status": "completed", "conclusion": "success"}]')
+         .on('gh', 'pr', 'diff', stdout='\n'.join(self.files))
+         .on('git', 'rev-parse', 'origin/main', stdout=BASE)
+         .on('git', 'rev-parse', 'FETCH_HEAD', stdout=HEAD)
+         .on('git', 'worktree', 'add', handler=worktree)
+         .on('git', 'worktree', 'remove', handler=removed)
+         .on('git', 'log', handler=logged)
+         .on('git', 'push', 'origin', '--delete')
+         .on('git', 'push', handler=push)
+         .on(*merge.GIT, 'commit-tree', stdout=COMMIT)
+         .on('git', stdout='')
+         .on('make', returncode=checks, stderr='[BAD] policy: broken' if checks else ''))
+        return runner
+
+    def check(self, runner):
+        with mock.patch.object(policy, 'evaluate', return_value=[]):
+            merge.merge(runner, self.root, 7, HEAD, REPO, sleep=lambda _: None)
+
+    def pushes(self, runner):
+        return [c for c in runner.calls if c[:2] == ('git', 'push') and '--delete' not in c]
+
+    def held(self, message, runner=None):
+        runner = runner or self.runner()
+        with self.assertRaisesRegex(merge.Hold, message):
+            self.check(runner)
+        self.assertEqual(self.pushes(runner), [])
+        return runner
+
+    def promoted_tag(self, root):
+        return 'tag: 2-abcdef0' in (root / 'apps/example/prod/helmrelease.yaml').read_text()
+
+    def sync(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+
+    # Merged ----------------------------------------------------------------------------------------
+
+    def test_a_records_only_promotion_is_merged_rendered_checked_and_pushed_as_one_merge(self):
+        self.open()
+        self.assertEqual(self.files, ['apps/example/prod/release.yaml'], 'the PR carries the record alone')
+        runner = self.runner()
+        self.check(runner)
+        self.assertEqual([c for c in runner.calls if c[:2] == ('git', 'fetch')],
+                         [('git', 'fetch', 'origin', 'main'), ('git', 'fetch', 'origin', 'pull/7/head')])
+        made = (*merge.GIT, 'commit-tree', '', '-p', BASE, '-p', HEAD, '-m',
+                'Merge pull request #7: apps: promote example/staging to example/prod')
+        self.assertIn(made, runner.calls)
+        self.assertEqual(self.pushes(runner), [('git', 'push', 'origin', f'{COMMIT}:refs/heads/main')])
+        order = [c[0] if c[0] != sys.executable else 'app-sync' for c in runner.calls if c[0] in ('make', sys.executable)]
+        self.assertEqual(order, ['app-sync', 'make'])
+        self.assertLess(runner.calls.index(CHECKS), runner.calls.index(self.pushes(runner)[0]))
+        self.assertTrue(self.promoted_tag(self.result), "main renders production's new release")
+        self.assertIn(('git', 'push', 'origin', '--delete', 'console/promote-example-staging-aaaaaaa'), runner.calls)
+
+    def test_a_newer_staging_deploy_another_apps_call_and_a_tooling_commit_on_main_do_not_hold_it(self):
+        self.open()
+        record = self.root / 'apps/example/staging/release.yaml'
+        record.write_text(record.read_text().replace('2-abcdef0', '3-abcdef0').replace('a' * 64, 'd' * 64))
+        with contextlib.redirect_stdout(io.StringIO()):
+            args = new.parse_args(['caller', '--manifest', str(MANIFESTS / 'web.yaml'), '--team', 'demo', '--env', 'prod',
+                                   '--no-auto-deploy', '--image', IMAGE.replace('example/app', 'example/caller'),
+                                   '--calls', 'example'])
+            new.generate(args, self.root)
+        self.sync()
+        (self.root / 'tools/swhurl/apps').mkdir(parents=True)
+        (self.root / 'tools/swhurl/apps/new.py').write_text('# changed generator\n')
+        runner = self.runner()
+        self.check(runner)
+        self.assertTrue(self.pushes(runner))
+        self.assertTrue(self.promoted_tag(self.result))
+        self.assertIn('tag: 3-abcdef0', (self.result / 'apps/example/staging/helmrelease.yaml').read_text(),
+                      "staging's newer build stays staging's")
+        self.assertIn('caller', (self.result / 'apps/example/prod/helmrelease.yaml').read_text(),
+                      "production is rendered with main's callers")
+
+    def test_a_push_that_loses_to_another_writer_is_merged_again_on_the_newer_main(self):
+        self.open()
+        runner = self.runner(push_failures=1)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.check(runner)
+        self.assertEqual(len(self.pushes(runner)), 2)
+        self.assertEqual(runner.calls.count(('git', 'fetch', 'origin', 'main')), 2)
+        self.assertIn('attempt 1 of 3', out.getvalue())
+        self.assertTrue((self.result / 'NEWS.md').is_file(), 'the second merge is made on the newer main')
+        runner = self.runner(push_failures=merge.ATTEMPTS)
+        with self.assertRaisesRegex(RuntimeError, 'main kept moving'), contextlib.redirect_stdout(io.StringIO()):
+            self.check(runner)
+        self.assertEqual(len(self.pushes(runner)), merge.ATTEMPTS)
+
+    # Held ------------------------------------------------------------------------------------------
+
+    def test_a_rollback_is_held(self):
+        record = self.root / 'apps/example/prod/release.yaml'
+        record.write_text(record.read_text().replace(PROD_TAG, '3-abcdef0'))
+        self.sync()
+        self.open()
+        self.held('older image than production runs')
+
+    def test_a_change_to_port_secret_names_or_publishes_is_held(self):
+        record = self.root / 'apps/example/staging/release.yaml'
+        original = record.read_text()
+        for change, needs, words in (('port: 8080', 'port: 9090', 'its port'),
+                                     ('telemetry: true', 'telemetry: true\nsecrets: [API_TOKEN]', 'its secret names')):
+            with self.subTest(needs=needs):
+                record.write_text(original.replace(change, needs))
+                self.sync()
+                self.open()
+                self.held(words)
+        record.write_text(original)
+        self.sync()
+
+        def publishes(tree):
+            path = tree / 'apps/example/prod/release.yaml'
+            path.write_text(path.read_text() + 'publishes: [created]\n')
+        self.open(publishes)
+        self.held('what it publishes')
+
+    def test_a_first_promotion_is_held(self):
+        shutil.rmtree(self.root / 'apps/example/prod')
+        (self.root / 'clusters/home/app-example-prod.yaml').unlink(missing_ok=True)
+        registry = self.root / 'clusters/home/kustomization.yaml'
+        registry.write_text(registry.read_text().replace('- app-example-prod.yaml\n', ''))
+        self.open()
+        self.assertIn('apps/example/prod/instance.yaml', self.files)
+        self.assertFalse([path for path in self.files if not promotion.records('example', path)], 'records only')
+        self.held('creates production')
+
+    def test_a_pr_touching_production_settings_or_a_rendered_file_is_held(self):
+        def replicas(tree):
+            path = tree / 'apps/example/prod/instance.yaml'
+            path.write_text(path.read_text().replace('version: 1\n', 'version: 1\nreplicas: 2\n'))
+        self.open(replicas)
+        self.held('changes apps/example/prod/instance.yaml')
+
+        def rendered(tree):
+            path = tree / 'apps/example/prod/helmrelease.yaml'
+            path.write_text(path.read_text() + '# by hand\n')
+        self.open(rendered)
+        runner = self.held("not example's promotion records")
+        self.assertFalse([c for c in runner.calls if c[:3] == ('git', 'worktree', 'add')], 'nothing is merged')
+
+    def test_a_merge_conflict_staging_never_ran_and_failed_checks_are_held(self):
+        self.open()
+        record = self.root / 'apps/example/prod/release.yaml'
+        record.write_text(record.read_text().replace(PROD_TAG, '4-abcdef0'))
+        self.held('conflicts with main: close it and promote again')
+        shutil.copyfile(self.base / 'apps/example/prod/release.yaml', record)
+        self.staged.clear()
+        self.held('an image staging never ran')
+        self.staged.add(IMAGE.split('@')[1])
+        self.held('fails make check-repo check-apps: \\[BAD\\] policy: broken', self.runner(checks=1))
+
+    def test_a_label_removed_during_the_checks_is_not_pushed(self):
+        self.open()
+        runner = self.runner(latest={**self.pr, 'labels': []})
+        with self.assertRaises(merge.Skip):
+            self.check(runner)
+        self.assertEqual(self.pushes(runner), [])
+
+
+class RefusalTests(unittest.TestCase):
+    """A held PR loses its label and gets the reason, where Activity reads it; a failure keeps the label."""
+
+    def run_main(self, outcomes):
+        runner = FakeRunner().on('gh', 'pr', 'list', stdout=json.dumps(
+            [{'number': n, 'headRefOid': HEAD, 'headRefName': f'console/promote-x-staging-abc{n}'} for n in range(1, len(outcomes) + 1)]
+        )).on('gh', 'api')
         sent = []
         real = runner.run
         runner.run = lambda args, **kwargs: (sent.append((tuple(args), kwargs.get('input'))), real(args, **kwargs))[1]
-        with mock.patch.object(merge, 'merge', side_effect=merge.Hold('diff includes\nunrelated   edits ' + 'x' * 400)), \
-                mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(merge.main(['59', HEAD], runner), 1)
+        with mock.patch.object(merge, 'merge', side_effect=outcomes) as merged, \
+                mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), contextlib.redirect_stdout(io.StringIO()) as out:
+            code = merge.main([], runner)
+        return code, merged, [(args, data) for args, data in sent if args[:2] == ('gh', 'api')], out.getvalue()
+
+    def test_a_hold_removes_the_label_and_comments_the_reason_on_one_line(self):
+        code, _, sent, _ = self.run_main([merge.Hold('diff includes\nunrelated   edits ' + 'x' * 400)])
+        self.assertEqual(code, 1)
         paths = [next(arg for arg in args if arg.startswith('repos/')) for args, _ in sent]
-        self.assertEqual(paths, [f'repos/{REPO}/issues/59/labels/auto-merge', f'repos/{REPO}/issues/59/labels',
-                                 f'repos/{REPO}/issues/59/comments'])
-        body = json.loads(sent[-1][1])['body']
-        first = body.split('\n', 1)[0]
+        self.assertEqual(paths, [f'repos/{REPO}/issues/1/labels/auto-merge', f'repos/{REPO}/issues/1/comments'])
+        first = json.loads(sent[-1][1])['body'].split('\n', 1)[0]
         self.assertTrue(first.startswith(merge.REFUSAL + 'diff includes unrelated edits x'))
         self.assertEqual(len(first), len(merge.REFUSAL) + merge.REFUSAL_LIMIT)
 
-    def test_a_race_with_main_is_retried_and_says_nothing(self):
-        runner = FakeRunner()
-        with mock.patch.object(merge, 'merge', side_effect=merge.Hold('main moved during validation; retry against the new base')), \
-                mock.patch.dict('os.environ', {'GITHUB_REPOSITORY': REPO}), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(merge.main(['59', HEAD], runner), 1)
-        self.assertEqual(runner.calls, [])
+    def test_a_transient_failure_keeps_the_label_and_the_queue_goes_on(self):
+        failure = CommandError(['gh', 'api'], 'gh api exited 1: HTTP 502 Bad Gateway')
+        code, merged, sent, out = self.run_main([failure, None, merge.Hold('a rollback')])
+        self.assertEqual(code, 1, 'the run fails, so the failure is seen')
+        self.assertEqual(merged.call_count, 3, 'one failure does not stop the queue')
+        self.assertEqual([next(arg for arg in args if arg.startswith('repos/')) for args, _ in sent],
+                         [f'repos/{REPO}/issues/3/labels/auto-merge', f'repos/{REPO}/issues/3/comments'],
+                         'only the held PR loses its label')
+        self.assertIn('Could not merge #1 (CommandError), the next run tries again', out)
+
+    def test_a_skipped_pr_says_nothing(self):
+        code, _, sent, _ = self.run_main([merge.Skip('Validate has not passed on the current PR head')])
+        self.assertEqual((code, sent), (0, []))
+
+
+if __name__ == '__main__':
+    unittest.main()

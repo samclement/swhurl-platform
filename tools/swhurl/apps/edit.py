@@ -337,11 +337,16 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
         raise EditError(problem)
     if not value:
         raise EditError(f'no value for {name}: give it on standard input')
-    instance, each = instance_dir(root, app, env), Instance(app, env)
+    each = Instance.named(app, env)
     world, _ = model_sync.read(root)
-    declared = world[each].release.secrets
-    # Rendered before the value is written: the instance's files must be what its records render now.
-    prepared = model_sync.prepare(root, each, lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET}))
+    if each is None or each not in world:
+        instance_dir(root, app, env)  # raises, naming what is missing
+    instance, declared = each.folder(root), world[each].release.secrets
+    # Rendered before the value is written: the instance's files must be what its records render now. An
+    # instance with records and no rendered files yet (a first promotion's branch, which carries only
+    # records) gets the encrypted file alone: main renders it when the branch is merged.
+    prepared = model_sync.prepare(root, each, lambda entry: replace(entry, encrypted=entry.encrypted | {APP_SECRET})) \
+        if (instance / 'helmrelease.yaml').is_file() else None
     path, runner = instance / SECRET_FILE, runner or Runner()
     relative = path.relative_to(root).as_posix()  # .sops.yaml's rules match this path
     try:
@@ -361,7 +366,8 @@ def set_secret(root: Path, app: str, env: str, name: str, value: str, *, runner:
     except CommandError as error:
         raise EditError(f'sops could not set {name} in {relative} (it needs the age key: age.agekey or SOPS_AGE_KEY_FILE): '
                         f'{error}') from None
-    model_sync.apply(root, prepared)
+    if prepared:
+        model_sync.apply(root, prepared)
     print(f'[OK] {app}/{env}: {name} set (value not shown)')
     if name not in declared:
         print(f'[INFO] {name} is not among the secrets its image declares yet: the app receives it all the same')
@@ -431,8 +437,7 @@ def staging_offers(root: Path, app: str, staging: Entry, target: Path) -> dict[P
 
 
 def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod', *,
-            expect_image: str | None = None, expect_config: str | None = None,
-            host: str | None = None, runner=None) -> Path:
+            expect_image: str | None = None, host: str | None = None, runner=None) -> Path:
     """Production runs staging's release (docs/apps.md#promote-to-production). A later promotion copies
     staging's Release whole, the image's minimum resources too (refused when production's quota cannot
     hold them), and renders it with production's own Settings; a first one creates production's records
@@ -443,8 +448,6 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     decision = promotion.decide(src, dst)
     if expect_image is not None and decision.image != expect_image:
         raise EditError(f'{app}/staging image changed since it was reviewed; refresh staging and review it again')
-    if expect_config is not None and promotion.fingerprint(root, app, 'staging') != expect_config:
-        raise EditError('staging configuration changed since it was reviewed; refresh and review it again')
     if decision.outcome == 'same':
         raise EditError(f'{app}/prod already runs this digest; same image in both')
     world, platform = model_sync.read(root)
@@ -675,7 +678,6 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
     p = argparse.ArgumentParser(prog='swhurl app-promote', description='Copy an app image (tag and digest) between environments')
     p.add_argument('app')
     p.add_argument('--expect-image', help='refuse if the source no longer names this exact repository, tag and digest')
-    p.add_argument('--expect-config', help='refuse if the reviewed staging configuration hash changed')
     p.add_argument('--host', help='distinct production hostname for first public promotion')
     p.add_argument('--source-unchanged', metavar='APPLIED..NEWEST', default='',
                    help="the caller has checked that staging's own files are the same at these two commits "
@@ -707,8 +709,7 @@ def main_promote(argv: list[str] | None = None, runner: Runner | None = None) ->
         problem = promotion.source_problem(status, decision.image)
         if problem:
             raise EditError(problem)
-        return promote(root, args.app, expect_image=args.expect_image,
-                       expect_config=args.expect_config, host=args.host, runner=runner)
+        return promote(root, args.app, expect_image=args.expect_image, host=args.host, runner=runner)
 
     try:
         return run(change, True)

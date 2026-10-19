@@ -19,14 +19,19 @@
 {% if review.storage %}<dt>Storage</dt><dd>New retained {{ review.storage }} volume, initially empty. No staging data is copied; database migrations run at startup.</dd>{% endif %}
 {% else %}<dt>Settings</dt><dd>Only the image changes. Production settings, data and credentials stay owned by production.</dd>{% endif %}
 </dl>
+{% if review.outcome == 'update' %}{% if review.diff_problem %}<p class="warn">The promotion does not apply to main: {{ review.diff_problem }}</p>
+{% else %}<details class="rendered-diff"><summary>What main renders differently: {{ review.diff_files }} file{{ '' if review.diff_files == 1 else 's' }}</summary>
+<p class="muted">The pull request carries only production's records; this is what main renders from them, against main as it is now.</p>
+<pre class="mono">{{ review.diff or 'No rendered file changes.' }}</pre></details>{% endif %}{% endif %}
 {% if review.rollback %}<p class="warn">This promotes an older build: an image rollback. Database migrations are not reversed.</p>{% endif %}
 {% if review.secrets %}<p class="warn">Production needs its own values for {{ review.secrets | join(', ') }}. The PR creates encrypted placeholders; set the values with SOPS on its branch before merging.</p>{% endif %}
 <form class="wizard promotion-form" method="post" action="/apps/{{ review.app }}/staging/promote">
-{% for name in ('image', 'configuration', 'target') %}<input type="hidden" name="{{ name }}" value="{{ review[name] }}">{% endfor %}
+<input type="hidden" name="image" value="{{ review.image }}">
 {% if review.needs_host %}<div class="field"><label for="host">Production public hostname</label><input id="host" name="host" required placeholder="app.example.com"><span class="muted hint">A distinct host outside the shared sign-in domain. Review DNS and TLS before manually merging this PR.</span></div>{% endif %}
-{% if review.admits %}<p class="warn">This also lets {{ review.app }} call {{ review.admits | join(', ') }} in production: the PR adds it to each one's allowed callers and network policy. Review those changes and merge the PR yourself on GitHub.</p>{% endif %}
-{% if review.setup %}<p class="muted">This PR {{ 'needs setup and manual review' if review.secrets or review.needs_host else 'does not merge itself: you merge it on GitHub' }}.</p>
-{% else %}<label class="check"><input type="checkbox" name="hold"> Hold for manual review</label><p class="muted">Otherwise, eligible PRs merge automatically after validation. Production is deployed when Flux applies the merge and reports Ready.</p>{% endif %}
+{% if review.admits %}<p class="warn">This also lets {{ review.app }} call {{ review.admits | join(', ') }} in production: once main renders it, each gains it in its allowed callers and network policy. Review that and merge the PR yourself on GitHub.</p>{% endif %}
+{% if review.setup %}<p class="muted">This PR {{ 'needs setup and manual review' if review.secrets or review.needs_host else 'does not merge itself: you merge it on GitHub' }}; main renders production when it is merged.</p>
+{% elif review.held %}<p class="muted">This PR does not merge itself: it {{ review.held }}. You merge it on GitHub; main renders it when it is merged.</p>
+{% else %}<label class="check"><input type="checkbox" name="hold"> Hold for manual review</label><p class="muted">Otherwise it merges itself after validation. Production is deployed when Flux applies the merge and reports Ready.</p>{% endif %}
 <button class="primary">Promote to production</button>
 </form>
 {% endif %}

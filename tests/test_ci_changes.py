@@ -2,7 +2,7 @@
 
 import unittest
 
-from ci_changes import classify
+from ci_changes import classify, records_only
 
 
 class CIChangeClassificationTests(unittest.TestCase):
@@ -29,6 +29,21 @@ class CIChangeClassificationTests(unittest.TestCase):
         self.assertEqual(classify(['apps/weather/prod/helmrelease.yaml', 'clusters/home/app-weather-prod.yaml',
                                    'clusters/home/kustomization.yaml']), (True, False))
         self.assertEqual(classify(['clusters/home/flux-system/kustomization.yaml']), (False, True))
+
+    def test_records_only_changes_are_the_input_records(self):
+        for paths in (['apps/weather/prod/release.yaml', 'apps/weather/prod/offers/api.yaml'],
+                      ['apps/weather/app.yaml', 'apps/weather/staging/instance.yaml',
+                       'apps/weather/staging/events.sops.yaml']):
+            with self.subTest(paths=paths):
+                self.assertTrue(records_only(paths))
+
+    def test_a_rendered_file_or_anything_else_is_not_records_only(self):
+        for paths in ([], ['apps/weather/prod/release.yaml', 'apps/weather/prod/helmrelease.yaml'],
+                      ['apps/weather/prod/release.yaml', 'clusters/home/kustomization.yaml'],
+                      ['apps/weather/qa/release.yaml'], ['tests/fixtures/apps/apps/x/staging/release.yaml'],
+                      ['apps/weather/prod/release.yaml', 'tools/swhurl/apps/model/render.py']):
+            with self.subTest(paths=paths):
+                self.assertFalse(records_only(paths))
 
 
 if __name__ == '__main__':

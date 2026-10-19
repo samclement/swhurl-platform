@@ -12,6 +12,7 @@ jobs:
     outputs:
       app_instance_only: ${{ steps.classify.outputs.app_instance_only }}
       tooling_tests_needed: ${{ steps.classify.outputs.tooling_tests_needed }}
+      records_only: ${{ steps.classify.outputs.records_only }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,11 +25,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
           if [[ "$EVENT_NAME" != pull_request ]]; then
             echo 'app_instance_only=false' >> "$GITHUB_OUTPUT"
             echo 'tooling_tests_needed=true' >> "$GITHUB_OUTPUT"
+            # A push of only input records (a held console PR merged on GitHub) is checked rendered,
+            # as the Render workflow will push it; anything else, or an unreadable range, is checked as is.
+            records=false
+            if git diff --name-only -z "$BEFORE" "$AFTER" > "$RUNNER_TEMP/paths" 2>/dev/null; then
+              records=$(python3 tools/ci_changes.py < "$RUNNER_TEMP/paths" | sed -n 's/^records_only=//p')
+            fi
+            echo "records_only=$records" | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
           git diff --name-only -z "$BASE_SHA...$HEAD_SHA" | python3 tools/ci_changes.py | tee -a "$GITHUB_OUTPUT"
@@ -88,6 +98,7 @@ jobs:
 
   repo:
     name: Validate manifests, schemas and documentation
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -120,11 +131,17 @@ jobs:
           tar -xzf "$RUNNER_TEMP/flux-schema.tar.gz" -C "$RUNNER_TEMP/bin" flux-schema
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      # A records-only change is checked as main will hold it once rendered (the Render workflow).
+      - name: Render the records
+        if: needs.changes.outputs.records_only == 'true'
+        run: PYTHONPATH=tools python3 -m swhurl app-sync
+
       - name: Validate active manifests and scripts
         run: make check-repo
 
   apps:
     name: Check app instances against policy
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -147,6 +164,10 @@ jobs:
 
       - name: Install validation dependencies
         run: python3 -m pip install --group check
+
+      - name: Render the records
+        if: needs.changes.outputs.records_only == 'true'
+        run: PYTHONPATH=tools python3 -m swhurl app-sync
 
       - name: Check app instances against policy
         run: make check-apps

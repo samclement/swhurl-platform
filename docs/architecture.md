@@ -129,8 +129,9 @@ Almost every change is a commit on `main` that Flux applies. They differ in who 
 | Chart version bumps (platform charts and every app's app-template) | Renovate | Pull request | Yes: you merge | [chart updates](operations.md#chart-updates) |
 | The console's own image pin | Validate's "Deploy the console" job (`github-actions[bot]`) | Direct push, after every check in that Validate run passed on the commit that changed the image's inputs | No | [deploy a new console](console.md#deploy-a-new-console) |
 | A staging app's image pin and what the image offers | The Deploy workflow (`github-actions[bot]`), started by Flux when an app's ImagePolicy picks a newer `<run>-<sha>` image, and hourly | Direct push, after `make check-apps` in the run | No; production still changes only through a promote | [deploy a new image](apps.md#deploy-a-new-image) |
+| The rendered files of a commit that changed only an app's input records (`app.yaml`, `release.yaml`, `instance.yaml`, `offers/`, encrypted files), such as a console pull request you merged on GitHub | The [Render workflow](../.github/workflows/render.yml) (`github-actions[bot]`), on every push to `main`; it does nothing when `main` is already rendered | Direct push, after `make app-sync`, `make check-repo` and `make check-apps` in the run | The records were (Validate renders them before checking); the rendered files follow from them | [plan section 24](plan.md#records-only-prs-decision-b-operator-19-october-2026-stages-started-19-october-2026) |
 
-`main` has no branch protection: the console's code alone limits it to `console/*` branches. Because bots also push to `main`, run `git pull --rebase` before pushing.
+Flux applies only rendered files: the records are in no Kustomization's resources, so between a records-only commit and its Render commit (about a minute) the cluster keeps what `main` rendered before. `main` has no branch protection: the console's code alone limits it to `console/*` branches. Because bots also push to `main`, run `git pull --rebase` before pushing.
 
 **From commit to running pods.** The same chain runs for every change on `main`; this is an app's image update:
 

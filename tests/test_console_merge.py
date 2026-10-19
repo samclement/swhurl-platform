@@ -32,10 +32,10 @@ CHECKS = ('make', '-j2', '--output-sync=target', 'check-repo', 'check-apps')
 COMMIT = 'c' * 40
 
 
-def seed(*_args, **_kwargs):
-    """--from-repo's swhurl.yaml, without GitHub: the web fixture's."""
-    from swhurl.apps import declaration
-    return declaration.parse((MANIFESTS / 'web.yaml').read_text(), 'web.yaml').seed
+def github(request):
+    """--from-repo's swhurl.yaml, without GitHub: the web fixture's, at the commit the image's tag names."""
+    assert request.full_url.endswith('/contents/swhurl.yaml?ref=abcdef0'), request.full_url
+    return (MANIFESTS / 'web.yaml').read_bytes()
 
 
 @functools.cache
@@ -91,9 +91,8 @@ class MergeTests(unittest.TestCase):
 
     def created(self, tree: Path, argv):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch.object(new, 'declared', side_effect=seed), \
                 mock.patch.object(intake, 'new_nats_key', side_effect=self.fake_key):
-            self.assertEqual(new.main([*argv, '--root', str(tree), '--no-policy-check']), 0)
+            self.assertEqual(new.main([*argv, '--root', str(tree), '--no-policy-check'], github), 0)
 
     KEY = 'apps/fresh/staging/events.sops.yaml'
     RECIPIENT = 'age1' + 'q' * 58
@@ -165,8 +164,8 @@ class MergeTests(unittest.TestCase):
 
     def check(self, runner):
         self.slept = []
-        with mock.patch.object(policy, 'evaluate', return_value=[]), mock.patch.object(new, 'declared', side_effect=seed):
-            merge.merge(runner, self.root, 7, HEAD, REPO, sleep=self.slept.append)
+        with mock.patch.object(policy, 'evaluate', return_value=[]):
+            merge.merge(runner, self.root, 7, HEAD, REPO, sleep=self.slept.append, opener=github)
 
     def pushes(self, runner):
         return [c for c in runner.calls if c[:3] == ('git', 'push', 'origin')]
@@ -320,10 +319,9 @@ class MergeTests(unittest.TestCase):
             derive.sync(self.root)
         self.new_app()
         runner = self.runner()  # the PR, from main before the first app
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
-                mock.patch.object(new, 'declared', side_effect=seed):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             first = [arg.replace('fresh', 'first') for arg in NEW_ARGV]
-            self.assertEqual(new.main([*first, '--root', str(self.root), '--no-policy-check']), 0)
+            self.assertEqual(new.main([*first, '--root', str(self.root), '--no-policy-check'], github), 0)
         self.check(runner)
         self.assertTrue(self.pushes(runner))
         ports = egress.ports(self.work)

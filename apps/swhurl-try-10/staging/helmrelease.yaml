@@ -6,7 +6,7 @@ metadata:
   annotations:
     platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: a4fdeeb
-    platform.swhurl.com/render: 8451619411020c375c5a5e6f7f766f4f7c3ffd704ba8f262dfeb5699cd38fece
+    platform.swhurl.com/render: dd0ca53a37d6d2a96f5a28c15742a5cd15ffda39c646470404ef544b2b38c1e6
 spec:
   interval: 30m
   timeout: 3m
@@ -46,7 +46,7 @@ spec:
             resources:
               requests:
                 cpu: 10m
-                memory: 48Mi
+                memory: 32Mi
               limits:
                 memory: 128Mi
             securityContext:

@@ -11,7 +11,8 @@ from unittest import mock
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import channels, contract, derive, policy, teams
+from swhurl.apps import channels, contract, derive, teams
+from swhurl.apps.model import generated
 from swhurl.apps.yaml_file import EditError
 from swhurl.run import FakeRunner, Result
 
@@ -72,7 +73,7 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(self.registered()['orders'], 'Old')
         self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('orders', 'orders'))
         self.assertEqual(teams.apps_of(self.root), {'orders': ['hello']})
-        self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
         with self.assertRaisesRegex(EditError, 'already exists; to merge the two, remove orders with --move-apps-to payments'):
             teams.change(self.root, 'orders', rename='payments')
         self.quiet(teams.change, 'demo', rename='core')  # no team is special: any can be renamed

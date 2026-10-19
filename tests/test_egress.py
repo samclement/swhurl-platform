@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT
-from swhurl.apps import checks, derive, edit, egress, helmrelease, per_environment, promotion
+from swhurl.apps import checks, derive, edit, egress, helmrelease, promotion
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
 from swhurl.apps.yaml_file import EditError
@@ -117,7 +117,6 @@ class EgressTests(unittest.TestCase):
     def test_a_promotion_never_widens_production(self):
         self.sync()
         self.grant(add=['api.stripe.com'])
-        self.assertTrue(per_environment.may_differ(egress.ANNOTATION))
         world, _ = model_sync.read(self.root)
         first = promotion.first_production(self.root, world, 'hello')
         self.assertEqual(first.entry.settings.egress, ())

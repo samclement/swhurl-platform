@@ -108,7 +108,6 @@ def check_manifest(runner: Runner, report: Report, label: str, manifest: bytes, 
             return False
         instances.append(instance_folder(root, NAME, env))
     problems = [f'{each.name}: {p}' for each in instances for p in policy.evaluate(each, runner)]
-    problems += policy.drift(sorted(instances, key=lambda e: e.name != 'prod'))
     problems += [f'app model: {p}' for p in generated.problems(root)]
     if problems:
         report.bad(f'{label}: ' + '; '.join(problems))

@@ -94,11 +94,16 @@ def instance_problems(root: Path, each: Instance, world: World, platform: Platfo
     return found
 
 
-def problems(root: Path, base: Path = Path('apps')) -> list[str]:
+def problems(root: Path, base: Path = Path('apps'), *, only: frozenset[Instance] | None = None) -> list[str]:
+    """Validate the records and their rendered files. ``only`` selects instance files, not shared files;
+    the whole world's records are still read and validated because they supply each other's dependencies."""
     world, found = store.world(root, base)
     platform = store.platform(root, base)
     for each in world:
-        found += instance_problems(root, each, world, platform, base)
+        if only is None or each in only:
+            found += instance_problems(root, each, world, platform, base)
+    if only is not None:
+        return found
     try:
         shared = render.shared(world, platform)
     except RenderError as error:

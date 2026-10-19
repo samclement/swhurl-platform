@@ -16,6 +16,7 @@ from swhurl import ROOT
 from swhurl.apps import calling, contract, derive, edit, new, ops, policy, promotion
 from swhurl.apps import release as intake
 from swhurl.apps.instance import Instance
+from swhurl.apps.model import generated
 from swhurl.run import CommandError, FakeRunner
 
 NEW_DIGEST = 'sha256:' + 'b' * 64
@@ -36,6 +37,8 @@ class EditTests(unittest.TestCase):
             src, dst = base / rel, self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
+        reloader = self.root / 'platform/reloader/helmrelease.yaml'
+        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
         self.staging = self.root / 'apps/hello/staging/helmrelease.yaml'
         self.prod = self.root / 'apps/hello/prod/helmrelease.yaml'
 
@@ -80,13 +83,13 @@ class EditTests(unittest.TestCase):
                     *(port['port'] for rule in network['spec']['ingress'] for port in rule['ports']),
                     int(self.env('orders', env)['SWHURL_SERVICE_HELLO_URL'].rsplit(':', 1)[1])}
         self.assertEqual((listens('staging'), listens('prod')), ({9090}, {8080}))
-        self.assertEqual(policy.drift([self.prod.parent, self.staging.parent]), [], 'staging ahead of production: held, not drift')
+        self.assertEqual(generated.problems(self.root), [], 'staging may run a newer release')
 
         self.quiet(edit.promote, self.root, 'hello', 'staging', 'prod')
         self.assertEqual(listens('prod'), {9090})
         self.assertIn('tag: 1.28-alpine', self.prod.read_text(), 'in the same commit as the image')
         self.assertEqual(yaml.safe_load((self.prod.parent / 'release.yaml').read_text()), yaml.safe_load(record.read_text()))
-        self.assertEqual(policy.drift([self.prod.parent, self.staging.parent]), [])
+        self.assertEqual(generated.problems(self.root), [])
         instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
         self.assertEqual(policy.check_calls(instances), {})
 
@@ -189,9 +192,8 @@ class EditTests(unittest.TestCase):
         self.assertEqual(self.state('staging'), {'exposure': 'authenticated-web', 'sign_in': True,
                                                  'host': 'staging-hello.homelab.swhurl.com',
                                                  'depends': ['infra-base', 'platform-oauth2-proxy']})
-        instances = [self.root / 'apps/hello/staging', self.root / 'apps/hello/prod']
         self.expose('staging', 'public', 'hello.example.com')
-        self.assertEqual(policy.drift(instances), [], 'exposure may differ between environments')
+        self.assertEqual(generated.problems(self.root), [], 'exposure may differ between environments')
 
     def network_policy(self, env):
         return yaml.safe_load((self.root / 'apps/hello' / env / 'networkpolicy.yaml').read_text())['spec']['ingress']
@@ -238,7 +240,7 @@ class EditTests(unittest.TestCase):
             instance = self.root / 'apps/hello' / env
             labels = yaml.safe_load((instance / 'namespace.yaml').read_text())['metadata']['labels']
             self.assertEqual(labels[contract.TEAM], 'payments')
-        self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
         with self.assertRaisesRegex(edit.EditError, 'already belongs to payments'):
             edit.set_team(self.root, 'hello', 'payments')
         before = (self.root / 'apps/hello/staging/namespace.yaml').read_text()
@@ -275,9 +277,7 @@ class EditTests(unittest.TestCase):
         self.assertNotIn('SWHURL_ALLOWED_CALLERS', self.env('orders', 'prod'), 'production is its own decision')
         instances = [self.root / 'apps' / app / env for app in ('hello', 'orders') for env in ('staging', 'prod')]
         self.assertEqual(policy.check_calls(instances), {})
-        self.assertEqual(policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging'])
-                         + policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [],
-                         'calls may differ between environments')
+        self.assertEqual(generated.problems(self.root), [], 'calls may differ between environments')
         self.assertEqual(policy.evaluate(self.root / 'apps/hello/staging') + policy.evaluate(self.root / 'apps/orders/staging'), [])
 
         with self.assertRaisesRegex(edit.EditError, 'is called by hello: remove those calls first'):
@@ -423,8 +423,7 @@ class EditTests(unittest.TestCase):
                                   '$JS.API.STREAM.INFO.staging-orders']},  # the Java client asks before it binds
             'subscribe': {'allow': ['_INBOX.staging.hello.>']}})
         self.assertNotIn('SWHURL_EVENTS_PUBLISH', self.env('orders', 'prod'), 'production is its own decision')
-        self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging'])
-                         + policy.drift([self.root / 'apps/hello/prod', self.root / 'apps/hello/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
         instances = [self.root / 'apps' / app / 'staging' for app in ('hello', 'orders')]
         self.assertEqual(policy.check_calls(instances), {})
         self.assertCountEqual(policy.check_event_users(self.root), [  # every instance needs its own key
@@ -996,7 +995,7 @@ components:
         def values(env):
             return yaml.safe_load((self.root / 'apps/orders' / env / 'helmrelease.yaml').read_text())['spec']['values']
         self.assertNotIn('data', values('prod')['persistence'], 'production keeps the old release until the promotion')
-        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [], 'staging ahead of production: held, not drift')
+        self.assertEqual(generated.problems(self.root), [], 'staging may run a newer release')
 
         _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
         for change in ('port 9000 -> 9090', 'database sqlite on a new 1Gi volume', 'secret names +API_TOKEN'):
@@ -1008,7 +1007,7 @@ components:
         self.assertEqual(values('prod')['persistence']['data']['storageClass'], 'local-path-retain', 'its own volume')
         self.assertEqual(values('prod')['service']['main']['ports']['http']['port'], 9090)
         self.assertTrue((prod / contract.BACKUP_FILE).is_file(), 'nightly backups of its own')
-        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
 
     def test_a_rollback_never_crosses_a_database_change(self):
         self.with_units()
@@ -1041,7 +1040,7 @@ components:
                     main['env'].get('OTEL_SERVICE_NAME'), main['resources']['requests']['memory'])
         self.assertEqual(runs('staging'), ({'/ready'}, 1000, 'orders', '64Mi'))
         self.assertEqual(runs('prod'), ({'/'}, 101, None, '32Mi'), 'production keeps the old release until the promotion')
-        self.assertEqual(policy.drift([prod, prod.parent / 'staging']), [], 'not drift: they move with the image')
+        self.assertEqual(generated.problems(self.root), [], 'needs move with the image')
 
         _, out = self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod')
         self.assertIn("[OK] orders/prod: health path / -> /ready, uid 101 -> 1000, telemetry otlp, requests.memory 32Mi -> 64Mi "
@@ -1199,7 +1198,7 @@ components:
         self.assertEqual(self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH'], 'created,paid', 'no second declaration for production')
         self.assertEqual(len(self.seeds), 2, 'production has its own key')
         self.assertEqual(offers.problems(prod, ['created', 'paid'], 'abc1234'), [])
-        self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [], 'offers follow each image')
+        self.assertEqual(generated.problems(self.root), [], 'offers follow each image')
         # A first promotion carries them too: production is made from staging's release, then given the documents.
         shutil.rmtree(prod)
         (self.root / 'clusters/home/app-orders-prod.yaml').unlink()
@@ -1211,11 +1210,12 @@ components:
                 if 'annotated' in p]):
             self.quiet(edit.promote, self.root, 'orders', 'staging', 'prod', runner=runner)
         self.assertEqual((offers.read(prod).commit, self.env('orders', 'prod')['SWHURL_EVENTS_PUBLISH']), ('abc1234', 'created,paid'))
-        release = self.root / 'apps/orders/staging/helmrelease.yaml'
-        doc = yaml.safe_load(release.read_text())
-        doc['metadata'].setdefault('annotations', {})[offers.API_ANNOTATION] = '/openapi.json'
-        release.write_text(yaml.safe_dump(doc, sort_keys=False))
-        self.assertEqual(policy.drift([prod, self.root / 'apps/orders/staging']), [],
+        record = self.root / 'apps/orders/staging/release.yaml'
+        doc = yaml.safe_load(record.read_text())
+        doc['apiPath'] = '/openapi.json'
+        record.write_text(yaml.safe_dump(doc, sort_keys=False))
+        self.quiet(derive.sync, self.root)
+        self.assertEqual(generated.problems(self.root), [],
                          'staging describes its API before production runs that image')
 
     def test_event_refusals_change_nothing(self):

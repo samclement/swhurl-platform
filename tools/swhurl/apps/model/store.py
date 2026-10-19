@@ -73,6 +73,13 @@ def world(root: Path, base: Path = Path('apps')) -> tuple[World, list[str]]:
         encrypted = frozenset(name for name, file in ((EVENTS_SECRET, events.SECRET_FILE), (APP_SECRET, SECRET_FILE))
                               if (folder / file).is_file())
         found[each] = Entry(app, release, settings, encrypted)
+    releases: dict[str, tuple[Instance, Release]] = {}
+    for each, entry in found.items():
+        reference, release = releases.setdefault(each.app, (each, entry.release))
+        for field in ('kind', 'command'):
+            if getattr(entry.release, field) != getattr(release, field):
+                problems.append(f'{each}: release.yaml: {field} must match {reference}; '
+                                'an app has the same workload kind and start command in every environment')
     return found, problems
 
 

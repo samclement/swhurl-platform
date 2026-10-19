@@ -30,11 +30,8 @@ class CommandSafetyTests(unittest.TestCase):
         self.calls = self.bin / 'calls'
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}',
                         CALLS=str(self.calls), KEY=KEY, OTHER_KEY=OTHER_KEY)
-        backups = self.bin / 'fresh-backups'
-        backups.mkdir()
-        stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')
-        (backups / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
-        self.env.update(BACKUP_DIR=str(backups), BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
+        stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')  # the fake bucket's backups are this fresh
+        self.env.update(BACKUP_S3_URI='s3://bucket/clickstack-mongodb/', STAMP=stamp)
         self.env['WEBHOOK_HOST'] = f'flux-webhook.{platform.base_domain()}'
         self.env.update(FLUX_VERSION=f'v{flux.pinned_version()}',
                         FLUX_ARGS=' '.join(flux.required_args()['kustomize-controller']))
@@ -163,17 +160,6 @@ elif 'secret' in argv:
 ''')
             path.chmod(0o700)
 
-    def test_recovery_dry_runs_never_call_cluster_tools(self):
-        for target in ('backup-mongodb', 'live-test-restore-mongodb'):
-            with self.subTest(target=target):
-                result = subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT,
-                                        env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')),
-                                        capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn('Plan (', result.stdout)
-                self.assertFalse(self.calls.exists(), 'A recovery dry run called a cluster tool')
-                self.assertFalse((self.bin / 'backups').exists(), 'A recovery dry run wrote files')
-
     def test_destroy_data_refuses_without_exact_confirmation(self):
         cases = (('pvc/ns/data', ''), ('pvc/ns/data', 'pvc/ns/other'), ('pv/name', 'pv/other'),
                  ('pvc/ns', 'pvc/ns'), ('secret/ns/x', 'secret/ns/x'), ('', ''))
@@ -191,8 +177,7 @@ elif 'secret' in argv:
         self.assertGreater(len(targets), 15)
 
         def plan(target):
-            return subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT, capture_output=True, text=True,
-                                  env=dict(self.env, BACKUP_DIR=str(self.bin / 'backups')))
+            return subprocess.run(['make', target, 'DRY_RUN=true'], cwd=ROOT, capture_output=True, text=True, env=self.env)
 
         with ThreadPoolExecutor() as pool:
             results = dict(zip(targets, pool.map(plan, targets), strict=True))
@@ -201,19 +186,11 @@ elif 'secret' in argv:
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue(result.stdout.strip(), 'a plan says what would happen')
         self.assertFalse(self.calls.exists(), 'A dry run that plans called a cluster tool')
-        self.assertFalse((self.bin / 'backups').exists(), 'A dry run that plans wrote files')
 
     def test_a_missing_variable_stops_a_target_before_any_tool(self):
         result = subprocess.run(['make', 'app-reconcile', 'APP=web'], cwd=ROOT, env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('Usage: make app-reconcile APP=<app> ENV=<env>', result.stderr)
-        self.assertFalse(self.calls.exists())
-
-    def test_sqlite_restore_test_dry_run_never_calls_cluster_tools(self):
-        result = subprocess.run(['make', 'live-test-restore-sqlite', 'DRY_RUN=true'], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('restore-sqlite brings back one, two', result.stdout)
         self.assertFalse(self.calls.exists())
 
     def test_restore_sqlite_refuses_without_exact_confirmation(self):

@@ -1,6 +1,5 @@
-"""backup-mongodb and live-test-restore-mongodb: every branch offline, with FakeRunner."""
+"""live-test-restore-mongodb: every branch offline, with FakeRunner."""
 import base64
-import datetime as dt
 import hashlib
 import io
 import json
@@ -8,166 +7,21 @@ import shutil
 import stat
 import tempfile
 import unittest
-from contextlib import redirect_stdout
 from pathlib import Path
 
 import yaml
 
-from swhurl import backupset, recovery
+from swhurl import recovery
 from swhurl.backupset import BackupError
 from swhurl.report import Report
 from swhurl.run import CommandError, FakeRunner, Result
 
-DUMP = 'PLAINTEXT-MONGODUMP-fixture-contents'
 TEAM_KEY = 'fixture-team-key-0000'
 COUNTS = {'sources': 4, 'teams': 1, 'users': 1}
-NOW = dt.datetime(2026, 9, 28, 12, 0, 0, tzinfo=dt.UTC)
-URI = 'mongodb://hyperdx:fixture-mongo-password@clickstack-mongodb-svc:27017/hyperdx'
+BUCKET = 's3://bucket/clickstack-mongodb/'
 
 
-def age_encrypt(args, stdin):
-    """Stand-in for `age -r R -o FILE`: writes a fake ciphertext, never the plaintext."""
-    out = Path(args[args.index('-o') + 1])
-    out.write_bytes(b'age-encryption.org/v1\n' + hashlib.sha256(stdin.encode()).digest())
-    return Result(args, 0)
-
-
-class BackupTests(unittest.TestCase):
-    def setUp(self):
-        self.dir = Path(tempfile.mkdtemp()) / 'backups'
-        self.addCleanup(shutil.rmtree, self.dir.parent)
-        self.settings = recovery.BackupSettings(backup_dir=self.dir, recipient='age1fixture', prune=False)
-
-    def runner(self, **overrides):
-        answers = {'dump': Result((), 0, DUMP), 'age': age_encrypt,
-                   'counts': Result((), 0, 'RESULT ' + json.dumps(COUNTS)), 'version': Result((), 0, 'db version v5.0.32\n')}
-        answers.update(overrides)
-
-        def respond(key):
-            value = answers[key]
-            return value if callable(value) else (lambda args, _in: Result(args, value.returncode, value.stdout,
-                                                                           value.stderr))
-        exec_mongo = ('kubectl', '-n', 'observability', 'exec', '-i', 'clickstack-mongodb-0', '-c', 'mongod', '--')
-        self.dump_input = []
-
-        def dump(args, stdin):
-            self.dump_input.append(stdin)
-            return respond('dump')(args, stdin)
-        uri_secret = {'data': {'connectionString.standard': base64.b64encode(URI.encode()).decode()}}
-        return (FakeRunner()
-                .on('kubectl', '-n', 'observability', 'get', 'secret', 'clickstack-mongodb-hyperdx-hyperdx',
-                    stdout=json.dumps(uri_secret))
-                .on(*exec_mongo, 'mongodump', handler=dump)
-                .on('age', handler=respond('age'))
-                .on(*exec_mongo, 'mongosh', handler=respond('counts'))
-                .on(*exec_mongo, 'mongod', handler=respond('version')))
-
-    def backup(self, runner):
-        lines = []
-        archive = recovery.backup(runner, self.settings, now=NOW, out=lines.append)
-        return archive, lines
-
-    def test_writes_private_archive_and_metadata(self):
-        archive, lines = self.backup(self.runner())
-        self.assertEqual(archive.name, 'clickstack-mongodb-20260928T120000Z.archive.gz.age')
-        metadata = json.loads(archive.with_name('clickstack-mongodb-20260928T120000Z.json').read_text())
-        self.assertEqual(metadata, {
-            'created': '20260928T120000Z', 'source': 'observability/clickstack-mongodb-0', 'database': 'hyperdx',
-            'mongodb_version': '5.0.32', 'age_recipient': 'age1fixture',
-            'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'collections': COUNTS})
-        for path in (self.dir, archive, archive.with_name('clickstack-mongodb-20260928T120000Z.json')):
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0, f'{path} is readable by others')
-        self.assertEqual(lines[:2], [f'[OK] Encrypted backup: {archive}',
-                                     f"[OK] Metadata: {archive.with_name(archive.name.replace('.archive.gz.age', '.json'))}"])
-
-    def test_login_reaches_mongodump_only_on_stdin(self):
-        runner = self.runner()
-        self.backup(runner)
-        self.assertEqual(self.dump_input, [f'uri: {json.dumps(URI)}\n'])
-        for call in runner.calls:
-            self.assertNotIn('fixture-mongo-password', ' '.join(call))
-
-    def test_plaintext_never_reaches_disk_or_output(self):
-        archive, lines = self.backup(self.runner())
-        for path in self.dir.iterdir():
-            self.assertNotIn(DUMP.encode(), path.read_bytes(), path.name)
-        self.assertNotIn(DUMP, '\n'.join(lines))
-
-    def test_failures_leave_no_partial_or_archive(self):
-        cases = {
-            'dump fails': {'dump': Result((), 1, '', 'connection refused')},
-            'encryption fails': {'age': lambda args, _in: Result(args, 1, '', 'bad recipient')},
-            'empty archive': {'age': lambda args, _in: (Path(args[args.index('-o') + 1]).write_bytes(b''),
-                                                        Result(args, 0))[1]},
-            'counts fail': {'counts': Result((), 1, '', 'mongosh error')},
-            'version unreadable': {'version': Result((), 0, 'something else')},
-        }
-        for label, overrides in cases.items():
-            with self.subTest(label):
-                with self.assertRaises((CommandError, BackupError)):
-                    self.backup(self.runner(**overrides))
-                self.assertEqual([p.name for p in self.dir.iterdir()] if self.dir.exists() else [], [])
-
-    def test_dry_run_plans_without_calls_or_files(self):
-        runner = FakeRunner(dry_run=True)
-        self.settings.prune = True
-        _, lines = self.backup(runner)
-        self.assertEqual(lines[0], 'Plan (backup-mongodb):')
-        self.assertIn('  - encrypt to age recipient age1fixture', lines)
-        self.assertTrue(lines[-1].startswith(f'  - prune {self.dir} to the newest backup'))
-        self.assertEqual(runner.calls, [])
-        self.assertFalse(self.dir.exists())
-
-    def test_prunes_after_writing(self):
-        self.dir.mkdir()
-        for day in range(1, 11):
-            stamp = f'202609{day:02d}T010000Z'
-            (self.dir / f'clickstack-mongodb-{stamp}.archive.gz.age').write_bytes(b'x')
-            (self.dir / f'clickstack-mongodb-{stamp}.json').write_text('{}')
-        self.settings.prune = True
-        with redirect_stdout(io.StringIO()):
-            self.backup(self.runner())
-        self.assertEqual(len(list(self.dir.glob('*.age'))), 7)
-
-    def test_backup_uploads_only_what_the_bucket_lacks(self):
-        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
-        self.dir.mkdir(parents=True)
-        (self.dir / 'clickstack-mongodb-20260927T000000Z.archive.gz.age').write_bytes(b'old')
-        (self.dir / 'clickstack-mongodb-20260927T000000Z.json').write_text('{}')
-        (self.dir / 'notes.txt').write_text('not a backup')
-        runner = self.runner().on('aws', 's3api', 'list-objects-v2', stdout=json.dumps(
-            ['clickstack-mongodb/clickstack-mongodb-20260927T000000Z.archive.gz.age',
-             'clickstack-mongodb/clickstack-mongodb-20260927T000000Z.json'])).on('aws', 's3', 'cp')
-        archive, lines = self.backup(runner)
-        copies = [c for c in runner.calls if c[:3] == ('aws', 's3', 'cp')]
-        self.assertEqual([c[-1] for c in copies], [
-            's3://bucket/clickstack-mongodb/clickstack-mongodb-20260928T120000Z.archive.gz.age',
-            's3://bucket/clickstack-mongodb/clickstack-mongodb-20260928T120000Z.json'])
-        self.assertEqual(copies[0][-2], str(archive))
-        self.assertIn('[OK] Off-host: 2 file(s) uploaded to s3://bucket/clickstack-mongodb/, 2 already there', lines)
-
-    def test_upload_failure_fails_the_backup_after_keeping_it_locally(self):
-        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
-        runner = self.runner().on('aws', 's3api', 'list-objects-v2', stdout='null').on(
-            'aws', 's3', 'cp', returncode=1, stderr='AccessDenied')
-        with self.assertRaisesRegex(CommandError, 'AccessDenied'):
-            self.backup(runner)
-        self.assertTrue(any(p.name.endswith('.archive.gz.age') for p in self.dir.iterdir()))
-
-    def test_empty_uri_skips_upload_and_bad_uri_is_refused(self):
-        _, lines = self.backup(self.runner())
-        self.assertIn('[INFO] BACKUP_S3_URI is empty: nothing copied off-host.', lines)
-        for uri in ('bucket/prefix/', 's3://', 's3://bucket/prefix'):
-            with self.subTest(uri=uri), self.assertRaises(BackupError):
-                backupset.s3_location(uri)
-
-    def test_dry_run_plans_the_upload_without_listing(self):
-        self.settings.s3_uri = 's3://bucket/clickstack-mongodb/'
-        runner = FakeRunner(dry_run=True)
-        _, lines = self.backup(runner)
-        self.assertIn('  - upload local backups not yet in s3://bucket/clickstack-mongodb/', lines)
-        self.assertEqual(runner.calls, [])
-
+class SopsRecipientTests(unittest.TestCase):
     def test_recipient_comes_from_sops_config(self):
         self.assertTrue(recovery.sops_recipient().startswith('age1'))
         root = Path(tempfile.mkdtemp())
@@ -188,7 +42,7 @@ class RestoreTestTests(unittest.TestCase):
         self.archive.with_name('clickstack-mongodb-20260928T120000Z.json').write_text(json.dumps(self.metadata))
         self.key = self.dir / 'age.agekey'
         self.key.write_text('AGE-SECRET-KEY-fixture')
-        self.settings = recovery.RestoreSettings(backup_dir=self.dir, age_key=self.key)
+        self.settings = recovery.RestoreSettings(uri=BUCKET, age_key=self.key, backup_file=self.archive)
 
     def runner(self, *, namespace=None, counts=COUNTS, team_key=TEAM_KEY, secret_key=TEAM_KEY, restore_rc=0):
         secret = {'apiVersion': 'v1', 'kind': 'Secret',
@@ -330,17 +184,31 @@ class RestoreTestTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(text.splitlines()[0], 'Plan (live-test-restore-mongodb):')
         self.assertIn(str(self.archive), text)
+        settings = recovery.RestoreSettings(uri=BUCKET, age_key=self.key)
+        code, text = self.run_test(runner, settings)
+        self.assertIn(f'the newest complete backup in {BUCKET}', text)
         self.assertEqual(runner.calls, [])
 
-    def test_latest_archive_is_newest_by_its_stamp_not_its_file_time(self):
-        import os
-        older = self.dir / 'clickstack-mongodb-20260101T000000Z.archive.gz.age'
-        older.write_bytes(b'x')
-        os.utime(self.archive, (1, 1))  # as after a copy back from S3 in another order
-        self.assertEqual(self.settings.archive(), self.archive)
-        named = recovery.RestoreSettings(backup_dir=self.dir, age_key=self.key, backup_file=older)
-        self.assertEqual(named.archive(), older)
+    def test_without_a_file_it_restores_the_newest_complete_backup_from_s3(self):
+        older = 'clickstack-mongodb-20260101T000000Z.archive.gz.age'
+        half = 'clickstack-mongodb-20261001T000000Z.archive.gz.age'  # newer, but its metadata never arrived
+        listing = [older, older.replace('.archive.gz.age', '.json'), self.archive.name, self.archive.name.replace('.archive.gz.age', '.json'), half]
+        runner = self.runner()
+        runner.on('aws', 's3api', 'list-objects-v2', stdout=json.dumps([f'clickstack-mongodb/{name}' for name in listing]))
 
+        def download(args, _in):
+            target = Path(args[-1])
+            self.assertEqual(stat.S_IMODE(target.parent.stat().st_mode), 0o700)
+            shutil.copyfile(self.dir / target.name, target)
+            return Result(args, 0)
+        runner.on('aws', 's3', 'cp', handler=download)
+        code, text = self.run_test(runner, recovery.RestoreSettings(uri=BUCKET, age_key=self.key))
+        self.assertEqual(code, 0, text)
+        self.assertEqual([c[-2] for c in runner.calls if c[:3] == ('aws', 's3', 'cp')],
+                         [BUCKET + self.archive.name, BUCKET + self.archive.name.replace('.archive.gz.age', '.json')])
+        self.assertIn(f'[OK] Restored {self.archive.name}', text)
+        self.assertFalse(Path([c[-1] for c in runner.calls if c[:3] == ('aws', 's3', 'cp')][0]).exists(),
+                         'the download is deleted afterwards')
 
 if __name__ == '__main__':
     unittest.main()

@@ -7,9 +7,8 @@
 A job pod runs these, not the operator. The pod mounts what it backs up and has a private scratch
 directory (BACKUP_DIR, an emptyDir), the age public key (AGE_RECIPIENT), the upload-only key
 (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and no Kubernetes token. BACKUP_SOURCE names the
-database in the metadata (``<namespace>/<app>``). The archives and their metadata belong to the same
-backup sets the host timer writes (``sqlite_backup.backups_in``, ``recovery.backups``), so a restore
-reads either. A failure exits 1 before the metadata is published, so a partial backup never counts
+database in the metadata (``<namespace>/<app>``). The archives and their metadata are backup sets
+(``sqlite_backup.backups_in``, ``recovery.backups``), which the restores fetch back. A failure exits 1 before the metadata is published, so a partial backup never counts
 (``backupset.publish``); retention is the bucket's lifecycle rule.
 """
 from __future__ import annotations

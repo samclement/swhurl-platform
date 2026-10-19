@@ -197,7 +197,7 @@ The [incident reviewer](services.md#incident-reviewer) and its namespace are rem
 kubectl get cronjobs -A -l platform.swhurl.com/backup=true   # every backup job, its schedule and last run
 make backup-mongodb              # run MongoDB's job now and show its log
 make backup-sqlite               # run every app database's job now and show their logs
-make live-test-restore-mongodb   # restores the newest local backup into a throwaway namespace and checks it
+make live-test-restore-mongodb   # restores the newest backup in S3 into a throwaway namespace and checks it
 ```
 
 **One job per database.** `backup-mongodb` in `observability` (unit `platform-backup`, 03:30 UTC) and `<app>-backup` in each namespace with a SQLite database (rendered with the instance, at a minute between 03:35 and 04:24 UTC that its namespace picks) run the `ghcr.io/samclement/swhurl-backup` image ([`images/backup/Dockerfile`](../images/backup/Dockerfile), [`backup_job.py`](../tools/swhurl/backup_job.py)). A failed job affects only its database, and nothing depends on this host. MongoDB streams `mongodump` straight into `age` with the login on stdin, then records the server version and each collection's count. A SQLite job runs as the app's user with the app's claim mounted, takes SQLite's online backup (the app keeps running) into a scratch volume, requires `PRAGMA integrity_check` to pass, records the table count and the plaintext's size and SHA-256, and encrypts it. Encryption needs only the age public key, so no job holds the private key.
@@ -206,34 +206,28 @@ Each job then publishes its archive and, last, its metadata to `s3://swhurl-plat
 
 `make verify-platform` judges freshness from S3 alone: a backup counts once its archive and its metadata are both there, and every instance whose `release.yaml` declares a SQLite database must have one younger than 26 hours (`BACKUP_MAX_AGE_HOURS`). To stop every job, set `suspend: true` in `platform/backup/mongodb.yaml` and `SUSPENDED = True` in `tools/swhurl/apps/model/backup.py`, run `make app-sync`, commit and reconcile.
 
-Restore an app's database from a backup copied down from S3. For MongoDB and SQLite alike, the newest backup is the one with the latest time in its file name, whatever order the files were copied in. Copy both the chosen archive and its matching `.json` metadata file from `s3://swhurl-platform-backups-110927251694/app-sqlite/<app>-<env>/` into `BACKUP_DIR/sqlite/<app>-<env>/` first:
+Restore an app's database from S3. `make restore-sqlite` downloads the newest complete backup (the latest time in its file name, with its metadata) from `app-sqlite/<app>-<env>/` into a private temporary directory, using the AWS CLI's own credentials (they need S3 read access; the jobs' key cannot read). To restore an older one, download it and its `.json` metadata into one directory and set `BACKUP_FILE`:
 
 ```bash
-export BACKUP_DIR="$HOME/restore-backups"
-mkdir -p "$BACKUP_DIR/sqlite/notes-prod"
-aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/
-ARCHIVE=sqlite-YYYYMMDDTHHMMSSZ  # choose the same timestamped base name from the listing
-aws s3 cp "s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/$ARCHIVE.db.age" "$BACKUP_DIR/sqlite/notes-prod/"
-aws s3 cp "s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/$ARCHIVE.json" "$BACKUP_DIR/sqlite/notes-prod/"
-make restore-sqlite APP=notes ENV=prod BACKUP_DIR="$BACKUP_DIR" DRY_RUN=true
-make restore-sqlite APP=notes ENV=prod BACKUP_DIR="$BACKUP_DIR" CONFIRM=notes/prod  # the app is down for about a minute
+make restore-sqlite APP=notes ENV=prod DRY_RUN=true          # downloads and checks the backup, prints the plan
+make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod     # the app is down for about a minute
+aws s3 ls s3://swhurl-platform-backups-110927251694/app-sqlite/notes-prod/   # an older one: copy both files, then
+make restore-sqlite APP=notes ENV=prod CONFIRM=notes/prod BACKUP_FILE="$HOME/restore/sqlite-YYYYMMDDTHHMMSSZ.db.age"
 ```
 
-It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app.
+It refuses a backup whose checksum or source instance does not match, then suspends the instance's HelmRelease (so no upgrade starts the app mid-restore), scales the app to 0, and streams `age -d` into a pod running as the app's user on its claim. The received file must match the backup's plaintext SHA-256, pass `integrity_check` and have the recorded table count, or the live database is left untouched. The current database and its `-wal`/`-shm` files move to `before-restore-<UTC>/` beside it (delete that directory yourself once you are happy); then the app is scaled back, the HelmRelease resumed and the rollout awaited, even when a step fails. `make live-test-restore-sqlite` proves the whole cycle on a throwaway app: the same backup job publishes to `app-sqlite/sqlite-restore-test/`, and the restore downloads it from there.
 
 **Targets:** at most 24 hours of MongoDB or app database changes lost (daily backups); about an hour from a bare host to working ClickStack.
 
-**Recovering on a new machine** needs Git (GitHub), `kubectl`, `flux`, `helm`, `sops`, `age`, Python 3.11+ with PyYAML, AWS CLI v2, the age private key and read access to the backup bucket. Find the key through your own recovery notes or the person responsible for its encrypted off-host copy; put it at `age.agekey` in the repository root and set `SOPS_AGE_KEY_FILE=./age.agekey`. Do not copy the key into Git. Follow [bootstrap](bootstrap.md) through Flux setup, then list the MongoDB backups and copy both the chosen archive and its matching metadata file into a private working directory:
+**Recovering on a new machine** needs Git (GitHub), `kubectl`, `flux`, `helm`, `sops`, `age`, Python 3.11+ with PyYAML, AWS CLI v2, the age private key and read access to the backup bucket. Find the key through your own recovery notes or the person responsible for its encrypted off-host copy; put it at `age.agekey` in the repository root and set `SOPS_AGE_KEY_FILE=./age.agekey`. Do not copy the key into Git. Follow [bootstrap](bootstrap.md) through Flux setup, then list the MongoDB backups and copy both the chosen archive (normally the newest) and its matching metadata file into a private working directory:
 
 ```bash
 aws s3 ls s3://swhurl-platform-backups-110927251694/clickstack-mongodb/
-export BACKUP_DIR="$HOME/restore-backups"
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
+mkdir -m 700 -p "$HOME/restore-backups" && cd "$HOME/restore-backups"
 ARCHIVE=clickstack-mongodb-YYYYMMDDTHHMMSSZ  # choose the same timestamped base name from the listing
-aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.archive.gz.age" "$BACKUP_DIR/"
-aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.json" "$BACKUP_DIR/"
-export BACKUP_FILE="$BACKUP_DIR/$ARCHIVE.archive.gz.age"
+aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.archive.gz.age" .
+aws s3 cp "s3://swhurl-platform-backups-110927251694/clickstack-mongodb/$ARCHIVE.json" .
+export BACKUP_FILE="$PWD/$ARCHIVE.archive.gz.age" && cd -
 export AGE_KEY_FILE="$PWD/age.agekey"
 ```
 

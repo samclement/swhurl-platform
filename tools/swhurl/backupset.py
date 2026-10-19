@@ -3,14 +3,12 @@
     <prefix>-<UTC stamp><suffix>   the archive, for example clickstack-mongodb-20260928T120000Z.archive.gz.age
     <prefix>-<UTC stamp>.json      its metadata: when it was taken, its SHA-256 and what its producer adds
 
-A set owns its file names, which archive is the newest (by the stamp in the name, never by file
-time: a file copied back from S3 carries the time of the copy), how old that one is, the retention
-rule, the checksum and the copy to S3. What produces the bytes and what consumes them (``recovery``
-for MongoDB, ``sqlite_backup`` and ``sqlite_restore`` for app databases) only fills and reads archives.
-
-Retention keeps the newest backup for each of the last N days that have backups and for each of the
-last M ISO weeks that have backups. Counting only days with backups means a pause in backups never
-ages out the last good copies.
+A set owns its file names, which archive is the newest (by the stamp in the name), how old that one
+is, the checksum, publishing to S3 and fetching back from it. A backup counts only when its metadata
+is beside it: a job publishes the metadata last. The backup jobs (``backup_job``) fill archives in a
+private scratch directory; the restores (``recovery`` for MongoDB, ``sqlite_restore`` for app
+databases) fetch one from S3 into a private directory of their own. Retention is the bucket's
+lifecycle rule (docs/operations.md#backups-and-recovery).
 """
 from __future__ import annotations
 
@@ -29,7 +27,6 @@ from swhurl import ROOT, platform
 from swhurl.report import Report
 from swhurl.run import CommandError, Runner
 
-DEFAULT_BACKUP_DIR = Path.home() / '.local/state/swhurl-platform/backups'
 STAMP = '%Y%m%dT%H%M%SZ'
 
 
@@ -40,10 +37,6 @@ class BackupError(Exception):
 def stamp(now: dt.datetime | None = None) -> str:
     """The UTC time that names a backup, to the second."""
     return (now or dt.datetime.now(dt.UTC)).strftime(STAMP)
-
-
-def backup_dir(env: Mapping[str, str]) -> Path:
-    return Path(env.get('BACKUP_DIR') or DEFAULT_BACKUP_DIR)
 
 
 def age_key(env: Mapping[str, str]) -> Path:
@@ -102,24 +95,31 @@ class BackupSet:
         match = re.fullmatch(rf'{re.escape(self.prefix)}-(\d{{8}}T\d{{6}}Z){re.escape(self.suffix)}', name)
         return dt.datetime.strptime(match[1], STAMP).replace(tzinfo=dt.UTC) if match else None
 
-    def archives(self) -> list[Path]:
-        """The set's archives on this host, newest first."""
-        if not self.directory.is_dir():
-            return []
-        found = [(taken, path) for path in self.directory.iterdir() if (taken := self.taken(path.name))]
-        return [path for _, path in sorted(found, reverse=True)]
-
-    def newest(self) -> Path | None:
-        return next(iter(self.archives()), None)
-
-    def age(self, now: dt.datetime, names: Iterable[str] | None = None) -> dt.timedelta | None:
-        """How old the newest complete backup is (an archive with its metadata, which is published last), here or
-        among ``names`` (a listing from elsewhere); None without one."""
-        names = [path.name for path in self.directory.iterdir()] if names is None and self.directory.is_dir() else names or []
+    def newest(self, names: Iterable[str]) -> str | None:
+        """The newest complete backup's archive name among ``names`` (an archive with its metadata, which is
+        published last); None without one."""
         present = set(names)
-        times = [taken for name in present if (taken := self.taken(name))
-                 and self.metadata_path(self.directory / name).name in present]
-        return now - max(times) if times else None
+        complete = [(taken, name) for name in present if (taken := self.taken(name))
+                    and self.metadata_path(self.directory / name).name in present]
+        return max(complete)[1] if complete else None
+
+    def age(self, now: dt.datetime, names: Iterable[str]) -> dt.timedelta | None:
+        """How old the newest complete backup among ``names`` is; None without one."""
+        newest = self.newest(names)
+        return now - self.taken(newest) if newest else None
+
+    def fetch(self, runner: Runner, uri: str) -> Path:
+        """Download the newest complete backup under ``uri`` and its metadata into this set's directory
+        (private); return the archive. Reads with the AWS CLI's own credentials."""
+        name = self.newest(remote_names(runner, uri))
+        if name is None:
+            raise BackupError(f'no complete backup in {uri}')
+        archive = self.directory / name
+        with private_files():
+            self.directory.mkdir(parents=True, exist_ok=True)
+            for path in (archive, self.metadata_path(archive)):
+                runner.run(['aws', 's3', 'cp', '--only-show-errors', uri + path.name, path])
+        return archive
 
     @contextlib.contextmanager
     def writing(self, stamp: str) -> Iterator[Path]:
@@ -156,49 +156,6 @@ class BackupSet:
             raise BackupError(f'{archive.name}: checksum does not match its metadata')
         return metadata
 
-    def keep(self, daily: int, weekly: int) -> set[Path]:
-        """The retention set: the newest archive of each of the last ``daily`` backup days and ``weekly`` ISO weeks."""
-        kept: set[Path] = set()
-        archives = self.archives()
-        for bucket, limit in ((lambda t: t.date(), daily), (lambda t: t.isocalendar()[:2], weekly)):
-            seen = []
-            for path in archives:  # newest first, so the first per bucket is kept
-                key = bucket(self.taken(path.name))
-                if key not in seen:
-                    if len(seen) == limit:
-                        break
-                    seen.append(key)
-                    kept.add(path)
-        return kept
-
-    def prune(self, daily: int, weekly: int, *, dry_run: bool = False, out: Callable[[str], None] = print) -> int:
-        """Remove the archives (and their metadata) outside the retention set; return how many were pruned."""
-        kept = self.keep(daily, weekly)
-        removed = 0
-        for path in self.archives():
-            if path in kept:
-                continue
-            for victim in (path, self.metadata_path(path)):
-                if victim.exists():
-                    out(f"[INFO] {'Would prune' if dry_run else 'Pruned'} {victim.name}")
-                    if not dry_run:
-                        victim.unlink()
-            removed += 1
-        out(f'[OK] Retention: kept {len(kept)} backup(s), pruned {removed} '
-            f'(newest per day for {daily} days, per ISO week for {weekly} weeks)')
-        return removed
-
-    def upload(self, runner: Runner, uri: str, out: Callable[[str], None] = print) -> list[Path]:
-        """Copy every archive and metadata file missing from ``uri``; archives are already age-encrypted."""
-        present = set(remote_names(runner, uri))
-        local = [path for archive in sorted(self.archives()) for path in (archive, self.metadata_path(archive))
-                 if path.is_file()]
-        missing = [path for path in local if path.name not in present]
-        for path in missing:
-            runner.run(['aws', 's3', 'cp', '--only-show-errors', path, uri + path.name], mutating=True)
-        out(f'[OK] Off-host: {len(missing)} file(s) uploaded to {uri}, {len(local) - len(missing)} already there')
-        return missing
-
 
 def publish(runner: Runner, backups: BackupSet, archive: Path, uri: str, out: Callable[[str], None] = print) -> None:
     """Upload one archive, then its metadata: a backup counts only once its metadata is there. S3 checks
@@ -221,17 +178,14 @@ def check_backup_set(runner: Runner, report: Report, backups: BackupSet, uri: st
     if not uri:
         report.bad(f'{prefix}no S3 location to check {what} backups in (BACKUP_S3_URI, SQLITE_S3_URI)')
         return
-    places = [(uri, lambda: backups.age(now, remote_names(runner, uri)))]
-    for where, read in places:
-        try:
-            age = read()
-        except (CommandError, BackupError, TypeError) as error:
-            report.bad(f'{prefix}cannot list backups in {where}: {error}')
-            continue
-        if age is None:
-            report.bad(f'{prefix}no {what} backup in {where} (run: {run})')
-        elif age > limit:
-            report.bad(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.0f} h old; '
-                       f'check: {hint}')
-        else:
-            report.ok(f'{prefix}newest {what} backup in {where} is {age.total_seconds() / 3600:.1f} h old')
+    try:
+        age = backups.age(now, remote_names(runner, uri))
+    except (CommandError, BackupError, TypeError) as error:
+        report.bad(f'{prefix}cannot list backups in {uri}: {error}')
+        return
+    if age is None:
+        report.bad(f'{prefix}no {what} backup in {uri} (run: {run})')
+    elif age > limit:
+        report.bad(f'{prefix}newest {what} backup in {uri} is {age.total_seconds() / 3600:.0f} h old; check: {hint}')
+    else:
+        report.ok(f'{prefix}newest {what} backup in {uri} is {age.total_seconds() / 3600:.1f} h old')

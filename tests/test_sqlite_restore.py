@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from swhurl import sqlite_backup
 from swhurl.backupset import BackupError, sha256
 from swhurl.run import FakeRunner, Result
-from swhurl.sqlite_backup import Database
-from swhurl.sqlite_restore import newest, restore
+from swhurl.sqlite_restore import IMAGE, Database, database, pod_manifest, restore
 
 DB = Database('notes-staging', 'notes', 'notes', '/data', '/data/app.db', 65532)
 NS = ('kubectl', '-n', 'notes-staging')
@@ -135,12 +135,44 @@ class SqliteRestoreTests(unittest.TestCase):
         self.assertEqual(cluster.mutations(), [])
         self.assertIn('Plan (restore-sqlite notes-staging/notes):', lines)
 
-    def test_picks_the_newest_backup(self):
-        self.backup('20260930T033000Z')
-        self.assertEqual(newest(self.dir, 'notes-staging'), self.archive)
-        with self.assertRaisesRegex(BackupError, 'no backup in'):
-            newest(self.dir, 'other-prod')
+    def test_the_restore_pod_runs_as_the_app_on_its_claim_with_no_token(self):
+        spec = pod_manifest(DB, 'sqlite-restore-notes')['spec']
+        self.assertEqual((spec['securityContext']['runAsUser'], spec['volumes'][0]['persistentVolumeClaim']['claimName']),
+                         (65532, 'notes'))
+        self.assertFalse(spec['automountServiceAccountToken'])
+        self.assertEqual(spec['containers'][0]['image'], IMAGE)
+        self.assertIn('@sha256:', IMAGE)
 
+    def test_backups_are_fetched_from_the_instances_prefix(self):
+        self.assertEqual(sqlite_backup.uri('notes-staging', {'SQLITE_S3_URI': 's3://b/app-sqlite/'}),
+                         's3://b/app-sqlite/notes-staging/')
+        self.assertEqual(sqlite_backup.uri('notes-staging', {'SQLITE_S3_URI': ''}), '')
+
+
+def app_deployment(name='notes', path='/data/app.db', mount='/data', uid=65532):
+    return {'metadata': {'name': name}, 'spec': {'template': {'spec': {
+        'securityContext': {'runAsUser': uid},
+        'volumes': [{'name': 'data', 'persistentVolumeClaim': {'claimName': name}}, {'name': 'tmp', 'emptyDir': {}}],
+        'containers': [{'name': 'main', 'env': [{'name': 'DATABASE_PATH', 'value': path}],
+                        'volumeMounts': [{'name': 'data', 'mountPath': mount}, {'name': 'tmp', 'mountPath': '/tmp'}]}]}}}}
+
+
+class DatabaseTests(unittest.TestCase):
+    def found(self, *deployments, ns='notes-staging'):
+        runner = FakeRunner().on('kubectl', '-n', ns, 'get', 'deployments', stdout=json.dumps({'items': list(deployments)}))
+        return database(runner, ns)
+
+    def test_the_namespaces_deployment_with_database_path(self):
+        plain = {'metadata': {'name': 'web'}, 'spec': {'template': {'spec': {'containers': [{'name': 'main'}]}}}}
+        self.assertEqual(self.found(app_deployment(), plain), DB)
+        db = self.found(app_deployment('x', path='/srv/db/main.db', mount='/srv/db', uid=101), ns='x-prod')
+        self.assertEqual((db.name, db.claim, db.in_pod, db.uid), ('x-prod/x', 'x', '/data/main.db', 101))
+
+    def test_refuses_none_two_or_a_path_off_its_claim(self):
+        for deployments, message in (((), 'found 0'), ((app_deployment(), app_deployment('other')), 'found 2'),
+                                     ((app_deployment(path='/tmp/app.db'),), 'not on a mounted claim')):
+            with self.subTest(message), self.assertRaisesRegex(BackupError, message):
+                self.found(*deployments)
 
 if __name__ == '__main__':
     unittest.main()

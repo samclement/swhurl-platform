@@ -244,8 +244,6 @@ SECTIONS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ('Host', (
         _timer('host-dns', 'Install or update the Route 53 dynamic DNS timer (records in host/dns.env; needs sudo)'),
         _timer('host-dns-delete', 'Remove the dynamic DNS timer'),
-        _timer('host-backup', 'Install or update the daily backup timer (backup-mongodb, backup-sqlite, S3; needs sudo)'),
-        _timer('host-backup-delete', 'Remove the backup timer (backups are kept)'),
         _timer('host-heartbeat', 'Install or update the five-minute notification heartbeat timer (needs sudo)'),
         _timer('host-heartbeat-delete', 'Remove the notification heartbeat timer'),
     )),
@@ -261,7 +259,6 @@ INTERNAL = (
             run='swhurl.notifications.service:main', internal=True),
     Command('flux-wait', 'Wait for every Flux unit to apply the fetched Git revision (flux-reconcile ends with it)',
             run='swhurl.flux:main', internal=True),
-    Command('prune-backups', 'Prune ClickStack MongoDB backups to the retention set', run='swhurl.recovery:prune_backups', internal=True),
     Command('backup-job-sqlite', "The backup job's pod: copy, check, encrypt and publish one app's SQLite database",
             run='swhurl.backup_job:sqlite_main', internal=True),
     Command('backup-job-mongodb', "The backup job's pod: dump, encrypt and publish ClickStack's MongoDB",

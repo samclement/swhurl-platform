@@ -57,7 +57,7 @@ check-lint:
 
 # Host timers (host/install-timer.sh) -------------------------------------------
 
-TIMERS := host-dns host-backup host-heartbeat
+TIMERS := host-dns host-heartbeat
 .PHONY: $(TIMERS) $(TIMERS:=-delete)
 $(TIMERS):
 	@./host/install-timer.sh $(@:host-%=%) $(if $(filter true,$(DRY_RUN)),--dry-run)

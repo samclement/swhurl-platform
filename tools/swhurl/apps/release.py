@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -78,12 +77,11 @@ def write_files(planned: dict[Path, str | None]) -> bool:
 
 
 def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path, str | None], *,
-                   runner: Runner | None = None, hold: Callable[[model_sync.Prepared], None] | None = None,
+                   runner: Runner | None = None,
                    adding: bool = False, keyed: bool = False) -> bool:
     """Make ``entry`` (a new Release, and what the operation chose with it) the instance's records, or a
     new instance's (``adding``): give it a NATS key if it now has events (or ``keyed``) and none, render,
-    let ``hold`` refuse the result, then write the rendered files and the offers documents (``planned``).
-    A refusal writes nothing. Whether anything changed."""
+    then write the rendered files and the offers documents (``planned``). A refusal writes nothing. Whether anything changed."""
     instance = each.folder(root)
     created = ''
     if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
@@ -92,8 +90,6 @@ def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path,
                         encrypted=entry.encrypted | {EVENTS_SECRET})
     try:
         prepared = model_sync.prepare(root, each, lambda _: entry, adding=adding)
-        if hold:
-            hold(prepared)
     except EditError:
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)

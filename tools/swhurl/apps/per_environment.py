@@ -12,7 +12,8 @@ here. Each row says where the value comes from and what a promotion does with st
     later    stays        a later promotion leaves production's value alone
              image        it moves with the image
              offers       it moves with the documents the image offers (edit.staging_offers)
-             held         it moves with them too, but a person reviews the change
+             held         it moves with the image or its documents too, but a person reviews the change
+                          (the auto-merge gate holds such a promotion: console/merge.py)
 
 The env-drift policy rule reads it (what is not compared); promotion renders production from the
 app model's records (apps/promotion.py, edit.promote), which the first and later columns describe.
@@ -86,6 +87,17 @@ SETTINGS = (
             where=VARIABLE, prefix=True),
     Setting(contract.OTLP_HOST_IP, GENERATED, CARRY, 'the node the collector runs on, for telemetry', later=WITH_IMAGE,
             where=VARIABLE),
+    # What the image needs that production must be ready for: staging takes it with a new image, a promotion
+    # carries it with the image (edit.take_release), and a person reviews that promotion.
+    Setting('port', GENERATED, CARRY, 'the port the image listens on (its Service; probes, policy and callers follow)',
+            later=HELD),
+    Setting('persistence', GENERATED, CARRY, "the image's database volume: each environment has its own", later=HELD),
+    Setting('strategy', GENERATED, CARRY, 'stop-first updates for a database (rule single-writer)', later=HELD),
+    Setting(contract.DATABASE_PATH_VARIABLE, GENERATED, CARRY, 'where the database file is', later=HELD, where=VARIABLE),
+    Setting('kustomize.toolkit.fluxcd.io/prune', GENERATED, CARRY, 'a database outlives its app: Flux keeps the namespace', later=HELD, where=ANNOTATION),
+    Setting(contract.SECRET_NAMES, GENERATED, CARRY, 'the secret names the image reads (values are set per environment)',
+            later=HELD, where=ANNOTATION),
+    Setting('envFrom', GENERATED, CARRY, "the environment's Secret, read once the image reads a secret name", later=HELD),
     Setting('replicas', DECLARED, CARRY, 'make app-scale'),
     Setting('schedule', DECLARED, CARRY, "when a job runs (make app-schedule): production starts with staging's"),
     Setting('resources', DECLARED, CARRY, 'make app-scale'),

@@ -245,6 +245,20 @@ class MergeTests(unittest.TestCase):
             with self.subTest(change=change.__name__):
                 self.held(f'differs from what its request makes on main: apps/example/prod/{rel}')
 
+    def test_a_promotion_that_changes_what_production_needs_is_merged_by_a_person(self):
+        """A new port or secret name reaches production with the image (edit.promote); a person merges it,
+        after setting any new secret value in production."""
+        record = self.root / 'apps/example/staging/release.yaml'
+        original = record.read_text()
+        for change, needs in (('port: 8080', 'port: 9090'), ('telemetry: true', 'telemetry: true\nsecrets: [API_TOKEN]')):
+            with self.subTest(needs=needs):
+                record.write_text(original.replace(*(change, needs)))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    derive.sync(self.root)
+                self.promotion()
+                self.held("the promotion changes production's " + ('port' if 'port' in needs else 'secret names'))
+        record.write_text(original)
+
     def test_a_first_production_is_merged_by_a_person(self):
         shutil.rmtree(self.root / 'apps/example/prod')
         (self.root / 'clusters/home/app-example-prod.yaml').unlink()

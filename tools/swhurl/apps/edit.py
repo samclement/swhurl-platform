@@ -25,8 +25,6 @@ import os
 import re
 import shutil
 import sys
-import tempfile
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -40,7 +38,6 @@ from swhurl.apps import (
     images,
     offers,
     ops,
-    policy,
     promotion,
 )
 from swhurl.apps.contract import (
@@ -74,7 +71,7 @@ from swhurl.apps.model import workload
 from swhurl.apps.model.draft import APP_SECRET, EVENTS_SECRET, Entry
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.exposure import ROUTED
-from swhurl.apps.model.records import APP_FILE, Image, Resources, Storage
+from swhurl.apps.model.records import APP_FILE, Image, Release, Resources, Storage
 from swhurl.apps.model.workload import DEFAULT_RESOURCES
 from swhurl.apps.new import (
     GenerationError,
@@ -230,44 +227,54 @@ def with_needs(entry: Entry, image: Image, declared: declaration.Declaration, ap
     telemetry, a new database's volume, the secret names it reads (a new one arrives without a value),
     resources at its minimum or the instance's capacity, whichever is larger, and its description. Returns them and what changed.
     A need the instance cannot take is refused (EditError)."""
-    needs, old, settings = declared.needs, entry.release, entry.settings
+    needs, old = declared.needs, entry.release
     if old.kind != needs.kind:
         raise EditError(f'kind: {needs.kind}, but the instance is a {"web app" if old.kind == "web" else old.kind}: '
                         'web, worker or job is fixed at creation (create a new app for the other kind)')
     web = needs.kind == 'web'
-    changes: list[str] = []
-    port, health = (needs.port, needs.health_path) if web else (None, '')
-    if port != old.port:
-        changes.append(f'port {old.port} -> {port}')
-    if health != old.health_path:
-        changes.append(f'health path {old.health_path} -> {health}')
-    if needs.uid != old.uid:
-        if old.database:
-            raise EditError(f'uid {needs.uid}: {app} keeps a volume whose files belong to uid {old.uid}, '
-                            'and a new image does not change who owns them (keep the uid, or move the data by hand)')
-        changes.append(f'uid {old.uid} -> {needs.uid}')
-    if needs.otlp != old.telemetry:
-        changes.append(f'telemetry {"otlp" if needs.otlp else "none"}')
-    allocations, replicas = settings.allocations, settings.replicas
-    if needs.database and not old.database:
-        # As app-new makes it: a retained volume, one writer, stop-first updates (rule single-writer).
-        allocations = replace(allocations, database=Storage(needs.database_size, RETAINED_STORAGE_CLASS))
-        replicas = None
-        changes.append(f'database {needs.database} on a new {needs.database_size} volume')
-    elif old.database and not needs.database:
-        raise EditError(f'database: none, but {app} keeps its database volume, and a push never deletes data: keep '
-                        'database in swhurl.yaml, or remove the data on purpose (make destroy-data, docs/operations.md#lifecycle)')
-    elif needs.database and allocations.database and allocations.database.size != needs.database_size:
-        raise EditError(f'databaseSize {needs.database_size}, but the volume was created with {allocations.database.size}, '
-                        'and a volume keeps its size: declare that size again')
-    if tuple(needs.secrets) != old.secrets:
-        changes.append('secret names ' + ', '.join([f'+{n}' for n in needs.secrets if n not in old.secrets]
-                                                   + [f'-{n}' for n in old.secrets if n not in needs.secrets]))
-    if declared.description != old.description:
-        changes.append('description')
-    release = replace(old, image=image, port=port, health_path=health, uid=needs.uid, telemetry=needs.otlp,
-                      database=needs.database or '', secrets=tuple(needs.secrets), description=declared.description,
+    release = replace(old, image=image, port=needs.port if web else None, health_path=needs.health_path if web else '',
+                      uid=needs.uid, telemetry=needs.otlp, database=needs.database or '', secrets=tuple(needs.secrets),
+                      description=declared.description,
                       resources=Resources(*(needs.minimum.get(field, '') for field, _, _ in RESOURCE_FIELDS)))
+    return take_release(entry, release, app, needs.database_size, 'swhurl.yaml')
+
+
+def take_release(entry: Entry, release: Release, app: str, database_size: str, said: str) -> tuple[Entry, list[str]]:
+    """``entry`` running ``release``, an image and what it needs (a new staging image's, or staging's for a
+    promotion), with what that changes in the instance's Settings: a new database gets a retained volume of
+    ``database_size`` and one writer. Returns the records and what changed. Refused (EditError, naming
+    ``said``, where the need was declared): a database the instance would lose, a volume of another size, and a
+    new uid for files already on a volume."""
+    old, settings = entry.release, entry.settings
+    changes: list[str] = []
+    if release.port != old.port:
+        changes.append(f'port {old.port} -> {release.port}')
+    if release.health_path != old.health_path:
+        changes.append(f'health path {old.health_path} -> {release.health_path}')
+    if release.uid != old.uid:
+        if old.database:
+            raise EditError(f'uid {release.uid}: {app} keeps a volume whose files belong to uid {old.uid}, '
+                            'and a new image does not change who owns them (keep the uid, or move the data by hand)')
+        changes.append(f'uid {old.uid} -> {release.uid}')
+    if release.telemetry != old.telemetry:
+        changes.append(f'telemetry {"otlp" if release.telemetry else "none"}')
+    allocations, replicas = settings.allocations, settings.replicas
+    if release.database and not old.database:
+        # As app-new makes it: a retained volume, one writer, stop-first updates (rule single-writer).
+        allocations = replace(allocations, database=Storage(database_size, RETAINED_STORAGE_CLASS))
+        replicas = None
+        changes.append(f'database {release.database} on a new {database_size} volume')
+    elif old.database and not release.database:
+        raise EditError(f'database: none, but {app} keeps its database volume, and a push never deletes data: keep '
+                        f'database in {said}, or remove the data on purpose (make destroy-data, docs/operations.md#lifecycle)')
+    elif release.database and allocations.database and allocations.database.size != database_size:
+        raise EditError(f'databaseSize {database_size}, but the volume was created with {allocations.database.size}, '
+                        'and a volume keeps its size: declare that size again')
+    if release.secrets != old.secrets:
+        changes.append('secret names ' + ', '.join([f'+{n}' for n in release.secrets if n not in old.secrets]
+                                                   + [f'-{n}' for n in old.secrets if n not in release.secrets]))
+    if release.description != old.description:
+        changes.append('description')
     # The instance's own capacity stays: resources render as the larger of it and the image's minimum.
     found = replace(entry, release=release, settings=replace(settings, replicas=replicas, allocations=allocations))
     changes += at_minimum(entry, found)
@@ -289,28 +296,6 @@ def at_minimum(before: Entry, after: Entry) -> list[str]:
         raise EditError(f"resources: the image's minimum {minimum} at {count} replica(s) "
                         f'exceeds the namespace quota for {", ".join(over)}')
     return changes
-
-
-def drift_hold(root: Path, app: str) -> Callable[[model_sync.Prepared], None]:
-    """Refuse a staging change that production would differ from beyond what may differ (rule env-drift):
-    a new port, secret name or database, which production needs prepared for (docs/plan.md section 21, stage 4)."""
-    def hold(prepared: model_sync.Prepared) -> None:
-        production, staging = instance_folder(root, app, 'prod'), instance_folder(root, app, 'staging')
-        if not (production / 'helmrelease.yaml').is_file():
-            return
-        with tempfile.TemporaryDirectory() as scratch:
-            rendered = Path(scratch) / 'staging'
-            shutil.copytree(staging, rendered)
-            for path, text in prepared.writes.items():
-                if path.parent == staging:
-                    (rendered / path.name).write_text(text)
-            for path in prepared.deletions:
-                if path.parent == staging:
-                    (rendered / path.name).unlink()
-            if drift := policy.drift([production, rendered]):
-                raise EditError(f"{'; '.join(drift)}: a new port, secret name or database waits while the app has "
-                                'production (docs/apps.md#deploy-a-new-image)')
-    return hold
 
 
 def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Opener = offers._open,
@@ -336,7 +321,7 @@ def deploy_staging(root: Path, app: str, *, token: str = '', opener: offers.Open
     updated, needed = with_needs(entry, image, declared, app)
     updated = replace(updated, release=offered(updated.release, commit, files, described, served))
     planned = offer_files(instance / offers.OFFERS_DIR, repository, commit, files)
-    changed = change_release(root, each, updated, planned, runner=runner, hold=drift_hold(root, app))
+    changed = change_release(root, each, updated, planned, runner=runner)
     describe_offers(app, 'staging', commit, files, described, declared, changed)
     if moved:
         print(f'[OK] {app}/staging: image {previous.tag} -> {found.tag}')
@@ -474,12 +459,20 @@ def promote(root: Path, app: str, source: str = 'staging', target: str = 'prod',
     if decision.outcome == 'update':
         if host:
             raise EditError('--host applies only to first production; change existing routes with app-expose')
-        promoted = replace(production, release=staging.release)
-        raised = at_minimum(production, promoted)
+        if decision.rollback and (moved := [name for name, a, b in (
+                ('database', production.release.database, staging.release.database),
+                ('uid', production.release.uid, staging.release.uid)) if a != b]):
+            raise EditError(f'{app}/staging runs an older image with another {" and ".join(moved)} than production: a rollback '
+                            'never changes what a volume holds or who owns it (promote a newer image instead)')
+        size = staging.settings.allocations.database.size if staging.settings.allocations.database else ''
+        promoted, changed = take_release(production, staging.release, app, size, f'{app}/staging')
         change_release(root, each, promoted, staging_offers(root, app, staging, folder), runner=runner)
         print(f'[OK] {app}/prod: image {decision.image} (from staging)' + (' [rollback]' if decision.rollback else ''))
-        if raised:
-            print(f'[OK] {app}/prod: {", ".join(raised)}')
+        if changed:
+            print(f'[OK] {app}/prod: {", ".join(changed)}')
+        if added := [name for name in staging.release.secrets if name not in production.release.secrets]:
+            print(f'[INFO] {app}/prod reads new secret names {", ".join(added)}: set their values before merging, in your own '
+                  f'terminal: make app-secret APP={app} ENV=prod NAME=<name>')
         egress_difference(app, staging, production)
         return folder
     first = promotion.first_production(root, world, app, host=host)

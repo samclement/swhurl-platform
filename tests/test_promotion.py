@@ -9,7 +9,7 @@ from pathlib import Path
 from swhurl import ROOT
 from swhurl.apps import contract, ops, promotion, state
 from swhurl.apps.instance import Instance
-from swhurl.apps.yaml_file import EditError
+from swhurl.apps.yaml_file import EditError, YamlFile
 
 DIGEST = 'sha256:' + 'a' * 64
 MANIFESTS = ROOT / 'tests/fixtures/manifests'
@@ -153,7 +153,7 @@ class FirstProductionTests(unittest.TestCase):
                 source = self.staging(kind, *extra)
                 values = source['spec']['values']
                 dst = self.promote()
-                production = promotion.YamlFile(dst / 'helmrelease.yaml').data
+                production = YamlFile(dst / 'helmrelease.yaml').data
                 self.assertEqual(promotion.image_of(production), promotion.image_of(source))
                 self.assertEqual(production['metadata']['namespace'], 'example-prod')
                 expected = json.loads(json.dumps(values['controllers']['main']))
@@ -225,7 +225,7 @@ class FirstProductionTests(unittest.TestCase):
 
     def test_a_staging_the_model_cannot_express_writes_nothing(self):
         source = self.staging()
-        doc = promotion.YamlFile(self.root / 'apps/example/staging/helmrelease.yaml')
+        doc = YamlFile(self.root / 'apps/example/staging/helmrelease.yaml')
         doc.data['spec']['values']['controllers']['sidecar'] = {}
         doc.save()
         before = sorted(self.root.rglob('*'))

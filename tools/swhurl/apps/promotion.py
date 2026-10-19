@@ -13,7 +13,8 @@ from swhurl.apps import contract, ops, state
 from swhurl.apps.instance import NAME_RE, Instance, instance_folder, instance_unit_file
 from swhurl.apps.model.draft import APP_SECRET, Entry, World
 from swhurl.apps.model.records import Allocations, Settings, Storage
-from swhurl.apps.yaml_file import EditError, YamlFile, mapping
+from swhurl.apps.yaml_file import EditError, mapping
+from swhurl.apps.yaml_file import read as read_yaml
 
 
 @dataclass(frozen=True)
@@ -51,12 +52,12 @@ def read(root: Path, app: str) -> tuple[dict, dict | None]:
     if not NAME_RE.fullmatch(app):
         raise EditError('APP must be a DNS label')
     base = root / 'apps' / app
-    source = YamlFile(base / 'staging/helmrelease.yaml').data
+    source = read_yaml(base / 'staging/helmrelease.yaml')
     target_dir = base / 'prod'
     unit = instance_unit_file(root, app, 'prod')
     if target_dir.exists() or unit.exists():
         # A partial target is a problem to repair, never evidence that production is missing.
-        target = YamlFile(target_dir / 'helmrelease.yaml').data
+        target = read_yaml(target_dir / 'helmrelease.yaml')
     else:
         target = None
     return source, target
@@ -70,7 +71,7 @@ def fingerprint(root: Path, app: str, env: str, *, ignore_image: bool = False) -
         if not path.is_file():
             continue
         if path.name == 'helmrelease.yaml':
-            doc = YamlFile(path).data
+            doc = read_yaml(path)
             if ignore_image:
                 (doc.get('metadata', {}).get('annotations') or {}).pop('platform.swhurl.com/render', None)
                 image_of(doc).pop('tag', None)

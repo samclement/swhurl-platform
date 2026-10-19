@@ -22,7 +22,7 @@ from swhurl.apps.instance import (
     instance_folder,
     instances,
 )
-from swhurl.apps.yaml_file import EditError, YamlFile, mapping
+from swhurl.apps.yaml_file import EditError, mapping, read
 
 
 def instance_dir(root: Path, app: str, env: str) -> Path:
@@ -34,7 +34,7 @@ def instance_dir(root: Path, app: str, env: str) -> Path:
     return path
 
 def load_release(instance: Path) -> dict:
-    return YamlFile(instance / 'helmrelease.yaml').data
+    return read(instance / 'helmrelease.yaml')
 
 def values(release: dict) -> dict:
     return mapping(mapping(release, 'spec'), 'values')
@@ -71,7 +71,7 @@ def subscribers_of(root: Path, app: str, env: str) -> list[str]:
     """The other instances of ``env`` that subscribe to an event of ``app``."""
     found = []
     for other in instances_in(root, env):
-        release = YamlFile(instance_folder(root, other, env) / 'helmrelease.yaml').data
+        release = read(instance_folder(root, other, env) / 'helmrelease.yaml')
         if other != app and any(publisher == app for publisher, _ in events.subscribed(helmrelease.variables(release))):
             found.append(other)
     return found
@@ -80,7 +80,7 @@ def callers_of(root: Path, app: str, env: str) -> list[str]:
     """The other instances of ``env`` that declare a call to ``app``."""
     found = []
     for other in instances_in(root, env):
-        release = YamlFile(instance_folder(root, other, env) / 'helmrelease.yaml').data
+        release = read(instance_folder(root, other, env) / 'helmrelease.yaml')
         if other != app and app in declared_calls(helmrelease.variables(release)):
             found.append(other)
     return found

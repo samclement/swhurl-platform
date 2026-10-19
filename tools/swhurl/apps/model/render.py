@@ -9,8 +9,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
+from swhurl import yamlio
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import (
     alerts,
@@ -38,7 +37,7 @@ def fingerprint(files: dict[Path, list[dict]]) -> str:
 
 def text(documents: list[dict]) -> str:
     """A file's bytes: the documents in the order rendered, long values on one line."""
-    return yaml.safe_dump_all(documents, sort_keys=False, default_flow_style=False, width=float('inf'))
+    return yamlio.dump_all(documents, wrap=False)
 
 
 def instance(each: Instance, world: World, platform: Platform) -> dict[Path, list[dict]]:

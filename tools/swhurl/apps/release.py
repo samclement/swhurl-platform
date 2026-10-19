@@ -13,8 +13,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-import yaml
-
+from swhurl import yamlio
 from swhurl.apps import declaration, events, nkeys, offers
 from swhurl.apps.derive import instance_dir
 from swhurl.apps.instance import Instance
@@ -27,7 +26,7 @@ from swhurl.run import CommandError, Runner
 
 
 def dump(docs) -> str:
-    return yaml.safe_dump_all(docs, sort_keys=False, default_flow_style=False)
+    return yamlio.dump_all(docs)
 
 
 def new_nats_key(instance: Path, app: str, env: str, *, runner: Runner | None = None) -> str:

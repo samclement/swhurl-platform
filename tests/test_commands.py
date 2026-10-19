@@ -109,6 +109,13 @@ class MakeTests(unittest.TestCase):
                 self.assertEqual((code, out, executed), (2, '', []))
                 self.assertIn(usage, err)
 
+    def test_dry_run_is_refused_where_the_command_has_no_dry_run(self):
+        code, out, err, executed = run_make('app-remove', {'APP': 'web', 'ENV': 'staging', 'DRY_RUN': 'true'})
+        self.assertEqual((code, out, executed), (2, '', []))
+        self.assertIn('make app-remove has no dry run', err)
+        code, _, _, executed = run_make('notifications-check', {'DRY_RUN': 'false'})
+        self.assertEqual(len(executed), 1, 'DRY_RUN=false runs it')
+
     def test_a_variable_the_command_reads_itself_is_left_to_it(self):
         self.assertEqual(TARGETS['restore-sqlite'].missing({'APP': 'notes', 'ENV': 'staging'}), [])
         self.assertEqual(TARGETS['restore-sqlite'].arguments({'APP': 'notes', 'ENV': 'staging', 'CONFIRM': 'notes/staging'}),

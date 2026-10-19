@@ -2,8 +2,8 @@
 version: 1
 image:
   repository: ghcr.io/samclement/demo-shopper
-  tag: 45-03389eb
-  digest: sha256:afd7ad8682536488b8052b1d1be94d49a55f2548707ae5390dda4094f34ab759
+  tag: 49-45e679e
+  digest: sha256:1c688abd91b3832679f29afdedb29309a5c2130c54a3c9842bf50f27903b3e62
 kind: worker
 uid: 65532
 stack: typescript

@@ -286,7 +286,7 @@ git add apps/nightly-report && git commit -m "apps: nightly-report/staging every
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `schedule` | `17 3 * * *` (daily, 03:17 UTC) at creation, or `--schedule` | Changed per environment with `make app-schedule`; the first promotion starts production with staging's |
+| `schedule` | `17 3 * * *` (daily, 03:17 UTC) at creation, or `--schedule` | Changed per environment with `make app-schedule`; the first promotion starts production with staging's. Five fields within minute 0–59, hour 0–23, day 1–31, month 1–12 and weekday 0–6 (ranges low to high, steps of at least 1), or `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`; anything else is refused before a file is written |
 | `concurrencyPolicy` | `Forbid` | A run never starts while the last one is still going |
 | `backoffLimit` | 0 | A failed run is not retried: the next scheduled run is the retry |
 | `activeDeadlineSeconds` | 3600 | A run still going after an hour is stopped, and counts as failed |

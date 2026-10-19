@@ -1,14 +1,16 @@
 """Promotion decisions use Git state and fail closed on incomplete or stale observations."""
 import dataclasses
 import json
+import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from swhurl import ROOT
+from swhurl import ROOT, yamlio
 from swhurl.apps import contract, ops, promotion, state
 from swhurl.apps.instance import Instance
+from swhurl.apps.model import generated
 from swhurl.apps.yaml_file import EditError, YamlFile
 
 DIGEST = 'sha256:' + 'a' * 64
@@ -118,6 +120,12 @@ class FirstProductionTests(unittest.TestCase):
             dst = self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / rel, dst)
+        reloader = self.root / 'platform/reloader/helmrelease.yaml'
+        reloader.write_text(re.sub(r'namespaces: \[[^\]]*\]', 'namespaces: [ingress, logging, console]', reloader.read_text()))
+        registry = self.root / 'clusters/home/kustomization.yaml'
+        doc = yamlio.load(registry.read_text())
+        doc['resources'] = [name for name in doc['resources'] if not name.startswith('app-')]
+        registry.write_text(yamlio.dump(doc))
 
     def staging(self, kind='web', *extra):
         from swhurl.apps import new
@@ -179,8 +187,6 @@ class FirstProductionTests(unittest.TestCase):
 
     def test_production_keeps_the_team_and_gets_its_own_quota_and_network_policy(self):
         import yaml
-
-        from swhurl.apps import policy
         self.staging('web', '--team', 'payments', '--port', '9000')
         dst = self.promote()
         self.assertEqual(yaml.safe_load((dst / 'namespace.yaml').read_text())['metadata']['labels'][contract.TEAM],
@@ -189,7 +195,7 @@ class FirstProductionTests(unittest.TestCase):
         self.assertEqual(network['metadata']['namespace'], 'example-prod')
         self.assertEqual(network['spec']['ingress'][0]['ports'], [{'port': 9000, 'protocol': 'TCP'}])
         self.assertEqual(yaml.safe_load((dst / 'resourcequota.yaml').read_text())['metadata']['namespace'], 'example-prod')
-        self.assertEqual(policy.drift([dst, self.root / 'apps/example/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
 
     def test_first_promotion_of_a_caller_needs_its_callee_in_production_and_links_them_there(self):
         import yaml
@@ -223,12 +229,12 @@ class FirstProductionTests(unittest.TestCase):
         edit.promote(self.root, 'reports', runner=self.encrypting())
         self.assertEqual(env('reports', 'prod')['SWHURL_ENV'], 'prod')
         self.assertNotIn('SWHURL_EVENTS_SUBSCRIBE', env('reports', 'prod'), 'what it receives is declared in production')
-        self.assertEqual(policy.drift([self.root / 'apps/orders/prod', self.root / 'apps/orders/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
         self.assertEqual(env('reports', 'prod')['SWHURL_SERVICE_ORDERS_URL'], env('reports', 'staging')['SWHURL_SERVICE_ORDERS_URL'])
         self.assertEqual(env('orders', 'prod')['SWHURL_ALLOWED_CALLERS'], 'reports')
         instances = [self.root / 'apps' / app / e for app in ('orders', 'reports') for e in ('staging', 'prod')]
         self.assertEqual(policy.check_calls(instances), {})
-        self.assertEqual(policy.drift([self.root / 'apps/reports/prod', self.root / 'apps/reports/staging']), [])
+        self.assertEqual(generated.problems(self.root), [])
 
     def test_a_staging_the_model_cannot_express_writes_nothing(self):
         source = self.staging()

@@ -17,6 +17,7 @@ from swhurl import ROOT
 from swhurl.apps import calling, contract, declaration, edit
 from swhurl.apps import new as app_new
 from swhurl.apps import policy as app_policy
+from swhurl.apps.model import generated
 from swhurl.run import CommandError, FakeRunner, Result
 
 FIXTURES = ROOT / 'tests/fixtures/apps'
@@ -263,7 +264,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn('tag: 12-abcdef0\n', (staging / 'helmrelease.yaml').read_text(), 'the Deploy workflow writes it: no markers')
         self.assertIn(contract.IMAGE_AUTOMATION_FILE, (staging / 'kustomization.yaml').read_text())
         self.assertFalse((prod / contract.IMAGE_AUTOMATION_FILE).exists())
-        self.assertEqual(app_policy.drift([staging, prod]), [], 'the staging-only automation is not drift')
+        self.assertEqual(generated.problems(self.tmp), [], 'each environment renders its own automation')
 
     def test_auto_deploy_needs_a_template_tag_and_digest(self):
         for image in ('ghcr.io/samclement/w:1.0@sha256:' + 'a' * 64, 'ghcr.io/samclement/w:12-abcdef0'):
@@ -659,68 +660,6 @@ class PlatformImageTests(unittest.TestCase):
             self.assertEqual(app_policy.evaluate(self.staging), [], 'fixtures and scratch trees are exempt')
             with mock.patch.object(app_policy, 'ROOT', self.tmp):
                 self.assertEqual(len(app_policy.evaluate(self.staging)), 1)
-
-
-class DriftTests(unittest.TestCase):
-    """Environments of one app may differ only in the settings per_environment.SETTINGS lists."""
-
-    def setUp(self):
-        self.app = Path(tempfile.mkdtemp()) / 'hello'
-        self.addCleanup(shutil.rmtree, self.app.parent)
-        shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', self.app)
-
-    def edit(self, change):
-        path = self.app / 'staging/helmrelease.yaml'
-        release = yaml.safe_load(path.read_text())
-        change(release['spec']['values'])
-        path.write_text(yaml.safe_dump(release, sort_keys=False))
-
-    def drift(self):
-        return app_policy.drift([self.app / 'prod', self.app / 'staging'])
-
-    def test_allowed_differences_pass(self):
-        def allowed(values):
-            main = values['controllers']['main']
-            main['replicas'] = 3
-            main['containers']['main']['image'].update(tag='1.28-alpine', digest='sha256:' + '0' * 64)
-            main['containers']['main']['resources']['limits']['memory'] = '1Gi'
-            values['ingress']['main']['annotations']['cert-manager.io/cluster-issuer'] = 'letsencrypt-staging'
-        self.edit(allowed)
-        self.assertEqual(self.drift(), [])
-
-    def test_other_differences_fail(self):
-        cases = {
-            'sign-in removed': (lambda v: v['ingress']['main']['annotations'].pop(
-                'traefik.ingress.kubernetes.io/router.middlewares'), 'router.middlewares'),
-            'different image': (lambda v: v['controllers']['main']['containers']['main']['image'].update(
-                repository='docker.io/library/nginx'), 'image.repository'),
-            'extra path': (lambda v: v['ingress']['main']['hosts'][0]['paths'].append(
-                {'path': '/admin', 'service': {'identifier': 'main', 'port': 'http'}}), 'paths[1]'),
-            'weaker security': (lambda v: v['defaultPodOptions'].update(automountServiceAccountToken=True),
-                                'automountServiceAccountToken'),
-        }
-        for label, (change, where) in cases.items():
-            with self.subTest(label):
-                shutil.rmtree(self.app)
-                shutil.copytree(ROOT / 'tests/fixtures/instance/apps/hello', self.app)
-                self.edit(change)
-                problems = self.drift()
-                self.assertEqual(len(problems), 1, problems)
-                self.assertIn('env-drift: staging differs from prod', problems[0])
-                self.assertIn(where, problems[0])
-
-    def test_missing_file_and_exception(self):
-        (self.app / 'staging/extra.yaml').write_text('apiVersion: v1\nkind: ConfigMap\nmetadata: {name: x}\n')
-        self.assertIn('extra.yaml#0', self.drift()[0])
-        self.edit(lambda v: None)
-        path = self.app / 'staging/helmrelease.yaml'
-        release = yaml.safe_load(path.read_text())
-        release['metadata']['annotations'] = {app_policy.EXCEPTIONS_KEY: 'env-drift=trial of a sidecar'}
-        path.write_text(yaml.safe_dump(release, sort_keys=False))
-        self.assertEqual(self.drift(), [])
-
-    def test_single_environment_has_no_drift(self):
-        self.assertEqual(app_policy.drift([self.app / 'prod']), [])
 
 
 if __name__ == '__main__':

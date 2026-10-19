@@ -7,9 +7,10 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
-from swhurl import ROOT
-from swhurl.apps import derive, edit
+from swhurl import ROOT, yamlio
+from swhurl.apps import derive, edit, policy
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
@@ -205,6 +206,75 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(self.problems(), ['apps/hello/staging/helmrelease.yaml: [0].spec.values.extra: committed True, not rendered'])
         (self.root / 'apps/hello/staging/stray.yaml').write_text('kind: ConfigMap\n')
         self.assertIn('apps/hello/staging/stray.yaml: committed, not rendered', self.problems())
+
+    def test_manifest_edits_are_rejected_even_without_another_environment(self):
+        """The old drift cases are contracts against this instance's records, not its sibling."""
+        shutil.rmtree(self.root / 'apps/hello/prod')
+        (self.root / 'clusters/home/app-hello-prod.yaml').unlink()
+        registry = self.root / 'clusters/home/kustomization.yaml'
+        registry.write_text(registry.read_text().replace('- app-hello-prod.yaml\n', ''))
+        release = self.root / 'apps/hello/staging/helmrelease.yaml'
+        original = release.read_text()
+        cases = (
+            (lambda v: v['ingress']['main']['annotations'].pop(
+                'traefik.ingress.kubernetes.io/router.middlewares'), 'router.middlewares'),
+            (lambda v: v['controllers']['main']['containers']['main']['image'].update(
+                repository='docker.io/library/nginx'), 'image.repository'),
+            (lambda v: v['ingress']['main']['hosts'][0]['paths'].append(
+                {'path': '/admin', 'service': {'identifier': 'main', 'port': 'http'}}), 'hosts[0].paths'),
+            (lambda v: v['defaultPodOptions'].update(automountServiceAccountToken=True), 'automountServiceAccountToken'),
+            (lambda v: v['controllers']['main'].update(replicas=3), 'replicas'),
+        )
+        self.assertEqual(self.problems(), [])
+        for change, where in cases:
+            with self.subTest(where=where):
+                doc = yamlio.load(original)
+                change(doc['spec']['values'])
+                release.write_text(yamlio.dump(doc))
+                self.assertTrue(any(where in line for line in self.problems()), self.problems())
+        release.write_text(original)
+
+    def test_workload_kind_and_command_are_app_contracts_over_release_records(self):
+        record = self.root / 'apps/hello/staging/release.yaml'
+        original = record.read_text()
+        for field, changes in (('kind', {'kind': 'worker', 'port': None, 'healthPath': ''}),
+                               ('command', {'command': ['/app/start']})):
+            with self.subTest(field=field):
+                doc = yamlio.load(original)
+                doc.update(changes)
+                record.write_text(yamlio.dump(doc))
+                _, problems = store.world(self.root)
+                self.assertTrue(any(f'{field} must match hello/prod' in line for line in problems), problems)
+        record.write_text(original)
+
+    def test_a_new_release_can_precede_production_without_a_manifest_allowlist(self):
+        record = self.root / 'apps/hello/staging/release.yaml'
+        doc = yamlio.load(record.read_text())
+        doc.update(port=9090, healthPath='/ready', uid=1000, telemetry=True,
+                   description='A new release', apiPath='/openapi.json', resources={'memory': '64Mi'})
+        record.write_text(yamlio.dump(doc))
+        with redirect_stdout(io.StringIO()):
+            derive.sync(self.root)
+        self.assertEqual(self.problems(), [])
+        world, problems = store.world(self.root)
+        self.assertEqual(problems, [])
+        self.assertNotEqual(world[Instance('hello', 'prod')].release, world[Instance('hello', 'staging')].release)
+
+    def test_explicit_policy_paths_check_records_and_only_the_selected_manifest_files(self):
+        staging = self.root / 'apps/hello/staging'
+        prod = self.root / 'apps/hello/prod/helmrelease.yaml'
+        prod.write_text(prod.read_text().replace('    controllers:', '    extra: true\n    controllers:', 1))
+        # Kubernetes safety checks have their own tests; isolate the CLI's records check here.
+        with mock.patch.object(policy, 'evaluate', return_value=[]), redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(policy.main([str(staging)]), 0, out.getvalue())
+            release = staging / 'helmrelease.yaml'
+            release.write_text(release.read_text().replace('    controllers:', '    extra: true\n    controllers:', 1))
+            self.assertEqual(policy.main([str(staging)]), 1)
+            self.assertIn('spec.values.extra', out.getvalue())
+            record = staging / 'instance.yaml'
+            record.write_text(record.read_text() + 'unknown: true\n')
+            self.assertEqual(policy.main([str(staging)]), 1)
+            self.assertIn('unknown field unknown', out.getvalue())
 
     def test_a_team_label_edited_by_hand_is_reported(self):
         """The team is the App record's (apps/<app>/app.yaml): a namespace that says otherwise was edited by hand."""

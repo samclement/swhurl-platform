@@ -56,11 +56,10 @@ and, for the whole tree:
   notify-channels     every channel a team notifies exists as a listed Secret in platform/notify, and
                       routes.yaml is what apps/teams.yaml generates (make app-sync rewrites it)
 
-and, across the environments of one app (source manifests, not rendered):
-
-  env-drift           environments differ only in the settings and files that per_environment.py lists
-                      (namespace, hosts, image, replicas, resources, issuer, exposure, calls, events, offers);
-                      encrypted Secrets are never compared
+  app records         App, Release and Settings parse strictly; every committed manifest must be
+                      exactly what its instance's records render. Settings belong to each environment;
+                      a release may be ahead in staging, but its kind and command agree across
+                      environments. Encrypted Secrets are never compared
 
 A reviewed exception goes on the HelmRelease as
   platform.swhurl.com/policy-exceptions: "rule-id=reason; other-rule=reason"
@@ -79,7 +78,7 @@ from pathlib import Path
 import yaml
 
 from swhurl import ROOT, app_alerts, platform, yamlio
-from swhurl.apps import channels, egress, events, helmrelease, offers, per_environment
+from swhurl.apps import channels, egress, events, helmrelease, offers
 from swhurl.apps.calling import (
     ENVIRONMENT_VARIABLE,
     TOKEN_SECONDS,
@@ -112,7 +111,7 @@ from swhurl.apps.contract import (
     over_quota,
     teams,
 )
-from swhurl.apps.instance import INSTANCE_ROOTS
+from swhurl.apps.instance import INSTANCE_ROOTS, Instance
 from swhurl.apps.instance import instances as instances_under
 from swhurl.apps.model import generated
 from swhurl.run import Runner
@@ -428,65 +427,6 @@ def check(docs: list[dict], known_teams: dict[str, str] | None = None, keys: str
     return violations
 
 
-def flatten(node, path: str = '', exposure_differs: bool = False) -> dict[str, object]:
-    """Leaf values by dotted path, without the settings environments may differ in (per_environment.py)."""
-    if isinstance(node, dict):
-        leaves = {}
-        for key, value in node.items():
-            if per_environment.may_differ(key, value, exposure_differs=exposure_differs):
-                continue
-            leaves.update(flatten(value, f'{path}.{key}' if path else str(key), exposure_differs))
-        return leaves
-    if isinstance(node, list):
-        leaves = {}
-        for index, value in enumerate(node):
-            leaves.update(flatten(value, f'{path}[{index}]', exposure_differs))
-        return leaves
-    return {path: node}
-
-
-def exposure_of(instance: Path) -> str | None:
-    path = instance / 'namespace.yaml'
-    docs = [d for d in yamlio.load_all(path.read_text()) if d] if path.exists() else []
-    return ((docs[0].get('metadata') or {}).get('labels') or {}).get(EXPOSURE) if docs else None
-
-
-def source(instance: Path, exposure_differs: bool = False) -> dict[str, object]:
-    """What an instance's manifests say, without the files and settings environments may differ in."""
-    leaves = {}
-    for path in sorted(instance.glob('*.yaml')):
-        if not per_environment.compared(path.name):
-            continue
-        for index, doc in enumerate(d for d in yamlio.load_all(path.read_text()) if d):
-            if doc.get('kind') == 'Namespace':
-                doc['metadata'].pop('name', None)
-            if doc.get('kind') == 'Kustomization':
-                doc['resources'] = [r for r in doc.get('resources') or [] if r not in per_environment.NOT_CARRIED]
-            if doc.get('kind') == 'HelmRelease':  # the reference to this environment's event key
-                per_environment.without_reference(doc, events.secret_name(doc['metadata']['name']))
-            leaves.update(flatten(doc, f'{path.name}#{index}', exposure_differs))
-    return leaves
-
-
-def drift(environments: list[Path]) -> list[str]:
-    """Differences between an app's environments beyond the allowed settings."""
-    if len(environments) < 2:
-        return []
-    base, *others = environments
-    problems = []
-    for other in others:
-        allowed, _ = exceptions([d for d in yamlio.load_all((other / 'helmrelease.yaml').read_text()) if d])
-        if 'env-drift' in allowed:
-            continue
-        exposure_differs = exposure_of(base) != exposure_of(other)
-        reference, leaves = source(base, exposure_differs), source(other, exposure_differs)
-        changed = sorted(k for k in reference.keys() | leaves.keys() if reference.get(k, '<absent>') != leaves.get(k, '<absent>'))
-        if changed:
-            shown = ', '.join(changed[:5]) + (f' (+{len(changed) - 5} more)' if len(changed) > 5 else '')
-            problems.append(f'env-drift: {other.name} differs from {base.name} at {shown}')
-    return problems
-
-
 def check_calls(instances: list[Path]) -> dict[Path, list[str]]:
     """Problems with the calls declared among the instances of each environment (rule calls), by instance."""
     releases = {instance: yamlio.load((instance / 'helmrelease.yaml').read_text())
@@ -583,17 +523,18 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 print(f'       {problem}')
         else:
             print(f'[OK] {label}')
-    apps: dict[Path, list[Path]] = {}
-    for instance in paths:
-        apps.setdefault(instance.parent, []).append(instance)
-    for app, environments in apps.items():
-        problems = drift(sorted(environments, key=lambda e: e.name != 'prod'))
-        if problems:
-            failed += 1
-            print(f'[BAD] {app.relative_to(ROOT) if app.is_relative_to(ROOT) else app}')
-            for problem in problems:
-                print(f'       {problem}')
-    if not argv:  # the whole tree
+    if argv:
+        roots: dict[Path, set[Instance]] = {}
+        for path in paths:
+            roots.setdefault(path.parents[2], set()).add(Instance(path.parent.name, path.name))
+        for root, selected in roots.items():
+            problems = generated.problems(root, only=frozenset(selected))
+            if problems:
+                failed += 1
+                print(f'[BAD] app records: {root}')
+                for problem in problems:
+                    print(f'       {problem}')
+    else:  # the whole tree
         problems = check_event_users()
         if problems:
             failed += 1
@@ -615,7 +556,7 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         problems = generated.check(ROOT)
         if problems:
             failed += 1
-            print('[BAD] app model: rendering the records read from the manifests differs (docs/plan.md section 24)')
+            print('[BAD] app model: records are invalid or their rendered files differ (docs/apps.md#the-app-policy)')
             for problem in problems:
                 print(f'       {problem}')
         else:

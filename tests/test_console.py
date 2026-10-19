@@ -128,8 +128,10 @@ class ConnectionsTests(unittest.TestCase):
     """One list of apps serves every reader: team and connections on the list, a map, and Connect on the app page."""
 
     def cluster(self):
-        def web(ns, name, variables=None, host=None):
+        def web(ns, name, variables=None, host=None, api=None):
             doc = release(ns, name)
+            if api:  # where it serves its API description: an annotation, not a variable
+                doc['metadata']['annotations'] = {'platform.swhurl.com/api-description': api}
             values = doc['spec']['values']
             values['service'] = {'main': {'ports': {'http': {'port': 9000}}}}
             values['controllers']['main']['containers']['main']['env'] = variables or {}
@@ -137,10 +139,9 @@ class ConnectionsTests(unittest.TestCase):
                 values['ingress'] = {'main': {'hosts': [{'host': host}]}}
             return doc
         releases = [
-            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_API_PATH': '/openapi.json',
-                                             'SWHURL_EVENTS_PUBLISH': 'created,paid'},
-                host='staging-orders.homelab.swhurl.com'),
-            web('orders-prod', 'orders', {'SWHURL_API_PATH': '/openapi.json'}),
+            web('orders-staging', 'orders', {'SWHURL_ALLOWED_CALLERS': 'reports', 'SWHURL_EVENTS_PUBLISH': 'created,paid'},
+                host='staging-orders.homelab.swhurl.com', api='/openapi.json'),
+            web('orders-prod', 'orders', api='/openapi.json'),
             web('reports-staging', 'reports', {'SWHURL_SERVICE_ORDERS_URL': 'http://orders.orders-$(SWHURL_ENV).svc.cluster.local:9000'}),
             release('job-staging', 'job'),
         ]

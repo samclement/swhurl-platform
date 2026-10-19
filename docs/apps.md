@@ -204,7 +204,7 @@ What the app is, what its image needs and what it offers other apps, kept in the
 
 Each field is one of four kinds ([glossary](../GLOSSARY.md)), and the templates write them in this order under a comment for each:
 
-- **Identity**: what the app is. `version`, `stack`, `kind`.
+- **Identity**: what the app is. `version`, `stack`, `kind`, `description`.
 - **Need**: what the image needs to run. `port`, `healthPath`, `uid`, `telemetry`, `resources` (the image's minimum), `database`, `databaseSize`, `secrets` (variable names, never values).
 - **Offer**: what other apps can use. `provides`, `flags`, `events.publish`.
 - **Grant**: what the platform allows the app: who owns it, who can reach it, what it may call and receive. `team`, `exposure`, `alerts`, `calls`, `events.subscribe`. A grant belongs to this repository and changes only through a `make app-*` command or the console; choose it on the console's **New app** form or as an `app-new` flag. The file may not hold one: wherever it is read (`app-new`, `make app-offers`, the console), a grant field is refused with the command that sets it, so a push to the app's repository cannot widen what the app may do.
@@ -214,13 +214,15 @@ Separately, each field the file may hold is read at one of two times:
 - **Read once.** `app-new --from-repo` reads the field when it creates the staging instance: it becomes an `app-new` default, and a flag on the command line still wins. From then on the instance in this repository is the truth. Editing the field in the app's repository afterwards changes nothing, and nothing reports the difference: change the instance with the command in the table.
 - **Read again.** The platform reads the field from the app's repository again, so an edit there arrives by itself. Every need is read at the commit of every new staging image and written into its release in the same commit as the image ([deploy a new image](#deploy-a-new-image)).
 
+**The rule for a field read again.** With every new image the platform replaces its copy of what the file says. A field you remove means none (no API link, no telemetry, the default port), except where that would lose data or break another app: then the image is held and the message says why (a database whose volume exists, an event another app receives). One exception remains: an app that stops naming an events document keeps what it publishes ([plan](plan.md#27-one-rule-for-what-swhurlyaml-declares--decided-19-october-2026-started-19-october-2026), S6). What the app reads arrives as a `SWHURL_*` variable; what only the platform reads (the offers commit, where the API description is served, the secret names) is an annotation on the instance's HelmRelease, which restarts nothing.
+
 `autoDeploy` is accepted and ignored: staging always follows new images.
 
 ```yaml
 # Identity
 version: 1              # required; this platform reads version 1
 stack: kotlin           # which template the app came from
-kind: web               # required: web or worker            --kind
+kind: web               # required: web, worker or job       --kind
 # Needs: what the image needs to run
 port: 8080              # web only (default 8080)            --port
 healthPath: /healthz    # web only, required                 --health-path
@@ -230,7 +232,7 @@ resources: {cpu: 100m, memory: 192Mi, memoryLimit: 384Mi}   # optional, the imag
 database: sqlite        # optional; databaseSize: 1Gi        --database, --database-size
 secrets: [API_TOKEN]    # optional: variable names           --secret-keys
 # Offers: what other apps can use
-provides: {api: /openapi.json}   # optional, web only: where its API description is served   --api-path
+provides: {api: /openapi.json}   # optional, web only: where its API description is served (no flag)
 #   also apiFile: openapi.json and eventsFile: asyncapi.yaml: where the repository keeps its OpenAPI and AsyncAPI documents (what an app offers)
 events: {publish: [created]}     # optional, until the app has provides.eventsFile   --publish
 flags:                  # optional: feature flags, typed, with a value per environment (see Feature flags)
@@ -243,7 +245,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | --- | --- | --- | --- |
 | `version` | identity | read again | Checked every time the file is read |
 | `stack` | identity | read again | The console reads it from the repository's default branch for the language it shows (kept for an hour) |
-| `kind` | identity | read once | Fixed: web, worker or job cannot change; an image that changes it is held. A job has no `port`, `healthPath` or `database` |
+| `kind` | identity | read again | Checked with every new staging image: web, worker or job is fixed at creation, and an image that changes it is held. A job has no `port`, `healthPath` or `database` |
 | `description` | identity | read again | With every new staging image, as `SWHURL_DESCRIPTION`; a promotion carries it with the image. Templates from `v0.2.14` declare it and serve it, with `SWHURL_APP`, in their API description, so an image built for another app (a [seed](#first-builds-of-new-apps)) describes this one |
 | `port` | need | read again | With every new staging image: the Service, the probes, its callers' addresses and its NetworkPolicy follow |
 | `healthPath` | need | read again | With every new staging image: the readiness, liveness and startup probes |
@@ -253,7 +255,7 @@ flags:                  # optional: feature flags, typed, with a value per envir
 | `database` | need | read again | With every new staging image: a new database gets its retained volume, `DATABASE_PATH`, one replica and stop-first updates. Removing it is refused while the volume exists: a push never deletes data (`make destroy-data` does) |
 | `databaseSize` | need | read again | The size a new database's volume is created with; a different size for an existing volume is refused |
 | `secrets` | need | read again | With every new staging image: a new name deploys without its value, shown as **value missing** until `make app-secret` sets it; a dropped name keeps its value, shown as unused ([secrets](#secrets)) |
-| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)) |
+| `provides` | offer | read again | `make app-offers` reads it at the commit of every new staging image (the Deploy workflow), and a promotion carries the result to production ([what an app offers](#what-an-app-offers)). `apiFile` offers the API to other apps (the Catalogue lists it); `api` only gives the console a link to the served description. Removing either removes what it gave |
 | `flags` | offer | read again | Built into every image: the app's build generates a typed accessor for each flag ([feature flags](#feature-flags)) |
 | `events.publish` | offer | read once | `make app-events`; once the app has `provides.eventsFile`, that file says what it publishes |
 | `team` | grant | refused | `make app-team`, or `--team` and the New app form at creation |
@@ -447,7 +449,7 @@ flowchart LR
 | What | Where | Why |
 | --- | --- | --- |
 | The documents, as the repository has them, and where they came from | `apps/<app>/<env>/offers/` (`source.yaml`: repository, commit, file names; `flags.json`: the [feature flags](#feature-flags) its `swhurl.yaml` declares, for the console's form). Not Kubernetes resources: nothing is applied | The offline checks and the console read them without building or calling the app |
-| Where the running app serves its API description | `SWHURL_API_PATH`, from `provides.api` | The console links it; an app that starts describing itself later gets it without `--api-path` |
+| Where the running app serves its API description | The annotation `platform.swhurl.com/api-description` on the instance's HelmRelease, from `provides.api` (no app reads it, so it is not a variable) | The console links it; it goes when `provides.api` goes |
 | The commit they were read at | The annotation `platform.swhurl.com/offers` on the instance's HelmRelease | The console sees that the app describes itself; an annotation does not restart the app |
 | The events the app publishes | `SWHURL_EVENTS_PUBLISH`, set from the channels `asyncapi.yaml` sends to (a channel's `address` is the event's name) | The AsyncAPI document is the declaration: nobody lists the events a second time. Everything that follows from the list is [as for any event](#events) |
 

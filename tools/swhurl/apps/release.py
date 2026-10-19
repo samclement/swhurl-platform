@@ -99,9 +99,10 @@ def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path,
 def offered(release: Release, commit: str, files: dict[str, str], described: list[offers.Event] | None,
             api_path: str) -> Release:
     """A release with what it offers: the commit its documents were read at, where a web app serves its
-    API description, and, with an events document, the events it publishes."""
+    API description (none when its swhurl.yaml no longer says: ``api_path`` is ''), and, with an events
+    document, the events it publishes."""
     release = replace(release, offers=commit if files else '')
-    if api_path and release.kind == 'web':
+    if release.kind == 'web':
         release = replace(release, api_path=api_path)
     if described is not None:
         release = replace(release, publishes=tuple(event.name for event in described))

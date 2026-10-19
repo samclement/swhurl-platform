@@ -4,8 +4,9 @@ metadata:
   name: swhurl-try-10
   namespace: swhurl-try-10-staging
   annotations:
+    platform.swhurl.com/api-description: /openapi.json
     platform.swhurl.com/offers: a4fdeeb
-    platform.swhurl.com/render: 9af781abfcafd180632e260ac13039c857b38d07f3561cc3ef81832d5dadd52b
+    platform.swhurl.com/render: 7eb959d22abb2f24587ec47490d75fb409ec0b907a6d8c72e0c62262b9a16a4c
 spec:
   interval: 30m
   timeout: 3m
@@ -60,7 +61,6 @@ spec:
               SWHURL_NOTIFY_URL: http://notify.notify.svc.cluster.local:8080
               SWHURL_AUTH_ISSUER: https://kubernetes.default.svc.cluster.local
               SWHURL_AUTH_KEYS: '{"keys":[{"alg":"RS256","e":"AQAB","kid":"ryIwIYzLBEQ2M5qEbegFhoPF7DukgkuAvYsL5kT_gLQ","kty":"RSA","n":"7WTXJTOl5JNWZ-ucaxVYkGxMLGjDTjmh6ZqvnnyEsyOprJDmrFL01Vn_s1Lnph8JFciD7FQKAgq3KRSkkgbjZinfs_HwKLU7tBrEnu9u6tZbIzT5IYNRGzlIACTIVkEkQTqkhDecTEQrecM0-tsXMTdUDjPGXXGM5eLSOreJvDyG4TFTJGVIvhWY5WN_Vuwz5_f_eqRc636qWqzMr0VW18Pjn1ZKUow_zHOS8jbM9J-55-gtGHgzHyKjvjJQJpyp0RgnFv23kxIgv8wmZK6gh6KfsDLTS-ocCrY_RRTsqllLOWiro7JS8M6K_L6gzrQ8vCRlVa5A0YpLuBAq9QpH8Q","use":"sig"}]}'
-              SWHURL_API_PATH: /openapi.json
               SWHURL_DESCRIPTION: 'throwaway: team platform T2 callee (orders), delete me'
               HOST_IP:
                 valueFrom:

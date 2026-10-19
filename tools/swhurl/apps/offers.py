@@ -34,6 +34,9 @@ FLAGS_NAME = 'flags.json'  # the feature flags swhurl.yaml declares, as JSON (do
 ANNOTATION = 'platform.swhurl.com/offers'
 """On the instance's HelmRelease: the commit its offers were read at. The console sees from it that
 the app describes itself, without a variable that would restart the app when it changes."""
+API_ANNOTATION = 'platform.swhurl.com/api-description'
+"""On a web instance's HelmRelease: the path where the running app serves its API description
+(swhurl.yaml's provides.api), which the console links. An annotation, not a variable: no app reads it."""
 IMAGE_COMMIT = re.compile(r'^[0-9]+-([0-9a-f]{7,40})$')
 """An app image's tag is <run>-<commit>: the commit says which revision of the repository it is."""
 EVENT_RE = re.compile(r'^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$')

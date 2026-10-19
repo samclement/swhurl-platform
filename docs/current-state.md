@@ -1976,4 +1976,20 @@ Plan section 26, F1 and F2. **Templates:** TypeScript `v0.2.18` (#60, `5215350`)
 | `swhurl-try-28` | Web app | `v0.2.18`, web, sqlite, openapi, vite (no events or flags keys) | #85 merged itself at 141 s | 204 s, `0-e2245bc` | own build `1-e2245bc` |
 | `swhurl-try-29` | Worker | `v0.2.18`, worker, none, none, none | #84 merged itself at 153 s | 206 s, `0-b5ae9e2` | own build `1-b5ae9e2` |
 
-The web app has a Service, Ingress, a claim and `DATABASE_PATH`, publishes `visited`; `http://` answers 301 to `https://`, which signed out answers 302 to Google sign-in (page and `/api/*`); signed in, `/` serves the page and `/api/hello` answers as the person with a visit count, and `/openapi.json` names the app. The worker has no Service, Ingress or claim and publishes `worked`; its first run was refused by NATS (`Authorization Violation`, the known wait for the server's config) and then reported `WORK DONE` every minute (`shout` is on in staging). `make app-status` shows both Healthy and `make verify-platform` passed. Both instances stay until the operator approves removing them (the web app's volume needs `make destroy-data`).
+The web app has a Service, Ingress, a claim and `DATABASE_PATH`, publishes `visited`; `http://` answers 301 to `https://`, which signed out answers 302 to Google sign-in (page and `/api/*`); signed in, `/` serves the page and `/api/hello` answers as the person with a visit count, and `/openapi.json` names the app. The worker has no Service, Ingress or claim and publishes `worked`; its first run was refused by NATS (`Authorization Violation`, the known wait for the server's config) and then reported `WORK DONE` every minute (`shout` is on in staging). `make app-status` shows both Healthy and `make verify-platform` passed. **Removed** (operator approved, 19 October): both instances (`1ec25a66`), `swhurl-try-28`'s volume with `make destroy-data` and its namespace, and both repositories and packages.
+
+## Existing apps onto their types (19 October 2026)
+
+Plan section 26, F3. Each app took one reviewed template update to the pinned release with its type's answers; the old `events` key is dropped from its answers file and `frontend: none` added. Renovate had opened the TypeScript updates; three had inline conflict markers and were resolved on their branches, keeping each app's own code:
+
+| App | Type | PR | Resolution | Staging image |
+| --- | --- | --- | --- | --- |
+| `swhurl-try-13` | Worker | #6 (Renovate) | none needed; gains `asyncapi.yaml` with `worked` and the `shout` flag | `49-bfa12a9` |
+| `swhurl-try-10` | API | #6 (Renovate) | none needed; gains the `shout` flag | `49-a4fdeeb` |
+| `demo-shopper` | Worker | #5 (Renovate) | its shop visits kept; the template's example publish and flag left out; `asyncapi.yaml` with no channels | `52-eeffa26` |
+| `demo-orders` | API | #5 (Renovate) | its routes, schemas and `created` event kept; `flagsLoaded` in `/healthz` adopted; the openapi test points at its own `/`; no example flag | `47-82b0f86` |
+| `demo-notifier` | Worker (Kotlin, `v0.2.4` to `v0.2.17`) | #8 (by hand; Renovate's #4 and #1 were stuck at `v0.2.10` and closed) | as `demo-shopper` | `21-eab35a3` |
+
+Each PR's Container checks passed (`demo-orders` 28 and `demo-shopper` 23 tests locally first; `demo-notifier` built and tested in podman). After the merges every staging instance ran its new image with no restarts and `make app-status` reported Healthy. What each publishes follows its document: `demo-orders` `created`, `swhurl-try-10` `visited`, `swhurl-try-13` `worked`, `demo-shopper` and `demo-notifier` nothing. The demo chain still runs: `demo-shopper`'s purchases return 201, `demo-orders` logged the `POST /orders` 201s and `demo-notifier` received `demo-orders.created`. `make verify-platform` and `make check-apps` passed. Production (`demo-orders`, `swhurl-try-10`) keeps its earlier images until promoted.
+
+Renovate's updates for `demo-shop`, `swhurl-try-11` and `swhurl-try-12` failed on the template's validator, as expected, and were closed: `demo-shop` moves by hand in F5, the other two stay on their template versions.

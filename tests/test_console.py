@@ -248,6 +248,30 @@ class ConnectionsTests(unittest.TestCase):
             for row in rows:
                 self.assertIn(row, listed, 'one connection per row, the same columns for each')
 
+    def test_the_app_page_shows_calls_waiting_for_a_grant_and_who_it_allows(self):
+        runner = self.cluster()
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'kustomization', stdout=json.dumps(unit('app-reports-staging')))
+        runner.on('kubectl', '-n', 'reports-staging', 'get', 'helmrelease', stdout=json.dumps(
+            next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'reports-staging')))
+        runner.on('kubectl', '-n', 'reports-staging', 'get', stdout=json.dumps({'items': []}))
+        runner.on('kubectl', '-n', 'flux-system', 'get', 'gitrepository', stdout=json.dumps({'status': {'artifact': {'revision': 'main@sha1:abc'}}}))
+        record = 'version: 1\ncalls: [orders, billing]\nallows: [team:demo, shop]\n'
+        text = client(runner, documents={'apps/reports/staging/instance.yaml': record}.get).get('/apps/reports/staging', headers=WHO).text
+        table = re.search(r'<table class="compact connections">.*?</table>', text, re.S)[0]
+        listed = [tuple(re.sub(r'<[^>]+>', '', cell).strip() for cell in re.findall(r'<td>.*?</td>', row, re.S))
+                  for row in re.findall(r'<tr>.*?</tr>', table, re.S)]
+        self.assertIn(('→ outgoing', 'call', 'billing', 'its API, waiting for billing to allow it', 'unknown'), listed,
+                      'a call recorded in Git that renders nothing yet')
+        self.assertIn(('→ outgoing', 'call', 'orders', 'its API', 'payments'), listed, 'the live one is shown once')
+        self.assertEqual(len([row for row in listed if row[1:3] == ('call', 'orders')]), 1)
+        self.assertIn('<input type="hidden" name="role" value="calls"><input type="hidden" name="app" value="billing">', text,
+                      'a waiting call can be removed')
+        self.assertIn('Allow callers</summary>', text)
+        for name in ('team:demo', 'shop'):
+            self.assertIn(f'<input type="hidden" name="remove" value="{name}">', text)
+        unread = client(runner, documents=lambda path: None).get('/apps/reports/staging', headers=WHO).text
+        self.assertNotIn('Allowed callers', unread, 'Git unreadable: only what runs is shown')
+
     def test_an_app_that_describes_its_events_declares_them_in_its_repository(self):
         runner = self.cluster()
         described = next(r for r in runner.json(list(cluster.RELEASES))['items'] if r['metadata']['namespace'] == 'orders-staging')

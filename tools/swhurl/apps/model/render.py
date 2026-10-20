@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from swhurl import yamlio
+from swhurl.apps.contract import BACKUP_FILE, IMAGE_AUTOMATION_FILE, NETWORK_POLICY_FILE, QUOTA_FILE
 from swhurl.apps.instance import UNITS, Instance
 from swhurl.apps.model import (
     alerts,
@@ -27,6 +28,11 @@ from swhurl.apps.model import (
 from swhurl.apps.model.draft import APP_SECRET, Platform, World
 
 ANNOTATION = 'platform.swhurl.com/render'
+REGISTRY_FILE = UNITS / 'kustomization.yaml'
+RELOADER_FILE = Path('platform/reloader/helmrelease.yaml')
+MANAGED_FILES = frozenset({'namespace.yaml', 'helmrelease.yaml', 'kustomization.yaml', QUOTA_FILE,
+                           NETWORK_POLICY_FILE, IMAGE_AUTOMATION_FILE, BACKUP_FILE, 'events.yaml'})
+
 
 
 def fingerprint(files: dict[Path, list[dict]]) -> str:

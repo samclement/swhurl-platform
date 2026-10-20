@@ -72,7 +72,7 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(list(self.registered()), ['demo', 'orders', 'payments'], 'it keeps its place and description')
         self.assertEqual(self.registered()['orders'], 'Old')
         self.assertEqual((self.team_of('staging'), self.team_of('prod')), ('orders', 'orders'))
-        self.assertEqual(teams.apps_of(self.root), {'orders': ['hello']})
+        self.assertEqual(yaml.safe_load((self.root / 'apps/hello/app.yaml').read_text())['team'], 'orders')
         self.assertEqual(generated.problems(self.root), [])
         with self.assertRaisesRegex(EditError, 'already exists; to merge the two, remove orders with --move-apps-to payments'):
             teams.change(self.root, 'orders', rename='payments')
@@ -123,17 +123,15 @@ class TeamTests(unittest.TestCase):
         directory = self.root / channels.NOTIFY_DIR
         directory.mkdir(parents=True)
         (directory / 'kustomization.yaml').write_text('# Channels.\nresources:\n  - namespace.yaml\n  - routes.yaml\n')
-        teams.write_routes(self.root)
+        edit.sync(self.root)
         (self.root / channels.UNIT_FILE).write_text(
             '# The notify unit.\nspec:\n  path: ./platform/notify\n  prune: true\n')
 
-        def encrypt(args, _input):
-            path = Path(args[-1])
-            document = yaml.safe_load(path.read_text())
+        def encrypt(args, text):
+            document = yaml.safe_load(text)
             document['stringData'] = {key: 'ENC[...]' for key in document['stringData']}
-            path.write_text(yaml.safe_dump(document) + 'sops:\n  version: 3\n')
-            return Result(args, 0)
-        return FakeRunner().on('sops', '--encrypt', '--in-place', handler=encrypt)
+            return Result(args, 0, yaml.safe_dump(document) + 'sops:\n  version: 3\n')
+        return FakeRunner().on('sops', '--encrypt', handler=encrypt)
 
     def routes(self):
         configmap = yaml.safe_load((self.root / channels.ROUTES_FILE).read_text())
@@ -178,6 +176,40 @@ class TeamTests(unittest.TestCase):
                 teams.channel_add(self.root, 'payments-phone', 'https://ntfy.sh/private', runner=runner)
             self.assertEqual(channels.channels(self.root), {})
 
+    def snapshot(self):
+        return {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+
+    def test_team_and_channel_planning_failures_leave_every_input_and_output_untouched(self):
+        runner = self.notify_unit()
+        record = self.root / 'apps/hello/staging/release.yaml'
+        record.write_text('invalid: [')
+        for action in (lambda: teams.change(self.root, 'demo', rename='core'),
+                       lambda: teams.remove(self.root, 'demo', 'payments'),
+                       lambda: teams.team_channel(self.root, 'demo', 'https://ntfy.sh/private', runner=runner)):
+            before = self.snapshot()
+            with self.assertRaises(EditError):
+                action()
+            self.assertEqual(self.snapshot(), before)
+        self.assertEqual(runner.calls, [], 'planning refused before encryption')
+
+    def test_replacing_a_channel_address_keeps_the_registry_bytes(self):
+        runner = self.notify_unit()
+        self.quiet(teams.team_channel, 'demo', 'https://ntfy.sh/first', runner=runner)
+        registry = self.root / 'apps/teams.yaml'
+        registry.write_text('teams:\n  demo: {notify: [demo]} # keep this style\n  payments: {}\n')
+        before = registry.read_bytes()
+        self.quiet(teams.team_channel, 'demo', 'https://ntfy.sh/second', runner=runner)
+        self.assertEqual(registry.read_bytes(), before)
+
+    def test_team_channel_removal_plans_both_registry_and_channel_before_writing(self):
+        runner = self.notify_unit()
+        self.quiet(teams.team_channel, 'demo', 'https://ntfy.sh/private', runner=runner)
+        (self.root / channels.NOTIFY_DIR / 'kustomization.yaml').write_text('resources: wrong\n')
+        before = self.snapshot()
+        with self.assertRaisesRegex(EditError, 'expected a resources list'):
+            teams.team_channel(self.root, 'demo', None)
+        self.assertEqual(self.snapshot(), before, 'the team must not lose its channel on a refused second step')
+
     def test_a_team_notifies_registered_channels_and_the_routes_follow(self):
         runner = self.notify_unit()
         for name in ('payments-phone', 'payments-desk'):
@@ -192,14 +224,16 @@ class TeamTests(unittest.TestCase):
         registry = self.root / 'apps/teams.yaml'
         one = registry.read_text()
         registry.write_text(one.replace('- payments-phone', '- payments-phone\n    - payments-desk'))
-        teams.write_routes(self.root)
+        edit.sync(self.root)
         self.assertEqual(channels.problems(self.root), ['notify-channels: team payments notifies 2 channels; a team has one '
                                                         '(make team-edit NAME=payments ARGS="--notify <channel>")'])
         registry.write_text(one)
-        teams.write_routes(self.root)
+        edit.sync(self.root)
         with self.assertRaisesRegex(EditError, 'channel payments-phone is notified by payments'):
             teams.channel_remove(self.root, 'payments-phone')
+        self.quiet(edit.set_allows, 'hello', 'staging', add=['team:payments'])
         self.quiet(teams.change, 'payments', rename='billing')
+        self.assertEqual(self.allows(), ['team:billing'])
         self.assertEqual(self.routes(), {'billing': ['payments-phone']})
         self.quiet(teams.change, 'billing', notify=['payments-desk'])
         self.quiet(teams.channel_remove, 'payments-phone')
@@ -209,6 +243,7 @@ class TeamTests(unittest.TestCase):
         self.quiet(teams.channel_remove, 'payments-desk')
         self.assertNotIn('decryption', (self.root / channels.UNIT_FILE).read_text(), 'no channel, nothing to decrypt')
         self.assertEqual(channels.problems(self.root), [])
+        self.quiet(edit.set_allows, 'hello', 'staging', remove=['team:billing'])
         self.quiet(teams.remove, 'billing')
         self.assertEqual(self.routes(), {})
         self.quiet(teams.change, 'demo', notify=[])
@@ -274,9 +309,11 @@ class TeamTests(unittest.TestCase):
     def test_an_app_naming_an_unregistered_team_is_found(self):
         path = self.root / 'apps/hello/app.yaml'
         path.write_text(path.read_text().replace('team: demo', 'team: ghost'))
-        self.assertEqual(teams.apps_of(self.root), {'ghost': ['hello']})
+        self.assertNotIn('ghost', self.registered())
         self.quiet(teams.add, 'ghost')  # registering it is one of the two ways out
         self.assertIn('ghost', self.registered())
+        with self.assertRaisesRegex(EditError, 'team ghost still owns hello'):
+            teams.remove(self.root, 'ghost')
 
     def test_commands_exit_2_on_refusal(self):
         err = io.StringIO()

@@ -92,7 +92,7 @@ class Pull:
 
 @dataclass(frozen=True)
 class Target:
-    """An instance's render in a Git tree; 'absent' is a proven missing HelmRelease, 'unrendered' records
+    """An instance's render in a Git tree; 'absent' is proven missing instance records, 'unrendered' records
     that main has not rendered yet."""
     hash: str
     digest: str = ''

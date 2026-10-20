@@ -17,7 +17,7 @@ from swhurl import yamlio
 from swhurl.apps import declaration, events, nkeys, offers
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import sync as model_sync
-from swhurl.apps.model.draft import EVENTS_SECRET, Entry
+from swhurl.apps.model.draft import EVENTS_SECRET
 from swhurl.apps.model.events import keyed as events_keyed
 from swhurl.apps.model.records import Image, Release
 from swhurl.apps.yaml_file import EditError
@@ -85,20 +85,20 @@ def write_files(planned: dict[Path, str | None]) -> bool:
     return bool(planned)
 
 
-def change_release(root: Path, each: Instance, entry: Entry, planned: dict[Path, str | None], *,
-                   runner: Runner | None = None,
-                   adding: bool = False, keyed: bool = False) -> bool:
-    """Make ``entry`` (a new Release, and what the operation chose with it) the instance's records, or a
-    new instance's (``adding``): give it a NATS key if it now has events (or ``keyed``) and none, render,
-    then write the rendered files and the offers documents (``planned``). A refusal writes nothing. Whether anything changed."""
+def change_release(root: Path, each: Instance, operation: model_sync.Create | model_sync.Update, planned: dict[Path, str | None], *,
+                   runner: Runner | None = None) -> bool:
+    """Prepare a create or update, supplying its NATS key when needed, then write it and its offers.
+    A planning refusal leaves the input files untouched. Returns whether anything changed."""
+    entry = operation.entry if isinstance(operation, model_sync.Create) else operation.update(model_sync.read(root)[0][each])
     instance = each.folder(root)
     created = ''
-    if (keyed or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
+    if (events.has_nats(root) or entry.release.publishes or entry.settings.subscriptions) and not events_keyed(entry):
         created = new_nats_key(instance, each.app, each.env, runner=runner)
         entry = replace(entry, settings=replace(entry.settings, allocations=replace(entry.settings.allocations, events_key=created)),
                         encrypted=entry.encrypted | {EVENTS_SECRET})
     try:
-        prepared = model_sync.prepare(root, each, lambda _: entry, adding=adding)
+        prepared = model_sync.prepare(root, {each: model_sync.Create(entry) if isinstance(operation, model_sync.Create)
+                                             else model_sync.Update(lambda _: entry)})
     except EditError:
         if created:
             (instance / events.SECRET_FILE).unlink(missing_ok=True)
@@ -130,7 +130,7 @@ def write_offers(root: Path, app: str, env: str, repository: str, commit: str, f
     entry = world[each]
     planned = offer_files(each.folder(root) / offers.OFFERS_DIR, repository, commit, files)
     release = offered(entry.release, commit, files, described, api_path)
-    return change_release(root, each, replace(entry, release=release), planned, runner=runner)
+    return change_release(root, each, model_sync.Update(lambda _: replace(entry, release=release)), planned, runner=runner)
 
 
 def image_source(image: Image, app: str, env: str) -> tuple[str, str]:

@@ -1349,6 +1349,42 @@ components:
             edit.remove(self.root, 'orders', 'staging')
         self.assertEqual(self.snapshot(), before)
 
+    def test_record_only_removal_refuses_subscribers_before_rendering_or_writing(self):
+        self.with_units()
+        self.publish_events('orders', ['created'], self.sops())
+        self.quiet(edit.set_events, self.root, 'hello', 'staging', subscribe=['orders.created'], runner=self.sops())
+        folder = self.root / 'apps/orders/staging'
+        for name in ('release.yaml', 'instance.yaml'):
+            (folder / name).unlink()
+        before = self.snapshot()
+        with self.assertRaisesRegex(edit.EditError, 'publishes events that hello subscribe to'):
+            model_sync.sync(self.root)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_malformed_notification_inputs_clean_up_keys_on_failed_release_and_sync_planning(self):
+        self.with_units()
+        notify = self.root / 'platform/notify'
+        notify.mkdir(parents=True)
+        teams = self.root / 'apps/teams.yaml'
+        for path, bad in ((teams, 'teams: ['), (notify / 'channel-phone.sops.yaml', 'metadata: [')):
+            teams.write_text('teams: {demo: {}}\n')
+            path.write_text(bad)
+            for action in ('release', 'sync'):
+                with self.subTest(path=path.name, action=action):
+                    before, runner = self.snapshot(), self.sops()
+                    if action == 'release':
+                        with self.assertRaisesRegex(edit.EditError, 'notification route'):
+                            intake.change_release(self.root, Instance('hello', 'staging'),
+                                                  model_sync.Update(lambda entry: entry), {}, runner=runner)
+                    else:
+                        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors:
+                            with mock.patch.object(intake, 'Runner', return_value=runner):
+                                self.assertEqual(edit.main_sync(['--root', str(self.root)]), 2)
+                        self.assertIn('notification route', errors.getvalue())
+                    self.assertTrue(runner.calls, 'a key was actually generated/encrypted before planning refused')
+                    self.assertEqual(self.snapshot(), before, 'new encrypted inputs are removed on planning refusal')
+            path.unlink()
+
     def test_remove_ignores_self_and_other_environment_relations(self):
         self.with_units()
         # Self records go with the target; production's relations belong to production's target.

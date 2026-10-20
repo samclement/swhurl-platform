@@ -14,6 +14,7 @@ from swhurl.apps import edit, policy
 from swhurl.apps.contract import JOB_SCHEDULE
 from swhurl.apps.instance import Instance
 from swhurl.apps.model import generated, render, store
+from swhurl.apps.model import sync as model_sync
 from swhurl.apps.model.draft import EVENTS_SECRET, Entry, Platform, RenderError
 from swhurl.apps.model.records import (
     Allocations,
@@ -25,6 +26,7 @@ from swhurl.apps.model.records import (
     Settings,
     Storage,
 )
+from swhurl.apps.yaml_file import EditError
 
 SAMPLE = ROOT / 'tests/fixtures/instance'  # frozen sample instance; see its README
 IMAGE = Image('ghcr.io/samclement/orders', '12-abcdef0', 'sha256:' + 'a' * 64)
@@ -263,6 +265,219 @@ class ShadowTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             edit.sync(self.root)
         self.assertFalse(unit.exists())
+
+    def snapshot(self):
+        return {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob('*') if path.is_file()}
+
+    def test_record_only_removal_cleans_shared_outputs_and_preserves_unrelated_files(self):
+        registry = self.root / render.REGISTRY_FILE
+        registry.write_text(registry.read_text() + '  - app-control.yaml # not an instance unit\n')
+        (self.root / 'platform/egress').mkdir(parents=True)
+        (self.root / 'platform/nats').mkdir(parents=True)
+        (self.root / 'platform/nats/controller-nkey.pub').write_text('UCONTROL')
+        for env in ('staging', 'prod'):
+            record = self.root / f'apps/hello/{env}/instance.yaml'
+            doc = yamlio.load(record.read_text())
+            doc['allocations'] = {'eventsKey': 'U' + env.upper()}
+            record.write_text(yamlio.dump(doc))
+            (record.parent / 'events.sops.yaml').write_text('sops: {}')
+        model_sync.sync(self.root)
+        self.assertIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
+        self.assertIn('UPROD', (self.root / 'platform/nats/users.yaml').read_text())
+        prod = self.root / 'apps/hello/prod'
+        unrelated = {'notes.yaml': 'kind: Note', 'other.sops.yaml': 'sops: {}', 'data/db': 'keep me',
+                     'offers/notes.txt': 'not an offer'}
+        for name, text in unrelated.items():
+            (prod / name).parent.mkdir(parents=True, exist_ok=True)
+            (prod / name).write_text(text)
+        (prod / 'offers/source.yaml').write_text('api: openapi.json\n')
+        (prod / 'offers/openapi.json').write_text('{}')
+        (prod / 'secret.sops.yaml').write_text('sops: {}')
+        for name in ('release.yaml', 'instance.yaml'):
+            (prod / name).unlink()  # what a held removal's merge carries; the old outputs are still present
+        (prod / 'helmrelease.yaml').write_text('invalid: [')  # stale output cannot resurrect the instance
+        self.assertNotIn(Instance('hello', 'prod'), store.world(self.root)[0])
+        model_sync.sync(self.root)
+        self.assertEqual({name: (prod / name).read_text() for name in unrelated}, unrelated)
+        for name in render.MANAGED_FILES | {'events.sops.yaml', 'secret.sops.yaml', 'offers/source.yaml', 'offers/openapi.json'}:
+            self.assertFalse((prod / name).exists(), name)
+        self.assertTrue((prod.parent / 'app.yaml').is_file(), 'another environment still owns the App record')
+        self.assertNotIn('hello-prod', (self.root / render.RELOADER_FILE).read_text())
+        self.assertIn('namespaces: [ingress, logging, console, hello-staging]', (self.root / render.RELOADER_FILE).read_text())
+        self.assertNotIn('UPROD', (self.root / 'platform/nats/users.yaml').read_text())
+        self.assertNotIn('hello-prod', (self.root / 'platform/egress/proxy.yaml').read_text())
+        registry = (self.root / render.REGISTRY_FILE).read_text()
+        self.assertNotIn('app-hello-prod.yaml', registry)
+        self.assertIn('app-hello-staging.yaml', registry)
+        self.assertIn('  - app-control.yaml # not an instance unit\n', registry)
+        self.assertFalse(Instance('hello', 'prod').unit_file(self.root).exists())
+        for name in ('release.yaml', 'instance.yaml'):
+            (self.root / 'apps/hello/staging' / name).unlink()
+        model_sync.sync(self.root)
+        self.assertFalse((prod.parent / 'app.yaml').exists(), 'the last environment owns its deletion')
+        self.assertFalse((self.root / 'apps/hello/staging').exists())
+        self.assertEqual({name: (prod / name).read_text() for name in unrelated}, unrelated)
+        before = self.snapshot()
+        self.assertEqual(model_sync.sync(self.root), [])
+        self.assertEqual(self.snapshot(), before, 'sync is byte-idempotent after a record-only removal')
+
+    def test_record_only_removal_refuses_waiting_and_granted_callers_with_zero_writes(self):
+        target, caller = Instance('hello', 'staging'), Instance('caller', 'staging')
+        for granted in (False, True):
+            for marker in ('folder', 'unit'):
+                with self.subTest(granted=granted, marker=marker), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp) / 'root'
+                    shutil.copytree(self.root, root)
+                    if granted:
+                        model_sync.change(root, target, lambda entry: dataclasses.replace(
+                            entry, settings=dataclasses.replace(entry.settings, allows=('caller',))))
+                    model_sync.apply(root, model_sync.prepare(root, {
+                        caller: model_sync.Create(Entry(App('demo'), web(), Settings(calls=('hello',))))}))
+                    for name in ('release.yaml', 'instance.yaml'):
+                        (target.folder(root) / name).unlink()
+                    if marker == 'folder':
+                        target.unit_file(root).unlink()
+                    else:
+                        for name in render.MANAGED_FILES:
+                            (target.folder(root) / name).unlink(missing_ok=True)
+                    before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                    with self.assertRaisesRegex(EditError, 'hello/staging is called by caller'):
+                        model_sync.sync(root)
+                    self.assertEqual({p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}, before)
+
+    def test_waiting_calls_to_arbitrary_absent_apps_are_not_orphan_removals(self):
+        caller = Instance('caller', 'staging')
+        model_sync.apply(self.root, model_sync.prepare(self.root, {
+            caller: model_sync.Create(Entry(App('demo'), web(), Settings(calls=('missing',))))}))
+        unrelated = self.root / 'apps/missing/staging/notes.yaml'
+        unrelated.parent.mkdir(parents=True)
+        unrelated.write_text('keep: true\n')
+        before = self.snapshot()
+        self.assertEqual(model_sync.sync(self.root), [])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_partial_or_malformed_records_are_errors_without_any_writes(self):
+        folder = self.root / 'apps/hello/prod'
+        original = {name: (folder / name).read_bytes() for name in ('release.yaml', 'instance.yaml')}
+        for name in original:
+            for text in (None, b'invalid: [', b'version: 1\nunknown: true\n'):
+                with self.subTest(name=name, text=text):
+                    if text is None:
+                        (folder / name).unlink()
+                    else:
+                        (folder / name).write_bytes(text)
+                    before = self.snapshot()
+                    with self.assertRaises(EditError):
+                        model_sync.sync(self.root)
+                    self.assertEqual(self.snapshot(), before)
+                    (folder / name).write_bytes(original[name])
+
+    def test_invalid_shared_files_abort_a_removal_before_any_write(self):
+        for path, text in ((render.REGISTRY_FILE, 'resources: wrong\n'),
+                           (render.REGISTRY_FILE, 'resources: &units []\n'),
+                           (render.RELOADER_FILE, 'spec: {values: {reloader: {namespaces: wrong}}}\n'),
+                           (render.RELOADER_FILE, 'spec: {values: {reloader: {namespaces: [{}]}}}\n')):
+            with self.subTest(path=path, text=text):
+                file = self.root / path
+                original = file.read_bytes()
+                file.write_text(text)
+                before = self.snapshot()
+                with self.assertRaises(EditError):
+                    edit.remove(self.root, 'hello', 'prod')
+                self.assertEqual(self.snapshot(), before, 'records, units and outputs are untouched')
+                file.write_bytes(original)
+
+    def test_explicit_remove_keeps_unrelated_files_even_for_the_last_environment(self):
+        prod = self.root / 'apps/hello/prod'
+        (prod / 'notes.yaml').write_text('keep: true\n')
+        model_sync.apply(self.root, model_sync.prepare(self.root, {Instance('hello', 'staging'): model_sync.Remove()}))
+        model_sync.apply(self.root, model_sync.prepare(self.root, {Instance('hello', 'prod'): model_sync.Remove()}))
+        self.assertEqual((prod / 'notes.yaml').read_text(), 'keep: true\n')
+        self.assertFalse((prod.parent / 'app.yaml').exists())
+        self.assertFalse((prod / 'release.yaml').exists())
+        self.assertFalse((prod / 'helmrelease.yaml').exists())
+
+    def test_explicit_remove_of_records_only_instance_cannot_resurrect_it(self):
+        for last_environment in (False, True):
+            with self.subTest(last_environment=last_environment), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = Instance('fresh', 'prod')
+                entry = Entry(App('demo'), web(), Settings())
+                world = {target: entry}
+                if not last_environment:
+                    world[Instance('fresh', 'staging')] = entry
+                for path, text in store.documents(world).items():
+                    (root / path).parent.mkdir(parents=True, exist_ok=True)
+                    (root / path).write_text(text)
+                folder = target.folder(root)
+                inputs = {'events.sops.yaml': 'sops: {}', 'secret.sops.yaml': 'sops: {}',
+                          'offers/source.yaml': 'api: openapi.json\n', 'offers/openapi.json': '{}'}
+                unrelated = {'notes.yaml': 'keep: true\n', 'data/db': 'keep data', 'offers/notes.txt': 'keep notes'}
+                for name, text in (inputs | unrelated).items():
+                    (folder / name).parent.mkdir(parents=True, exist_ok=True)
+                    (folder / name).write_text(text)
+                with redirect_stdout(io.StringIO()):
+                    edit.remove(root, target.app, target.env)
+                for name in inputs.keys() | {'release.yaml', 'instance.yaml'}:
+                    self.assertFalse((folder / name).exists(), name)
+                self.assertEqual({name: (folder / name).read_text() for name in unrelated}, unrelated)
+                self.assertEqual((folder.parent / 'app.yaml').exists(), not last_environment)
+                model_sync.sync(root)
+                found, problems = store.world(root)
+                self.assertEqual(problems, [])
+                self.assertNotIn(target, found)
+                self.assertFalse((folder / 'helmrelease.yaml').exists(), 'sync must not resurrect the removed instance')
+                self.assertEqual(model_sync.sync(root), [], 'the result is idempotent')
+
+    def test_other_instances_render_failure_refuses_removal_without_writes(self):
+        record = self.root / 'apps/hello/staging/release.yaml'
+        doc = yamlio.load(record.read_text())
+        doc['database'] = 'sqlite'  # valid record, but cannot render without an allocation
+        record.write_text(yamlio.dump(doc))
+        before = self.snapshot()
+        with self.assertRaisesRegex(EditError, 'has no database allocation'):
+            model_sync.prepare(self.root, {Instance('hello', 'prod'): model_sync.Remove()})
+        self.assertEqual(self.snapshot(), before)
+
+    def test_no_register_is_a_planning_choice_not_an_apply_side_effect(self):
+        each = Instance('fresh', 'staging')
+        entry = Entry(App('demo'), web(), Settings())
+        registry = self.root / render.REGISTRY_FILE
+        original = registry.read_bytes()
+        prepared = model_sync.prepare(self.root, {each: model_sync.Create(entry)}, register=False)
+        self.assertNotIn(registry, prepared.writes)
+        model_sync.apply(self.root, prepared)
+        self.assertTrue(each.unit_file(self.root).is_file(), '--no-register still writes the new unit')
+        self.assertEqual(registry.read_bytes(), original)
+        model_sync.sync(self.root)
+        self.assertIn(f'{each.unit}.yaml', registry.read_text(), 'full sync reconciles all registrations')
+        registry.unlink()
+        each.unit_file(self.root).unlink()
+        model_sync.sync(self.root)
+        self.assertFalse(each.unit_file(self.root).exists(), 'scratch sync does not invent missing units')
+        second = Instance('second', 'staging')
+        model_sync.apply(self.root, model_sync.prepare(self.root, {second: model_sync.Create(entry)}))
+        self.assertTrue(second.unit_file(self.root).is_file(), 'scratch creation still emits its unit')
+
+    def test_every_target_is_validated_before_any_transition_or_write(self):
+        touched = []
+        before = self.snapshot()
+        with self.assertRaisesRegex(EditError, 'no instance absent/staging'):
+            model_sync.prepare(self.root, {
+                Instance('hello', 'staging'): model_sync.Update(lambda entry: touched.append(entry) or entry),
+                Instance('absent', 'staging'): model_sync.Remove()})
+        self.assertEqual(touched, [])
+        self.assertEqual(self.snapshot(), before)
+        with self.assertRaisesRegex(EditError, 'already exists'):
+            model_sync.prepare(self.root, {Instance('hello', 'staging'): model_sync.Create(Entry(App('demo'), web(), Settings()))})
+        self.assertEqual(self.snapshot(), before)
+
+    def test_sync_preserves_unrelated_yaml_beside_active_instance_outputs(self):
+        folder = self.root / 'apps/hello/prod'
+        unrelated = folder / 'notes.yaml'
+        unrelated.write_text('kind: Note\n')
+        model_sync.sync(self.root)
+        self.assertEqual(unrelated.read_text(), 'kind: Note\n')
 
     def test_arbitrary_merged_job_records_with_invalid_schedule_do_not_render_or_write(self):
         folder = self.root / 'apps/nightly/staging'

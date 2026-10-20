@@ -13,6 +13,10 @@ REGISTRY = "clusters/home/kustomization.yaml"
 RECORD = re.compile(r"apps/[^/]+/app\.yaml"
                     r"|apps/[^/]+/(staging|prod)/(release\.yaml|instance\.yaml|[^/]+\.sops\.yaml|offers/.+)")
 
+SHARED_INPUTS = frozenset({'apps/teams.yaml', 'platform/notify/kustomization.yaml',
+                           'clusters/home/platform-notify.yaml'})
+CHANNEL = re.compile(r'platform/notify/channel-[a-z]([a-z0-9-]{0,38}[a-z0-9])?\.sops\.yaml')
+
 
 def classify(paths: list[str]) -> tuple[bool, bool]:
     """Return (app_instance_only, tooling_tests_needed); empty paths fail closed."""
@@ -25,7 +29,7 @@ def classify(paths: list[str]) -> tuple[bool, bool]:
 
 def records_only(paths: list[str]) -> bool:
     """Whether every changed path is an input record, so the checks render the records first; empty is False."""
-    return bool(paths) and all(RECORD.fullmatch(path) for path in paths)
+    return bool(paths) and all(RECORD.fullmatch(path) or path in SHARED_INPUTS or CHANNEL.fullmatch(path) for path in paths)
 
 
 def main() -> int:

@@ -38,6 +38,7 @@ from swhurl.apps.contract import (
     APP_OWNER,
     APP_TYPES,
     EXPOSURES,
+    SECRET_FILE,
     STACKS,
     TEAMS_FILE,
     schedule_problem,
@@ -45,7 +46,7 @@ from swhurl.apps.contract import (
 )
 from swhurl.apps.instance import NAME_RE, Instance
 from swhurl.apps.model import store
-from swhurl.apps.model.records import ALLOW_RE, SETTINGS_FILE, Settings
+from swhurl.apps.model.records import ALLOW_RE, APP_FILE, RECORD_FILES, SETTINGS_FILE, Settings
 from swhurl.apps.model.render import ANNOTATION
 from swhurl.console.actions import ActionError, Job
 from swhurl.console.merge import ACTIONS, INSTANCE_KINDS, REFUSAL, REFUSAL_LIMIT, new_app_records, settings_held
@@ -231,7 +232,8 @@ def main_commit(runner: Runner, github: GitHub) -> str:
 
 def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, Target]:
     """Immutable Git facts from a complete tree. Missing paths mean absent only after a successful read.
-    Read only HelmReleases and the platform's settings files; encrypted files and credentials never enter the result."""
+    Both instance records absent means removed, even before stale outputs are cleaned up.
+    Read only records and their HelmReleases; encrypted files and credentials never enter the result."""
     api = GitHubAPI(runner, github)
     try:
         content = api.call('GET', f'/tarball/{revision}').content
@@ -244,7 +246,7 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
                 if len(parts) == 4 and parts[3] == 'app.yaml':
                     apps[parts[2]] = archive.extractfile(member).read()
                 elif len(parts) == 5 and parts[4] == 'helmrelease.yaml':
-                    releases[f'{parts[2]}/{parts[3]}'] = yamlio.load(archive.extractfile(member).read().decode())
+                    releases[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
                 elif len(parts) == 5 and parts[4] == 'instance.yaml':
                     settings[f'{parts[2]}/{parts[3]}'] = archive.extractfile(member).read()
                 elif len(parts) == 5 and parts[4] == 'release.yaml':
@@ -253,28 +255,25 @@ def render_targets(runner: Runner, github: GitHub, revision: str) -> dict[str, T
             def digest(*parts: bytes) -> str:
                 return hashlib.sha256(b'\0'.join(parts)).hexdigest()[:16]
             found = {}
-            for name in releases.keys() | records.keys():
+            for name in settings.keys() | records.keys():
                 app, mine, record = apps.get(name.split('/')[0], b''), settings.get(name), records.get(name)
-                if mine is not None:
-                    # A system allocation completes creation after a records-only merge; it is not
-                    # a new operator choice. Ignore only that port when identifying the inputs.
-                    inputs = Settings.parse(yamlio.load(mine.decode()))
-                    inputs = replace(inputs, allocations=replace(inputs.allocations, egress_port=None))
-                    mine = yamlio.dump(inputs.document()).encode()
-                release = releases.get(name)
-                if release is None and (mine is None or record is None):
-                    continue  # neither rendered nor recorded: not an instance
+                if mine is None or record is None:
+                    raise ValueError(f'{name}: incomplete instance records')
+                # A system allocation completes creation after a records-only merge; it is not
+                # a new operator choice. Ignore only that port when identifying the inputs.
+                inputs = Settings.parse(yamlio.load(mine.decode()))
+                inputs = replace(inputs, allocations=replace(inputs.allocations, egress_port=None))
+                mine = yamlio.dump(inputs.document()).encode()
+                release = yamlio.load(releases[name].decode()) if name in releases else None
                 rendered_digest = helmrelease.image(release).get('digest', '') if release else ''
-                requested_digest = str(((yamlio.load(record.decode()) or {}).get('image') or {}).get('digest', '')) \
-                    if record is not None else rendered_digest
+                requested_digest = str(((yamlio.load(record.decode()) or {}).get('image') or {}).get('digest', ''))
                 # A held later promotion merges new records alongside the old HelmRelease. Its
                 # healthy old pod is not evidence that the promoted image has been rendered or run.
                 pending = release is None or requested_digest != rendered_digest
                 found[name] = Target(
                     UNRENDERED if pending else (release.get('metadata', {}).get('annotations') or {}).get(ANNOTATION, ''),
                     requested_digest,
-                    digest(app, mine) if mine is not None else '',
-                    digest(app, record, mine) if mine is not None and record is not None else '')
+                    digest(app, mine), digest(app, record, mine))
             return found
     except (tarfile.TarError, ValueError, AttributeError, yaml.YAMLError) as error:
         raise ActionError(f'cannot read render targets: {error}') from None
@@ -753,6 +752,7 @@ class Change:
         gated = self.kind in INSTANCE_KINDS  # its PR carries the instance's Settings alone; the gate's rule decides
         env = self.commands[0].argv[1] if gated else ''
         seen: dict[str, Settings | None] = {}
+        deleted: set[str] = set()
 
         def settings_in(clone: Path) -> Settings | None:
             path = clone / 'apps' / app / env / SETTINGS_FILE
@@ -762,9 +762,12 @@ class Change:
             return settings_held(env, seen['before'], seen['after']) if gated else ''
 
         def change(clone: Path) -> None:
+            removal = [clone / 'apps' / app / APP_FILE, *(clone / 'apps' / app / self.commands[0].argv[1]).rglob('*')] \
+                if self.kind == 'remove' else []
             if gated:
                 seen['before'] = settings_in(clone)
             self.apply(runner, job, clone)
+            deleted.update(str(path.relative_to(clone)) for path in removal if not path.exists())
             if gated:
                 seen['after'] = settings_in(clone)
             if new_app:
@@ -777,6 +780,18 @@ class Change:
             keep = lambda path: new_app_records(app, path)  # noqa: E731
         elif gated:
             keep = lambda path: ACTIONS[self.kind].owns(app, env, path)  # noqa: E731
+        elif self.kind == 'remove':
+            folder = f'apps/{app}/{self.commands[0].argv[1]}/'
+            keep = lambda path: path in deleted and (path == f'apps/{app}/{APP_FILE}' or (path.startswith(folder) and (  # noqa: E731
+                path.removeprefix(folder) in RECORD_FILES | {SECRET_FILE, events.SECRET_FILE}
+                or path.startswith(folder + 'offers/'))))
+        elif self.kind.startswith('team '):
+            keep = lambda path: path == str(TEAMS_FILE) or (  # noqa: E731
+                Path(path).match('apps/*/app.yaml') or Path(path).match('apps/*/*/instance.yaml'))
+        elif self.kind.startswith('channel '):
+            keep = lambda path: path in (str(TEAMS_FILE), str(channels.UNIT_FILE),  # noqa: E731
+                                          str(channels.NOTIFY_DIR / 'kustomization.yaml')) or (
+                Path(path).parent == channels.NOTIFY_DIR and Path(path).match('channel-*.sops.yaml'))
         else:
             keep = None
         return open_pr(runner, github, job, slug=self.slug, title=self.title, body=self.body, change=change,

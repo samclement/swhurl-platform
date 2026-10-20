@@ -154,6 +154,18 @@ Scale, schedule, who can reach it, connect, disconnect, reach a host outside and
 
 On the app page, **Allow callers** (web apps only) adds to the instance's `allows`, and each allowed caller has a **Remove** button; a call recorded in Git that renders nothing yet is shown in the connections table as waiting for the other app to allow it, read from the instance's `instance.yaml` on `main`. A held instance change is merged with GitHub's Merge button and rendered by the [Render workflow](../.github/workflows/render.yml), as for a promotion. Two changes to the same instance conflict in Git; close the second and make it again.
 
+### Removals, teams and channels
+
+These PRs stay held for a person's review, and carry only inputs:
+
+| Change | PR contents |
+| --- | --- |
+| Uninstall an instance | Deletions of its `release.yaml`, `instance.yaml`, offers and encrypted inputs; `app.yaml` only for its last environment |
+| Change a team | `apps/teams.yaml`, affected apps' `app.yaml`, and `instance.yaml` wherever a renamed `team:<name>` grant changes |
+| Change a notification channel | The team registry, encrypted channel files, notify resource list and its unit's decryption setting, where changed |
+
+No generated instance manifests, app-unit registrations, Reloader list or notification routes travel in these PRs. Validate recognizes these team/channel inputs and renders them before checking; generated routes are not inputs. After GitHub's Merge button, the Render workflow reconciles them on the newest `main`, including [removal cleanup](apps.md#remove-an-app). Activity treats both instance records absent as the removal target even while old generated files remain, and waits for live absence before showing Removed. Direct CLI commands still write the complete planned tree.
+
 ### The gate
 
 [The workflow](../.github/workflows/auto-merge.yml) uses trusted `main` tooling and verifies the current PR head passed Validate (the run the label starts waits up to two minutes for it, so the merge does not need a second runner start).

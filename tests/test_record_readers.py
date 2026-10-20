@@ -119,7 +119,9 @@ class RecordReaderTests(unittest.TestCase):
             'status': {'conditions': [{'type': 'Ready', 'status': 'True'}], 'latestRef': {'tag': '7-abcdef0'}}}]}))
         checks.check_image_automation(runner, report, self.root)
         self.assertIn('[OK] hello-staging: newest image 7-abcdef0, deployed', report.lines)
-        self.assertEqual(teams.apps_of(self.root), {'demo': ['hello']})
+        (self.root / 'apps/teams.yaml').write_text('teams: {demo: {}}\n')
+        with self.assertRaisesRegex(edit.EditError, 'team demo still owns hello'):
+            teams.remove(self.root, 'demo')
 
     def test_deploy_and_webhook_inventory_use_recorded_repository_not_flux_yaml(self):
         record = self.root / 'apps/hello/staging/release.yaml'
